@@ -1,0 +1,9 @@
+version: 1.0
+runtime: docker
+build:
+  commands:
+    build:
+      - echo "Building with Dockerfile"
+run:
+  network:
+    port: 8080

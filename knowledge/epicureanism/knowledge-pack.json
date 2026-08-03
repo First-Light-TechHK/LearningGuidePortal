@@ -1,0 +1,78 @@
+{
+  "topic": "Epicureanism",
+  "scope": "Demo pack focused on pleasure, desire, tranquillity, and friendship.",
+  "sourcePriorities": [
+    {
+      "rank": 1,
+      "source": "Epicurus, Letter to Menoeceus",
+      "useFor": "Core ethical claims about pleasure, desire, death, pain, fear, and tranquillity."
+    },
+    {
+      "rank": 2,
+      "source": "Epicurus, Principal Doctrines",
+      "useFor": "Concise doctrine-level support, especially the limit of pleasure and friendship."
+    }
+  ],
+  "topicFrame": {
+    "oneSentence": "Epicureanism is a practical philosophy of living pleasantly by reducing pain, fear, and unnecessary desire, not by maximising luxury.",
+    "coreIdeas": [
+      "Pleasure is the goal, but the most reliable pleasure is stable freedom from pain and disturbance.",
+      "Not every pleasure should be chosen; some pleasures produce greater trouble later.",
+      "Desires should be examined: some are natural and necessary, others are empty or costly.",
+      "Friendship is central to security and happiness."
+    ],
+    "teachingSequence": [
+      "Start with the modern misunderstanding of 'pleasure'.",
+      "Explain freedom from pain and fear as the basic target.",
+      "Introduce desire selection and the rejection of every-pleasure indulgence.",
+      "Use friendship to show that Epicurean life is social, not merely private."
+    ]
+  },
+  "misconceptions": [
+    {
+      "id": "pleasure_as_indulgence",
+      "studentVersion": "Epicurus means we should enjoy luxury and indulge ourselves.",
+      "correction": "Epicurus treats pleasure as the goal, but he argues for stable freedom from pain and mental disturbance. Indulgence can create future pain."
+    },
+    {
+      "id": "simple_selfishness",
+      "studentVersion": "Epicureanism is selfish because it focuses on personal pleasure.",
+      "correction": "Epicurean pleasure includes security, friendship, and freedom from fear; friendship is one of the greatest supports of happiness."
+    },
+    {
+      "id": "anti_reason",
+      "studentVersion": "If pleasure is the goal, reason does not matter.",
+      "correction": "Reason is needed to choose between pleasures and pains over time."
+    }
+  ],
+  "rubric": [
+    {
+      "criterion": "Pleasure defined accurately",
+      "goodAnswer": "Explains pleasure as stable freedom from pain/fear rather than luxury."
+    },
+    {
+      "criterion": "Desire selection",
+      "goodAnswer": "Notes that Epicurus does not choose every pleasure."
+    },
+    {
+      "criterion": "Use of source",
+      "goodAnswer": "Connects the answer to Letter to Menoeceus or Principal Doctrines."
+    },
+    {
+      "criterion": "Avoids modern distortion",
+      "goodAnswer": "Does not reduce Epicureanism to consumer enjoyment, self-help minimalism, or selfishness."
+    }
+  ],
+  "editorialRules": [
+    "Do not treat modern 'epicurean' luxury dining as equivalent to ancient Epicureanism.",
+    "Do not explain Epicureanism as simple self-indulgence.",
+    "Do not over-politicise the topic unless the student asks a relevant historical question.",
+    "Use short source references, not academic footnote style."
+  ],
+  "sampleQuestions": [
+    "Did Epicurus believe pleasure means indulgence?",
+    "Why is friendship so important in Epicurean philosophy?",
+    "Is Epicureanism selfish?",
+    "How is Epicurean pleasure different from luxury?"
+  ]
+}

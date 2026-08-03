@@ -1,0 +1,69 @@
+{
+  "topic": "Epicureanism",
+  "demoScope": "Ethics of pleasure, desire, tranquillity, prudence, and friendship.",
+  "sourcePolicy": "Use primary texts first. Use the knowledge pack only as teaching control, not as a substitute for source text.",
+  "primaryCanon": [
+    {
+      "id": "letter_to_menoeceus",
+      "title": "Letter to Menoeceus",
+      "author": "Epicurus",
+      "translator": "Robert Drew Hicks",
+      "sourceUrl": "https://classics.mit.edu/Epicurus/menoec.html",
+      "priority": 1,
+      "demoUse": [
+        "pleasure as the end",
+        "freedom from pain and fear",
+        "classification of desires",
+        "not choosing every pleasure",
+        "prudence and simple living"
+      ]
+    },
+    {
+      "id": "principal_doctrines",
+      "title": "Principal Doctrines",
+      "author": "Epicurus",
+      "translator": "Robert Drew Hicks",
+      "sourceUrl": "https://classics.mit.edu/Epicurus/princdoc.html",
+      "priority": 2,
+      "demoUse": [
+        "limit of pleasure",
+        "prudence and justice",
+        "friendship",
+        "natural and unnecessary desires",
+        "security and fear"
+      ]
+    }
+  ],
+  "laterCanonCandidates": [
+    {
+      "title": "Vatican Sayings",
+      "reasonToAddLater": "Useful short sayings for friendship, desire, and daily practice; add after selecting a reliable edition."
+    },
+    {
+      "title": "Diogenes Laertius, Lives of Eminent Philosophers, Book X",
+      "reasonToAddLater": "Important ancient biographical and doctrinal witness; useful for broader course context."
+    },
+    {
+      "title": "Lucretius, De Rerum Natura",
+      "reasonToAddLater": "Roman Epicurean poem; useful for physics, death, fear, and reception, but broader than this first ethics demo."
+    }
+  ],
+  "sourceToKnowledgeFrame": [
+    {
+      "source": "Letter to Menoeceus",
+      "knowledgeFrame": "Pleasure is not indulgence; it is stable freedom from pain and fear."
+    },
+    {
+      "source": "Letter to Menoeceus",
+      "knowledgeFrame": "Pleasures and pains must be chosen by judgement over time."
+    },
+    {
+      "source": "Principal Doctrines",
+      "knowledgeFrame": "Pleasure has a natural limit once pain is removed."
+    },
+    {
+      "source": "Principal Doctrines",
+      "knowledgeFrame": "Friendship is central to happiness and security."
+    }
+  ]
+}

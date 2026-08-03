@@ -1,0 +1,25 @@
+Focus on how a professor would teach this topic.
+Focus on student learning challenges.
+Extract hidden teaching patterns whenever possible.
+Convert factual content into teachable concept
+Convert explanations into teaching strategies.
+Convert examples into instructional use cases.
+Convert arguments into discussion pathways.
+Convert questions into Socratic teaching questions.
+Convert corrections into misconception handling guidance.
+Convert evaluations into assessment criteria.
+Extract the professor’s answer style.
+Extract how the professor defines terms before answering.
+Extract how the professor handles questions with misleading modern assumptions.
+Extract how the professor avoids anachronism.
+Extract how the professor separates surface similarity from deep conceptual difference.
+Extract how the professor uses historical and social context before making a judgement.
+Extract how the professor compares different philosophical systems.
+Extract how the professor gives qualified answers rather than simple yes or no answers.
+Extract questions that a normal LLM may answer incorrectly without the Knowledge System.
+For each high-risk question, extract why the answer is risky, what mistake a normal LLM may make, and how the AI tutor should answer more safely.
+Extract chat-ready tutor behaviour.
+For each important teaching point, identify the kind of student question that should trigger it.
+Extract possible Socratic follow-up questions that the tutor can ask after giving a short explanation.
+Extract assessment criteria for judging whether the student has understood the point.
+Prioritise knowledge that can improve real AI tutor conversations, not knowledge that only helps produce a textbook summary.

@@ -1,0 +1,19 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci --cache .npm --prefer-offline
+    build:
+      commands:
+        # Amplify console env vars → Next.js SSR runtime
+        - env | grep -e OPENROUTER_API_KEY -e OPENROUTER_SITE_URL -e OPENROUTER_APP_NAME -e OPENROUTER_MODEL >> .env.production || true
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - .next/cache/**/*
+      - .npm/**/*
