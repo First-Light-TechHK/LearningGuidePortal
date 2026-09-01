@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "smoke:product": "node scripts/smoke-product.mjs",
     "preflight:production": "node scripts/preflight-production.mjs",
+    "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3011/api/payment/webhook",
     "seed:science": "npx --yes tsx scripts/seed-science.ts",
     "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs"

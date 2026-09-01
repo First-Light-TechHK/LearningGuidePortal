@@ -23,6 +23,15 @@ export function publicAppOrigin(request?: Request) {
     if (parsed.protocol !== "https:") throw new Error("NEXT_PUBLIC_APP_URL must use HTTPS in production.");
     return parsed.origin;
   }
+  if (configured) {
+    try {
+      const parsed = new URL(configured);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+      return parsed.origin;
+    } catch {
+      throw new Error("NEXT_PUBLIC_APP_URL must be a valid HTTP or HTTPS URL.");
+    }
+  }
   return appOrigin(request);
 }
 
