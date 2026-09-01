@@ -5,6 +5,9 @@ import { getKnowledge, knowledgeDir } from "./knowledgeStore";
 import { downloadRelease, listReleases } from "./releaseStore";
 import { DEFAULT_MODEL_ID, displayModelLabel, findConfiguredModel, listConfiguredModels } from "./modelStore";
 import { ChatMode, ChatRoute, getPromptSettings, getRouteConfig, PromptSettings, saveRouteConfig } from "./chatTestingStore";
+import { fetchOpenRouter } from "./openRouterClient";
+import { isScienceFieldCourse, SCIENCE_DISPLAY_CONTRACT } from "./scienceTopics";
+import { sanitiseModelState } from "./scienceModels";
 
 export type DialogueRole = "user" | "assistant";
 
@@ -550,12 +553,7 @@ export async function assessStandaloneDialogue(
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        signal: AbortSignal.timeout(45000),
-        headers: openRouterHeaders(apiKey),
-        body: JSON.stringify(requestBody)
-      });
+      const response = await fetchOpenRouter(apiKey, requestBody, { timeoutMs: 45000 });
       httpStatus = response.status;
       if (!response.ok) {
         const responseText = await response.text();
@@ -636,14 +634,19 @@ function languageGuard(input: string) {
   ].join("\n");
 }
 
-function buildSystemPrompt(prompts: PromptSettings, mode: ChatMode, knowledgeContext: string, latestInput: string) {
+function buildSystemPrompt(prompts: PromptSettings, mode: ChatMode, knowledgeContext: string, latestInput: string, courseId = "", modelState = "") {
   const modePrompt = mode === "lecture" ? prompts.lecturePrompt : prompts.socraticPrompt;
   const finalPrompt = [prompts.basePrompt, modePrompt].filter(Boolean).join("\n\n");
+  const liveModel = sanitiseModelState(modelState);
   return [
     finalPrompt,
+    isScienceFieldCourse(courseId) ? SCIENCE_DISPLAY_CONTRACT : "",
     knowledgeContext
       ? `Current Knowledge Wiki release markdown:\n${knowledgeContext}`
       : "No KS Wiki context is enabled for this dialogue session.",
+    liveModel
+      ? `Live course model now on the student's card:\n${liveModel}\nSpeak to these quantities if the student asks about the figure, the run, or a slider. Do not invent a different current value.`
+      : "",
     languageGuard(latestInput)
   ].filter(Boolean).join("\n\n");
 }
@@ -754,7 +757,8 @@ async function buildDialogueRequest(
   modeValue: ChatMode,
   configInput: Partial<DialogueSessionConfig>,
   messagesInput: DialogueMessage[],
-  input: string
+  input: string,
+  modelState = ""
 ) {
   const courseId = safeSegment(courseIdValue);
   const knowledgeId = safeSegment(knowledgeIdValue);
@@ -781,7 +785,7 @@ async function buildDialogueRequest(
     createdAt: now()
   };
   const openRouterMessages = [
-    { role: "system", content: buildSystemPrompt(prompts, mode, knowledgeContext, trimmed) },
+    { role: "system", content: buildSystemPrompt(prompts, mode, knowledgeContext, trimmed, courseId, modelState) },
     ...history.map((message) => ({ role: message.role, content: message.content })),
     { role: "user", content: trimmed }
   ];
@@ -824,7 +828,8 @@ export async function streamDialogueMessage(
   messagesInput: DialogueMessage[],
   input: string,
   routeIdValue?: string,
-  storage: "testing" | "dialogue" = "testing"
+  storage: "testing" | "dialogue" = "testing",
+  modelState = ""
 ) {
   const {
     apiKey,
@@ -836,7 +841,7 @@ export async function streamDialogueMessage(
     config,
     fullHistory,
     userMessage
-  } = await buildDialogueRequest(courseIdValue, knowledgeIdValue, modeValue, configInput, messagesInput, input);
+  } = await buildDialogueRequest(courseIdValue, knowledgeIdValue, modeValue, configInput, messagesInput, input, modelState);
   const routeId = routeIdValue || "default";
   const debugPath = storage === "dialogue" ? dialogueStandaloneDebugPath(courseId, knowledgeId) : dialogueDebugPath(courseId, knowledgeId);
   const saveSession = storage === "dialogue" ? saveStandaloneDialogueRouteSession : saveDialogueRouteSession;
@@ -844,12 +849,7 @@ export async function streamDialogueMessage(
   const startedAt = now();
   let response: Response;
   try {
-    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: AbortSignal.timeout(30000),
-      headers: openRouterHeaders(apiKey),
-      body: JSON.stringify(requestBody)
-    });
+    response = await fetchOpenRouter(apiKey, requestBody, { timeoutMs: 45000 });
   } catch (error) {
     const errorMessage = error instanceof Error && error.name === "TimeoutError"
       ? "OpenRouter did not respond before timeout."
@@ -1027,21 +1027,12 @@ export async function sendDialogueMessage(
     config,
     fullHistory,
     userMessage
-  } = await buildDialogueRequest(courseIdValue, knowledgeIdValue, modeValue, configInput, messagesInput, input);
+  } = await buildDialogueRequest(courseIdValue, knowledgeIdValue, modeValue, configInput, messagesInput, input, "");
   const debugPath = storage === "dialogue" ? dialogueStandaloneDebugPath(courseId, knowledgeId) : dialogueDebugPath(courseId, knowledgeId);
   const saveSession = storage === "dialogue" ? saveStandaloneDialogueRouteSession : saveDialogueRouteSession;
   let response: Response;
   try {
-    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "http://localhost:3000",
-        "X-Title": process.env.OPENROUTER_APP_NAME || "Knowledge System"
-      },
-      body: JSON.stringify({ ...requestBody, stream: false })
-    });
+    response = await fetchOpenRouter(apiKey, { ...requestBody, stream: false }, { timeoutMs: 45000 });
   } catch (error) {
     const errorMessage = openRouterFetchErrorMessage(error);
     await atomicWriteJson(debugPath, {

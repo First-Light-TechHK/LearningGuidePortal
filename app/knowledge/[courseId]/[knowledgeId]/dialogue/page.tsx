@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Bot, Check, CircleHelp, ClipboardCheck, Lightbulb, RotateCcw, Send, Sparkles, TriangleAlert, UserRound, X } from "lucide-react";
 import { MarkdownAnswer } from "@/components/MarkdownAnswer";
+import { ScienceModelCard } from "@/components/ScienceModelCard";
 
 const STREAM_ERROR_PREFIX = "__DIALOGUE_TESTING_ERROR__:";
 
@@ -104,6 +105,7 @@ export default function DialoguePage() {
   const [assessmentSelectionChanged, setAssessmentSelectionChanged] = useState(false);
   const [assessmentError, setAssessmentError] = useState("");
   const [assessment, setAssessment] = useState<AssessmentRecord | null>(null);
+  const [modelState, setModelState] = useState("");
 
   useEffect(() => { void loadState(); }, [query]);
 
@@ -207,10 +209,18 @@ export default function DialoguePage() {
     }
   }
 
-  function useSuggestedQuestion() {
+  function continueWithSuggestedQuestion() {
     const question = assessment?.result.next_question;
     if (!question) return;
-    setInput(question);
+    setMessages((current) => [
+      ...current,
+      {
+        id: `assessment_question_${Date.now()}`,
+        role: "assistant",
+        content: question,
+        createdAt: new Date().toISOString()
+      }
+    ]);
     closeAssessment();
   }
 
@@ -222,7 +232,7 @@ export default function DialoguePage() {
       const res = await fetch("/api/dialogue/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId, knowledgeId, mode, config: route, messages: history, input: userMessage.content })
+        body: JSON.stringify({ courseId, knowledgeId, mode, config: route, messages: history, input: userMessage.content, modelState })
       });
       if (!res.ok) throw new Error(await res.text() || "Dialogue send failed.");
       if (!res.body) throw new Error("Dialogue returned no response stream.");
@@ -351,6 +361,8 @@ export default function DialoguePage() {
           ))}
         </div>
       </section>
+      <div className="single-dialogue-dock">
+        <ScienceModelCard knowledgeId={knowledgeId} onState={setModelState} />
       <form className="single-dialogue-composer" onSubmit={sendMessage}>
         <button className="single-dialogue-tool" type="button" aria-label="Assess selected dialogue" title={rounds.length || assessment ? "Assess dialogue" : "Add a complete dialogue round to assess"} onClick={openAssessment} disabled={loading || (!rounds.length && !assessment)}>
           <ClipboardCheck />
@@ -365,6 +377,7 @@ export default function DialoguePage() {
           <Send /> Send
         </button>
       </form>
+      </div>
       {assessmentOpen ? (
         <div className="assessment-overlay" role="dialog" aria-modal="true" aria-label="Dialogue assessment">
           <section className="assessment-sheet">
@@ -393,7 +406,7 @@ export default function DialoguePage() {
                   <section className={`assessment-panel overall quality-${assessment.result.overall_quality}`}><h3>Overall quality</h3><strong>{QUALITY_LABELS[assessment.result.overall_quality]}</strong></section>
                   <section className="assessment-panel understands"><h3>What the student understands</h3><ul>{assessment.result.student_understands.map((item) => <li key={item}><Check />{item}</li>)}</ul></section>
                   <section className="assessment-panel gaps"><h3>What is still missing</h3><ul>{assessment.result.student_gaps.map((item) => <li key={item}><TriangleAlert />{item}</li>)}</ul></section>
-                  {assessment.result.next_question ? <section className="assessment-panel next-question"><h3>Suggested next question</h3><div className="next-question-content"><CircleHelp /><p>{assessment.result.next_question}</p></div><button className="assessment-use-question" type="button" onClick={useSuggestedQuestion}>Use this question</button></section> : <section className="assessment-panel next-question complete"><h3>Assessment complete</h3><div className="next-question-content"><Lightbulb /><p>This conversation has reached a suitable conclusion.</p></div></section>}
+                  {assessment.result.next_question ? <section className="assessment-panel next-question"><h3>Next tutor question</h3><div className="next-question-content"><CircleHelp /><p>{assessment.result.next_question}</p></div><button className="assessment-use-question" type="button" onClick={continueWithSuggestedQuestion}>Continue assessment</button></section> : <section className="assessment-panel next-question complete"><h3>Assessment complete</h3><div className="next-question-content"><Lightbulb /><p>This conversation has reached a suitable conclusion.</p></div></section>}
                 </div>
               </div>
             ) : null}

@@ -1,0 +1,21 @@
+{
+  "brand": "Learning Guide",
+  "portal": {
+    "eyebrow": "Learning Guide Portal",
+    "title": "Learn through guided courses",
+    "description": "Explore a course, start with the public lesson, and continue learning with a course-aligned AI Tutor.",
+    "viewCourses": "View courses",
+    "signIn": "Sign in",
+    "myLearning": "My Learning",
+    "featuredCourses": "Courses",
+    "noCourses": "No published courses are available yet.",
+    "courseDetail": "Course Detail",
+    "openCourse": "Open course",
+    "publicFirstLesson": "Public First Lesson",
+    "productionShell": "Production website starter",
+    "productionShellDescription": "The public Portal is wired first. User Registration, Purchase, Payment Management, My Learning and AI Tutor are added behind the same application boundary."
+  },
+  "health": {
+    "ok": "Learning Guide is running"
+  }
+}

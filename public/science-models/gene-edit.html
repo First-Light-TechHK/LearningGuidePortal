@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gene edit sequence</title>
+  <link rel="stylesheet" href="/science-models/model.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Frangoul extract: three objects, no invented figure</h1>
+    <div class="example">
+      <strong>Worked numbers from the stored extract.</strong>
+      About 80% of alleles were modified in healthy-donor CD34+ cells.
+      Two patients received autologous edited cells.
+      More than a year later: high allelic editing, higher HbF, transfusion independence, and (SCD) elimination of vaso-occlusive episodes.
+      Patient 1’s 18-month visit is a follow-up, not a lifetime.
+    </div>
+    <div class="detail">
+      <h2>Contrast cases — only the stored extract</h2>
+      <div class="cases">
+        <article><strong>Case 1 — cells, not a cartoon.</strong> About 80% of alleles were modified in healthy-donor CD34+ cells. The locus named in the extract is the BCL11A erythroid enhancer, not HBB.</article>
+        <article><strong>Case 2 — two patients, a named visit.</strong> Autologous edited cells; more than a year later: high allelic editing, higher HbF, transfusion independence, and (SCD) no vaso-occlusive episodes. The reported visit is 18 months.</article>
+        <article><strong>Case 3 — what is not here.</strong> The Journal’s panels were not stored. Do not invent cut–repair artwork. An 18-month follow-up is not a lifetime, and it is not “we have edited what makes us human”.</article>
+      </div>
+    </div>
+    <div class="row"><label>Follow-up (months)</label><input id="m" type="range" min="0" max="18" step="1" value="18" /><span class="value" id="mv">18</span></div>
+    <div class="stage">
+      <svg viewBox="0 0 360 150" id="plot"></svg>
+    </div>
+    <p class="caption">The Journal’s panels were not stored. This card only names the extract’s sequence. It does not draw cut–repair artwork.</p>
+    <p class="fence">A named somatic trial at a reported follow-up is not “we have edited what makes us human”.</p>
+    <div class="actions">
+      <button type="button" id="run">Run</button>
+      <button type="button" class="secondary" id="reset">18 months</button>
+    </div>
+  </div>
+  <script src="/science-models/model.js"></script>
+  <script>
+    ScienceModel.topic = "gene-edit";
+    const m = document.getElementById("m");
+    const plot = document.getElementById("plot");
+    const boxes = [
+      { x: 16, title: "Locus", body: "BCL11A erythroid enhancer, not HBB" },
+      { x: 128, title: "Product", body: "ΔHbF in edited cells" },
+      { x: 240, title: "Endpoint", body: "Named visit, not a lifetime" }
+    ];
+    function summary() {
+      const months = Number(m.value);
+      return `Follow-up = ${months} months. Sequence: BCL11A erythroid enhancer → ΔHbF → named endpoint. ${months < 18 ? "The extract’s reported visit is 18 months; this slider is earlier." : "The 18-month visit is a follow-up, not a lifetime."} No Journal figure is stored.`;
+    }
+    function draw(phase) {
+      const months = Number(m.value);
+      const lit = months <= 0 ? 0 : months < 12 ? 1 : 2;
+      const shown = Math.min(2, Math.floor(phase * 3));
+      plot.innerHTML = boxes.map((box, i) => {
+        const on = i <= Math.max(lit, shown);
+        return `
+          <rect x="${box.x}" y="22" width="104" height="86" rx="8" fill="${on ? "#eef4ff" : "#f4f6fa"}" stroke="${on ? "#1d4f9c" : "#d5deec"}"/>
+          <text x="${box.x + 52}" y="46" text-anchor="middle" font-size="12" fill="#10203a">${box.title}</text>
+          <text x="${box.x + 52}" y="72" text-anchor="middle" font-size="10" fill="#5a6880">${box.body.split(",")[0]}</text>
+          <text x="${box.x + 52}" y="88" text-anchor="middle" font-size="10" fill="#5a6880">${box.body.split(",")[1] || ""}</text>`;
+      }).join("") + `<text x="180" y="136" text-anchor="middle" fill="#5a6880" font-size="11">${months} months</text>`;
+      document.getElementById("mv").textContent = String(months);
+      ScienceModel.report(summary(), { months });
+    }
+    function run() {
+      const start = performance.now();
+      const from = 0;
+      const step = (t) => {
+        const u = Math.min(1, (t - start) / 1400);
+        m.value = String(Math.round(from + 18 * u));
+        draw(u);
+        if (u < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    m.oninput = () => draw(1);
+    document.getElementById("run").onclick = run;
+    document.getElementById("reset").onclick = () => { m.value = "18"; draw(1); };
+    ScienceModel.onRun(run);
+    ScienceModel.onApply((p) => {
+      if (p.months != null) m.value = String(p.months);
+      draw(1);
+    });
+    draw(1);
+  </script>
+</body>
+</html>

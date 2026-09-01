@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2×2 DD</title>
+  <link rel="stylesheet" href="/science-models/model.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Goodman-Bacon 2×2: Treat × Post, not 15 per cent alone</h1>
+    <div class="example">
+      <strong>Worked numbers.</strong>
+      Suppose the treated series falls 15 percentage points after the charge, and the untreated series falls 4 points over the same window.
+      Treated change = −15 pp, comparison change = −4 pp, so
+      <span class="eq">β̂<sup>2×2</sup> = −15 − (−4) = −11 pp</span>.
+      The public 15 per cent, with no comparison group, is not this estimator. Incidence is not in that average.
+    </div>
+    <div class="detail">
+      <h2>Contrast cases — the difference of two changes</h2>
+      <div class="cases">
+        <article><strong>Case 1 — the 2×2.</strong> Treated change = −15 pp, comparison change = −4 pp. Then β̂<sup>2×2</sup> = −15 − (−4) = −11 pp.</article>
+        <article><strong>Case 2 — the public number.</strong> “Traffic fell 15 per cent” with no untreated series is not this estimator. The solid drop alone is not the DD.</article>
+        <article><strong>Case 3 — what is not in the average.</strong> Incidence (who pays) is not in that −11 pp. An 11-point contrast is not “congestion charging works”.</article>
+      </div>
+    </div>
+    <div class="row"><label>Treated change (pp)</label><input id="t" type="range" min="-25" max="5" step="1" value="-15" /><span class="value" id="tv">−15</span></div>
+    <div class="row"><label>Comparison change (pp)</label><input id="c" type="range" min="-15" max="5" step="1" value="-4" /><span class="value" id="cv">−4</span></div>
+    <div class="stage">
+      <svg viewBox="0 0 360 150" id="plot"></svg>
+    </div>
+    <p class="caption">Solid: treated. Dashed: untreated. The DD is the difference of the two changes, not the treated drop alone.</p>
+    <p class="fence">An 11-point contrast is not “congestion charging works”.</p>
+    <div class="actions">
+      <button type="button" id="run">Run</button>
+      <button type="button" class="secondary" id="reset">−15 vs −4</button>
+    </div>
+  </div>
+  <script src="/science-models/model.js"></script>
+  <script>
+    ScienceModel.topic = "public-policy";
+    const t = document.getElementById("t");
+    const c = document.getElementById("c");
+    const plot = document.getElementById("plot");
+    function summary() {
+      const dt = Number(t.value), dc = Number(c.value);
+      const dd = dt - dc;
+      return `Treated change = ${dt} pp, comparison change = ${dc} pp, 2×2 DD = ${dd} pp. A single 15 per cent with no comparison group is not this estimator.`;
+    }
+    function ymap(v) { return 40 - v * 2.2; }
+    function draw(phase) {
+      const dt = Number(t.value), dc = Number(c.value);
+      const tPost = 0 + dt * phase;
+      const cPost = 0 + dc * phase;
+      plot.innerHTML = `
+        <line x1="180" y1="16" x2="180" y2="128" stroke="#d5deec"/>
+        <polyline points="40,${ymap(0)} 180,${ymap(0)} 320,${ymap(tPost)}" fill="none" stroke="#c45c2a" stroke-width="2.4"/>
+        <polyline points="40,${ymap(0) + 8} 180,${ymap(0) + 8} 320,${ymap(cPost) + 8}" fill="none" stroke="#4c7fd4" stroke-width="2" stroke-dasharray="6 4"/>
+        <text x="48" y="18" fill="#c45c2a" font-size="11">treated</text>
+        <text x="110" y="18" fill="#4c7fd4" font-size="11">comparison</text>
+        <text x="188" y="140" fill="#5a6880" font-size="11">treatment time</text>
+        <text x="250" y="36" fill="#10203a" font-size="12">DD = ${(dt - dc).toFixed(0)} pp</text>`;
+      document.getElementById("tv").textContent = String(dt);
+      document.getElementById("cv").textContent = String(dc);
+      ScienceModel.report(summary(), { treated: dt, comparison: dc, dd: dt - dc });
+    }
+    function run() {
+      const start = performance.now();
+      const step = (now) => {
+        const u = Math.min(1, (now - start) / 1300);
+        draw(u);
+        if (u < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    t.oninput = c.oninput = () => draw(1);
+    document.getElementById("run").onclick = run;
+    document.getElementById("reset").onclick = () => { t.value = "-15"; c.value = "-4"; draw(1); };
+    ScienceModel.onRun(run);
+    ScienceModel.onApply((p) => {
+      if (p.treated != null) t.value = String(p.treated);
+      if (p.comparison != null) c.value = String(p.comparison);
+      draw(1);
+    });
+    draw(1);
+  </script>
+</body>
+</html>

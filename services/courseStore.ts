@@ -15,6 +15,8 @@ type CourseIndex = { courseIds: string[] };
 export const DEFAULT_COURSE_ID = "philosophy";
 export const DEFAULT_KNOWLEDGE_ID = "epicureanism";
 
+let scienceSeedState: "idle" | "running" | "done" = "idle";
+
 export function courseDir(courseId: string) {
   return path.join(COURSES_ROOT, safeSegment(courseId));
 }
@@ -43,6 +45,16 @@ export async function ensureDefaultData() {
       createdAt: time,
       updatedAt: time
     });
+  }
+  if (scienceSeedState === "done" || scienceSeedState === "running") return;
+  scienceSeedState = "running";
+  try {
+    const { ensureScienceTopics } = await import("./scienceSeed");
+    await ensureScienceTopics();
+    scienceSeedState = "done";
+  } catch (error) {
+    scienceSeedState = "idle";
+    throw error;
   }
 }
 

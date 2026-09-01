@@ -13,7 +13,9 @@ export async function POST(request: Request) {
       body.config || {},
       body.messages || [],
       body.input || "",
-      body.routeId
+      body.routeId,
+      "testing",
+      body.modelState || ""
     );
     return new Response(stream, {
       headers: {

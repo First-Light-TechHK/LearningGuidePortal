@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Two-level control</title>
+  <link rel="stylesheet" href="/science-models/model.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Vandersypen &amp; Chuang Eq. (1): one spin, not Shor</h1>
+    <div class="example">
+      <strong>Worked numbers.</strong>
+      The system Hamiltonian is <span class="eq">ℋ₀ = −ħω₀ I<sub>z</sub></span>, a two-level splitting.
+      Drive on resonance (detuning = 0): a π pulse takes the lower level to the upper level — inversion = 1.
+      Detune by 0.4 ω₀: the same pulse gives inversion ≈ 0.72, not a finished algorithm.
+      A noisy 50-qubit register is NISQ, not Shor’s engine.
+    </div>
+    <div class="detail">
+      <h2>Contrast cases — one spin, not an algorithm</h2>
+      <div class="cases">
+        <article><strong>Case 1 — on resonance.</strong> Detuning = 0. A driven π pulse inverts the two-level system: inversion = 1. That is laboratory control of ℋ₀ = −ħω₀ I<sub>z</sub>.</article>
+        <article><strong>Case 2 — the same pulse, detuned.</strong> Detuning = 0.4 ω₀. Inversion ≈ 0.72. The pulse did not finish; this is not a computed answer.</article>
+        <article><strong>Case 3 — scope.</strong> A noisy 50-qubit register is NISQ. It is not Shor’s engine, and “0 and 1 at once” is not this Hamiltonian.</article>
+      </div>
+    </div>
+    <div class="row"><label>Detuning / ω₀</label><input id="d" type="range" min="0" max="1" step="0.02" value="0" /><span class="value" id="dv">0.00</span></div>
+    <div class="stage">
+      <svg viewBox="0 0 360 150" id="plot"></svg>
+    </div>
+    <p class="caption">Filled disc = population on the upper level after a driven π pulse. “0 and 1 at once” is not this Hamiltonian.</p>
+    <p class="fence">A Rabi / NMR control sequence is not “how Shor’s algorithm works”.</p>
+    <div class="actions">
+      <button type="button" id="run">Run</button>
+      <button type="button" class="secondary" id="reset">On resonance</button>
+    </div>
+  </div>
+  <script src="/science-models/model.js"></script>
+  <script>
+    ScienceModel.topic = "quantum-computing";
+    const d = document.getElementById("d");
+    const plot = document.getElementById("plot");
+    let anim = 0;
+    function inversion(det) {
+      const x = 1 / Math.sqrt(1 + det * det);
+      return x * x;
+    }
+    function summary() {
+      const det = Number(d.value);
+      const inv = inversion(det);
+      return `Detuning = ${det.toFixed(2)} ω₀. π-pulse inversion = ${inv.toFixed(2)}. ${det === 0 ? "On resonance: complete inversion of the two-level system." : "Off resonance: inversion is incomplete."} This is laboratory control, not Shor.`;
+    }
+    function draw(phase) {
+      const det = Number(d.value);
+      const inv = inversion(det) * phase;
+      const upY = 36;
+      const dnY = 108;
+      plot.innerHTML = `
+        <line x1="70" y1="${upY}" x2="210" y2="${upY}" stroke="#1d4f9c" stroke-width="2"/>
+        <line x1="70" y1="${dnY}" x2="210" y2="${dnY}" stroke="#1d4f9c" stroke-width="2"/>
+        <circle cx="140" cy="${dnY}" r="${10 * (1 - inv)}" fill="#4c7fd4"/>
+        <circle cx="140" cy="${upY}" r="${10 * inv}" fill="#c45c2a"/>
+        <text x="220" y="40" fill="#5a6880" font-size="11">+ħω₀/2</text>
+        <text x="220" y="112" fill="#5a6880" font-size="11">−ħω₀/2</text>
+        <text x="70" y="142" fill="#5a6880" font-size="11">inversion ${inv.toFixed(2)}</text>`;
+      document.getElementById("dv").textContent = det.toFixed(2);
+      ScienceModel.report(summary(), { detuning: det, inversion: inv });
+    }
+    function run() {
+      cancelAnimationFrame(anim);
+      const start = performance.now();
+      const step = (t) => {
+        const u = Math.min(1, (t - start) / 1100);
+        draw(u);
+        if (u < 1) anim = requestAnimationFrame(step);
+      };
+      anim = requestAnimationFrame(step);
+    }
+    d.oninput = () => draw(1);
+    document.getElementById("run").onclick = run;
+    document.getElementById("reset").onclick = () => { d.value = "0"; draw(1); };
+    ScienceModel.onRun(run);
+    ScienceModel.onApply((p) => {
+      if (p.detuning != null) d.value = String(p.detuning);
+      draw(1);
+    });
+    draw(1);
+  </script>
+</body>
+</html>

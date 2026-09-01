@@ -1,0 +1,51 @@
+# Phase 1：发布和上线运行手册
+
+## 1. 环境
+
+| 环境 | 用途 | 数据 | 发布方式 |
+|---|---|---|---|
+| DEV | 开发人员联调 | 测试数据，可重置 | pull request 合并后自动部署 |
+| SIT | 系统集成和支付测试 | 固定集成数据，Stripe test mode | DEV smoke 通过后发布 |
+| UAT | 客户验收 | 脱敏验收数据，Stripe test mode | 版本候选人工批准 |
+| PPE/PROD | 生产预演和正式站点 | 生产数据，Stripe live mode 仅在批准后打开 | 受控发布窗口 |
+
+每个环境都是一个 AWS App Runner 服务，运行同一个 Docker image；配置通过 App Runner environment variables 和 Secrets Manager 注入。不要用代码分支复制业务逻辑。
+
+## 2. Cloud 配置
+
+- **Containers**：Docker image 启动 `next start`，监听 App Runner 提供的 `PORT`（当前配置为 8080）。
+- **Database**：RDS PostgreSQL；生产只允许应用安全组访问；migration 由发布流程执行。
+- **S3**：保存 avatar、course media、source material、KS 文件；bucket private；应用只生成短期 signed URL。
+- **Network**：App Runner 通过 VPC Connector 访问 RDS；RDS 不公开暴露；S3、Stripe、Google、WeChat、OpenRouter 使用出站 HTTPS。
+- **Security Strategy**：Secrets Manager 保存 `DATABASE_URL`、`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、OAuth secrets、`OPENROUTER_API_KEY`、session secret；代码仓库和浏览器不保存 secret。
+- **Monitor**：CloudWatch 记录 request error、latency、App Runner instance、database connection、payment webhook failure；不记录密码、卡信息、OAuth code 或完整 prompt/学生隐私内容。
+- **Message Queue**：Phase 1 不单独部署队列；只有确有异步需求的邮件/通知才使用 database outbox，发送失败可重试。
+
+## 3. CI/CD
+
+```text
+GitHub pull request
+  -> typecheck / lint / unit / integration / build
+  -> Docker build
+  -> push Amazon ECR
+  -> deploy DEV
+  -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
+  -> promote same image to SIT -> UAT -> PPE/PROD
+```
+
+每次发布记录：git SHA、Docker image digest、database migration、环境、批准人、回滚 image。禁止在 App Runner 控制台直接改代码或手工执行生产 SQL。
+
+## 4. 上线前必须完成
+
+1. 四个环境的 App Runner、RDS、S3、Secrets Manager、CloudWatch 配置已逐项核对。
+2. Domain、TLS、trusted origins、Google/WeChat callback 和 SES sender 已验证。
+3. Stripe test mode 已完成成功、失败、取消、重复 webhook、乱序 webhook、全额 refund、异常订单 Resynchronise Payment。
+4. 真实 plan、term、currency、税务规则、business timezone 和 trial 窗口已由业务确认。
+5. `/my-learning/*`、`/learn/:course_id`、AI Tutor、Expired、Payment Grace、reset password 和中英文切换已通过 UAT。
+6. 1–7 October 中国国庆假期不做 PPE/PROD 数据库变更或正式发布；release candidate 要么在假期前完成，要么 8 October 后执行。
+
+## 5. 回滚
+
+- 应用错误：把 App Runner 指回上一个已验证 image digest。
+- 数据库错误：先停止继续发布，按 migration 的反向操作或备份恢复方案处理；不得直接删除生产表。
+- Stripe/Entitlement 错误：停止新 checkout，保留 webhook 接收，修复后按 Stripe 当前对象重新同步；不得手工在页面上“补开权限”。

@@ -98,7 +98,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ],
     counts: { videoCount: 0, documentCount: 0, qaNotesCount: 0 }
   });
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ philosophy: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    physics: true,
+    biology: true,
+    economics: true,
+    philosophy: true
+  });
 
   async function refreshNavigation() {
     const res = await fetch(`/api/navigation?courseId=${context.courseId}&knowledgeId=${context.knowledgeId}`, { cache: "no-store" });

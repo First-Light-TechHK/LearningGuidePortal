@@ -1,0 +1,21 @@
+{
+  "brand": "Learning Guide",
+  "portal": {
+    "eyebrow": "Learning Guide Portal",
+    "title": "通过引导式课程学习",
+    "description": "先浏览课程和公开首课，再在课程范围内使用 AI Tutor 持续学习。",
+    "viewCourses": "查看课程",
+    "signIn": "登录",
+    "myLearning": "My Learning",
+    "featuredCourses": "课程",
+    "noCourses": "暂时没有已发布课程。",
+    "courseDetail": "Course Detail",
+    "openCourse": "打开课程",
+    "publicFirstLesson": "Public First Lesson",
+    "productionShell": "生产网站基础入口",
+    "productionShellDescription": "先接通公开 Portal；User Registration、Purchase、Payment Management、My Learning 和 AI Tutor 会在同一个应用边界内继续实现。"
+  },
+  "health": {
+    "ok": "Learning Guide 正在运行"
+  }
+}

@@ -4,6 +4,8 @@ import { atomicWriteJson, ensureDir, now, readJson, safeSegment } from "./fileSt
 import { getKnowledge, knowledgeDir } from "./knowledgeStore";
 import { downloadRelease, listReleases } from "./releaseStore";
 import { DEFAULT_MODEL_ID, displayModelLabel, findConfiguredModel, listConfiguredModels } from "./modelStore";
+import { fetchOpenRouter } from "./openRouterClient";
+import { SCIENCE_DISPLAY_CONTRACT, isScienceFieldCourse } from "./scienceTopics";
 
 export type ChatMode = "lecture" | "socratic";
 export type ChatRouteStatus = "pending" | "loading" | "streaming" | "done" | "error";
@@ -232,6 +234,7 @@ async function buildRouteRequest(courseId: string, knowledgeId: string, question
   ].filter(Boolean).join("\n\n");
   const systemPrompt = [
     finalPrompt,
+    isScienceFieldCourse(courseId) ? SCIENCE_DISPLAY_CONTRACT : "",
     knowledgeContext
       ? `Current Knowledge Wiki release markdown:\n${knowledgeContext}`
       : "No Knowledge Wiki release is available for this route."
@@ -239,7 +242,7 @@ async function buildRouteRequest(courseId: string, knowledgeId: string, question
   const requestBody = {
     model: route.model,
     temperature: mode === "socratic" ? 0.55 : 0.35,
-    max_tokens: 900,
+    max_tokens: 1400,
     stream,
     messages: [
       { role: "system", content: systemPrompt },
@@ -293,16 +296,7 @@ async function readStreamWithTimeout(reader: ReadableStreamDefaultReader<Uint8Ar
 async function runOneRoute(courseId: string, knowledgeId: string, question: string, mode: ChatMode, prompts: PromptSettings, route: ChatRoute): Promise<ChatResult> {
   const { apiKey, requestBody, debugBase } = await buildRouteRequest(courseId, knowledgeId, question, mode, prompts, route);
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "http://localhost:3000",
-      "X-Title": process.env.OPENROUTER_APP_NAME || "Knowledge System"
-    },
-    body: JSON.stringify(requestBody)
-  });
+  const response = await fetchOpenRouter(apiKey, requestBody, { timeoutMs: 45000 });
   const responseText = await response.text();
   let data: { choices?: { message?: { content?: string } }[]; error?: { message?: string; code?: string | number } } = {};
   try {
@@ -418,17 +412,7 @@ export async function streamChatTestingRoute(
   const startedAt = now();
   let response: Response;
   try {
-    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: AbortSignal.timeout(30000),
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "http://localhost:3000",
-        "X-Title": process.env.OPENROUTER_APP_NAME || "Knowledge System"
-      },
-      body: JSON.stringify(requestBody)
-    });
+    response = await fetchOpenRouter(apiKey, requestBody, { timeoutMs: 45000 });
   } catch (error) {
     const errorMessage = error instanceof Error && error.name === "TimeoutError"
       ? "OpenRouter did not respond before timeout."

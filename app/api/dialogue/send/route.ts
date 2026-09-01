@@ -14,7 +14,8 @@ export async function POST(request: Request) {
       body.messages || [],
       body.input || "",
       "primary",
-      "dialogue"
+      "dialogue",
+      body.modelState || ""
     );
     return new Response(stream, {
       headers: {

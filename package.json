@@ -3,21 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
     "lint": "next lint",
+    "seed:science": "npx --yes tsx scripts/seed-science.ts",
+    "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
+    "katex": "^0.16.22",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.8.0",
     "next": "^15.0.4",
     "pdf-parse": "^1.1.1",
     "pg": "^8.22.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

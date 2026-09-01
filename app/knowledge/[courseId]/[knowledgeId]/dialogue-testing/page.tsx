@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Bot, ChevronDown, Download, Eye, RefreshCw, RotateCcw, Send, Settings, SlidersHorizontal, Upload, UserRound } from "lucide-react";
 import { MarkdownAnswer } from "@/components/MarkdownAnswer";
+import { ScienceModelCard } from "@/components/ScienceModelCard";
 
 const STREAM_ERROR_PREFIX = "__DIALOGUE_TESTING_ERROR__:";
 type CopyFeedback = "copied" | "failed" | null;
@@ -113,6 +114,7 @@ export default function DialogueTestingPage() {
   const [knowledgeApplying, setKnowledgeApplying] = useState(false);
   const [knowledgeImportStatus, setKnowledgeImportStatus] = useState("");
   const [knowledgeReleases, setKnowledgeReleases] = useState<Record<string, PublishedRelease[]>>({});
+  const [modelState, setModelState] = useState("");
 
   useEffect(() => { loadState(); }, [query]);
 
@@ -387,7 +389,7 @@ export default function DialogueTestingPage() {
       const res = await fetch("/api/dialogue-testing/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId, knowledgeId, routeId: route.id, mode, config: route, messages: history, input: userMessage.content })
+        body: JSON.stringify({ courseId, knowledgeId, routeId: route.id, mode, config: route, messages: history, input: userMessage.content, modelState })
       });
       if (!res.ok) throw new Error(await res.text() || "Dialogue send failed.");
       if (!res.body) throw new Error("Dialogue returned no response stream.");
@@ -624,6 +626,8 @@ export default function DialogueTestingPage() {
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
+
+      <ScienceModelCard knowledgeId={knowledgeId} onState={setModelState} />
 
       <div className={`dialogue-route-grid route-count-${Math.max(routes.length, 1)}`}>
         {routes.map((route) => {

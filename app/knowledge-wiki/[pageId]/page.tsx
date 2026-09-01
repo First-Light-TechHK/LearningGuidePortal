@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
+import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 import { Bold, Check, Heading3, Italic, Link as LinkIcon, MessageCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 
 type WikiEntry = {
@@ -255,7 +255,7 @@ export default function KnowledgeWikiPage({ params }: { params: Promise<{ pageId
                       </div>
                     </>
                   ) : (
-                    <div className="markdown wiki-markdown">{renderMarkdownLinks(entry.content)}</div>
+                    <div className="wiki-markdown"><MarkdownAnswer content={entry.content} /></div>
                   )}
 
                   {commentingId === entry.id ? (
@@ -299,24 +299,6 @@ export default function KnowledgeWikiPage({ params }: { params: Promise<{ pageId
       </div>
     </AppShell>
   );
-}
-
-function renderMarkdownLinks(content: string) {
-  const nodes: ReactNode[] = [];
-  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
-  let lastIndex = 0;
-  for (const match of content.matchAll(linkPattern)) {
-    const index = match.index || 0;
-    if (index > lastIndex) nodes.push(content.slice(lastIndex, index));
-    nodes.push(
-      <a key={`${index}-${match[2]}`} href={match[2]} target="_blank" rel="noreferrer">
-        {match[1]}
-      </a>
-    );
-    lastIndex = index + match[0].length;
-  }
-  if (lastIndex < content.length) nodes.push(content.slice(lastIndex));
-  return nodes;
 }
 
 function SourceReferences({ references, onRemove }: { references: SourceReference[]; onRemove: (reference: SourceReference) => void }) {

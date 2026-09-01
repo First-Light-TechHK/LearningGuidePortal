@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { readPublishedWiki } from "../../lib/wiki-store";
+import { fetchOpenRouter, openRouterErrorMessage } from "../../../services/openRouterClient";
 
 export const runtime = "nodejs";
 
@@ -48,9 +49,12 @@ async function buildSystemPrompt(body: RequestBody) {
     "SOURCE EXCERPTS:",
     body.sources,
     "PROMPT CONTRACT:",
-    "- First validate whether the student turn is relevant to Epicureanism or the course context.",
+    "- First validate whether the student turn is relevant to the current topic or the course context.",
     "- If relevant, use the course pack and source excerpts.",
     "- If the student asks an understanding-test style answer, assess it against the rubric.",
+    "- When the course names a governing equation, write it in LaTeX using $...$ or $$...$$.",
+    "- When the course names a figure, include it as a markdown image using the exact path in the course pack.",
+    "- Do not invent a finished number when a needed quantity was not given, and do not close with a newspaper headline.",
     "- Keep the response suitable for a student, not a research seminar."
   ].join("\n\n");
 }
@@ -69,44 +73,28 @@ export async function POST(request: NextRequest) {
     { role: "user", content: body.message }
   ];
 
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), CHAT_TIMEOUT_MS);
   let upstream: Response;
 
   try {
-    upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: abortController.signal,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "http://localhost:3007",
-        "X-Title": process.env.OPENROUTER_APP_NAME || "KS AI Tutor Demo"
+    upstream = await fetchOpenRouter(apiKey, {
+      model: body.model,
+      messages,
+      stream: true,
+      reasoning: {
+        effort: "none",
+        exclude: true
       },
-      body: JSON.stringify({
-        model: body.model,
-        messages,
-        stream: true,
-        reasoning: {
-          effort: "none",
-          exclude: true
-        },
-        temperature: body.mode === "socratic" ? 0.55 : 0.35,
-        max_tokens: 900
-      })
-    });
+      temperature: body.mode === "socratic" ? 0.55 : 0.35,
+      max_tokens: 900
+    }, { timeoutMs: CHAT_TIMEOUT_MS });
   } catch (error) {
-    clearTimeout(timeout);
-    const message = error instanceof Error && error.name === "AbortError"
+    const message = error instanceof Error && error.name === "TimeoutError"
       ? timeoutMessage(body.model)
-      : error instanceof Error
-        ? error.message
-        : "OpenRouter request failed.";
+      : openRouterErrorMessage(error);
     return new Response(message, { status: 504 });
   }
 
   if (!upstream.ok || !upstream.body) {
-    clearTimeout(timeout);
     const text = await upstream.text();
     return new Response(text || `OpenRouter error ${upstream.status}`, {
       status: upstream.status || 500
@@ -154,7 +142,6 @@ export async function POST(request: NextRequest) {
             : error
         );
       } finally {
-        clearTimeout(timeout);
         try {
           controller.close();
         } catch {

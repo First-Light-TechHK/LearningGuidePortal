@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forcing, feedback, temperature</title>
+  <link rel="stylesheet" href="/science-models/model.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Jeevanjee: forcing is not a temperature</h1>
+    <div class="example">
+      <strong>Worked numbers.</strong>
+      Take the paper’s comprehensive doubling forcing <span class="eq">F<sub>2x</sub> = 4 W m<sup>−2</sup></span>
+      and a feedback <span class="eq">κ = 2 W m<sup>−2</sup> K<sup>−1</sup></span>.
+      Then <span class="eq">ΔT<sub>s</sub> = F/κ = 2.0 K</span>. That 2 K is an equilibrium change.
+      A local summer of +1.2 K is a weather point, not ECS.
+    </div>
+    <div class="detail">
+      <h2>Contrast cases — same equation, different objects</h2>
+      <div class="cases">
+        <article><strong>Case 1 — paper default.</strong> F<sub>2x</sub> = 4 W m<sup>−2</sup>, κ = 2 W m<sup>−2</sup> K<sup>−1</sup>. Then ΔT<sub>s</sub> = F/κ = 2.0 K. That is an equilibrium change after the feedback has acted.</article>
+        <article><strong>Case 2 — a weather point.</strong> A local summer of +1.2 K is a tick on the ΔT bar, not ECS. Do not read the dashed summer line as the forcing or as the equilibrium.</article>
+        <article><strong>Case 3 — a wrong reading.</strong> F is not a temperature. A no-feedback first-year transient is not “the warming we shall see”.</article>
+      </div>
+    </div>
+    <div class="row"><label>F (W m<sup>−2</sup>)</label><input id="F" type="range" min="0" max="6" step="0.1" value="4" /><span class="value" id="Fv">4.0</span></div>
+    <div class="row"><label>κ (W m<sup>−2</sup> K<sup>−1</sup>)</label><input id="k" type="range" min="0.8" max="4" step="0.1" value="2" /><span class="value" id="kv">2.0</span></div>
+    <div class="stage">
+      <svg viewBox="0 0 360 150" id="plot"></svg>
+    </div>
+    <p class="caption">Left: forcing. Middle: feedback. Right: equilibrium ΔT = F/κ. The summer tick is not the equilibrium bar.</p>
+    <p class="fence">A no-feedback first-year transient is not “the warming we shall see”.</p>
+    <div class="actions">
+      <button type="button" id="run">Run</button>
+      <button type="button" class="secondary" id="reset">Reset example</button>
+    </div>
+  </div>
+  <script src="/science-models/model.js"></script>
+  <script>
+    ScienceModel.topic = "global-warming";
+    const F = document.getElementById("F");
+    const k = document.getElementById("k");
+    const plot = document.getElementById("plot");
+    let anim = 0;
+
+    function nums() {
+      return { F: Number(F.value), k: Number(k.value), dT: Number(F.value) / Number(k.value) };
+    }
+    function summary() {
+      const n = nums();
+      return `F = ${n.F.toFixed(1)} W m⁻², κ = ${n.k.toFixed(1)} W m⁻² K⁻¹, ΔT = F/κ = ${n.dT.toFixed(2)} K. A single summer (+1.2 K) is not this equilibrium.`;
+    }
+    function draw(scale) {
+      const n = nums();
+      const fH = Math.min(90, n.F * 16);
+      const kH = Math.min(90, n.k * 22);
+      const tH = Math.min(90, n.dT * 28) * scale;
+      plot.innerHTML = `
+        <rect x="28" y="${120 - fH}" width="44" height="${fH}" fill="#4c7fd4"/>
+        <rect x="148" y="${120 - kH}" width="44" height="${kH}" fill="#2a9d6e"/>
+        <rect x="268" y="${120 - tH}" width="44" height="${tH}" fill="#c45c2a"/>
+        <line x1="268" y1="${120 - 1.2 * 28}" x2="312" y2="${120 - 1.2 * 28}" stroke="#9a4a13" stroke-dasharray="3 2"/>
+        <text x="50" y="142" text-anchor="middle" fill="#5a6880" font-size="11">F</text>
+        <text x="170" y="142" text-anchor="middle" fill="#5a6880" font-size="11">κ</text>
+        <text x="290" y="142" text-anchor="middle" fill="#5a6880" font-size="11">ΔT</text>
+        <text x="318" y="${116 - 1.2 * 28}" fill="#9a4a13" font-size="10">summer</text>`;
+      document.getElementById("Fv").textContent = n.F.toFixed(1);
+      document.getElementById("kv").textContent = n.k.toFixed(1);
+      ScienceModel.report(summary(), n);
+    }
+    function run() {
+      cancelAnimationFrame(anim);
+      const start = performance.now();
+      const step = (t) => {
+        const u = Math.min(1, (t - start) / 1400);
+        draw(1 - Math.exp(-4 * u));
+        if (u < 1) anim = requestAnimationFrame(step);
+      };
+      anim = requestAnimationFrame(step);
+    }
+    function reset() { F.value = "4"; k.value = "2"; draw(1); }
+    F.oninput = k.oninput = () => draw(1);
+    document.getElementById("run").onclick = run;
+    document.getElementById("reset").onclick = reset;
+    ScienceModel.onRun(run);
+    ScienceModel.onApply((p) => {
+      if (p.F != null) F.value = String(p.F);
+      if (p.k != null) k.value = String(p.k);
+      draw(1);
+    });
+    draw(1);
+  </script>
+</body>
+</html>

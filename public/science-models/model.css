@@ -1,0 +1,92 @@
+:root {
+  --ink: #10203a;
+  --muted: #5a6880;
+  --line: #d5deec;
+  --paper: #f7f9fd;
+  --accent: #1d4f9c;
+  --good: #1f7a4d;
+  --warn: #9a4a13;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: #fff;
+  color: var(--ink);
+  font: 13px/1.45 "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+}
+.wrap { padding: 10px 12px 12px; }
+h1 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+.example {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+}
+.example strong { color: var(--accent); }
+.fence {
+  color: var(--warn);
+  font-weight: 650;
+}
+.row {
+  display: grid;
+  grid-template-columns: 92px 1fr 58px;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+label { color: var(--muted); }
+input[type="range"] { width: 100%; }
+.value { font-variant-numeric: tabular-nums; text-align: right; }
+.stage {
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+svg, canvas { display: block; width: 100%; height: auto; }
+.caption { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.actions { display: flex; gap: 8px; margin-top: 8px; }
+button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #c5d0e4;
+  border-radius: 6px;
+  background: #1d4f9c;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+button.secondary { background: #fff; color: var(--ink); }
+.eq { font-family: "Times New Roman", serif; }
+.detail { display: none; margin: 0 0 10px; }
+.detail h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--accent);
+}
+.cases {
+  display: grid;
+  gap: 8px;
+}
+.cases article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.cases strong { color: var(--ink); }
+html[data-mode="compact"] .actions { display: none; }
+html[data-mode="full"] .detail { display: block; }
+html[data-mode="full"] .wrap { padding: 12px 14px 16px; }
+html[data-mode="full"] h1 { font-size: 18px; }
+html[data-mode="full"] .example,
+html[data-mode="full"] .cases article { font-size: 14px; line-height: 1.5; }
+@media (min-width: 720px) {
+  html[data-mode="full"] .cases { grid-template-columns: 1fr 1fr 1fr; }
+}

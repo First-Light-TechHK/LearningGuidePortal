@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tasks I and N</title>
+  <link rel="stylesheet" href="/science-models/model.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Acemoglu &amp; Restrepo Fig. 1: I moves; N is observed</h1>
+    <div class="example">
+      <strong>Worked numbers.</strong>
+      Tasks live on an interval of length 1. Start with I = 0.35 (capital on the left), labour on (I, N].
+      Move I to 0.55: automation takes tasks; that is not yet a labour-share forecast.
+      N stays at 1.00 until you extend it. Extending N is an observation of new labour-intensive tasks, not a default from 1820.
+      Cobb–Douglas with a frozen s<sub>L</sub> = 0.60 cannot ask this question.
+    </div>
+    <div class="detail">
+      <h2>Contrast cases — I moves; N is observed</h2>
+      <div class="cases">
+        <article><strong>Case 1 — automation only.</strong> Start at I = 0.35. Move I to 0.55. Capital takes tasks on the left. That displacement is not yet a labour-share forecast.</article>
+        <article><strong>Case 2 — new tasks.</strong> N stays at 1.00 until you extend it. Extending N is an observation of new labour-intensive tasks, not a default from 1820.</article>
+        <article><strong>Case 3 — three objects.</strong> Hours, the wage, and s<sub>L</sub> = wL/Y are not the same thing. Cobb–Douglas with a frozen s<sub>L</sub> = 0.60 cannot ask this question.</article>
+      </div>
+    </div>
+    <div class="row"><label>Automation I</label><input id="I" type="range" min="0.15" max="0.85" step="0.01" value="0.35" /><span class="value" id="Iv">0.35</span></div>
+    <div class="row"><label>New tasks N</label><input id="N" type="range" min="1" max="1.35" step="0.01" value="1" /><span class="value" id="Nv">1.00</span></div>
+    <div class="stage">
+      <svg viewBox="0 0 360 140" id="plot"></svg>
+    </div>
+    <p class="caption">Capital on [N−1, I], labour on [I, N]. Hours, the wage, and s<sub>L</sub> = wL/Y are three objects.</p>
+    <p class="fence">“New jobs will appear, as in the industrial revolution” is not licensed until N has been observed.</p>
+    <div class="actions">
+      <button type="button" id="run">Run</button>
+      <button type="button" class="secondary" id="reset">Reset</button>
+    </div>
+  </div>
+  <script src="/science-models/model.js"></script>
+  <script>
+    ScienceModel.topic = "ai-and-labour";
+    const I = document.getElementById("I");
+    const N = document.getElementById("N");
+    const plot = document.getElementById("plot");
+    function summary() {
+      const i = Number(I.value), n = Number(N.value);
+      return `I = ${i.toFixed(2)} (automation; capital on the left). N = ${n.toFixed(2)} (${n > 1 ? "new tasks have been extended — treat as observed" : "no new tasks observed"}). Hours are not s_L = wL/Y.`;
+    }
+    function xmap(v, n) {
+      const left = n - 1;
+      return 24 + 312 * (v - left) / (n - left);
+    }
+    function draw() {
+      const i = Number(I.value), n = Number(N.value);
+      const xL = xmap(n - 1, n), xI = xmap(i, n), xN = xmap(n, n);
+      plot.innerHTML = `
+        <rect x="${xL}" y="48" width="${xI - xL}" height="28" fill="#c45c2a"/>
+        <rect x="${xI}" y="48" width="${xN - xI}" height="28" fill="#4c7fd4"/>
+        <line x1="${xL}" y1="40" x2="${xN}" y2="40" stroke="#10203a"/>
+        <text x="${(xL + xI) / 2}" y="67" text-anchor="middle" fill="#fff" font-size="11">K</text>
+        <text x="${(xI + xN) / 2}" y="67" text-anchor="middle" fill="#fff" font-size="11">L</text>
+        <text x="${xI}" y="100" text-anchor="middle" font-size="11" fill="#5a6880">I</text>
+        <text x="${xN}" y="100" text-anchor="middle" font-size="11" fill="#5a6880">N</text>
+        <text x="${xL}" y="100" text-anchor="middle" font-size="11" fill="#5a6880">N−1</text>`;
+      document.getElementById("Iv").textContent = i.toFixed(2);
+      document.getElementById("Nv").textContent = n.toFixed(2);
+      ScienceModel.report(summary(), { I: i, N: n });
+    }
+    function run() {
+      const startI = Number(I.value);
+      const target = Math.min(0.85, startI + 0.2);
+      const start = performance.now();
+      const step = (t) => {
+        const u = Math.min(1, (t - start) / 1200);
+        I.value = (startI + (target - startI) * u).toFixed(2);
+        draw();
+        if (u < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    I.oninput = N.oninput = draw;
+    document.getElementById("run").onclick = run;
+    document.getElementById("reset").onclick = () => { I.value = "0.35"; N.value = "1"; draw(); };
+    ScienceModel.onRun(run);
+    ScienceModel.onApply((p) => {
+      if (p.I != null) I.value = String(p.I);
+      if (p.N != null) N.value = String(p.N);
+      draw();
+    });
+    draw();
+  </script>
+</body>
+</html>
