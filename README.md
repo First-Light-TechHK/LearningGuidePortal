@@ -17,11 +17,15 @@ This repository was initialized from [Ashley-AIHR/AITutor](https://github.com/As
 
 ```bash
 npm install
-# Create .env.local with OPENROUTER_API_KEY (and DATABASE_URL when using Postgres)
+# Create .env.local with OPENROUTER_API_KEY (and DATABASE_URL/DATA_S3_BUCKET when using the AWS persistence path)
 npm run dev
 ```
 
+The product smoke flow can be run against a started local server with `npm run smoke:product`.
+
 Do not commit `.env` / `.env.local`.
+
+For a local operator account, set `BACKOFFICE_OPERATOR_EMAIL` before starting the server and register that exact address. For Stripe test mode, set `PAYMENT_MODE=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `NEXT_PUBLIC_APP_URL`; for production email verification and password reset, also set `SES_FROM_EMAIL` and grant the App Runner role permission to send through SES. Google and WeChat buttons appear only when their server credentials are configured.
 
 ## Legacy reference
 

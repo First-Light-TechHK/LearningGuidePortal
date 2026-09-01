@@ -16,7 +16,7 @@ export default async function CoursesPage({ params }: { params: Promise<{ locale
           <span className="portal-brand-mark">LG</span>
           <span>{getMessages(locale).brand}</span>
         </Link>
-        <Link href={`/${locale}/portal`}>{getMessages(locale).brand}</Link>
+        <nav className="portal-nav"><Link href={`/${locale}/portal/faq`}>{copy.faq}</Link><Link href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link></nav>
       </header>
       <section className="portal-section portal-section-first">
         <p className="portal-eyebrow">{copy.featuredCourses}</p>

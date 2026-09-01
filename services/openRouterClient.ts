@@ -94,7 +94,14 @@ async function fetchOnce(apiKey: string, body: unknown, timeoutMs: number) {
   const { payload, injectedReasoning } = withOpenRouterDefaults(body);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
+  let rejectDeadline: ((error: Error) => void) | undefined;
+  const deadline = new Promise<never>((_, reject) => { rejectDeadline = reject; });
+  const deadlineTimer = setTimeout(() => {
+    const error = new Error(`OpenRouter request timed out after ${timeoutMs}ms.`) as Error & { code?: string };
+    error.code = "ETIMEDOUT";
+    rejectDeadline?.(error);
+  }, timeoutMs);
+  const request = (async () => {
     let response = await postOpenRouter(apiKey, payload, controller.signal);
     if (response.status === 400 && injectedReasoning && payload && typeof payload === "object") {
       const text = await response.text();
@@ -105,8 +112,13 @@ async function fetchOnce(apiKey: string, body: unknown, timeoutMs: number) {
       return new Response(text, { status: 400, headers: response.headers });
     }
     return response;
+  })();
+  try {
+    return await Promise.race([request, deadline]);
   } finally {
     clearTimeout(timer);
+    clearTimeout(deadlineTimer);
+    controller.abort();
   }
 }
 

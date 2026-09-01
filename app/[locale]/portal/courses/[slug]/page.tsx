@@ -18,6 +18,7 @@ export default async function CourseDetailPage({
   const learningCopy = getMessages(locale).learning;
   const plans = await listPlans(course.id);
   const firstLesson = publicFirstLesson(course);
+  const lessons = course.sections.flatMap((section) => section.lessons);
 
   return (
     <main className="portal-page portal-page-narrow">
@@ -37,6 +38,7 @@ export default async function CourseDetailPage({
           <span>{firstLesson?.title || copy.productionShellDescription}</span>
           {firstLesson ? <Link className="portal-button portal-button-secondary" href={`/${locale}/portal/courses/${course.id}/public-lesson`}>{copy.openCourse}</Link> : null}
         </div>
+        <div className="course-lesson-index"><h2>{copy.lessons || "Lessons"}</h2>{lessons.map((lesson, index) => <div className="course-lesson-row" key={lesson.id}><div><strong>{index + 1}. {lesson.title}</strong><span>{lesson.durationMinutes} {learningCopy.minutes}</span></div><span className={lesson.isPublic ? "lesson-access-open" : "lesson-access-locked"}>{lesson.isPublic ? copy.publicFirstLesson : copy.lockedLesson}</span></div>)}</div>
         <PurchasePanel locale={locale} courseId={course.id} plans={plans} copy={{ startTrial: learningCopy.startTrial, buy: learningCopy.buy, choosePlan: learningCopy.choosePlan }} />
       </section>
     </main>

@@ -13,9 +13,11 @@ export function PurchasePanel({ locale, courseId, plans, copy }: { locale: "en-G
   async function startTrial() {
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/trial", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId }) });
-      const data = await response.json() as { error?: string };
+      const response = await fetch("/api/trial", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, planId: selectedPlan, locale }) });
+      const data = await response.json() as { error?: string; checkoutUrl?: string };
+      if (response.status === 401) { window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(window.location.pathname)}`); return; }
       if (!response.ok) throw new Error(data.error || "Trial activation failed.");
+      if (data.checkoutUrl) { window.location.assign(data.checkoutUrl); return; }
       window.location.assign(`/${locale}/account/learn/${courseId}`);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Trial activation failed."); setBusy(false); }
   }
@@ -26,6 +28,7 @@ export function PurchasePanel({ locale, courseId, plans, copy }: { locale: "en-G
     try {
       const quoteResponse = await fetch("/api/purchase/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan }) });
       const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string };
+      if (quoteResponse.status === 401) { window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(window.location.pathname)}`); return; }
       if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.error || "Price calculation failed.");
       const checkoutResponse = await fetch("/api/purchase/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quoteData.quote.id, locale }) });
       const checkoutData = await checkoutResponse.json() as { checkoutUrl?: string; error?: string };

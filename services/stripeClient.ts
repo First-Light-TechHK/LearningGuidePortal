@@ -43,3 +43,51 @@ export async function createHostedCheckout(input: {
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };
 }
+
+export async function createHostedTrialCheckout(input: {
+  origin: string;
+  locale: "en-GB" | "zh-CN";
+  userEmail: string;
+  orderId: string;
+  userId: string;
+  quoteId: string;
+  planId: string;
+  courseId: string;
+  planName: string;
+  amountMinor: number;
+  currency: string;
+  termMonths: number;
+}) {
+  const session = await getStripe().checkout.sessions.create({
+    mode: "subscription",
+    customer_email: input.userEmail,
+    payment_method_collection: "always",
+    line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName }, recurring: { interval: "month", interval_count: input.termMonths } } }],
+    metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId },
+    subscription_data: { trial_period_days: 3, metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId } },
+    success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
+    cancel_url: `${input.origin}/${input.locale}/portal/courses/${encodeURIComponent(input.courseId)}`
+  });
+  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+  return { id: session.id, url: session.url };
+}
+
+export async function createCustomerPortalSession(input: { customerId: string; returnUrl: string; locale: "en-GB" | "zh-CN" }) {
+  const session = await getStripe().billingPortal.sessions.create({ customer: input.customerId, return_url: input.returnUrl, locale: input.locale === "en-GB" ? "en-GB" : "zh-CN" });
+  if (!session.url) throw new Error("Stripe did not return a customer portal URL.");
+  return session.url;
+}
+
+export async function retrieveCheckoutState(sessionId: string) {
+  const session = await getStripe().checkout.sessions.retrieve(sessionId, { expand: ["subscription", "payment_intent"] });
+  const subscription = typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null;
+  const customer = typeof session.customer === "string" ? session.customer : session.customer?.id || null;
+  const paymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null;
+  const stripeStatus = session.status === "expired" ? "canceled" : session.status === "complete" && session.payment_status === "paid" ? "paid" : session.status === "complete" && session.payment_status === "unpaid" ? "failed" : "processing";
+  return { stripeStatus: stripeStatus as "paid" | "processing" | "failed" | "canceled", checkoutSessionId: session.id, paymentIntentId: paymentIntent, subscriptionId: subscription, customerId: customer, paymentStatus: session.payment_status, sessionStatus: session.status };
+}
+
+export async function createFullRefund(paymentIntentId: string) {
+  const refund = await getStripe().refunds.create({ payment_intent: paymentIntentId });
+  return { id: refund.id, status: refund.status || "unknown" };
+}

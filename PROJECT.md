@@ -37,13 +37,19 @@ Use these terms in code, routes, documentation and UI:
 
 The current runnable product path is implemented in the same Next.js application:
 
-- `/en-GB/portal` and `/zh-CN/portal` show published Courses and Public First Lesson content;
+- `/en-GB/portal` and `/zh-CN/portal` show published Courses and Public First Lesson content; `/pricing` presents the configured plans for each published Course and preserves an optional Course context;
 - User Registration and User Authentication create an httpOnly session; the configured `BACKOFFICE_OPERATOR_EMAIL` receives the `operator` Role when that account is created;
-- Visitor / Trial gives a seven-day local trial in `PAYMENT_MODE=demo`;
-- Purchase, Payment Management and Subscription Management support a local Demo checkout, or Stripe Hosted Checkout plus `/api/payment/webhook` when `PAYMENT_MODE=stripe` and Stripe secrets are configured;
-- My Learning lists active access even before the first Study event, records Lesson progress with server-side limits and idempotency, and permits trial/subscription cancellation and resumption;
-- Learning Room supports every published Lesson in a Course, Lecture/Socratic Tutor modes, restored conversations and the last six turns of context;
-- Learning Guide Backoffice Portal permits an Operator to create Courses, add Lessons, mark a Public First Lesson and publish or unpublish Course content.
+- Visitor / Trial gives a three-day local trial in `PAYMENT_MODE=demo`, or a Stripe payment-method collection flow with a three-day subscription trial in `PAYMENT_MODE=stripe`;
+- Purchase, Payment Management and Subscription Management support a local Demo checkout, or Stripe Hosted Checkout plus `/api/payment/webhook` when `PAYMENT_MODE=stripe` and Stripe secrets are configured. Trial conversion, renewal success and payment failure are handled from Stripe invoice events;
+- Payment Management has an operator configuration page for Stripe display settings and records whether the server-side Stripe secret is configured; the secret itself remains in environment configuration or AWS Secrets Manager;
+- My Learning lists active access even before the first Study event, records Lesson progress with server-side limits and idempotency, exposes payment records and user-scoped demo/Stripe receipts, and permits trial/subscription cancellation and resumption;
+- My Learning has independent Subscription, Notification Center, Personal Settings and Help Center routes; password recovery and email-verification routes are also present;
+- Learning Room supports every published Lesson in a Course, Lecture/Socratic Tutor modes, restored conversations and the last six turns of context. OpenRouter has a bounded connection/stream timeout and a course-aware local fallback, so a slow provider does not leave a student request hanging indefinitely;
+- Learning Guide Backoffice Portal permits an Operator to create Courses, add Lessons, mark a Public First Lesson, publish or unpublish Course content, configure Payment Management, and review Order Management with search, filters, detail, CSV export, full refunds and Stripe Payment resynchronisation;
+- The public PRD routes (`/en-GB/courses`, `/en-GB/pricing`, `/en-GB/my-learning`, `/en-GB/learn/:courseId`, `/en-GB/sign-in` and their `zh-CN` equivalents) redirect to the implemented Portal and account pages, so existing requirement links remain usable;
+- User Registration supports email/password plus optional server-side Google and WeChat adapters when their credentials are configured. Production email verification and password reset use SES; local development returns a safe one-time link for testing;
+
+Live Stripe checkout, customer-portal and trial boundaries are implemented. Stripe must be configured with the correct Checkout settings and webhook events before `PPE/PROD`; no access is granted from the browser return page.
 
 For local development, the product store uses the existing virtual file system. With `DATABASE_URL` and `DATA_S3_BUCKET`, the same file operations use the configured PostgreSQL/S3 persistence layer; the normalised relational tables in `db/migrations` remain the next scale-up step before high-volume production. `PAYMENT_MODE=demo` is deliberately the default for development and must not be used for live charging.
 

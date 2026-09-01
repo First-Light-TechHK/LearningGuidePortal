@@ -2,12 +2,14 @@ import Link from "next/link";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { listPublishedCourses } from "@/services/productStore";
+import { currentProductUser } from "@/services/productAuth";
 
 export default async function PortalHome({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: rawLocale } = await params;
   const locale = localeFrom(rawLocale);
   const copy = getMessages(locale).portal;
   const courses = await listPublishedCourses();
+  const user = await currentProductUser();
 
   return (
     <main className="portal-page">
@@ -18,7 +20,8 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
         </Link>
         <nav className="portal-nav" aria-label="Primary navigation">
           <Link href={`/${locale}/portal/courses`}>{copy.viewCourses}</Link>
-          <Link href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>
+          <Link href={user ? `/${locale}/account/my-learning` : `/${locale}/portal/sign-in`}>{user ? copy.myLearning : copy.signIn}</Link>
+          <Link href={`/${locale}/portal/faq`}>{copy.faq}</Link>
         </nav>
       </header>
 

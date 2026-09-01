@@ -13,7 +13,8 @@ type TutorInput = {
   locale: "en-GB" | "zh-CN";
 };
 
-const STREAM_IDLE_TIMEOUT_MS = 25_000;
+const PROVIDER_TIMEOUT_MS = 20_000;
+const STREAM_IDLE_TIMEOUT_MS = 15_000;
 
 async function readPrompt(name: string) {
   try { return await readFile(path.join(process.cwd(), "prompts", "chat_testing", name), "utf8"); } catch { return ""; }
@@ -148,13 +149,19 @@ export async function createTutorResponse(input: TutorInput) {
     return { stream: streamText(answer), conversationId: conversation.id, provider: "local-demo" };
   }
   const system = await buildPrompt(input, conversation);
-  const upstream = await fetchOpenRouter(apiKey, {
-    model: process.env.OPENROUTER_MODEL || "openrouter/auto",
-    temperature: 0.25,
-    max_tokens: 900,
-    stream: true,
-    messages: [{ role: "system", content: system }, ...history.map((message) => ({ role: message.role, content: message.content })), { role: "user", content: input.message }]
-  }, { timeoutMs: 45_000, attempts: 2 });
-  if (!upstream.ok) throw new Error(`AI Tutor provider returned HTTP ${upstream.status}.`);
-  return { stream: streamOpenRouter(upstream, conversation, input, history), conversationId: conversation.id, provider: "openrouter" };
+  try {
+    const upstream = await fetchOpenRouter(apiKey, {
+      model: process.env.OPENROUTER_MODEL || "openrouter/auto",
+      temperature: 0.25,
+      max_tokens: 900,
+      stream: true,
+      messages: [{ role: "system", content: system }, ...history.map((message) => ({ role: message.role, content: message.content })), { role: "user", content: input.message }]
+    }, { timeoutMs: PROVIDER_TIMEOUT_MS, attempts: 1 });
+    if (!upstream.ok) throw new Error(`AI Tutor provider returned HTTP ${upstream.status}.`);
+    return { stream: streamOpenRouter(upstream, conversation, input, history), conversationId: conversation.id, provider: "openrouter" };
+  } catch {
+    const answer = fallbackAnswer(input);
+    await saveConversation({ ...conversation, mode: input.mode, messages: [...history, { role: "user", content: input.message, createdAt: new Date().toISOString() }, { role: "assistant", content: answer, createdAt: new Date().toISOString() }] });
+    return { stream: streamText(answer), conversationId: conversation.id, provider: "local-demo" };
+  }
 }
