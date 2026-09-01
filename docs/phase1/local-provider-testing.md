@@ -9,6 +9,32 @@ The local application supports two different modes. They must not be confused:
 
 The second mode is real integration testing. It requires test credentials from each provider; there is no credential-free way to test a real Google account, WeChat account or Stripe payment.
 
+## New developer setup
+
+Credentials are deliberately excluded from Git. A developer checks out the repository and creates a private local environment file:
+
+```bash
+git clone https://github.com/First-Light-TechHK/LearningGuidePortal.git
+cd LearningGuidePortal
+npm ci
+npm run setup:local
+```
+
+`npm run setup:local` copies the committed `.env.example` to `.env.local` and does nothing if `.env.local` already exists. The developer then obtains the required values from the team's approved secret store or password manager. Do not send provider secrets in GitHub issues, pull requests, Slack, WeChat or this repository.
+
+The minimum product-development setup is:
+
+```dotenv
+APP_ENV=DEV
+STORAGE_BACKEND=local
+PAYMENT_MODE=demo
+LOCAL_SOCIAL_LOGIN=1
+NEXT_PUBLIC_APP_URL=http://localhost:3011
+OPENROUTER_API_KEY=the-development-key-from-the-team-secret-store
+```
+
+This starts the product without external payment or social-provider credentials. To test the real integrations, replace the provider values as described below and set `LOCAL_SOCIAL_LOGIN=0` and `PAYMENT_MODE=stripe`.
+
 ## 1. Local application configuration
 
 Use one stable host consistently. If the browser is opened at `http://localhost:3011`, use that exact host in `NEXT_PUBLIC_APP_URL`; do not start on `127.0.0.1` and complete the provider callback on `localhost`.

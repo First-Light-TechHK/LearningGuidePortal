@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
     "lint": "eslint .",
+    "setup:local": "node scripts/setup-local.mjs",
     "smoke:product": "node scripts/smoke-product.mjs",
     "preflight:production": "node scripts/preflight-production.mjs",
     "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3011/api/payment/webhook",
