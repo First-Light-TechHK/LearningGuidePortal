@@ -1087,6 +1087,22 @@ textarea:focus, input:focus { border-color: var(--color-primary); box-shadow: 0 
   .assessment-panel { min-height: 0; border-radius: 14px; padding: 19px; }
 }
 
+@media (max-width: 900px) {
+  .account-dashboard { grid-template-columns: 1fr; }
+  .account-dashboard-side { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+
+@media (max-width: 640px) {
+  .account-utility, .portal-account-page > .account-nav, .account-dashboard { width: calc(100% - 40px); }
+  .account-dashboard { padding-top: 34px; }
+  .account-dashboard-side { grid-template-columns: 1fr; }
+  .account-panel { padding: 18px; }
+  .account-learning-card { grid-template-columns: 1fr; gap: 0; }
+  .account-learning-card > .course-thumbnail { width: 100%; height: 170px; }
+  .account-learning-card-content { padding: 14px 16px 16px; }
+  .account-empty-state { align-items: stretch; flex-direction: column; }
+}
+
 @media (max-height: 640px) {
   .single-dialogue-scroll { padding-top: 16px; padding-bottom: 16px; }
   .single-dialogue-thread { gap: 16px; }
@@ -1902,4 +1918,280 @@ input:focus {
   .workflow-page-actions {
     flex-wrap: wrap;
   }
+}
+
+/* Learning Guide public interface: aligned to the supplied Figma reference */
+:root {
+  --lg-blue: #2161f5;
+  --lg-blue-dark: #174bd0;
+  --lg-ink: #101828;
+  --lg-muted: #667085;
+  --lg-line: #e4e7ec;
+  --lg-pale-blue: #eaf1ff;
+  --lg-slate: #344054;
+}
+
+body { background: #fff; color: var(--lg-ink); }
+.portal-page { min-height: 100vh; padding: 0; background: #fff; color: var(--lg-ink); }
+.portal-page-narrow { max-width: 1180px; margin: 0 auto; padding-left: 32px; padding-right: 32px; }
+.portal-page-wide { max-width: 1440px; margin: 0 auto; padding-left: 32px; padding-right: 32px; }
+.portal-header { width: 100%; max-width: none; min-height: 70px; padding: 0 32px; background: #fff; border-bottom: 1px solid var(--lg-line); }
+.portal-header-inner { width: min(1344px, 100%); min-height: 70px; margin: 0 auto; display: flex; align-items: center; gap: 36px; }
+.portal-header a { color: #344054; font-weight: 550; }
+.portal-brand { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; color: var(--lg-ink) !important; font-size: 20px; line-height: 1; font-weight: 780 !important; }
+.portal-brand-mark { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 0; background: transparent; color: var(--lg-blue); font-size: 11px; font-weight: 800; }
+.portal-nav { display: flex; align-items: center; gap: 32px; }
+.portal-nav a { position: relative; min-height: 70px; display: inline-flex; align-items: center; color: #475467; font-size: 14px; text-decoration: none; }
+.portal-nav a:hover, .portal-nav a.active { color: var(--lg-blue); }
+.portal-nav a.active::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: var(--lg-blue); content: ""; }
+.portal-header-actions { display: flex; align-items: center; gap: 22px; margin-left: auto; }
+.portal-header-link { white-space: nowrap; text-decoration: none; }
+.portal-language { min-height: 26px; display: inline-flex; align-items: center; gap: 2px; padding: 0 7px; border-radius: 5px; background: #eaecf0; color: #475467 !important; font-size: 12px; text-decoration: none; }
+.portal-header-cta { min-height: 38px; padding: 10px 18px; border-radius: 9px; font-size: 14px; }
+.portal-header-avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: var(--lg-blue); color: #fff; font-weight: 750; }
+.portal-button { min-height: 42px; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.portal-button:hover { transform: translateY(-1px); }
+.portal-button-primary { background: var(--lg-blue); color: #fff !important; }
+.portal-button-primary:hover { background: var(--lg-blue-dark); }
+.portal-button-secondary { border: 1px solid #d0d5dd; background: #fff; color: #344054 !important; }
+.portal-button-outline-light { border: 1px solid rgba(255, 255, 255, .72); background: transparent; color: #fff !important; }
+.portal-eyebrow { margin: 0 0 12px; color: var(--lg-blue); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.portal-lead { max-width: 700px; margin: 18px 0 0; color: var(--lg-muted); font-size: 18px; line-height: 1.55; }
+.portal-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.portal-home-hero { min-height: 500px; display: flex; align-items: center; background: linear-gradient(90deg, rgba(15, 24, 40, .76), rgba(15, 24, 40, .22)), url('/portal/auth-library.jpg') center 45% / cover; }
+.portal-home-hero-content { width: min(1344px, calc(100% - 64px)); margin: 0 auto; padding: 72px 0; color: #fff; }
+.portal-home-hero h1 { max-width: 700px; margin: 0; color: #fff; font-size: clamp(42px, 5vw, 68px); line-height: 1.04; }
+.portal-home-hero .portal-eyebrow { color: #b9d0ff; }
+.portal-home-hero .portal-lead { color: rgba(255, 255, 255, .84); }
+.portal-benefits { padding: 44px max(32px, 6vw) 48px; background: var(--lg-pale-blue); }
+.portal-benefits .portal-section-heading { width: min(1280px, 100%); margin: 0 auto 28px; }
+.portal-benefits .portal-section-heading h2 { margin: 0; color: var(--lg-ink); font-size: 26px; }
+.portal-benefits-grid { width: min(1280px, 100%); margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 30px; }
+.portal-benefit { min-width: 0; display: grid; align-content: start; gap: 8px; }
+.portal-benefit-icon { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--lg-blue); border-radius: 50%; color: var(--lg-blue); font-size: 14px; font-weight: 800; }
+.portal-benefit strong { color: #1d2939; font-size: 14px; }
+.portal-benefit p { margin: 0; color: var(--lg-muted); font-size: 12px; line-height: 1.45; }
+.portal-section { width: min(1180px, calc(100% - 64px)); margin: 0 auto; padding: 64px 0; border-top: 0; }
+.portal-section-first { padding-top: 64px; }
+.portal-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+.portal-section-heading h2 { margin: 0; color: var(--lg-ink); font-size: 30px; line-height: 1.15; }
+.portal-section-description { margin: 8px 0 0; color: var(--lg-muted); font-size: 14px; }
+.portal-text-link { color: var(--lg-blue) !important; font-size: 14px; font-weight: 700; text-decoration: none; }
+.portal-course-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.portal-course-card { min-width: 0; display: flex; flex-direction: column; align-items: stretch; overflow: hidden; padding: 0; border: 1px solid #eaecf0; border-radius: 12px; background: #fff; box-shadow: 0 2px 4px rgba(16, 24, 40, .04); }
+.portal-course-image-wrap { position: relative; height: 170px; overflow: hidden; background: #e4e7ec; }
+.course-thumbnail { width: 100%; height: 100%; display: block; object-fit: cover; }
+.portal-course-tag { position: absolute; top: 12px; right: 12px; display: inline-flex; min-height: 22px; align-items: center; border-radius: 7px; padding: 3px 8px; background: #fff; color: #344054; font-size: 11px; font-weight: 750; }
+.portal-course-card-body { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; }
+.portal-course-card h3 { margin: 0; color: #101828; font-size: 18px; line-height: 1.3; }
+.portal-course-card p { margin: 0; color: var(--lg-muted); font-size: 13px; line-height: 1.5; }
+.portal-course-meta { display: flex; flex-wrap: wrap; gap: 8px; color: #667085; font-size: 11px; }
+.portal-course-meta span:first-child { border-radius: 4px; padding: 3px 7px; background: #ffb547; color: #fff; font-weight: 750; }
+.portal-course-card .portal-button { width: 100%; margin-top: auto; }
+.portal-quick-guide { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 0.85fr); gap: 48px; align-items: stretch; padding: 64px max(32px, 6vw); background: var(--lg-pale-blue); }
+.portal-quick-guide > div:first-child { width: min(560px, 100%); justify-self: end; padding-top: 10px; }
+.portal-quick-guide h2, .portal-why-band h2 { max-width: 520px; margin: 0; color: var(--lg-ink); font-size: 34px; line-height: 1.12; }
+.portal-guide-list { display: grid; gap: 0; margin-top: 28px; }
+.portal-guide-list div { display: flex; align-items: center; gap: 14px; min-height: 54px; border-bottom: 1px solid #d0d5dd; }
+.portal-guide-list span { color: #98a2b3; font-size: 13px; font-style: italic; }
+.portal-guide-list strong { color: #344054; font-size: 15px; }
+.portal-quick-guide-image { min-height: 360px; border-radius: 12px; background: url('/portal/course-study.jpg') center / cover; }
+.portal-why-band { padding: 72px max(32px, 6vw); background: linear-gradient(100deg, #1d62f5, #3a34d5); color: #fff; }
+.portal-why-band > div { width: min(1180px, 100%); margin: 0 auto; }
+.portal-why-band .portal-eyebrow { color: #b9d0ff; }
+.portal-why-band h2 { color: #fff; }
+.portal-footer { padding: 52px max(32px, 6vw) 30px; background: var(--lg-slate); color: #fff; }
+.portal-footer-grid { width: min(1180px, 100%); margin: 0 auto; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 40px; }
+.portal-footer h2 { margin: 0 0 18px; color: #fff; font-size: 15px; }
+.portal-footer p, .portal-footer a { display: block; max-width: 250px; margin: 0 0 9px; color: #d0d5dd; font-size: 12px; line-height: 1.45; text-decoration: none; }
+.portal-footer a:hover { color: #fff; }
+.portal-footer-copyright { width: min(1180px, 100%); margin: 54px auto 0 !important; max-width: none !important; color: #98a2b3 !important; text-align: center; }
+.portal-status { display: none; }
+.portal-empty { padding: 22px; border: 1px dashed #cfd4dc; color: var(--lg-muted); background: #fff; }
+.account-utility { width: min(1180px, calc(100% - 64px)); margin: 10px auto 0; display: flex; justify-content: flex-end; }
+.account-utility .portal-text-button { color: var(--lg-blue); font-size: 13px; font-weight: 700; }
+.portal-account-page > .account-nav { width: min(1180px, calc(100% - 64px)); margin: 0 auto; padding: 0; border-bottom: 1px solid var(--lg-line); }
+.portal-account-page > .account-nav a { min-height: 46px; display: inline-flex; align-items: center; color: #475467; font-size: 13px; font-weight: 650; text-decoration: none; }
+.portal-account-page > .account-nav a:first-child { color: var(--lg-blue); border-bottom: 2px solid var(--lg-blue); }
+.account-dashboard { width: min(1304px, calc(100% - 64px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 350px); gap: 28px; padding: 44px 0 72px; }
+.account-dashboard-main, .account-dashboard-side { min-width: 0; display: grid; align-content: start; gap: 20px; }
+.account-page-heading { padding: 0 4px 4px; }
+.account-page-heading h1 { margin: 0; color: var(--lg-ink); font-size: clamp(36px, 4vw, 52px); line-height: 1.04; }
+.account-panel { min-width: 0; padding: 22px; border: 1px solid var(--lg-line); border-radius: 12px; background: #fff; box-shadow: 0 2px 4px rgba(16, 24, 40, .04); }
+.account-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.account-panel-heading h2 { margin: 0; color: var(--lg-ink); font-size: 22px; }
+.account-panel-heading p { margin: 6px 0 0; color: var(--lg-muted); font-size: 13px; }
+.account-learning-list { display: grid; gap: 12px; }
+.account-learning-card { display: grid; grid-template-columns: 146px minmax(0, 1fr); gap: 18px; overflow: hidden; border: 1px solid var(--lg-line); border-radius: 9px; background: #fff; }
+.account-learning-card > .course-thumbnail { width: 146px; height: 130px; object-fit: cover; }
+.account-learning-card-content { min-width: 0; display: grid; align-content: start; gap: 8px; padding: 14px 16px 14px 0; }
+.account-learning-card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.account-learning-card h3 { margin: 0; color: #101828; font-size: 16px; }
+.account-learning-card p { margin: 4px 0 0; color: var(--lg-muted); font-size: 12px; line-height: 1.45; }
+.account-learning-meta { margin: 0 !important; }
+.account-status { flex: 0 0 auto; border-radius: 999px; padding: 4px 8px; background: #ecfdf3; color: #039855; font-size: 11px; font-weight: 750; }
+.account-status.expired { background: #f2f4f7; color: #667085; }
+.account-status.complete { background: #eff8ff; color: #175cd3; }
+.account-learning-action { justify-self: start; min-height: 34px; padding: 7px 12px; font-size: 12px; }
+.account-empty-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 26px 0 4px; }
+.account-empty-state p { margin: 0; color: var(--lg-muted); font-size: 14px; }
+.account-empty-state .portal-button { flex: 0 0 auto; }
+.account-activity-panel .notification-list { margin-top: 0; }
+.account-profile-card { padding: 24px; border-radius: 12px; background: linear-gradient(135deg, #07a95e, #00a39a); color: #fff; box-shadow: 0 7px 15px rgba(16, 24, 40, .1); }
+.account-avatar { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; margin-bottom: 20px; border: 3px solid rgba(255, 255, 255, .82); border-radius: 50%; background: rgba(255, 255, 255, .95); color: #344054; font-size: 26px; font-weight: 750; }
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.account-profile-card p { margin: 0; color: rgba(255, 255, 255, .75); font-size: 14px; }
+.account-profile-card h2 { margin: 2px 0 4px; color: #fff; font-size: 25px; }
+.account-profile-card > span { display: block; overflow: hidden; color: rgba(255, 255, 255, .82); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.account-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 24px; }
+.account-stat-grid div { min-width: 0; padding: 12px 8px; border-radius: 8px; background: rgba(255, 255, 255, .15); text-align: center; }
+.account-stat-grid strong, .account-stat-grid span { display: block; }
+.account-stat-grid strong { font-size: 20px; }
+.account-stat-grid span { margin-top: 3px; color: rgba(255, 255, 255, .78); font-size: 10px; line-height: 1.25; }
+.account-subscription-panel { padding: 0; box-shadow: none; }
+.account-subscription-panel .subscription-section { margin-top: 0; padding: 20px; }
+.account-subscription-panel .subscription-heading { display: block; }
+.account-subscription-panel .subscription-heading .portal-button { margin-top: 12px; }
+.account-subscription-panel .payment-records { margin-top: 26px; }
+.account-subscription-panel .payment-records h3 { font-size: 16px; }
+
+.portal-catalog-hero { background: linear-gradient(100deg, #1e63f6, #3d32d5); color: #fff; }
+.portal-catalog-hero-inner { width: min(1180px, calc(100% - 64px)); min-height: 360px; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; padding: 56px 0; }
+.portal-catalog-hero h1 { margin: 0; color: #fff; font-size: clamp(40px, 5vw, 60px); line-height: 1.04; }
+.portal-catalog-hero p { max-width: 660px; margin: 12px 0 0; color: rgba(255, 255, 255, .9); font-size: 16px; }
+.portal-course-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; max-width: 850px; margin-top: 26px; padding: 2px; border: 1px solid rgba(255, 255, 255, .72); border-radius: 8px; }
+.portal-course-search input { min-height: 42px; border: 0; border-radius: 6px; padding: 0 14px; background: transparent; color: #fff; }
+.portal-course-search input::placeholder { color: rgba(255, 255, 255, .68); }
+.portal-course-search input:focus { outline: 0; box-shadow: none; }
+.portal-course-search .portal-button { min-width: 100px; background: #fff; color: #344054 !important; }
+.portal-benefits-catalog { padding-top: 32px; padding-bottom: 36px; }
+.portal-benefits-catalog .portal-section-heading { margin-bottom: 22px; }
+.portal-benefits-catalog .portal-section-heading h2 { font-size: 18px; text-transform: uppercase; }
+.portal-catalog-courses { padding-top: 60px; }
+
+.course-detail-hero { min-height: 390px; display: grid; grid-template-columns: minmax(340px, .9fr) minmax(0, 1.1fr); background: #26354c; color: #fff; }
+.course-detail-hero-image { min-height: 390px; }
+.course-detail-hero-image .course-thumbnail { height: 100%; object-fit: cover; opacity: .92; }
+.course-detail-hero-copy { display: flex; flex-direction: column; justify-content: center; padding: 56px max(32px, 7vw) 56px 56px; }
+.course-detail-hero-copy .portal-course-tag { position: static; width: fit-content; margin-bottom: 18px; }
+.course-detail-hero-copy h1 { margin: 0; color: #fff; font-size: clamp(38px, 5vw, 60px); line-height: 1.04; }
+.course-detail-hero-copy > p:not(.portal-course-tag) { max-width: 640px; margin: 18px 0 0; color: rgba(255, 255, 255, .82); font-size: 17px; line-height: 1.55; }
+.course-detail-stats { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 26px; color: #d0d5dd; font-size: 13px; }
+.portal-course-detail-body { width: min(1180px, calc(100% - 64px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .44fr); gap: 48px; padding: 62px 0 76px; }
+.portal-detail-intro h2 { margin: 0; color: var(--lg-ink); font-size: 30px; }
+.portal-detail-intro > p:last-child { max-width: 700px; margin: 12px 0 0; color: var(--lg-muted); line-height: 1.6; }
+.course-lesson-index { display: grid; gap: 8px; margin-top: 34px; }
+.course-lesson-index h2 { margin: 0 0 8px; color: var(--lg-ink); font-size: 22px; }
+.course-lesson-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--lg-line); border-radius: 8px; background: #fff; }
+.course-lesson-row div { display: grid; gap: 5px; min-width: 0; }
+.course-lesson-row strong { color: #1d2939; font-size: 14px; overflow-wrap: anywhere; }
+.course-lesson-row span { color: var(--lg-muted); font-size: 12px; }
+.course-lesson-row .lesson-access-open { color: #039855; font-weight: 750; }
+.course-lesson-row .lesson-access-locked { color: #667085; }
+.course-detail-aside { min-width: 0; }
+.course-detail-aside .portal-detail-placeholder { margin-top: 0; }
+.portal-detail-placeholder { display: grid; gap: 10px; margin-top: 0; padding: 20px; border: 1px solid var(--lg-line); border-radius: 10px; background: #fff; box-shadow: 0 3px 8px rgba(16, 24, 40, .04); }
+.portal-detail-placeholder strong { color: #1d2939; }
+.portal-detail-placeholder span { color: var(--lg-muted); line-height: 1.5; }
+.portal-detail-placeholder .portal-button { width: 100%; }
+.purchase-panel { display: grid; gap: 16px; margin-top: 14px; padding: 20px; border: 1px solid var(--lg-line); border-radius: 10px; background: #fff; box-shadow: 0 3px 8px rgba(16, 24, 40, .04); }
+.purchase-panel h2 { margin: 0; color: var(--lg-ink); font-size: 20px; }
+.purchase-plans { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.purchase-plan { min-height: 58px; padding: 11px; border: 1px solid var(--lg-line); border-radius: 7px; }
+.purchase-plan.selected { border-color: var(--lg-blue); background: #f5f8ff; }
+.purchase-plan input { accent-color: var(--lg-blue); }
+.purchase-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.purchase-actions .portal-button { width: 100%; }
+.portal-public-lesson-page .public-lesson { width: min(820px, calc(100% - 64px)); margin: 0 auto; padding: 82px 0 96px; }
+.public-lesson h1 { margin: 0; color: var(--lg-ink); font-size: clamp(36px, 5vw, 56px); line-height: 1.08; }
+.public-lesson .lesson-body { margin: 30px 0 32px; color: #344054; font-size: 17px; line-height: 1.75; }
+
+.portal-auth-page { min-height: 100vh; padding: 0; background: linear-gradient(rgba(10, 17, 28, .62), rgba(10, 17, 28, .62)), url('/portal/auth-library.jpg') center / cover fixed; }
+.portal-auth-page .portal-header { position: relative; z-index: 1; }
+.portal-auth-stage { min-height: calc(100vh - 70px); display: grid; place-items: center; padding: 50px 20px 72px; }
+.portal-auth-card { width: min(448px, 100%); }
+.portal-auth-heading { display: grid; justify-items: center; margin-bottom: 16px; color: #fff; text-align: center; }
+.portal-brand-lockup { display: inline-flex; align-items: center; gap: 8px; font-size: 21px; }
+.portal-auth-heading h1 { margin: 24px 0 8px; color: #fff; font-size: 30px; line-height: 1.15; }
+.portal-auth-heading p { margin: 0; color: rgba(255, 255, 255, .9); font-size: 14px; }
+.portal-auth-heading p a { color: #7fb0ff; text-decoration: none; }
+.portal-auth-heading .portal-brand-mark { width: auto; height: auto; color: #fff; font-size: 20px; }
+.portal-auth-stage .portal-form { width: min(448px, 100%); border: 0; border-radius: 16px; padding: 30px 32px 34px; box-shadow: 0 20px 60px rgba(16, 24, 40, .22); }
+.portal-auth-stage .portal-form h1 { color: var(--lg-ink); font-size: 28px; }
+.portal-auth-stage .portal-form label { color: #344054; }
+.portal-auth-stage .portal-form input { min-height: 48px; border-color: #d0d5dd; border-radius: 8px; }
+.portal-auth-stage .portal-form input:focus { border-color: var(--lg-blue); outline: 0; box-shadow: 0 0 0 3px rgba(33, 97, 245, .12); }
+.portal-auth-stage .portal-form .portal-button { min-height: 46px; }
+.portal-auth-stage .portal-form a { color: var(--lg-blue); }
+.portal-auth-back { display: block; margin-top: 16px; color: #fff !important; font-size: 13px; text-align: center; text-decoration: none; }
+
+@media (max-width: 900px) {
+  .portal-header { padding: 0 20px; }
+  .portal-header-inner { gap: 20px; }
+  .portal-nav { gap: 18px; }
+  .portal-header-actions { gap: 12px; }
+  .portal-benefits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portal-course-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .course-detail-hero { grid-template-columns: 1fr; }
+  .course-detail-hero-image { min-height: 250px; max-height: 300px; }
+  .portal-course-detail-body { grid-template-columns: 1fr; }
+  .course-detail-aside { order: -1; }
+}
+
+.portal-page-narrow > .portal-header { width: calc(100% + 64px); margin-left: -32px; padding-right: 32px; padding-left: 32px; }
+.portal-page-narrow > .portal-header .portal-text-button { color: var(--lg-blue); font-size: 14px; font-weight: 700; }
+.portal-page-narrow > .account-nav { border-bottom: 1px solid var(--lg-line); }
+.portal-page-narrow > .account-nav a { min-height: 42px; display: inline-flex; align-items: center; color: #475467; font-size: 13px; font-weight: 600; }
+.portal-page-narrow > .account-nav a:first-child { color: var(--lg-blue); border-bottom: 2px solid var(--lg-blue); }
+
+@media (max-width: 900px) {
+  .account-dashboard { grid-template-columns: 1fr; }
+  .account-dashboard-side { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+
+@media (max-width: 640px) {
+  .account-utility, .portal-account-page > .account-nav, .account-dashboard { width: calc(100% - 40px); }
+  .account-dashboard { padding-top: 34px; }
+  .account-dashboard-side { grid-template-columns: 1fr; }
+  .account-panel { padding: 18px; }
+  .account-learning-card { grid-template-columns: 1fr; gap: 0; }
+  .account-learning-card > .course-thumbnail { width: 100%; height: 170px; }
+  .account-learning-card-content { padding: 14px 16px 16px; }
+  .account-empty-state { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-width: 640px) {
+  .portal-header { min-height: 62px; }
+  .portal-header-inner { min-height: 62px; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0; }
+  .portal-brand { font-size: 18px; }
+  .portal-nav { order: 3; width: 100%; gap: 18px; overflow-x: auto; }
+  .portal-nav a { min-height: 28px; white-space: nowrap; }
+  .portal-nav a.active::after { bottom: -10px; }
+  .portal-header-actions { margin-left: auto; }
+  .portal-header-link, .portal-header-cta { display: none; }
+  .portal-header-avatar { width: 32px; height: 32px; }
+  .portal-home-hero { min-height: 540px; }
+  .portal-home-hero-content { width: min(100% - 40px, 1344px); padding: 50px 0; }
+  .portal-home-hero h1 { font-size: 42px; }
+  .portal-benefits, .portal-quick-guide, .portal-why-band { padding-right: 20px; padding-left: 20px; }
+  .portal-benefits-grid, .portal-course-grid { grid-template-columns: 1fr; }
+  .portal-section, .portal-course-detail-body { width: calc(100% - 40px); }
+  .portal-section-heading { align-items: flex-start; flex-direction: column; }
+  .portal-quick-guide { grid-template-columns: 1fr; gap: 28px; }
+  .portal-quick-guide > div:first-child { justify-self: stretch; }
+  .portal-quick-guide h2, .portal-why-band h2 { font-size: 29px; }
+  .portal-quick-guide-image { min-height: 260px; }
+  .portal-footer { padding-right: 20px; padding-left: 20px; }
+  .portal-footer-grid { grid-template-columns: 1fr 1fr; gap: 28px 18px; }
+  .portal-footer-grid > div:first-child { grid-column: 1 / -1; }
+  .portal-catalog-hero-inner { width: calc(100% - 40px); min-height: 330px; }
+  .portal-course-search { grid-template-columns: 1fr; gap: 4px; border: 0; }
+  .portal-course-search input { min-height: 46px; border: 1px solid rgba(255, 255, 255, .72); }
+  .portal-course-search .portal-button { width: 100%; }
+  .course-detail-hero-copy { padding: 38px 20px 42px; }
+  .course-detail-hero-copy h1 { font-size: 40px; }
+  .portal-course-detail-body { padding-top: 42px; }
+  .portal-public-lesson-page .public-lesson { width: calc(100% - 40px); padding: 50px 0 70px; }
+  .purchase-actions { grid-template-columns: 1fr; }
+  .portal-auth-stage { min-height: calc(100vh - 62px); padding: 28px 16px 50px; }
 }

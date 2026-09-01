@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 
-export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string }) {
+export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError, showTitle = true }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string; showTitle?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
@@ -33,7 +33,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
   const switchPath = signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`;
   return (
     <form className="portal-form" onSubmit={submit}>
-      <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1>
+      {showTitle ? <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1> : null}
       {!signIn ? <label>{copy.nickname}<input value={nickname} onChange={(event) => setNickname(event.target.value)} maxLength={40} /></label> : null}
       <label>{copy.email}<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
       <label>{copy.password}<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete={signIn ? "current-password" : "new-password"} /></label>
