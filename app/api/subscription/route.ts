@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
 import { cancelSubscription, getLearningOverview, resumeSubscription } from "@/services/productStore";
 import { getStripe } from "@/services/stripeClient";
+import { paymentMode } from "@/services/runtimeConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     const body = await request.json() as { subscriptionId?: string; action?: "cancel" | "resume" };
     if (!body.subscriptionId || !body.action) return NextResponse.json({ ok: false, error: "Subscription and action are required." }, { status: 400 });
     const current = (await getLearningOverview(user.id)).subscriptions.find((subscription) => subscription.id === body.subscriptionId);
-    if (current?.stripeSubscriptionId && process.env.PAYMENT_MODE === "stripe") {
+    if (current?.stripeSubscriptionId && paymentMode() === "stripe") {
       await getStripe().subscriptions.update(current.stripeSubscriptionId, { cancel_at_period_end: body.action === "cancel" });
     }
     const subscription = body.action === "cancel" ? await cancelSubscription(user.id, body.subscriptionId) : await resumeSubscription(user.id, body.subscriptionId);

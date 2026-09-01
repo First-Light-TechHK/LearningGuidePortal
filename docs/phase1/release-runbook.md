@@ -44,6 +44,8 @@ GitHub pull request
 5. `/my-learning/*`、`/learn/:course_id`、AI Tutor、Expired、Payment Grace、reset password 和中英文切换已通过 UAT。
 6. 1–7 October 中国国庆假期不做 PPE/PROD 数据库变更或正式发布；release candidate 要么在假期前完成，要么 8 October 后执行。
 
+正式发布前还必须运行 `npm run preflight:production`。如果 `/api/health/config` 返回 `ready: false`，不得把该 App Runner 服务当作生产站点开放购买或登录。生产环境必须使用真实 Google、WeChat、Stripe、SES 和 PostgreSQL/S3 配置；`LOCAL_SOCIAL_LOGIN=1`、`PAYMENT_MODE=demo` 或 `STORAGE_BACKEND=local` 均为阻断项。
+
 ## 5. 回滚
 
 - 应用错误：把 App Runner 指回上一个已验证 image digest。

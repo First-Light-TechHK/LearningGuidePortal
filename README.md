@@ -25,7 +25,7 @@ The product smoke flow can be run against a started local server with `npm run s
 
 Do not commit `.env` / `.env.local`.
 
-For a local operator account, set `BACKOFFICE_OPERATOR_EMAIL` before starting the server and register that exact address. With `LOCAL_SOCIAL_LOGIN=1` (the local default), Google and WeChat buttons create deterministic local provider accounts without external credentials. For Stripe test mode, set `PAYMENT_MODE=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `NEXT_PUBLIC_APP_URL`; for production email verification and password reset, also set `SES_FROM_EMAIL` and grant the App Runner role permission to send through SES. In PPE/PROD, Google and WeChat use their real server-side credentials.
+For a local operator account, set `BACKOFFICE_OPERATOR_EMAIL` before starting the server and register that exact address. With `LOCAL_SOCIAL_LOGIN=1` (the local default), Google and WeChat buttons use local accounts without external credentials, and `PAYMENT_MODE=demo` uses a local checkout. This is not a live site configuration. For PPE/PROD, run `npm run preflight:production` with the App Runner environment variables first, then use real Google and WeChat server-side credentials, `PAYMENT_MODE=stripe`, Stripe secret and webhook secrets, HTTPS `NEXT_PUBLIC_APP_URL`, RDS PostgreSQL, S3 and SES. See [`docs/phase1/production-configuration.md`](docs/phase1/production-configuration.md).
 
 ## Legacy reference
 

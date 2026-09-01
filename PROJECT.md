@@ -51,7 +51,7 @@ The current runnable product path is implemented in the same Next.js application
 
 Live Stripe checkout, customer-portal and trial boundaries are implemented. Stripe must be configured with the correct Checkout settings and webhook events before `PPE/PROD`; no access is granted from the browser return page.
 
-For local development, the product store uses the existing virtual file system. With `DATABASE_URL` and `DATA_S3_BUCKET`, the same file operations use the configured PostgreSQL/S3 persistence layer; the normalised relational tables in `db/migrations` remain the next scale-up step before high-volume production. `PAYMENT_MODE=demo` is deliberately the default for development and must not be used for live charging.
+For local development, the product store uses the existing virtual file system. With `DATABASE_URL` and `DATA_S3_BUCKET`, the same file operations use the configured PostgreSQL/S3 persistence layer. App Runner's local container file is ephemeral and is not an acceptable production data store. `PAYMENT_MODE=demo` is deliberately the default for development and must not be used for live charging. See `docs/phase1/production-configuration.md` for the exact PPE/PROD configuration and provider callback contract.
 
 Do not create separate microservices, ECS workloads, an independent queue, Redis or a separate vector database for Phase 1. Keep the business functions as modules in one application. Add infrastructure only when a PRD or a measured production problem requires it.
 

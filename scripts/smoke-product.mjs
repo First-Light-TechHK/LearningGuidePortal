@@ -20,19 +20,29 @@ function assert(condition, message) {
 const stamp = Date.now();
 const email = `smoke-${stamp}@example.com`;
 const json = { "content-type": "application/json" };
+let result;
 
-for (const path of ["/api/health", "/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/faq"]) {
+for (const path of ["/api/health", "/api/health/config", "/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/faq"]) {
   assert((await request(path)).status === 200, `${path} did not return 200`);
 }
+result = await request("/api/health/config");
+assert(result.body.environment === "DEV" && result.body.storage === "local" && result.body.payment.mode === "demo", "local runtime configuration is not explicit");
 
 // Local OAuth must be usable without provider credentials. It creates the same
 // account/session records as the real callback, then redirects to the product.
-let result = await request(`/api/auth/google?locale=en-GB&returnTo=${encodeURIComponent("/en-GB/account/my-learning")}`);
+result = await request(`/api/auth/google?locale=en-GB&returnTo=${encodeURIComponent("/en-GB/account/my-learning")}`);
 assert(result.status === 307 && result.location?.endsWith("/en-GB/account/my-learning") && new URL(result.location, base).origin === new URL(base).origin, "local Google sign-in did not redirect on the current host");
 result = await request("/api/auth/me");
 assert(result.status === 200 && result.body.user?.email === "google.local@example.test", "local Google session failed");
 result = await request("/api/auth/logout", { method: "POST" });
 assert(result.status === 200 && result.body.ok, "logout after local Google sign-in failed");
+
+result = await request(`/api/auth/wechat?locale=en-GB&returnTo=${encodeURIComponent("/en-GB/account/my-learning")}`);
+assert(result.status === 307 && result.location?.endsWith("/en-GB/account/my-learning") && new URL(result.location, base).origin === new URL(base).origin, "local WeChat sign-in did not redirect on the current host");
+result = await request("/api/auth/me");
+assert(result.status === 200 && result.body.user?.email === "wechat.local@example.test", "local WeChat session failed");
+result = await request("/api/auth/logout", { method: "POST" });
+assert(result.status === 200 && result.body.ok, "logout after local WeChat sign-in failed");
 
 result = await request("/api/auth/register", { method: "POST", headers: json, body: JSON.stringify({ email, password: "Passw0rd!123", nickname: "Smoke User", locale: "en-GB" }) });
 assert(result.status === 200 && result.body.ok, "registration failed");
