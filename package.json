@@ -6,7 +6,7 @@
     "dev": "NODE_OPTIONS=--dns-result-order=ipv4first next dev",
     "build": "next build",
     "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "seed:science": "npx --yes tsx scripts/seed-science.ts",
     "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs"
@@ -24,7 +24,8 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "stripe": "^22.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

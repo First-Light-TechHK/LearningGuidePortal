@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { listCourses } from "@/services/courseStore";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
+import { listPublishedCourses } from "@/services/productStore";
 
 export default async function CoursesPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: rawLocale } = await params;
   const locale = localeFrom(rawLocale);
   const copy = getMessages(locale).portal;
-  const courses = await listCourses();
+  const courses = await listPublishedCourses();
 
   return (
     <main className="portal-page portal-page-narrow">

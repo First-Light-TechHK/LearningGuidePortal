@@ -4,6 +4,8 @@
 
 ## 1. 页面和功能
 
+The following table remains the scope map. The product code now has a runnable vertical slice for Portal, User Registration, User Authentication, Visitor / Trial, Purchase, Payment Management, Subscription Management, My Learning, Study, AI Tutor and the protected Course Manager/Operator path. Items marked as future integrations stay outside the local Demo mode.
+
 | PRD | 页面 | 服务 / Basic Components | 主要数据 | 先完成的验收 |
 |---|---|---|---|---|
 | Portal | `/`、`/courses`、`/courses/:course_slug`、`/courses/:course_slug/public-lesson`、`/pricing`、`/subscription/confirm`、Stripe result、`/learn/:course_id`、FAQ、legal | Portal、Course Management、Purchase、User Authentication、Rule Engine | Course、Section、Lesson、Plan、Entitlement、FAQ、Cookie Consent | 游客可浏览已发布课程和 Public First Lesson；完整 Course 必须再次由服务端检查 Entitlement |

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCourse } from "@/services/courseStore";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
+import { getProductCourse, listPlans, publicFirstLesson } from "@/services/productStore";
+import { PurchasePanel } from "@/components/portal/PurchasePanel";
 
 export default async function CourseDetailPage({
   params
@@ -11,9 +12,12 @@ export default async function CourseDetailPage({
 }) {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
-  const course = await getCourse(slug);
-  if (!course) notFound();
+  const course = await getProductCourse(slug);
+  if (!course || course.status !== "published") notFound();
   const copy = getMessages(locale).portal;
+  const learningCopy = getMessages(locale).learning;
+  const plans = await listPlans(course.id);
+  const firstLesson = publicFirstLesson(course);
 
   return (
     <main className="portal-page portal-page-narrow">
@@ -27,11 +31,13 @@ export default async function CourseDetailPage({
       <section className="portal-detail">
         <p className="portal-eyebrow">{copy.courseDetail}</p>
         <h1>{course.title}</h1>
-        <p className="portal-lead">{copy.publicFirstLesson}</p>
+        <p className="portal-lead">{course.description}</p>
         <div className="portal-detail-placeholder">
           <strong>{copy.publicFirstLesson}</strong>
-          <span>{copy.productionShellDescription}</span>
+          <span>{firstLesson?.title || copy.productionShellDescription}</span>
+          {firstLesson ? <Link className="portal-button portal-button-secondary" href={`/${locale}/portal/courses/${course.id}/public-lesson`}>{copy.openCourse}</Link> : null}
         </div>
+        <PurchasePanel locale={locale} courseId={course.id} plans={plans} copy={{ startTrial: learningCopy.startTrial, buy: learningCopy.buy, choosePlan: learningCopy.choosePlan }} />
       </section>
     </main>
   );
