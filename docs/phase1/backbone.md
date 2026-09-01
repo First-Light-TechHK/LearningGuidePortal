@@ -51,4 +51,4 @@ Route Handler 不直接拼 SQL、读取 Stripe SDK 或解释 Subscription 状态
 
 ## 本地配置
 
-复制 `.env.example` 到 `.env.local`。本地可以先不连接 PostgreSQL，使用现有文件存储运行 POC 页面；正式业务模块必须通过 PostgreSQL repository。OpenRouter、Stripe、Google、WeChat 和 SES 的 secret 只能在本地 `.env.local` 或 AWS Secrets Manager 中出现。
+复制 `.env.example` 到 `.env.local`。本地开发明确支持不连接 PostgreSQL、Stripe、Google、WeChat 或 SES：设置 `STORAGE_BACKEND=local`、`PAYMENT_MODE=demo` 和 `LOCAL_SOCIAL_LOGIN=1`。本地支付页面仍使用 pending、paid、failed、cancelled 订单状态，因此可以验证与生产相同的产品边界但不会真实扣款。正式业务模块在配置环境变量后使用 PostgreSQL/S3 和真实 provider adapter。secret 只能出现在本地 `.env.local` 或 AWS Secrets Manager。

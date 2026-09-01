@@ -1,13 +1,27 @@
 import { NextResponse } from "next/server";
 import { localeFrom } from "@/lib/i18n/config";
+import { createSession, getOrCreateSocialUser } from "@/services/productStore";
+import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
 import { appOrigin, safeReturnTo } from "@/services/runtimeConfig";
-import { googleConfigured, makeOAuthState, OAUTH_STATE_COOKIE } from "@/services/oauthService";
+import { googleConfigured, localSocialLoginEnabled, localSocialProfile, makeOAuthState, OAUTH_STATE_COOKIE } from "@/services/oauthService";
 
 export async function GET(request: Request) {
-  if (!googleConfigured()) return NextResponse.json({ ok: false, error: "Google sign-in is not configured." }, { status: 503 });
   const url = new URL(request.url);
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/account/my-learning`);
+  if (!googleConfigured()) {
+    if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, error: "Google sign-in is not configured." }, { status: 503 });
+    try {
+      const profile = localSocialProfile("google");
+      const user = await getOrCreateSocialUser({ provider: "google", providerSubject: profile.subject, email: profile.email, nickname: profile.nickname, locale });
+      const session = await createSession(user.id);
+      const response = NextResponse.redirect(new URL(returnTo, appOrigin(request)));
+      response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: false, path: "/", maxAge: SESSION_MAX_AGE });
+      return response;
+    } catch (error) {
+      return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Local Google sign-in failed." }, { status: 400 });
+    }
+  }
   const state = makeOAuthState(locale, returnTo);
   const callback = `${appOrigin(request)}/api/auth/google/callback`;
   const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");

@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import { localeFrom, type Locale } from "@/lib/i18n/config";
+import { isProductionEnvironment } from "./runtimeConfig";
 
 export const OAUTH_STATE_COOKIE = "learning_guide_oauth_state";
 
@@ -9,6 +10,24 @@ export function googleConfigured() {
 
 export function wechatConfigured() {
   return Boolean(process.env.WECHAT_APP_ID?.trim() && process.env.WECHAT_APP_SECRET?.trim());
+}
+
+export function localSocialLoginEnabled() {
+  return !isProductionEnvironment() && process.env.LOCAL_SOCIAL_LOGIN !== "0";
+}
+
+export function googleEnabled() {
+  return googleConfigured() || localSocialLoginEnabled();
+}
+
+export function wechatEnabled() {
+  return wechatConfigured() || localSocialLoginEnabled();
+}
+
+export function localSocialProfile(provider: "google" | "wechat") {
+  return provider === "google"
+    ? { subject: "local-google-user", email: "google.local@example.test", nickname: "Google Learner" }
+    : { subject: "local-wechat-user", email: "wechat.local@example.test", nickname: "WeChat Learner" };
 }
 
 export function makeOAuthState(localeValue: string, returnTo: string) {

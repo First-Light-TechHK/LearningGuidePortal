@@ -573,29 +573,40 @@ export async function checkEntitlement(userId: string, courseId: string) {
   return entitlement ? { allowed: true, source: entitlement.source, validTo: entitlement.validTo } : { allowed: false, source: null, validTo: null };
 }
 
-export async function activateTrial(userId: string, courseId: string) {
-  return editData((data) => {
-    const course = data.courses.find((item) => item.id === courseId);
-    if (!course || course.status !== "published") throw new Error("Course is not available.");
-    const existing = activeEntitlement(data, userId, courseId);
-    if (existing) return existing;
-    const previousTrial = data.subscriptions.find((item) => item.userId === userId && item.courseId === courseId && item.source === "trial");
-    if (previousTrial) {
-      if (new Date(previousTrial.validTo) <= new Date()) { previousTrial.state = "expired"; throw new Error("The three-day trial has ended."); }
-      previousTrial.state = "active";
-      const previousEntitlement = data.entitlements.find((item) => item.userId === userId && item.courseId === courseId && item.source === "trial" && item.validTo === previousTrial.validTo);
-      if (previousEntitlement) { previousEntitlement.state = "active"; return previousEntitlement; }
+function grantTrialAccess(data: ProductData, userId: string, courseId: string) {
+  const course = data.courses.find((item) => item.id === courseId);
+  if (!course || course.status !== "published") throw new Error("Course is not available.");
+  const existing = activeEntitlement(data, userId, courseId);
+  if (existing) {
+    const subscription = data.subscriptions.find((item) => item.userId === userId && item.courseId === courseId && item.source === "trial" && item.validTo === existing.validTo) || null;
+    return { subscription, entitlement: existing };
+  }
+  const previousTrial = data.subscriptions.find((item) => item.userId === userId && item.courseId === courseId && item.source === "trial");
+  if (previousTrial) {
+    if (new Date(previousTrial.validTo) <= new Date()) {
+      previousTrial.state = "expired";
+      throw new Error("The three-day trial has ended.");
     }
-    const validFrom = now();
-    const trialEnd = new Date(validFrom);
-    trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS);
-    const subscription: ProductSubscription = { id: id("subscription"), userId, planId: "trial", courseId, state: "active", source: "trial", validFrom, validTo: trialEnd.toISOString(), cancelAtPeriodEnd: false, stripeSubscriptionId: null };
-    const entitlement: ProductEntitlement = { id: id("entitlement"), userId, courseId, state: "active", source: "trial", validTo: subscription.validTo };
-    data.subscriptions.unshift(subscription);
-    data.entitlements.unshift(entitlement);
-    data.notifications.unshift({ id: id("notification"), userId, title: "Trial activated", body: `${course.title} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
-    return entitlement;
-  });
+    previousTrial.state = "active";
+    const previousEntitlement = data.entitlements.find((item) => item.userId === userId && item.courseId === courseId && item.source === "trial" && item.validTo === previousTrial.validTo);
+    if (previousEntitlement) {
+      previousEntitlement.state = "active";
+      return { subscription: previousTrial, entitlement: previousEntitlement };
+    }
+  }
+  const validFrom = now();
+  const trialEnd = new Date(validFrom);
+  trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS);
+  const subscription: ProductSubscription = { id: id("subscription"), userId, planId: "trial", courseId, state: "active", source: "trial", validFrom, validTo: trialEnd.toISOString(), cancelAtPeriodEnd: false, stripeSubscriptionId: null };
+  const entitlement: ProductEntitlement = { id: id("entitlement"), userId, courseId, state: "active", source: "trial", validTo: subscription.validTo };
+  data.subscriptions.unshift(subscription);
+  data.entitlements.unshift(entitlement);
+  data.notifications.unshift({ id: id("notification"), userId, title: "Trial activated", body: `${course.title} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
+  return { subscription, entitlement };
+}
+
+export async function activateTrial(userId: string, courseId: string) {
+  return editData((data) => grantTrialAccess(data, userId, courseId).entitlement);
 }
 
 export async function createQuote(userId: string, planId: string) {
@@ -616,17 +627,32 @@ export async function completeDemoCheckout(userId: string, quoteId: string) {
     if (!quote || new Date(quote.expiresAt) <= new Date()) throw new Error("This quote has expired. Please calculate the price again.");
     const plan = data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
-    const existingOrder = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.status === "paid");
-    if (existingOrder) {
+    let order = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "purchase");
+    if (!order) {
+      order = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "demo", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
+      data.orders.unshift(order);
+    }
+    if (order.status === "paid") {
       const subscription = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "purchase" && item.state !== "expired");
       const entitlement = data.entitlements.find((item) => item.userId === userId && item.courseId === plan.courseId && item.state === "active");
-      if (subscription && entitlement) return { order: existingOrder, subscription, entitlement };
+      if (subscription && entitlement) return { order, subscription, entitlement };
     }
-    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "paid", paymentMode: "demo", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
+    return fulfilDemoPurchase(data, userId, order, plan);
+  });
+}
+
+function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrder, plan: ProductPlan) {
+    if (order.status === "paid") {
+      const subscription = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "purchase" && item.state !== "expired");
+      const entitlement = data.entitlements.find((item) => item.userId === userId && item.courseId === plan.courseId && item.state === "active");
+      if (subscription && entitlement) return { order, subscription, entitlement };
+    }
+    if (!["pending", "paid"].includes(order.status)) throw new Error("This payment attempt cannot be completed.");
+    order.status = "paid";
+    order.failureReason = null;
     const validFrom = now();
     const subscription: ProductSubscription = { id: id("subscription"), userId, planId: plan.id, courseId: plan.courseId, state: "active", source: "purchase", validFrom, validTo: addMonths(validFrom, plan.termMonths), cancelAtPeriodEnd: false, stripeSubscriptionId: null };
     const entitlement: ProductEntitlement = { id: id("entitlement"), userId, courseId: plan.courseId, state: "active", source: "purchase", validTo: subscription.validTo };
-    data.orders.unshift(order);
     data.subscriptions.unshift(subscription);
     const trial = data.subscriptions.find((item) => item.userId === userId && item.courseId === plan.courseId && item.source === "trial" && item.state === "active");
     if (trial) trial.state = "expired";
@@ -637,6 +663,75 @@ export async function completeDemoCheckout(userId: string, quoteId: string) {
     data.entitlements.unshift(entitlement);
     data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
     return { order, subscription, entitlement };
+}
+
+export async function createPendingDemoOrder(userId: string, quoteId: string) {
+  return editData((data) => {
+    const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
+    if (!quote || new Date(quote.expiresAt) <= new Date()) throw new Error("This quote has expired. Please calculate the price again.");
+    const plan = data.plans.find((item) => item.id === quote.planId);
+    if (!plan) throw new Error("Plan not found.");
+    const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "purchase" && ["pending", "paid"].includes(item.status));
+    if (existing) return { order: existing, plan };
+    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "demo", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
+    data.orders.unshift(order);
+    return { order, plan };
+  });
+}
+
+export async function completeDemoOrder(userId: string, orderId: string) {
+  return editData((data) => {
+    const order = data.orders.find((item) => item.id === orderId && item.userId === userId && item.paymentMode === "demo" && item.kind === "purchase");
+    if (!order) throw new Error("Payment order not found.");
+    const plan = data.plans.find((item) => item.id === order.planId);
+    if (!plan) throw new Error("Plan not found.");
+    return fulfilDemoPurchase(data, userId, order, plan);
+  });
+}
+
+export async function createPendingDemoTrialOrder(userId: string, planId: string, courseId?: string) {
+  return editData((data) => {
+    const plan = data.plans.find((item) => item.id === planId) || data.plans.find((item) => !planId && item.courseId === courseId);
+    if (!plan) throw new Error("Plan not found.");
+    const course = data.courses.find((item) => item.id === plan.courseId);
+    if (!course || course.status !== "published") throw new Error("Course is not available.");
+    const existing = data.orders.find((item) => item.userId === userId && item.planId === plan.id && item.paymentMode === "demo" && item.kind === "trial_activation" && ["pending", "paid"].includes(item.status));
+    if (existing) return { order: existing, plan };
+    if (data.entitlements.some((item) => item.userId === userId && item.courseId === plan.courseId && item.state === "active" && new Date(item.validTo) > new Date())) throw new Error("This course already has active access.");
+    if (data.subscriptions.some((item) => item.userId === userId && item.courseId === plan.courseId && item.source === "trial")) throw new Error("The three-day trial has already been used for this course.");
+    const createdAt = now();
+    const quote: ProductQuote = { id: id("trial_quote"), userId, planId: plan.id, amountMinor: plan.amountMinor, currency: plan.currency, expiresAt: new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString(), createdAt };
+    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: 0, currency: plan.currency, status: "pending", paymentMode: "demo", kind: "trial_activation", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt };
+    data.quotes.unshift(quote);
+    data.orders.unshift(order);
+    return { order, plan };
+  });
+}
+
+export async function completeDemoTrialOrder(userId: string, orderId: string) {
+  return editData((data) => {
+    const order = data.orders.find((item) => item.id === orderId && item.userId === userId && item.paymentMode === "demo" && item.kind === "trial_activation");
+    if (!order) throw new Error("Trial order not found.");
+    const plan = data.plans.find((item) => item.id === order.planId);
+    if (!plan) throw new Error("Plan not found.");
+    if (!["pending", "paid"].includes(order.status)) throw new Error("This trial payment attempt cannot be completed.");
+    const result = grantTrialAccess(data, userId, plan.courseId);
+    order.status = "paid";
+    order.failureReason = null;
+    return { order, subscription: result.subscription, entitlement: result.entitlement };
+  });
+}
+
+export async function updateDemoOrderStatus(userId: string, orderId: string, status: "failed" | "canceled", reason: string) {
+  return editData((data) => {
+    const order = data.orders.find((item) => item.id === orderId && item.userId === userId && item.paymentMode === "demo");
+    if (!order) throw new Error("Payment order not found.");
+    if (order.status === "paid") throw new Error("A completed payment cannot be changed here.");
+    if (order.status === "pending") {
+      order.status = status;
+      order.failureReason = reason;
+    }
+    return order;
   });
 }
 
@@ -883,10 +978,9 @@ export async function getLearningOverview(userId: string) {
       if (["active", "cancel_at_period_end", "grace"].includes(subscription.state) && new Date(subscription.validTo) <= currentTime) subscription.state = "expired";
     });
     const records = data.studyRecords.filter((record) => record.userId === userId);
-    const activeCourseIds = data.entitlements
-      .filter((entitlement) => entitlement.userId === userId && entitlement.state === "active" && new Date(entitlement.validTo) > currentTime)
-      .map((entitlement) => entitlement.courseId);
-    const courseIds = [...new Set([...records.map((record) => record.courseId), ...activeCourseIds])];
+    // My Learning is a study history, not an access list. Access appears here only
+    // after the learner opens the full course and a Study Record exists.
+    const courseIds = [...new Set(records.map((record) => record.courseId))];
     const courses = courseIds.map((courseId) => {
       const record = records.find((item) => item.courseId === courseId);
       const course = data.courses.find((item) => item.id === courseId);

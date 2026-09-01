@@ -40,6 +40,6 @@ Study -> My Learning progress / current Lesson
 - `/my-learning/*` 必须有 session；失效或不存在的 Entitlement 只保留历史，不允许继续学习。
 - Payment status 以 Stripe Webhook 同步结果为准；回跳页只查询结果。
 - Stripe trial starts only after `checkout.session.completed`; `invoice.paid` converts the trial or records a renewal, and `invoice.payment_failed` extends access only through the configured grace period. A browser redirect never creates access.
-- Production `PPE/PROD` requires `SES_FROM_EMAIL` for email verification and password reset. OAuth buttons are hidden unless the corresponding provider credentials are configured.
+- Production `PPE/PROD` requires `SES_FROM_EMAIL` for email verification and password reset. OAuth buttons are shown in DEV with `LOCAL_SOCIAL_LOGIN=1` and use a local provider account; PPE/PROD shows them only when the corresponding provider credentials are configured.
 - The current file-backed product store is suitable for the local MVP and a single-instance DEV deployment. Before multi-instance production traffic, apply the relational migrations and move the transactional product records from `app_files` JSON to PostgreSQL tables.
 - Business date/timezone、税费、6/12 month 的实际销售配置列为上线前确认项，不能由开发人员猜定。

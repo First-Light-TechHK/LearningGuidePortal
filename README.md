@@ -17,7 +17,7 @@ This repository was initialized from [Ashley-AIHR/AITutor](https://github.com/As
 
 ```bash
 npm install
-# Create .env.local with OPENROUTER_API_KEY (and DATABASE_URL/DATA_S3_BUCKET when using the AWS persistence path)
+# Create .env.local with OPENROUTER_API_KEY. Local development uses file storage, local social-provider accounts and a local payment page; add DATABASE_URL/DATA_S3_BUCKET and the provider credentials only when using the AWS persistence path.
 npm run dev
 ```
 
@@ -25,7 +25,7 @@ The product smoke flow can be run against a started local server with `npm run s
 
 Do not commit `.env` / `.env.local`.
 
-For a local operator account, set `BACKOFFICE_OPERATOR_EMAIL` before starting the server and register that exact address. For Stripe test mode, set `PAYMENT_MODE=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `NEXT_PUBLIC_APP_URL`; for production email verification and password reset, also set `SES_FROM_EMAIL` and grant the App Runner role permission to send through SES. Google and WeChat buttons appear only when their server credentials are configured.
+For a local operator account, set `BACKOFFICE_OPERATOR_EMAIL` before starting the server and register that exact address. With `LOCAL_SOCIAL_LOGIN=1` (the local default), Google and WeChat buttons create deterministic local provider accounts without external credentials. For Stripe test mode, set `PAYMENT_MODE=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `NEXT_PUBLIC_APP_URL`; for production email verification and password reset, also set `SES_FROM_EMAIL` and grant the App Runner role permission to send through SES. In PPE/PROD, Google and WeChat use their real server-side credentials.
 
 ## Legacy reference
 
