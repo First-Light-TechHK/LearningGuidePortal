@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first next dev",
+    "dev": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next dev",
     "build": "next build",
-    "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
+    "start": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next start",
     "lint": "eslint .",
     "setup:local": "node scripts/setup-local.mjs",
     "smoke:product": "node scripts/smoke-product.mjs",
