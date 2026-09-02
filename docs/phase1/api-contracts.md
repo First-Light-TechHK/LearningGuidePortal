@@ -4,6 +4,8 @@
 
 Email registration uses `POST /api/auth/sign-up`, activation uses `POST /api/auth/verify-email`, and resend uses `POST /api/auth/resend-verification`. Resend always returns an accepted result; only a pending account receives a new link, and issuing that link invalidates the previous one.
 
+Google authentication uses `GET /api/auth/google` and `GET /api/auth/google/callback`. The first route creates a signed state/nonce/PKCE transaction and redirects to Google. The callback verifies the transaction and Google ID Token before calling the User Authentication service and creating the application Session cookie. Existing email accounts are not automatically linked.
+
 ```ts
 type ApiResult<T> =
   | { ok: true; data: T; requestId: string }

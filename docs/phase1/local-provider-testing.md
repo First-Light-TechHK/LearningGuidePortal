@@ -30,6 +30,7 @@ STORAGE_BACKEND=local
 PAYMENT_MODE=demo
 LOCAL_SOCIAL_LOGIN=1
 NEXT_PUBLIC_APP_URL=http://localhost:3011
+SESSION_SECRET=replace-with-at-least-32-random-characters
 OPENROUTER_API_KEY=the-development-key-from-the-team-secret-store
 ```
 
@@ -51,6 +52,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
+SESSION_SECRET=replace-with-at-least-32-random-characters
 WECHAT_APP_ID=...
 WECHAT_APP_SECRET=...
 ```
@@ -71,7 +73,7 @@ Create a Google OAuth client of type **Web application** and add this exact auth
 http://localhost:3011/api/auth/google/callback
 ```
 
-Start the application, open the sign-in page using `http://localhost:3011`, and select Google. The application sends the same callback origin in both the authorisation request and the code exchange. The callback validates the state cookie, exchanges the one-time code on the server and creates the application session.
+Start the application, open the sign-in page using `http://localhost:3011`, and select Google. The application sends the same callback origin in both the authorisation request and the code exchange. The callback validates a signed, ten-minute state transaction, uses PKCE, verifies the Google ID Token audience, issuer, expiry, nonce and verified email, and then creates the application session. A Google `sub` is the stable account key. An existing password account with the same email is not merged automatically.
 
 For HTTPS local testing, replace the URL with the stable tunnel URL and register:
 

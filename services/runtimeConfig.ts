@@ -56,6 +56,7 @@ export function runtimeConfiguration() {
   const email = hasEnv("SES_FROM_EMAIL");
   const emailVerification = emailVerificationRequired();
   const openRouter = hasEnv("OPENROUTER_API_KEY");
+  const sessionSecret = Boolean(process.env.SESSION_SECRET?.trim() && (process.env.SESSION_SECRET?.trim().length || 0) >= 32);
   const payment = paymentMode();
   const required: string[] = [];
   if (production && !publicUrl) required.push("NEXT_PUBLIC_APP_URL");
@@ -67,6 +68,7 @@ export function runtimeConfiguration() {
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
   if (emailVerification && !email) required.push("SES_FROM_EMAIL");
   if (production && !openRouter) required.push("OPENROUTER_API_KEY");
+  if ((google || wechat) && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
   return {
     environment: appEnvironment(),
     production,
@@ -82,7 +84,8 @@ export function runtimeConfiguration() {
       google: google ? "configured" : socialLocal ? "local" : "missing",
       wechat: wechat ? "configured" : socialLocal ? "local" : "missing",
       email: email ? "configured" : "missing",
-      emailVerification: emailVerification ? "required" : "disabled"
+      emailVerification: emailVerification ? "required" : "disabled",
+      sessionSecret: sessionSecret ? "configured" : "missing"
     },
     aiTutor: openRouter ? "configured" : "missing",
     ready: required.length === 0,

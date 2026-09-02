@@ -79,6 +79,9 @@
     "or": "或使用以下方式继续",
     "google": "Google",
     "wechat": "微信",
+    "oauthAccountConflict": "该邮箱已经关联 Learning Guide 账号。请先使用邮箱和密码登录，再绑定 Google。",
+    "oauthAccountDisabled": "该 Learning Guide 账号已被禁用。",
+    "oauthEmailUnverified": "Google 没有提供已验证的邮箱地址。",
     "oauthError": "第三方登录没有完成，请重试或使用邮箱和密码。"
   },
   "learning": {

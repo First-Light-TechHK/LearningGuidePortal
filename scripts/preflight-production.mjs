@@ -7,6 +7,7 @@ const required = [
   "STRIPE_WEBHOOK_SECRET",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
+  "SESSION_SECRET",
   "WECHAT_APP_ID",
   "WECHAT_APP_SECRET",
   "SES_FROM_EMAIL",
@@ -17,6 +18,8 @@ const missing = required.filter((name) => !process.env[name]?.trim());
 const environment = (process.env.APP_ENV || "").trim().toUpperCase();
 const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "";
 const paymentMode = (process.env.PAYMENT_MODE || "").trim().toLowerCase();
+
+if (process.env.SESSION_SECRET?.trim() && process.env.SESSION_SECRET.trim().length < 32) missing.push("SESSION_SECRET must contain at least 32 characters");
 
 if (!["PPE/PROD", "PROD"].includes(environment)) missing.unshift("APP_ENV must be PPE/PROD or PROD");
 if (paymentMode !== "stripe") missing.push("PAYMENT_MODE=stripe");

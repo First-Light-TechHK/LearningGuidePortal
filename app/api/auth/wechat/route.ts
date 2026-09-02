@@ -23,10 +23,10 @@ export async function GET(request: Request) {
     }
   }
   try {
-    const state = makeOAuthState(locale, returnTo);
+    const state = makeOAuthState(locale, returnTo, "wechat");
     const callback = `${publicAppOrigin(request)}/api/auth/wechat/callback`;
     const wechatUrl = new URL("https://open.weixin.qq.com/connect/qrconnect");
-    wechatUrl.search = new URLSearchParams({ appid: process.env.WECHAT_APP_ID as string, redirect_uri: callback, response_type: "code", scope: "snsapi_login", state: state.nonce }).toString();
+    wechatUrl.search = new URLSearchParams({ appid: process.env.WECHAT_APP_ID as string, redirect_uri: callback, response_type: "code", scope: "snsapi_login", state: state.state }).toString();
     const response = NextResponse.redirect(`${wechatUrl}#wechat_redirect`);
     response.cookies.set(OAUTH_STATE_COOKIE, state.cookieValue, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 600 });
     return response;

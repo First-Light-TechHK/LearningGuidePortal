@@ -14,7 +14,7 @@ export type Locale = "en-GB" | "zh-CN";
 export type ProductUser = {
   id: string;
   email: string;
-  passwordHash: string;
+  passwordHash: string | null;
   nickname: string;
   locale: Locale;
   role: "student" | "operator";
@@ -147,6 +147,12 @@ export type ProductNotification = {
 export type ProductSession = { id: string; tokenHash: string; userId: string; expiresAt: string; createdAt: string };
 export type ProductToken = { id: string; userId: string; tokenHash: string; expiresAt: string; usedAt: string | null; createdAt: string };
 export type ProductAccount = { id: string; userId: string; provider: "google" | "wechat"; providerSubject: string; createdAt: string };
+
+export class ProductAuthError extends Error {
+  constructor(public readonly code: "account_conflict" | "account_disabled" | "account_unavailable", message: string) {
+    super(message);
+  }
+}
 export type ProductPaymentSettings = {
   provider: "stripe";
   name: string;
@@ -322,7 +328,8 @@ async function passwordHash(password: string) {
   return `scrypt$${salt}$${Buffer.from(key).toString("hex")}`;
 }
 
-async function passwordMatches(password: string, stored: string) {
+async function passwordMatches(password: string, stored: string | null) {
+  if (!stored) return false;
   const [, salt, value] = stored.split("$");
   if (!salt || !value) return false;
   const actual = await scrypt(password, salt, 64) as Buffer;
@@ -382,12 +389,15 @@ export async function getOrCreateSocialUser(input: { provider: "google" | "wecha
     const account = data.accounts.find((item) => item.provider === input.provider && item.providerSubject === input.providerSubject);
     if (account) {
       const user = data.users.find((item) => item.id === account.userId);
-      if (!user || user.status !== "active") throw new Error("This account is not available.");
+      if (!user) throw new ProductAuthError("account_unavailable", "This account is not available.");
+      if (user.status === "disabled") throw new ProductAuthError("account_disabled", "This account has been disabled.");
+      if (user.status !== "active") throw new ProductAuthError("account_unavailable", "This account is not available.");
+      if (user.email !== email && !data.users.some((item) => item.id !== user.id && item.email === email)) user.email = email;
       return user;
     }
-    if (data.users.some((item) => item.email === email)) throw new Error("An account already uses this email. Sign in with that account before linking a provider.");
+    if (data.users.some((item) => item.email === email)) throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
     const nickname = input.nickname && /^[A-Za-z0-9 ]{1,15}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
-    const user: ProductUser = { id: id("user"), email, passwordHash: await passwordHash(randomBytes(32).toString("base64url")), nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: now(), createdAt: now() };
+    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: now(), createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
     data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
@@ -449,7 +459,7 @@ export async function verifyEmailToken(rawToken: string) {
 export async function requestPasswordReset(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
-  const user = data.users.find((item) => item.email === email && item.status === "active");
+  const user = data.users.find((item) => item.email === email && item.status === "active" && item.passwordHash);
   if (!user) return { accepted: true, token: null };
   return { accepted: true, token: await issueToken("passwordResetTokens", user.id) };
 }

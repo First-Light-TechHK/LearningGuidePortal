@@ -7,7 +7,7 @@ import { fetchWeChatProfile, OAUTH_STATE_COOKIE, readOAuthState } from "@/servic
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const state = readOAuthState((await cookies()).get(OAUTH_STATE_COOKIE)?.value, url.searchParams.get("state"));
+  const state = readOAuthState((await cookies()).get(OAUTH_STATE_COOKIE)?.value, url.searchParams.get("state"), "wechat");
   const origin = appOrigin(request);
   if (!state) return NextResponse.redirect(new URL("/en-GB/portal/sign-in?oauthError=state", origin));
   const returnTo = safeReturnTo(state.returnTo, `/${state.locale}/account/my-learning`);

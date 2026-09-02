@@ -33,6 +33,7 @@ Set these as App Runner environment variables or Secrets Manager references for 
 | `STRIPE_WEBHOOK_SECRET` | secret | Signing secret for `/api/payment/webhook` | Verifies payment facts before granting access |
 | `GOOGLE_CLIENT_ID` | variable | Web OAuth client ID | Starts Google sign-in |
 | `GOOGLE_CLIENT_SECRET` | secret | Web OAuth client secret | Exchanges the Google authorization code |
+| `SESSION_SECRET` | secret | At least 32 random characters | Signs Google OAuth transactions and protects callback state |
 | `WECHAT_APP_ID` | variable | WeChat Open Platform website application ID | Starts QR sign-in |
 | `WECHAT_APP_SECRET` | secret | WeChat application secret | Exchanges the WeChat authorization code |
 | `LOCAL_SOCIAL_LOGIN` | variable | `0` or leave empty | Ensures no local social account is used |

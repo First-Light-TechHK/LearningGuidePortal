@@ -79,6 +79,9 @@
     "or": "Or continue with",
     "google": "Google",
     "wechat": "WeChat",
+    "oauthAccountConflict": "An account already uses this email. Sign in with your email and password before linking Google.",
+    "oauthAccountDisabled": "This Learning Guide account has been disabled.",
+    "oauthEmailUnverified": "Google did not provide a verified email address.",
     "oauthError": "The provider sign-in could not be completed. Please try again or use email and password."
   },
   "learning": {

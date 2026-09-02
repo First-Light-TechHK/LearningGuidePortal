@@ -8,6 +8,8 @@ The following table remains the scope map. The product code now has a runnable p
 
 Email registration is implemented in `services/productStore.ts`, `services/emailService.ts`, `app/api/auth/register`, `app/api/auth/verify-email`, and `app/api/auth/resend-verification`. Email/password accounts remain pending until a one-time 24-hour verification token is accepted. Registration does not create a session before activation. The Portal check-email and verify-email pages cover resend, loading, success, invalid, expired, and already-used link states.
 
+Google registration and sign-in are implemented in `services/oauthService.ts`, `app/api/auth/google`, and `app/api/auth/google/callback`. The server-side Authorization Code flow uses signed state, OIDC nonce, PKCE and verified ID Token claims. Accounts are keyed by `(provider, providerSubject)` and are never merged automatically by email.
+
 | PRD | 页面 | 服务 / Basic Components | 主要数据 | 先完成的验收 |
 |---|---|---|---|---|
 | Portal | `/`、`/courses`、`/courses/:course_slug`、`/courses/:course_slug/public-lesson`、`/pricing`、`/subscription/confirm`、Stripe result、`/learn/:course_id`、FAQ、legal | Portal、Course Management、Purchase、User Authentication、Rule Engine | Course、Section、Lesson、Plan、Entitlement、FAQ、Cookie Consent | 游客可浏览已发布课程和 Public First Lesson；完整 Course 必须再次由服务端检查 Entitlement |

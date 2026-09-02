@@ -1,4 +1,5 @@
 .next
+test-results
 node_modules
 data
 .wiki-store
