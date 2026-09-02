@@ -1,5 +1,7 @@
 # Phase 1：发布和上线运行手册
 
+邮箱注册在 PPE/PROD 必须配置 `EMAIL_VERIFICATION_REQUIRED=1`、`SES_FROM_EMAIL`、`AWS_REGION` 和使用 HTTPS 的 `NEXT_PUBLIC_APP_URL`。冒烟测试必须确认待激活账号不能登录、验证链接只能成功使用一次，并且重新发送后旧链接失效。
+
 ## 1. 环境
 
 | 环境 | 用途 | 数据 | 发布方式 |

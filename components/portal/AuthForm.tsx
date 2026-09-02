@@ -16,13 +16,9 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     setError("");
     try {
       const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale }) });
-      const data = await response.json() as { ok?: boolean; error?: string; verificationRequired?: boolean };
-      if (!response.ok || !data.ok) throw new Error(data.error || "Request failed.");
-      if (data.verificationRequired) {
-        setError("Check your email to verify your account before signing in.");
-        setBusy(false);
-        return;
-      }
+      const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean } };
+      if (!response.ok || !data.ok) throw new Error(data.message || "Request failed.");
+      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email`);
       window.location.assign(returnTo || `/${locale}/account/my-learning`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Request failed.");

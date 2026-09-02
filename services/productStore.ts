@@ -18,7 +18,7 @@ export type ProductUser = {
   nickname: string;
   locale: Locale;
   role: "student" | "operator";
-  status: "active" | "disabled";
+  status: "pending" | "active" | "disabled";
   emailVerifiedAt: string | null;
   avatarPath?: string | null;
   avatarContentType?: string | null;
@@ -350,7 +350,15 @@ export async function registerUser(input: { email: string; password: string; loc
   if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
   const nickname = validateNickname(input.nickname?.trim() || "Learner");
   return editData(async (data) => {
-    if (data.users.some((user) => user.email === email)) throw new Error("An account with this email already exists.");
+    const existing = data.users.find((user) => user.email === email);
+    if (existing?.status === "active" || existing?.status === "disabled") throw new Error("An account with this email already exists.");
+    if (existing) {
+      existing.passwordHash = await passwordHash(input.password);
+      existing.nickname = nickname;
+      existing.locale = input.locale === "zh-CN" ? "zh-CN" : "en-GB";
+      existing.emailVerifiedAt = null;
+      return existing;
+    }
     const user: ProductUser = {
       id: id("user"),
       email,
@@ -358,13 +366,11 @@ export async function registerUser(input: { email: string; password: string; loc
       nickname,
       locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB",
       role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student",
-      status: "active",
-      // Local/dev mode is immediately usable. A production SES verification step can be enabled later.
-      emailVerifiedAt: isProductionEnvironment() ? null : now(),
+      status: "pending",
+      emailVerifiedAt: null,
       createdAt: now(),
     };
     data.users.push(user);
-    data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
     return user;
   });
 }
@@ -393,17 +399,32 @@ function tokenExpiry(hours: number) {
   return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 }
 
-async function issueToken(collection: "verificationTokens" | "passwordResetTokens", userId: string) {
+async function issueToken(collection: "verificationTokens" | "passwordResetTokens", userId: string, enforceCooldown = false) {
   const rawToken = randomBytes(32).toString("base64url");
   await editData((data) => {
-    data[collection] = data[collection].filter((item) => item.userId !== userId || (item.usedAt === null && new Date(item.expiresAt) > new Date()));
-    data[collection].unshift({ id: id(collection === "verificationTokens" ? "verify" : "reset"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(collection === "verificationTokens" ? 24 : 1), usedAt: null, createdAt: now() });
+    const issuedAt = now();
+    const latest = data[collection].find((item) => item.userId === userId);
+    if (enforceCooldown && latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) {
+      throw new Error("Please wait before requesting another verification email.");
+    }
+    for (const item of data[collection]) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data[collection].unshift({ id: id(collection === "verificationTokens" ? "verify" : "reset"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(collection === "verificationTokens" ? 24 : 1), usedAt: null, createdAt: issuedAt });
   });
   return rawToken;
 }
 
-export async function issueEmailVerificationToken(userId: string) {
-  return issueToken("verificationTokens", userId);
+export async function issueEmailVerificationToken(userId: string, enforceCooldown = false) {
+  return issueToken("verificationTokens", userId, enforceCooldown);
+}
+
+export async function requestEmailVerification(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && item.status === "pending");
+  if (!user) return { accepted: true as const, user: null, token: null };
+  return { accepted: true as const, user, token: await issueEmailVerificationToken(user.id, true) };
 }
 
 export async function verifyEmailToken(rawToken: string) {
@@ -414,6 +435,13 @@ export async function verifyEmailToken(rawToken: string) {
     if (!user) throw new Error("User not found.");
     token.usedAt = now();
     user.emailVerifiedAt = now();
+    user.status = "active";
+    for (const item of data.verificationTokens) {
+      if (item.userId === user.id && !item.usedAt) item.usedAt = token.usedAt;
+    }
+    if (!data.notifications.some((item) => item.userId === user.id && item.title === "Welcome to Learning Guide")) {
+      data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
+    }
     return user;
   });
 }
@@ -493,8 +521,9 @@ export async function getUserAvatar(userId: string) {
 export async function authenticateUser(emailValue: string, password: string) {
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === emailValue.trim().toLowerCase());
-  if (!user || user.status !== "active" || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
-  if (isProductionEnvironment() && !user.emailVerifiedAt) throw new Error("Verify your email address before signing in.");
+  if (!user || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
+  if (user.status === "pending" || !user.emailVerifiedAt) throw new Error("Verify your email address before signing in.");
+  if (user.status !== "active") throw new Error("This account is not available.");
   return user;
 }
 
@@ -513,7 +542,7 @@ export async function getUserBySessionToken(token: string | undefined) {
   const data = await ensureProductData();
   const session = data.sessions.find((item) => item.tokenHash === hashToken(token) && new Date(item.expiresAt) > new Date());
   if (!session) return null;
-  return data.users.find((user) => user.id === session.userId && user.status === "active" && (!isProductionEnvironment() || Boolean(user.emailVerifiedAt))) || null;
+  return data.users.find((user) => user.id === session.userId && user.status === "active" && Boolean(user.emailVerifiedAt)) || null;
 }
 
 export async function deleteSession(token: string | undefined) {

@@ -2,6 +2,8 @@
 
 所有 JSON API 使用：
 
+Email registration uses `POST /api/auth/sign-up`, activation uses `POST /api/auth/verify-email`, and resend uses `POST /api/auth/resend-verification`. Resend always returns an accepted result; only a pending account receives a new link, and issuing that link invalidates the previous one.
+
 ```ts
 type ApiResult<T> =
   | { ok: true; data: T; requestId: string }

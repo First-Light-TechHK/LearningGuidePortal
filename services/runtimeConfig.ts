@@ -6,6 +6,11 @@ export function isProductionEnvironment() {
   return ["PROD", "PPE/PROD"].includes(appEnvironment());
 }
 
+export function emailVerificationRequired() {
+  if (isProductionEnvironment()) return true;
+  return process.env.EMAIL_VERIFICATION_REQUIRED?.trim() !== "0";
+}
+
 export function paymentMode() {
   return (process.env.PAYMENT_MODE || "demo").trim().toLowerCase();
 }
@@ -49,6 +54,7 @@ export function runtimeConfiguration() {
   const publicUrl = hasEnv("NEXT_PUBLIC_APP_URL");
   const persistentStorage = Boolean(process.env.DATABASE_URL?.trim() && process.env.DATA_S3_BUCKET?.trim()) && process.env.STORAGE_BACKEND !== "local";
   const email = hasEnv("SES_FROM_EMAIL");
+  const emailVerification = emailVerificationRequired();
   const openRouter = hasEnv("OPENROUTER_API_KEY");
   const payment = paymentMode();
   const required: string[] = [];
@@ -59,7 +65,7 @@ export function runtimeConfiguration() {
   if (production && payment === "stripe" && !stripeWebhook) required.push("STRIPE_WEBHOOK_SECRET");
   if (production && !google) required.push("GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET");
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
-  if (production && !email) required.push("SES_FROM_EMAIL");
+  if (emailVerification && !email) required.push("SES_FROM_EMAIL");
   if (production && !openRouter) required.push("OPENROUTER_API_KEY");
   return {
     environment: appEnvironment(),
@@ -75,7 +81,8 @@ export function runtimeConfiguration() {
     authentication: {
       google: google ? "configured" : socialLocal ? "local" : "missing",
       wechat: wechat ? "configured" : socialLocal ? "local" : "missing",
-      email: email ? "configured" : "missing"
+      email: email ? "configured" : "missing",
+      emailVerification: emailVerification ? "required" : "disabled"
     },
     aiTutor: openRouter ? "configured" : "missing",
     ready: required.length === 0,

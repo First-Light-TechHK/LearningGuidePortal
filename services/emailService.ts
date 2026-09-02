@@ -30,12 +30,13 @@ async function sendEmail(input: { to: string; subject: string; text: string; htm
   }));
 }
 
-export function sendVerificationEmail(input: { to: string; url: string }) {
+export function sendVerificationEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
+  const chinese = input.locale === "zh-CN";
   return sendEmail({
     to: input.to,
-    subject: "Verify your Learning Guide account",
-    text: `Verify your Learning Guide account by opening this link:\n\n${input.url}\n\nThis link expires in 24 hours.`,
-    html: `<p>Verify your Learning Guide account by opening this link:</p><p><a href="${input.url}">Verify email address</a></p><p>This link expires in 24 hours.</p>`
+    subject: chinese ? "激活您的 Learning Guide 账号" : "Verify your Learning Guide account",
+    text: chinese ? `请打开以下链接激活您的 Learning Guide 账号：\n\n${input.url}\n\n此链接将在 24 小时后失效。` : `Verify your Learning Guide account by opening this link:\n\n${input.url}\n\nThis link expires in 24 hours.`,
+    html: chinese ? `<p>请点击下面的链接激活您的 Learning Guide 账号：</p><p><a href="${input.url}">激活账号</a></p><p>此链接将在 24 小时后失效。</p>` : `<p>Verify your Learning Guide account by opening this link:</p><p><a href="${input.url}">Verify email address</a></p><p>This link expires in 24 hours.</p>`
   });
 }
 
