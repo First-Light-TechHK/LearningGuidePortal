@@ -108,6 +108,8 @@
     "or": "Or continue with",
     "google": "Google",
     "wechat": "WeChat",
+    "emailContinue": "Continue with email",
+    "emailEntryDescription": "Enter your email address. We will take you to sign in or create your account.",
     "oauthAccountConflict": "An account already uses this email. Sign in with your email and password before linking Google.",
     "oauthAccountDisabled": "This Learning Guide account has been disabled.",
     "oauthEmailUnverified": "Google did not provide a verified email address.",

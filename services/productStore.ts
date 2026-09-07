@@ -455,6 +455,13 @@ export async function getUserById(userId: string) {
   return data.users.find((user) => user.id === userId) || null;
 }
 
+export async function userEmailExists(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return false;
+  const data = await ensureProductData();
+  return data.users.some((user) => user.email === email && ["pending", "active"].includes(user.status));
+}
+
 export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string }) {
   const email = input.email.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
