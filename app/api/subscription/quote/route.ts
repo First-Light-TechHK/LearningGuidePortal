@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
-import { createQuote, getQuoteForUser } from "@/services/productStore";
+import { createQuote, createUpgradeQuote, getQuoteForUser } from "@/services/productStore";
 
 export async function GET(request: Request) {
   const user = await currentProductUser();
@@ -15,8 +15,10 @@ export async function POST(request: Request) {
   const user = await currentProductUser();
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   try {
-    const body = await request.json() as { planId?: string; kind?: "purchase" | "trial" };
-    const result = await createQuote(user.id, body.planId || "", body.kind === "trial" ? "trial" : "purchase");
+    const body = await request.json() as { planId?: string; subscriptionId?: string; kind?: "purchase" | "trial" | "upgrade" };
+    const result = body.kind === "upgrade"
+      ? await createUpgradeQuote(user.id, body.subscriptionId || "")
+      : await createQuote(user.id, body.planId || "", body.kind === "trial" ? "trial" : "purchase");
     return NextResponse.json({ ok: true, quote: result.quote, plan: result.plan });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Price calculation failed." }, { status: 400 });

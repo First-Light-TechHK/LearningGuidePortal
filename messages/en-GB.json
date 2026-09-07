@@ -66,6 +66,7 @@
     "footerContact": "Contact us",
     "footerPrivacy": "Privacy Policy",
     "footerTerms": "Terms of Service",
+    "footerCookies": "Cookie settings",
     "noCourses": "No published courses are available yet.",
     "courseDetail": "Course Detail",
     "lessons": "Lessons",
@@ -244,12 +245,38 @@
   "helpPage": {
     "title": "Help Center / FAQ",
     "contact": "For account or payment support, contact the Learning Guide operator.",
+    "categories": [
+      { "title": "Account and access", "items": [
+        { "question": "How do I verify my account?", "answer": "Open the activation link sent to your email. You must verify the address before signing in with email and password." },
+        { "question": "How do I continue a course?", "answer": "Open My Learning, choose a course, select a lesson, and use Mark lesson complete when you have finished it. Your progress is stored against your account." }
+      ] },
+      { "title": "Payments and subscriptions", "items": [
+        { "question": "How does a course trial work?", "answer": "A trial begins only after the selected plan, payment method and auto-renewal consent have been confirmed. Cancelling during the trial removes full-course access immediately; resuming before the original end time does not extend it." },
+        { "question": "What happens after a card payment?", "answer": "Stripe confirms the payment through the server webhook before paid access is granted. The payment page may show pending briefly while that confirmation arrives." }
+      ] },
+      { "title": "Learning and AI Tutor", "items": [
+        { "question": "How does the AI Tutor use the course?", "answer": "The Tutor receives the current course and lesson context together with the published course knowledge pack. Lecture and Socratic are response modes for the current conversation." }
+      ] }
+    ],
     "items": [
       { "question": "How does a course trial work?", "answer": "The local demo provides three days of access to the selected course. Cancelling the trial removes access immediately; resuming it before the original end time does not extend the trial." },
       { "question": "How do I continue a course?", "answer": "Open My Learning, choose a course, select a lesson, and use Mark lesson complete when you have finished it. Your progress is stored against your account." },
       { "question": "How does the AI Tutor use the course?", "answer": "The Tutor receives the selected course and lesson context together with the Epicureanism knowledge pack. Lecture and Socratic are response modes for the current conversation." },
       { "question": "What happens after a card payment?", "answer": "Stripe confirms the payment through the server webhook before paid access is granted. The payment page may show pending briefly while that confirmation arrives." }
     ]
+  },
+  "legal": {
+    "privacyTitle": "Privacy Policy",
+    "privacyIntro": "Learning Guide uses account, course progress and payment-status information to provide the service.",
+    "privacyBody": ["We store the account information needed to authenticate you and associate learning progress, subscriptions and entitlements with your user ID. Stripe handles card details and payment collection on its hosted pages; Learning Guide does not store full card numbers or CVCs.", "We use essential cookies for sign-in and a local cookie preference for non-essential analytics choices. You can request account support through the contact address shown on this site."],
+    "termsTitle": "Terms of Service",
+    "termsIntro": "These terms govern use of Learning Guide courses, learning tools and AI Tutor features.",
+    "termsBody": ["Course access is determined by the subscription and entitlement returned by the service. Public first lessons remain available only where the course has enabled them. Subscription renewal, cancellation and refund conditions are shown before checkout and in Stripe's hosted payment flow.", "AI Tutor responses support learning and should not be treated as professional, legal, medical or financial advice."],
+    "cookiesTitle": "Cookie Settings",
+    "cookiesIntro": "Essential cookies keep sign-in and security functions working. Optional analytics cookies are off until you choose otherwise.",
+    "acceptOptional": "Allow optional cookies",
+    "rejectOptional": "Use essential cookies only",
+    "saved": "Cookie preference saved."
   },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",

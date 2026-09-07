@@ -48,6 +48,31 @@ export async function createHostedCheckout(input: {
   return { id: session.id, url: session.url };
 }
 
+export async function createHostedUpgradeCheckout(input: {
+  origin: string;
+  locale: "en-GB" | "zh-CN";
+  userEmail: string;
+  orderId: string;
+  userId: string;
+  quoteId: string;
+  planId: string;
+  sourceSubscriptionId: string;
+  planName: string;
+  amountMinor: number;
+  currency: string;
+}) {
+  const session = await getStripe().checkout.sessions.create({
+    mode: "payment",
+    customer_email: input.userEmail,
+    line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName } } }],
+    metadata: { kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
+    success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
+    cancel_url: `${input.origin}/${input.locale}/pricing`
+  });
+  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+  return { id: session.id, url: session.url };
+}
+
 export async function createHostedTrialCheckout(input: {
   origin: string;
   locale: "en-GB" | "zh-CN";

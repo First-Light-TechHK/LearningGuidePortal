@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
-import { attachStripeCheckoutSession, createPendingDemoOrder, createPendingStripeOrder } from "@/services/productStore";
-import { createHostedCheckout } from "@/services/stripeClient";
+import { attachStripeCheckoutSession, completeDemoUpgradeOrder, completeStripeUpgradeOrder, createPendingDemoOrder, createPendingDemoUpgradeOrderFromQuote, createPendingStripeOrder, createPendingStripeUpgradeOrderFromQuote, getQuoteForUser } from "@/services/productStore";
+import { createHostedCheckout, createHostedUpgradeCheckout } from "@/services/stripeClient";
 import { isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "@/services/runtimeConfig";
 
 export async function POST(request: Request) {
@@ -14,6 +14,23 @@ export async function POST(request: Request) {
     const body = await request.json() as { quoteId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
     if (!body.consents?.renewal || !body.consents.terms || !body.consents.refund) return NextResponse.json({ ok: false, error: "All subscription confirmations are required." }, { status: 400 });
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
+    const quoted = await getQuoteForUser(user.id, body.quoteId || "");
+    if (!quoted) return NextResponse.json({ ok: false, error: "Quote not found or expired." }, { status: 400 });
+    if (quoted.quote.kind === "upgrade") {
+      const pending = mode === "demo"
+        ? await createPendingDemoUpgradeOrderFromQuote(user.id, quoted.quote.id)
+        : await createPendingStripeUpgradeOrderFromQuote(user.id, quoted.quote.id);
+      if (quoted.quote.amountMinor === 0) {
+        const result = mode === "demo" ? await completeDemoUpgradeOrder(user.id, pending.order.id) : await completeStripeUpgradeOrder(user.id, pending.order.id);
+        return NextResponse.json({ ok: true, order: result.order, checkoutUrl: `/${locale}/account/my-learning` });
+      }
+      if (mode === "demo") return NextResponse.json({ ok: true, order: pending.order, checkoutUrl: `/${locale}/portal/payment/checkout?orderId=${encodeURIComponent(pending.order.id)}` });
+      const sourceSubscriptionId = quoted.quote.sourceSubscriptionId;
+      if (!sourceSubscriptionId) return NextResponse.json({ ok: false, error: "Upgrade source subscription is missing." }, { status: 400 });
+      const session = await createHostedUpgradeCheckout({ origin: publicAppOrigin(request), locale, userEmail: user.email, orderId: pending.order.id, userId: user.id, quoteId: pending.order.quoteId, planId: pending.plan.id, sourceSubscriptionId, planName: pending.plan.name, amountMinor: pending.order.amountMinor, currency: pending.plan.currency });
+      await attachStripeCheckoutSession(user.id, pending.order.id, session.id);
+      return NextResponse.json({ ok: true, order: { ...pending.order, stripeCheckoutSessionId: session.id }, checkoutUrl: session.url });
+    }
     if (mode === "demo") {
       const result = await createPendingDemoOrder(user.id, body.quoteId || "");
       return NextResponse.json({ ok: true, order: result.order, checkoutUrl: `/${locale}/portal/payment/checkout?orderId=${encodeURIComponent(result.order.id)}` });

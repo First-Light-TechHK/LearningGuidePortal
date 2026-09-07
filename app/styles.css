@@ -1939,6 +1939,39 @@ input:focus {
   }
 }
 
+/* Portal states added for subscription, help and legal flows. */
+.portal-banner-controls { position: absolute; z-index: 2; left: max(32px, 6vw); right: max(32px, 6vw); bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.portal-banner-arrow { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgba(255, 255, 255, .5); border-radius: 50%; background: rgba(16, 42, 77, .54); color: #fff; cursor: pointer; }
+.portal-banner-arrow:hover { background: rgba(16, 42, 77, .82); }
+.portal-banner-dots { position: static; }
+.course-access-card { display: grid; gap: 10px; margin-top: 16px; border: 1px solid #cfe3d7; border-radius: 8px; padding: 20px; background: #f6fbf8; }
+.course-access-card strong { color: #163a5f; font-size: 18px; }
+.course-access-card span { color: #647588; font-size: 13px; }
+.help-category-list { display: grid; gap: 28px; margin-top: 28px; }
+.help-category { display: grid; gap: 10px; }
+.help-category h2 { margin: 0; color: #163a5f; font-size: 20px; }
+.legal-page { display: grid; gap: 16px; max-width: 860px; }
+.legal-page h1, .legal-page p { margin: 0; }
+.legal-page .portal-lead { margin-bottom: 8px; }
+.cookie-consent { position: fixed; z-index: 30; right: 22px; bottom: 22px; left: 22px; display: flex; align-items: center; justify-content: space-between; gap: 24px; max-width: 980px; margin-inline: auto; border: 1px solid #cfd9e2; border-radius: 10px; padding: 18px 20px; background: #fff; box-shadow: 0 18px 44px rgba(22, 58, 95, .18); }
+.cookie-consent > div:first-child { display: grid; gap: 6px; }
+.cookie-consent p { margin: 0; color: #647588; font-size: 13px; line-height: 1.45; }
+.cookie-consent a { color: #165d9b; font-size: 13px; }
+.cookie-consent-actions, .cookie-policy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cookie-policy-controls { display: grid; gap: 12px; margin-top: 8px; }
+.cookie-policy-saved { margin: 0; color: #157347; font-size: 13px; }
+.pricing-upgrade-panel { display: grid; gap: 10px; margin: 28px 0 34px; border: 1px solid #cadcf0; border-radius: 8px; padding: 22px; background: #f6f9fd; }
+.pricing-upgrade-panel h2, .pricing-upgrade-panel p { margin: 0; }
+.pricing-upgrade-panel h2 { color: #163a5f; font-size: 22px; }
+.pricing-upgrade-panel p:not(.portal-eyebrow):not(.portal-form-error) { max-width: 760px; color: #526578; line-height: 1.5; }
+
+@media (max-width: 760px) {
+  .portal-banner-controls { left: 20px; right: 20px; }
+  .cookie-consent { align-items: stretch; flex-direction: column; right: 12px; bottom: 12px; left: 12px; }
+  .cookie-consent-actions { justify-content: stretch; }
+  .cookie-consent-actions .portal-button { flex: 1; }
+}
+
 /* Learning Guide public interface: aligned to the supplied Figma reference */
 :root {
   --lg-blue: #2161f5;
@@ -2210,6 +2243,11 @@ body { background: #fff; color: var(--lg-ink); }
 .subscription-consents { display: grid; gap: .85rem; margin: 1.5rem 0; }
 .subscription-consents label { display: flex; gap: .7rem; align-items: flex-start; color: #293852; line-height: 1.5; }
 .subscription-consents input { margin-top: .25rem; }
+
+.portal-banner-controls { position: absolute; z-index: 2; left: max(32px, 6vw); right: max(32px, 6vw); bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.portal-banner-controls .portal-banner-dots { position: static; right: auto; bottom: auto; }
+.portal-banner-arrow { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgba(255, 255, 255, .5); border-radius: 50%; padding: 0; background: rgba(16, 42, 77, .54); color: #fff; cursor: pointer; }
+.portal-banner-arrow:hover { background: rgba(16, 42, 77, .82); }
 
 @media (max-width: 900px) {
   .portal-header { padding: 0 20px; }

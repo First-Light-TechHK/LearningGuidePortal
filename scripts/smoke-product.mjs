@@ -100,7 +100,29 @@ assert(subscriptionId, "purchase subscription was not created");
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "cancel", reasonCode: "too_expensive" }) });
 assert(result.status === 200 && result.body.subscription?.state === "cancel_at_period_end", "subscription cancellation failed");
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "resume" }) });
-assert(result.status === 400, "subscription resume must be unavailable after cancellation");
+assert(result.status === 200 && result.body.subscription?.state === "active", "subscription resume failed");
+
+// A paid category subscription can be upgraded to the matching PC Everything
+// term. The quote owns the daily credit and the checkout replaces the scope.
+result = await request("/api/purchase/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "european-humanities-pc-6", kind: "purchase" }) });
+assert(result.status === 200 && result.body.quote?.kind === "purchase", "category purchase quote failed");
+result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB", consents }) });
+assert(result.status === 200 && result.body.order?.status === "pending", "category purchase did not create a pending order");
+const categoryOrderId = result.body.order.id;
+result = await request("/api/purchase/demo/confirm", { method: "POST", headers: json, body: JSON.stringify({ orderId: categoryOrderId, action: "complete" }) });
+assert(result.status === 200 && result.body.order?.status === "paid", "category purchase completion failed");
+result = await request("/api/my-learning");
+const categorySubscriptionId = result.body.overview.subscriptions.find((subscription) => subscription.scope === "category" && subscription.state === "active")?.id;
+assert(categorySubscriptionId, "category subscription was not created");
+result = await request("/api/subscription/quote", { method: "POST", headers: json, body: JSON.stringify({ kind: "upgrade", subscriptionId: categorySubscriptionId }) });
+assert(result.status === 200 && result.body.quote?.kind === "upgrade" && typeof result.body.quote?.creditMinor === "number", "upgrade quote did not calculate credit");
+result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB", consents }) });
+assert(result.status === 200 && result.body.order?.kind === "upgrade", "upgrade checkout did not create an upgrade order");
+const upgradeOrderId = result.body.order.id;
+result = await request("/api/purchase/demo/confirm", { method: "POST", headers: json, body: JSON.stringify({ orderId: upgradeOrderId, action: "complete" }) });
+assert(result.status === 200 && result.body.order?.status === "paid", "upgrade completion failed");
+result = await request("/api/my-learning");
+assert(result.status === 200 && result.body.overview.entitlements.some((entitlement) => entitlement.scope === "everything"), "upgrade did not replace category access with PC Everything access");
 
 result = await request("/api/study/events", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", lessonId: "pleasure-and-the-good-life", event: "complete", seconds: 1500, clientEventId: `complete-${stamp}` }) });
 assert(result.status === 200 && result.body.record.progress === 56, "course progress calculation failed");
@@ -111,7 +133,7 @@ result = await request("/api/my-learning/notifications/read", { method: "POST", 
 assert(result.status === 200 && result.body.notification.readAt, "notification read failed");
 result = await request("/api/my-learning/notifications/read", { method: "POST", headers: json, body: JSON.stringify({ notificationId: notification.id, read: false }) });
 assert(result.status === 200 && result.body.notification.readAt === null, "notification unread failed");
-for (const path of ["/en-GB/account/my-learning", "/en-GB/account/my-learning/subscription", "/en-GB/account/my-learning/notifications", "/en-GB/account/my-learning/settings", "/en-GB/account/my-learning/help", "/en-GB/account/learn/epicureanism"]) {
+for (const path of ["/en-GB/account/my-learning", "/en-GB/account/my-learning/subscription", "/en-GB/account/my-learning/notifications", "/en-GB/account/my-learning/settings", "/en-GB/account/my-learning/help", "/en-GB/account/learn/epicureanism", "/en-GB/privacy-policy", "/en-GB/terms-of-service", "/en-GB/cookie-policy"]) {
   assert((await request(path)).status === 200, `${path} did not return 200`);
 }
 const avatarForm = new FormData();

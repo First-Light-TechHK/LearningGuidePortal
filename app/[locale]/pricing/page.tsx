@@ -5,10 +5,11 @@ import { PurchasePanel } from "@/components/portal/PurchasePanel";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { currentProductUser } from "@/services/productAuth";
+import { UpgradePanel } from "@/components/portal/UpgradePanel";
 
-export default async function PricingPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ courseId?: string }> }) {
+export default async function PricingPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ courseId?: string; upgradeFrom?: string }> }) {
   const locale = localeFrom((await params).locale);
-  const requestedCourseId = (await searchParams).courseId;
+  const { courseId: requestedCourseId, upgradeFrom } = await searchParams;
   const courses = await listPublishedCourses();
   const requestedCourse = requestedCourseId ? await getProductCourse(requestedCourseId) : null;
   const orderedCourses = requestedCourse && requestedCourse.status === "published" ? [requestedCourse, ...courses.filter((course) => course.id !== requestedCourse.id)] : courses;
@@ -23,7 +24,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
   const learningCopy = messages.learning;
   const user = await currentProductUser();
 
-  return <main className="portal-page"><PortalHeader locale={locale} active="pricing" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} /><section className="portal-section portal-section-first"><p className="portal-eyebrow">{copy.pricingEyebrow}</p><h1>{copy.pricingTitle}</h1><p className="portal-lead">{copy.pricingDescription}</p><div className="pricing-list">
+  return <main className="portal-page"><PortalHeader locale={locale} active="pricing" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} /><section className="portal-section portal-section-first"><p className="portal-eyebrow">{copy.pricingEyebrow}</p><h1>{copy.pricingTitle}</h1><p className="portal-lead">{copy.pricingDescription}</p>{upgradeFrom && user ? <UpgradePanel locale={locale} subscriptionId={upgradeFrom} /> : null}<div className="pricing-list">
     {coursePlans.length ? orderedCourses.map((course) => { const plans = coursePlans.filter((plan) => (plan.scopeId || plan.courseId) === course.id); return <article className={`pricing-course ${course.id === requestedCourse?.id ? "selected" : ""}`} key={course.id}><p className="portal-course-category">PC Course · {course.category || "European Humanities"}</p><h2>{course.title}</h2><p>{course.description}</p><PurchasePanel locale={locale} courseId={course.id} plans={plans} copy={{ startTrial: learningCopy.startTrial, buy: learningCopy.buy, choosePlan: learningCopy.choosePlan }} /></article>; }) : null}
     {categoryIds.map((categoryId) => <article className="pricing-course" key={`category-${categoryId}`}><p className="portal-course-category">PC Category</p><h2>{categoryId}</h2><p>{locale === "en-GB" ? `Access published courses in the ${categoryId} category, including courses added during the active term.` : `访问“${categoryId}”分类下已发布的课程，包括周期内新增课程。`}</p><PurchasePanel locale={locale} courseId="*" plans={categoryPlans.filter((plan) => (plan.scopeId || plan.category) === categoryId)} copy={{ startTrial: learningCopy.startTrial, buy: learningCopy.buy, choosePlan: learningCopy.choosePlan }} /></article>)}
     {everythingPcPlans.length ? <article className="pricing-course pricing-everything"><p className="portal-course-category">PC Everything</p><h2>Everything</h2><p>{locale === "en-GB" ? "Access all published courses in the Learning Guide catalogue, including courses added during the active term." : "访问 Learning Guide 中所有已发布课程，包括周期内新增课程。"}</p><PurchasePanel locale={locale} courseId="*" plans={everythingPcPlans} allowTrial={false} copy={{ startTrial: learningCopy.startTrial, buy: learningCopy.buy, choosePlan: learningCopy.choosePlan }} /></article> : null}

@@ -66,6 +66,7 @@
     "footerContact": "联系我们",
     "footerPrivacy": "隐私政策",
     "footerTerms": "服务条款",
+    "footerCookies": "Cookie 设置",
     "noCourses": "暂时没有已发布课程。",
     "courseDetail": "Course Detail",
     "lessons": "课程内容",
@@ -244,12 +245,38 @@
   "helpPage": {
     "title": "帮助中心 / 常见问题",
     "contact": "如需账号或支付支持，请联系 Learning Guide 运营人员。",
+    "categories": [
+      { "title": "账号与访问", "items": [
+        { "question": "如何验证账号？", "answer": "打开发送到邮箱的激活链接。使用邮箱和密码登录前必须完成邮箱验证。" },
+        { "question": "如何继续学习课程？", "answer": "打开 My Learning，选择课程和课程内容，完成学习后点击“标记课程完成”。进度会保存到你的账号。" }
+      ] },
+      { "title": "支付与订阅", "items": [
+        { "question": "课程试用如何工作？", "answer": "只有在选择计划、确认支付方式和同意自动续费后，试用才会开始。试用期间取消会立即移除完整课程访问权限；在原结束时间前恢复不会延长试用期。" },
+        { "question": "银行卡支付后会发生什么？", "answer": "Stripe 会通过服务器 webhook 确认支付，确认后系统才会开通付费访问。确认到达前，支付页面可能短暂显示处理中。" }
+      ] },
+      { "title": "学习与 AI Tutor", "items": [
+        { "question": "AI Tutor 如何使用课程内容？", "answer": "Tutor 会收到当前课程、当前课程内容和已发布的课程知识包。Lecture 和 Socratic 是当前对话的回答方式。" }
+      ] }
+    ],
     "items": [
       { "question": "课程试用如何工作？", "answer": "本地演示模式为所选课程提供三天访问权限。取消试用会立即移除访问权限；在原结束时间前恢复不会延长试用期。" },
       { "question": "如何继续学习课程？", "answer": "打开 My Learning，选择课程和课程内容，完成学习后点击“标记课程完成”。进度会保存到你的账号。" },
       { "question": "AI Tutor 如何使用课程内容？", "answer": "Tutor 会收到当前课程、当前课程内容和 Epicureanism knowledge pack。Lecture 和 Socratic 是当前对话的回答方式。" },
       { "question": "银行卡支付后会发生什么？", "answer": "Stripe 会通过服务器 webhook 确认支付，确认后系统才会开通付费访问。确认到达前，支付页面可能短暂显示处理中。" }
     ]
+  },
+  "legal": {
+    "privacyTitle": "隐私政策",
+    "privacyIntro": "Learning Guide 使用账号、课程进度和支付状态信息来提供服务。",
+    "privacyBody": ["我们保存用于账号认证的信息，并通过用户 ID 关联学习进度、订阅和访问权限。Stripe 在其托管页面处理银行卡信息和支付；Learning Guide 不保存完整卡号或 CVC。", "我们使用登录所需的必要 Cookie，并在你选择后保存非必要分析 Cookie 的偏好。你可以通过网站显示的联系地址请求账号支持。"],
+    "termsTitle": "服务条款",
+    "termsIntro": "这些条款适用于 Learning Guide 课程、学习工具和 AI Tutor 功能。",
+    "termsBody": ["课程访问权限由服务返回的订阅和 entitlement 决定。只有课程启用时，公开首课才会开放。续费、取消和退款条件会在确认页和 Stripe 托管支付流程中显示。", "AI Tutor 用于学习支持，不应被当作专业、法律、医疗或财务建议。"],
+    "cookiesTitle": "Cookie 设置",
+    "cookiesIntro": "必要 Cookie 用于保持登录和安全功能。可选分析 Cookie 在你主动选择前保持关闭。",
+    "acceptOptional": "允许可选 Cookie",
+    "rejectOptional": "仅使用必要 Cookie",
+    "saved": "Cookie 偏好已保存。"
   },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",

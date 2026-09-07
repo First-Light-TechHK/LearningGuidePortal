@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Quote = { id: string; kind?: "purchase" | "trial"; amountMinor: number; currency: string };
+type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number };
 type Plan = { id: string; name: string; termMonths: number; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
 
 type Copy = {
