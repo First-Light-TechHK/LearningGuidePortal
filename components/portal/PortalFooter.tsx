@@ -8,8 +8,8 @@ export function PortalFooter({ locale }: { locale: Locale }) {
     <footer className="portal-footer">
       <div className="portal-footer-grid">
         <div><h2>{getMessages(locale).brand}</h2><p>{copy.footerAbout}</p></div>
-        <div><h2>{copy.footerLinks}</h2><Link href={`/${locale}/portal/courses`}>{copy.navigation.courses}</Link><Link href={`/${locale}/portal/faq`}>{copy.navigation.studyGroups}</Link><Link href={`/${locale}/portal/faq`}>{copy.navigation.inPerson}</Link></div>
-        <div><h2>{copy.footerSupport}</h2><Link href={`/${locale}/portal/faq`}>{copy.footerHelp}</Link><Link href={`/${locale}/portal/faq`}>{copy.footerContact}</Link><Link href={`/${locale}/portal/faq`}>{copy.footerPrivacy}</Link><Link href={`/${locale}/portal/faq`}>{copy.footerTerms}</Link></div>
+        <div><h2>{copy.footerLinks}</h2><Link href={`/${locale}/portal/courses`}>{copy.navigation.courses}</Link><Link href={`/${locale}/portal/faq`}>{copy.navigation.studyGroups}</Link><Link href={`/${locale}/pricing`}>{copy.navigation.pricing}</Link></div>
+        <div><h2>{copy.footerSupport}</h2><Link href={`/${locale}/help`}>{copy.footerHelp}</Link><Link href={`/${locale}/contact`}>{copy.footerContact}</Link><Link href={`/${locale}/portal/faq`}>{copy.footerPrivacy}</Link><Link href={`/${locale}/portal/faq`}>{copy.footerTerms}</Link></div>
       </div>
       <p className="portal-footer-copyright">© 2026 Learning Guide. All rights reserved.</p>
     </footer>

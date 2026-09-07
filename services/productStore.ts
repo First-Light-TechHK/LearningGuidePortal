@@ -22,6 +22,10 @@ export type ProductUser = {
   emailVerifiedAt: string | null;
   avatarPath?: string | null;
   avatarContentType?: string | null;
+  country?: string | null;
+  ageRange?: string | null;
+  education?: string | null;
+  areasOfInterest?: string[];
   createdAt: string;
 };
 
@@ -39,6 +43,8 @@ export type ProductCourse = {
   slug: string;
   title: string;
   description: string;
+  category?: "Chinese Humanities" | "European Humanities" | "Science";
+  thumbnailPath?: string | null;
   status: "draft" | "published";
   sections: ProductSection[];
   createdAt: string;
@@ -52,6 +58,8 @@ export type ProductPlan = {
   device: "pc" | "mobile";
   amountMinor: number;
   currency: "usd";
+  scope?: "category" | "everything" | "course";
+  category?: string | null;
 };
 export type ProductQuote = {
   id: string;
@@ -96,6 +104,8 @@ export type ProductSubscription = {
   graceEndsAt?: string | null;
   stripeSubscriptionId?: string | null;
   stripeCustomerId?: string | null;
+  cancelReasonCode?: "low_usage" | "too_expensive" | "content" | "website" | "other" | null;
+  cancelReasonText?: string | null;
 };
 export type ProductEntitlement = {
   id: string;
@@ -202,6 +212,8 @@ function defaultCourse(): ProductCourse {
     slug: "epicureanism",
     title: "Epicureanism",
     description: "A guided introduction to pleasure, desire, friendship and the Epicurean argument about death.",
+    category: "European Humanities",
+    thumbnailPath: null,
     status: "published",
     createdAt: time,
     updatedAt: time,
@@ -245,10 +257,12 @@ function defaultData(): ProductData {
     sessions: [],
     courses: [defaultCourse()],
     plans: [
-      { id: "epicureanism-pc-6", courseId: "epicureanism", name: "Epicureanism · 6 months", termMonths: 6, device: "pc", amountMinor: 4900, currency: "usd" },
-      { id: "epicureanism-pc-12", courseId: "epicureanism", name: "Epicureanism · 12 months", termMonths: 12, device: "pc", amountMinor: 7900, currency: "usd" },
-      { id: "epicureanism-mobile-6", courseId: "epicureanism", name: "Epicureanism · 6 months · Mobile", termMonths: 6, device: "mobile", amountMinor: 2900, currency: "usd" },
-      { id: "epicureanism-mobile-12", courseId: "epicureanism", name: "Epicureanism · 12 months · Mobile", termMonths: 12, device: "mobile", amountMinor: 4900, currency: "usd" },
+      { id: "epicureanism-pc-6", courseId: "epicureanism", name: "Epicureanism · 6 months", termMonths: 6, device: "pc", amountMinor: 4900, currency: "usd", scope: "category", category: "European Humanities" },
+      { id: "epicureanism-pc-12", courseId: "epicureanism", name: "Epicureanism · 12 months", termMonths: 12, device: "pc", amountMinor: 7900, currency: "usd", scope: "category", category: "European Humanities" },
+      { id: "epicureanism-mobile-6", courseId: "epicureanism", name: "Epicureanism · 6 months · Mobile", termMonths: 6, device: "mobile", amountMinor: 2900, currency: "usd", scope: "course", category: "European Humanities" },
+      { id: "epicureanism-mobile-12", courseId: "epicureanism", name: "Epicureanism · 12 months · Mobile", termMonths: 12, device: "mobile", amountMinor: 4900, currency: "usd", scope: "course", category: "European Humanities" },
+      { id: "everything-pc-6", courseId: "*", name: "Everything · 6 months", termMonths: 6, device: "pc", amountMinor: 9900, currency: "usd", scope: "everything", category: null },
+      { id: "everything-pc-12", courseId: "*", name: "Everything · 12 months", termMonths: 12, device: "pc", amountMinor: 15900, currency: "usd", scope: "everything", category: null },
     ],
     quotes: [],
     orders: [],
@@ -295,6 +309,11 @@ export async function ensureProductData() {
     if (!current.paymentSettings) current.paymentSettings = defaultPaymentSettings();
     if (!current.orderActivities) current.orderActivities = [];
     if (!current.accounts) current.accounts = [];
+    current.users.forEach((user) => { user.areasOfInterest ||= []; });
+    current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
+    current.plans.forEach((plan) => { plan.scope ||= plan.id.endsWith("-pc-6") || plan.id.endsWith("-pc-12") ? "category" : plan.courseId === "*" ? "everything" : "course"; plan.category ??= plan.scope === "category" ? "European Humanities" : null; });
+    if (!current.plans.some((plan) => plan.id === "everything-pc-6")) current.plans.push({ id: "everything-pc-6", courseId: "*", name: "Everything · 6 months", termMonths: 6, device: "pc", amountMinor: 9900, currency: "usd", scope: "everything", category: null });
+    if (!current.plans.some((plan) => plan.id === "everything-pc-12")) current.plans.push({ id: "everything-pc-12", courseId: "*", name: "Everything · 12 months", termMonths: 12, device: "pc", amountMinor: 15900, currency: "usd", scope: "everything", category: null });
     return current;
   }
   const seeded = defaultData();
@@ -318,7 +337,7 @@ function hashToken(token: string) {
 }
 
 function validateNickname(value: string) {
-  if (!/^[A-Za-z0-9 ]{1,15}$/.test(value)) throw new Error("Name must be 1-15 English letters, numbers or spaces.");
+  if (!/^[A-Za-z0-9 ]{2,30}$/.test(value)) throw new Error("Name must be 2-30 English letters, numbers or spaces.");
   return value;
 }
 
@@ -338,7 +357,7 @@ async function passwordMatches(password: string, stored: string | null) {
 }
 
 export function publicUser(user: ProductUser) {
-  return { id: user.id, email: user.email, nickname: user.nickname, locale: user.locale, role: user.role || "student", status: user.status, emailVerifiedAt: user.emailVerifiedAt };
+  return { id: user.id, email: user.email, nickname: user.nickname, locale: user.locale, role: user.role || "student", status: user.status, emailVerifiedAt: user.emailVerifiedAt, country: user.country || null, ageRange: user.ageRange || null, education: user.education || null, areasOfInterest: user.areasOfInterest || [] };
 }
 
 export function isOperator(user: ProductUser) {
@@ -396,7 +415,7 @@ export async function getOrCreateSocialUser(input: { provider: "google" | "wecha
       return user;
     }
     if (data.users.some((item) => item.email === email)) throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
-    const nickname = input.nickname && /^[A-Za-z0-9 ]{1,15}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
+    const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
     const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: now(), createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
@@ -478,12 +497,16 @@ export async function resetPassword(rawToken: string, newPassword: string) {
   });
 }
 
-export async function updateUserProfile(input: { userId: string; nickname: string; locale: Locale; currentPassword?: string; newPassword?: string }) {
+export async function updateUserProfile(input: { userId: string; nickname: string; locale: Locale; country?: string | null; ageRange?: string | null; education?: string | null; areasOfInterest?: string[]; currentPassword?: string; newPassword?: string }) {
   return editData(async (data) => {
     const user = data.users.find((item) => item.id === input.userId);
     if (!user) throw new Error("User not found.");
     user.nickname = validateNickname(input.nickname.trim());
     user.locale = input.locale;
+    user.country = input.country?.trim() || null;
+    user.ageRange = input.ageRange?.trim() || null;
+    user.education = input.education?.trim() || null;
+    user.areasOfInterest = [...new Set((input.areasOfInterest || []).map((item) => item.trim()).filter(Boolean))].slice(0, 5);
     if (input.newPassword !== undefined && input.newPassword !== "") {
       if (input.newPassword.length < 8) throw new Error("New password must contain at least 8 characters.");
       if (!input.currentPassword || !(await passwordMatches(input.currentPassword, user.passwordHash))) throw new Error("Current password is incorrect.");
@@ -576,7 +599,7 @@ export function publicFirstLesson(course: ProductCourse) {
 
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
-  return data.plans.filter((plan) => !courseId || plan.courseId === courseId);
+  return data.plans.filter((plan) => plan.device === "pc" && (courseId ? plan.courseId === courseId : ["category", "everything"].includes(plan.scope || "course")));
 }
 
 export async function getPaymentSettings() {
@@ -597,7 +620,7 @@ export async function updatePaymentSettings(input: { name: string; publishableKe
 }
 
 function activeEntitlement(data: ProductData, userId: string, courseId: string) {
-  const entitlement = data.entitlements.find((item) => item.userId === userId && item.courseId === courseId && item.state === "active");
+  const entitlement = data.entitlements.find((item) => item.userId === userId && (item.courseId === courseId || item.courseId === "*") && item.state === "active");
   if (!entitlement) return null;
   if (new Date(entitlement.validTo) <= new Date()) {
     entitlement.state = "expired";
@@ -975,11 +998,13 @@ export async function claimStripeEvent(eventId: string, eventType: string) {
   });
 }
 
-export async function cancelSubscription(userId: string, subscriptionId: string) {
+export async function cancelSubscription(userId: string, subscriptionId: string, reason?: { code?: ProductSubscription["cancelReasonCode"]; text?: string }) {
   return editData((data) => {
     const subscription = data.subscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
     if (!subscription) throw new Error("Subscription not found.");
     if (new Date(subscription.validTo) <= new Date()) { subscription.state = "expired"; throw new Error("This subscription has expired."); }
+    subscription.cancelReasonCode = reason?.code || null;
+    subscription.cancelReasonText = reason?.code === "other" ? (reason.text || "").trim().slice(0, 500) : null;
     if (subscription.source === "trial") {
       subscription.state = "trial_canceled";
       const entitlement = data.entitlements.find((item) => item.userId === userId && item.courseId === subscription.courseId && item.source === "trial" && item.validTo === subscription.validTo);
@@ -1036,6 +1061,9 @@ export async function getLearningOverview(userId: string) {
         currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
+        courseCategory: course?.category || "European Humanities",
+        totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
+        courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,
         progress: record?.progress || 0,
         completedAt: record?.completedAt || null,

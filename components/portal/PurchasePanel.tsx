@@ -4,7 +4,7 @@ import { useState } from "react";
 
 type Plan = { id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string };
 
-export function PurchasePanel({ locale, courseId, plans, copy }: { locale: "en-GB" | "zh-CN"; courseId: string; plans: Plan[]; copy: { startTrial: string; buy: string; choosePlan: string } }) {
+export function PurchasePanel({ locale, courseId, plans, allowTrial = true, copy }: { locale: "en-GB" | "zh-CN"; courseId: string; plans: Plan[]; allowTrial?: boolean; copy: { startTrial: string; buy: string; choosePlan: string } }) {
   const [selectedPlan, setSelectedPlan] = useState(plans[0]?.id || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,7 @@ export function PurchasePanel({ locale, courseId, plans, copy }: { locale: "en-G
       </div>
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
       {message ? <p className="portal-success">{message}</p> : null}
-      <div className="purchase-actions"><button className="portal-button portal-button-secondary" disabled={busy} onClick={startTrial}>{copy.startTrial}</button><button className="portal-button portal-button-primary" disabled={busy || !selectedPlan} onClick={purchase}>{busy ? "..." : copy.buy}</button></div>
+      <div className="purchase-actions">{allowTrial ? <button className="portal-button portal-button-secondary" disabled={busy} onClick={startTrial}>{copy.startTrial}</button> : null}<button className="portal-button portal-button-primary" disabled={busy || !selectedPlan} onClick={purchase}>{busy ? "..." : copy.buy}</button></div>
     </div>
   );
 }

@@ -22,7 +22,7 @@ const email = `smoke-${stamp}@example.com`;
 const json = { "content-type": "application/json" };
 let result;
 
-for (const path of ["/api/health", "/api/health/config", "/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/faq"]) {
+for (const path of ["/api/health", "/api/health/config", "/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/faq", "/en-GB/help", "/zh-CN/help", "/en-GB/contact", "/zh-CN/contact", "/en-GB/pricing"]) {
   assert((await request(path)).status === 200, `${path} did not return 200`);
 }
 result = await request("/api/health/config");
@@ -83,10 +83,10 @@ result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.entitlements[0]?.source === "purchase", "purchase did not replace trial access");
 const subscriptionId = result.body.overview.subscriptions.find((subscription) => subscription.source === "purchase")?.id;
 assert(subscriptionId, "purchase subscription was not created");
-result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "cancel" }) });
+result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "cancel", reasonCode: "too_expensive" }) });
 assert(result.status === 200 && result.body.subscription?.state === "cancel_at_period_end", "subscription cancellation failed");
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "resume" }) });
-assert(result.status === 200 && result.body.subscription?.state === "active", "subscription resume failed");
+assert(result.status === 400, "subscription resume must be unavailable after cancellation");
 
 result = await request("/api/study/events", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", lessonId: "pleasure-and-the-good-life", event: "complete", seconds: 1500, clientEventId: `complete-${stamp}` }) });
 assert(result.status === 200 && result.body.record.progress === 56, "course progress calculation failed");
