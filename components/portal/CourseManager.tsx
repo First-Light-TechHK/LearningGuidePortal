@@ -3,13 +3,14 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Lesson = { id: string; title: string; body: string; durationMinutes: number; isPublic: boolean };
-type Course = { id: string; title: string; description: string; status: "draft" | "published"; slug: string; sections: Array<{ id: string; title: string; lessons: Lesson[] }> };
+type Course = { id: string; title: string; description: string; category?: "Chinese Humanities" | "European Humanities" | "Science"; status: "draft" | "published"; slug: string; sections: Array<{ id: string; title: string; lessons: Lesson[] }> };
 
 type Copy = {
   title: string;
   courses: string;
   courseTitle: string;
   description: string;
+  category: string;
   create: string;
   lessons: string;
   lessonTitle: string;
@@ -24,10 +25,11 @@ type Copy = {
   unpublish: string;
 };
 
-export function CourseManager({ copy }: { copy: Copy }) {
+export function CourseManager({ copy, locale }: { copy: Copy; locale: "en-GB" | "zh-CN" }) {
   const [courses, setCourses] = useState<Course[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<"Chinese Humanities" | "European Humanities" | "Science">("European Humanities");
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [lessonTitle, setLessonTitle] = useState("");
   const [lessonBody, setLessonBody] = useState("");
@@ -51,11 +53,12 @@ export function CourseManager({ copy }: { copy: Copy }) {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/backoffice/courses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, description }) });
+      const response = await fetch("/api/backoffice/courses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, description, category }) });
       const data = await response.json() as { error?: string };
       if (!response.ok) throw new Error(data.error || "Create failed.");
       setTitle("");
       setDescription("");
+      setCategory("European Humanities");
       await load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Create failed.");
@@ -108,6 +111,7 @@ export function CourseManager({ copy }: { copy: Copy }) {
       <form className="backoffice-form" onSubmit={create}>
         <label>{copy.courseTitle}<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
         <label>{copy.description}<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} /></label>
+        <label>{copy.category}<select value={category} onChange={(event) => setCategory(event.target.value as typeof category)}><option value="Chinese Humanities">{locale === "zh-CN" ? "中国人文" : "Chinese Humanities"}</option><option value="European Humanities">{locale === "zh-CN" ? "欧洲人文" : "European Humanities"}</option><option value="Science">{locale === "zh-CN" ? "科学" : "Science"}</option></select></label>
         <button className="portal-button portal-button-primary" disabled={busy}>{copy.create}</button>
       </form>
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
@@ -117,7 +121,7 @@ export function CourseManager({ copy }: { copy: Copy }) {
           return <article className={`backoffice-course-row ${selectedCourseId === course.id ? "selected" : ""}`} key={course.id}>
             <div>
               <strong>{course.title}</strong>
-              <span>{course.status === "published" ? copy.published : copy.draft} · {lessons.length} {copy.lessons.toLowerCase()}</span>
+              <span>{course.category || "European Humanities"} · {course.status === "published" ? copy.published : copy.draft} · {lessons.length} {copy.lessons.toLowerCase()}</span>
               {lessons.length ? <ul className="backoffice-lesson-list">{lessons.map((lesson) => <li key={lesson.id}>{lesson.title}{lesson.isPublic ? ` · ${copy.publicLesson}` : ""}</li>)}</ul> : <span>{copy.noLessons}</span>}
             </div>
             <div className="backoffice-row-actions">

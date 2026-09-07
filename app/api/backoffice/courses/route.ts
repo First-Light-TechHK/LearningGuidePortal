@@ -15,8 +15,8 @@ export async function POST(request: Request) {
   const user = await currentProductUser();
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   try {
-    const body = await request.json() as { title?: string; description?: string };
-    return NextResponse.json({ ok: true, course: await createCourseForOperator({ title: body.title || "", description: body.description }) });
+    const body = await request.json() as { title?: string; description?: string; category?: "Chinese Humanities" | "European Humanities" | "Science" };
+    return NextResponse.json({ ok: true, course: await createCourseForOperator({ title: body.title || "", description: body.description, category: body.category }) });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Course creation failed." }, { status: 400 });
   }

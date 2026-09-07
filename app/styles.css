@@ -2202,6 +2202,14 @@ body { background: #fff; color: var(--lg-ink); }
 .public-placeholder-page { min-height: 420px; }
 .public-placeholder-page h1 { margin: 0; color: var(--lg-ink); }
 .public-placeholder-page > p:last-child { margin-top: 18px; color: var(--lg-muted); font-size: 16px; }
+.subscription-confirmation { max-width: 860px; margin-inline: auto; }
+.subscription-confirmation-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; margin: 2rem 0; border: 1px solid #d9e0ea; background: #d9e0ea; }
+.subscription-confirmation-summary > div { display: grid; gap: .45rem; min-height: 100px; padding: 1rem; background: #fff; }
+.subscription-confirmation-summary span { color: #637187; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
+.subscription-confirmation-summary strong { color: #17243a; font-size: 1rem; }
+.subscription-consents { display: grid; gap: .85rem; margin: 1.5rem 0; }
+.subscription-consents label { display: flex; gap: .7rem; align-items: flex-start; color: #293852; line-height: 1.5; }
+.subscription-consents input { margin-top: .25rem; }
 
 @media (max-width: 900px) {
   .portal-header { padding: 0 20px; }
@@ -2271,5 +2279,6 @@ body { background: #fff; color: var(--lg-ink); }
   .portal-course-detail-body { padding-top: 42px; }
   .portal-public-lesson-page .public-lesson { width: calc(100% - 40px); padding: 50px 0 70px; }
   .purchase-actions { grid-template-columns: 1fr; }
+  .subscription-confirmation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .portal-auth-stage { min-height: calc(100vh - 62px); padding: 28px 16px 50px; }
 }

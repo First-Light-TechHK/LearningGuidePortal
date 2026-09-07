@@ -1,1 +1,24 @@
-export { POST } from "../../purchase/quote/route";
+import { NextResponse } from "next/server";
+import { currentProductUser } from "@/services/productAuth";
+import { createQuote, getQuoteForUser } from "@/services/productStore";
+
+export async function GET(request: Request) {
+  const user = await currentProductUser();
+  if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
+  const quoteId = new URL(request.url).searchParams.get("quoteId") || "";
+  const result = await getQuoteForUser(user.id, quoteId);
+  if (!result) return NextResponse.json({ ok: false, error: "Quote not found or expired." }, { status: 404 });
+  return NextResponse.json({ ok: true, quote: result.quote, plan: result.plan });
+}
+
+export async function POST(request: Request) {
+  const user = await currentProductUser();
+  if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
+  try {
+    const body = await request.json() as { planId?: string; kind?: "purchase" | "trial" };
+    const result = await createQuote(user.id, body.planId || "", body.kind === "trial" ? "trial" : "purchase");
+    return NextResponse.json({ ok: true, quote: result.quote, plan: result.plan });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Price calculation failed." }, { status: 400 });
+  }
+}

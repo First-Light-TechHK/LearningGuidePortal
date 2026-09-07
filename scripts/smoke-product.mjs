@@ -27,6 +27,9 @@ for (const path of ["/api/health", "/api/health/config", "/en-GB/portal", "/zh-C
 }
 result = await request("/api/health/config");
 assert(result.body.environment === "DEV" && result.body.storage === "local" && result.body.payment.mode === "demo", "local runtime configuration is not explicit");
+result = await request("/api/portal/plans");
+const planIds = new Set((result.body.plans || []).map((plan) => plan.id));
+assert(result.status === 200 && ["epicureanism-pc-6", "european-humanities-pc-6", "everything-pc-6", "everything-mobile-6"].every((id) => planIds.has(id)), "the four required plan groups are not available");
 
 // Local OAuth must be usable without provider credentials. It creates the same
 // account/session records as the real callback, then redirects to the product.
@@ -51,7 +54,13 @@ assert(result.status === 200 && result.body.overview.courses.length === 0, "My L
 
 // Trial follows the same pending -> paid boundary as Stripe. The local checkout
 // is deliberately explicit so a failed/cancelled attempt cannot grant access.
-result = await request("/api/trial", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", planId: "epicureanism-pc-6", locale: "en-GB" }) });
+const consents = { renewal: true, terms: true, refund: true };
+result = await request("/api/subscription/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "epicureanism-pc-6", kind: "trial" }) });
+assert(result.status === 200 && result.body.quote?.kind === "trial", "trial quote failed");
+const trialQuoteId = result.body.quote.id;
+result = await request("/api/trial", { method: "POST", headers: json, body: JSON.stringify({ quoteId: trialQuoteId, locale: "en-GB" }) });
+assert(result.status === 400, "trial checkout accepted missing confirmations");
+result = await request("/api/trial", { method: "POST", headers: json, body: JSON.stringify({ quoteId: trialQuoteId, locale: "en-GB", consents }) });
 assert(result.status === 200 && result.body.order?.status === "pending" && result.body.checkoutUrl?.includes("/portal/payment/checkout"), "trial did not create a pending local order");
 const canceledTrialOrderId = result.body.order.id;
 const canceledCheckoutUrl = new URL(result.body.checkoutUrl, base);
@@ -61,7 +70,9 @@ assert(result.status === 200 && result.body.order?.status === "canceled", "trial
 result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.entitlements.length === 0, "cancelled trial granted access");
 
-result = await request("/api/trial", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", planId: "epicureanism-pc-6", locale: "en-GB" }) });
+result = await request("/api/subscription/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "epicureanism-pc-6", kind: "trial" }) });
+assert(result.status === 200 && result.body.quote?.kind === "trial", "second trial quote failed");
+result = await request("/api/trial", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB", consents }) });
 assert(result.status === 200 && result.body.order?.status === "pending", "second trial attempt did not create a pending order");
 const trialOrderId = result.body.order.id;
 result = await request("/api/purchase/demo/confirm", { method: "POST", headers: json, body: JSON.stringify({ orderId: trialOrderId, action: "complete" }) });
@@ -70,9 +81,12 @@ result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.courses.length === 0 && result.body.overview.entitlements.length === 1, "trial entitlement or My Learning start rule failed");
 
 // Purchase is a separate order and subscription. Completing it replaces trial access.
-result = await request("/api/purchase/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "epicureanism-pc-6" }) });
-assert(result.status === 200 && result.body.quote?.id, "purchase quote failed");
-result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB" }) });
+result = await request("/api/purchase/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "epicureanism-pc-6", kind: "purchase" }) });
+assert(result.status === 200 && result.body.quote?.id && result.body.quote?.kind === "purchase", "purchase quote failed");
+const purchaseQuoteId = result.body.quote.id;
+result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: purchaseQuoteId, locale: "en-GB" }) });
+assert(result.status === 400, "purchase checkout accepted missing confirmations");
+result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: purchaseQuoteId, locale: "en-GB", consents }) });
 assert(result.status === 200 && result.body.order?.status === "pending" && result.body.checkoutUrl?.includes("/portal/payment/checkout"), "purchase did not create a pending local order");
 const purchaseOrderId = result.body.order.id;
 result = await request("/api/purchase/demo/confirm", { method: "POST", headers: json, body: JSON.stringify({ orderId: purchaseOrderId, action: "complete" }) });

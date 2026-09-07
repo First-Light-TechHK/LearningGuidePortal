@@ -22,7 +22,11 @@ export async function createHostedCheckout(input: {
   amountMinor: number;
   currency: string;
   termMonths: number;
+  scopeType?: "course" | "category" | "everything";
+  scopeId?: string | null;
 }) {
+  const returnPath = input.courseId && input.courseId !== "*" ? `/courses/${encodeURIComponent(input.courseId)}` : "/pricing";
+  const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
     customer_email: input.userEmail,
@@ -35,10 +39,10 @@ export async function createHostedCheckout(input: {
         recurring: { interval: "month", interval_count: input.termMonths }
       }
     }],
-    metadata: { orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId },
-    subscription_data: { metadata: { orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId } },
+    metadata: { orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },
+    subscription_data: { metadata: { orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId } },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}/portal/courses/${encodeURIComponent(input.courseId)}`
+    cancel_url: `${input.origin}/${input.locale}${returnPath}`
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };
@@ -57,16 +61,20 @@ export async function createHostedTrialCheckout(input: {
   amountMinor: number;
   currency: string;
   termMonths: number;
+  scopeType?: "course" | "category" | "everything";
+  scopeId?: string | null;
 }) {
+  const returnPath = input.courseId && input.courseId !== "*" ? `/courses/${encodeURIComponent(input.courseId)}` : "/pricing";
+  const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
     customer_email: input.userEmail,
     payment_method_collection: "always",
     line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName }, recurring: { interval: "month", interval_count: input.termMonths } } }],
-    metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId },
-    subscription_data: { trial_period_days: 3, metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId } },
+    metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },
+    subscription_data: { trial_period_days: 3, metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId } },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}/portal/courses/${encodeURIComponent(input.courseId)}`
+    cancel_url: `${input.origin}/${input.locale}${returnPath}`
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };
