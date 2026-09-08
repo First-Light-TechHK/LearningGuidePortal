@@ -35,7 +35,7 @@
       "consentRenewal": "我了解该计划会自动续费，除非我在下一次扣款前取消。",
       "consentTerms": "我接受 Learning Guide 使用条款和适用的支付条款。",
       "consentRefund": "我了解本计划显示的试用、取消和退款条件。",
-      "continue": "确认并继续",
+      "continue": "继续",
       "back": "返回价格页",
       "expired": "此报价已过期，请返回价格页重新计算。",
       "processing": "正在准备支付...",
@@ -476,12 +476,67 @@
       }
     ]
   },
+  "confirmationDetails": {
+    "payToday": "本次支付",
+    "termPayment": "支付本期 {months} 个月的费用",
+    "trialPayment": "自动续订需要提供付款方式",
+    "datesAfterPayment": "付款成功后确认起止日期",
+    "trialDates": "试用期结束后开始付费周期",
+    "nextCharge": "下次自动扣款",
+    "billingSchedule": "在结账时确认",
+    "automaticRenewal": "除非取消，否则将自动续订",
+    "renewalPrice": "下次续订价格",
+    "applicablePrice": "以扣款日适用价格为准",
+    "priceNotice": "如有价格变更，我们将至少提前 3 天通过邮件通知您。",
+    "courseAccess": "可访问此课程。",
+    "checkoutError": "无法准备结账，请稍后重试。"
+  },
+  "settingsDesign": {
+    "imageTypeError": "请上传 JPG 或 PNG 图片。",
+    "imageSizeError": "图片大小不能超过 5 MB。",
+    "imageUploadError": "图片上传失败。",
+    "imageRemoveError": "图片删除失败。",
+    "passwordMismatch": "两次输入的新密码不一致。",
+    "countryRequired": "请选择国家或地区。",
+    "saveError": "设置保存失败。",
+    "intro": "管理个人资料和偏好设置。",
+    "profile": "个人资料",
+    "profileIntro": "邮箱是您的主要账户标识。",
+    "personalDetails": "个人信息",
+    "detailsIntro": "国家或地区为必填项，年龄段和教育程度为选填项。",
+    "avatarRules": "JPG / PNG · 最大 5 MB · 比例 1:1",
+    "interestLabels": [
+      "人文",
+      "科学",
+      "历史",
+      "哲学",
+      "数学",
+      "文学",
+      "艺术"
+    ],
+    "ageLabels": [
+      "18 岁以下",
+      "18–24 岁",
+      "25–34 岁",
+      "35–44 岁",
+      "45–54 岁",
+      "55–64 岁",
+      "65 岁及以上"
+    ],
+    "educationLabels": [
+      "中等教育",
+      "本科",
+      "研究生",
+      "博士",
+      "其他"
+    ]
+  },
   "overviewDesign": {
     "welcome": "欢迎回来，{name}",
     "description": "课程按您首次开始学习的时间排列。",
     "yourLearning": "您的学习",
     "courseStates": "学习中和已完成的课程",
-    "activeAccess": "当前权限 · 有效订阅",
+    "currentAccess": "当前权限 · {scope}",
     "noAccess": "暂无有效订阅",
     "outsideAccess": "您保存的课程不在当前访问权限范围内。",
     "review": "复习课程",

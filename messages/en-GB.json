@@ -35,7 +35,7 @@
       "consentRenewal": "I understand that this plan renews automatically unless I cancel it before the next billing date.",
       "consentTerms": "I accept the Learning Guide terms and the applicable payment terms.",
       "consentRefund": "I understand the trial, cancellation and refund conditions shown for this plan.",
-      "continue": "Confirm and continue",
+      "continue": "Continue",
       "back": "Back to pricing",
       "expired": "This quote has expired. Return to Pricing and calculate it again.",
       "processing": "Preparing checkout...",
@@ -476,12 +476,67 @@
       }
     ]
   },
+  "confirmationDetails": {
+    "payToday": "Pay today",
+    "termPayment": "Payment for this {months}-month term",
+    "trialPayment": "Payment method required for automatic renewal",
+    "datesAfterPayment": "Dates confirmed after successful payment",
+    "trialDates": "Paid term follows the trial period",
+    "nextCharge": "Next automatic charge",
+    "billingSchedule": "Confirmed at checkout",
+    "automaticRenewal": "Renews automatically unless cancelled",
+    "renewalPrice": "Next renewal price",
+    "applicablePrice": "Price applicable on charge date",
+    "priceNotice": "We will email you at least 3 days in advance of any price change.",
+    "courseAccess": "Access to this course.",
+    "checkoutError": "Checkout could not be prepared."
+  },
+  "settingsDesign": {
+    "imageTypeError": "Use a JPG or PNG image.",
+    "imageSizeError": "The image must be 5 MB or smaller.",
+    "imageUploadError": "Image upload failed.",
+    "imageRemoveError": "Image removal failed.",
+    "passwordMismatch": "New passwords do not match.",
+    "countryRequired": "Country is required.",
+    "saveError": "Settings update failed.",
+    "intro": "Manage your profile and personal preferences.",
+    "profile": "Profile",
+    "profileIntro": "Your email is your primary account ID.",
+    "personalDetails": "Personal details",
+    "detailsIntro": "Country/Region is required. Age range and education level are optional.",
+    "avatarRules": "JPG / PNG · 5 MB · 1:1",
+    "interestLabels": [
+      "Humanities",
+      "Science",
+      "History",
+      "Philosophy",
+      "Mathematics",
+      "Literature",
+      "Arts"
+    ],
+    "ageLabels": [
+      "Under 18",
+      "18–24",
+      "25–34",
+      "35–44",
+      "45–54",
+      "55–64",
+      "65+"
+    ],
+    "educationLabels": [
+      "Secondary education",
+      "Undergraduate",
+      "Postgraduate",
+      "Doctorate",
+      "Other"
+    ]
+  },
   "overviewDesign": {
     "welcome": "Welcome back, {name}",
     "description": "Your courses are listed by when you first started learning.",
     "yourLearning": "Your learning",
     "courseStates": "In progress & completed courses",
-    "activeAccess": "Current access · Active subscription",
+    "currentAccess": "Current access · {scope}",
     "noAccess": "No active subscription",
     "outsideAccess": "Your saved course is not in the current access range.",
     "review": "Review course",

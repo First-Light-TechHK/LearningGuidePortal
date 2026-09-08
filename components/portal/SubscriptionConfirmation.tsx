@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ArrowRight } from "lucide-react";
+import { getMessages } from "@/lib/i18n/messages";
 
 type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number };
 type Plan = { id: string; name: string; termMonths: number; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
@@ -14,7 +15,8 @@ type Copy = {
   cancel: string; close: string; selectedPlan: string; paymentRenewal: string; confirmations: string; months: string;
 };
 
-export function SubscriptionConfirmation({ locale, quote, plan, copy }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy }) {
+export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeading, planSubtitle, scopeDescription }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy; planHeading: string; planSubtitle?: string; scopeDescription: string }) {
+  const details = getMessages(locale).confirmationDetails;
   const dialog = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const [renewal, setRenewal] = useState(false);
@@ -41,10 +43,10 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy }: { locale
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quote.id, locale, consents: { renewal: true, terms: true, refund: true } }) });
       const data = await response.json() as { checkoutUrl?: string; error?: string };
       if (response.status === 401) { window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`); return; }
-      if (!response.ok || !data.checkoutUrl) throw new Error(data.error || "Checkout could not be prepared.");
+      if (!response.ok || !data.checkoutUrl) throw new Error(data.error || details.checkoutError);
       window.location.assign(data.checkoutUrl);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Checkout could not be prepared.");
+      setError(requestError instanceof Error ? requestError.message : details.checkoutError);
       setBusy(false);
     }
   }
@@ -55,17 +57,19 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy }: { locale
       <button className="confirmation-close" type="button" aria-label={copy.close} title={copy.close} onClick={dismiss} disabled={busy}><X size={24} aria-hidden="true" /></button>
     </header>
     <section className="confirmation-plan" aria-label={copy.selectedPlan}>
-      <p className="confirmation-label">{copy.selectedPlan}</p><h2>{plan.name}</h2>
-      <p>{plan.device === "pc" ? copy.pcDevice : copy.mobileDevice}</p>
-      <p>{(plan.aiPoints ?? 0).toLocaleString(locale)} {copy.aiPoints}</p>
+      <p className="confirmation-label">{copy.selectedPlan}</p><h2>{planHeading}{planSubtitle ? <span>{planSubtitle}</span> : null}</h2>
+      <div className="confirmation-benefits"><p>{scopeDescription}</p><p>{plan.device === "pc" ? copy.pcDevice : copy.mobileDevice}</p><p>{(plan.aiPoints ?? 0).toLocaleString(locale)} {copy.aiPoints}</p></div>
     </section>
     <section className="confirmation-payment" aria-labelledby="confirmation-payment-heading">
       <h2 id="confirmation-payment-heading">{copy.paymentRenewal}</h2>
       <dl className="confirmation-payment-grid">
-        <div><dt>{copy.amount}</dt><dd>{isTrial ? copy.trialAmount : `${(quote.amountMinor / 100).toFixed(2)} ${quote.currency.toUpperCase()}`}</dd></div>
-        <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd></div>
+        <div><dt>{details.payToday}</dt><dd>{isTrial ? copy.trialAmount : `${new Intl.NumberFormat(locale, {style:"currency", currency:quote.currency, currencyDisplay:"narrowSymbol"}).format(quote.amountMinor / 100)} ${quote.currency.toUpperCase()}`}</dd><p>{isTrial ? details.trialPayment : details.termPayment.replace("{months}", String(plan.termMonths))}</p></div>
+        <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd><p>{isTrial ? details.trialDates : details.datesAfterPayment}</p></div>
       </dl>
-      <p className="confirmation-renewal">{copy.consentRenewal}</p>
+      <dl className="confirmation-renewal-grid">
+        <div><dt>{details.nextCharge}</dt><dd>{details.billingSchedule}</dd><p>{details.automaticRenewal}</p></div>
+        <div><dt>{details.renewalPrice}</dt><dd>{details.applicablePrice}</dd><p>{details.priceNotice}</p></div>
+      </dl>
     </section>
     <fieldset className="subscription-consents"><legend>{copy.confirmations}</legend>
       <label><input type="checkbox" checked={refund} onChange={(event) => setRefund(event.target.checked)} />{copy.consentRefund}</label>

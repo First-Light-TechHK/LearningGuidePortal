@@ -51,7 +51,8 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(base + "/en-GB/account/my-learning/settings");
   assert.equal(await page.getByLabel("Country", { exact: true }).getAttribute("required"), "");
-  assert.ok(await page.getByLabel("Areas of interest", { exact: false }).getAttribute("multiple") !== null);
+  await page.locator(".settings-interest-menu summary").click();
+  assert.equal(await page.locator(".settings-interest-menu input[type=checkbox]").count(), 7);
   assert.ok(await page.getByLabel("Device management").isDisabled());
   assert.ok(await page.getByLabel("Email notifications").isDisabled());
   await page.locator(".account-menu-trigger").click();

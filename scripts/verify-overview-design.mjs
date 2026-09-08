@@ -21,6 +21,7 @@ try {
   assert.equal((await api.post(`${base}/api/purchase/demo/confirm`, { data: { orderId: order.id, action: "complete" } })).status(), 200);
   assert.equal((await api.post(`${base}/api/study/events`, { data: { courseId: "epicureanism", lessonId: "pleasure-and-the-good-life", event: "complete", seconds: 1500, clientEventId: `overview-${Date.now()}` } })).status(), 200);
   await page.reload();
+  assert.equal(await page.locator(".overview-access").textContent(), "Current access · Epicureanism");
   await page.evaluate(() => document.fonts.ready);
   await page.locator(".overview-course img").evaluateAll(async (images) => {
     await Promise.all(images.map((image) => image.decode()));

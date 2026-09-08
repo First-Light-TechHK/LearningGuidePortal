@@ -58,6 +58,24 @@ node scripts/verify-cookie-policy.mjs
 
 Stop `next dev` before building in the same checkout. Do not share `.next` between concurrent development and production builds.
 
+## Personal Settings verification, 9 September 2026
+
+Rebuilt Profile and Personal details from local Figma node 131:182, preserving the revised JPG/PNG 5 MB limit and disabled device/email controls. Profile is x=344/y=214, 946x300; Personal details is x=344/y=534, 946x337. Online design-context access was attempted again and remains rate-limited. The downloaded file supplies the section and field measurements.
+
+The interests field now uses a native details dropdown and labelled checkboxes, with at most five selections. Existing stored values remain unchanged. Age, education and interest option labels and client-side validation messages are translated. Profile changes still use the existing server endpoint. Existing password, language and Google connection functionality is retained; the entire Settings page is not yet claimed as an exact visual match, including the avatar crop interaction and lower sections.
+
+`node scripts/verify-settings-design.mjs` passes on Chromium, Firefox and WebKit after the final build: section measurements (0.1px tolerance for browser rounding), invalid image type rejection, five-interest limit, save/reload persistence, read-only email, and English/Chinese overflow checks at 768/390/320. Screenshots are `/tmp/lg-settings-chromium.png`, `/tmp/lg-settings-firefox.png` and `/tmp/lg-settings-webkit.png`. No live OAuth action is performed.
+
+The focused test waits for page requests to settle. Separate rapid full-page navigation still reproduces WebKit RSC prefetch access-control errors, including when leaving Portal for Pricing. This is not resolved or filtered out; the focused test does not supersede that outstanding finding.
+
+## Overview verification, 9 September 2026
+
+Corrected the inherited content grid gap and duplicate current-lesson text. The course description uses a single-line summary with its full text retained in the title attribute. Access labels now reflect actual entitlements; category labels use the configured English/Chinese translations.
+
+`node scripts/verify-overview-design.mjs` passes against the rebuilt DEV/local/demo application. The test registers a user, checks the empty account, completes a local paid order, records lesson activity, and verifies Figma node 131:472: card x=344/y=294, width=946/height=178; title x=570/y=322; progress x=570/y=412 within 0.1px browser rounding; action x=1065/y=358. It awaits image decoding before the screenshot and checks both languages at 768/390/320. Screenshot: `/tmp/lg-overview-actual.png`.
+
+Production build and bilingual local payment-return tests passed. Chromium and Firefox passed the broader four-width suite before the final access-label change. WebKit failed that suite and a separate rerun with RSC prefetch access-control errors; this remains unresolved and supersedes the earlier all-browser result. No errors were filtered out. Preview-course states, remaining account screen differences, and whole-site visual equivalence are still pending. These tests do not verify live payment or identity providers.
+
 - Browser suite: registration, account menu, sign-out, Courses and four account pages; English and Chinese; widths 1440, 768, 390 and 320; horizontal overflow and JavaScript errors. Screenshots and results are written to `/tmp/learning-guide-ui-verification`.
 - Payment-return suite: cancellation and failure preserve the quote; consent requirements; no access from unpaid orders; unauthorised portal configuration is rejected.
 - Billing-recovery suite: mocked Stripe SDK responses, including ownership mismatch and paid/missing invoices. No network payment is performed.
