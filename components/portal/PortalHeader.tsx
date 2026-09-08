@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Bell, ChevronDown, GraduationCap } from "lucide-react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
+import { AccountMenu } from "@/components/portal/AccountMenu";
 
 type HeaderSection = "courses" | "my-learning" | "pricing";
 
@@ -30,7 +31,7 @@ export function PortalHeader({ locale, active, signedIn = false, displayName, av
           {signedIn ? <Link className="portal-header-link" href={`/${locale}/account/my-learning`}>{copy.myLearning}</Link> : <Link className="portal-header-link" href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}
           {signedIn ? <Link className="portal-header-icon-link" href={`/${locale}/account/my-learning/notifications`} aria-label={copy.notifications}><Bell size={18} strokeWidth={1.8} /></Link> : null}
           {signedIn ? null : <Link className="portal-button portal-button-primary portal-header-cta" href={startHref}>{copy.navigation.getStarted}</Link>}
-          {signedIn ? <span className="portal-header-avatar" aria-hidden="true">{avatarUrl ? <img src={avatarUrl} alt="" /> : (displayName?.trim()[0] || "L").toUpperCase()}</span> : null}
+          {signedIn ? <AccountMenu locale={locale} displayName={displayName} avatarUrl={avatarUrl} labels={{ myLearning: copy.myLearning, settings: messages.account.settings, notifications: copy.notifications, signOut: messages.learning.signOut }} /> : null}
         </div>
       </div>
     </header>
