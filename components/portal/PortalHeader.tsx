@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Bell, ChevronDown, GraduationCap } from "lucide-react";
+import { Bell, ChevronDown } from "lucide-react";
+import Image from "next/image";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { AccountMenu } from "@/components/portal/AccountMenu";
@@ -16,7 +17,7 @@ export function PortalHeader({ locale, active, signedIn = false, displayName, av
     <header className="portal-header">
       <div className="portal-header-inner">
         <Link className="portal-brand" href={`/${locale}/portal`}>
-          <span className="portal-brand-mark" aria-hidden="true"><GraduationCap size={22} strokeWidth={2.2} /></span>
+          <span className="portal-brand-mark" aria-hidden="true"><Image src="/portal/figma-logo.svg" width={24} height={24} alt="" /></span>
           <span>{messages.brand}</span>
         </Link>
         <nav className="portal-nav" aria-label="Primary navigation">

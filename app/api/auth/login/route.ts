@@ -1,3 +1,4 @@
+import { secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { authenticateUser, createSession, publicUser } from "@/services/productStore";
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
     const user = await authenticateUser(body.email || "", body.password || "");
     const session = await createSession(user.id);
     const response = NextResponse.json({ ok: true, data: { user: publicUser(user) }, requestId });
-    response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: SESSION_MAX_AGE });
+    response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sign in failed.";

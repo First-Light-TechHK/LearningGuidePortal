@@ -1,0 +1,256 @@
+const imgIcon = "https://www.figma.com/api/mcp/asset/0c36459c-567c-43c8-8e82-367aa2dd816b.svg";
+const imgPolygon1 = "https://www.figma.com/api/mcp/asset/cabd2623-3d2e-439c-9378-5899ab68c631.svg";
+const imgLine58 = "https://www.figma.com/api/mcp/asset/abe38c4f-3117-46eb-bf8f-2bcac22f9440.svg";
+
+export default function MyLearningOverview() {
+  return (
+    <div className="bg-[#f8fafd] relative size-full" data-node-id="131:472" data-name="My Learning — Overview">
+      <div className="absolute bg-white h-[1230px] left-0 top-[68px] w-[280px]" data-node-id="131:485" data-name="Sidebar" />
+      <div className="absolute bg-[#dbe3f0] left-[279px] size-px top-[68px]" data-node-id="131:486" data-name="Divider" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[36px] not-italic text-[#94a3b8] text-[12px] top-[112px] w-[170px]" data-node-id="131:487">
+        MY LEARNING
+      </p>
+      <div className="absolute bg-[#e8f1ff] h-[44px] left-[28px] rounded-[8px] top-[139px] w-[220px]" data-node-id="131:488" data-name="Active nav bg" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[42px] not-italic text-[#1660d8] text-[15px] top-[151px] w-[190px]" data-node-id="131:489">
+        Overview
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[42px] not-italic text-[#475569] text-[15px] top-[203px] w-[190px]" data-node-id="131:490">
+        My Subscription
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[42px] not-italic text-[#475569] text-[15px] top-[255px] w-[190px]" data-node-id="131:491">
+        Notification Center
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[42px] not-italic text-[#475569] text-[15px] top-[307px] w-[190px]" data-node-id="131:492">
+        Personal Settings
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[42px] not-italic text-[#475569] text-[15px] top-[359px] w-[190px]" data-node-id="131:493">
+        Help Center
+      </p>
+      <div className="absolute bg-[#e8f1ff] h-[132px] left-[28px] rounded-[8px] top-[1028px] w-[220px]" data-node-id="131:494" data-name="Help card" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20.8px] leading-[normal] left-[44px] not-italic text-[#15233a] text-[16px] top-[1048px] w-[150px]" data-node-id="131:495">
+        Contact us
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[44px] not-italic text-[#64748b] text-[13px] top-[1078px] w-[175px]" data-node-id="131:496">
+        Get support from our team.
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[44px] not-italic text-[#1660d8] text-[13px] top-[1110px] w-[176px] whitespace-pre-wrap" data-node-id="131:497">{`Open support chat  →`}</p>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[40.3px] leading-[normal] left-[344px] not-italic text-[#15233a] text-[31px] top-[118px] w-[560px]" data-node-id="131:498">
+        Welcome back, Macai
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20.8px] leading-[normal] left-[344px] not-italic text-[#64748b] text-[16px] top-[160px] w-[610px]" data-node-id="131:499">
+        Your courses are listed by when you first started learning.
+      </p>
+      <div className="absolute bg-[#e8f1ff] h-[34px] left-[1054px] rounded-[16px] top-[120px] w-[236px]" data-node-id="131:500" data-name="Access chip" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[1068px] not-italic text-[#1660d8] text-[13px] top-[129px] w-[208px]" data-node-id="131:501">
+        Current access · Everything
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[29.9px] leading-[normal] left-[344px] not-italic text-[#15233a] text-[23px] top-[228px] w-[300px]" data-node-id="131:502">
+        Your learning
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[344px] not-italic text-[#64748b] text-[14px] top-[260px] w-[320px]" data-node-id="131:503">{`In progress & completed courses`}</p>
+      <div className="absolute bg-white border border-[#dbe3f0] border-solid h-[178px] left-[344px] rounded-[10px] top-[294px] w-[946px]" data-node-id="131:504" data-name="Course card The Art of Seeing" />
+      <div className="absolute bg-[#1660d8] h-[130px] left-[368px] rounded-[8px] top-[318px] w-[172px]" data-node-id="131:505" data-name="Course cover The Art of Seeing" />
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[454px] not-italic text-[11px] text-center text-white top-[374px] w-[140px]" data-node-id="131:506">
+        ART
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[27.3px] leading-[normal] left-[570px] not-italic text-[#15233a] text-[21px] top-[322px] w-[370px]" data-node-id="131:507">
+        The Art of Seeing
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[570px] not-italic text-[#64748b] text-[14px] top-[354px] w-[360px]" data-node-id="131:508">
+        Art · 12 lessons · Current: Lesson 4
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[570px] not-italic text-[#475569] text-[13px] top-[378px] w-[430px]" data-node-id="131:509">
+        Explore the language of images and visual culture.
+      </p>
+      <div className="absolute bg-[#dbe3f0] h-[7px] left-[570px] rounded-[4px] top-[412px] w-[316px]" data-node-id="131:510" data-name="Progress track The Art of Seeing" />
+      <div className="absolute bg-[#246bfd] h-[7px] left-[570px] rounded-[4px] top-[412px] w-[145.36px]" data-node-id="131:511" data-name="Progress value The Art of Seeing" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[570px] not-italic text-[#1660d8] text-[12px] top-[428px] w-[170px]" data-node-id="131:512">
+        46%
+      </p>
+      <p className="-translate-x-full [word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[1020px] not-italic text-[#64748b] text-[12px] text-right top-[428px] w-[260px]" data-node-id="131:513">
+        12 lessons · Current: Lesson 4
+      </p>
+      <div className="absolute bg-[#246bfd] h-[42px] left-[1065px] rounded-[7px] top-[358px] w-[190px]" data-node-id="131:514" data-name="Course CTA The Art of Seeing" />
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[1160px] not-italic text-[13px] text-center text-white top-[369px] w-[190px]" data-node-id="131:515">
+        Continue learning
+      </p>
+      <div className="absolute bg-white border border-[#dbe3f0] border-solid h-[178px] left-[344px] rounded-[10px] top-[494px] w-[946px]" data-node-id="131:516" data-name="Course card Tang Dynasty History" />
+      <div className="absolute bg-[#4d7aa3] h-[130px] left-[368px] rounded-[8px] top-[518px] w-[172px]" data-node-id="131:517" data-name="Course cover Tang Dynasty History" />
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[454px] not-italic text-[11px] text-center text-white top-[574px] w-[140px]" data-node-id="131:518">
+        HUMANITIES
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[27.3px] leading-[normal] left-[570px] not-italic text-[#15233a] text-[21px] top-[522px] w-[370px]" data-node-id="131:519">
+        Tang Dynasty History
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[570px] not-italic text-[#64748b] text-[14px] top-[554px] w-[360px]" data-node-id="131:520">
+        Humanities · 10 lessons · Completed
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[570px] not-italic text-[#475569] text-[13px] top-[578px] w-[430px]" data-node-id="131:521">
+        A guided journey through the Tang Dynasty.
+      </p>
+      <div className="absolute bg-[#dbe3f0] h-[7px] left-[570px] rounded-[4px] top-[612px] w-[316px]" data-node-id="131:522" data-name="Progress track Tang Dynasty History" />
+      <div className="absolute bg-[#1a8c4f] h-[7px] left-[570px] rounded-[4px] top-[612px] w-[316px]" data-node-id="131:523" data-name="Progress value Tang Dynasty History" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[570px] not-italic text-[#1a7340] text-[12px] top-[628px] w-[170px]" data-node-id="131:524">
+        Completed
+      </p>
+      <p className="-translate-x-full [word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[1020px] not-italic text-[#64748b] text-[12px] text-right top-[628px] w-[260px]" data-node-id="131:525">
+        Completed
+      </p>
+      <div className="absolute bg-[#246bfd] h-[42px] left-[1065px] rounded-[7px] top-[558px] w-[190px]" data-node-id="131:526" data-name="Course CTA Tang Dynasty History" />
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[1160px] not-italic text-[13px] text-center text-white top-[569px] w-[190px]" data-node-id="131:527">
+        Review course
+      </p>
+      <div className="absolute bg-white border border-[#dbe3f0] border-solid h-[178px] left-[344px] rounded-[10px] top-[694px] w-[946px]" data-node-id="131:528" data-name="Course card The Logic of Nature" />
+      <div className="absolute bg-[#7a66a8] h-[130px] left-[368px] rounded-[8px] top-[718px] w-[172px]" data-node-id="131:529" data-name="Course cover The Logic of Nature" />
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[454px] not-italic text-[11px] text-center text-white top-[774px] w-[140px]" data-node-id="131:530">
+        SCIENCE
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[27.3px] leading-[normal] left-[570px] not-italic text-[#15233a] text-[21px] top-[722px] w-[370px]" data-node-id="131:531">
+        The Logic of Nature
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[570px] not-italic text-[#64748b] text-[14px] top-[754px] w-[360px]" data-node-id="131:532">
+        Science · 8 lessons · Current: Lesson 2
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[570px] not-italic text-[#475569] text-[13px] top-[778px] w-[430px]" data-node-id="131:533">
+        Your saved course is not in the current access range.
+      </p>
+      <div className="absolute bg-[#dbe3f0] h-[7px] left-[570px] rounded-[4px] top-[812px] w-[316px]" data-node-id="131:534" data-name="Progress track The Logic of Nature" />
+      <div className="absolute bg-[#246bfd] h-[7px] left-[570px] rounded-[4px] top-[812px] w-[56.88px]" data-node-id="131:535" data-name="Progress value The Logic of Nature" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[570px] not-italic text-[#1660d8] text-[12px] top-[828px] w-[170px]" data-node-id="131:536">
+        18%
+      </p>
+      <p className="-translate-x-full [word-break:break-word] absolute font-['Inter:Medium'] font-medium h-[20px] leading-[normal] left-[1020px] not-italic text-[#64748b] text-[12px] text-right top-[828px] w-[260px]" data-node-id="131:537">
+        8 lessons · Current: Lesson 2
+      </p>
+      <div className="absolute bg-white border border-[#dbe3f0] border-solid h-[42px] left-[1065px] rounded-[7px] top-[758px] w-[190px]" data-node-id="131:538" data-name="Course CTA The Logic of Nature" />
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[1160px] not-italic text-[#1660d8] text-[13px] text-center top-[769px] w-[190px]" data-node-id="131:539">
+        View plans
+      </p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[normal] left-[344px] not-italic text-[#64748b] text-[13px] top-[902px] w-[360px]" data-node-id="131:540">
+        Showing all courses you have started
+      </p>
+      <div className="absolute bg-[#14387d] h-[310px] left-0 top-[1218px] w-[1440px]" data-node-id="131:541" data-name="Footer" />
+      <p className="[word-break:break-word] absolute font-['Inter:Bold'] font-bold h-[26px] leading-[normal] left-[100px] not-italic text-[20px] text-white top-[1270px] w-[220px]" data-node-id="131:542">
+        Learning Guide
+      </p>
+      <div className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[0] left-[100px] not-italic text-[#c7d6ff] text-[14px] top-[1306px] w-[300px]" data-node-id="131:543">
+        <p className="leading-[normal] mb-0">A thoughtful place to explore culture,</p>
+        <p className="leading-[normal]">ideas and the world.</p>
+      </div>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[560px] not-italic text-[14px] text-white top-[1270px] w-[100px]" data-node-id="131:544">
+        Courses
+      </p>
+      <div className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[0] left-[560px] not-italic text-[#c7d6ff] text-[13px] top-[1303px] w-[120px] whitespace-pre-wrap" data-node-id="131:545">
+        <p className="leading-[normal] mb-0">Humanities</p>
+        <p className="leading-[normal] mb-0">​</p>
+        <p className="leading-[normal] mb-0">Art</p>
+        <p className="leading-[normal] mb-0">​</p>
+        <p className="leading-[normal]">Science</p>
+      </div>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[795px] not-italic text-[14px] text-white top-[1270px] w-[100px]" data-node-id="131:546">
+        Support
+      </p>
+      <div className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[0] left-[795px] not-italic text-[#c7d6ff] text-[13px] top-[1303px] w-[160px] whitespace-pre-wrap" data-node-id="131:547">
+        <p className="leading-[normal] mb-0">Help Center / FAQ</p>
+        <p className="leading-[normal] mb-0">​</p>
+        <p className="leading-[normal] mb-0">Contact us</p>
+        <p className="leading-[normal] mb-0">​</p>
+        <p className="leading-[normal]">Cookie settings</p>
+      </div>
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[1030px] not-italic text-[14px] text-white top-[1270px] w-[100px]" data-node-id="131:548">
+        Legal
+      </p>
+      <div className="[word-break:break-word] absolute font-['Inter:Regular'] font-normal h-[20px] leading-[0] left-[1030px] not-italic text-[#c7d6ff] text-[13px] top-[1303px] w-[190px] whitespace-pre-wrap" data-node-id="131:549">
+        <p className="leading-[normal] mb-0">Privacy policy</p>
+        <p className="leading-[normal] mb-0">​</p>
+        <p className="leading-[normal] mb-0">Terms of service</p>
+        <p className="leading-[normal] mb-0">​</p>
+        <p className="leading-[normal]">© 2026 Learning Guide</p>
+      </div>
+      <div className="absolute bg-[#dbe3f0] h-px left-[100px] top-[1434px] w-[1240px]" data-node-id="131:550" data-name="Divider" />
+      <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[100px] not-italic text-[13px] text-white top-[1462px] w-[250px] whitespace-pre-wrap" data-node-id="131:551">{`Instagram   LinkedIn   YouTube`}</p>
+      <div className="absolute h-[68px] left-0 top-0 w-[1440px]" data-node-id="2007:396" data-name="Header — Signed-in">
+        <div className="absolute bg-white inset-0" data-node-id="I2007:396;2007:181" />
+        <div className="absolute inset-[32.35%_95.56%_32.35%_2.78%]" data-node-id="I2007:396;2007:182" data-name="Icon">
+          <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon} />
+        </div>
+        <div className="absolute inset-[29.41%_87.08%_29.41%_5%]" data-node-id="I2007:396;2007:186" data-name="Header">
+          <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold leading-[normal] left-0 not-italic text-[#0a0a0a] text-[20px] top-0 whitespace-nowrap" data-node-id="I2007:396;2007:187">
+            Learning Guide
+          </p>
+        </div>
+        <div className="[word-break:break-word] absolute bottom-[38.97%] content-stretch flex font-['Inter:Medium'] font-medium gap-[30px] items-start leading-[normal] left-[252.04px] not-italic text-[#4a5565] text-[14px] top-[36.03%] whitespace-nowrap" data-node-id="I2007:396;2007:188">
+          <p className="relative shrink-0" data-node-id="I2007:396;2007:189">
+            Courses
+          </p>
+          <p className="capitalize relative shrink-0" data-node-id="I2007:396;2007:190">
+            Study Groups
+          </p>
+          <p className="relative shrink-0" data-node-id="I2007:396;2007:191">
+            Pricing
+          </p>
+        </div>
+        <div className="absolute inset-[23.53%_15.21%_23.53%_79.44%]" data-node-id="I2007:396;2007:192" data-name="Button">
+          <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Medium'] font-medium leading-[normal] left-[38px] not-italic text-[#4a5565] text-[14px] text-center top-[8.5px] whitespace-nowrap" data-node-id="I2007:396;2007:193">
+            Sign In
+          </p>
+        </div>
+        <div className="absolute bg-[rgba(147,180,245,0.38)] inset-[23.53%_2.78%_23.53%_89.7%] rounded-[10px]" data-node-id="I2007:396;2007:194" data-name="Button">
+          <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Medium'] font-medium leading-[normal] left-[54.5px] not-italic text-[#246bfd] text-[14px] text-center top-[8.5px] whitespace-nowrap" data-node-id="I2007:396;2007:195">
+            My Learning
+          </p>
+        </div>
+        <div className="absolute contents inset-[33.82%_24.31%_33.82%_72.78%]" data-node-id="I2007:396;2007:196">
+          <div className="absolute bg-[#d9d9d9] inset-[33.82%_24.31%_33.82%_72.78%] rounded-[4px]" data-node-id="I2007:396;2007:197" />
+          <p className="[word-break:break-word] absolute font-['Inter:Medium'] font-medium inset-[36.76%_25.42%_38.24%_73.26%] leading-[normal] not-italic text-[#4a5565] text-[14px] uppercase whitespace-nowrap" data-node-id="I2007:396;2007:198">
+            en
+          </p>
+          <div className="absolute flex inset-[45.59%_24.79%_47.06%_74.86%] items-center justify-center" data-node-id="I2007:396;2007:199" style={{ containerType: "size" }}>
+            <div className="flex-none h-[100cqh] rotate-180 w-[100cqw]">
+              <div className="relative size-full">
+                <div className="absolute bottom-1/4 left-[6.7%] right-[6.7%] top-0">
+                  <img alt="" className="block max-w-none size-full" src={imgPolygon1} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 top-full" data-node-id="I2007:396;2007:200">
+          <div className="absolute inset-[-1px_0_0_0]">
+            <img alt="" className="block max-w-none size-full" src={imgLine58} />
+          </div>
+        </div>
+        <div className="absolute bg-[#e8f1ff] left-[1234px] rounded-[18px] size-[32px] top-[18px]" data-node-id="I2007:396;2007:202" data-name="Avatar" />
+        <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold h-[20px] leading-[normal] left-[1250px] not-italic text-[#1660d8] text-[13px] text-center top-[25px] w-[32px]" data-node-id="I2007:396;2007:203">
+          M
+        </p>
+        <CodeConnectSnippet data-node-id="I2007:396;2007:204" data-name="Notification">
+          {/* Material 3 Design Kit component */}
+          <Notifications />
+        </CodeConnectSnippet>
+      </div>
+    </div>
+  );
+}
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+These styles are contained in the design: M3/sys/light/on-surface: #1D1B20.
+If the node is connected to a code component in the users codebase via Code Connect, the connected component will be included in the final markup wrapped in a CodeConnectSnippet element, with relevant imports at the top of the file. There are two formats: 1. Single snippet: <CodeConnectSnippet data-snippet-language="React"><TitleComponent>Hello World</TitleComponent></CodeConnectSnippet> 2. Multiple options: <CodeConnectSnippet data-snippet-language="React" options={[<Button variant="primary" />, <Button variant="secondary" />]} /> IMPORTANT: the CodeConnectSnippet wrapper element should not be part of the final code. For the options format, choose the single most appropriate option to use in your implementation. The source of the code component will be in the import path, e.g. import {ComponentName } from 'path/to/component'; IMPORTANT: the import path may not be relative/may point to a URL, so you should search for the component in the codebase and MUST use it if possible.
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## State=Signed-in
+**Node ID:** 2007:206
+
+Learning Guide desktop header — signed-in state. Order: brand, Courses, Study Groups, Pricing, language, notifications, Sign In, avatar, My Learning.
+
+## Header
+**Node ID:** 2007:207
+
+Learning Guide desktop header with Visitor and Signed-in states. Notification uses the Material 3 notifications component.
+Images and SVGs will be stored as constants, e.g. const image = 'https://www.figma.com/api/mcp/asset/550e8400-e29b-41d4-a716-446655440000.png'. These constants will be used in the code as the source for the image, ex: <img src={image} />. Image assets are stored on a remote server for 7 days and can be fetched using the provided URLs until they expire.

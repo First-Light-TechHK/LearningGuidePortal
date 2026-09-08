@@ -29,6 +29,7 @@
 
 ## 实施要求
 
+- 所有范围内页面均按 `DESIGN.md` 的 Figma 设计依据验收；不能把 UI 对照范围限制为 Excel/PPT 修改清单。修改清单仅约束其涉及的功能。
 - 新功能先写数据类型、服务函数和 API contract，再写页面。
 - 每个 Route Handler 只做：解析 request、校验输入、取得 session、调用 application service、返回统一结果。
 - 业务规则放在 application service 或 Rule Engine；SQL 只放在 repository；Stripe 只在 Payment Management service 调用。

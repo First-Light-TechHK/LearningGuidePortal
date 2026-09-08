@@ -1,0 +1,87 @@
+const imgIcon = "https://www.figma.com/api/mcp/asset/d3f880b2-c4af-4922-a985-d81f94d67f16.svg";
+const imgPolygon1 = "https://www.figma.com/api/mcp/asset/2dfc89c6-a3c5-4c18-8c66-377114580fd7.svg";
+const imgLine58 = "https://www.figma.com/api/mcp/asset/16259986-a970-4f35-9586-9da07f7615cc.svg";
+
+type HeaderProps = {
+  className?: string;
+  state?: "Visitor";
+};
+
+function Header({ className, state = "Visitor" }: HeaderProps) {
+  return (
+    <div className={className || "h-[68px] relative w-[1440px]"} data-node-id="2007:179">
+      <div className="absolute bg-white inset-0" data-node-id="2007:157" />
+      <div className="absolute inset-[32.35%_95.56%_32.35%_2.78%]" data-node-id="2007:158" data-name="Icon">
+        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon} />
+      </div>
+      <div className="absolute inset-[29.41%_87.08%_29.41%_5%]" data-node-id="2007:162" data-name="Header">
+        <p className="[word-break:break-word] absolute font-['Inter:Semi_Bold'] font-semibold leading-[normal] left-0 not-italic text-[#0a0a0a] text-[20px] top-0 whitespace-nowrap" data-node-id="2007:163">
+          Learning Guide
+        </p>
+      </div>
+      <div className="[word-break:break-word] absolute bottom-[38.97%] content-stretch flex font-['Inter:Medium'] font-medium gap-[30px] items-start left-[252.04px] not-italic text-[#4a5565] text-[14px] top-[36.03%] whitespace-nowrap" data-node-id="2007:164">
+        <a className="block cursor-pointer leading-[0] relative shrink-0" data-node-id="2007:165">
+          <p className="leading-[normal]">Courses</p>
+        </a>
+        <p className="capitalize leading-[normal] relative shrink-0" data-node-id="2007:166">
+          Study Groups
+        </p>
+        <p className="leading-[normal] relative shrink-0" data-node-id="2007:167">
+          Pricing
+        </p>
+      </div>
+      <div className="absolute inset-[23.53%_11.41%_23.53%_83.24%]" data-node-id="2007:168" data-name="Button">
+        <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Medium'] font-medium leading-[normal] left-[38px] not-italic text-[#4a5565] text-[14px] text-center top-[8.5px] whitespace-nowrap" data-node-id="2007:169">
+          Sign In
+        </p>
+      </div>
+      <div className="absolute bg-[#155dfc] inset-[23.53%_2.78%_23.53%_89.7%] rounded-[10px]" data-node-id="2007:170" data-name="Button">
+        <p className="-translate-x-1/2 [word-break:break-word] absolute font-['Inter:Medium'] font-medium leading-[normal] left-[54px] not-italic text-[14px] text-center text-white top-[8.5px] whitespace-nowrap" data-node-id="2007:171">
+          Get Started
+        </p>
+      </div>
+      <div className="absolute contents inset-[33.82%_20.49%_33.82%_76.6%]" data-node-id="2007:172">
+        <div className="absolute bg-[#d9d9d9] inset-[33.82%_20.49%_33.82%_76.6%] rounded-[4px]" data-node-id="2007:173" />
+        <p className="[word-break:break-word] absolute font-['Inter:Medium'] font-medium inset-[36.76%_21.6%_38.24%_77.08%] leading-[normal] not-italic text-[#4a5565] text-[14px] uppercase whitespace-nowrap" data-node-id="2007:174">
+          en
+        </p>
+        <div className="absolute flex inset-[45.59%_20.97%_47.06%_78.68%] items-center justify-center" data-node-id="2007:175" style={{ containerType: "size" }}>
+          <div className="flex-none h-[100cqh] rotate-180 w-[100cqw]">
+            <div className="relative size-full">
+              <div className="absolute bottom-1/4 left-[6.7%] right-[6.7%] top-0">
+                <img alt="" className="block max-w-none size-full" src={imgPolygon1} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 top-full" data-node-id="2007:176">
+        <div className="absolute inset-[-1px_0_0_0]">
+          <img alt="" className="block max-w-none size-full" src={imgLine58} />
+        </div>
+      </div>
+    </div>
+  );
+}
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+These styles are contained in the design: M3/sys/light/on-surface: #1D1B20.
+If the node is connected to a code component in the users codebase via Code Connect, the connected component will be included in the final markup wrapped in a CodeConnectSnippet element, with relevant imports at the top of the file. There are two formats: 1. Single snippet: <CodeConnectSnippet data-snippet-language="React"><TitleComponent>Hello World</TitleComponent></CodeConnectSnippet> 2. Multiple options: <CodeConnectSnippet data-snippet-language="React" options={[<Button variant="primary" />, <Button variant="secondary" />]} /> IMPORTANT: the CodeConnectSnippet wrapper element should not be part of the final code. For the options format, choose the single most appropriate option to use in your implementation. The source of the code component will be in the import path, e.g. import {ComponentName } from 'path/to/component'; IMPORTANT: the import path may not be relative/may point to a URL, so you should search for the component in the codebase and MUST use it if possible.
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## State=Visitor
+**Node ID:** 2007:179
+
+Learning Guide desktop header — visitor state. Order: brand, Courses, Study Groups, Pricing, language, notifications, Sign In, Get Started.
+
+## Header
+**Node ID:** 2007:207
+
+Learning Guide desktop header with Visitor and Signed-in states. Notification uses the Material 3 notifications component.
+Images and SVGs will be stored as constants, e.g. const image = 'https://www.figma.com/api/mcp/asset/550e8400-e29b-41d4-a716-446655440000.png'. These constants will be used in the code as the source for the image, ex: <img src={image} />. Image assets are stored on a remote server for 7 days and can be fetched using the provided URLs until they expire.

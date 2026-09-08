@@ -72,3 +72,36 @@ test("Google profile accepts only a verified email and matching OIDC nonce", asy
     prototype.verifyIdToken = originalVerifyIdToken;
   }
 });
+
+test("Google identity links only to the active account with the same email", async () => {
+  const originalCwd = process.cwd();
+  const isolatedCwd = await mkdtemp(path.join(tmpdir(), "learning-guide-link-"));
+  process.chdir(isolatedCwd);
+  try {
+    const store = await import("../../services/productStore");
+    const user = await store.registerUser({ email: "link@example.test", password: "strong-password", nickname: "Learner", locale: "en-GB" });
+    await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
+
+    const linked = await store.linkSocialProvider({ userId: user.id, provider: "google", providerSubject: "link-subject", email: "link@example.test" });
+    expect(linked.id).toBe(user.id);
+    expect(await store.socialProvidersForUser(user.id)).toEqual(["google"]);
+
+    // The bound identity now signs in to the same account through the provider path.
+    const googleUser = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "link-subject", email: "link@example.test", nickname: "Google User", locale: "en-GB" });
+    expect(googleUser.id).toBe(user.id);
+
+    // Re-linking the same identity to the same user is idempotent.
+    await expect(store.linkSocialProvider({ userId: user.id, provider: "google", providerSubject: "link-subject", email: "link@example.test" })).resolves.toMatchObject({ id: user.id });
+
+    // A different email must not be bound to this account.
+    await expect(store.linkSocialProvider({ userId: user.id, provider: "google", providerSubject: "other-subject", email: "other@example.test" })).rejects.toMatchObject({ code: "account_conflict" });
+
+    // An identity already bound to another account must not be re-bound.
+    const other = await store.registerUser({ email: "other@example.test", password: "strong-password", nickname: "Learner", locale: "en-GB" });
+    await store.verifyEmailToken(await store.issueEmailVerificationToken(other.id));
+    await expect(store.linkSocialProvider({ userId: other.id, provider: "google", providerSubject: "link-subject", email: "other@example.test" })).rejects.toMatchObject({ code: "account_conflict" });
+  } finally {
+    process.chdir(originalCwd);
+    await rm(isolatedCwd, { recursive: true, force: true });
+  }
+});

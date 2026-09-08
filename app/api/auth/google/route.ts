@@ -1,3 +1,4 @@
+import { secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { localeFrom } from "@/lib/i18n/config";
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
       const user = await getOrCreateSocialUser({ provider: "google", providerSubject: profile.subject, email: profile.email, nickname: profile.nickname, locale });
       const session = await createSession(user.id);
       const response = NextResponse.redirect(new URL(returnTo, publicAppOrigin(request)));
-      response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: false, path: "/", maxAge: SESSION_MAX_AGE });
+      response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
       return response;
     } catch (error) {
       return NextResponse.json({ ok: false, code: "LOCAL_GOOGLE_FAILED", message: error instanceof Error ? error.message : "Local Google sign-in failed.", requestId }, { status: 400 });
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     googleUrl.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID as string, redirect_uri: callback, response_type: "code", scope: "openid email profile", state: state.state, nonce: state.nonce, code_challenge: state.codeChallenge, code_challenge_method: "S256", access_type: "online", prompt: "select_account" }).toString();
     const response = NextResponse.redirect(googleUrl);
-    response.cookies.set(OAUTH_STATE_COOKIE, state.cookieValue, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 600 });
+    response.cookies.set(OAUTH_STATE_COOKIE, state.cookieValue, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: 600 });
     return response;
   } catch (error) {
     console.warn("Google OAuth start failed", { requestId, error: error instanceof Error ? error.message : "unknown" });

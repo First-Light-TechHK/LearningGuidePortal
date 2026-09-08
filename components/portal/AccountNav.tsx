@@ -1,5 +1,12 @@
+"use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { getMessages } from "@/lib/i18n/messages";
 
 export function AccountNav({ locale, copy }: { locale: "en-GB" | "zh-CN"; copy: { overview: string; subscription: string; notifications: string; settings: string; help: string } }) {
-  return <nav className="account-nav" aria-label="Account navigation"><Link href={`/${locale}/account/my-learning`}>{copy.overview}</Link><Link href={`/${locale}/account/my-learning/subscription`}>{copy.subscription}</Link><Link href={`/${locale}/account/my-learning/notifications`}>{copy.notifications}</Link><Link href={`/${locale}/account/my-learning/settings`}>{copy.settings}</Link><Link href={`/${locale}/help`}>{copy.help}</Link></nav>;
+  const pathname = usePathname();
+  const labels = getMessages(locale).account;
+  const root = `/${locale}/account/my-learning`;
+  const links = [[root, copy.overview], [`${root}/subscription`, copy.subscription], [`${root}/notifications`, copy.notifications], [`${root}/settings`, copy.settings], [`/${locale}/help`, copy.help]];
+  return <nav className="account-nav" aria-label={labels.menu}><p className="account-nav-title">MY LEARNING</p>{links.map(([href, label]) => <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined}>{label}</Link>)}<div className="account-nav-support"><strong>{labels.contact}</strong><p>{labels.supportDescription}</p><Link href={`/${locale}/contact`}>{labels.contactAction}</Link></div></nav>;
 }

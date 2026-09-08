@@ -3,6 +3,7 @@ import path from "path";
 import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
 import { isProductionEnvironment } from "./runtimeConfig";
+import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
 
 const scrypt = promisify(scryptCallback);
 const PRODUCT_DIR = path.join(SYSTEM_ROOT, "learning_guide");
@@ -188,6 +189,7 @@ export type ProductPaymentSettings = {
 };
 
 export type ProductData = {
+  portalContent?: PortalContent;
   version: 1;
   users: ProductUser[];
   sessions: ProductSession[];
@@ -455,6 +457,40 @@ export async function getUserById(userId: string) {
   return data.users.find((user) => user.id === userId) || null;
 }
 
+export async function getPortalContent(): Promise<PortalContent> {
+  return (await ensureProductData()).portalContent || defaultPortalContent;
+}
+
+export async function savePortalContent(value: unknown): Promise<PortalContent> {
+  if (!value || typeof value !== "object") throw new Error("Invalid portal content.");
+  const content = value as PortalContent;
+  function validUrl(value: unknown, optional = false) {
+    if (optional && value === "") return true;
+    if (typeof value !== "string" || value.length > 2048 || /[\\\\\s]/.test(value)) return false;
+    if (value.startsWith("/") && !value.startsWith("//")) return true;
+    try { return new URL(value).protocol === "https:"; } catch { return false; }
+  }
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const banners = content.banners?.[locale];
+    if (!Array.isArray(banners) || banners.length !== 3) throw new Error("Exactly three banners are required for each language.");
+    for (const banner of banners) {
+      if (!banner || !validUrl(banner.image) || !validUrl(banner.href)) throw new Error("Banner URLs must be relative paths or HTTPS URLs.");
+      for (const key of ["eyebrow", "title", "text", "cta"] as const) {
+        if (typeof banner[key] !== "string" || banner[key].length > 500 || !banner[key].trim()) throw new Error("Complete every banner text field (maximum 500 characters).");
+      }
+    }
+  }
+  const expected = defaultPortalContent.categories.map((item) => item.id);
+  if (!Array.isArray(content.categories) || content.categories.length !== 3 || new Set(content.categories.map((item) => item.id)).size !== 3 ||
+      content.categories.some((item) => !expected.includes(item.id) || ["en-GB", "zh-CN"].some((locale) => typeof item.labels?.[locale as Locale] !== "string" || !item.labels[locale as Locale].trim() || item.labels[locale as Locale].length > 80))) throw new Error("Provide one translated label for each supported category.");
+  if (!Array.isArray(content.countries) || !content.countries.length || content.countries.length > 300 || content.countries.some((item) => typeof item !== "string" || !item.trim() || item.length > 80)) throw new Error("Provide a valid country list.");
+  if (!validUrl(content.supportUrl, true)) throw new Error("Support URL must be a relative path or HTTPS URL.");
+  return editData((data) => {
+    data.portalContent = { banners: content.banners, categories: content.categories, countries: [...new Set(content.countries)], supportUrl: content.supportUrl };
+    return data.portalContent;
+  });
+}
+
 export async function userEmailExists(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) return false;
@@ -514,6 +550,30 @@ export async function getOrCreateSocialUser(input: { provider: "google" | "wecha
     data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
     return user;
   });
+}
+
+// Binds a social provider identity to an existing email-and-password account.
+// Only allowed when the signed-in user's email matches the verified provider
+// email, so a provider login can never take over another account.
+export async function linkSocialProvider(input: { userId: string; provider: "google" | "wechat"; providerSubject: string; email: string }) {
+  const email = input.email.trim().toLowerCase();
+  return editData(async (data) => {
+    const user = data.users.find((item) => item.id === input.userId);
+    if (!user || user.status !== "active" || !user.emailVerifiedAt) throw new ProductAuthError("account_unavailable", "This account is not available.");
+    if (user.email !== email) throw new ProductAuthError("account_conflict", "The provider email does not match the signed-in account.");
+    const existing = data.accounts.find((item) => item.provider === input.provider && item.providerSubject === input.providerSubject);
+    if (existing) {
+      if (existing.userId === input.userId) return user;
+      throw new ProductAuthError("account_conflict", `This ${input.provider === "google" ? "Google" : "WeChat"} identity is already linked to another Learning Guide account.`);
+    }
+    data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
+    return user;
+  });
+}
+
+export async function socialProvidersForUser(userId: string): Promise<Array<"google" | "wechat">> {
+  const data = await ensureProductData();
+  return data.accounts.filter((item) => item.userId === userId).map((item) => item.provider);
 }
 
 function tokenExpiry(hours: number) {

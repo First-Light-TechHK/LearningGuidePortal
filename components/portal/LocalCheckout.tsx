@@ -10,7 +10,7 @@ type Copy = {
   error: string;
 };
 
-export function LocalCheckout({ orderId, locale, copy }: { orderId: string; locale: "en-GB" | "zh-CN"; copy: Copy }) {
+export function LocalCheckout({ orderId, quoteId, locale, copy }: { orderId: string; quoteId: string; locale: "en-GB" | "zh-CN"; copy: Copy }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -21,7 +21,9 @@ export function LocalCheckout({ orderId, locale, copy }: { orderId: string; loca
       const response = await fetch("/api/purchase/demo/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId, action }) });
       const data = await response.json() as { ok?: boolean; error?: string; status?: string };
       if (!response.ok || !data.ok) throw new Error(data.error || copy.error);
-      window.location.assign(`/${locale}/portal/payment/success?orderId=${encodeURIComponent(orderId)}`);
+      window.location.assign(action === "complete"
+        ? `/${locale}/portal/payment/success?orderId=${encodeURIComponent(orderId)}`
+        : `/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteId)}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : copy.error);
       setBusy(false);

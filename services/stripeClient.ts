@@ -9,6 +9,19 @@ export function getStripe() {
   return stripe;
 }
 
+export async function getSubscriptionPaymentUrl(subscriptionId: string, customerId: string) {
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId, { expand: ["latest_invoice"] });
+  const owner = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  if (owner !== customerId) throw new Error("The billing account does not match this subscription.");
+  const invoice = typeof subscription.latest_invoice === "string"
+    ? await getStripe().invoices.retrieve(subscription.latest_invoice)
+    : subscription.latest_invoice;
+  if (!invoice || invoice.status !== "open" || !invoice.hosted_invoice_url) {
+    throw new Error("There is no unpaid invoice available for this subscription. Refresh the page to check its current status.");
+  }
+  return invoice.hosted_invoice_url;
+}
+
 export async function createHostedCheckout(input: {
   origin: string;
   locale: "en-GB" | "zh-CN";
@@ -25,7 +38,7 @@ export async function createHostedCheckout(input: {
   scopeType?: "course" | "category" | "everything";
   scopeId?: string | null;
 }) {
-  const returnPath = input.courseId && input.courseId !== "*" ? `/courses/${encodeURIComponent(input.courseId)}` : "/pricing";
+
   const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
@@ -42,7 +55,7 @@ export async function createHostedCheckout(input: {
     metadata: { orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },
     subscription_data: { metadata: { orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId } },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}${returnPath}`
+    cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };
@@ -67,7 +80,7 @@ export async function createHostedUpgradeCheckout(input: {
     line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName } } }],
     metadata: { kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}/pricing`
+    cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };
@@ -89,7 +102,7 @@ export async function createHostedTrialCheckout(input: {
   scopeType?: "course" | "category" | "everything";
   scopeId?: string | null;
 }) {
-  const returnPath = input.courseId && input.courseId !== "*" ? `/courses/${encodeURIComponent(input.courseId)}` : "/pricing";
+
   const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
@@ -99,7 +112,7 @@ export async function createHostedTrialCheckout(input: {
     metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },
     subscription_data: { trial_period_days: 3, metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId } },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}${returnPath}`
+    cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };

@@ -2075,7 +2075,6 @@ body { background: #fff; color: var(--lg-ink); }
 .portal-footer h2 { margin: 0 0 18px; color: #fff; font-size: 15px; }
 .portal-footer p, .portal-footer a { display: block; max-width: 250px; margin: 0 0 9px; color: #d0d5dd; font-size: 12px; line-height: 1.45; text-decoration: none; }
 .portal-footer a:hover { color: #fff; }
-.portal-footer-copyright { width: min(1180px, 100%); margin: 54px auto 0 !important; max-width: none !important; color: #98a2b3 !important; text-align: center; }
 .portal-status { display: none; }
 .portal-empty { padding: 22px; border: 1px dashed #cfd4dc; color: var(--lg-muted); background: #fff; }
 .account-utility { width: min(1180px, calc(100% - 64px)); margin: 10px auto 0; display: flex; justify-content: flex-end; }
@@ -2339,3 +2338,11 @@ body { background: #fff; color: var(--lg-ink); }
   .subscription-confirmation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .portal-auth-stage { min-height: calc(100vh - 62px); padding: 28px 16px 50px; }
 }
+
+/* Account settings — sign-in method linking */
+.settings-signin-methods { display: grid; gap: 12px; margin-top: 24px; }
+.settings-signin-methods h2 { margin: 0; color: #163a5f; font-size: 18px; }
+.settings-signin-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid #d6e1e9; border-radius: 8px; background: #fff; }
+.settings-signin-row > div { min-width: 0; }
+.settings-signin-row .settings-hint { margin: 4px 0 0; }
+.settings-linked-badge { flex-shrink: 0; padding: 5px 12px; border-radius: 999px; background: #e7f6ec; color: #0e7a3c; font-size: 12px; font-weight: 700; white-space: nowrap; }

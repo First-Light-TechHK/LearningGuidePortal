@@ -1,4 +1,5 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import nodemailer from "nodemailer";
 import { awsRegion } from "./persistence/config";
 
 let client: SESv2Client | null = null;
@@ -8,12 +9,42 @@ function getClient() {
   return client;
 }
 
-export function emailDeliveryConfigured() {
-  return Boolean(process.env.SES_FROM_EMAIL?.trim());
+function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim());
 }
 
-async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
-  const from = process.env.SES_FROM_EMAIL?.trim();
+function fromAddress() {
+  return process.env.SMTP_FROM?.trim() || process.env.SES_FROM_EMAIL?.trim() || process.env.SMTP_USER?.trim() || "";
+}
+
+export function emailDeliveryConfigured() {
+  return smtpConfigured() || Boolean(process.env.SES_FROM_EMAIL?.trim());
+}
+
+async function sendViaSmtp(input: { to: string; subject: string; text: string; html: string }) {
+  const from = fromAddress();
+  if (!from) throw new Error("SMTP_FROM or SES_FROM_EMAIL is not configured.");
+  const port = Number(process.env.SMTP_PORT || "465");
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: process.env.SMTP_SECURE?.trim() !== "0" && port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+  await transporter.sendMail({
+    from,
+    to: input.to,
+    subject: input.subject,
+    text: input.text,
+    html: input.html
+  });
+}
+
+async function sendViaSes(input: { to: string; subject: string; text: string; html: string }) {
+  const from = fromAddress();
   if (!from) throw new Error("SES_FROM_EMAIL is not configured.");
   await getClient().send(new SendEmailCommand({
     FromEmailAddress: from,
@@ -28,6 +59,11 @@ async function sendEmail(input: { to: string; subject: string; text: string; htm
       }
     }
   }));
+}
+
+async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
+  if (smtpConfigured()) return sendViaSmtp(input);
+  return sendViaSes(input);
 }
 
 export function sendVerificationEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {

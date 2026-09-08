@@ -1,0 +1,2215 @@
+<canvas id="0:1" name="ALL" x="0" y="0" width="0" height="0">
+  <frame id="2:83" name="Portal-Homepage" x="-433" y="67" width="1440" height="2978">
+    <frame id="2:231" name="Group 26" x="0" y="1520" width="1440" height="335">
+      <rounded-rectangle id="2:232" name="Rectangle 7" x="0" y="1520" width="1440" height="335" />
+      <text id="2:233" name="Access thousands of courses taught by industry experts. Learn at your own pace and advance your career." x="144" y="1670" width="1153" height="96" />
+      <vector id="2:234" name="Vector 2" x="520.5" y="1771.869384765625" width="157.5" height="10.130570411682129" />
+      <text id="2:235" name="why us" x="678" y="1576" width="83" height="24" />
+    </frame>
+    <text id="2:236" name="benefit" x="127" y="1945" width="56" height="19" />
+    <text id="2:237" name="description description description description description description description description" x="127" y="1974" width="300" height="30" />
+    <text id="2:238" name="benefit" x="427" y="1945" width="56" height="19" />
+    <text id="2:239" name="description description description description description description description description" x="427" y="1974" width="300" height="30" />
+    <text id="2:240" name="benefit" x="717" y="1945" width="56" height="19" />
+    <text id="2:241" name="description description description description description description description description" x="717" y="1974" width="300" height="30" />
+    <text id="2:242" name="benefit" x="1007" y="1945" width="56" height="19" />
+    <text id="2:243" name="description description description description description description description description" x="1007" y="1974" width="300" height="30" />
+    <frame id="2:244" name="file-image-line" x="1007" y="1903" width="24" height="24" />
+    <frame id="2:246" name="file-image-line" x="127" y="1903" width="24" height="24" />
+    <frame id="2:248" name="file-image-line" x="427" y="1903" width="24" height="24" />
+    <frame id="2:250" name="file-image-line" x="717" y="1903" width="24" height="24" />
+    <rounded-rectangle id="2:252" name="Rectangle 8" x="-4" y="2072" width="1440" height="600" />
+    <text id="2:253" name="quickly guide" x="86" y="2128" width="205" height="36" />
+    <text id="2:254" name="study with us" x="86" y="2272" width="138" height="24" />
+    <text id="2:255" name="description description description description description description description description description description description description description" x="86" y="2304" width="494" height="30" />
+    <text id="2:256" name="study with us" x="86" y="2370" width="138" height="24" />
+    <text id="2:257" name="description description description description description description description description description description description description description" x="86" y="2402" width="494" height="30" />
+    <text id="2:258" name="study with us" x="86" y="2468" width="138" height="24" />
+    <text id="2:259" name="description description description description description description description description description description description description description" x="86" y="2500" width="494" height="30" />
+    <rounded-rectangle id="2:260" name="Rectangle 9" x="724" y="2113" width="563" height="522" />
+    <text id="2:261" name="step 1" x="86" y="2220" width="97" height="36" />
+    <line id="2:262" name="Line 1" x="86" y="2352" width="470" height="0" />
+    <line id="2:263" name="Line 2" x="86" y="2450" width="470" height="0" />
+    <frame id="2:60" name="Footer — Course Detail" x="-3" y="2672" width="1440" height="306">
+      <text id="2:61" name="Learning Guide" x="100" y="54" width="149" height="28" />
+      <text id="2:62" name="A thoughtful place to explore culture, ideas and the world." x="100" y="88" width="270" height="44" />
+      <text id="2:63" name="Courses" x="560" y="54" width="57" height="20" />
+      <text id="2:64" name="Humanities" x="560" y="88" width="69" height="18" />
+      <text id="2:65" name="Art" x="560" y="119" width="19" height="18" />
+      <text id="2:66" name="Science" x="560" y="150" width="49" height="18" />
+      <text id="2:67" name="Support" x="795" y="54" width="55" height="20" />
+      <text id="2:68" name="Help Center / FAQ" x="795" y="88" width="111" height="18" />
+      <text id="2:69" name="Contact us" x="795" y="119" width="67" height="18" />
+      <text id="2:70" name="Cookie settings" x="795" y="150" width="96" height="18" />
+      <text id="2:71" name="Legal" x="1030" y="54" width="37" height="20" />
+      <text id="2:72" name="Privacy policy" x="1030" y="88" width="86" height="18" />
+      <text id="2:73" name="Terms of service" x="1030" y="119" width="103" height="18" />
+      <text id="2:74" name="© 2026 Learning Guide" x="1030" y="150" width="145" height="18" />
+      <text id="2:75" name="Instagram LinkedIn YouTube" x="100" y="238" width="191" height="18" />
+      <rounded-rectangle id="2:76" name="Footer divider" x="100" y="216" width="1240" height="1" />
+    </frame>
+    <instance id="2013:379" name="Header" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="3:498" name="Hero — Brand Value" x="-433" y="138" width="1440" height="510">
+    <frame id="3:499" name="Hero Copy" x="100" y="98" width="560" height="330">
+      <frame id="3:500" name="Eyebrow" x="0" y="0" width="125" height="28">
+        <text id="3:501" name="LEARNING GUIDE" x="12" y="6" width="101" height="16" />
+      </frame>
+      <text id="3:502" name="Learn with curiosity. Grow with confidence." x="0" y="48" width="560" height="128" />
+      <text id="3:503" name="Learning Guide turns world-class cultural knowledge into a personal learning journey — in video or text, at your own pace." x="0" y="196" width="510" height="70" />
+      <frame id="3:504" name="Hero CTA — Explore Courses" x="0" y="286" width="185" height="46">
+        <text id="3:505" name="Explore Courses →" x="22" y="13" width="141" height="20" />
+      </frame>
+    </frame>
+    <frame id="3:506" name="Hero Visual" x="718" y="93" width="510" height="340" />
+    <frame id="3:508" name="Carousel Indicators" x="1286" y="259" width="54" height="8">
+      <ellipse id="3:509" name="Slide 1" x="0" y="0" width="22" height="8" />
+      <ellipse id="3:510" name="Slide 2" x="30" y="0" width="8" height="8" />
+      <ellipse id="3:511" name="Slide 3" x="46" y="0" width="8" height="8" />
+    </frame>
+  </frame>
+  <frame id="3:513" name="Featured Courses" x="-433" y="632" width="1440" height="942">
+    <frame id="3:514" name="Section Heading" x="100" y="75" width="1240" height="99">
+      <frame id="3:515" name="Featured Course Copy" x="0" y="0" width="331" height="67">
+        <text id="3:516" name="Popular courses" x="0" y="0" width="239" height="41" />
+        <text id="3:517" name="Begin with a subject that sparks your curiosity." x="0" y="46" width="331" height="21" />
+      </frame>
+    </frame>
+    <frame id="3:518" name="Course Card Grid" x="100" y="174" width="1240" height="696">
+      <frame id="3:519" name="Course Card — European Humanities" x="0" y="0" width="400" height="325">
+        <rounded-rectangle id="3:520" name="Course Cover" x="0" y="0" width="413" height="200" />
+        <frame id="3:521" name="Category" x="19" y="208" width="125" height="25">
+          <text id="3:522" name="Chinese Humanities" x="9" y="5" width="107" height="15" />
+        </frame>
+        <text id="3:523" name="European Humanities" x="19" y="238" width="179" height="23" />
+        <text id="3:524" name="8 lessons · 4h 20m" x="19" y="299" width="108" height="17" />
+        <text id="3:525" name="→" x="363" y="264" width="18" height="25" />
+        <text id="3:526" name="Course summary" x="19" y="267" width="350" height="32" />
+      </frame>
+      <frame id="3:527" name="Course Card — China: Art &amp; Civilization" x="420" y="0" width="400" height="325">
+        <rounded-rectangle id="3:528" name="Course Cover" x="0" y="0" width="413" height="200" />
+        <frame id="3:529" name="Category" x="18" y="207" width="35" height="25">
+          <text id="3:530" name="Art" x="9" y="5" width="17" height="15" />
+        </frame>
+        <text id="3:531" name="China: Art &amp; Civilization" x="18" y="232" width="197" height="23" />
+        <text id="3:532" name="10 lessons · 5h 10m" x="18" y="297" width="111" height="17" />
+        <text id="3:533" name="→" x="364" y="262" width="18" height="25" />
+        <text id="3:534" name="Course summary" x="18" y="260" width="350" height="32" />
+      </frame>
+      <frame id="3:535" name="Course Card — The Art of Seeing" x="840" y="0" width="400" height="325">
+        <rounded-rectangle id="3:536" name="Course Cover" x="0" y="0" width="413" height="200" />
+        <frame id="3:537" name="Category" x="16" y="213" width="35" height="25">
+          <text id="3:538" name="Art" x="9" y="5" width="17" height="15" />
+        </frame>
+        <text id="3:539" name="The Art of Seeing" x="16" y="238" width="146" height="23" />
+        <text id="3:540" name="7 lessons · 3h 45m" x="16" y="301" width="107" height="17" />
+        <text id="3:541" name="→" x="362" y="269" width="18" height="25" />
+        <text id="3:542" name="Course summary" x="16" y="269" width="350" height="32" />
+      </frame>
+      <frame id="3:543" name="Course Card — Origins of Modern Science" x="0" y="350" width="400" height="325">
+        <rounded-rectangle id="3:544" name="Course Cover" x="0" y="0" width="413" height="200" />
+        <frame id="3:545" name="Category" x="19" y="207" width="61" height="25">
+          <text id="3:546" name="Science" x="9" y="5" width="43" height="15" />
+        </frame>
+        <text id="3:547" name="Origins of Modern Science" x="19" y="233" width="221" height="23" />
+        <text id="3:548" name="9 lessons · 4h 50m" x="19" y="296" width="108" height="17" />
+        <text id="3:549" name="→" x="365" y="291" width="18" height="25" />
+        <text id="3:550" name="Course summary" x="19" y="260" width="350" height="32" />
+      </frame>
+      <frame id="3:551" name="Course Card — Cities, Objects &amp; Stories" x="420" y="350" width="400" height="325">
+        <rounded-rectangle id="3:552" name="Course Cover" x="0" y="0" width="413" height="200" />
+        <frame id="3:553" name="Category" x="18" y="206" width="132" height="25">
+          <text id="3:554" name="European Humanities" x="9" y="5" width="114" height="15" />
+        </frame>
+        <text id="3:555" name="Cities, Objects &amp; Stories" x="19" y="236" width="201" height="23" />
+        <text id="3:556" name="6 lessons · 3h 20m" x="19" y="296" width="108" height="17" />
+        <text id="3:557" name="→" x="365" y="291" width="18" height="25" />
+        <text id="3:558" name="Course summary" x="19" y="259" width="350" height="32" />
+      </frame>
+      <frame id="3:559" name="Course Card — Wonder in the Natural World" x="840" y="350" width="400" height="325">
+        <rounded-rectangle id="3:560" name="Course Cover" x="0" y="0" width="413" height="200" />
+        <frame id="3:561" name="Category" x="19" y="206" width="61" height="25">
+          <text id="3:562" name="Science" x="9" y="5" width="43" height="15" />
+        </frame>
+        <text id="3:563" name="Wonder in the Natural World" x="19" y="233" width="235" height="23" />
+        <text id="3:564" name="8 lessons · 4h 05m" x="19" y="296" width="108" height="17" />
+        <text id="3:565" name="→" x="365" y="291" width="18" height="25" />
+        <text id="3:566" name="Course summary" x="19" y="256" width="350" height="32" />
+      </frame>
+    </frame>
+    <frame id="100:380" name="Button" x="607.8984375" y="870" width="224.203125" height="48">
+      <text id="100:381" name="Explore more" x="62" y="15" width="101" height="19" />
+    </frame>
+  </frame>
+  <frame id="3:854" name="Portal-Course discovery" x="1097" y="67" width="1440" height="2128">
+    <instance id="2007:231" name="Header — Visitor" x="0" y="0" width="1440" height="68" />
+    <frame id="3:873" name="Public Lesson Banner" x="0" y="68" width="1440" height="505">
+      <frame id="3:874" name="Public Lesson Copy" x="100" y="130" width="570" height="245">
+        <frame id="3:875" name="Public" x="0" y="0" width="226" height="27">
+          <text id="3:876" name="FEATURED NOW · FREE FIRST LESSON" x="11" y="6" width="204" height="15" />
+        </frame>
+        <text id="3:877" name="Try the first lesson before you subscribe." x="0" y="41" width="600" height="86" />
+        <text id="3:878" name="Watch or read a complete first lesson before you subscribe." x="0" y="141" width="540" height="20" />
+        <frame id="2014:464" name="Hero CTA — Explore Courses" x="0" y="175" width="185" height="46">
+          <text id="2014:465" name="Explore Courses →" x="22" y="13" width="141" height="20" />
+        </frame>
+      </frame>
+      <frame id="3:881" name="Public Lesson Preview" x="706" y="71" width="634" height="363" />
+    </frame>
+    <frame id="3:885" name="Course Directory" x="0" y="573" width="1440" height="939">
+      <text id="3:886" name="Explore all courses" x="100" y="68" width="296" height="43" />
+      <text id="3:887" name="Explore curated learning journeys across the humanities, arts and sciences." x="100" y="116" width="570" height="22" />
+      <frame id="3:888" name="Course Categories" x="100" y="170" width="592" height="39">
+        <frame id="3:889" name="Category — All courses" x="0" y="0" width="112" height="39">
+          <text id="3:890" name="All courses" x="18" y="10" width="76" height="19" />
+        </frame>
+        <frame id="3:891" name="Category — Humanities" x="124" y="0" width="181" height="39">
+          <text id="3:892" name="European Humanities" x="18" y="10" width="145" height="19" />
+        </frame>
+        <frame id="3:893" name="Category — Art" x="317" y="0" width="172" height="39">
+          <text id="3:894" name="Chinese Humanities" x="18" y="10" width="136" height="19" />
+        </frame>
+        <frame id="3:1001" name="Category — Science" x="501" y="0" width="91" height="39">
+          <text id="3:1002" name="Science" x="18" y="10" width="55" height="19" />
+        </frame>
+      </frame>
+      <frame id="3:897" name="Courses Grid" x="100" y="245" width="1240" height="664">
+        <frame id="3:898" name="Course — European Humanities" x="0" y="0" width="400" height="299">
+          <rounded-rectangle id="3:899" name="Rectangle" x="0" y="0" width="413" height="200" />
+          <text id="3:901" name="European Humanities" x="23" y="213" width="179" height="23" />
+          <text id="3:902" name="8 lessons · 4h 20m" x="24" y="270" width="108" height="16" />
+          <text id="3:903" name="View course →" x="278" y="240" width="97" height="18" />
+          <text id="3:904" name="Course summary" x="24" y="245" width="240" height="16" />
+        </frame>
+        <frame id="3:905" name="Course — China: Art &amp; Civilization" x="420" y="0" width="400" height="299">
+          <rounded-rectangle id="3:906" name="Rectangle" x="0" y="0" width="413" height="200" />
+          <text id="3:908" name="China: Art &amp; Civilization" x="24" y="210" width="197" height="23" />
+          <text id="3:909" name="10 lessons · 5h 10m" x="24" y="272" width="111" height="16" />
+          <text id="3:910" name="View course →" x="278" y="246" width="97" height="18" />
+          <text id="3:911" name="Course summary" x="24" y="243" width="240" height="16" />
+        </frame>
+        <frame id="3:912" name="Course — The Art of Seeing" x="840" y="0" width="400" height="299">
+          <rounded-rectangle id="3:913" name="Rectangle" x="0" y="0" width="400" height="199" />
+          <text id="3:915" name="The Art of Seeing" x="16" y="211" width="146" height="23" />
+          <text id="3:916" name="7 lessons · 3h 45m" x="16" y="271" width="107" height="16" />
+          <text id="3:917" name="View course →" x="270" y="245" width="97" height="18" />
+          <text id="3:918" name="Course summary" x="16" y="242" width="240" height="16" />
+        </frame>
+        <frame id="3:919" name="Course — Origins of Modern Science" x="0" y="326" width="400" height="299">
+          <rounded-rectangle id="3:920" name="Rectangle" x="0" y="0" width="413" height="200" />
+          <text id="3:922" name="Origins of Modern Science" x="16" y="210" width="221" height="23" />
+          <text id="3:923" name="9 lessons · 4h 50m" x="16" y="270" width="108" height="16" />
+          <text id="3:924" name="View course →" x="270" y="244" width="97" height="18" />
+          <text id="3:925" name="Course summary" x="16" y="241" width="240" height="16" />
+        </frame>
+        <frame id="3:926" name="Course — Cities, Objects &amp; Stories" x="420" y="326" width="400" height="299">
+          <rounded-rectangle id="3:927" name="Rectangle" x="0" y="0" width="400" height="199" />
+          <text id="3:929" name="Cities, Objects &amp; Stories" x="18" y="209" width="201" height="23" />
+          <text id="3:930" name="6 lessons · 3h 20m" x="18" y="269" width="108" height="16" />
+          <text id="3:931" name="View course →" x="272" y="243" width="97" height="18" />
+          <text id="3:932" name="Course summary" x="18" y="240" width="240" height="16" />
+        </frame>
+        <frame id="3:933" name="Course — Wonder in the Natural World" x="840" y="326" width="400" height="299">
+          <rounded-rectangle id="3:934" name="Rectangle" x="0" y="0" width="400" height="200" />
+          <text id="3:936" name="Wonder in the Natural World" x="16" y="210" width="235" height="23" />
+          <text id="3:937" name="8 lessons · 4h 05m" x="16" y="270" width="108" height="16" />
+          <text id="3:938" name="View course →" x="270" y="244" width="97" height="18" />
+          <text id="3:939" name="Course summary" x="16" y="241" width="240" height="16" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="3:940" name="Learning Method" x="0" y="1512" width="1440" height="310">
+      <frame id="3:941" name="Frame" x="100" y="75" width="570" height="160">
+        <text id="3:942" name="THE LEARNING GUIDE METHOD" x="0" y="0" width="184" height="16" />
+        <text id="3:943" name="Learn through stories, questions and connections." x="0" y="26" width="540" height="82" />
+        <text id="3:944" name="Every course offers a choice between video and text, designed to keep you actively thinking." x="0" y="120" width="550" height="46" />
+      </frame>
+      <frame id="3:945" name="Method Steps" x="834" y="107" width="506" height="96">
+        <frame id="3:946" name="Frame" x="0" y="0" width="150" height="96">
+          <text id="3:947" name="01" x="0" y="0" width="15" height="18" />
+          <text id="3:948" name="Watch or read" x="0" y="27" width="102" height="20" />
+        </frame>
+        <frame id="3:949" name="Frame" x="178" y="0" width="150" height="96">
+          <text id="3:950" name="02" x="0" y="0" width="17" height="18" />
+          <text id="3:951" name="Pause and reflect" x="0" y="27" width="127" height="20" />
+        </frame>
+        <frame id="3:952" name="Frame" x="356" y="0" width="150" height="96">
+          <text id="3:953" name="03" x="0" y="0" width="18" height="18" />
+          <text id="3:954" name="Continue learning" x="0" y="27" width="129" height="20" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="3:955" name="Footer" x="0" y="1822" width="1440" height="306">
+      <text id="3:956" name="Learning Guide" x="100" y="54" width="149" height="28" />
+      <text id="3:957" name="A thoughtful place to explore culture, ideas and the world." x="100" y="88" width="270" height="44" />
+      <text id="3:958" name="Courses" x="560" y="54" width="57" height="20" />
+      <text id="3:959" name="Humanities" x="560" y="88" width="69" height="18" />
+      <text id="3:960" name="Art" x="560" y="119" width="19" height="18" />
+      <text id="3:961" name="Science" x="560" y="150" width="49" height="18" />
+      <text id="3:962" name="Support" x="795" y="54" width="55" height="20" />
+      <text id="3:963" name="Help Center / FAQ" x="795" y="88" width="111" height="18" />
+      <text id="3:964" name="Contact us" x="795" y="119" width="67" height="18" />
+      <text id="3:965" name="Cookie settings" x="795" y="150" width="96" height="18" />
+      <text id="3:966" name="Legal" x="1030" y="54" width="37" height="20" />
+      <text id="3:967" name="Privacy policy" x="1030" y="88" width="86" height="18" />
+      <text id="3:968" name="Terms of service" x="1030" y="119" width="103" height="18" />
+      <text id="3:969" name="© 2026 Learning Guide" x="1030" y="150" width="145" height="18" />
+      <text id="3:970" name="Instagram LinkedIn YouTube" x="100" y="238" width="191" height="18" />
+      <rounded-rectangle id="3:971" name="Footer divider" x="100" y="216" width="1240" height="1" />
+    </frame>
+  </frame>
+  <frame id="101:385" name="Portal-About us" x="-433" y="3541" width="1440" height="3002">
+    <rounded-rectangle id="101:386" name="Rectangle 92" x="0" y="1501" width="1440" height="484" />
+    <rounded-rectangle id="101:387" name="Rectangle 91" x="0" y="909" width="1440" height="200" />
+    <rounded-rectangle id="101:388" name="Rectangle 90" x="0" y="71" width="1440" height="278" />
+    <text id="101:389" name="About Us" x="564.1640625" y="145.5" width="216" height="48" />
+    <text id="101:390" name="We&#39;re on a mission to make quality education acces" x="301.8828125" y="217" width="741" height="28" />
+    <frame id="101:391" name="Container" x="80" y="453" width="616" height="336">
+      <frame id="101:392" name="Heading 2" x="0" y="0" width="616" height="40">
+        <text id="101:393" name="Our Story" x="0" y="0.5" width="169" height="40" />
+      </frame>
+      <frame id="101:394" name="Container" x="0" y="64" width="616" height="272">
+        <text id="101:395" name="Founded in 2018, EduPlatform began with a simple i" x="0" y="0" width="614" height="96" />
+        <text id="101:396" name="What started as a small platform with just 10 cour" x="0" y="112" width="597" height="96" />
+        <text id="101:397" name="Our platform combines cutting-edge technology with" x="0" y="224" width="608" height="72" />
+      </frame>
+    </frame>
+    <frame id="101:398" name="ImageWithFallback" x="744" y="429" width="616" height="384" />
+    <text id="101:399" name="50K+" x="139.421875" y="963.5" width="119" height="48" />
+    <text id="101:400" name="Active Learners" x="140.8984375" y="1018.5" width="114" height="24" />
+    <text id="101:401" name="500+" x="464.640625" y="963.5" width="122" height="48" />
+    <text id="101:402" name="Expert Instructors" x="461.25" y="1018.5" width="131" height="24" />
+    <text id="101:403" name="1,000+" x="775.5625" y="963.5" width="156" height="48" />
+    <text id="101:404" name="Courses Available" x="790.0078125" y="1018.5" width="129" height="24" />
+    <text id="101:405" name="150+" x="1124.5546875" y="963.5" width="115" height="48" />
+    <text id="101:406" name="Countries Reached" x="1113.1640625" y="1018.5" width="139" height="24" />
+    <frame id="101:407" name="Section" x="80" y="1173" width="1280" height="272">
+      <frame id="101:408" name="Container" x="0" y="0" width="624" height="272">
+        <frame id="101:409" name="Container" x="32" y="32" width="48" height="48">
+          <frame id="101:410" name="Icon" x="12" y="12" width="24" height="24" />
+        </frame>
+        <frame id="101:414" name="Heading 3" x="32" y="96" width="560" height="32">
+          <text id="101:415" name="Our Mission" x="0" y="0" width="138" height="32" />
+        </frame>
+        <frame id="101:416" name="Paragraph" x="32" y="144" width="560" height="96">
+          <text id="101:417" name="To democratize education by providing high-quality" x="0" y="-0.5" width="527" height="96" />
+        </frame>
+      </frame>
+      <frame id="101:418" name="Container" x="656" y="0" width="624" height="272">
+        <frame id="101:419" name="Container" x="32" y="32" width="48" height="48">
+          <frame id="101:420" name="Icon" x="12" y="12" width="24" height="24" />
+        </frame>
+        <frame id="101:423" name="Heading 3" x="32" y="96" width="560" height="32">
+          <text id="101:424" name="Our Vision" x="0" y="0" width="120" height="32" />
+        </frame>
+        <frame id="101:425" name="Paragraph" x="32" y="144" width="560" height="96">
+          <text id="101:426" name="To become the world&#39;s leading collaborative learni" x="0" y="-0.5" width="558" height="96" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:427" name="Container" x="80" y="1573" width="1280" height="80">
+      <frame id="101:428" name="Heading 2" x="0" y="0" width="1280" height="40">
+        <text id="101:429" name="Our Values" x="545.0625" y="0.5" width="191" height="40" />
+      </frame>
+      <frame id="101:430" name="Paragraph" x="304" y="56" width="672" height="24">
+        <text id="101:431" name="These core values guide everything we do and shape" x="98.6171875" y="-0.5" width="474" height="24" />
+      </frame>
+    </frame>
+    <frame id="101:432" name="Container" x="80" y="1701" width="1280" height="164">
+      <frame id="101:433" name="Container" x="0" y="0" width="296" height="164">
+        <frame id="101:434" name="Container" x="116" y="0" width="64" height="64">
+          <frame id="101:435" name="Icon" x="16" y="16" width="32" height="32" />
+        </frame>
+        <frame id="101:439" name="Heading 3" x="0" y="80" width="296" height="28">
+          <text id="101:440" name="Excellence" x="99.109375" y="0" width="99" height="28" />
+        </frame>
+        <frame id="101:441" name="Paragraph" x="0" y="116" width="296" height="48">
+          <text id="101:442" name="We strive for the highest quality in every course " x="2.96875" y="-0.5" width="291" height="48" />
+        </frame>
+      </frame>
+      <frame id="101:443" name="Container" x="328" y="0" width="296" height="164">
+        <frame id="101:444" name="Container" x="116" y="0" width="64" height="64">
+          <frame id="101:445" name="Icon" x="16" y="16" width="32" height="32" />
+        </frame>
+        <frame id="101:447" name="Heading 3" x="0" y="80" width="296" height="28">
+          <text id="101:448" name="Community" x="95.140625" y="0" width="107" height="28" />
+        </frame>
+        <frame id="101:449" name="Paragraph" x="0" y="116" width="296" height="48">
+          <text id="101:450" name="Building a supportive and inclusive learning envir" x="22.0703125" y="-0.5" width="252" height="72" />
+        </frame>
+      </frame>
+      <frame id="101:451" name="Container" x="656" y="0" width="296" height="164">
+        <frame id="101:452" name="Container" x="116" y="0" width="64" height="64">
+          <frame id="101:453" name="Icon" x="16" y="16" width="32" height="32" />
+        </frame>
+        <frame id="101:457" name="Heading 3" x="0" y="80" width="296" height="28">
+          <text id="101:458" name="Innovation" x="100.46875" y="0" width="96" height="28" />
+        </frame>
+        <frame id="101:459" name="Paragraph" x="0" y="116" width="296" height="48">
+          <text id="101:460" name="Continuously improving and adapting to meet learne" x="3.8515625" y="-0.5" width="289" height="48" />
+        </frame>
+      </frame>
+      <frame id="101:461" name="Container" x="984" y="0" width="296" height="164">
+        <frame id="101:462" name="Container" x="116" y="0" width="64" height="64">
+          <frame id="101:463" name="Icon" x="16" y="16" width="32" height="32" />
+        </frame>
+        <frame id="101:467" name="Heading 3" x="0" y="80" width="296" height="28">
+          <text id="101:468" name="Accessibility" x="89.7890625" y="0" width="116" height="28" />
+        </frame>
+        <frame id="101:469" name="Paragraph" x="0" y="116" width="296" height="48">
+          <text id="101:470" name="Making quality education accessible to learners wo" x="7.84375" y="-0.5" width="281" height="48" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:471" name="Section" x="96" y="1986" width="1280" height="684">
+      <frame id="101:472" name="Container" x="0" y="64" width="1280" height="80">
+        <frame id="101:473" name="Heading 2" x="0" y="0" width="1280" height="40">
+          <text id="101:474" name="Meet Our Leadership Team" x="402.5078125" y="0.5" width="474" height="40" />
+        </frame>
+        <frame id="101:475" name="Paragraph" x="304" y="56" width="672" height="24">
+          <text id="101:476" name="Passionate individuals dedicated to transforming e" x="118.9296875" y="-0.5" width="434" height="24" />
+        </frame>
+      </frame>
+      <frame id="101:477" name="Container" x="0" y="192" width="1280" height="428">
+        <frame id="101:478" name="Container" x="0" y="0" width="296" height="428">
+          <frame id="101:479" name="ImageWithFallback" x="0" y="0" width="296" height="256" />
+          <frame id="101:480" name="Container" x="0" y="256" width="296" height="152">
+            <frame id="101:481" name="Heading 3" x="24" y="24" width="248" height="28">
+              <text id="101:482" name="Sarah Johnson" x="0" y="0" width="137" height="28" />
+            </frame>
+            <frame id="101:483" name="Paragraph" x="24" y="56" width="248" height="20">
+              <text id="101:484" name="CEO &amp; Founder" x="0" y="0.5" width="99" height="20" />
+            </frame>
+            <frame id="101:485" name="Paragraph" x="24" y="80" width="248" height="40">
+              <text id="101:486" name="Former educator with 15+ years of experience in on" x="0" y="0.5" width="222" height="40" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:487" name="Container" x="328" y="0" width="296" height="428">
+          <frame id="101:488" name="ImageWithFallback" x="0" y="0" width="296" height="256" />
+          <frame id="101:489" name="Container" x="0" y="256" width="296" height="152">
+            <frame id="101:490" name="Heading 3" x="24" y="24" width="248" height="28">
+              <text id="101:491" name="Michael Chen" x="0" y="0" width="126" height="28" />
+            </frame>
+            <frame id="101:492" name="Paragraph" x="24" y="56" width="248" height="20">
+              <text id="101:493" name="Chief Technology Officer" x="0" y="0.5" width="162" height="20" />
+            </frame>
+            <frame id="101:494" name="Paragraph" x="24" y="80" width="248" height="40">
+              <text id="101:495" name="Tech innovator passionate about building scalable " x="0" y="0.5" width="246" height="40" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:496" name="Container" x="656" y="0" width="296" height="428">
+          <frame id="101:497" name="ImageWithFallback" x="0" y="0" width="296" height="256" />
+          <frame id="101:498" name="Container" x="0" y="256" width="296" height="172">
+            <frame id="101:499" name="Heading 3" x="24" y="24" width="248" height="28">
+              <text id="101:500" name="Emily Rodriguez" x="0" y="0" width="148" height="28" />
+            </frame>
+            <frame id="101:501" name="Paragraph" x="24" y="56" width="248" height="20">
+              <text id="101:502" name="Head of Content" x="0" y="0.5" width="108" height="20" />
+            </frame>
+            <frame id="101:503" name="Paragraph" x="24" y="80" width="248" height="60">
+              <text id="101:504" name="Curriculum developer with expertise in creating en" x="0" y="0.5" width="233" height="60" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:505" name="Container" x="984" y="0" width="296" height="428">
+          <frame id="101:506" name="ImageWithFallback" x="0" y="0" width="296" height="256" />
+          <frame id="101:507" name="Container" x="0" y="256" width="296" height="172">
+            <frame id="101:508" name="Heading 3" x="24" y="24" width="248" height="28">
+              <text id="101:509" name="David Kim" x="0" y="0" width="93" height="28" />
+            </frame>
+            <frame id="101:510" name="Paragraph" x="24" y="56" width="248" height="20">
+              <text id="101:511" name="Head of Community" x="0" y="0.5" width="130" height="20" />
+            </frame>
+            <frame id="101:512" name="Paragraph" x="24" y="80" width="248" height="60">
+              <text id="101:513" name="Community builder dedicated to fostering collabora" x="0" y="0.5" width="208" height="60" />
+            </frame>
+          </frame>
+        </frame>
+      </frame>
+    </frame>
+    <instance id="2007:254" name="Header — Visitor" x="0" y="0" width="1440" height="68" />
+    <frame id="101:1062" name="Footer — Course Detail" x="1" y="2696" width="1440" height="306">
+      <text id="101:1063" name="Learning Guide" x="100" y="54" width="149" height="28" />
+      <text id="101:1064" name="A thoughtful place to explore culture, ideas and the world." x="100" y="88" width="270" height="44" />
+      <text id="101:1065" name="Courses" x="560" y="54" width="57" height="20" />
+      <text id="101:1066" name="Humanities" x="560" y="88" width="69" height="18" />
+      <text id="101:1067" name="Art" x="560" y="119" width="19" height="18" />
+      <text id="101:1068" name="Science" x="560" y="150" width="49" height="18" />
+      <text id="101:1069" name="Support" x="795" y="54" width="55" height="20" />
+      <text id="101:1070" name="Help Center / FAQ" x="795" y="88" width="111" height="18" />
+      <text id="101:1071" name="Contact us" x="795" y="119" width="67" height="18" />
+      <text id="101:1072" name="Cookie settings" x="795" y="150" width="96" height="18" />
+      <text id="101:1073" name="Legal" x="1030" y="54" width="37" height="20" />
+      <text id="101:1074" name="Privacy policy" x="1030" y="88" width="86" height="18" />
+      <text id="101:1075" name="Terms of service" x="1030" y="119" width="103" height="18" />
+      <text id="101:1076" name="© 2026 Learning Guide" x="1030" y="150" width="145" height="18" />
+      <text id="101:1077" name="Instagram LinkedIn YouTube" x="100" y="238" width="191" height="18" />
+      <rounded-rectangle id="101:1078" name="Footer divider" x="100" y="216" width="1240" height="1" />
+    </frame>
+  </frame>
+  <frame id="101:554" name="Portal-Contact Us" x="1188" y="3541" width="1440" height="1294">
+    <instance id="2007:277" name="Header — Visitor" x="0" y="0" width="1440" height="68" />
+    <rounded-rectangle id="101:556" name="Rectangle 90" x="0" y="71" width="1440" height="278" />
+    <text id="101:557" name="Get in Touch" x="526.1640625" y="145.5" width="293" height="48" />
+    <text id="101:558" name="We&#39;re on a mission to make quality education acces" x="331" y="217" width="778" height="28" />
+    <frame id="101:559" name="Container" x="80" y="400" width="405.328125" height="468">
+      <frame id="101:560" name="Heading 2" x="0" y="0" width="405.328125" height="32">
+        <text id="101:561" name="Contact Information" x="0" y="0" width="231" height="32" />
+      </frame>
+      <frame id="101:562" name="Container" x="0" y="56" width="405.328125" height="412">
+        <frame id="101:563" name="Container" x="0" y="0" width="405.328125" height="79">
+          <frame id="101:564" name="Container" x="0" y="0" width="48" height="48">
+            <frame id="101:565" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:568" name="Container" x="64" y="0" width="194.84375" height="79">
+            <frame id="101:569" name="Heading 3" x="0" y="0" width="194.84375" height="27">
+              <text id="101:570" name="Email" x="0" y="0.5" width="45" height="27" />
+            </frame>
+            <frame id="101:571" name="Paragraph" x="0" y="31" width="194.84375" height="24">
+              <text id="101:572" name="support@learningguide.com" x="0" y="-0.5" width="206" height="24" />
+            </frame>
+            <frame id="101:573" name="Paragraph" x="0" y="59" width="194.84375" height="24">
+              <text id="101:574" name="info@learningguide.com" x="0" y="-0.5" width="176" height="24" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:575" name="Container" x="0" y="95" width="405.328125" height="79">
+          <frame id="101:576" name="Container" x="0" y="0" width="48" height="48">
+            <frame id="101:577" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:579" name="Container" x="64" y="0" width="137.21875" height="79">
+            <frame id="101:580" name="Heading 3" x="0" y="0" width="137.21875" height="27">
+              <text id="101:581" name="Phone" x="0" y="0.5" width="53" height="27" />
+            </frame>
+            <frame id="101:582" name="Paragraph" x="0" y="31" width="137.21875" height="24">
+              <text id="101:583" name="+1 (555) 123-4567" x="0" y="-0.5" width="137" height="24" />
+            </frame>
+            <frame id="101:584" name="Paragraph" x="0" y="59" width="137.21875" height="24">
+              <text id="101:585" name="+1 (555) 765-4321" x="0" y="-0.5" width="137" height="24" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:586" name="Container" x="0" y="190" width="405.328125" height="103">
+          <frame id="101:587" name="Container" x="0" y="0" width="48" height="48">
+            <frame id="101:588" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:591" name="Container" x="64" y="0" width="181.7734375" height="103">
+            <frame id="101:592" name="Heading 3" x="0" y="0" width="181.7734375" height="27">
+              <text id="101:593" name="Office" x="0" y="0.5" width="51" height="27" />
+            </frame>
+            <frame id="101:594" name="Paragraph" x="0" y="31" width="181.7734375" height="24">
+              <text id="101:595" name="Flat 63, 7F, Woon Lee COMMERCIAL Building" x="0" y="-0.5" width="328" height="24" />
+            </frame>
+            <frame id="101:596" name="Paragraph" x="0" y="55" width="181.7734375" height="24">
+              <text id="101:597" name="7-9 Austin Avenue, TSIM SHA TSUI, Kowloon" x="0" y="-0.5" width="326" height="24" />
+            </frame>
+            <frame id="101:598" name="Paragraph" x="0" y="79" width="181.7734375" height="24">
+              <text id="101:599" name="HONGKONG" x="0" y="-0.5" width="92" height="24" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:600" name="Container" x="0" y="309" width="405.328125" height="103">
+          <frame id="101:601" name="Container" x="0" y="0" width="48" height="48">
+            <frame id="101:602" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:605" name="Container" x="64" y="0" width="240.8203125" height="103">
+            <frame id="101:606" name="Heading 3" x="0" y="0" width="240.8203125" height="27">
+              <text id="101:607" name="Business Hours" x="0" y="0.5" width="128" height="27" />
+            </frame>
+            <frame id="101:608" name="Paragraph" x="0" y="31" width="240.8203125" height="24">
+              <text id="101:609" name="Monday - Friday: 9am - 6pm PST" x="0" y="-0.5" width="242" height="24" />
+            </frame>
+            <frame id="101:610" name="Paragraph" x="0" y="55" width="240.8203125" height="24">
+              <text id="101:611" name="Saturday: 10am - 4pm PST" x="0" y="-0.5" width="196" height="24" />
+            </frame>
+            <frame id="101:612" name="Paragraph" x="0" y="79" width="240.8203125" height="24">
+              <text id="101:613" name="Sunday: Closed" x="0" y="-0.5" width="114" height="24" />
+            </frame>
+          </frame>
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:614" name="Container" x="517.328125" y="400" width="842.671875" height="805">
+      <frame id="101:615" name="Heading 2" x="32" y="32" width="778.671875" height="32">
+        <text id="101:616" name="Send us a Message" x="0" y="0" width="224" height="32" />
+      </frame>
+      <frame id="101:617" name="Form" x="32" y="88" width="778.671875" height="685">
+        <frame id="101:618" name="Container" x="0" y="0" width="778.671875" height="70">
+          <frame id="101:619" name="Container" x="0" y="0" width="377.3359375" height="70">
+            <frame id="101:620" name="Label" x="0" y="0" width="377.3359375" height="20">
+              <text id="101:621" name="First Name *" x="0" y="0.5" width="82" height="20" />
+            </frame>
+            <frame id="101:622" name="Text Input" x="0" y="28" width="377.3359375" height="42">
+              <text id="101:623" name="John" x="16" y="11.5" width="37" height="19" />
+            </frame>
+          </frame>
+          <frame id="101:624" name="Container" x="401.3359375" y="0" width="377.3359375" height="70">
+            <frame id="101:625" name="Label" x="0" y="0" width="377.3359375" height="20">
+              <text id="101:626" name="Last Name *" x="0" y="0.5" width="81" height="20" />
+            </frame>
+            <frame id="101:627" name="Text Input" x="0" y="28" width="377.3359375" height="42">
+              <text id="101:628" name="Doe" x="16" y="11.5" width="30" height="19" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="101:629" name="Container" x="0" y="94" width="778.671875" height="70">
+          <frame id="101:630" name="Label" x="0" y="0" width="778.671875" height="20">
+            <text id="101:631" name="Email Address *" x="0" y="0.5" width="104" height="20" />
+          </frame>
+          <frame id="101:632" name="Email Input" x="0" y="28" width="778.671875" height="42">
+            <text id="101:633" name="john.doe@example.com" x="16" y="11.5" width="175" height="19" />
+          </frame>
+        </frame>
+        <frame id="101:634" name="Container" x="0" y="188" width="778.671875" height="70">
+          <frame id="101:635" name="Label" x="0" y="0" width="778.671875" height="20">
+            <text id="101:636" name="Phone Number" x="0" y="0.5" width="98" height="20" />
+          </frame>
+          <frame id="101:637" name="Phone Input" x="0" y="28" width="778.671875" height="42">
+            <text id="101:638" name="+1 (555) 123-4567" x="16" y="11.5" width="137" height="19" />
+          </frame>
+        </frame>
+        <frame id="101:639" name="Container" x="0" y="282" width="778.671875" height="67">
+          <frame id="101:640" name="Label" x="0" y="0" width="778.671875" height="20">
+            <text id="101:641" name="Subject *" x="0" y="0.5" width="61" height="20" />
+          </frame>
+          <frame id="101:642" name="Dropdown" x="0" y="28" width="778.671875" height="39">
+            <frame id="101:643" name="Option" x="-469.328125" y="-787" width="0.00009999999747378752" height="0.00009999999747378752" />
+            <frame id="101:644" name="Option" x="-469.328125" y="-787" width="0.00009999999747378752" height="0.00009999999747378752" />
+            <frame id="101:645" name="Option" x="-469.328125" y="-787" width="0.00009999999747378752" height="0.00009999999747378752" />
+            <frame id="101:646" name="Option" x="-469.328125" y="-787" width="0.00009999999747378752" height="0.00009999999747378752" />
+            <frame id="101:647" name="Option" x="-469.328125" y="-787" width="0.00009999999747378752" height="0.00009999999747378752" />
+            <frame id="101:648" name="Option" x="-469.328125" y="-787" width="0.00009999999747378752" height="0.00009999999747378752" />
+          </frame>
+        </frame>
+        <frame id="101:649" name="Container" x="0" y="373" width="778.671875" height="196">
+          <frame id="101:650" name="Label" x="0" y="0" width="778.671875" height="20">
+            <text id="101:651" name="Message *" x="0" y="0.5" width="71" height="20" />
+          </frame>
+          <frame id="101:652" name="Text Area" x="0" y="28" width="778.671875" height="162">
+            <text id="101:653" name="Tell us how we can help you..." x="16" y="8" width="216" height="24" />
+          </frame>
+        </frame>
+        <frame id="101:654" name="Container" x="0" y="593" width="778.671875" height="20">
+          <frame id="101:655" name="Checkbox" x="0" y="4" width="13" height="13" />
+          <frame id="101:656" name="Label" x="21" y="0" width="543.4453125" height="20">
+            <text id="101:657" name="I agree to receive communications from EduPlatform" x="0" y="0.5" width="540" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:658" name="Button" x="0" y="637" width="778.671875" height="48">
+          <frame id="101:659" name="Icon" x="320.9921875" y="14" width="20" height="20" />
+          <text id="101:662" name="Send Message" x="347.9921875" y="11.5" width="110" height="24" />
+        </frame>
+      </frame>
+    </frame>
+  </frame>
+  <frame id="101:663" name="Portal-Help Center" x="2741" y="3541" width="1440" height="2762">
+    <instance id="2007:300" name="Header — Visitor" x="0" y="0" width="1440" height="68" />
+    <rounded-rectangle id="101:665" name="Rectangle 90" x="0" y="71" width="1440" height="278" />
+    <text id="101:666" name="How can we help you?" x="460" y="145.5" width="519" height="48" />
+    <text id="101:667" name="We&#39;re on a mission to make quality education acces" x="466" y="217" width="508" height="28" />
+    <frame id="101:668" name="Section" x="80" y="333" width="1280" height="416">
+      <frame id="101:669" name="Heading 2" x="0" y="64" width="1280" height="36">
+        <text id="101:670" name="Browse by Category" x="0" y="0" width="1280" height="36" />
+      </frame>
+      <frame id="101:671" name="Container" x="0" y="132" width="1280" height="220">
+        <frame id="101:672" name="Container" x="0" y="0" width="302" height="220">
+          <frame id="101:673" name="Container" x="24" y="24" width="48" height="48">
+            <frame id="101:674" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:676" name="Heading 3" x="24" y="88" width="254" height="28">
+            <text id="101:677" name="Getting Started" x="0" y="0" width="142" height="28" />
+          </frame>
+          <frame id="101:678" name="Paragraph" x="24" y="124" width="254" height="20">
+            <text id="101:679" name="Learn the basics of using EduPlatform" x="0" y="0.5" width="246" height="20" />
+          </frame>
+          <frame id="101:680" name="Paragraph" x="24" y="156" width="254" height="20">
+            <text id="101:681" name="12 articles" x="0" y="0.5" width="67" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:682" name="Container" x="326" y="0" width="302" height="220">
+          <frame id="101:683" name="Container" x="24" y="24" width="48" height="48">
+            <frame id="101:684" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:687" name="Heading 3" x="24" y="88" width="254" height="28">
+            <text id="101:688" name="Billing &amp; Payments" x="0" y="0" width="168" height="28" />
+          </frame>
+          <frame id="101:689" name="Paragraph" x="24" y="124" width="254" height="40">
+            <text id="101:690" name="Manage your subscription and payments" x="0" y="0.5" width="196" height="40" />
+          </frame>
+          <frame id="101:691" name="Paragraph" x="24" y="176" width="254" height="20">
+            <text id="101:692" name="8 articles" x="0" y="0.5" width="60" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:693" name="Container" x="652" y="0" width="302" height="220">
+          <frame id="101:694" name="Container" x="24" y="24" width="48" height="48">
+            <frame id="101:695" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:700" name="Heading 3" x="24" y="88" width="254" height="28">
+            <text id="101:701" name="Study Groups" x="0" y="0" width="126" height="28" />
+          </frame>
+          <frame id="101:702" name="Paragraph" x="24" y="124" width="254" height="20">
+            <text id="101:703" name="Create and join study groups" x="0" y="0.5" width="187" height="20" />
+          </frame>
+          <frame id="101:704" name="Paragraph" x="24" y="156" width="254" height="20">
+            <text id="101:705" name="15 articles" x="0" y="0.5" width="67" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:706" name="Container" x="978" y="0" width="302" height="220">
+          <frame id="101:707" name="Container" x="24" y="24" width="48" height="48">
+            <frame id="101:708" name="Icon" x="12" y="12" width="24" height="24" />
+          </frame>
+          <frame id="101:711" name="Heading 3" x="24" y="88" width="254" height="28">
+            <text id="101:712" name="Account Settings" x="0" y="0" width="158" height="28" />
+          </frame>
+          <frame id="101:713" name="Paragraph" x="24" y="124" width="254" height="20">
+            <text id="101:714" name="Manage your profile and preferences" x="0" y="0.5" width="239" height="20" />
+          </frame>
+          <frame id="101:715" name="Paragraph" x="24" y="156" width="254" height="20">
+            <text id="101:716" name="10 articles" x="0" y="0.5" width="67" height="20" />
+          </frame>
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:717" name="Section" x="0" y="749" width="1345" height="685">
+      <frame id="101:718" name="Heading 2" x="0" y="64" width="1280" height="36">
+        <text id="101:719" name="Popular Articles" x="0" y="0" width="1280" height="36" />
+      </frame>
+      <frame id="101:720" name="Container" x="256" y="132" width="768" height="489">
+        <frame id="101:721" name="Link" x="0" y="0" width="768" height="85">
+          <frame id="101:722" name="Heading 3" x="17" y="17" width="734" height="27">
+            <text id="101:723" name="How to create your first course" x="0" y="0.5" width="254" height="27" />
+          </frame>
+          <frame id="101:724" name="Paragraph" x="17" y="48" width="734" height="20">
+            <text id="101:725" name="Step-by-step guide to getting started" x="0" y="0.5" width="244" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:726" name="Link" x="0" y="101" width="768" height="85">
+          <frame id="101:727" name="Heading 3" x="17" y="17" width="734" height="27">
+            <text id="101:728" name="Understanding your dashboard" x="0" y="0.5" width="256" height="27" />
+          </frame>
+          <frame id="101:729" name="Paragraph" x="17" y="48" width="734" height="20">
+            <text id="101:730" name="Navigate your learning dashboard with ease" x="0" y="0.5" width="285" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:731" name="Link" x="0" y="202" width="768" height="85">
+          <frame id="101:732" name="Heading 3" x="17" y="17" width="734" height="27">
+            <text id="101:733" name="Managing your subscription" x="0" y="0.5" width="229" height="27" />
+          </frame>
+          <frame id="101:734" name="Paragraph" x="17" y="48" width="734" height="20">
+            <text id="101:735" name="Change, upgrade, or cancel your plan" x="0" y="0.5" width="243" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:736" name="Link" x="0" y="303" width="768" height="85">
+          <frame id="101:737" name="Heading 3" x="17" y="17" width="734" height="27">
+            <text id="101:738" name="Downloading certificates" x="0" y="0.5" width="205" height="27" />
+          </frame>
+          <frame id="101:739" name="Paragraph" x="17" y="48" width="734" height="20">
+            <text id="101:740" name="Get and share your course certificates" x="0" y="0.5" width="248" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:741" name="Link" x="0" y="404" width="768" height="85">
+          <frame id="101:742" name="Heading 3" x="17" y="17" width="734" height="27">
+            <text id="101:743" name="Troubleshooting video playback" x="0" y="0.5" width="262" height="27" />
+          </frame>
+          <frame id="101:744" name="Paragraph" x="17" y="48" width="734" height="20">
+            <text id="101:745" name="Fix common video streaming issues" x="0" y="0.5" width="231" height="20" />
+          </frame>
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:746" name="Section" x="256" y="1434" width="768" height="571">
+      <frame id="101:747" name="Heading 2" x="0" y="0" width="768" height="36">
+        <text id="101:748" name="Frequently Asked Questions" x="0" y="0" width="768" height="36" />
+      </frame>
+      <frame id="101:749" name="Container" x="0" y="68" width="768" height="503">
+        <frame id="101:750" name="Container" x="24" y="24" width="720" height="57">
+          <frame id="101:751" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:752" name="Text" x="0" y="16" width="218.6328125" height="24">
+              <text id="101:753" name="How do I enroll in a course?" x="0" y="-0.5" width="202" height="24" />
+            </frame>
+            <frame id="101:754" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:756" name="Container" x="24" y="81" width="720" height="57">
+          <frame id="101:757" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:758" name="Text" x="0" y="16" width="317.8046875" height="24">
+              <text id="101:759" name="Can I access courses on mobile devices?" x="0" y="-0.5" width="302" height="24" />
+            </frame>
+            <frame id="101:760" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:762" name="Container" x="24" y="138" width="720" height="57">
+          <frame id="101:763" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:764" name="Text" x="0" y="16" width="310.2578125" height="24">
+              <text id="101:765" name="What payment methods do you accept?" x="0" y="-0.5" width="294" height="24" />
+            </frame>
+            <frame id="101:766" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:768" name="Container" x="24" y="195" width="720" height="57">
+          <frame id="101:769" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:770" name="Text" x="0" y="16" width="222.390625" height="24">
+              <text id="101:771" name="How do study groups work?" x="0" y="-0.5" width="207" height="24" />
+            </frame>
+            <frame id="101:772" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:774" name="Container" x="24" y="252" width="720" height="57">
+          <frame id="101:775" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:776" name="Text" x="0" y="16" width="291.984375" height="24">
+              <text id="101:777" name="Can I get a refund if I&#39;m not satisfied?" x="0" y="-0.5" width="272" height="24" />
+            </frame>
+            <frame id="101:778" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:780" name="Container" x="24" y="309" width="720" height="57">
+          <frame id="101:781" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:782" name="Text" x="0" y="16" width="234.5078125" height="24">
+              <text id="101:783" name="Do courses have certificates?" x="0" y="-0.5" width="219" height="24" />
+            </frame>
+            <frame id="101:784" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:786" name="Container" x="24" y="366" width="720" height="57">
+          <frame id="101:787" name="Button" x="0" y="0" width="720" height="56">
+            <frame id="101:788" name="Text" x="0" y="16" width="306.15625" height="24">
+              <text id="101:789" name="How long do I have access to a course?" x="0" y="-0.5" width="290" height="24" />
+            </frame>
+            <frame id="101:790" name="Icon" x="700" y="18" width="20" height="20" />
+          </frame>
+        </frame>
+        <frame id="101:792" name="Button" x="24" y="423" width="720" height="56">
+          <frame id="101:793" name="Text" x="0" y="16" width="264.6875" height="24">
+            <text id="101:794" name="Can I download course materials?" x="0" y="-0.5" width="248" height="24" />
+          </frame>
+          <frame id="101:795" name="Icon" x="700" y="18" width="20" height="20" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:797" name="Section" x="0" y="2065" width="1440" height="404">
+      <frame id="101:798" name="Container" x="0" y="64" width="1440" height="276">
+        <frame id="101:799" name="Icon" x="684" y="0" width="72" height="64" />
+        <frame id="101:801" name="Heading 2" x="0" y="88" width="1440" height="36">
+          <text id="101:802" name="Still need help?" x="0" y="0" width="1440" height="36" />
+        </frame>
+        <frame id="101:803" name="Paragraph" x="342" y="140" width="756" height="56">
+          <text id="101:804" name="Our support team is here to assist you. Reach out " x="10.90625" y="0" width="651" height="56" />
+        </frame>
+        <frame id="101:805" name="Button" x="615" y="228" width="210" height="48">
+          <text id="101:806" name="Contact Support" x="43" y="11.5" width="123" height="24" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="101:1097" name="Footer — Course Detail" x="-1" y="2469" width="1440" height="306">
+      <text id="101:1098" name="Learning Guide" x="100" y="54" width="149" height="28" />
+      <text id="101:1099" name="A thoughtful place to explore culture, ideas and the world." x="100" y="88" width="270" height="44" />
+      <text id="101:1100" name="Courses" x="560" y="54" width="57" height="20" />
+      <text id="101:1101" name="Humanities" x="560" y="88" width="69" height="18" />
+      <text id="101:1102" name="Art" x="560" y="119" width="19" height="18" />
+      <text id="101:1103" name="Science" x="560" y="150" width="49" height="18" />
+      <text id="101:1104" name="Support" x="795" y="54" width="55" height="20" />
+      <text id="101:1105" name="Help Center / FAQ" x="795" y="88" width="111" height="18" />
+      <text id="101:1106" name="Contact us" x="795" y="119" width="67" height="18" />
+      <text id="101:1107" name="Cookie settings" x="795" y="150" width="96" height="18" />
+      <text id="101:1108" name="Legal" x="1030" y="54" width="37" height="20" />
+      <text id="101:1109" name="Privacy policy" x="1030" y="88" width="86" height="18" />
+      <text id="101:1110" name="Terms of service" x="1030" y="119" width="103" height="18" />
+      <text id="101:1111" name="© 2026 Learning Guide" x="1030" y="150" width="145" height="18" />
+      <text id="101:1112" name="Instagram LinkedIn YouTube" x="100" y="238" width="191" height="18" />
+      <rounded-rectangle id="101:1113" name="Footer divider" x="100" y="216" width="1240" height="1" />
+    </frame>
+  </frame>
+  <frame id="101:808" name="Portal-Privacy Policy" x="4294" y="3541" width="1440" height="2209">
+    <instance id="2007:323" name="Header — Visitor" x="0" y="0" width="1440" height="68" />
+    <rounded-rectangle id="101:810" name="Rectangle 90" x="0" y="71" width="1440" height="278" />
+    <text id="101:811" name="Privacy Policy" x="557" y="145.5" width="325" height="48" />
+    <text id="101:812" name="We&#39;re on a mission to make quality education acces" x="577" y="217" width="286" height="28" />
+    <frame id="101:813" name="Section" x="272" y="412" width="896" height="2840">
+      <frame id="101:814" name="Container" x="48" y="48" width="800" height="2744">
+        <frame id="101:815" name="Heading 2" x="0" y="0" width="800" height="36">
+          <text id="101:816" name="Introduction" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:817" name="Paragraph" x="0" y="60" width="800" height="72">
+          <text id="101:818" name="At EduPlatform, we take your privacy seriously. Th" x="0" y="-0.5" width="791" height="72" />
+        </frame>
+        <frame id="101:819" name="Heading 2" x="0" y="180" width="800" height="36">
+          <text id="101:820" name="Information We Collect" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:821" name="Heading 3" x="0" y="240" width="800" height="32">
+          <text id="101:822" name="Personal Information" x="0" y="0" width="239" height="32" />
+        </frame>
+        <frame id="101:823" name="Paragraph" x="0" y="288" width="800" height="24">
+          <text id="101:824" name="We collect information that you provide directly t" x="0" y="-0.5" width="461" height="24" />
+        </frame>
+        <frame id="101:825" name="List" x="0" y="328" width="800" height="184">
+          <frame id="101:826" name="List Item" x="24" y="0" width="776" height="24">
+            <text id="101:827" name="Name, email address, and contact information" x="0" y="-0.5" width="334" height="24" />
+          </frame>
+          <frame id="101:828" name="List Item" x="24" y="32" width="776" height="24">
+            <text id="101:829" name="Account credentials (username and password)" x="0" y="-0.5" width="339" height="24" />
+          </frame>
+          <frame id="101:830" name="List Item" x="24" y="64" width="776" height="24">
+            <text id="101:831" name="Profile information and preferences" x="0" y="-0.5" width="256" height="24" />
+          </frame>
+          <frame id="101:832" name="List Item" x="24" y="96" width="776" height="24">
+            <text id="101:833" name="Payment and billing information" x="0" y="-0.5" width="229" height="24" />
+          </frame>
+          <frame id="101:834" name="List Item" x="24" y="128" width="776" height="24">
+            <text id="101:835" name="Course enrollment and progress data" x="0" y="-0.5" width="270" height="24" />
+          </frame>
+          <frame id="101:836" name="List Item" x="24" y="160" width="776" height="24">
+            <text id="101:837" name="Communications with us and other users" x="0" y="-0.5" width="297" height="24" />
+          </frame>
+        </frame>
+        <frame id="101:838" name="Heading 3" x="0" y="536" width="800" height="32">
+          <text id="101:839" name="Automatically Collected Information" x="0" y="0" width="414" height="32" />
+        </frame>
+        <frame id="101:840" name="Paragraph" x="0" y="584" width="800" height="24">
+          <text id="101:841" name="When you access our platform, we automatically col" x="0" y="-0.5" width="549" height="24" />
+        </frame>
+        <frame id="101:842" name="List" x="0" y="624" width="800" height="120">
+          <frame id="101:843" name="List Item" x="24" y="0" width="776" height="24">
+            <text id="101:844" name="Device information (IP address, browser type, oper" x="0" y="-0.5" width="467" height="24" />
+          </frame>
+          <frame id="101:845" name="List Item" x="24" y="32" width="776" height="24">
+            <text id="101:846" name="Usage data (pages visited, time spent, features us" x="0" y="-0.5" width="389" height="24" />
+          </frame>
+          <frame id="101:847" name="List Item" x="24" y="64" width="776" height="24">
+            <text id="101:848" name="Cookies and similar tracking technologies" x="0" y="-0.5" width="302" height="24" />
+          </frame>
+          <frame id="101:849" name="List Item" x="24" y="96" width="776" height="24">
+            <text id="101:850" name="Location information (with your consent)" x="0" y="-0.5" width="295" height="24" />
+          </frame>
+        </frame>
+        <frame id="101:851" name="Heading 2" x="0" y="792" width="800" height="36">
+          <text id="101:852" name="How We Use Your Information" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:853" name="Paragraph" x="0" y="852" width="800" height="24">
+          <text id="101:854" name="We use the information we collect for various purp" x="0" y="-0.5" width="403" height="24" />
+        </frame>
+        <frame id="101:855" name="List" x="0" y="892" width="800" height="248">
+          <frame id="101:856" name="List Item" x="24" y="0" width="776" height="24">
+            <text id="101:857" name="Provide, maintain, and improve our services" x="0" y="-0.5" width="317" height="24" />
+          </frame>
+          <frame id="101:858" name="List Item" x="24" y="32" width="776" height="24">
+            <text id="101:859" name="Process transactions and send related information" x="0" y="-0.5" width="365" height="24" />
+          </frame>
+          <frame id="101:860" name="List Item" x="24" y="64" width="776" height="24">
+            <text id="101:861" name="Send administrative information, updates, and secu" x="0" y="-0.5" width="441" height="24" />
+          </frame>
+          <frame id="101:862" name="List Item" x="24" y="96" width="776" height="24">
+            <text id="101:863" name="Respond to your comments, questions, and customer " x="0" y="-0.5" width="513" height="24" />
+          </frame>
+          <frame id="101:864" name="List Item" x="24" y="128" width="776" height="24">
+            <text id="101:865" name="Personalize your learning experience" x="0" y="-0.5" width="267" height="24" />
+          </frame>
+          <frame id="101:866" name="List Item" x="24" y="160" width="776" height="24">
+            <text id="101:867" name="Monitor and analyze usage trends and activities" x="0" y="-0.5" width="347" height="24" />
+          </frame>
+          <frame id="101:868" name="List Item" x="24" y="192" width="776" height="24">
+            <text id="101:869" name="Detect, prevent, and address technical issues and " x="0" y="-0.5" width="498" height="24" />
+          </frame>
+          <frame id="101:870" name="List Item" x="24" y="224" width="776" height="24">
+            <text id="101:871" name="Send you marketing communications (with your conse" x="0" y="-0.5" width="414" height="24" />
+          </frame>
+        </frame>
+        <frame id="101:872" name="Heading 2" x="0" y="1188" width="800" height="36">
+          <text id="101:873" name="Information Sharing and Disclosure" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:874" name="Paragraph" x="0" y="1248" width="800" height="24">
+          <text id="101:875" name="We may share your information in the following cir" x="0" y="-0.5" width="453" height="24" />
+        </frame>
+        <frame id="101:876" name="List" x="0" y="1288" width="800" height="152">
+          <frame id="101:877" name="List Item" x="24" y="0" width="776" height="24">
+            <text id="101:878" name="Service Providers: We share information with third" x="0" y="-0.5" width="740" height="24" />
+          </frame>
+          <frame id="101:879" name="List Item" x="24" y="32" width="776" height="24">
+            <text id="101:880" name="Course Instructors: Course-related information is " x="0" y="-0.5" width="706" height="24" />
+          </frame>
+          <frame id="101:881" name="List Item" x="24" y="64" width="776" height="24">
+            <text id="101:882" name="Study Groups: Your profile information may be visi" x="0" y="-0.5" width="702" height="24" />
+          </frame>
+          <frame id="101:883" name="List Item" x="24" y="96" width="776" height="24">
+            <text id="101:884" name="Legal Requirements: We may disclose information if" x="0" y="-0.5" width="664" height="24" />
+          </frame>
+          <frame id="101:885" name="List Item" x="24" y="128" width="776" height="24">
+            <text id="101:886" name="Business Transfers: Information may be transferred" x="0" y="-0.5" width="686" height="24" />
+          </frame>
+        </frame>
+        <frame id="101:887" name="Heading 2" x="0" y="1488" width="800" height="36">
+          <text id="101:888" name="Data Security" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:889" name="Paragraph" x="0" y="1548" width="800" height="72">
+          <text id="101:890" name="We implement appropriate technical and organizatio" x="0" y="-0.5" width="794" height="72" />
+        </frame>
+        <frame id="101:891" name="Heading 2" x="0" y="1668" width="800" height="36">
+          <text id="101:892" name="Your Rights and Choices" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:893" name="Paragraph" x="0" y="1728" width="800" height="24">
+          <text id="101:894" name="You have several rights regarding your personal in" x="0" y="-0.5" width="436" height="24" />
+        </frame>
+        <frame id="101:895" name="List" x="0" y="1768" width="800" height="152">
+          <frame id="101:896" name="List Item" x="24" y="0" width="776" height="24">
+            <text id="101:897" name="Access and Update: You can access and update your " x="0" y="-0.5" width="626" height="24" />
+          </frame>
+          <frame id="101:898" name="List Item" x="24" y="32" width="776" height="24">
+            <text id="101:899" name="Delete: You can request deletion of your account a" x="0" y="-0.5" width="541" height="24" />
+          </frame>
+          <frame id="101:900" name="List Item" x="24" y="64" width="776" height="24">
+            <text id="101:901" name="Opt-Out: You can opt out of marketing communicatio" x="0" y="-0.5" width="405" height="24" />
+          </frame>
+          <frame id="101:902" name="List Item" x="24" y="96" width="776" height="24">
+            <text id="101:903" name="Cookie Preferences: You can manage cookie settings" x="0" y="-0.5" width="553" height="24" />
+          </frame>
+          <frame id="101:904" name="List Item" x="24" y="128" width="776" height="24">
+            <text id="101:905" name="Data Portability: You can request a copy of your d" x="0" y="-0.5" width="535" height="24" />
+          </frame>
+        </frame>
+        <frame id="101:906" name="Heading 2" x="0" y="1968" width="800" height="36">
+          <text id="101:907" name="Children&#39;s Privacy" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:908" name="Paragraph" x="0" y="2028" width="800" height="72">
+          <text id="101:909" name="Our services are not directed to children under 13" x="0" y="-0.5" width="791" height="72" />
+        </frame>
+        <frame id="101:910" name="Heading 2" x="0" y="2148" width="800" height="36">
+          <text id="101:911" name="International Data Transfers" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:912" name="Paragraph" x="0" y="2208" width="800" height="72">
+          <text id="101:913" name="Your information may be transferred to and process" x="0" y="-0.5" width="781" height="72" />
+        </frame>
+        <frame id="101:914" name="Heading 2" x="0" y="2328" width="800" height="36">
+          <text id="101:915" name="Changes to This Privacy Policy" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:916" name="Paragraph" x="0" y="2388" width="800" height="72">
+          <text id="101:917" name="We may update this Privacy Policy from time to tim" x="0" y="-0.5" width="773" height="72" />
+        </frame>
+        <frame id="101:918" name="Heading 2" x="0" y="2508" width="800" height="36">
+          <text id="101:919" name="Contact Us" x="0" y="0" width="800" height="36" />
+        </frame>
+        <frame id="101:920" name="Paragraph" x="0" y="2568" width="800" height="24">
+          <text id="101:921" name="If you have questions or concerns about this Priva" x="0" y="-0.5" width="567" height="24" />
+        </frame>
+        <frame id="101:922" name="Container" x="0" y="2608" width="800" height="136">
+          <frame id="101:923" name="Paragraph" x="24" y="24" width="752" height="24">
+            <text id="101:924" name="Email: privacy@eduplatform.com" x="0" y="-0.5" width="242" height="24" />
+          </frame>
+          <frame id="101:925" name="Paragraph" x="24" y="56" width="752" height="24">
+            <text id="101:926" name="Address: 123 Education Street, San Francisco, CA 9" x="0" y="-0.5" width="415" height="24" />
+          </frame>
+          <frame id="101:927" name="Paragraph" x="24" y="88" width="752" height="24">
+            <text id="101:928" name="Phone: +1 (555) 123-4567" x="0" y="-0.5" width="194" height="24" />
+          </frame>
+        </frame>
+      </frame>
+    </frame>
+  </frame>
+  <frame id="131:182" name="My Learning — Personal Settings" x="5828" y="9985" width="1440" height="2180">
+    <rounded-rectangle id="131:183" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="131:184" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="131:185" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="131:186" name="Nav Study Group" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="131:187" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="131:188" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="131:189" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="131:190" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="131:191" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="131:192" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="131:193" name="Sidebar" x="0" y="68" width="280" height="1730" />
+    <rounded-rectangle id="131:194" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:195" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:196" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="131:197" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:198" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:199" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:200" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:201" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:202" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:203" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:204" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:205" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:206" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="131:207" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="131:208" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="131:209" name="Access chip label" x="1068" y="129" width="208" height="20" />
+    <text id="131:210" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="131:211" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="131:212" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="131:213" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="131:214" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="131:215" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="131:216" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="131:217" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="131:218" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="131:219" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="131:220" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="131:221" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="131:222" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="131:223" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="131:224" name="Course card Tang Dynasty History" x="344" y="323" width="946" height="178" />
+    <rounded-rectangle id="131:225" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="131:226" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="131:227" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="131:228" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="131:229" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="131:230" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="131:231" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="131:232" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="131:233" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="131:234" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="131:235" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="131:236" name="Course card The Logic of Nature" x="344" y="523" width="946" height="178" />
+    <rounded-rectangle id="131:237" name="Course cover The Logic of Nature" x="368" y="547" width="172" height="130" />
+    <text id="131:238" name="Course cover label The Logic of Nature" x="384" y="603" width="140" height="20" />
+    <text id="131:239" name="Course The Logic of Nature" x="570" y="551" width="370" height="27.299999237060547" />
+    <text id="131:240" name="Course meta The Logic of Nature" x="570" y="583" width="360" height="20" />
+    <text id="131:241" name="Course desc The Logic of Nature" x="570" y="607" width="430" height="20" />
+    <rounded-rectangle id="131:242" name="Progress track The Logic of Nature" x="570" y="641" width="316" height="7" />
+    <rounded-rectangle id="131:243" name="Progress value The Logic of Nature" x="570" y="641" width="56.880001068115234" height="7" />
+    <text id="131:244" name="Progress The Logic of Nature" x="570" y="657" width="170" height="20" />
+    <text id="131:245" name="Current lesson The Logic of Nature" x="760" y="657" width="260" height="20" />
+    <rounded-rectangle id="131:246" name="Course CTA The Logic of Nature" x="1065" y="587" width="190" height="42" />
+    <text id="131:247" name="Course CTA The Logic of Nature label" x="1065" y="598" width="190" height="20" />
+    <text id="131:248" name="All courses listed" x="344" y="731" width="360" height="20" />
+    <rounded-rectangle id="131:249" name="Footer" x="0" y="1798" width="1440" height="310" />
+    <text id="131:250" name="Footer brand" x="100" y="1850" width="220" height="26" />
+    <text id="131:251" name="Footer copy" x="100" y="1886" width="300" height="20" />
+    <text id="131:252" name="Footer Courses" x="560" y="1850" width="100" height="20" />
+    <text id="131:253" name="Footer course links" x="560" y="1883" width="120" height="20" />
+    <text id="131:254" name="Footer Support" x="795" y="1850" width="100" height="20" />
+    <text id="131:255" name="Footer support links" x="795" y="1883" width="160" height="20" />
+    <text id="131:256" name="Footer Legal" x="1030" y="1850" width="100" height="20" />
+    <text id="131:257" name="Footer legal links" x="1030" y="1883" width="190" height="20" />
+    <rounded-rectangle id="131:258" name="Divider" x="100" y="2014" width="1240" height="1" />
+    <text id="131:259" name="Social links" x="100" y="2042" width="250" height="20" />
+    <rounded-rectangle id="131:260" name="Sidebar replacement" x="0" y="68" width="280" height="1730" />
+    <rounded-rectangle id="131:261" name="Main replacement" x="280" y="78" width="1160" height="1730" />
+    <rounded-rectangle id="131:262" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:263" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:264" name="Active nav bg" x="28" y="295" width="220" height="44" />
+    <text id="131:265" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:266" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:267" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:268" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:269" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:270" name="Help card" x="28" y="1596" width="220" height="132" />
+    <text id="131:271" name="Help Desk CTA title" x="44" y="1616" width="150" height="20.799999237060547" />
+    <text id="131:272" name="Help Desk CTA copy" x="44" y="1646" width="175" height="20" />
+    <text id="131:273" name="Help Desk CTA" x="44" y="1678" width="176" height="20" />
+    <text id="131:274" name="Title" x="344" y="118" width="520" height="40.29999923706055" />
+    <text id="131:275" name="Intro" x="344" y="160" width="620" height="20.799999237060547" />
+    <rounded-rectangle id="131:276" name="Profile section" x="344" y="214" width="946" height="300" />
+    <text id="131:277" name="Profile heading" x="368" y="238" width="200" height="27.299999237060547" />
+    <text id="131:278" name="Profile intro" x="368" y="268" width="330" height="20" />
+    <rounded-rectangle id="131:279" name="Avatar preview" x="368" y="310" width="82" height="82" />
+    <text id="131:280" name="Avatar M" x="368" y="335" width="82" height="29.899999618530273" />
+    <rounded-rectangle id="131:281" name="Upload avatar" x="474" y="314" width="148" height="42" />
+    <text id="131:282" name="Upload avatar label" x="474" y="325" width="148" height="20" />
+    <text id="131:283" name="Avatar rules" x="474" y="363" width="300" height="20" />
+    <text id="131:284" name="Nickname label" x="818" y="284" width="260" height="20" />
+    <rounded-rectangle id="131:285" name="Nickname input" x="818" y="309" width="420" height="45" />
+    <text id="131:286" name="Nickname value" x="834" y="322" width="368" height="20" />
+    <text id="131:287" name="Save nickname label" x="1084" y="473" width="154" height="20" />
+    <rounded-rectangle id="131:288" name="Personal details section" x="344" y="534" width="946" height="337" />
+    <text id="131:289" name="Personal details heading" x="368" y="558" width="260" height="27.299999237060547" />
+    <text id="131:290" name="Personal details note" x="368" y="588" width="650" height="20" />
+    <text id="131:291" name="Country label" x="368" y="630" width="420" height="20" />
+    <rounded-rectangle id="131:292" name="Country select" x="368" y="654" width="405" height="38" />
+    <text id="131:293" name="Country value" x="384" y="664" width="388" height="20" />
+    <text id="131:294" name="Age label" x="368" y="725" width="420" height="20" />
+    <rounded-rectangle id="131:295" name="Age select" x="368" y="749" width="405" height="38" />
+    <text id="131:296" name="Age value" x="384" y="759" width="388" height="20" />
+    <text id="131:297" name="Education label" x="849" y="722" width="250" height="20" />
+    <rounded-rectangle id="131:298" name="Education select" x="832" y="746" width="405" height="38" />
+    <text id="131:299" name="Education value" x="865" y="756" width="218" height="20" />
+    <rounded-rectangle id="131:300" name="Save personal details" x="1134" y="1631" width="154" height="42" />
+    <text id="131:301" name="Save personal details label" x="1134" y="1642" width="154" height="20" />
+    <text id="131:302" name="Email label" x="818" y="388" width="260" height="20" />
+    <rounded-rectangle id="131:303" name="Email read-only field" x="818" y="412" width="420" height="45" />
+    <text id="131:304" name="Email value" x="834" y="425" width="388" height="20" />
+    <text id="131:305" name="Interests label" x="849" y="626" width="420" height="20" />
+    <rounded-rectangle id="131:306" name="Interests multi-select" x="832" y="650" width="406" height="42" />
+    <text id="131:307" name="Interests selected" x="865" y="663" width="820" height="20" />
+    <rounded-rectangle id="131:308" name="Device management section" x="344" y="910" width="946" height="250" />
+    <text id="131:309" name="Device management heading" x="368" y="934" width="260" height="27.299999237060547" />
+    <text id="131:310" name="Device management note" x="368" y="964" width="700" height="20" />
+    <rounded-rectangle id="131:311" name="PC device card" x="368" y="1002" width="420" height="78" />
+    <rounded-rectangle id="131:312" name="Mobile device card" x="818" y="1002" width="420" height="78" />
+    <text id="131:313" name="PC device label" x="384" y="1014" width="180" height="20" />
+    <text id="131:314" name="PC device value" x="384" y="1040" width="300" height="20" />
+    <text id="131:315" name="Mobile device label" x="834" y="1014" width="180" height="20" />
+    <text id="131:316" name="Mobile device value" x="834" y="1040" width="300" height="20" />
+    <text id="131:317" name="PC log out" x="624" y="1040" width="150" height="20" />
+    <text id="131:318" name="Mobile log out" x="1074" y="1040" width="150" height="20" />
+    <rounded-rectangle id="131:319" name="Email notifications section" x="344" y="1186" width="946" height="400" />
+    <text id="131:320" name="Email notifications heading" x="368" y="1210" width="320" height="27.299999237060547" />
+    <text id="131:321" name="Email notifications note" x="368" y="1240" width="650" height="20" />
+    <rounded-rectangle id="131:322" name="Email notifications master toggle" x="1172" y="1210" width="66" height="34" />
+    <rounded-rectangle id="131:323" name="Email notifications toggle knob" x="1208" y="1215" width="24" height="24" />
+    <text id="131:324" name="Email notifications master label" x="368" y="1294" width="500" height="20" />
+    <rounded-rectangle id="131:325" name="Email option 1 checkbox" x="368" y="1338" width="24" height="24" />
+    <text id="131:326" name="Email option 1 checkmark" x="373" y="1339" width="16" height="20" />
+    <text id="131:327" name="Email option 1 label" x="408" y="1338" width="470" height="20" />
+    <text id="131:328" name="Email option 1 helper" x="408" y="1364" width="790" height="20" />
+    <rounded-rectangle id="131:329" name="Email option 2 checkbox" x="368" y="1410" width="24" height="24" />
+    <text id="131:330" name="Email option 2 checkmark" x="373" y="1411" width="16" height="20" />
+    <text id="131:331" name="Email option 2 label" x="408" y="1410" width="470" height="20" />
+    <text id="131:332" name="Email option 2 helper" x="408" y="1436" width="790" height="20" />
+    <rounded-rectangle id="131:333" name="Email option 3 checkbox" x="368" y="1482" width="24" height="24" />
+    <text id="131:334" name="Email option 3 checkmark" x="373" y="1483" width="16" height="20" />
+    <text id="131:335" name="Email option 3 label" x="408" y="1482" width="470" height="20" />
+    <text id="131:336" name="Email option 3 helper" x="408" y="1508" width="790" height="20" />
+    <text id="131:337" name="Email notifications required note" x="368" y="1558" width="700" height="20" />
+    <instance id="2007:346" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:338" name="My Learning — My Subscription" x="4198" y="9985" width="1440" height="1540">
+    <rounded-rectangle id="131:339" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="131:340" name="Divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <rounded-rectangle id="131:341" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="131:342" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="131:343" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="131:344" name="Nav Study Groups" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="131:345" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="131:346" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="131:347" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="131:348" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="131:349" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="131:350" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="131:351" name="Sidebar" x="0" y="68" width="280" height="1230" />
+    <rounded-rectangle id="131:352" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:353" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:354" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="131:355" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:356" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:357" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:358" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:359" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:360" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:361" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:362" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:363" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:364" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="131:365" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="131:366" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="131:367" name="Access chip label" x="1068" y="129" width="208" height="20" />
+    <text id="131:368" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="131:369" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="131:370" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="131:371" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="131:372" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="131:373" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="131:374" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="131:375" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="131:376" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="131:377" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="131:378" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="131:379" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="131:380" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="131:381" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="131:382" name="Course card Tang Dynasty History" x="344" y="494" width="946" height="178" />
+    <rounded-rectangle id="131:383" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="131:384" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="131:385" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="131:386" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="131:387" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="131:388" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="131:389" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="131:390" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="131:391" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="131:392" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="131:393" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="131:394" name="Course card The Logic of Nature" x="344" y="694" width="946" height="178" />
+    <rounded-rectangle id="131:395" name="Course cover The Logic of Nature" x="368" y="718" width="172" height="130" />
+    <text id="131:396" name="Course cover label The Logic of Nature" x="384" y="774" width="140" height="20" />
+    <text id="131:397" name="Course The Logic of Nature" x="570" y="722" width="370" height="27.299999237060547" />
+    <text id="131:398" name="Course meta The Logic of Nature" x="570" y="754" width="360" height="20" />
+    <text id="131:399" name="Course desc The Logic of Nature" x="570" y="778" width="430" height="20" />
+    <rounded-rectangle id="131:400" name="Progress track The Logic of Nature" x="570" y="812" width="316" height="7" />
+    <rounded-rectangle id="131:401" name="Progress value The Logic of Nature" x="570" y="812" width="56.880001068115234" height="7" />
+    <text id="131:402" name="Progress The Logic of Nature" x="570" y="828" width="170" height="20" />
+    <text id="131:403" name="Current lesson The Logic of Nature" x="760" y="828" width="260" height="20" />
+    <rounded-rectangle id="131:404" name="Course CTA The Logic of Nature" x="1065" y="758" width="190" height="42" />
+    <text id="131:405" name="Course CTA The Logic of Nature label" x="1065" y="769" width="190" height="20" />
+    <text id="131:406" name="All courses listed" x="344" y="902" width="360" height="20" />
+    <rounded-rectangle id="131:407" name="Footer" x="0" y="1218" width="1440" height="310" />
+    <text id="131:408" name="Footer brand" x="100" y="1270" width="220" height="26" />
+    <text id="131:409" name="Footer copy" x="100" y="1306" width="300" height="20" />
+    <text id="131:410" name="Footer Courses" x="560" y="1270" width="100" height="20" />
+    <text id="131:411" name="Footer course links" x="560" y="1303" width="120" height="20" />
+    <text id="131:412" name="Footer Support" x="795" y="1270" width="100" height="20" />
+    <text id="131:413" name="Footer support links" x="795" y="1303" width="160" height="20" />
+    <text id="131:414" name="Footer Legal" x="1030" y="1270" width="100" height="20" />
+    <text id="131:415" name="Footer legal links" x="1030" y="1303" width="190" height="20" />
+    <rounded-rectangle id="131:416" name="Divider" x="100" y="1434" width="1240" height="1" />
+    <text id="131:417" name="Social links" x="100" y="1462" width="250" height="20" />
+    <rounded-rectangle id="131:418" name="Sidebar replacement" x="0" y="68" width="280" height="1150" />
+    <rounded-rectangle id="131:419" name="Main replacement" x="277" y="116" width="1160" height="1102" />
+    <rounded-rectangle id="131:420" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:421" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:422" name="Active nav bg" x="28" y="191" width="220" height="44" />
+    <text id="131:423" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:424" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:425" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:426" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:427" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:428" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:429" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:430" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:431" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:432" name="Title" x="344" y="118" width="500" height="40.29999923706055" />
+    <text id="131:433" name="Intro" x="344" y="160" width="650" height="20.799999237060547" />
+    <text id="131:434" name="Subscription records" x="344" y="234" width="223" height="27" />
+    <text id="131:435" name="Records helper" x="344" y="267" width="402" height="16" />
+    <rounded-rectangle id="131:436" name="Records table header" x="344" y="302" width="946" height="42" />
+    <text id="131:437" name="Plan" x="368" y="316" width="26" height="15" />
+    <text id="131:438" name="Amount" x="770" y="316" width="46" height="15" />
+    <text id="131:439" name="Valid period" x="954" y="315" width="70" height="15" />
+    <text id="131:440" name="Receipt" x="1140" y="316" width="45" height="15" />
+    <rounded-rectangle id="131:441" name="Subscription record — Everything" x="344" y="358" width="946" height="132" />
+    <rounded-rectangle id="131:442" name="Cover artwork" x="368" y="380" width="132" height="88" />
+    <text id="131:443" name="Cover label" x="382" y="393" width="65" height="12" />
+    <text id="131:444" name="Cover detail" x="382" y="447" width="66" height="11" />
+    <text id="131:445" name="Plan name" x="524" y="382" width="79" height="18" />
+    <text id="131:446" name="Account action" x="524" y="412" width="130" height="16" />
+    <text id="131:447" name="Latest charge" x="770" y="414" width="61" height="17" />
+    <text id="131:448" name="Valid period value" x="918" y="414" width="190" height="15" />
+    <rounded-rectangle id="131:449" name="View receipt button" x="1140" y="408" width="102" height="32" />
+    <text id="131:450" name="View receipt" x="1156" y="416" width="73" height="15" />
+    <rounded-rectangle id="131:451" name="Subscription record — Category - Chinese Humanities" x="344" y="508" width="946" height="132" />
+    <rounded-rectangle id="131:452" name="Cover artwork" x="368" y="530" width="132" height="88" />
+    <text id="131:453" name="Cover label" x="382" y="543" width="64" height="12" />
+    <text id="131:454" name="Cover detail" x="382" y="597" width="66" height="11" />
+    <text id="131:455" name="Plan name" x="524" y="532" width="228" height="18" />
+    <text id="131:456" name="Account action" x="524" y="562" width="47" height="16" />
+    <text id="131:457" name="Latest charge" x="770" y="564" width="61" height="17" />
+    <text id="131:458" name="Valid period value" x="918" y="567" width="190" height="15" />
+    <rounded-rectangle id="131:459" name="View receipt button" x="1140" y="558" width="102" height="32" />
+    <text id="131:460" name="View receipt" x="1156" y="566" width="73" height="15" />
+    <rounded-rectangle id="131:461" name="Subscription record — Category - Science" x="344" y="658" width="946" height="132" />
+    <rounded-rectangle id="131:462" name="Cover artwork" x="368" y="680" width="132" height="88" />
+    <text id="131:463" name="Cover label" x="382" y="693" width="44" height="12" />
+    <text id="131:464" name="Cover detail" x="382" y="747" width="66" height="11" />
+    <text id="131:465" name="Plan name" x="524" y="682" width="140" height="18" />
+    <text id="131:466" name="Account action" x="524" y="712" width="155" height="16" />
+    <text id="131:467" name="Latest charge" x="770" y="712" width="61" height="17" />
+    <text id="131:468" name="Valid period value" x="918" y="710" width="190" height="15" />
+    <rounded-rectangle id="131:469" name="View receipt button" x="1140" y="708" width="102" height="32" />
+    <text id="131:470" name="View receipt" x="1156" y="716" width="73" height="15" />
+    <text id="131:471" name="Payment note" x="344" y="818" width="620" height="15" />
+    <instance id="2007:371" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:472" name="My Learning — Overview" x="2568" y="9985" width="1440" height="1540">
+    <rounded-rectangle id="131:473" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="131:474" name="Divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <rounded-rectangle id="131:475" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="131:476" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="131:477" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="131:478" name="Nav Study Groups" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="131:479" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="131:480" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="131:481" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="131:482" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="131:483" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="131:484" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="131:485" name="Sidebar" x="0" y="68" width="280" height="1230" />
+    <rounded-rectangle id="131:486" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:487" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:488" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="131:489" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:490" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:491" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:492" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:493" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:494" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:495" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:496" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:497" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:498" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="131:499" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="131:500" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="131:501" name="Access chip label" x="1068" y="129" width="208" height="20" />
+    <text id="131:502" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="131:503" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="131:504" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="131:505" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="131:506" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="131:507" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="131:508" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="131:509" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="131:510" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="131:511" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="131:512" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="131:513" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="131:514" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="131:515" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="131:516" name="Course card Tang Dynasty History" x="344" y="494" width="946" height="178" />
+    <rounded-rectangle id="131:517" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="131:518" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="131:519" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="131:520" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="131:521" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="131:522" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="131:523" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="131:524" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="131:525" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="131:526" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="131:527" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="131:528" name="Course card The Logic of Nature" x="344" y="694" width="946" height="178" />
+    <rounded-rectangle id="131:529" name="Course cover The Logic of Nature" x="368" y="718" width="172" height="130" />
+    <text id="131:530" name="Course cover label The Logic of Nature" x="384" y="774" width="140" height="20" />
+    <text id="131:531" name="Course The Logic of Nature" x="570" y="722" width="370" height="27.299999237060547" />
+    <text id="131:532" name="Course meta The Logic of Nature" x="570" y="754" width="360" height="20" />
+    <text id="131:533" name="Course desc The Logic of Nature" x="570" y="778" width="430" height="20" />
+    <rounded-rectangle id="131:534" name="Progress track The Logic of Nature" x="570" y="812" width="316" height="7" />
+    <rounded-rectangle id="131:535" name="Progress value The Logic of Nature" x="570" y="812" width="56.880001068115234" height="7" />
+    <text id="131:536" name="Progress The Logic of Nature" x="570" y="828" width="170" height="20" />
+    <text id="131:537" name="Current lesson The Logic of Nature" x="760" y="828" width="260" height="20" />
+    <rounded-rectangle id="131:538" name="Course CTA The Logic of Nature" x="1065" y="758" width="190" height="42" />
+    <text id="131:539" name="Course CTA The Logic of Nature label" x="1065" y="769" width="190" height="20" />
+    <text id="131:540" name="All courses listed" x="344" y="902" width="360" height="20" />
+    <rounded-rectangle id="131:541" name="Footer" x="0" y="1218" width="1440" height="310" />
+    <text id="131:542" name="Footer brand" x="100" y="1270" width="220" height="26" />
+    <text id="131:543" name="Footer copy" x="100" y="1306" width="300" height="20" />
+    <text id="131:544" name="Footer Courses" x="560" y="1270" width="100" height="20" />
+    <text id="131:545" name="Footer course links" x="560" y="1303" width="120" height="20" />
+    <text id="131:546" name="Footer Support" x="795" y="1270" width="100" height="20" />
+    <text id="131:547" name="Footer support links" x="795" y="1303" width="160" height="20" />
+    <text id="131:548" name="Footer Legal" x="1030" y="1270" width="100" height="20" />
+    <text id="131:549" name="Footer legal links" x="1030" y="1303" width="190" height="20" />
+    <rounded-rectangle id="131:550" name="Divider" x="100" y="1434" width="1240" height="1" />
+    <text id="131:551" name="Social links" x="100" y="1462" width="250" height="20" />
+    <instance id="2007:396" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:552" name="My Learning  — Overview — Preview state" x="1067" y="9985" width="1440" height="1540">
+    <rounded-rectangle id="131:553" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="131:554" name="Divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <rounded-rectangle id="131:555" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="131:556" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="131:557" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="131:558" name="Nav Study Groups" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="131:559" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="131:560" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="131:561" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="131:562" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="131:563" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="131:564" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="131:565" name="Sidebar" x="0" y="68" width="280" height="1230" />
+    <rounded-rectangle id="131:566" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:567" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:568" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="131:569" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:570" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:571" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:572" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:573" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:574" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:575" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:576" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:577" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:578" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="131:579" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="131:580" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="131:581" name="Access chip label" x="1100" y="128" width="208" height="20" />
+    <text id="131:582" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="131:583" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="131:584" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="131:585" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="131:586" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="131:587" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="131:588" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="131:589" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="131:590" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="131:591" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="131:592" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="131:593" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="131:594" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="131:595" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="131:596" name="Course card Tang Dynasty History" x="344" y="494" width="946" height="178" />
+    <rounded-rectangle id="131:597" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="131:598" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="131:599" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="131:600" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="131:601" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="131:602" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="131:603" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="131:604" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="131:605" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="131:606" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="131:607" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="131:608" name="Course card The Logic of Nature" x="344" y="694" width="946" height="178" />
+    <rounded-rectangle id="131:609" name="Course cover The Logic of Nature" x="368" y="718" width="172" height="130" />
+    <text id="131:610" name="Course cover label The Logic of Nature" x="384" y="774" width="140" height="20" />
+    <text id="131:611" name="Course The Logic of Nature" x="570" y="722" width="370" height="27.299999237060547" />
+    <text id="131:612" name="Course meta The Logic of Nature" x="570" y="754" width="360" height="20" />
+    <text id="131:613" name="Course desc The Logic of Nature" x="570" y="778" width="430" height="20" />
+    <rounded-rectangle id="131:614" name="Progress track The Logic of Nature" x="570" y="812" width="316" height="7" />
+    <rounded-rectangle id="131:615" name="Progress value The Logic of Nature" x="570" y="812" width="56.880001068115234" height="7" />
+    <text id="131:616" name="Progress The Logic of Nature" x="570" y="828" width="170" height="20" />
+    <text id="131:617" name="Current lesson The Logic of Nature" x="760" y="828" width="260" height="20" />
+    <rounded-rectangle id="131:618" name="Course CTA The Logic of Nature" x="1065" y="758" width="190" height="42" />
+    <text id="131:619" name="Course CTA The Logic of Nature label" x="1065" y="769" width="190" height="20" />
+    <text id="131:620" name="All courses listed" x="344" y="902" width="360" height="20" />
+    <rounded-rectangle id="131:621" name="Footer" x="0" y="1218" width="1440" height="310" />
+    <text id="131:622" name="Footer brand" x="100" y="1270" width="220" height="26" />
+    <text id="131:623" name="Footer copy" x="100" y="1306" width="300" height="20" />
+    <text id="131:624" name="Footer Courses" x="560" y="1270" width="100" height="20" />
+    <text id="131:625" name="Footer course links" x="560" y="1303" width="120" height="20" />
+    <text id="131:626" name="Footer Support" x="795" y="1270" width="100" height="20" />
+    <text id="131:627" name="Footer support links" x="795" y="1303" width="160" height="20" />
+    <text id="131:628" name="Footer Legal" x="1030" y="1270" width="100" height="20" />
+    <text id="131:629" name="Footer legal links" x="1030" y="1303" width="190" height="20" />
+    <rounded-rectangle id="131:630" name="Divider" x="100" y="1434" width="1240" height="1" />
+    <text id="131:631" name="Social links" x="100" y="1462" width="250" height="20" />
+    <instance id="2007:421" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:632" name="My Learning — My Subscription — No subscription" x="-433" y="9985" width="1440" height="1540">
+    <rounded-rectangle id="131:633" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="131:634" name="Divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <rounded-rectangle id="131:635" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="131:636" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="131:637" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="131:638" name="Nav Study Groups" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="131:639" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="131:640" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="131:641" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="131:642" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="131:643" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="131:644" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="131:645" name="Sidebar" x="0" y="68" width="280" height="1230" />
+    <rounded-rectangle id="131:646" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:647" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:648" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="131:649" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:650" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:651" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:652" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:653" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:654" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:655" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:656" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:657" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:658" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="131:659" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="131:660" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="131:661" name="Access chip label" x="1068" y="129" width="208" height="20" />
+    <text id="131:662" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="131:663" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="131:664" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="131:665" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="131:666" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="131:667" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="131:668" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="131:669" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="131:670" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="131:671" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="131:672" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="131:673" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="131:674" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="131:675" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="131:676" name="Course card Tang Dynasty History" x="344" y="494" width="946" height="178" />
+    <rounded-rectangle id="131:677" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="131:678" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="131:679" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="131:680" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="131:681" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="131:682" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="131:683" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="131:684" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="131:685" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="131:686" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="131:687" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="131:688" name="Course card The Logic of Nature" x="344" y="694" width="946" height="178" />
+    <rounded-rectangle id="131:689" name="Course cover The Logic of Nature" x="368" y="718" width="172" height="130" />
+    <text id="131:690" name="Course cover label The Logic of Nature" x="384" y="774" width="140" height="20" />
+    <text id="131:691" name="Course The Logic of Nature" x="570" y="722" width="370" height="27.299999237060547" />
+    <text id="131:692" name="Course meta The Logic of Nature" x="570" y="754" width="360" height="20" />
+    <text id="131:693" name="Course desc The Logic of Nature" x="570" y="778" width="430" height="20" />
+    <rounded-rectangle id="131:694" name="Progress track The Logic of Nature" x="570" y="812" width="316" height="7" />
+    <rounded-rectangle id="131:695" name="Progress value The Logic of Nature" x="570" y="812" width="56.880001068115234" height="7" />
+    <text id="131:696" name="Progress The Logic of Nature" x="570" y="828" width="170" height="20" />
+    <text id="131:697" name="Current lesson The Logic of Nature" x="760" y="828" width="260" height="20" />
+    <rounded-rectangle id="131:698" name="Course CTA The Logic of Nature" x="1065" y="758" width="190" height="42" />
+    <text id="131:699" name="Course CTA The Logic of Nature label" x="1065" y="769" width="190" height="20" />
+    <text id="131:700" name="All courses listed" x="344" y="902" width="360" height="20" />
+    <rounded-rectangle id="131:701" name="Footer" x="0" y="1218" width="1440" height="310" />
+    <text id="131:702" name="Footer brand" x="100" y="1270" width="220" height="26" />
+    <text id="131:703" name="Footer copy" x="100" y="1306" width="300" height="20" />
+    <text id="131:704" name="Footer Courses" x="560" y="1270" width="100" height="20" />
+    <text id="131:705" name="Footer course links" x="560" y="1303" width="120" height="20" />
+    <text id="131:706" name="Footer Support" x="795" y="1270" width="100" height="20" />
+    <text id="131:707" name="Footer support links" x="795" y="1303" width="160" height="20" />
+    <text id="131:708" name="Footer Legal" x="1030" y="1270" width="100" height="20" />
+    <text id="131:709" name="Footer legal links" x="1030" y="1303" width="190" height="20" />
+    <rounded-rectangle id="131:710" name="Divider" x="100" y="1434" width="1240" height="1" />
+    <text id="131:711" name="Social links" x="100" y="1462" width="250" height="20" />
+    <rounded-rectangle id="131:712" name="Sidebar replacement" x="0" y="68" width="280" height="1150" />
+    <rounded-rectangle id="131:713" name="Main replacement" x="277" y="116" width="1160" height="1102" />
+    <rounded-rectangle id="131:714" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:715" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:716" name="Active nav bg" x="28" y="191" width="220" height="44" />
+    <text id="131:717" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:718" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:719" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:720" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:721" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:722" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:723" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:724" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:725" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:726" name="Title" x="344" y="118" width="500" height="40.29999923706055" />
+    <text id="131:727" name="Intro" x="344" y="160" width="650" height="20.799999237060547" />
+    <text id="131:728" name="Subscription records" x="344" y="234" width="239" height="27" />
+    <text id="131:729" name="Records helper" x="344" y="267" width="193" height="16" />
+    <rounded-rectangle id="131:730" name="Records table header" x="344" y="302" width="946" height="42" hidden="true" />
+    <text id="131:731" name="Plan" x="368" y="316" width="26" height="15" hidden="true" />
+    <text id="131:732" name="Amount" x="770" y="316" width="46" height="15" hidden="true" />
+    <text id="131:733" name="Valid period" x="954" y="315" width="70" height="15" hidden="true" />
+    <text id="131:734" name="Receipt" x="1140" y="316" width="45" height="15" hidden="true" />
+    <rounded-rectangle id="131:735" name="Subscription record — Everything" x="344" y="358" width="946" height="132" hidden="true" />
+    <rounded-rectangle id="131:736" name="Cover artwork" x="368" y="380" width="132" height="88" hidden="true" />
+    <text id="131:737" name="Cover label" x="382" y="393" width="65" height="12" hidden="true" />
+    <text id="131:738" name="Cover detail" x="382" y="447" width="66" height="11" hidden="true" />
+    <text id="131:739" name="Plan name" x="524" y="382" width="79" height="18" hidden="true" />
+    <text id="131:740" name="Account action" x="524" y="412" width="130" height="16" hidden="true" />
+    <text id="131:741" name="Latest charge" x="770" y="414" width="61" height="17" hidden="true" />
+    <text id="131:742" name="Valid period value" x="918" y="414" width="190" height="15" hidden="true" />
+    <rounded-rectangle id="131:743" name="View receipt button" x="1140" y="408" width="102" height="32" hidden="true" />
+    <text id="131:744" name="View receipt" x="1156" y="416" width="73" height="15" hidden="true" />
+    <rounded-rectangle id="131:745" name="Subscription record — Category - Chinese Humanities" x="344" y="508" width="946" height="132" hidden="true" />
+    <rounded-rectangle id="131:746" name="Cover artwork" x="368" y="530" width="132" height="88" hidden="true" />
+    <text id="131:747" name="Cover label" x="382" y="543" width="64" height="12" hidden="true" />
+    <text id="131:748" name="Cover detail" x="382" y="597" width="66" height="11" hidden="true" />
+    <text id="131:749" name="Plan name" x="524" y="532" width="228" height="18" hidden="true" />
+    <text id="131:750" name="Account action" x="524" y="562" width="47" height="16" hidden="true" />
+    <text id="131:751" name="Latest charge" x="770" y="564" width="61" height="17" hidden="true" />
+    <text id="131:752" name="Valid period value" x="918" y="567" width="190" height="15" hidden="true" />
+    <rounded-rectangle id="131:753" name="View receipt button" x="1140" y="558" width="102" height="32" hidden="true" />
+    <text id="131:754" name="View receipt" x="1156" y="566" width="73" height="15" hidden="true" />
+    <rounded-rectangle id="131:755" name="Subscription record — Category - Science" x="344" y="658" width="946" height="132" hidden="true" />
+    <rounded-rectangle id="131:756" name="Cover artwork" x="368" y="680" width="132" height="88" hidden="true" />
+    <text id="131:757" name="Cover label" x="382" y="693" width="44" height="12" hidden="true" />
+    <text id="131:758" name="Cover detail" x="382" y="747" width="66" height="11" hidden="true" />
+    <text id="131:759" name="Plan name" x="524" y="682" width="140" height="18" hidden="true" />
+    <text id="131:760" name="Account action" x="524" y="712" width="155" height="16" hidden="true" />
+    <text id="131:761" name="Latest charge" x="770" y="712" width="61" height="17" hidden="true" />
+    <text id="131:762" name="Valid period value" x="918" y="710" width="190" height="15" hidden="true" />
+    <rounded-rectangle id="131:763" name="View receipt button" x="1140" y="708" width="102" height="32" hidden="true" />
+    <text id="131:764" name="View receipt" x="1156" y="716" width="73" height="15" hidden="true" />
+    <text id="131:765" name="Payment note" x="344" y="818" width="620" height="15" hidden="true" />
+    <rounded-rectangle id="131:766" name="No subscription empty state card" x="344" y="302" width="946" height="220" />
+    <text id="131:767" name="No subscription empty state title" x="390" y="358" width="350" height="26" />
+    <text id="131:768" name="No subscription empty state copy" x="390" y="396" width="500" height="22" />
+    <rounded-rectangle id="131:769" name="View subscription plans button" x="390" y="438" width="190" height="42" />
+    <text id="131:770" name="View subscription plans label" x="440" y="450" width="100" height="20" />
+    <instance id="2007:446" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:813" name="Subscription - Pricing — Existing Category Upgrade" x="2641" y="7658" width="1440" height="1512">
+    <frame id="131:816" name="Pricing Plan Comparison — Upgrade" x="0" y="68" width="1440" height="790">
+      <text id="131:817" name="Pricing heading" x="80" y="30" width="600" height="36" />
+      <frame id="131:818" name="Current plan information" x="80" y="76" width="1280" height="83">
+        <text id="131:819" name="Current plan label" x="20" y="21" width="180" height="16" />
+        <text id="131:820" name="Current plan name" x="20" y="40" width="300" height="22" />
+        <text id="131:821" name="Current plan renewal" x="428" y="43" width="240" height="18" />
+        <frame id="131:822" name="Active" x="1194" y="37" width="66" height="28">
+          <text id="131:823" name="Active label" x="12" y="5" width="42" height="17" />
+        </frame>
+      </frame>
+      <frame id="131:824" name="Upgrade to Everything" x="80" y="191" width="600" height="570">
+        <frame id="131:825" name="Recommended" x="27" y="26" width="106" height="25">
+          <text id="131:826" name="Recommended label" x="10" y="5" width="86" height="15" />
+        </frame>
+        <text id="131:827" name="Upgrade title" x="28" y="62" width="360" height="34" />
+        <text id="131:828" name="Upgrade lead" x="28" y="110" width="480" height="22" />
+        <text id="131:829" name="Upgrade price label" x="28" y="152" width="260" height="16" />
+        <text id="131:830" name="Upgrade price" x="28" y="171" width="300" height="29" />
+        <text id="131:831" name="Upgrade renewal" x="28" y="218" width="420" height="20" />
+        <text id="131:832" name="Upgrade benefits" x="28" y="397" width="500" height="86" />
+        <frame id="131:833" name="Upgrade action" x="28" y="500" width="544" height="42">
+          <text id="131:834" name="Upgrade action label" x="177" y="11" width="190" height="19" />
+        </frame>
+        <text id="131:835" name="Current Category plan credit" x="28" y="246" width="300" height="16" />
+        <text id="131:836" name="Current Category plan credit value" x="28" y="264" width="160" height="22" />
+        <text id="131:837" name="Estimated upgrade charge label" x="28" y="292" width="330" height="16" />
+        <text id="131:838" name="Estimated upgrade charge" x="28" y="309" width="180" height="38" />
+        <text id="131:839" name="Upgrade calculation note" x="28" y="347" width="520" height="30" />
+      </frame>
+      <frame id="131:840" name="Add another category" x="760" y="192" width="600" height="570">
+        <text id="131:841" name="Category title" x="28" y="30" width="300" height="34" />
+        <frame id="131:842" name="Term switch" x="370" y="26" width="202" height="42">
+          <frame id="131:843" name="6 Months" x="3" y="3" width="96" height="36">
+            <text id="131:844" name="6 Months label" x="20.5" y="10" width="55" height="16" />
+          </frame>
+          <frame id="131:845" name="1 Year" x="103" y="3" width="96" height="36">
+            <text id="131:846" name="1 Year label" x="30.5" y="10" width="35" height="16" />
+          </frame>
+        </frame>
+        <text id="131:847" name="Category price" x="28" y="92" width="120" height="60" />
+        <text id="131:848" name="Category price detail" x="152" y="124" width="250" height="20" />
+        <text id="131:849" name="Category label" x="28" y="174" width="300" height="19" />
+        <frame id="131:850" name="Humanities" x="28" y="204" width="94" height="36">
+          <text id="131:851" name="Humanities label" x="8" y="9" width="78" height="17" />
+        </frame>
+        <frame id="131:852" name="Chinese Humanities" x="130" y="204" width="148" height="36">
+          <text id="131:853" name="Chinese Humanities label" x="8" y="9" width="132" height="17" />
+        </frame>
+        <frame id="131:854" name="Science" x="286" y="204" width="78" height="36">
+          <text id="131:855" name="Science label" x="8" y="9" width="62" height="17" />
+        </frame>
+        <text id="131:856" name="Category benefits" x="28" y="266" width="500" height="86" />
+        <frame id="131:857" name="Add category action" x="28" y="500" width="544" height="42">
+          <text id="131:858" name="Add category action label" x="219" y="11" width="110" height="19" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="131:863" name="Important information" x="0" y="858" width="1440" height="348">
+      <text id="131:864" name="Important heading" x="100" y="42" width="500" height="32" />
+      <text id="131:865" name="Important helper" x="100" y="84" width="720" height="20" />
+      <frame id="131:866" name="Changing plans" x="100" y="142" width="360" height="112">
+        <text id="131:867" name="Changing plans heading" x="18" y="16" width="324" height="20" />
+        <text id="131:868" name="Changing plans copy" x="18" y="43" width="324" height="48" />
+      </frame>
+      <frame id="131:869" name="Device access" x="540" y="142" width="360" height="112">
+        <text id="131:870" name="Device access heading" x="18" y="16" width="324" height="20" />
+        <text id="131:871" name="Device access copy" x="18" y="43" width="324" height="48" />
+      </frame>
+      <frame id="131:872" name="Renewal pricing" x="980" y="142" width="360" height="112">
+        <text id="131:873" name="Renewal pricing heading" x="18" y="16" width="324" height="20" />
+        <text id="131:874" name="Renewal pricing copy" x="18" y="43" width="324" height="48" />
+      </frame>
+    </frame>
+    <frame id="131:875" name="Footer — Upgrade Pricing" x="0" y="1206" width="1440" height="306">
+      <text id="131:876" name="Learning Guide" x="100" y="54" width="149" height="28" />
+      <text id="131:877" name="A thoughtful place to explore culture, ideas and the world." x="100" y="88" width="270" height="44" />
+      <text id="131:878" name="Courses" x="560" y="54" width="57" height="20" />
+      <text id="131:879" name="Humanities" x="560" y="88" width="69" height="18" />
+      <text id="131:880" name="Art" x="560" y="119" width="19" height="18" />
+      <text id="131:881" name="Science" x="560" y="150" width="49" height="18" />
+      <text id="131:882" name="Support" x="795" y="54" width="55" height="20" />
+      <text id="131:883" name="Help Center / FAQ" x="795" y="88" width="111" height="18" />
+      <text id="131:884" name="Contact us" x="795" y="119" width="67" height="18" />
+      <text id="131:885" name="Cookie settings" x="795" y="150" width="96" height="18" />
+      <text id="131:886" name="Legal" x="1030" y="54" width="37" height="20" />
+      <text id="131:887" name="Privacy policy" x="1030" y="88" width="86" height="18" />
+      <text id="131:888" name="Terms of service" x="1030" y="119" width="103" height="18" />
+      <text id="131:889" name="© 2026 Learning Guide" x="1030" y="150" width="145" height="18" />
+      <text id="131:890" name="Instagram LinkedIn YouTube" x="100" y="238" width="191" height="18" />
+      <rounded-rectangle id="131:891" name="Footer divider" x="100" y="216" width="1240" height="1" />
+    </frame>
+    <instance id="2013:429" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:892" name="Subscription - Pricing " x="-433" y="7658" width="1440" height="1471">
+    <instance id="2013:403" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+    <frame id="131:897" name="Pricing Plan Comparison" x="0" y="68" width="1440" height="749">
+      <text id="131:898" name="Pricing heading" x="100" y="58" width="700" height="40" />
+      <frame id="131:899" name="Everything plan" x="100" y="128" width="570" height="552">
+        <frame id="131:900" name="Plan title and term" x="28" y="28" width="514" height="51">
+          <text id="131:901" name="Plan name" x="0" y="0" width="230" height="38" />
+          <frame id="131:902" name="Subscription term switch" x="316" y="0" width="198" height="47">
+            <frame id="131:903" name="6 Months" x="3" y="3" width="96" height="40">
+              <text id="131:904" name="6 Months label" x="16" y="10.5" width="64" height="19" />
+            </frame>
+            <frame id="131:905" name="1 Year" x="99" y="3" width="96" height="40">
+              <text id="131:906" name="1 Year label" x="29" y="11" width="38" height="18" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="131:907" name="Price" x="28" y="95" width="514" height="80">
+          <text id="131:908" name="Price value" x="0" y="16" width="150" height="64" />
+          <text id="131:909" name="Price detail" x="127" y="50" width="340" height="30" />
+        </frame>
+        <text id="131:910" name="Plan scope" x="28" y="191" width="514" height="85" />
+        <frame id="131:911" name="Plan benefits" x="28" y="292" width="511" height="159">
+          <text id="131:912" name="Benefit" x="0" y="0" width="514" height="19" />
+          <text id="131:913" name="Benefit" x="0" y="26" width="514" height="19" />
+          <text id="131:914" name="Benefit" x="0" y="52" width="514" height="19" />
+          <text id="131:915" name="Benefit" x="0" y="78" width="514" height="19" />
+        </frame>
+        <frame id="131:916" name="Subscribe" x="28" y="467" width="514" height="46">
+          <text id="131:917" name="Subscribe label" x="197" y="13" width="120" height="20" />
+        </frame>
+      </frame>
+      <frame id="131:918" name="Category plan" x="770" y="128" width="570" height="552">
+        <frame id="131:919" name="Plan title and term" x="28" y="28" width="514" height="51">
+          <text id="131:920" name="Plan name" x="0" y="0" width="230" height="38" />
+          <frame id="131:921" name="Subscription term switch" x="316" y="0" width="198" height="47">
+            <frame id="131:922" name="6 Months" x="3" y="3" width="96" height="40">
+              <text id="131:923" name="6 Months label" x="16" y="10.5" width="64" height="19" />
+            </frame>
+            <frame id="131:924" name="1 Year" x="99" y="3" width="96" height="40">
+              <text id="131:925" name="1 Year label" x="29" y="11" width="38" height="18" />
+            </frame>
+          </frame>
+        </frame>
+        <frame id="131:926" name="Price" x="28" y="95" width="514" height="80">
+          <text id="131:927" name="Price value" x="0" y="16" width="150" height="64" />
+          <text id="131:928" name="Price detail" x="120" y="50" width="340" height="30" />
+        </frame>
+        <frame id="131:929" name="Category switch buttons" x="28" y="191" width="514" height="85">
+          <frame id="131:930" name="Humanities" x="0" y="22.5" width="104" height="40">
+            <text id="131:931" name="Humanities label" x="16" y="10.5" width="72" height="19" />
+          </frame>
+          <frame id="131:932" name="Chinese Humanities" x="112" y="22.5" width="184" height="40">
+            <text id="131:933" name="Chinese Humanities label" x="16" y="10.5" width="152" height="19" />
+          </frame>
+          <frame id="131:934" name="Science" x="304" y="22.5" width="94" height="40">
+            <text id="131:935" name="Science label" x="16" y="10.5" width="62" height="19" />
+          </frame>
+        </frame>
+        <frame id="131:936" name="Plan benefits" x="28" y="292" width="514" height="159">
+          <text id="131:937" name="Benefit" x="0" y="0" width="514" height="19" />
+          <text id="131:938" name="Benefit" x="0" y="26" width="514" height="19" />
+          <text id="131:939" name="Benefit" x="0" y="52" width="514" height="19" />
+          <text id="131:940" name="Benefit" x="0" y="78" width="514" height="19" />
+        </frame>
+        <frame id="131:941" name="Subscribe" x="28" y="467" width="514" height="46">
+          <text id="131:942" name="Subscribe label" x="197" y="13" width="120" height="20" />
+        </frame>
+      </frame>
+    </frame>
+    <frame id="131:943" name="Pricing Terms and Rules" x="0" y="817" width="1440" height="348">
+      <text id="131:944" name="Important information heading" x="100" y="42" width="500" height="34" />
+      <text id="131:945" name="Important information intro" x="100" y="84" width="700" height="22" />
+      <frame id="131:946" name="Changing plans" x="100" y="132" width="360" height="116">
+        <text id="131:947" name="Changing plans heading" x="18" y="18" width="324" height="21" />
+        <text id="131:948" name="Changing plans copy" x="18" y="47" width="324" height="50" />
+      </frame>
+      <frame id="131:949" name="Device access" x="540" y="132" width="360" height="116">
+        <text id="131:950" name="Device access heading" x="18" y="18" width="324" height="21" />
+        <text id="131:951" name="Device access copy" x="18" y="47" width="324" height="50" />
+      </frame>
+      <frame id="131:952" name="Renewal pricing" x="980" y="132" width="360" height="116">
+        <text id="131:953" name="Renewal pricing heading" x="18" y="18" width="324" height="21" />
+        <text id="131:954" name="Renewal pricing copy" x="18" y="47" width="324" height="50" />
+      </frame>
+    </frame>
+    <frame id="131:955" name="Footer — Pricing" x="0" y="1165" width="1440" height="306">
+      <text id="131:956" name="Learning Guide" x="100" y="54" width="149" height="28" />
+      <text id="131:957" name="A thoughtful place to explore culture, ideas and the world." x="100" y="88" width="270" height="44" />
+      <text id="131:958" name="Courses" x="560" y="54" width="57" height="20" />
+      <text id="131:959" name="Humanities" x="560" y="88" width="69" height="18" />
+      <text id="131:960" name="Art" x="560" y="119" width="19" height="18" />
+      <text id="131:961" name="Science" x="560" y="150" width="49" height="18" />
+      <text id="131:962" name="Support" x="795" y="54" width="55" height="20" />
+      <text id="131:963" name="Help Center / FAQ" x="795" y="88" width="111" height="18" />
+      <text id="131:964" name="Contact us" x="795" y="119" width="67" height="18" />
+      <text id="131:965" name="Cookie settings" x="795" y="150" width="96" height="18" />
+      <text id="131:966" name="Legal" x="1030" y="54" width="37" height="20" />
+      <text id="131:967" name="Privacy policy" x="1030" y="88" width="86" height="18" />
+      <text id="131:968" name="Terms of service" x="1030" y="119" width="103" height="18" />
+      <text id="131:969" name="© 2026 Learning Guide" x="1030" y="150" width="145" height="18" />
+      <text id="131:970" name="Instagram LinkedIn YouTube" x="100" y="238" width="191" height="18" />
+      <rounded-rectangle id="131:971" name="Footer divider" x="100" y="216" width="1240" height="1" />
+    </frame>
+  </frame>
+  <frame id="131:972" name="Subscription - Subscription Confirm — Desktop Modal" x="1104" y="7658" width="1440" height="1162">
+    <rounded-rectangle id="131:973" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="131:974" name="Header divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <text id="131:975" name="Brand" x="84" y="27" width="160" height="23" hidden="true" />
+    <text id="131:976" name="Navigation" x="280" y="30" width="290" height="19" hidden="true" />
+    <text id="131:977" name="Account" x="1210" y="29" width="150" height="19" hidden="true" />
+    <text id="131:978" name="Pricing heading" x="100" y="154" width="600" height="49" />
+    <text id="131:979" name="Pricing helper" x="100" y="204" width="480" height="23" />
+    <rounded-rectangle id="131:980" name="Plan preview A" x="100" y="318" width="570" height="390" />
+    <rounded-rectangle id="131:981" name="Plan preview B" x="770" y="318" width="570" height="390" />
+    <rounded-rectangle id="131:982" name="Backdrop dimmer" x="0" y="0" width="1440" height="1162" />
+    <frame id="131:983" name="Subscription Confirm Dialog" x="360" y="72" width="720" height="894">
+      <frame id="131:984" name="Dialog Header" x="32" y="28" width="656" height="58">
+        <frame id="131:985" name="Dialog Title Group" x="0" y="0" width="590" height="58">
+          <text id="131:986" name="Dialog Title" x="0" y="0" width="560" height="37" />
+          <text id="131:987" name="Dialog Intro" x="0" y="42" width="590" height="20" />
+        </frame>
+        <text id="131:988" name="Close" x="628" y="10.5" width="28" height="37" />
+      </frame>
+      <frame id="131:989" name="Selected Plan Summary" x="32" y="104" width="656" height="237">
+        <text id="131:990" name="Summary Eyebrow" x="20" y="18" width="600" height="16" />
+        <text id="131:991" name="Summary Name" x="20" y="42" width="600" height="68" />
+        <text id="131:992" name="Summary Benefits" x="20" y="118" width="308" height="134" />
+      </frame>
+      <frame id="131:993" name="Payment and Renewal Details" x="32" y="359" width="656" height="228">
+        <text id="131:994" name="Details heading" x="0" y="0" width="656" height="23" />
+        <frame id="131:995" name="Payment row" x="0" y="37" width="656" height="72">
+          <frame id="131:996" name="Today price" x="0" y="0" width="304" height="72">
+            <text id="131:997" name="Today price label" x="0" y="0" width="304" height="16" />
+            <text id="131:998" name="Today price value" x="0" y="20" width="304" height="23" />
+            <text id="131:999" name="Today price helper" x="0" y="47" width="304" height="17" />
+          </frame>
+          <frame id="131:1000" name="Term" x="332" y="0" width="304" height="72">
+            <text id="131:1001" name="Term label" x="0" y="0" width="304" height="16" />
+            <text id="131:1002" name="Term value" x="0" y="20" width="304" height="23" />
+            <text id="131:1003" name="Term helper" x="0" y="47" width="304" height="17" />
+          </frame>
+        </frame>
+        <rounded-rectangle id="131:1004" name="Details divider" x="0" y="123" width="656" height="1" />
+        <frame id="131:1005" name="Renewal row" x="0" y="138" width="656" height="90">
+          <frame id="131:1006" name="Next charge" x="0" y="0" width="304" height="72">
+            <text id="131:1007" name="Next charge label" x="0" y="0" width="304" height="16" />
+            <text id="131:1008" name="Next charge value" x="0" y="20" width="304" height="23" />
+            <text id="131:1009" name="Next charge helper" x="0" y="47" width="304" height="17" />
+          </frame>
+          <frame id="131:1010" name="Renewal price" x="332" y="0" width="304" height="81">
+            <text id="131:1011" name="Renewal price label" x="0" y="0" width="304" height="16" />
+            <text id="131:1012" name="Renewal price value" x="0" y="20" width="304" height="23" />
+            <text id="131:1013" name="Renewal price helper" x="0" y="47" width="304" height="34" />
+          </frame>
+        </frame>
+      </frame>
+      <frame id="131:1014" name="Required Terms" x="32" y="605" width="656" height="178">
+        <text id="131:1015" name="Terms heading" x="0" y="0" width="656" height="22" />
+        <frame id="131:1016" name="No refund" x="0" y="32" width="656" height="38">
+          <instance id="131:1017" name="Checkbox / Subscription Confirm / Selected" x="0" y="0" width="20" height="20" />
+          <text id="131:1018" name="No refund copy" x="32" y="0" width="620" height="19" />
+        </frame>
+        <frame id="131:1019" name="Stripe authorization" x="0" y="80" width="656" height="38">
+          <instance id="131:1020" name="Checkbox / Subscription Confirm / Selected" x="0" y="0" width="20" height="20" />
+          <text id="131:1021" name="Stripe authorization copy" x="32" y="0" width="620" height="19" />
+        </frame>
+        <frame id="131:1022" name="Annual pricing" x="0" y="128" width="656" height="38">
+          <instance id="131:1023" name="Checkbox / Subscription Confirm / Selected" x="0" y="0" width="20" height="20" />
+          <text id="131:1024" name="Annual pricing copy" x="32" y="0" width="620" height="32" />
+        </frame>
+      </frame>
+      <frame id="131:1025" name="Dialog Actions" x="32" y="801" width="656" height="46">
+        <frame id="131:1026" name="Cancel" x="378" y="0" width="130" height="46">
+          <text id="131:1027" name="Cancel label" x="38.5" y="13" width="53" height="20" />
+        </frame>
+        <frame id="131:1028" name="Continue to Stripe" x="524" y="0" width="132" height="46">
+          <text id="131:1029" name="Continue label" x="25" y="13" width="82" height="20" />
+        </frame>
+      </frame>
+    </frame>
+    <vector id="131:1030" name="Cover artwork" x="747.5" y="197.5" width="263" height="161" />
+    <instance id="2007:521" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:1031" name="My Learning v1.0 — My Subscription" x="5715" y="7664" width="1440" height="1540">
+    <rounded-rectangle id="131:1032" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="131:1033" name="Divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <rounded-rectangle id="131:1034" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="131:1035" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="131:1036" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="131:1037" name="Nav Study Groups" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="131:1038" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="131:1039" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="131:1040" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="131:1041" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="131:1042" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="131:1043" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="131:1044" name="Sidebar" x="0" y="68" width="280" height="1230" />
+    <rounded-rectangle id="131:1045" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:1046" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:1047" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="131:1048" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:1049" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:1050" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:1051" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:1052" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:1053" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:1054" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:1055" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:1056" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:1057" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="131:1058" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="131:1059" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="131:1060" name="Access chip label" x="1068" y="129" width="208" height="20" />
+    <text id="131:1061" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="131:1062" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="131:1063" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="131:1064" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="131:1065" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="131:1066" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="131:1067" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="131:1068" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="131:1069" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="131:1070" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="131:1071" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="131:1072" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="131:1073" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="131:1074" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="131:1075" name="Course card Tang Dynasty History" x="344" y="494" width="946" height="178" />
+    <rounded-rectangle id="131:1076" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="131:1077" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="131:1078" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="131:1079" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="131:1080" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="131:1081" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="131:1082" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="131:1083" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="131:1084" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="131:1085" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="131:1086" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="131:1087" name="Course card The Logic of Nature" x="344" y="694" width="946" height="178" />
+    <rounded-rectangle id="131:1088" name="Course cover The Logic of Nature" x="368" y="718" width="172" height="130" />
+    <text id="131:1089" name="Course cover label The Logic of Nature" x="384" y="774" width="140" height="20" />
+    <text id="131:1090" name="Course The Logic of Nature" x="570" y="722" width="370" height="27.299999237060547" />
+    <text id="131:1091" name="Course meta The Logic of Nature" x="570" y="754" width="360" height="20" />
+    <text id="131:1092" name="Course desc The Logic of Nature" x="570" y="778" width="430" height="20" />
+    <rounded-rectangle id="131:1093" name="Progress track The Logic of Nature" x="570" y="812" width="316" height="7" />
+    <rounded-rectangle id="131:1094" name="Progress value The Logic of Nature" x="570" y="812" width="56.880001068115234" height="7" />
+    <text id="131:1095" name="Progress The Logic of Nature" x="570" y="828" width="170" height="20" />
+    <text id="131:1096" name="Current lesson The Logic of Nature" x="760" y="828" width="260" height="20" />
+    <rounded-rectangle id="131:1097" name="Course CTA The Logic of Nature" x="1065" y="758" width="190" height="42" />
+    <text id="131:1098" name="Course CTA The Logic of Nature label" x="1065" y="769" width="190" height="20" />
+    <text id="131:1099" name="All courses listed" x="344" y="902" width="360" height="20" />
+    <rounded-rectangle id="131:1100" name="Footer" x="0" y="1218" width="1440" height="310" />
+    <text id="131:1101" name="Footer brand" x="100" y="1270" width="220" height="26" />
+    <text id="131:1102" name="Footer copy" x="100" y="1306" width="300" height="20" />
+    <text id="131:1103" name="Footer Courses" x="560" y="1270" width="100" height="20" />
+    <text id="131:1104" name="Footer course links" x="560" y="1303" width="120" height="20" />
+    <text id="131:1105" name="Footer Support" x="795" y="1270" width="100" height="20" />
+    <text id="131:1106" name="Footer support links" x="795" y="1303" width="160" height="20" />
+    <text id="131:1107" name="Footer Legal" x="1030" y="1270" width="100" height="20" />
+    <text id="131:1108" name="Footer legal links" x="1030" y="1303" width="190" height="20" />
+    <rounded-rectangle id="131:1109" name="Divider" x="100" y="1434" width="1240" height="1" />
+    <text id="131:1110" name="Social links" x="100" y="1462" width="250" height="20" />
+    <rounded-rectangle id="131:1111" name="Sidebar replacement" x="0" y="68" width="280" height="1150" />
+    <rounded-rectangle id="131:1112" name="Main replacement" x="277" y="116" width="1160" height="1102" />
+    <rounded-rectangle id="131:1113" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="131:1114" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="131:1115" name="Active nav bg" x="28" y="191" width="220" height="44" />
+    <text id="131:1116" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="131:1117" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="131:1118" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="131:1119" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="131:1120" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="131:1121" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="131:1122" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="131:1123" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="131:1124" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="131:1125" name="Title" x="344" y="118" width="500" height="40.29999923706055" />
+    <text id="131:1126" name="Intro" x="344" y="160" width="650" height="20.799999237060547" />
+    <text id="131:1127" name="Subscription records" x="344" y="234" width="223" height="27" />
+    <text id="131:1128" name="Records helper" x="344" y="267" width="402" height="16" />
+    <rounded-rectangle id="131:1129" name="Records table header" x="344" y="302" width="946" height="42" />
+    <text id="131:1130" name="Plan" x="368" y="316" width="26" height="15" />
+    <text id="131:1131" name="Amount" x="770" y="316" width="46" height="15" />
+    <text id="131:1132" name="Valid period" x="954" y="315" width="70" height="15" />
+    <text id="131:1133" name="Receipt" x="1140" y="316" width="45" height="15" />
+    <rounded-rectangle id="131:1134" name="Subscription record — Everything" x="344" y="358" width="946" height="132" />
+    <rounded-rectangle id="131:1135" name="Cover artwork" x="368" y="380" width="132" height="88" />
+    <text id="131:1136" name="Cover label" x="382" y="393" width="65" height="12" />
+    <text id="131:1137" name="Cover detail" x="382" y="447" width="66" height="11" />
+    <text id="131:1138" name="Plan name" x="524" y="382" width="79" height="18" />
+    <text id="131:1139" name="Account action" x="524" y="412" width="130" height="16" />
+    <text id="131:1140" name="Latest charge" x="770" y="414" width="61" height="17" />
+    <text id="131:1141" name="Valid period value" x="918" y="414" width="190" height="15" />
+    <rounded-rectangle id="131:1142" name="View receipt button" x="1140" y="408" width="102" height="32" />
+    <text id="131:1143" name="View receipt" x="1156" y="416" width="73" height="15" />
+    <rounded-rectangle id="131:1144" name="Subscription record — Category - Chinese Humanities" x="344" y="508" width="946" height="132" />
+    <rounded-rectangle id="131:1145" name="Cover artwork" x="368" y="530" width="132" height="88" />
+    <text id="131:1146" name="Cover label" x="382" y="543" width="64" height="12" />
+    <text id="131:1147" name="Cover detail" x="382" y="597" width="66" height="11" />
+    <text id="131:1148" name="Plan name" x="524" y="532" width="228" height="18" />
+    <text id="131:1149" name="Account action" x="524" y="562" width="47" height="16" />
+    <text id="131:1150" name="Latest charge" x="770" y="564" width="61" height="17" />
+    <text id="131:1151" name="Valid period value" x="918" y="567" width="190" height="15" />
+    <rounded-rectangle id="131:1152" name="View receipt button" x="1140" y="558" width="102" height="32" />
+    <text id="131:1153" name="View receipt" x="1156" y="566" width="73" height="15" />
+    <rounded-rectangle id="131:1154" name="Subscription record — Category - Science" x="344" y="658" width="946" height="132" />
+    <rounded-rectangle id="131:1155" name="Cover artwork" x="368" y="680" width="132" height="88" />
+    <text id="131:1156" name="Cover label" x="382" y="693" width="44" height="12" />
+    <text id="131:1157" name="Cover detail" x="382" y="747" width="66" height="11" />
+    <text id="131:1158" name="Plan name" x="524" y="682" width="140" height="18" />
+    <text id="131:1159" name="Account action" x="524" y="712" width="155" height="16" />
+    <text id="131:1160" name="Latest charge" x="770" y="712" width="61" height="17" />
+    <text id="131:1161" name="Valid period value" x="918" y="710" width="190" height="15" />
+    <rounded-rectangle id="131:1162" name="View receipt button" x="1140" y="708" width="102" height="32" />
+    <text id="131:1163" name="View receipt" x="1156" y="716" width="73" height="15" />
+    <text id="131:1164" name="Payment note" x="344" y="818" width="620" height="15" />
+    <instance id="2007:546" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="131:1165" name="Subscription - Cancel Auto-Renewal — Desktop Modal" x="7253" y="7664" width="1440" height="900">
+    <rounded-rectangle id="131:1166" name="Backdrop" x="0" y="0" width="1440" height="900" />
+    <rounded-rectangle id="131:1167" name="Dialog" x="400" y="132" width="640" height="658" />
+    <text id="131:1168" name="Title" x="440" y="174" width="520" height="32" />
+    <text id="131:1169" name="Close" x="970" y="174" width="30" height="30" />
+    <text id="131:1170" name="Plan" x="440" y="226" width="500" height="22" />
+    <text id="131:1171" name="Plan helper" x="440" y="254" width="535" height="42" />
+    <text id="131:1172" name="Reason heading" x="440" y="330" width="500" height="22" />
+    <text id="131:1173" name="Reason helper" x="440" y="357" width="530" height="38" />
+    <rounded-rectangle id="131:1174" name="Radio Low usage" x="440" y="414" width="20" height="20" />
+    <text id="131:1175" name="Reason Low usage" x="474" y="415" width="350" height="20" />
+    <rounded-rectangle id="131:1176" name="Radio Too expensive" x="440" y="456" width="20" height="20" />
+    <text id="131:1177" name="Reason Too expensive" x="474" y="457" width="350" height="20" />
+    <rounded-rectangle id="131:1178" name="Radio I do not like the content" x="440" y="498" width="20" height="20" />
+    <text id="131:1179" name="Reason I do not like the content" x="474" y="499" width="350" height="20" />
+    <rounded-rectangle id="131:1180" name="Radio The website is difficult to use" x="440" y="540" width="20" height="20" />
+    <text id="131:1181" name="Reason The website is difficult to use" x="474" y="541" width="350" height="20" />
+    <rounded-rectangle id="131:1182" name="Radio Other" x="440" y="582" width="20" height="20" />
+    <text id="131:1183" name="Reason Other" x="474" y="583" width="350" height="20" />
+    <text id="131:1184" name="Other input placeholder" x="474" y="616" width="430" height="18" />
+    <rounded-rectangle id="131:1185" name="Input underline" x="474" y="642" width="460" height="1" />
+    <rounded-rectangle id="131:1186" name="Back" x="730" y="678" width="149" height="44" />
+    <rounded-rectangle id="131:1187" name="Skip" x="440" y="678" width="60" height="44" />
+    <text id="131:1188" name="Skip label" x="455" y="690" width="144" height="20" />
+    <rounded-rectangle id="131:1189" name="Confirm cancellation" x="885" y="678" width="90" height="44" />
+    <text id="131:1190" name="Confirm cancellation label" x="734" y="690" width="158" height="20" />
+    <text id="131:1191" name="Back label" x="917" y="690" width="48" height="17" />
+    <text id="131:1192" name="Interaction note" x="440" y="738" width="520" height="18" />
+  </frame>
+  <frame id="131:1193" name="Subscription - Upgrade Confirm — Desktop Modal" x="4178" y="7664" width="1440" height="1206">
+    <rounded-rectangle id="131:1194" name="Backdrop" x="0" y="0" width="1440" height="1206" />
+    <rounded-rectangle id="131:1195" name="Dialog" x="370" y="54" width="700" height="914" />
+    <text id="131:1196" name="Title" x="410" y="86" width="560" height="32" />
+    <text id="131:1197" name="Close" x="1002" y="86" width="30" height="30" />
+    <text id="131:1198" name="Intro" x="410" y="128" width="580" height="20" />
+    <rounded-rectangle id="131:1199" name="Summary" x="410" y="172" width="620" height="240" />
+    <text id="131:1200" name="Current plan label" x="434" y="194" width="180" height="16" />
+    <text id="131:1201" name="Current plan" x="434" y="218" width="370" height="22" />
+    <text id="131:1202" name="Target label" x="434" y="253" width="180" height="16" />
+    <text id="131:1203" name="Target label" x="434" y="319" width="180" height="16" />
+    <text id="131:1204" name="Target plan" x="434" y="277" width="370" height="22" />
+    <text id="131:1205" name="Inheritance" x="434" y="339" width="270" height="34" />
+    <text id="131:1206" name="Price heading" x="410" y="427" width="580" height="22" />
+    <rounded-rectangle id="131:1207" name="Price table" x="410" y="455" width="620" height="144" />
+    <text id="131:1208" name="Everything price" x="434" y="478" width="300" height="18" />
+    <text id="131:1209" name="Everything value" x="870" y="478" width="128" height="18" />
+    <text id="131:1210" name="Credit label" x="434" y="513" width="300" height="18" />
+    <text id="131:1211" name="Credit value" x="870" y="513" width="128" height="18" />
+    <text id="131:1212" name="Payable label" x="434" y="553" width="300" height="20" />
+    <text id="131:1213" name="Payable value" x="870" y="551" width="140" height="22" />
+    <text id="131:1214" name="Other categories" x="410" y="637" width="590" height="36" />
+    <text id="131:1215" name="Agreements" x="410" y="698" width="560" height="20" />
+    <rounded-rectangle id="131:1216" name="Unchecked agreement 0" x="410" y="734" width="20" height="20" />
+    <text id="131:1217" name="Agreement copy 0" x="442" y="734" width="560" height="30" />
+    <rounded-rectangle id="131:1218" name="Unchecked agreement 1" x="410" y="774" width="20" height="20" />
+    <text id="131:1219" name="Agreement copy 1" x="442" y="774" width="560" height="30" />
+    <rounded-rectangle id="131:1220" name="Unchecked agreement 2" x="410" y="814" width="20" height="20" />
+    <text id="131:1221" name="Agreement copy 2" x="442" y="814" width="560" height="30" />
+    <rounded-rectangle id="131:1222" name="Cancel" x="676" y="864" width="118" height="44" />
+    <text id="131:1223" name="Cancel label" x="708" y="876" width="118" height="20" />
+    <rounded-rectangle id="131:1224" name="Continue disabled" x="806" y="864" width="224" height="44" />
+    <text id="131:1225" name="Continue disabled label" x="856" y="876" width="124" height="17" />
+    <text id="131:1226" name="Disabled helper" x="410" y="914" width="380" height="16" />
+    <vector id="131:1227" name="Cover artwork" x="734" y="212" width="263" height="161" />
+  </frame>
+  <frame id="136:287" name="My Learning — Notifications" x="7458" y="9985" width="1440" height="1540">
+    <rounded-rectangle id="136:288" name="Header" x="0" y="0" width="1440" height="80" hidden="true" />
+    <rounded-rectangle id="136:289" name="Divider" x="0" y="79" width="1440" height="1" hidden="true" />
+    <rounded-rectangle id="136:290" name="Logo mark" x="52" y="30" width="18" height="18" hidden="true" />
+    <text id="136:291" name="Logo" x="84" y="28" width="150" height="22.100000381469727" hidden="true" />
+    <text id="136:292" name="Nav Courses" x="280" y="30" width="64" height="20" hidden="true" />
+    <text id="136:293" name="Nav Study Groups" x="385" y="30" width="95" height="20" hidden="true" />
+    <text id="136:294" name="Nav Pricing" x="490" y="30" width="60" height="20" hidden="true" />
+    <text id="136:295" name="Language" x="1125" y="30" width="35" height="20" hidden="true" />
+    <text id="136:296" name="Notification bell" x="1185" y="25" width="22" height="23.399999618530273" hidden="true" />
+    <rounded-rectangle id="136:297" name="Avatar" x="1225" y="24" width="32" height="32" hidden="true" />
+    <text id="136:298" name="Avatar initial" x="1225" y="31" width="32" height="20" hidden="true" />
+    <text id="136:299" name="Account" x="1270" y="30" width="120" height="20" hidden="true" />
+    <rounded-rectangle id="136:300" name="Sidebar" x="0" y="68" width="280" height="1230" />
+    <rounded-rectangle id="136:301" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="136:302" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="136:303" name="Active nav bg" x="28" y="139" width="220" height="44" />
+    <text id="136:304" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="136:305" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="136:306" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="136:307" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="136:308" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="136:309" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="136:310" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="136:311" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="136:312" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="136:313" name="Greeting" x="344" y="118" width="560" height="40.29999923706055" />
+    <text id="136:314" name="Subhead" x="344" y="160" width="610" height="20.799999237060547" />
+    <rounded-rectangle id="136:315" name="Access chip" x="1054" y="120" width="236" height="34" />
+    <text id="136:316" name="Access chip label" x="1068" y="129" width="208" height="20" />
+    <text id="136:317" name="Section title" x="344" y="228" width="300" height="29.899999618530273" />
+    <text id="136:318" name="Section helper" x="344" y="260" width="320" height="20" />
+    <rounded-rectangle id="136:319" name="Course card The Art of Seeing" x="344" y="294" width="946" height="178" />
+    <rounded-rectangle id="136:320" name="Course cover The Art of Seeing" x="368" y="318" width="172" height="130" />
+    <text id="136:321" name="Course cover label The Art of Seeing" x="384" y="374" width="140" height="20" />
+    <text id="136:322" name="Course The Art of Seeing" x="570" y="322" width="370" height="27.299999237060547" />
+    <text id="136:323" name="Course meta The Art of Seeing" x="570" y="354" width="360" height="20" />
+    <text id="136:324" name="Course desc The Art of Seeing" x="570" y="378" width="430" height="20" />
+    <rounded-rectangle id="136:325" name="Progress track The Art of Seeing" x="570" y="412" width="316" height="7" />
+    <rounded-rectangle id="136:326" name="Progress value The Art of Seeing" x="570" y="412" width="145.36000061035156" height="7" />
+    <text id="136:327" name="Progress The Art of Seeing" x="570" y="428" width="170" height="20" />
+    <text id="136:328" name="Current lesson The Art of Seeing" x="760" y="428" width="260" height="20" />
+    <rounded-rectangle id="136:329" name="Course CTA The Art of Seeing" x="1065" y="358" width="190" height="42" />
+    <text id="136:330" name="Course CTA The Art of Seeing label" x="1065" y="369" width="190" height="20" />
+    <rounded-rectangle id="136:331" name="Course card Tang Dynasty History" x="344" y="494" width="946" height="178" />
+    <rounded-rectangle id="136:332" name="Course cover Tang Dynasty History" x="368" y="518" width="172" height="130" />
+    <text id="136:333" name="Course cover label Tang Dynasty History" x="384" y="574" width="140" height="20" />
+    <text id="136:334" name="Course Tang Dynasty History" x="570" y="522" width="370" height="27.299999237060547" />
+    <text id="136:335" name="Course meta Tang Dynasty History" x="570" y="554" width="360" height="20" />
+    <text id="136:336" name="Course desc Tang Dynasty History" x="570" y="578" width="430" height="20" />
+    <rounded-rectangle id="136:337" name="Progress track Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <rounded-rectangle id="136:338" name="Progress value Tang Dynasty History" x="570" y="612" width="316" height="7" />
+    <text id="136:339" name="Progress Tang Dynasty History" x="570" y="628" width="170" height="20" />
+    <text id="136:340" name="Current lesson Tang Dynasty History" x="760" y="628" width="260" height="20" />
+    <rounded-rectangle id="136:341" name="Course CTA Tang Dynasty History" x="1065" y="558" width="190" height="42" />
+    <text id="136:342" name="Course CTA Tang Dynasty History label" x="1065" y="569" width="190" height="20" />
+    <rounded-rectangle id="136:343" name="Course card The Logic of Nature" x="344" y="694" width="946" height="178" />
+    <rounded-rectangle id="136:344" name="Course cover The Logic of Nature" x="368" y="718" width="172" height="130" />
+    <text id="136:345" name="Course cover label The Logic of Nature" x="384" y="774" width="140" height="20" />
+    <text id="136:346" name="Course The Logic of Nature" x="570" y="722" width="370" height="27.299999237060547" />
+    <text id="136:347" name="Course meta The Logic of Nature" x="570" y="754" width="360" height="20" />
+    <text id="136:348" name="Course desc The Logic of Nature" x="570" y="778" width="430" height="20" />
+    <rounded-rectangle id="136:349" name="Progress track The Logic of Nature" x="570" y="812" width="316" height="7" />
+    <rounded-rectangle id="136:350" name="Progress value The Logic of Nature" x="570" y="812" width="56.880001068115234" height="7" />
+    <text id="136:351" name="Progress The Logic of Nature" x="570" y="828" width="170" height="20" />
+    <text id="136:352" name="Current lesson The Logic of Nature" x="760" y="828" width="260" height="20" />
+    <rounded-rectangle id="136:353" name="Course CTA The Logic of Nature" x="1065" y="758" width="190" height="42" />
+    <text id="136:354" name="Course CTA The Logic of Nature label" x="1065" y="769" width="190" height="20" />
+    <text id="136:355" name="All courses listed" x="344" y="902" width="360" height="20" />
+    <rounded-rectangle id="136:356" name="Footer" x="0" y="1218" width="1440" height="310" />
+    <text id="136:357" name="Footer brand" x="100" y="1270" width="220" height="26" />
+    <text id="136:358" name="Footer copy" x="100" y="1306" width="300" height="20" />
+    <text id="136:359" name="Footer Courses" x="560" y="1270" width="100" height="20" />
+    <text id="136:360" name="Footer course links" x="560" y="1303" width="120" height="20" />
+    <text id="136:361" name="Footer Support" x="795" y="1270" width="100" height="20" />
+    <text id="136:362" name="Footer support links" x="795" y="1303" width="160" height="20" />
+    <text id="136:363" name="Footer Legal" x="1030" y="1270" width="100" height="20" />
+    <text id="136:364" name="Footer legal links" x="1030" y="1303" width="190" height="20" />
+    <rounded-rectangle id="136:365" name="Divider" x="100" y="1434" width="1240" height="1" />
+    <text id="136:366" name="Social links" x="100" y="1462" width="250" height="20" />
+    <rounded-rectangle id="136:367" name="Sidebar replacement" x="0" y="68" width="280" height="1150" />
+    <rounded-rectangle id="136:368" name="Main replacement" x="280" y="68" width="1160" height="1150" />
+    <rounded-rectangle id="136:369" name="Divider" x="279" y="68" width="1" height="1" />
+    <text id="136:370" name="Sidebar eyebrow" x="36" y="112" width="170" height="20" />
+    <rounded-rectangle id="136:371" name="Active nav bg" x="28" y="243" width="220" height="44" />
+    <text id="136:372" name="Side nav Overview" x="42" y="151" width="190" height="20" />
+    <text id="136:373" name="Side nav My Subscription" x="42" y="203" width="190" height="20" />
+    <text id="136:374" name="Side nav Notification Center" x="42" y="255" width="190" height="20" />
+    <text id="136:375" name="Side nav Personal Settings" x="42" y="307" width="190" height="20" />
+    <text id="136:376" name="Side nav Help Center" x="42" y="359" width="190" height="20" />
+    <rounded-rectangle id="136:377" name="Help card" x="28" y="1028" width="220" height="132" />
+    <text id="136:378" name="Help Desk CTA title" x="44" y="1048" width="150" height="20.799999237060547" />
+    <text id="136:379" name="Help Desk CTA copy" x="44" y="1078" width="175" height="20" />
+    <text id="136:380" name="Help Desk CTA" x="44" y="1110" width="176" height="20" />
+    <text id="136:381" name="Title" x="344" y="118" width="520" height="40.29999923706055" />
+    <text id="136:382" name="Intro" x="344" y="160" width="550" height="20.799999237060547" />
+    <rounded-rectangle id="136:383" name="Unread chip" x="1107" y="122" width="183" height="34" />
+    <text id="136:384" name="Unread label" x="1119" y="131" width="160" height="20" />
+    <rounded-rectangle id="136:385" name="Notification Payment successful" x="344" y="232" width="946" height="112" />
+    <rounded-rectangle id="136:386" name="Unread dot Payment successful" x="370" y="262" width="9" height="9" />
+    <text id="136:387" name="Notification title Payment successful" x="394" y="252" width="480" height="22.100000381469727" />
+    <text id="136:388" name="Notification body Payment successful" x="394" y="280" width="600" height="20" />
+    <text id="136:389" name="Notification time Payment successful" x="1110" y="256" width="140" height="20" />
+    <text id="136:390" name="Notification action Payment successful" x="1082" y="294" width="170" height="20" />
+    <rounded-rectangle id="136:391" name="Notification Auto-renewal cancelled" x="344" y="362" width="946" height="100" />
+    <text id="136:392" name="Notification title Auto-renewal cancelled" x="370" y="382" width="480" height="22.100000381469727" />
+    <text id="136:393" name="Notification body Auto-renewal cancelled" x="370" y="410" width="600" height="20" />
+    <text id="136:394" name="Notification time Auto-renewal cancelled" x="1110" y="386" width="140" height="20" />
+    <text id="136:395" name="Notification action Auto-renewal cancelled" x="1082" y="424" width="170" height="20" />
+    <rounded-rectangle id="136:396" name="Notification New course available" x="344" y="480" width="946" height="112" />
+    <rounded-rectangle id="136:397" name="Unread dot New course available" x="370" y="510" width="9" height="9" />
+    <text id="136:398" name="Notification title New course available" x="394" y="500" width="480" height="22.100000381469727" />
+    <text id="136:399" name="Notification body New course available" x="394" y="528" width="600" height="20" />
+    <text id="136:400" name="Notification time New course available" x="1110" y="504" width="140" height="20" />
+    <text id="136:401" name="Notification action New course available" x="1082" y="542" width="170" height="20" />
+    <rounded-rectangle id="136:402" name="Notification Welcome to Learning Guide" x="344" y="610" width="946" height="100" />
+    <text id="136:403" name="Notification title Welcome to Learning Guide" x="370" y="630" width="480" height="22.100000381469727" />
+    <text id="136:404" name="Notification body Welcome to Learning Guide" x="370" y="658" width="600" height="20" />
+    <text id="136:405" name="Notification time Welcome to Learning Guide" x="1110" y="634" width="140" height="20" />
+    <text id="136:406" name="Notification action Welcome to Learning Guide" x="1082" y="672" width="170" height="20" />
+    <rounded-rectangle id="136:407" name="Info box" x="344" y="754" width="946" height="80" />
+    <text id="136:408" name="Info icon" x="370" y="775" width="26" height="20.799999237060547" />
+    <text id="136:409" name="Info text" x="410" y="768" width="820" height="20" />
+    <instance id="2007:571" name="Header — Signed-in" x="0" y="0" width="1440" height="68" />
+  </frame>
+  <frame id="2007:207" name="Header" x="48" y="-308" width="1440" height="176">
+    <symbol id="2007:179" name="State=Visitor" x="0" y="0" width="1440" height="68" />
+    <symbol id="2007:206" name="State=Signed-in" x="0" y="108" width="1440" height="68" />
+  </frame>
+</canvas>
+IMPORTANT: After you call this tool, you MUST call get_design_context if trying to implement the design, since this tool only returns metadata. If you do not call get_design_context, the agent will not be able to implement the design.

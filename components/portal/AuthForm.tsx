@@ -26,7 +26,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     }
   }
 
-  const switchPath = signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`;
+  const switchPath = `${signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`}?returnTo=${encodeURIComponent(returnTo)}`;
   return (
     <form className="portal-form" onSubmit={submit}>
       {showTitle ? <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1> : null}

@@ -1,3 +1,4 @@
+import { secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createSession, issueEmailVerificationToken, publicUser, registerUser, verifyEmailToken } from "@/services/productStore";
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
     const activatedUser = await verifyEmailToken(verificationToken);
     const session = await createSession(user.id);
     const response = NextResponse.json({ ok: true, data: { user: publicUser(activatedUser), verificationRequired: false }, requestId });
-    response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: SESSION_MAX_AGE });
+    response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Registration failed.";

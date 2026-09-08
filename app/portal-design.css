@@ -1,0 +1,142 @@
+/* Shared dimensions from the supplied Figma design. */
+.portal-account-page.overview-design-page > .account-dashboard { padding-top:50px; padding-right:150px; min-height:1150px; }
+.overview-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; min-height:110px; }
+.overview-heading h1 { margin:0; line-height:40.3px; }
+.overview-heading p { margin:1.7px 0 0; font-size:16px; line-height:20.8px; color:#64748b; }
+.overview-access { margin-top:2px; padding:7px 14px; min-height:34px; box-sizing:border-box; background:#e8f1ff; color:#1660d8; border-radius:17px; font-size:13px; line-height:20px; white-space:nowrap; }
+.overview-section-heading h2 { margin:0 0 2px; font-size:23px; line-height:30px; font-weight:600; color:#15233a; }
+.overview-section-heading p { margin:0 0 14px; font-size:14px; line-height:20px; color:#64748b; }
+.portal-account-page .account-learning-card.overview-course { grid-template-columns:172px minmax(0,1fr) 190px; gap:30px; padding:23px 34px 23px 23px; }
+.portal-account-page .overview-course .account-learning-card-content { display:block; padding-top:4px; }
+.overview-course h3 { margin:0; line-height:27.3px; }
+.overview-course .overview-course-meta { margin:4.7px 0 0; font-size:14px; line-height:20px; color:#64748b; }
+.overview-course .overview-course-description { margin:4px 0 0; font-size:13px; line-height:20px; color:#64748b; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.overview-course-progress { width:316px; max-width:100%; height:7px; margin-top:14px; background:#e5edf8; border-radius:4px; overflow:hidden; }
+.overview-course-progress > span { display:block; height:100%; background:#2968ff; border-radius:4px; }
+.overview-progress-labels { display:flex; justify-content:space-between; gap:20px; margin-top:9px; font-size:12px; line-height:20px; color:#64748b; }
+.overview-course .account-learning-action { align-self:start; margin:40px 0 0; min-height:42px; width:190px; padding:10px 12px; font-size:13px; line-height:20px; border-radius:8px; }
+.overview-list-caption { margin:26px 0 0; font-size:13px; line-height:20px; color:#64748b; }
+@media(max-width:1320px) { .portal-account-page.overview-design-page > .account-dashboard { padding-right:40px; } .portal-account-page .account-learning-card.overview-course { grid-template-columns:130px minmax(0,1fr); gap:20px; } .overview-course .account-learning-action { grid-column:2; margin-top:0; } .overview-heading { flex-wrap:wrap; padding-bottom:32px; } }
+@media(max-width:720px) { .portal-account-page.overview-design-page > .account-dashboard { padding:28px 20px 48px; min-height:600px; } .overview-heading { min-height:0; margin-bottom:32px; } .overview-course .account-learning-action { width:100%; margin-top:20px; } .overview-progress-labels { flex-wrap:wrap; gap:4px 16px; } }
+.pricing-design-main { max-width:1240px; margin:auto; padding:58px 0 69px; }
+.pricing-design-main > h1 { margin:0 0 30px; font-size:28px; line-height:40px; font-weight:600; color:#15233a; }
+.pricing-comparison { display:grid; grid-template-columns:minmax(0,570px) minmax(0,570px); justify-content:space-between; gap:40px; }
+.pricing-design-card { border:1px solid #93b4f5; border-radius:14px; padding:27px; min-height:552px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
+.pricing-card-heading { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; min-height:51px; }
+.pricing-card-heading h2 { font-size:27px; line-height:38px; margin:0; font-weight:600; }
+.pricing-term-switch { padding:2px; background:#fff; border:1px solid #93b4f5; border-radius:8px; display:flex; flex:none; }
+.pricing-term-switch button { width:96px; height:40px; padding:0 8px; border:0; border-radius:6px; font-size:13px; background:transparent; color:#475569; cursor:pointer; }
+.pricing-term-switch button[aria-pressed=true] { background:#2968ff; color:#fff; font-weight:600; }
+.pricing-card-price { min-height:80px; margin-top:16px; display:flex; gap:12px; align-items:flex-end; }
+.pricing-card-price strong { font-size:54px; line-height:64px; font-weight:600; }
+.pricing-card-price span { font-size:16px; line-height:30px; }
+.pricing-card-scope,.pricing-category-switch { min-height:85px; margin:16px 0 0; font-size:18px; line-height:27px; }
+.pricing-category-switch { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.pricing-category-switch button { padding:10px 12px; min-height:40px; background:#fff; border:1px solid #dbe3f0; border-radius:6px; color:#475569; font-size:13px; cursor:pointer; }
+.pricing-category-switch button[aria-pressed=true] { color:#fff; background:#2968ff; border-color:#2968ff; }
+.pricing-card-benefits { margin:16px 0; padding-left:18px; min-height:159px; font-size:14px; line-height:19px; }
+.pricing-card-benefits li { margin-bottom:7px; padding-left:2px; }
+.pricing-design-card .purchase-panel { margin-top:auto; border:0; padding:0; }
+.pricing-design-card .purchase-actions { display:block; margin:0; }
+.pricing-design-card .purchase-actions button { width:100%; min-height:46px; border-radius:8px; }
+.pricing-design-information { background:#f8fafd; padding:40px 0 58px; min-height:348px; box-sizing:border-box; }
+.pricing-design-information > div { max-width:1240px; margin:auto; }
+.pricing-design-information h2 { font-size:24px; line-height:32px; margin:0 0 12px; }
+.pricing-design-information p { font-size:14px; line-height:22px; margin:0; }
+.pricing-information-grid { margin-top:32px; display:grid; grid-template-columns:repeat(3,minmax(0,360px)); justify-content:space-between; gap:40px; }
+.pricing-information-grid > div { padding:18px; min-height:116px; border:1px solid #dbe3f0; border-radius:10px; background:#fff; box-sizing:border-box; }
+.pricing-information-grid h3 { font-size:16px; margin:0 0 10px; }
+.pricing-direct { margin-top:40px; }
+@media(max-width:1320px) { .pricing-design-main,.pricing-design-information > div { margin-left:40px; margin-right:40px; } .pricing-card-heading { flex-wrap:wrap; } }
+@media(max-width:800px) { .pricing-comparison { grid-template-columns:1fr; } .pricing-information-grid { grid-template-columns:1fr; gap:24px; } .pricing-design-main,.pricing-design-information > div { margin-left:20px; margin-right:20px; } .pricing-design-card { min-height:552px; padding:24px; } }
+dialog.subscription-confirmation { box-sizing:border-box; width:720px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 48px); margin:auto; padding:28px 32px 32px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
+dialog.subscription-confirmation::backdrop { background:rgb(15 23 42 / 45%); }
+.confirmation-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.confirmation-heading h1 { margin:0; font-size:26px; line-height:37px; font-weight:600; }
+.confirmation-heading p { margin:5px 0 0; font-size:14px; line-height:20px; }
+.confirmation-close { display:grid; place-items:center; flex:none; width:28px; height:37px; border:0; background:transparent; color:inherit; cursor:pointer; }
+.confirmation-plan { min-height:237px; box-sizing:border-box; padding:18px 20px; border-radius:12px; background:#f0f7ff; margin-bottom:18px; }
+.confirmation-label { margin:0 0 16px; font-size:11px; line-height:16px; text-transform:uppercase; }
+.confirmation-plan h2 { margin:0 0 20px; font-size:20px; line-height:28px; font-weight:600; }
+.confirmation-plan p:not(.confirmation-label) { margin:8px 0; font-size:14px; line-height:22px; }
+.confirmation-payment { margin:0 0 18px; }
+.confirmation-payment h2 { margin:0 0 14px; font-size:16px; line-height:23px; font-weight:600; }
+.confirmation-payment-grid { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin:0; padding-bottom:20px; border-bottom:1px solid #dbe3f0; }
+.confirmation-payment-grid dt { font-size:11px; line-height:16px; text-transform:uppercase; margin-bottom:6px; }
+.confirmation-payment-grid dd { margin:0; font-size:16px; line-height:23px; font-weight:600; }
+.confirmation-renewal { margin:16px 0; font-size:13px; line-height:20px; }
+dialog.subscription-confirmation .subscription-consents { border:0; padding:0; margin:0 0 18px; display:grid; gap:10px; }
+.subscription-confirmation .subscription-consents legend { font-size:15px; line-height:22px; font-weight:600; margin-bottom:10px; padding:0; }
+dialog.subscription-confirmation .subscription-consents label { display:flex; gap:12px; align-items:flex-start; min-height:38px; font-size:13px; line-height:19px; }
+dialog.subscription-confirmation .subscription-consents input { width:20px; height:20px; flex:0 0 20px; margin:0; accent-color:#155dfc; }
+.confirmation-actions { display:flex; justify-content:flex-end; gap:16px; }
+.confirmation-actions .portal-button { min-height:46px; min-width:130px; border-radius:8px; font-size:14px; }
+@media(max-width:540px) { dialog.subscription-confirmation { padding:24px 20px; max-height:calc(100dvh - 24px); } .confirmation-heading h1 { font-size:22px; line-height:30px; } .confirmation-payment-grid { gap:16px; } .confirmation-actions { gap:12px; } .confirmation-actions .portal-button { min-width:0; flex:1; } }
+.portal-content-editor { padding:40px 0; display:grid; gap:24px; }
+.portal-content-editor label { display:grid; gap:8px; min-width:0; }
+.portal-content-editor input,.portal-content-editor textarea,.portal-content-editor select { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }
+.portal-content-editor fieldset { min-width:0; border:1px solid #dbe3f0; padding:20px; display:grid; gap:16px; }
+.settings-form label,.settings-form fieldset,.settings-grid > * { min-width:0; }
+.settings-form input,.settings-form select,.settings-form textarea { min-width:0; max-width:100%; }
+.avatar-settings { flex-wrap:wrap; }
+.avatar-settings > div { min-width:0; }
+.settings-disabled-options label { overflow-wrap:break-word; }
+.portal-header { min-height:68px; padding:0 40px; box-sizing:border-box; }
+.portal-header-inner { min-height:67px; width:100%; max-width:1440px; gap:30px; }
+.portal-nav a { min-height:67px; }
+.portal-header-cta { min-height:36px; background:#155dfc; font-weight:500; }
+.portal-account-page { display:grid; grid-template-columns:280px minmax(0,1fr); grid-template-rows:auto 1fr auto; background:#f8fafd; }
+.portal-account-page > .portal-header,.portal-account-page > .portal-footer { grid-column:1 / -1; }
+.portal-account-page > .account-nav { grid-column:1; grid-row:2; width:280px; max-width:none; margin:0; padding:40px 28px; background:white; border:0; border-right:1px solid #dbe3f0; display:flex; flex-direction:column; flex-wrap:nowrap; gap:8px; align-items:stretch; }
+.account-nav-title { margin:0 8px 6px; color:#94a3b8; font-size:12px; font-weight:600; }
+.portal-account-page > .account-nav > a { display:flex; min-height:44px; padding:12px 14px; font-size:15px; font-weight:500; line-height:20px; border:0; border-radius:8px; color:#475569; text-decoration:none; }
+.portal-account-page > .account-nav > a[aria-current="page"] { color:#1660d8; background:#e8f1ff; font-weight:600; }
+.account-nav-support { margin-top:auto; padding:20px 16px; background:#e8f1ff; border-radius:8px; }
+.account-nav-support strong { font-size:16px; color:#15233a; }
+.account-nav-support p,.account-nav-support a { font-size:13px; line-height:20px; }
+.portal-account-page > .portal-section,.portal-account-page > .account-dashboard { grid-column:2; grid-row:2; width:auto; max-width:none; margin:0; padding:44px 64px 80px; min-height:900px; display:block; }
+.portal-account-page h1 { font-size:31px; font-weight:600; color:#15233a; line-height:1.3; }
+.portal-account-page .account-panel { padding:0; border:0; box-shadow:none; background:transparent; }
+.portal-account-page .account-learning-list { gap:22px; }
+.portal-account-page .account-learning-card { min-height:178px; grid-template-columns:172px minmax(0,1fr); gap:30px; padding:24px; background:white; border:1px solid #dbe3f0; border-radius:10px; }
+.portal-account-page .account-learning-card > .course-thumbnail { width:172px; height:130px; border-radius:8px; }
+.portal-account-page .account-learning-card-content { min-width:0; padding:0; }
+.portal-account-page .account-learning-card h3 { font-size:21px; font-weight:600; }
+.portal-account-page .settings-form { width:100%; max-width:946px; border:1px solid #dbe3f0; box-shadow:none; padding:24px; }
+.portal-page .portal-footer { background:#14387d; padding:54px 40px 50px; box-sizing:border-box; }
+.pricing-design-page .portal-footer { background:#12337d; }
+.portal-footer-grid { width:100%; max-width:1240px; margin:0 auto; grid-template-columns:420px 195px 195px minmax(0,1fr); gap:40px; }
+.portal-footer h2 { font-size:14px; line-height:20px; font-weight:600; margin:0 0 14px; }
+.portal-footer-grid > div:first-child h2 { font-size:20px; line-height:28px; font-weight:700; margin-bottom:6px; }
+.portal-footer p,.portal-footer a { font-size:13px; line-height:18px; color:#c7d6ff; font-weight:400; }
+.portal-footer-grid > div > a { display:block; margin:0 0 13px; }
+.portal-footer-grid > div > a:last-child { margin-bottom:0; }
+.portal-footer-grid > div:first-child p { width:270px; max-width:100%; font-size:14px; line-height:22px; margin:0; }
+.portal-footer .portal-footer-copyright { border:0; padding:0; margin:0; width:auto; text-align:left; }
+.portal-footer-bottom { width:100%; max-width:1240px; margin:48px auto 0; border-top:1px solid #ffffff33; padding-top:21px; }
+.portal-footer .portal-footer-social { display:flex; flex-wrap:wrap; gap:10px; color:#fff; font-weight:600; margin:0; }
+@media(max-width:1320px) { .portal-footer-grid { grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)); gap:24px; } }
+.portal-explore-more { display:flex; justify-content:center; margin-top:36px; }
+@media(max-width:1100px) {
+ .portal-account-page { grid-template-columns:230px minmax(0,1fr); }
+ .portal-account-page > .account-nav { width:230px; padding:32px 16px; }
+ .portal-account-page > .portal-section,.portal-account-page > .account-dashboard { padding:36px 28px 60px; }
+ .portal-account-page .account-learning-card { gap:16px; grid-template-columns:130px minmax(0,1fr); padding:18px; }
+ .portal-account-page .account-learning-card > .course-thumbnail { width:130px; height:120px; }
+}
+@media(max-width:720px) {
+ .settings-grid { grid-template-columns:minmax(0,1fr); }
+ .portal-header { padding:0 20px; }
+ .portal-account-page { display:block; }
+ .portal-account-page > .account-nav { width:100%; padding:16px 20px; flex-direction:row; flex-wrap:wrap; border-bottom:1px solid #dbe3f0; }
+ .account-nav-title { flex-basis:100%; }
+ .account-nav-support { display:none; }
+ .portal-account-page > .account-nav > a { font-size:13px; padding:8px; min-height:36px; }
+ .portal-account-page > .portal-section,.portal-account-page > .account-dashboard { padding:28px 20px 48px; min-height:600px; }
+ .portal-account-page .account-learning-card { display:block; }
+ .portal-account-page .account-learning-card > .course-thumbnail { width:100%; height:180px; margin-bottom:16px; }
+ .portal-header-actions .portal-header-link { display:inline-flex; font-size:13px; }
+ .portal-footer-grid { grid-template-columns:1fr 1fr; }
+ .portal-footer-grid > div:first-child { grid-column:1 / -1; }
+}
+@media(prefers-reduced-motion:reduce) { .portal-banner *,.account-menu * { transition:none !important; } }

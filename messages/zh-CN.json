@@ -21,8 +21,8 @@
     "pricingDescription": "选择适合你的课程权限和周期。支付会在 Stripe 托管页面完成。",
     "subscriptionConfirmation": {
       "eyebrow": "订阅确认",
-      "title": "确认学习计划",
-      "description": "确认服务器计算出的计划和条款，然后继续前往 Stripe。",
+      "title": "确认订阅",
+      "description": "付款前，请核对订阅方案并确认相关条款。",
       "plan": "计划",
       "scope": "学习范围",
       "device": "设备权限",
@@ -38,7 +38,13 @@
       "continue": "确认并继续",
       "back": "返回价格页",
       "expired": "此报价已过期，请返回价格页重新计算。",
-      "processing": "正在准备支付..."
+      "processing": "正在准备支付...",
+      "cancel": "取消",
+      "close": "关闭",
+      "selectedPlan": "所选方案",
+      "paymentRenewal": "付款与续订",
+      "confirmations": "必需确认事项",
+      "months": "个月"
     },
     "featuredCourses": "课程",
     "catalogTitle": "拓展你的知识",
@@ -46,22 +52,38 @@
     "searchCourses": "搜索课程……",
     "search": "搜索",
     "allCategories": "全部",
-    "courseCategories": ["全部", "中国人文", "欧洲人文", "科学"],
+    "courseCategories": [
+      "全部",
+      "中国人文",
+      "欧洲人文",
+      "科学"
+    ],
     "category": "分类",
     "lessonCount": "个课程内容",
     "videoDuration": "视频",
     "minutesShort": "分钟",
     "whatYouWillLearn": "你将学到什么",
-    "benefits": ["按照自己的节奏学习", "沿着清晰的课程结构学习", "需要帮助时询问 AI Tutor", "在一个地方查看学习记录"],
+    "benefits": [
+      "按照自己的节奏学习",
+      "沿着清晰的课程结构学习",
+      "需要帮助时询问 AI Tutor",
+      "在一个地方查看学习记录"
+    ],
     "popularCourses": "热门课程",
     "popularCoursesDescription": "从现有课程开始学习",
     "whyUs": "为什么选择 Learning Guide",
     "whyUsTitle": "有结构、有引导，也给思考留下空间。",
     "quicklyGuide": "快速开始",
-    "quicklyGuideSteps": ["选择一门课程", "学习课程内容", "询问 AI Tutor", "准备好后继续回来学习"],
-    "footerAbout": "通过高质量课程和有思考的学习体验帮助学习者成长。",
+    "quicklyGuideSteps": [
+      "选择一门课程",
+      "学习课程内容",
+      "询问 AI Tutor",
+      "准备好后继续回来学习"
+    ],
+    "footerAbout": "探索文化、思想与世界的思考空间。",
     "footerLinks": "快速链接",
     "footerSupport": "支持",
+    "footerLegal": "法律条款",
     "footerHelp": "帮助中心 / 常见问题",
     "footerContact": "联系我们",
     "footerPrivacy": "隐私政策",
@@ -74,7 +96,8 @@
     "publicFirstLesson": "Public First Lesson",
     "lockedLesson": "开通权限后可学习",
     "productionShell": "生产网站基础入口",
-    "productionShellDescription": "先接通公开 Portal；User Registration、Purchase、Payment Management、My Learning 和 AI Tutor 会在同一个应用边界内继续实现。"
+    "productionShellDescription": "先接通公开 Portal；User Registration、Purchase、Payment Management、My Learning 和 AI Tutor 会在同一个应用边界内继续实现。",
+    "footerCopyright": "© 2026 Learning Guide"
   },
   "health": {
     "ok": "Learning Guide 正在运行"
@@ -124,7 +147,7 @@
     "viewPlans": "查看计划",
     "inProgress": "学习中",
     "completed": "已完成",
-    "expired": "访问权限已过期",
+    "expired": "已过期",
     "courseWithdrawn": "课程已下架",
     "progress": "进度",
     "lessons": "课程内容",
@@ -152,7 +175,6 @@
     "grace": "支付宽限期",
     "cancelAtPeriodEnd": "将在当前周期结束时取消",
     "canceled": "已取消",
-    "expired": "已过期",
     "cancel": "取消",
     "resume": "恢复",
     "cancelTitle": "取消自动续费",
@@ -208,7 +230,11 @@
     "subscription": "我的订阅",
     "notifications": "通知中心",
     "settings": "个人设置",
-    "help": "帮助中心 / 常见问题"
+    "help": "帮助中心 / 常见问题",
+    "menu": "账户菜单",
+    "supportDescription": "获取客户支持。",
+    "contact": "联系我们",
+    "contactAction": "联系客服"
   },
   "notificationsPage": {
     "title": "通知中心",
@@ -242,38 +268,85 @@
     "newPassword": "修改密码",
     "confirmPassword": "确认新密码",
     "save": "保存修改",
-    "saved": "设置已保存。"
+    "saved": "设置已保存。",
+    "signInMethodsTitle": "登录方式",
+    "googleConnected": "已绑定",
+    "googleConnectedHint": "您可以随时使用 Google 登录。",
+    "googleConnect": "绑定 Google",
+    "googleConnectHint": "绑定 Google 账号后,无需密码即可登录。"
   },
   "helpPage": {
     "title": "帮助中心 / 常见问题",
     "contact": "如需账号或支付支持，请联系 Learning Guide 运营人员。",
     "categories": [
-      { "title": "账号与访问", "items": [
-        { "question": "如何验证账号？", "answer": "打开发送到邮箱的激活链接。使用邮箱和密码登录前必须完成邮箱验证。" },
-        { "question": "如何继续学习课程？", "answer": "打开 My Learning，选择课程和课程内容，完成学习后点击“标记课程完成”。进度会保存到你的账号。" }
-      ] },
-      { "title": "支付与订阅", "items": [
-        { "question": "课程试用如何工作？", "answer": "只有在选择计划、确认支付方式和同意自动续费后，试用才会开始。试用期间取消会立即移除完整课程访问权限；在原结束时间前恢复不会延长试用期。" },
-        { "question": "银行卡支付后会发生什么？", "answer": "Stripe 会通过服务器 webhook 确认支付，确认后系统才会开通付费访问。确认到达前，支付页面可能短暂显示处理中。" }
-      ] },
-      { "title": "学习与 AI Tutor", "items": [
-        { "question": "AI Tutor 如何使用课程内容？", "answer": "Tutor 会收到当前课程、当前课程内容和已发布的课程知识包。Lecture 和 Socratic 是当前对话的回答方式。" }
-      ] }
+      {
+        "title": "账号与访问",
+        "items": [
+          {
+            "question": "如何验证账号？",
+            "answer": "打开发送到邮箱的激活链接。使用邮箱和密码登录前必须完成邮箱验证。"
+          },
+          {
+            "question": "如何继续学习课程？",
+            "answer": "打开 My Learning，选择课程和课程内容，完成学习后点击“标记课程完成”。进度会保存到你的账号。"
+          }
+        ]
+      },
+      {
+        "title": "支付与订阅",
+        "items": [
+          {
+            "question": "课程试用如何工作？",
+            "answer": "只有在选择计划、确认支付方式和同意自动续费后，试用才会开始。试用期间取消会立即移除完整课程访问权限；在原结束时间前恢复不会延长试用期。"
+          },
+          {
+            "question": "银行卡支付后会发生什么？",
+            "answer": "Stripe 会通过服务器 webhook 确认支付，确认后系统才会开通付费访问。确认到达前，支付页面可能短暂显示处理中。"
+          }
+        ]
+      },
+      {
+        "title": "学习与 AI Tutor",
+        "items": [
+          {
+            "question": "AI Tutor 如何使用课程内容？",
+            "answer": "Tutor 会收到当前课程、当前课程内容和已发布的课程知识包。Lecture 和 Socratic 是当前对话的回答方式。"
+          }
+        ]
+      }
     ],
     "items": [
-      { "question": "课程试用如何工作？", "answer": "本地演示模式为所选课程提供三天访问权限。取消试用会立即移除访问权限；在原结束时间前恢复不会延长试用期。" },
-      { "question": "如何继续学习课程？", "answer": "打开 My Learning，选择课程和课程内容，完成学习后点击“标记课程完成”。进度会保存到你的账号。" },
-      { "question": "AI Tutor 如何使用课程内容？", "answer": "Tutor 会收到当前课程、当前课程内容和 Epicureanism knowledge pack。Lecture 和 Socratic 是当前对话的回答方式。" },
-      { "question": "银行卡支付后会发生什么？", "answer": "Stripe 会通过服务器 webhook 确认支付，确认后系统才会开通付费访问。确认到达前，支付页面可能短暂显示处理中。" }
+      {
+        "question": "课程试用如何工作？",
+        "answer": "本地演示模式为所选课程提供三天访问权限。取消试用会立即移除访问权限；在原结束时间前恢复不会延长试用期。"
+      },
+      {
+        "question": "如何继续学习课程？",
+        "answer": "打开 My Learning，选择课程和课程内容，完成学习后点击“标记课程完成”。进度会保存到你的账号。"
+      },
+      {
+        "question": "AI Tutor 如何使用课程内容？",
+        "answer": "Tutor 会收到当前课程、当前课程内容和 Epicureanism knowledge pack。Lecture 和 Socratic 是当前对话的回答方式。"
+      },
+      {
+        "question": "银行卡支付后会发生什么？",
+        "answer": "Stripe 会通过服务器 webhook 确认支付，确认后系统才会开通付费访问。确认到达前，支付页面可能短暂显示处理中。"
+      }
     ]
   },
   "legal": {
     "privacyTitle": "隐私政策",
     "privacyIntro": "Learning Guide 使用账号、课程进度和支付状态信息来提供服务。",
-    "privacyBody": ["我们保存用于账号认证的信息，并通过用户 ID 关联学习进度、订阅和访问权限。Stripe 在其托管页面处理银行卡信息和支付；Learning Guide 不保存完整卡号或 CVC。", "我们使用登录所需的必要 Cookie，并在你选择后保存非必要分析 Cookie 的偏好。你可以通过网站显示的联系地址请求账号支持。"],
+    "privacyBody": [
+      "我们保存用于账号认证的信息，并通过用户 ID 关联学习进度、订阅和访问权限。Stripe 在其托管页面处理银行卡信息和支付；Learning Guide 不保存完整卡号或 CVC。",
+      "我们使用登录所需的必要 Cookie，并在你选择后保存非必要分析 Cookie 的偏好。你可以通过网站显示的联系地址请求账号支持。"
+    ],
     "termsTitle": "服务条款",
     "termsIntro": "这些条款适用于 Learning Guide 课程、学习工具和 AI Tutor 功能。",
-    "termsBody": ["课程访问权限由服务返回的订阅和 entitlement 决定。只有课程启用时，公开首课才会开放。续费、取消和退款条件会在确认页和 Stripe 托管支付流程中显示。", "AI Tutor 用于学习支持，不应被当作专业、法律、医疗或财务建议。"],
+    "termsBody": [
+      "课程访问权限由服务返回的订阅和 entitlement 决定。只有课程启用时，公开首课才会开放。续费、取消和退款条件会在确认页和 Stripe 托管支付流程中显示。",
+      "AI Tutor 用于学习支持，不应被当作专业、法律、医疗或财务建议。"
+    ],
     "cookiesTitle": "Cookie 设置",
     "cookiesIntro": "必要 Cookie 用于保持登录和安全功能。可选分析 Cookie 在你主动选择前保持关闭。",
     "acceptOptional": "允许可选 Cookie",
@@ -332,7 +405,13 @@
       "status": "支付状态",
       "paymentMode": "支付方式",
       "all": "全部",
-      "paymentStatus": { "paid": "已支付", "pending": "处理中", "failed": "失败", "canceled": "已取消", "refunded": "已退款" },
+      "paymentStatus": {
+        "paid": "已支付",
+        "pending": "处理中",
+        "failed": "失败",
+        "canceled": "已取消",
+        "refunded": "已退款"
+      },
       "details": "查看详情",
       "student": "学生",
       "amount": "金额",
@@ -346,5 +425,67 @@
       "export": "导出 CSV",
       "confirmRefund": "确定要全额退款吗？退款后会移除课程访问权限。"
     }
+  },
+  "portalEditor": {
+    "title": "标题",
+    "language": "内容语言",
+    "banner": "轮播图",
+    "image": "图片地址",
+    "eyebrow": "标签",
+    "text": "简介",
+    "cta": "按钮文字",
+    "href": "跳转地址",
+    "categories": "分类名称",
+    "countries": "国家/地区（每行一个）",
+    "support": "客服地址",
+    "save": "保存修改",
+    "saving": "保存中……",
+    "saved": "修改已保存。",
+    "failed": "保存失败。",
+    "heading": "门户内容"
+  },
+  "pricingDesign": {
+    "heading": "选择适合您的学习方案",
+    "everything": "全部课程",
+    "category": "分类课程",
+    "sixMonths": "6 个月",
+    "year": "1 年",
+    "term": "订阅周期",
+    "subscribe": "订阅",
+    "allCourses": "完整访问 Learning Guide 的所有课程",
+    "categoryCourses": "不限次数访问所选分类的所有课程",
+    "bilingual": "中英双语课程材料",
+    "devices": "支持 1 台电脑和 1 台移动设备",
+    "points": "AI Tutor 积分",
+    "unavailable": "此方案暂不可用。",
+    "perCategory": "分类",
+    "information": "重要信息",
+    "renewal": "除非您在续订日期前取消，否则订阅将自动续订。",
+    "rules": [
+      {
+        "title": "更改方案",
+        "text": "升级时支付适用差价，新的订阅周期从升级当日开始。"
+      },
+      {
+        "title": "设备访问",
+        "text": "订阅包含一台电脑和一台移动设备的访问权限。"
+      },
+      {
+        "title": "续订价格",
+        "text": "随着新课程的增加，续订价格可能调整。我们将至少提前三天通过邮件通知您。"
+      }
+    ]
+  },
+  "overviewDesign": {
+    "welcome": "欢迎回来，{name}",
+    "description": "课程按您首次开始学习的时间排列。",
+    "yourLearning": "您的学习",
+    "courseStates": "学习中和已完成的课程",
+    "activeAccess": "当前权限 · 有效订阅",
+    "noAccess": "暂无有效订阅",
+    "outsideAccess": "您保存的课程不在当前访问权限范围内。",
+    "review": "复习课程",
+    "continue": "继续学习",
+    "allCourses": "已显示您开始学习的所有课程"
   }
 }

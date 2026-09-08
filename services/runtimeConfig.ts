@@ -6,6 +6,12 @@ export function isProductionEnvironment() {
   return ["PROD", "PPE/PROD"].includes(appEnvironment());
 }
 
+export function secureAuthCookie(request: Request) {
+  if (appEnvironment() !== "DEV") return true;
+  const url = new URL(request.url);
+  return !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
+}
+
 export function emailVerificationRequired() {
   if (isProductionEnvironment()) return true;
   return process.env.EMAIL_VERIFICATION_REQUIRED?.trim() !== "0";
@@ -53,7 +59,7 @@ export function runtimeConfiguration() {
   const stripeWebhook = hasEnv("STRIPE_WEBHOOK_SECRET");
   const publicUrl = hasEnv("NEXT_PUBLIC_APP_URL");
   const persistentStorage = Boolean(process.env.DATABASE_URL?.trim() && process.env.DATA_S3_BUCKET?.trim()) && process.env.STORAGE_BACKEND !== "local";
-  const email = hasEnv("SES_FROM_EMAIL");
+  const email = hasEnv("SES_FROM_EMAIL") || (hasEnv("SMTP_HOST") && hasEnv("SMTP_USER") && hasEnv("SMTP_PASS"));
   const emailVerification = emailVerificationRequired();
   const openRouter = hasEnv("OPENROUTER_API_KEY");
   const sessionSecret = Boolean(process.env.SESSION_SECRET?.trim() && (process.env.SESSION_SECRET?.trim().length || 0) >= 32);
@@ -66,7 +72,7 @@ export function runtimeConfiguration() {
   if (production && payment === "stripe" && !stripeWebhook) required.push("STRIPE_WEBHOOK_SECRET");
   if (production && !google) required.push("GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET");
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
-  if (emailVerification && !email) required.push("SES_FROM_EMAIL");
+  if (emailVerification && !email) required.push("SES_FROM_EMAIL or SMTP_HOST + SMTP_USER + SMTP_PASS");
   if (production && !openRouter) required.push("OPENROUTER_API_KEY");
   if ((google || wechat) && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
   return {
