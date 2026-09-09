@@ -15,7 +15,7 @@ export function PortalHeader({ locale, active, signedIn = false, displayName, av
   const startHref = signedIn ? `/${locale}/account/my-learning` : `/${locale}/portal/sign-up`;
 
   return (
-    <header className="portal-header">
+    <header className={`portal-header ${signedIn ? "portal-header--signed-in" : "portal-header--visitor"}`}>
       <div className="portal-header-inner">
         <Link prefetch={false} className="portal-brand" href={`/${locale}/portal`}>
           <span className="portal-brand-mark" aria-hidden="true"><Image src="/portal/figma-logo.svg" width={24} height={24} alt="" /></span>
