@@ -1,3 +1,4 @@
+import { PaymentError, type StripePriceSnapshot } from "@/contracts/payment";
 import Stripe from "stripe";
 import { configuredStripePrice, validateStripePrice } from "./stripePrices";
 
@@ -11,25 +12,18 @@ export function getStripe() {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secret) throw new Error("STRIPE_SECRET_KEY is not configured.");
   if (process.env.STRIPE_SANDBOX === "1" && !secret.startsWith("sk_test_")) throw new Error("This sandbox requires a Stripe test key.");
-  if (!stripe) stripe = new Stripe(secret);
+  if (!stripe) stripe = new Stripe(secret, { maxNetworkRetries: 2, timeout: 20000 });
   return stripe;
 }
 
 export async function resolveStripePrice(planId: string, months: number, amountMinor?: number, currency = "usd") {
   const reference = configuredStripePrice(planId);
   if (!reference) throw new Error(`No Stripe price is configured for ${planId}.`);
-  const price = reference.startsWith("price_") ? await getStripe().prices.retrieve(reference)
-    : (await getStripe().prices.list({ active: true, lookup_keys: [reference], limit: 2 })).data[0];
-  if (!price) throw new Error(`Stripe price not found for ${planId}.`);
+  const prices = reference.startsWith("price_") ? [await getStripe().prices.retrieve(reference)]
+    : (await getStripe().prices.list({ active: true, lookup_keys: [reference], limit: 2 })).data;
+  if (prices.length !== 1) throw new Error(`Expected one active Stripe price for ${planId}.`);
+  const price = prices[0];
   return validateStripePrice(price, { months, amountMinor, currency });
-}
-
-async function recurringLineItem(input: { planId: string; termMonths: number; amountMinor: number; currency: string; planName: string }): Promise<Stripe.Checkout.SessionCreateParams.LineItem> {
-  if (configuredStripePrice(input.planId) || process.env.STRIPE_SANDBOX === "1") {
-    const price = await resolveStripePrice(input.planId, input.termMonths, input.amountMinor, input.currency);
-    return { price: price.id, quantity: 1 };
-  }
-  return { quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName }, recurring: { interval: "month", interval_count: input.termMonths } } };
 }
 
 export async function getSubscriptionPaymentUrl(subscriptionId: string, customerId: string) {
@@ -45,37 +39,33 @@ export async function getSubscriptionPaymentUrl(subscriptionId: string, customer
   return invoice.hosted_invoice_url;
 }
 
-export async function createHostedCheckout(input: {
-  origin: string;
-  locale: "en-GB" | "zh-CN";
-  userEmail: string | null;
-  orderId: string;
-  userId: string;
-  quoteId: string;
-  planId: string;
-  courseId: string;
-  planName: string;
-  amountMinor: number;
-  currency: string;
-  termMonths: number;
-  scopeType?: "course" | "category" | "everything";
-  scopeId?: string | null;
-}) {
+export type SubscriptionCheckoutInput = {
+  origin: string; locale: "en-GB" | "zh-CN"; userEmail: string | null;
+  orderId: string; userId: string; quoteId: string; planId: string; courseId: string;
+  planName: string; amountMinor: number; currency: string; termMonths: number;
+  scopeType?: "course" | "category" | "everything"; scopeId?: string | null;
+  price: StripePriceSnapshot;
+};
 
+async function subscriptionCheckout(input: SubscriptionCheckoutInput, trial: boolean) {
+  if (!input.price?.stripePriceId) throw new PaymentError("price_unavailable", 503);
   const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
+  const metadata = { app: "learning_guide", kind: trial ? "trial_activation" : "purchase", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, priceId: input.price.stripePriceId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId };
   const session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
-    ...sandboxCheckoutOptions(),
-    customer_email: input.userEmail || undefined,
-    line_items: [await recurringLineItem(input)],
-    metadata: { orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },
-    subscription_data: { metadata: { orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId } },
-    success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
-  }, { idempotencyKey: `lg-checkout-${input.orderId}` });
-  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+    mode: "subscription", ...sandboxCheckoutOptions(),
+    locale: input.locale === "zh-CN" ? "zh" : "en-GB",
+    customer_email: input.userEmail || undefined, client_reference_id: input.orderId,
+    line_items: [{ price: input.price.stripePriceId, quantity: 1 }], metadata,
+    ...(trial ? { payment_method_collection: "always" as const } : {}),
+    subscription_data: { metadata, ...(trial ? { trial_period_days: 3 } : {}) },
+    success_url: input.origin + "/" + input.locale + "/portal/payment/success?orderId=" + encodeURIComponent(input.orderId),
+    cancel_url: input.origin + "/" + input.locale + "/portal/subscription/confirmation?quoteId=" + encodeURIComponent(input.quoteId),
+  }, { idempotencyKey: "learning-guide-checkout-" + input.orderId });
+  if (!session.url) throw new PaymentError("payment_unavailable", 502);
   return { id: session.id, url: session.url };
 }
+export const createHostedCheckout = (input: SubscriptionCheckoutInput) => subscriptionCheckout(input, false);
+export const createHostedTrialCheckout = (input: SubscriptionCheckoutInput) => subscriptionCheckout(input, true);
 
 export async function createHostedUpgradeCheckout(input: {
   origin: string;
@@ -91,47 +81,13 @@ export async function createHostedUpgradeCheckout(input: {
   currency: string;
 }) {
   const session = await getStripe().checkout.sessions.create({
-    mode: "payment",
-    ...sandboxCheckoutOptions(),
+    mode: "payment", ...sandboxCheckoutOptions(),
     customer_email: input.userEmail || undefined,
     line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName } } }],
-    metadata: { kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
+    metadata: { app: "learning_guide", kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
     cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
-  });
-  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
-  return { id: session.id, url: session.url };
-}
-
-export async function createHostedTrialCheckout(input: {
-  origin: string;
-  locale: "en-GB" | "zh-CN";
-  userEmail: string | null;
-  orderId: string;
-  userId: string;
-  quoteId: string;
-  planId: string;
-  courseId: string;
-  planName: string;
-  amountMinor: number;
-  currency: string;
-  termMonths: number;
-  scopeType?: "course" | "category" | "everything";
-  scopeId?: string | null;
-}) {
-
-  const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
-  const session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
-    customer_email: input.userEmail || undefined,
-    payment_method_collection: "always",
-    ...sandboxCheckoutOptions(),
-    line_items: [await recurringLineItem(input)],
-    metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },
-    subscription_data: { trial_period_days: 3, metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId } },
-    success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
-    cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
-  });
+  }, { idempotencyKey: "learning-guide-upgrade-" + input.orderId });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");
   return { id: session.id, url: session.url };
 }

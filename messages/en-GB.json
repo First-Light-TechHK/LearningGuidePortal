@@ -612,5 +612,12 @@
     "review": "Review course",
     "continue": "Continue learning",
     "allCourses": "Showing all courses you have started"
+  },
+  "paymentErrors": {
+    "price_unavailable": "This plan is temporarily unavailable. Please try again later.",
+    "quote_expired": "This quote or checkout has expired. Please select your plan again.",
+    "payment_unavailable": "Payment is temporarily unavailable. Please try again later.",
+    "invalid_request": "Please confirm all purchase terms and start checkout from this website.",
+    "checkAgain": "Check payment status"
   }
 }

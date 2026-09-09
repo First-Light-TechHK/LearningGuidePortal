@@ -38,6 +38,8 @@ Study -> My Learning progress / current Lesson
 
 ## 3. 不可变规则
 
+Stripe Pricing implementation: `contracts/payment.ts`, `services/stripePriceService.ts`, `services/paymentService.ts`, `services/stripeWebhookService.ts`, `repositories/productTransactionRepository.ts`, and `components/portal/PaymentStatusRefresh.tsx`. Eight lookup keys map Everything/European Humanities/Chinese Humanities/Science to 6/12-month subscriptions. Quote/Order pin Price and Plan snapshots. PostgreSQL deployments must apply `db/migrations/009_product_payment_keys.sql` before rollout. Regression: `npm run test:payment`; isolated real test-mode Checkout and bilingual page checks: `node scripts/verify-stripe-checkout.mjs` (no card submitted). Target-domain real webhook delivery and Figma visual acceptance remain release checks.
+
 - 只有 `published` Course、Section、Lesson 对游客可见。
 - Public First Lesson 不创建完整 Course 的 Study Record。
 - 完整 Course 首次打开且开始 Lesson 1 后才创建 Study Record。

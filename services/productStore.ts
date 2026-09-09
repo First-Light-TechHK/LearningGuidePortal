@@ -1,3 +1,7 @@
+import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent } from "@/contracts/payment";
+import { configuredStripePrice } from "./stripePrices";
+import { resolveSubscriptionPrice } from "./stripePriceService";
+import { productTransaction } from "@/repositories/productTransactionRepository";
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "crypto";
 import { constants as fsConstants } from "fs";
 import { open as openFile, unlink } from "fs/promises";
@@ -6,7 +10,6 @@ import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
 import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
-import { configuredStripePrice } from "./stripePrices";
 import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
@@ -66,6 +69,8 @@ export type ProductCourse = {
   updatedAt: string;
 };
 export type ProductPlan = {
+  available?: boolean;
+  price?: StripePriceSnapshot;
   id: string;
   courseId: string;
   name: string;
@@ -80,6 +85,8 @@ export type ProductPlan = {
   trialEligible?: boolean;
 };
 export type ProductQuote = {
+  price?: StripePriceSnapshot;
+  planSnapshot?: ProductPlan;
   id: string;
   userId: string;
   planId: string;
@@ -92,6 +99,10 @@ export type ProductQuote = {
   createdAt: string;
 };
 export type ProductOrder = {
+  price?: StripePriceSnapshot;
+  planSnapshot?: ProductPlan;
+  checkoutOrigin?: string;
+  checkoutLocale?: Locale;
   id: string;
   userId: string;
   planId: string;
@@ -295,6 +306,7 @@ function defaultData(): ProductData {
       { id: "european-humanities-pc-12", courseId: "*", name: "European Humanities · PC · 12 months", termMonths: 12, device: "pc", amountMinor: 10900, currency: "usd", scope: "category", scopeId: "European Humanities", category: "European Humanities", aiPoints: 6500, trialEligible: true },
       { id: "everything-pc-6", courseId: "*", name: "Everything · PC · 6 months", termMonths: 6, device: "pc", amountMinor: 9900, currency: "usd", scope: "everything", scopeId: "*", category: null, aiPoints: 10000, trialEligible: true },
       { id: "everything-pc-12", courseId: "*", name: "Everything · PC · 12 months", termMonths: 12, device: "pc", amountMinor: 15900, currency: "usd", scope: "everything", scopeId: "*", category: null, aiPoints: 10000, trialEligible: true },
+      ...subscriptionPrices.filter(item => ["Chinese Humanities", "Science"].includes(item.scopeId)).map(item => ({ id: item.id, courseId: "*", name: item.scopeId + " - " + item.termMonths + " months", termMonths: item.termMonths, device: "pc" as const, amountMinor: item.termMonths === 6 ? 3900 : 7800, currency: "usd" as const, scope: item.scope, scopeId: item.scopeId, category: item.scopeId, aiPoints: item.termMonths === 6 ? 3000 : 6500, trialEligible: true })),
       { id: "everything-mobile-6", courseId: "*", name: "Everything · Mobile · 6 months", termMonths: 6, device: "mobile", amountMinor: 3900, currency: "usd", scope: "everything", scopeId: "*", category: null, aiPoints: 0, trialEligible: false },
       { id: "everything-mobile-12", courseId: "*", name: "Everything · Mobile · 12 months", termMonths: 12, device: "mobile", amountMinor: 5900, currency: "usd", scope: "everything", scopeId: "*", category: null, aiPoints: 0, trialEligible: false },
     ],
@@ -447,14 +459,11 @@ async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function editData<T>(mutator: (data: ProductData) => Promise<T> | T) {
-  const operation = editQueue.then(async () => {
-    return withProductFileLock(async () => {
-      const data = await ensureProductData();
-      const result = await mutator(data);
-      await saveData(data);
-      return result;
-    });
-  });
+  const operation = editQueue.then(() => withProductFileLock(() => productTransaction(async () => {
+    const data = await ensureProductData();
+    const result = await mutator(data);
+    return { data, result };
+  }, saveData)));
   editQueue = operation.then(() => undefined, () => undefined);
   return operation;
 }
@@ -883,12 +892,19 @@ export function publicFirstLesson(course: ProductCourse) {
 
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
-  return data.plans.filter((plan) => {
+  const plans = data.plans.filter((plan) => {
     if (paymentMode() === "stripe" && process.env.STRIPE_SANDBOX === "1" && !configuredStripePrice(plan.id)) return false;
     const scope = planScope(plan);
     if (courseId) return plan.device === "pc" && scope.scope === "course" && scope.scopeId === courseId;
     return (plan.device === "pc" && ["course", "category", "everything"].includes(scope.scope)) || (plan.device === "mobile" && scope.scope === "everything");
   });
+  if (paymentMode() !== "stripe") return plans;
+  return Promise.all(plans.map(async plan => {
+    try {
+      const price = await resolveSubscriptionPrice(plan.id);
+      return { ...plan, amountMinor: price.amountMinor, currency: price.currency, price, available: true };
+    } catch { return { ...plan, available: false }; }
+  }));
 }
 
 export async function syncSandboxStripePlans(plans: ProductPlan[]) {
@@ -997,17 +1013,16 @@ export async function activateTrial(userId: string, courseId: string) {
 }
 
 export async function createQuote(userId: string, planId: string, kind: "purchase" | "trial" = "purchase") {
+  const price = paymentMode() === "stripe" ? await resolveSubscriptionPrice(planId) : undefined;
   return editData((data) => {
     const plan = data.plans.find((item) => item.id === planId);
     if (!plan) throw new Error("Plan not found.");
+    if (price) { plan.amountMinor = price.amountMinor; plan.currency = price.currency; }
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
-    if (kind === "purchase") {
-      const alreadyActive = data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date());
-      if (alreadyActive) throw new Error("This plan already has active access.");
-    }
-    const quote: ProductQuote = { id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
+    if (kind === "purchase" && data.subscriptions.some(item => item.userId === userId && item.planId === plan.id && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) throw new Error("This plan already has active access.");
+    const quote: ProductQuote = { price, planSnapshot: { ...plan }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
     return { quote, plan };
   });
@@ -1036,10 +1051,17 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
 }
 
 export async function createUpgradeQuote(userId: string, subscriptionId: string) {
+  const preliminary = paymentMode() === "stripe" ? upgradeCalculation(await ensureProductData(), userId, subscriptionId) : undefined;
+  const price = preliminary ? await resolveSubscriptionPrice(preliminary.target.id) : undefined;
   return editData((data) => {
+    if (price && preliminary) {
+      const target = data.plans.find(item => item.id === preliminary.target.id);
+      if (target) target.amountMinor = price.amountMinor;
+    }
     const calculation = upgradeCalculation(data, userId, subscriptionId);
     const createdAt = now();
     const quote: ProductQuote = {
+      price, planSnapshot: { ...calculation.target },
       id: id("quote"),
       userId,
       planId: calculation.target.id,
@@ -1060,7 +1082,7 @@ export async function getQuoteForUser(userId: string, quoteId: string) {
   const data = await ensureProductData();
   const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
   if (!quote || new Date(quote.expiresAt) <= new Date()) return null;
-  const plan = data.plans.find((item) => item.id === quote.planId);
+  const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
   const source = quote.kind === "upgrade" ? data.subscriptions.find(item => item.id === quote.sourceSubscriptionId && item.userId === userId) : undefined;
   const sourcePlan = source ? data.plans.find(item => item.id === source.planId) : undefined;
   return plan ? { quote, plan, sourceSubscription: source, sourcePlan } : null;
@@ -1070,7 +1092,7 @@ export async function completeDemoCheckout(userId: string, quoteId: string) {
   return editData((data) => {
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || new Date(quote.expiresAt) <= new Date()) throw new Error("This quote has expired. Please calculate the price again.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     let order = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "purchase");
     if (!order) {
@@ -1131,7 +1153,7 @@ function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, t
   order.status = "paid";
   order.failureReason = null;
   const validFrom = now();
-  const subscription = subscriptionForPlan(userId, targetPlan, "purchase", validFrom, source.validTo, { stripeSubscriptionId: order.stripeSubscriptionId || null });
+  const subscription = subscriptionForPlan(userId, targetPlan, "purchase", validFrom, source.validTo, { stripeSubscriptionId: order.stripeSubscriptionId || null, stripeCustomerId: source.stripeCustomerId || null });
   order.servicePeriodStart = subscription.validFrom;
   order.servicePeriodEnd = subscription.validTo;
   const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo);
@@ -1146,7 +1168,7 @@ export async function createPendingDemoOrder(userId: string, quoteId: string) {
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || new Date(quote.expiresAt) <= new Date()) throw new Error("This quote has expired. Please calculate the price again.");
     if (quote.kind !== "purchase") throw new Error("This quote must use its matching checkout flow.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "purchase" && ["pending", "paid"].includes(item.status));
     if (existing) return { order: existing, plan };
@@ -1160,7 +1182,7 @@ export async function createPendingDemoUpgradeOrderFromQuote(userId: string, quo
   return editData((data) => {
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || quote.kind !== "upgrade" || new Date(quote.expiresAt) <= new Date()) throw new Error("This upgrade quote has expired. Please calculate the price again.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "upgrade" && ["pending", "paid"].includes(item.status));
     if (existing) return { order: existing, plan };
@@ -1174,7 +1196,7 @@ export async function completeDemoOrder(userId: string, orderId: string) {
   return editData((data) => {
     const order = data.orders.find((item) => item.id === orderId && item.userId === userId && item.paymentMode === "demo" && ["purchase", "upgrade"].includes(item.kind || ""));
     if (!order) throw new Error("Payment order not found.");
-    const plan = data.plans.find((item) => item.id === order.planId);
+    const plan = order.planSnapshot || data.plans.find((item) => item.id === order.planId);
     if (!plan) throw new Error("Plan not found.");
     return order.kind === "upgrade" ? fulfilUpgrade(data, userId, order, plan) : fulfilDemoPurchase(data, userId, order, plan);
   });
@@ -1206,7 +1228,7 @@ function pendingTrialOrder(data: ProductData, userId: string, plan: ProductPlan,
   const quote = suppliedQuote || { id: id("trial_quote"), userId, planId: plan.id, amountMinor: 0, currency: plan.currency, kind: "trial" as const, expiresAt: new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString(), createdAt };
   if (quote.kind !== "trial") throw new Error("This quote is not a trial quote.");
   if (!suppliedQuote) data.quotes.unshift(quote);
-  const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: 0, currency: plan.currency, status: "pending", paymentMode, kind: "trial_activation", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt };
+  const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: 0, currency: plan.currency, status: "pending", paymentMode, kind: "trial_activation", price: quote.price, planSnapshot: quote.planSnapshot, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt };
   data.orders.unshift(order);
   return { order, plan };
 }
@@ -1223,7 +1245,7 @@ export async function createPendingDemoTrialOrderFromQuote(userId: string, quote
   return editData((data) => {
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || quote.kind !== "trial" || new Date(quote.expiresAt) <= new Date()) throw new Error("This trial quote has expired. Please calculate the price again.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     return pendingTrialOrder(data, userId, plan, "demo", quote);
   });
@@ -1261,11 +1283,13 @@ export async function createPendingStripeOrder(userId: string, quoteId: string) 
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || new Date(quote.expiresAt) <= new Date()) throw new Error("This quote has expired. Please calculate the price again.");
     if (quote.kind !== "purchase") throw new Error("This quote must use its matching checkout flow.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
-    const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && ["pending", "paid"].includes(item.status));
+    const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe");
     if (existing) return { order: existing, plan };
-    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
+    if (!quote.price) throw new PaymentError("quote_expired");
+    if (data.subscriptions.some(item => item.userId === userId && sameScope(item, { ...plan, scope: plan.scope }) && item.device === plan.device && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) throw new PaymentError("invalid_request");
+    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "purchase", price: quote.price, planSnapshot: quote.planSnapshot, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
   });
@@ -1275,11 +1299,11 @@ export async function createPendingStripeUpgradeOrderFromQuote(userId: string, q
   return editData((data) => {
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || quote.kind !== "upgrade" || new Date(quote.expiresAt) <= new Date()) throw new Error("This upgrade quote has expired. Please calculate the price again.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe" && item.kind === "upgrade" && ["pending", "paid"].includes(item.status));
     if (existing) return { order: existing, plan };
-    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
+    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", price: quote.price, planSnapshot: quote.planSnapshot, sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
   });
@@ -1297,7 +1321,7 @@ export async function createPendingStripeTrialOrderFromQuote(userId: string, quo
   return editData((data) => {
     const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
     if (!quote || quote.kind !== "trial" || new Date(quote.expiresAt) <= new Date()) throw new Error("This trial quote has expired. Please calculate the price again.");
-    const plan = data.plans.find((item) => item.id === quote.planId);
+    const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     return pendingTrialOrder(data, userId, plan, "stripe", quote);
   });
@@ -1424,18 +1448,29 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
   });
 }
 
+export async function prepareStripeCheckout(userId: string, orderId: string, origin: string, locale: Locale) {
+  return editData(data => {
+    const order = data.orders.find(item => item.id === orderId && item.userId === userId);
+    if (!order || !["pending", "paid"].includes(order.status)) throw new PaymentError("quote_expired");
+    if (!order.price) throw new PaymentError("quote_expired");
+    order.checkoutOrigin ||= origin;
+    order.checkoutLocale ||= locale;
+    return order;
+  });
+}
+
 export async function attachStripeCheckoutSession(userId: string, orderId: string, sessionId: string) {
   return editData((data) => {
     const order = data.orders.find((item) => item.id === orderId && item.userId === userId);
     if (!order) throw new Error("Order not found.");
-    if (order.stripeCheckoutSessionId) return order;
+    if (order.stripeCheckoutSessionId && order.stripeCheckoutSessionId !== sessionId) throw new Error("Checkout session conflict.");
     order.stripeCheckoutSessionId = sessionId;
     return order;
   });
 }
 
 function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPlan, amountMinor: number, quoteId: string, stripeCheckoutSessionId?: string, stripeSubscriptionId?: string, stripeCustomerId?: string, stripePaymentIntentId?: string) {
-  let order = data.orders.find((item) => item.id === quoteId || item.stripeCheckoutSessionId === stripeCheckoutSessionId);
+  let order = data.orders.find((item) => item.userId === userId && (item.id === quoteId || (Boolean(stripeCheckoutSessionId) && item.stripeCheckoutSessionId === stripeCheckoutSessionId)));
   if (!order) order = data.orders.find((item) => item.userId === userId && item.quoteId === quoteId);
   if (!order) throw new Error("Order not found.");
   if (order.status === "paid") return order;
@@ -1856,4 +1891,113 @@ export async function setCourseStatus(courseId: string, status: ProductCourse["s
     course.updatedAt = now();
     return course;
   });
+}
+
+// All state changes and the event marker are saved together. An exception saves neither.
+export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
+  return editData(data => {
+    if (data.stripeEvents.some(item => item.id === event.id)) return { duplicate: true };
+    const order = event.orderId ? data.orders.find(item => item.id === event.orderId && item.paymentMode === "stripe") : undefined;
+    let subscription = data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId && item.state !== "expired")
+      || data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId);
+    if (event.action === "checkout") {
+      if (!order || !event.subscriptionId || !event.periodStart || !event.periodEnd) throw new Error("Payment cannot be reconciled yet.");
+      if (order.status !== "paid") {
+        if (order.status === "refunded") throw new Error("Refunded order cannot be fulfilled.");
+        const plan = order.planSnapshot || data.plans.find(item => item.id === order.planId);
+        if (!plan) throw new Error("Plan not found.");
+        if (order.kind === "upgrade") {
+          order.stripeSubscriptionId = event.subscriptionId;
+          fulfilUpgrade(data, order.userId, order, plan);
+          subscription = data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId && item.state !== "expired");
+        } else {
+          order.status = "paid";
+          subscription = subscriptionForPlan(order.userId, plan, event.trial ? "trial" : "purchase", event.periodStart, event.periodEnd, { stripeSubscriptionId: event.subscriptionId, stripeCustomerId: event.customerId });
+          data.subscriptions.unshift(subscription);
+          data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd));
+          data.notifications.unshift({ id: id("notification"), userId: order.userId, title: event.trial ? "Trial activated" : "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
+        }
+        order.stripeCheckoutSessionId = event.sessionId;
+        order.stripeSubscriptionId = event.subscriptionId;
+        order.stripePaymentIntentId = event.paymentIntentId || null;
+        order.servicePeriodStart = event.periodStart;
+        order.servicePeriodEnd = event.periodEnd;
+        order.lastStripeStatus = "paid";
+        order.lastSyncedAt = now();
+      }
+    } else if (event.action === "failed_checkout") {
+      if (order?.status === "pending") { order.status = event.status === "expired" ? "canceled" : "failed"; order.lastStripeStatus = event.status; }
+    } else if (event.action === "invoice") {
+      if (!subscription || !event.invoiceId) throw new Error("Subscription cannot be reconciled yet.");
+      if (event.status === "paid" && !data.orders.some(item => item.stripeInvoiceId === event.invoiceId)) {
+        // The free initial trial invoice is not the first paid renewal.
+        if (!(subscription.source === "trial" && event.billingReason === "subscription_create" && event.amountMinor === 0)) {
+          if (!event.periodStart || !event.periodEnd) throw new Error("Invoice period is missing.");
+          const plan = data.plans.find(item => item.id === subscription!.planId);
+          if (!plan) throw new Error("Plan not found.");
+          if (subscription.source === "trial") {
+            data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.state = "expired"; });
+            subscription.source = "purchase";
+          }
+          const initial = event.billingReason === "subscription_create" ? data.orders.find(item => item.stripeSubscriptionId === event.subscriptionId && item.kind === "purchase" && !item.stripeInvoiceId) : undefined;
+          const paid: ProductOrder = initial || { id: id("order"), userId: subscription.userId, planId: subscription.planId, quoteId: "invoice_" + event.invoiceId, amountMinor: event.amountMinor!, currency: "usd", status: "paid", paymentMode: "stripe", kind: "purchase", stripeSubscriptionId: event.subscriptionId, createdAt: now() };
+          paid.stripeInvoiceId = event.invoiceId;
+          paid.stripePaymentIntentId = event.paymentIntentId || paid.stripePaymentIntentId;
+          paid.amountMinor = event.amountMinor!;
+          paid.servicePeriodStart = event.periodStart;
+          paid.servicePeriodEnd = event.periodEnd;
+          if (!initial) data.orders.unshift(paid);
+          // Older invoices cannot move the current paid period backwards.
+          if (paid.status !== "refunded" && new Date(event.periodEnd) >= new Date(subscription.validTo) && !["canceled", "unpaid", "incomplete_expired", "paused"].includes(event.subscriptionStatus || "")) {
+            subscription.validFrom = event.periodStart;
+            subscription.validTo = event.periodEnd;
+            subscription.state = subscription.cancelAtPeriodEnd ? "cancel_at_period_end" : "active";
+            subscription.graceEndsAt = null;
+            let entitlement = data.entitlements.find(item => entitlementMatchesSubscription(item, subscription!));
+            if (!entitlement) { entitlement = entitlementForPlan(subscription.userId, plan, "purchase", event.periodEnd); data.entitlements.push(entitlement); }
+            entitlement.state = "active";
+            entitlement.validTo = event.periodEnd;
+          }
+        }
+      } else if (event.status === "open" && event.periodEnd && new Date(event.periodEnd) > new Date(subscription.validTo)) {
+        // Stable grace boundary; retries must never extend access again.
+        const end = new Date(new Date(event.periodStart || subscription.validTo).getTime() + TRIAL_DAYS * 86400000).toISOString();
+        subscription.state = "grace";
+        subscription.graceEndsAt = end;
+        subscription.validTo = end;
+        data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.validTo = end; });
+      }
+    }
+    if ((event.action === "subscription" || event.subscriptionStatus) && subscription) {
+      const remoteStatus = event.subscriptionStatus || event.status;
+      subscription.cancelAtPeriodEnd = Boolean(event.cancelAtPeriodEnd);
+      if (["canceled", "unpaid", "incomplete_expired", "paused"].includes(remoteStatus || "")) {
+        subscription.state = "expired";
+        data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.state = "expired"; });
+      } else if (["active", "trialing"].includes(remoteStatus || "") && subscription.state !== "trial_canceled" && subscription.state !== "grace") {
+        // An update alone never grants or extends paid access.
+        subscription.state = event.cancelAtPeriodEnd ? "cancel_at_period_end" : subscription.state === "expired" ? "expired" : "active";
+      }
+    }
+    data.stripeEvents.push({ id: event.id, type: event.type, processedAt: now() });
+    return { duplicate: false };
+  });
+}
+
+export async function stripeOrderContext(orderId: string) {
+  const data = await ensureProductData();
+  const order = data.orders.find(item => item.id === orderId && item.paymentMode === "stripe");
+  if (!order) return null;
+  return { order, source: data.subscriptions.find(item => item.id === order.sourceSubscriptionId), plan: order.planSnapshot || data.plans.find(item => item.id === order.planId) };
+}
+
+export async function isLegacyStripeSubscription(subscriptionId: string) {
+  const data = await ensureProductData();
+  const order = data.orders.find(item => item.stripeSubscriptionId === subscriptionId);
+  return Boolean(order && !order.price);
+}
+
+export async function isSnapshotStripeCheckout(sessionId: string) {
+ const data = await ensureProductData();
+ return data.orders.some(order => order.stripeCheckoutSessionId === sessionId && Boolean(order.price));
 }

@@ -118,3 +118,9 @@ Tests below used the public AWS site, actual Stripe test Checkout, the dedicated
 | Existing configuration | PostgreSQL/S3, Google, WeChat and email remain configured; email verification remains required. No authentication setting was relaxed. |
 
 The site remains DEV with Stripe sandbox payments. These checks establish successful purchase and expired-session behaviour, not full production payment-lifecycle acceptance. Live charging is not enabled.
+
+## Local integration, 10 September 2026
+
+The integration starts from remote `6d8934e` and preserves its sandbox-only Checkout options, catalogue sync scripts, file lock and legacy signed-event handling. New quotes/orders pin Price and Plan snapshots; Checkout validates the pinned Price, and new-order events use `stripeWebhookService.ts`. `stripeLegacyWebhookService.ts` retains compatibility with pre-snapshot orders and subscriptions. Retryable processing errors now return HTTP 500; signature errors return HTTP 400.
+
+The local PostgreSQL transaction/unique-key extension requires migration `009_product_payment_keys.sql` before rollout. The remote manual payment evidence above applies to `7c733fc`, not to this merged version. Re-run deployed webhook, payment and visual smoke checks before release; no cloud deployment or live charge is part of this local merge.

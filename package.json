@@ -21,7 +21,8 @@
     "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3011/api/payment/webhook",
     "seed:science": "npx --yes tsx scripts/seed-science.ts",
     "verify:science-display": "node scripts/verify-science-display.mjs",
-    "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs"
+    "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs",
+    "test:payment": "playwright test --config=playwright.payment.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",

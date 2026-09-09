@@ -1,3 +1,5 @@
+import { subscriptionPrices } from "@/contracts/payment";
+
 export function appEnvironment() {
   return (process.env.APP_ENV || process.env.NODE_ENV || "DEV").trim().toUpperCase();
 }
@@ -22,7 +24,9 @@ export function paymentMode() {
 }
 
 export function publicAppOrigin(request?: Request) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  // Server redirects must use runtime configuration when one image is promoted across environments.
+  const environment = process.env;
+  const configured = environment.NEXT_PUBLIC_APP_URL?.trim();
   if (isProductionEnvironment()) {
     if (!configured) throw new Error("NEXT_PUBLIC_APP_URL is required in production.");
     let parsed: URL;
@@ -70,6 +74,7 @@ export function runtimeConfiguration() {
   if (production && payment !== "stripe") required.push("PAYMENT_MODE=stripe");
   if (production && payment === "stripe" && !stripeSecret) required.push("STRIPE_SECRET_KEY");
   if (production && payment === "stripe" && !stripeWebhook) required.push("STRIPE_WEBHOOK_SECRET");
+  if (payment === "stripe") for (const price of subscriptionPrices) if (!hasEnv(price.env)) required.push(price.env);
   if (production && !google) required.push("GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET");
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
   if (emailVerification && !email) required.push("SES_FROM_EMAIL or SMTP_HOST + SMTP_USER + SMTP_PASS");
@@ -84,7 +89,8 @@ export function runtimeConfiguration() {
       mode: payment,
       configured: payment === "demo" ? !production : stripeSecret && stripeWebhook && publicUrl,
       stripeSecret: stripeSecret ? "configured" : "missing",
-      stripeWebhook: stripeWebhook ? "configured" : "missing"
+      stripeWebhook: stripeWebhook ? "configured" : "missing",
+      lookupKeys: Object.fromEntries(subscriptionPrices.map(price => [price.id, hasEnv(price.env) ? "configured" : "missing"]))
     },
     authentication: {
       google: google ? "configured" : socialLocal ? "local" : "missing",

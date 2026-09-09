@@ -1,3 +1,4 @@
+import { paymentFailure } from "@/services/paymentHttp";
 import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
 import { createQuote } from "@/services/productStore";
@@ -10,6 +11,6 @@ export async function POST(request: Request) {
     const result = await createQuote(user.id, body.planId || "", body.kind === "trial" ? "trial" : "purchase");
     return NextResponse.json({ ok: true, quote: result.quote, plan: result.plan });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Price calculation failed." }, { status: 400 });
+    return paymentFailure(error, user.locale);
   }
 }

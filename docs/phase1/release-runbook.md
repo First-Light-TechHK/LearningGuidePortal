@@ -25,6 +25,16 @@
 
 ## 3. CI/CD
 
+### Stripe lookup-key rollout
+
+- Set `PAYMENT_MODE=stripe`; keep each `STRIPE_PRICE_*` value as its Stripe lookup key. All eight mapped Prices must be active, licensed recurring USD Prices; six months means `month/6`, one year means `year/1` or `month/12`. A monthly Price is rejected for a yearly selection.
+- With PostgreSQL, apply `db/migrations/009_product_payment_keys.sql` before deploying this version. Product writers now serialize the existing JSON aggregate and commit provider identity uniqueness in the same database transaction. Back up the aggregate first; this migration does not rewrite existing user or purchase records.
+- Run `npm run test:auth`, `npm run test:payment`, and `npm run build`. Then run `node scripts/verify-stripe-checkout.mjs` with test credentials: it uses a disposable local store, creates and expires unpaid Checkout sessions, validates all available choices, and captures bilingual Pricing screenshots. It refuses live keys and does not submit a card.
+- Configure the target endpoint `/api/payment/webhook` for Checkout completion/async success/async failure/expiry, invoice paid/failed, and subscription updated/deleted. Stripe CLI forwarding uses its own signing secret. Verify delivery and retry using the actual endpoint; test helpers alone do not verify deployed webhook configuration.
+- Complete a real Stripe sandbox payment, renewal failure/recovery, cancellation, and Category-to-Everything upgrade before promotion. Check Order, Subscription and Entitlement, both locales, no-email WeChat users, and webhook-before/after-browser-return. The return page refreshes pending state but never grants access itself.
+- Upgrades retain the existing one-time difference collection and change the original recurring subscription only after verified payment, with no proration or new subscription. Source and target must use the same Stripe interval/count so the renewal anchor is preserved.
+- The remote sandbox verification records the Science annual lookup key correction; see `stripe-sandbox.md`. Revalidate the current catalogue before each release.
+
 ```text
 GitHub pull request
   -> typecheck / lint / unit / integration / build

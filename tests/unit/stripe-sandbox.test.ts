@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type Stripe from "stripe";
@@ -34,7 +34,12 @@ test("annual price validates; accidental monthly, live, amount and currency mism
 async function fixture() {
   const user = await store.registerUser({ email: `stripe${++count}@example.test`, password: "TestPass123!" });
   const { quote, plan } = await store.createQuote(user.id, "everything-pc-6");
-  const { order } = await store.createPendingStripeOrder(user.id, quote.id);
+  // Model an order persisted by the remote version before Price snapshots existed.
+  const { order } = await store.createPendingDemoOrder(user.id, quote.id);
+  const file = path.join(directory, "data", "knowledge_system", "learning_guide", "product.json");
+  const data = JSON.parse(await readFile(file, "utf8"));
+  data.orders.find((item: { id: string }) => item.id === order.id).paymentMode = "stripe";
+  await writeFile(file, JSON.stringify(data));
   const sessionId = `cs_test_fixture_${count}`;
   await store.attachStripeCheckoutSession(user.id, order.id, sessionId);
   return { user, order, object: { id: sessionId, payment_status: "paid", amount_total: order.amountMinor, currency: order.currency, subscription: `sub_fixture_${count}`, metadata: { userId: user.id, orderId: order.id, quoteId: quote.id, planId: plan.id } } };
@@ -78,8 +83,8 @@ test("late failure cannot remove a successful purchase", async () => {
 test("amount mismatch, bad signatures and live events cannot grant access", async () => {
   const f = await fixture();
   const retryId = `evt_retry_${count}`;
-  assert.equal((await event("checkout.session.completed", { ...f.object, amount_total: 1 }, retryId)).status, 400);
-  assert.equal((await event("checkout.session.completed", f.object, `evt_live_${count}`, true)).status, 400);
+  assert.equal((await event("checkout.session.completed", { ...f.object, amount_total: 1 }, retryId)).status, 500);
+  assert.equal((await event("checkout.session.completed", f.object, `evt_live_${count}`, true)).status, 500);
   assert.equal((await handler.POST(new Request("http://localhost/api/payment/webhook", { method: "POST", body: "{}", headers: { "stripe-signature": "invalid" } }))).status, 400);
   assert.equal((await store.checkEntitlement(f.user.id, "epicureanism")).allowed, false);
   assert.equal((await event("checkout.session.completed", f.object, retryId)).status, 200);
@@ -94,7 +99,7 @@ test("invoice processing retries after a provider failure and accepts current St
   const invoice = { id: `in_fixture_${count}`, amount_paid: 9900, parent: { subscription_details: { subscription: f.object.subscription } } };
   try {
     stripe.subscriptions.retrieve = (async () => { throw new Error("Temporary provider failure"); }) as typeof retrieve;
-    assert.equal((await event("invoice.paid", invoice, id)).status, 400);
+    assert.equal((await event("invoice.paid", invoice, id)).status, 500);
     stripe.subscriptions.retrieve = (async () => ({ status: "active", items: { data: [{ current_period_start: 1800000000, current_period_end: 1815552000 }] } })) as unknown as typeof retrieve;
     assert.equal((await event("invoice.paid", invoice, id)).status, 200);
     assert.equal((await event("invoice.paid", invoice, id)).status, 200);

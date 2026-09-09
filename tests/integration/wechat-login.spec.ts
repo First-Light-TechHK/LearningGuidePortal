@@ -197,7 +197,7 @@ test("paid, trial and upgrade Checkout omit absent email and retain user identit
     return { id: "cs_test", url: "https://checkout.example.test" };
   }) as typeof sessions.create;
   try {
-    const input = { origin: "https://login.example.test", locale: "en-GB" as const, userEmail: null,
+    const input = { origin: "https://login.example.test", locale: "en-GB" as const, userEmail: null, price: { stripePriceId: "price_test", lookupKey: "test", amountMinor: 100, currency: "usd" as const, termMonths: 6 as const },
       userId: "wechat-user", orderId: "order", quoteId: "quote", planId: "plan", courseId: "course",
       planName: "Plan", amountMinor: 100, currency: "usd", termMonths: 6 };
     await stripe.createHostedCheckout(input);

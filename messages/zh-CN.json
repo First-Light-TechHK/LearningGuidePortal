@@ -612,5 +612,12 @@
     "review": "复习课程",
     "continue": "继续学习",
     "allCourses": "已显示您开始学习的所有课程"
+  },
+  "paymentErrors": {
+    "price_unavailable": "此套餐暂时无法购买，请稍后重试。",
+    "quote_expired": "报价或支付会话已过期，请重新选择套餐。",
+    "payment_unavailable": "支付暂时不可用，请稍后重试。",
+    "invalid_request": "请检查购买确认选项，并从本站重新发起支付。",
+    "checkAgain": "重新查询支付状态"
   }
 }

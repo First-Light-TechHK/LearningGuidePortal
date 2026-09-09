@@ -91,3 +91,7 @@ type TutorRequest = {
 ```
 
 服务端顺序：session → `checkEntitlement` → 读取已发布 Course/Lesson 和 KS knowledge links → 读取版本化 prompt → 取最近六轮 conversation → 编译消息 → 调用 OpenRouter → 流式返回。浏览器不得上传 `knowledgePack`、`sources` 或完整 system prompt 作为可信输入。
+
+## Stripe lookup-key subscriptions
+
+`POST /api/subscription/quote` accepts `{ planId, kind: "purchase" | "trial" }`. The server resolves the configured lookup key, validates a licensed USD recurring Price with a 6/12-month period, and snapshots Price ID, amount, currency and term. Checkout accepts only the owned quote ID and required consents, never a client-supplied price. All eight Pricing combinations use subscription Checkout. Unavailable/misconfigured prices are disabled; no demo amount is charged as a fallback. Webhooks verify the current provider objects and apply payment, subscription and entitlement state with event deduplication. Existing course/mobile prices are not mapped to category prices.
