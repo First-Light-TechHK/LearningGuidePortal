@@ -12,6 +12,7 @@ import {
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
+import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 
 const scrypt = promisify(scryptCallback);
 const PRODUCT_DIR = path.join(SYSTEM_ROOT, "learning_guide");
@@ -798,6 +799,54 @@ export async function listPublishedCourses() {
 export async function getProductCourse(slug: string) {
   const data = await ensureProductData();
   return data.courses.find((course) => course.slug === slug || course.id === slug) || null;
+}
+
+/** D1 Course page view: identity, syllabus access, CTA bands, unique-LP progress. */
+export async function getCoursePage(slug: string, userId?: string | null): Promise<CoursePage> {
+  if (!userId) {
+    const data = await ensureProductData();
+    const course = data.courses.find((item) => item.slug === slug || item.id === slug) || null;
+    return buildCoursePage({
+      course,
+      hasLiveEntitlement: false,
+      accessEnded: false,
+      accessState: "none",
+      openedLessonIds: [],
+      completedLessonIds: [],
+    });
+  }
+
+  return editData((data) => {
+    const currentTime = new Date();
+    data.entitlements.forEach((entitlement) => {
+      if (entitlement.state === "active" && new Date(entitlement.validTo) <= currentTime) entitlement.state = "expired";
+    });
+    data.subscriptions.forEach((subscription) => {
+      if (["active", "cancel_at_period_end", "grace"].includes(subscription.state) && new Date(subscription.validTo) <= currentTime) {
+        subscription.state = "expired";
+      }
+    });
+
+    const course = data.courses.find((item) => item.slug === slug || item.id === slug) || null;
+    if (!course) return emptyFailedCoursePage();
+
+    const entitlement = activeEntitlement(data, userId, course.id);
+    const subscriptions = data.subscriptions.filter((item) => item.userId === userId);
+    const accessState = accessStateFromSubscriptions(subscriptions);
+    const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === course.id);
+    const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
+    const completedLessonIds = [...new Set(courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId))];
+    const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && entitlementCoversCourse(item, course));
+
+    return buildCoursePage({
+      course,
+      hasLiveEntitlement: Boolean(entitlement),
+      accessEnded,
+      accessState,
+      openedLessonIds,
+      completedLessonIds,
+    });
+  });
 }
 
 export function publicFirstLesson(course: ProductCourse) {

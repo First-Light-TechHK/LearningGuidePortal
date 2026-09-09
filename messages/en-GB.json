@@ -98,6 +98,11 @@
     "openCourse": "Open course",
     "publicFirstLesson": "Public First Lesson",
     "lockedLesson": "Available with access",
+    "startPreview": "Start preview",
+    "previewableLesson": "Previewable",
+    "entitledLesson": "Available",
+    "courseUnavailable": "This course is unavailable",
+    "courseUnavailableDescription": "The course could not be read. It may have been removed or the link is incorrect.",
     "productionShell": "Production website starter",
     "productionShellDescription": "The public Portal is wired first. User Registration, Purchase, Payment Management, My Learning and AI Tutor are added behind the same application boundary.",
     "footerCopyright": "© 2026 Learning Guide"

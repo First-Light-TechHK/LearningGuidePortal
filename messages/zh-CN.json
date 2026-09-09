@@ -98,6 +98,11 @@
     "openCourse": "打开课程",
     "publicFirstLesson": "Public First Lesson",
     "lockedLesson": "开通权限后可学习",
+    "startPreview": "开始试看",
+    "previewableLesson": "可试看",
+    "entitledLesson": "已开通",
+    "courseUnavailable": "课程不可用",
+    "courseUnavailableDescription": "无法读取该课程。课程可能已下架，或链接不正确。",
     "productionShell": "生产网站基础入口",
     "productionShellDescription": "先接通公开 Portal；User Registration、Purchase、Payment Management、My Learning 和 AI Tutor 会在同一个应用边界内继续实现。",
     "footerCopyright": "© 2026 Learning Guide"
