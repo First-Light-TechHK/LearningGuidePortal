@@ -20,7 +20,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, data: { accepted: true }, requestId });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Verification email could not be sent.";
-    const tooSoon = message.includes("wait before requesting");
-    return NextResponse.json({ ok: false, code: tooSoon ? "VERIFICATION_RATE_LIMITED" : "EMAIL_DELIVERY_FAILED", message, requestId }, { status: tooSoon ? 429 : 400 });
+    if (message.includes("wait before requesting")) {
+      return NextResponse.json({ ok: true, data: { accepted: true }, requestId });
+    }
+    return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_FAILED", message, requestId }, { status: 400 });
   }
 }

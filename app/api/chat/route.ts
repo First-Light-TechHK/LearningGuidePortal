@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readPublishedWiki } from "../../lib/wiki-store";
+import { buildSystemPrompt } from "../../../lib/chatSystemPrompt";
 import { fetchOpenRouter, openRouterErrorMessage } from "../../../services/openRouterClient";
 import { currentProductUserFromRequest } from "../../../services/productAuth";
 
@@ -33,31 +33,6 @@ function timeoutMessage(model: string) {
 
 function lastTurns(history: ChatMessage[]) {
   return history.slice(-6);
-}
-
-async function buildSystemPrompt(body: RequestBody) {
-  const modePrompt = body.mode === "lecture" ? body.prompts.lecture : body.prompts.socratic;
-  const publishedWiki = await readPublishedWiki(body.topic || "Epicureanism");
-  return [
-    body.prompts.base,
-    modePrompt,
-    "CURRENT CONVERSATION TOPIC:",
-    body.topic || "Epicureanism",
-    "PUBLISHED KS WIKI MARKDOWN FOR THIS TOPIC:",
-    publishedWiki.markdown || "No published wiki markdown found for this topic yet.",
-    "COURSE PACK JSON:",
-    JSON.stringify(body.knowledgePack, null, 2),
-    "SOURCE EXCERPTS:",
-    body.sources,
-    "PROMPT CONTRACT:",
-    "- First validate whether the student turn is relevant to the current topic or the course context.",
-    "- If relevant, use the course pack and source excerpts.",
-    "- If the student asks an understanding-test style answer, assess it against the rubric.",
-    "- When the course names a governing equation, write it in LaTeX using $...$ or $$...$$.",
-    "- When the course names a figure, include it as a markdown image using the exact path in the course pack.",
-    "- Do not invent a finished number when a needed quantity was not given, and do not close with a newspaper headline.",
-    "- Keep the response suitable for a student, not a research seminar."
-  ].join("\n\n");
 }
 
 export async function POST(request: NextRequest) {

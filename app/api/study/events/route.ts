@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { studyEventHttpStatus } from "@/lib/studyEventHttpStatus";
 import { currentProductUser } from "@/services/productAuth";
 import { recordStudyEvent } from "@/services/productStore";
 
@@ -11,6 +12,6 @@ export async function POST(request: Request) {
     const record = await recordStudyEvent({ userId: user.id, courseId: body.courseId, lessonId: body.lessonId, event: body.event, seconds: body.seconds || 0, clientEventId: body.clientEventId });
     return NextResponse.json({ ok: true, record });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Study event failed." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Study event failed." }, { status: studyEventHttpStatus(error) });
   }
 }

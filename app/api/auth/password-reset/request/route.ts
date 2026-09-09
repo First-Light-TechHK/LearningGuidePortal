@@ -9,9 +9,11 @@ export async function POST(request: Request) {
     if (isProductionEnvironment() && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, error: `Password reset email is not configured for ${appEnvironment()}.` }, { status: 503 });
     const result = await requestPasswordReset(body.email || "");
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
-    const resetUrl = result.token && !isProductionEnvironment() ? `/${locale}/portal/reset-password?token=${encodeURIComponent(result.token)}` : null;
-    if (result.token && isProductionEnvironment()) await sendPasswordResetEmail({ to: body.email?.trim() || "", url: `${appOrigin(request)}/${locale}/portal/reset-password?token=${encodeURIComponent(result.token)}` });
-    return NextResponse.json({ ok: true, resetUrl });
+    if (result.token) {
+      const url = `${appOrigin(request)}/${locale}/portal/reset-password?token=${encodeURIComponent(result.token)}`;
+      if (isProductionEnvironment() || emailDeliveryConfigured()) await sendPasswordResetEmail({ to: body.email?.trim() || "", url });
+    }
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Password reset request failed." }, { status: 400 });
   }

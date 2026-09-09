@@ -6,13 +6,14 @@ import { PortalHeader } from "@/components/portal/PortalHeader";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { currentProductUser } from "@/services/productAuth";
+import { demoCheckoutSignInReturnTo } from "@/lib/demoCheckoutReturnTo";
 import { getOrderForUser } from "@/services/productStore";
 
 export default async function LocalCheckoutPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ orderId?: string }> }) {
   const locale = localeFrom((await params).locale);
   const { orderId } = await searchParams;
   const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=/${locale}/portal/payment/checkout`);
+  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(demoCheckoutSignInReturnTo(locale, orderId))}`);
   const order = await getOrderForUser(user.id, orderId || "");
   if (!order || order.paymentMode !== "demo") redirect(`/${locale}/account/my-learning`);
   const messages = getMessages(locale);
