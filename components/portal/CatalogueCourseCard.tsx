@@ -15,7 +15,7 @@ export function CatalogueCourseCard({ course, category, locale }: { course: Prod
     <div className="portal-course-card-body">
       <h3>{course.title}</h3><div className="portal-course-category">{category}</div><p>{course.description}</p>
       <div className="portal-course-card-bottom"><div className="portal-course-meta"><span>{lessons.length} {copy.lessonCount}</span>{videoMinutes === null ? null : <span>{videoMinutes} {copy.minutesShort} {copy.videoDuration}</span>}</div>
-        <Link className="portal-course-link" href={`/${locale}/portal/courses/${course.id}`}>{copy.viewCourse}<ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link prefetch={false} className="portal-course-link" href={`/${locale}/portal/courses/${course.id}`}>{copy.viewCourse}<ArrowRight size={16} aria-hidden="true" /></Link>
       </div>
     </div>
   </article>;

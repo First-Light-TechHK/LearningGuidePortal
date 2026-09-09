@@ -61,7 +61,7 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
               </div>
               {!withdrawn ? <Link className={`portal-button ${(canStudy && !completed) || canPreview ? "portal-button-primary" : "portal-button-secondary"} account-learning-action`} href={canStudy ? `/${locale}/account/learn/${item.courseId}` : canPreview ? `/${locale}/portal/courses/${item.courseId}/public-lesson?lessonId=${encodeURIComponent(item.nextPreviewLessonId!)}` : `/${locale}/pricing?courseId=${encodeURIComponent(item.courseId)}`}>{canStudy ? completed ? design.review : design.continue : canPreview ? design.continuePreview : copy.viewPlans}</Link> : null}
             </article>;
-          })}</div> : <div className="account-empty-state"><p>{copy.noCourses}</p><Link className="portal-button portal-button-primary" href={`/${locale}/portal/courses`}>{messages.portal.viewCourses}</Link></div>}
+          })}</div> : <div className="account-empty-state"><p>{copy.noCourses}</p><Link prefetch={false} className="portal-button portal-button-primary" href={`/${locale}/portal/courses`}>{messages.portal.viewCourses}</Link></div>}
           {overview.courses.length ? <p className="overview-list-caption">{design.allCourses}</p> : null}
         </section>
       </section>
