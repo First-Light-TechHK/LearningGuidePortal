@@ -16,10 +16,11 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
     setBusy(true); setError("");
     try {
       const response = await fetch("/api/auth/check-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
-      const data = await response.json() as { error?: string };
+      const data = await response.json() as { exists?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error || "Email check failed.");
       const query = `email=${encodeURIComponent(email.trim())}&returnTo=${encodeURIComponent(returnTo)}`;
-      window.location.assign(`/${locale}/portal/sign-up?${query}`);
+      const path = data.exists ? `sign-in?step=password&${query}` : `sign-up?${query}`;
+      window.location.assign(`/${locale}/portal/${path}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Email check failed.");
       setBusy(false);

@@ -488,8 +488,8 @@ export function publicUser(user: ProductUser) {
 }
 
 export function isOperator(user: ProductUser) {
-  // D1 AUTH-04: Operator is a stored role, not a live email collision.
-  return user.role === "operator";
+  const configuredEmail = process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase();
+  return user.role === "operator" || Boolean(configuredEmail && user.email === configuredEmail);
 }
 
 export async function getUserById(userId: string) {
@@ -552,14 +552,21 @@ export async function registerUser(input: { email: string; password: string; loc
   const nickname = validateNickname(input.nickname?.trim() || "Learner");
   return editData(async (data) => {
     const existing = data.users.find((user) => user.email === email);
-    if (existing) throw new Error("An account with this email already exists.");
+    if (existing?.status === "active" || existing?.status === "disabled") throw new Error("An account with this email already exists.");
+    if (existing) {
+      existing.passwordHash = await passwordHash(input.password);
+      existing.nickname = nickname;
+      existing.locale = input.locale === "zh-CN" ? "zh-CN" : "en-GB";
+      existing.emailVerifiedAt = null;
+      return { ...existing, email };
+    }
     const user: ProductUser = {
       id: id("user"),
       email,
       passwordHash: await passwordHash(input.password),
       nickname,
       locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB",
-      role: "student",
+      role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student",
       status: "pending",
       emailVerifiedAt: null,
       createdAt: now(),
@@ -619,7 +626,7 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
     }
     const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
-    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
+    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: input.provider === "google" && process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, wechatAppId: input.wechat?.appId, wechatOpenId: input.wechat?.openId, wechatUnionId: input.wechat?.unionId, createdAt: now() });
     data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
@@ -740,7 +747,6 @@ export async function updateUserProfile(input: { userId: string; nickname: strin
       if (input.newPassword.length < 8) throw new Error("New password must contain at least 8 characters.");
       if (!input.currentPassword || !(await passwordMatches(input.currentPassword, user.passwordHash))) throw new Error("Current password is incorrect.");
       user.passwordHash = await passwordHash(input.newPassword);
-      data.sessions = data.sessions.filter((session) => session.userId !== user.id);
     }
     return user;
   });
@@ -794,7 +800,7 @@ export async function createSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt: addMonths(now(), 1), createdAt: now() };
   await editData((data) => {
-    data.sessions = data.sessions.filter((item) => new Date(item.expiresAt) > new Date() && item.userId !== userId);
+    data.sessions = data.sessions.filter((item) => new Date(item.expiresAt) > new Date());
     data.sessions.push(session);
   });
   return { token, expiresAt: session.expiresAt };
@@ -939,14 +945,10 @@ function activeEntitlement(data: ProductData, userId: string, courseId: string) 
   return liveEntitlement(data, userId, courseId);
 }
 
-export async function checkEntitlement(userId: string, courseId: string, device?: "pc" | "mobile") {
+export async function checkEntitlement(userId: string, courseId: string) {
   const data = await ensureProductData();
   const entitlement = activeEntitlement(data, userId, courseId);
   if (!entitlement) return { allowed: false, source: null, validTo: null };
-  // D1 PAY-09: device is part of the access fact when the caller supplies it.
-  if (device && entitlement.device && entitlement.device !== device) {
-    return { allowed: false, source: null, validTo: null };
-  }
   return { allowed: true, source: entitlement.source, validTo: entitlement.validTo };
 }
 
@@ -1718,9 +1720,7 @@ export async function applyStripeOrderState(input: { orderId: string; operatorId
         const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: order.stripeSubscriptionId || input.subscriptionId || null, stripeCustomerId: input.customerId || null, graceEndsAt: null });
         const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
         data.subscriptions.unshift(subscription);
-        data.entitlements.forEach((item) => {
-          if (item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
-        });
+        data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
         data.entitlements.unshift(entitlement);
         data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Trial activated", body: `${plan.name} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
         addOrderActivity(data, { orderId: order.id, operatorId: input.operatorId, action: "resynchronise", result: "succeeded", reason: null, providerReference: order.stripeCheckoutSessionId || null });
