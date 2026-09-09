@@ -17,9 +17,10 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   try {
     const body = await request.json() as { subscriptionId?: string; action?: "cancel" | "resume"; reasonCode?: "low_usage" | "too_expensive" | "content" | "website" | "other"; reasonText?: string };
-    if (!body.subscriptionId || !body.action) return NextResponse.json({ ok: false, error: "Subscription and action are required." }, { status: 400 });
+    if (!body.subscriptionId || !["cancel", "resume"].includes(body.action || "")) return NextResponse.json({ ok: false, error: "Subscription and a valid action are required." }, { status: 400 });
     const current = (await getLearningOverview(user.id)).subscriptions.find((subscription) => subscription.id === body.subscriptionId);
     if (!current) return NextResponse.json({ ok: false, error: "Subscription not found." }, { status: 404 });
+    if (body.action === "resume" && current.source === "purchase") return NextResponse.json({ ok: false, error: "Auto-renewal cannot be restored. You can purchase a new plan after the current period ends." }, { status: 400 });
     if (current.stripeSubscriptionId && paymentMode() === "stripe") {
       await getStripe().subscriptions.update(current.stripeSubscriptionId, { cancel_at_period_end: body.action === "cancel" });
     }

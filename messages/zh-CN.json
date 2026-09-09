@@ -61,6 +61,9 @@
     "category": "分类",
     "lessonCount": "个课程内容",
     "videoDuration": "视频",
+    "viewCourse": "查看课程",
+    "exploreAllCourses": "探索全部课程",
+    "exploreDescription": "探索人文、艺术与科学领域的精选课程。",
     "minutesShort": "分钟",
     "whatYouWillLearn": "你将学到什么",
     "benefits": [
@@ -103,6 +106,10 @@
     "ok": "Learning Guide 正在运行"
   },
   "auth": {
+    "welcomeBack": "欢迎回来",
+    "rememberMe": "记住我",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "signInTitle": "登录",
     "signUpTitle": "创建账号",
     "email": "邮箱",
@@ -368,6 +375,7 @@
     "lessonTitle": "课程标题",
     "lessonBody": "课程内容",
     "durationMinutes": "时长（分钟）",
+    "videoDurationSeconds": "视频时长（秒；未知则留空，纯文字填 0）",
     "publicLesson": "Public First Lesson",
     "addLesson": "添加课程",
     "noLessons": "还没有课程内容",
@@ -467,7 +475,7 @@
     "rules": [
       {
         "title": "更改方案",
-        "text": "升级时支付适用差价，新的订阅周期从升级当日开始。"
+        "text": "每次升级选择一个分类订阅，以实际支付金额抵扣，保留原到期日。其他分类订阅不受影响。"
       },
       {
         "title": "设备访问",
@@ -478,6 +486,21 @@
         "text": "随着新课程的增加，续订价格可能调整。我们将至少提前三天通过邮件通知您。"
       }
     ]
+  },
+  "subscriptionDesign": {
+    "allAttempts": "所有付款记录",
+    "intro": "查看订阅、付款记录和账户操作。",
+    "records": "订阅记录",
+    "recordsIntro": "查看成功付款、有效期及收据。",
+    "periodUnavailable": "未记录有效期",
+    "paymentNote": "每次成功付款分别列出，可查看对应收据。",
+    "noPayments": "您还没有成功的订阅付款记录。",
+    "viewPlans": "查看方案"
+  },
+  "cancelDesign": {
+    "accessUntil": "您可以继续访问至 {date}。",
+    "optionalReason": "选填。您可以提供原因，也可以跳过并继续。",
+    "skip": "跳过"
   },
   "confirmationDetails": {
     "payToday": "本次支付",
@@ -534,7 +557,24 @@
       "其他"
     ]
   },
+  "upgradeConfirmation": {
+    "title": "确认升级",
+    "intro": "您将把所选的有效分类订阅升级为全站订阅。",
+    "source": "原订阅方案",
+    "target": "升级方案",
+    "validUntil": "有效期至 {date}，保留原到期日。",
+    "price": "升级费用",
+    "targetPrice": "全站订阅当前价格",
+    "credit": "原订阅实际支付金额",
+    "payToday": "本次升级应付金额",
+    "otherCategories": "其他有效分类订阅的有效期、自动续费状态和已付金额保持不变；如需停止其自动续费，请分别取消。"
+  },
   "overviewDesign": {
+    "continuePreview": "继续预览",
+    "previewAvailable": "可预览",
+    "previewLimit": "已完成预览内容",
+    "previewDescription": "继续学习开放预览的课程内容。",
+    "previewSaveError": "学习进度保存失败，请重试。",
     "welcome": "欢迎回来，{name}",
     "description": "课程按您首次开始学习的时间排列。",
     "yourLearning": "您的学习",

@@ -61,6 +61,9 @@
     "category": "Category",
     "lessonCount": "lessons",
     "videoDuration": "video",
+    "viewCourse": "View course",
+    "exploreAllCourses": "Explore all courses",
+    "exploreDescription": "Explore curated learning journeys across the humanities, arts and sciences.",
     "minutesShort": "min",
     "whatYouWillLearn": "What You Will Learn",
     "benefits": [
@@ -103,6 +106,10 @@
     "ok": "Learning Guide is running"
   },
   "auth": {
+    "welcomeBack": "Welcome back",
+    "rememberMe": "Remember me",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "signInTitle": "Sign in",
     "signUpTitle": "Create your account",
     "email": "Email",
@@ -368,6 +375,7 @@
     "lessonTitle": "Lesson title",
     "lessonBody": "Lesson content",
     "durationMinutes": "Duration (minutes)",
+    "videoDurationSeconds": "Video duration (seconds; leave blank if unknown, 0 for text only)",
     "publicLesson": "Public First Lesson",
     "addLesson": "Add lesson",
     "noLessons": "No lessons yet",
@@ -467,7 +475,7 @@
     "rules": [
       {
         "title": "Changing plans",
-        "text": "If you upgrade, you pay the applicable difference and your new period begins on the upgrade date."
+        "text": "Upgrade one Category to Everything using the amount you actually paid as credit. Your original expiry date is retained; other Category subscriptions are unchanged."
       },
       {
         "title": "Device access",
@@ -478,6 +486,21 @@
         "text": "Renewal prices may change as new courses are added. We will email you at least 3 days in advance."
       }
     ]
+  },
+  "subscriptionDesign": {
+    "allAttempts": "All payment attempts",
+    "intro": "View your subscriptions, recent payments and account actions.",
+    "records": "Subscription records",
+    "recordsIntro": "Your successful payments, valid periods and receipts.",
+    "periodUnavailable": "Period not recorded",
+    "paymentNote": "Each successful payment is listed separately. Receipts are available for recorded payments.",
+    "noPayments": "You have no successful subscription payments yet.",
+    "viewPlans": "View plans"
+  },
+  "cancelDesign": {
+    "accessUntil": "Your access remains active until {date}.",
+    "optionalReason": "Optional. Share a reason or skip and continue.",
+    "skip": "Skip"
   },
   "confirmationDetails": {
     "payToday": "Pay today",
@@ -534,7 +557,24 @@
       "Other"
     ]
   },
+  "upgradeConfirmation": {
+    "title": "Confirm your upgrade",
+    "intro": "You are upgrading your active Category subscription to Everything.",
+    "source": "Source plan",
+    "target": "Target plan",
+    "validUntil": "Valid until {date}. Your existing end date is retained.",
+    "price": "Upgrade price",
+    "targetPrice": "Everything current price",
+    "credit": "Original actual amount paid",
+    "payToday": "Upgrade charge today",
+    "otherCategories": "Any other active Categories keep their current validity, auto-renewal and paid amount unless you cancel their auto-renewal separately."
+  },
   "overviewDesign": {
+    "continuePreview": "Continue preview",
+    "previewAvailable": "Preview available",
+    "previewLimit": "Preview limit reached",
+    "previewDescription": "Continue within the configured preview range.",
+    "previewSaveError": "Your progress could not be saved. Please try again.",
     "welcome": "Welcome back, {name}",
     "description": "Your courses are listed by when you first started learning.",
     "yourLearning": "Your learning",

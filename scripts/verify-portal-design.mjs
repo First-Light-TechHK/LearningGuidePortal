@@ -53,8 +53,8 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
   assert.equal(await page.getByLabel("Country", { exact: true }).getAttribute("required"), "");
   await page.locator(".settings-interest-menu summary").click();
   assert.equal(await page.locator(".settings-interest-menu input[type=checkbox]").count(), 7);
-  assert.ok(await page.getByLabel("Device management").isDisabled());
-  assert.ok(await page.getByLabel("Email notifications").isDisabled());
+  assert.ok(await page.getByRole("checkbox", { name: "Device management", exact: true }).isDisabled());
+  assert.ok(await page.getByRole("checkbox", { name: "Email notifications", exact: true }).isDisabled());
   await page.locator(".account-menu-trigger").click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await page.waitForURL("**/en-GB/portal");

@@ -16,6 +16,7 @@ type Copy = {
   lessonTitle: string;
   lessonBody: string;
   durationMinutes: string;
+  videoDurationSeconds: string;
   publicLesson: string;
   addLesson: string;
   noLessons: string;
@@ -34,6 +35,7 @@ export function CourseManager({ copy, locale }: { copy: Copy; locale: "en-GB" | 
   const [lessonTitle, setLessonTitle] = useState("");
   const [lessonBody, setLessonBody] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("20");
+  const [videoDurationSeconds, setVideoDurationSeconds] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,12 +90,13 @@ export function CourseManager({ copy, locale }: { copy: Copy; locale: "en-GB" | 
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/backoffice/courses/${selectedCourseId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: lessonTitle, body: lessonBody, durationMinutes: Number(durationMinutes), isPublic }) });
+      const response = await fetch(`/api/backoffice/courses/${selectedCourseId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: lessonTitle, body: lessonBody, durationMinutes: Number(durationMinutes), videoDurationSeconds: videoDurationSeconds === "" ? null : Number(videoDurationSeconds), isPublic }) });
       const data = await response.json() as { error?: string };
       if (!response.ok) throw new Error(data.error || "Lesson creation failed.");
       setLessonTitle("");
       setLessonBody("");
       setDurationMinutes("20");
+      setVideoDurationSeconds("");
       setIsPublic(false);
       await load();
     } catch (requestError) {
@@ -136,6 +139,7 @@ export function CourseManager({ copy, locale }: { copy: Copy; locale: "en-GB" | 
         <label>{copy.lessonTitle}<input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} required /></label>
         <label>{copy.lessonBody}<textarea value={lessonBody} onChange={(event) => setLessonBody(event.target.value)} rows={8} required /></label>
         <label>{copy.durationMinutes}<input type="number" min="1" max="600" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} required /></label>
+        <label>{copy.videoDurationSeconds}<input type="number" min="0" max="36000" step="1" value={videoDurationSeconds} onChange={(event) => setVideoDurationSeconds(event.target.value)} /></label>
         <label className="backoffice-checkbox"><input type="checkbox" checked={isPublic} onChange={(event) => setIsPublic(event.target.checked)} />{copy.publicLesson}</label>
         <button className="portal-button portal-button-primary" disabled={busy}>{copy.addLesson}</button>
       </form> : null}

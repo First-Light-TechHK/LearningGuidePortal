@@ -105,10 +105,10 @@ assert(subscriptionId, "purchase subscription was not created");
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "cancel", reasonCode: "too_expensive" }) });
 assert(result.status === 200 && result.body.subscription?.state === "cancel_at_period_end", "subscription cancellation failed");
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "resume" }) });
-assert(result.status === 200 && result.body.subscription?.state === "active", "subscription resume failed");
+assert(result.status === 400, "paid auto-renewal must not be restored after cancellation (SUB-FR-012)");
 
 // A paid category subscription can be upgraded to the matching PC Everything
-// term. The quote owns the daily credit and the checkout replaces the scope.
+// term. The actual Category payment is credited and its expiry is retained.
 result = await request("/api/purchase/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "european-humanities-pc-6", kind: "purchase" }) });
 assert(result.status === 200 && result.body.quote?.kind === "purchase", "category purchase quote failed");
 result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB", consents }) });

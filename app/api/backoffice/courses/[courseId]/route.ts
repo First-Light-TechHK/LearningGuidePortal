@@ -20,8 +20,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ cou
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   try {
     const { courseId } = await params;
-    const body = await request.json() as { title?: string; body?: string; durationMinutes?: number; isPublic?: boolean };
-    return NextResponse.json({ ok: true, lesson: await addLessonToCourse({ courseId, title: body.title || "", body: body.body || "", durationMinutes: body.durationMinutes || 0, isPublic: body.isPublic }) });
+    const body = await request.json() as { title?: string; body?: string; durationMinutes?: number; videoDurationSeconds?: number | null; isPublic?: boolean };
+    return NextResponse.json({ ok: true, lesson: await addLessonToCourse({ courseId, title: body.title || "", body: body.body || "", durationMinutes: body.durationMinutes || 0, videoDurationSeconds: body.videoDurationSeconds, isPublic: body.isPublic }) });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Lesson creation failed." }, { status: 400 });
   }

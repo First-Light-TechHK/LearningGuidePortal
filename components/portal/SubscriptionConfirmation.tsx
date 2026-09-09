@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ArrowRight } from "lucide-react";
+import { keepFocusInDialog } from "@/lib/dialogFocus";
 import { getMessages } from "@/lib/i18n/messages";
 
-type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number };
+type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number; sourceSubscriptionId?: string | null };
 type Plan = { id: string; name: string; termMonths: number; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
 
 type Copy = {
@@ -15,8 +16,9 @@ type Copy = {
   cancel: string; close: string; selectedPlan: string; paymentRenewal: string; confirmations: string; months: string;
 };
 
-export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeading, planSubtitle, scopeDescription }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy; planHeading: string; planSubtitle?: string; scopeDescription: string }) {
+export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeading, planSubtitle, scopeDescription, upgradeSource }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy; planHeading: string; planSubtitle?: string; scopeDescription: string; upgradeSource?: { name: string; validTo: string } }) {
   const details = getMessages(locale).confirmationDetails;
+  const upgrade = getMessages(locale).upgradeConfirmation;
   const dialog = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const [renewal, setRenewal] = useState(false);
@@ -25,7 +27,9 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const isTrial = quote.kind === "trial";
-  const dismiss = () => router.replace(`/${locale}/pricing?planId=${encodeURIComponent(plan.id)}`);
+  const isUpgrade = quote.kind === "upgrade" && Boolean(upgradeSource);
+  const money = (amount: number) => `${new Intl.NumberFormat(locale, { style: "currency", currency: quote.currency, currencyDisplay: "narrowSymbol" }).format(amount / 100)} ${quote.currency.toUpperCase()}`;
+  const dismiss = () => router.replace(isUpgrade ? `/${locale}/pricing?upgradeFrom=${encodeURIComponent(quote.sourceSubscriptionId || "")}` : `/${locale}/pricing?planId=${encodeURIComponent(plan.id)}`);
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
@@ -51,12 +55,24 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
     }
   }
 
-  return <dialog ref={dialog} className="subscription-confirmation" aria-labelledby="subscription-confirmation-title" aria-describedby="subscription-confirmation-intro" onCancel={(event) => { event.preventDefault(); if (!busy) dismiss(); }}>
+  return <dialog ref={dialog} className={`subscription-confirmation${isUpgrade ? " upgrade-confirmation" : ""}`} aria-labelledby="subscription-confirmation-title" aria-describedby="subscription-confirmation-intro" onKeyDown={keepFocusInDialog} onCancel={(event) => { event.preventDefault(); if (!busy) dismiss(); }}>
     <header className="confirmation-heading">
-      <div><h1 id="subscription-confirmation-title">{copy.title}</h1><p id="subscription-confirmation-intro">{copy.description}</p></div>
+      <div><h1 id="subscription-confirmation-title">{isUpgrade ? upgrade.title : copy.title}</h1><p id="subscription-confirmation-intro">{isUpgrade ? upgrade.intro : copy.description}</p></div>
       <button className="confirmation-close" type="button" aria-label={copy.close} title={copy.close} onClick={dismiss} disabled={busy}><X size={24} aria-hidden="true" /></button>
     </header>
-    <section className="confirmation-plan" aria-label={copy.selectedPlan}>
+    {isUpgrade && upgradeSource ? <>
+      <section className="upgrade-summary" aria-label={copy.selectedPlan}><dl>
+        <div><dt>{upgrade.source}</dt><dd>{upgradeSource.name}</dd></div>
+        <div><dt>{upgrade.target}</dt><dd>{planHeading}</dd></div>
+        <div><dt>{copy.term}</dt><dd className="upgrade-validity">{upgrade.validUntil.replace("{date}", new Date(upgradeSource.validTo).toLocaleDateString(locale))}</dd></div>
+      </dl><span className="upgrade-art" aria-hidden="true" /></section>
+      <section className="upgrade-price" aria-labelledby="upgrade-price-heading"><h2 id="upgrade-price-heading">{upgrade.price}</h2><dl>
+        <div><dt>{upgrade.targetPrice}</dt><dd>{money(quote.amountMinor + (quote.creditMinor ?? 0))}</dd></div>
+        <div><dt>{upgrade.credit}</dt><dd>{money(quote.creditMinor ?? 0)}</dd></div>
+        <div><dt>{upgrade.payToday}</dt><dd>{money(quote.amountMinor)}</dd></div>
+      </dl></section>
+      <p className="upgrade-other-categories">{upgrade.otherCategories}</p>
+    </> : <><section className="confirmation-plan" aria-label={copy.selectedPlan}>
       <p className="confirmation-label">{copy.selectedPlan}</p><h2>{planHeading}{planSubtitle ? <span>{planSubtitle}</span> : null}</h2>
       <div className="confirmation-benefits"><p>{scopeDescription}</p><p>{plan.device === "pc" ? copy.pcDevice : copy.mobileDevice}</p><p>{(plan.aiPoints ?? 0).toLocaleString(locale)} {copy.aiPoints}</p></div>
     </section>
@@ -70,7 +86,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
         <div><dt>{details.nextCharge}</dt><dd>{details.billingSchedule}</dd><p>{details.automaticRenewal}</p></div>
         <div><dt>{details.renewalPrice}</dt><dd>{details.applicablePrice}</dd><p>{details.priceNotice}</p></div>
       </dl>
-    </section>
+    </section></>}
     <fieldset className="subscription-consents"><legend>{copy.confirmations}</legend>
       <label><input type="checkbox" checked={refund} onChange={(event) => setRefund(event.target.checked)} />{copy.consentRefund}</label>
       <label><input type="checkbox" checked={renewal} onChange={(event) => setRenewal(event.target.checked)} />{copy.consentRenewal}</label>

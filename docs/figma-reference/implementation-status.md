@@ -25,16 +25,35 @@
 
 ## Acceptance still outstanding
 
-1. Use the recovered local screens to compare precise spacing, typography, assets and interaction states. Pricing and confirmation/cancellation dialogues are now available for inspection and still need implementation comparison.
-2. Confirmation now uses a native modal over Pricing, with the measured 720px width, 32px side padding and separate plan/payment/consent/action sections. Full visual acceptance is still pending: artwork and complete renewal details must be reconciled with actual billing data, and its measured vertical layout needs further comparison.
+1. Complete whole-page comparisons for course detail, lesson pages, Homepage, About Us and the remaining account sections. Selected rectangle assertions are not whole-page pixel equivalence.
+2. Confirmation's section rectangles and keyboard behaviour are tested. Final billing/legal wording still needs reconciliation with the actual provider implementation; sample billing dates are not production data.
 3. Complete the Personal Settings section layout against its full design, including a user-adjustable crop if required. Current cropping is automatic and centred.
-4. Complete subscription payment-history reconciliation: one record per successful payment with the correct service period, not just a list of current subscriptions.
-5. Verify Overview with withdrawn courses and a failing progress request; verify video-duration figures against actual lesson media metadata.
-6. Exercise operator configuration save/reload with an authorised operator. Unauthorised GET and PUT are tested; no operator credentials were assumed.
-7. Verify live Google/WeChat callbacks and Stripe test-mode checkout, invoice recovery and webhooks with the configured provider accounts. Local-mode tests are not provider acceptance tests.
+4. Finish cancellation-dialog interior measurements and the existing-category upgrade Pricing layout.
+5. Verify Overview's failed-progress-request behaviour and anonymous preview-history requirements. Signed-in preview recording, payment-history rows and measured video-duration aggregation are tested.
+6. Reconcile all revised Subscription v1.6 business rules, including duplicate purchase prevention and scheduled renewal behaviour, before production acceptance. Local UI tests do not certify the live billing lifecycle.
+7. Live Google/WeChat callbacks and Stripe test-mode checkout, invoice recovery and webhooks are **deferred by the project owner** (9 September: “skip first”). This is not a passing result and must remain a production acceptance item.
 8. Agree named minimum browser versions. Current Chromium, Firefox and Playwright WebKit are tested; this does not certify older physical Safari/iOS devices.
 
 ## Reproducible checks
+
+### Current results, 9 September 2026
+
+The following results supersede the earlier incremental notes below about unresolved WebKit prefetch errors, missing subscription history and untested operator configuration. Tests ran against DEV/local/demo; none used live identity or payment providers.
+
+| Check | Result and coverage |
+| --- | --- |
+| `verify-portal-design.mjs` | Passed Chromium, Firefox and WebKit; English/Chinese; 1440/768/390/320 widths; navigation, account menu, local registration/logout and overflow. |
+| `verify-catalogue-navigation.mjs` | Passed all three browser engines; three-column desktop geometry, category filtering, locale path/query preservation and rapid page navigation without JavaScript errors. |
+| `verify-subscription-design.mjs` | Passed all three engines in both languages; separate successful-payment rows, actual amounts and receipts, stored service periods, one current subscription action and responsive layout. Unknown historical periods remain explicitly unknown. |
+| `verify-preview-progress.mjs` | Passed signed-in preview open/complete, idempotent completion, access rejection and history preservation after local purchase. Anonymous history merging is not covered. |
+| `verify-course-duration.mjs` | Passed eight isolated cases. Video duration is aggregated from explicit media seconds, never inferred from estimated study time. |
+| `verify-operator-configuration.mjs` | Passed in an isolated temporary DEV instance: unauthorised rejection, operator edit/save/reload, public banner update, lesson duration validation and published course duration. Existing developer data was not modified. |
+| `verify-upgrade-design.mjs` | Passed all three engines in both languages: actual paid credit, selected Category upgrade, inherited expiry, idempotent local fulfilment, other subscription preservation and paid-renewal resume rejection. This does not verify a Stripe subscription change. |
+| `verify-auth-design.mjs` | Passed all three engines after the divider fix: form x=448.5/y=311, 448x464; provider row y=701, height=32; email-first/password flow, password visibility, selected-plan return, remember-me/session cookie behaviour, unsafe return-path rejection and responsive overflow. |
+
+Implemented changes include shared catalogue cards; optional `videoDurationSeconds` on lessons; signed-in public-lesson progress through `/api/study/preview`; explicit order service-period snapshots; full paid-amount upgrade credit instead of daily proration; and independent session/persistent sign-in cookies. Google, WeChat and Stripe tests remain deferred, not simulated acceptance.
+
+### Earlier incremental measurements
 
 Shared footer update: `scripts/verify-footer-design.mjs` passes against the built app for Pricing node 131:955. Confirmed heading x positions 100/560/795/1030 and y=54, copyright x=1030/y=150, divider y=216, social labels y=238, footer height=306, and background RGB(18,51,125). Responsive overflow checks pass at 768/390/320. Screenshot: `/tmp/lg-footer-measured.png`. The social labels are plain text, as the supplied layer has no verified account destinations; they must not be represented as working social links. Other pages' footer colour variants and whole-page pixel comparisons remain pending.
 
@@ -57,6 +76,16 @@ node scripts/verify-cookie-policy.mjs
 ```
 
 Stop `next dev` before building in the same checkout. Do not share `.next` between concurrent development and production builds.
+
+## Subscription dialogs, 9 September 2026
+
+Confirmation now separates the plan type and category, includes scope benefits and a payment/renewal grid, and retains server quote amounts. Unconfirmed billing dates are not copied from the Figma sample. Consent wording remains the application's existing wording; billing dates and the legal-copy differences still require review before claiming exact whole-dialog equivalence.
+
+`verify-confirmation-design.mjs` passes on Chromium, Firefox and WebKit in English and Chinese. At 1440x1162 the dialog is x=360/y=72, 720x894. Relative section rectangles are: plan 32/104/656/237; payment 32/359/656/228; confirmations 32/605/656/178; actions 32/801/656/46. The script asserts these rectangles, actual quote amount, three required consents, keyboard focus containment, Escape return to the selected plan and reachable actions without horizontal overflow at 768/390/320. Keyboard checks initially failed and led to an explicit Tab/Shift-Tab cycle shared by both native dialogs; results above are after that correction.
+
+Cancellation uses a native dialog with body scroll locking, Escape dismissal, focus restoration, and in-dialog errors. No cancellation reason is preselected. Skip omits both reason code and any previously entered Other text. `verify-cancellation-design.mjs` passes for English/Chinese local orders, including Escape without cancellation, keyboard navigation, mobile overflow and the resulting cancel_at_period_end state. Cancellation styling is based on node 131:1165 but has not yet passed an exact interior-position comparison. Screenshots: `/tmp/lg-cancellation-en-GB.png` and `/tmp/lg-confirmation-chromium-en-GB.png`.
+
+Final production build and local payment-return suite passed. These are DEV/demo checks, not live Stripe verification. Whole subscription-page alignment and the separate rapid-navigation WebKit prefetch errors remain outstanding.
 
 ## Personal Settings verification, 9 September 2026
 

@@ -41,8 +41,9 @@ for(const [name,engine] of Object.entries({chromium,firefox,webkit})) {
       for(let i=0;i<2;i++)await consents.nth(i).check();
       assert.ok(await submit.isDisabled()); await consents.nth(2).check(); assert.ok(await submit.isEnabled());
       for(let i=0;i<8;i++) {
+        const before=await page.evaluate(()=>({tag:document.activeElement?.tagName,text:document.activeElement?.textContent?.slice(0,60)}));
         await page.keyboard.press("Tab");
-        assert.ok(await dialog.evaluate(el=>el.contains(document.activeElement)),"Keyboard focus must remain in the modal");
+        assert.ok(await dialog.evaluate(el=>el.contains(document.activeElement)),`Keyboard focus must remain in the modal: ${name} step ${i}, before ${JSON.stringify(before)}`);
       }
       await page.screenshot({path:`/tmp/lg-confirmation-${name}-${locale}.png`,fullPage:true});
       for(const width of [768,390,320]) {

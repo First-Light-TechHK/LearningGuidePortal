@@ -20,5 +20,7 @@ export default async function SubscriptionConfirmationPage({ params, searchParam
   const planHeading = scope === "everything" ? copy.pricingDesign.everything : scope === "category" ? copy.pricingDesign.category : result.plan.name;
   const planSubtitle = scope === "category" ? category?.labels[locale] || result.plan.category || result.plan.scopeId || undefined : undefined;
   const scopeDescription = scope === "everything" ? copy.pricingDesign.allCourses : scope === "category" ? copy.pricingDesign.categoryCourses : copy.confirmationDetails.courseAccess;
-  return <><PricingPage params={Promise.resolve({ locale })} searchParams={Promise.resolve({ planId: result.plan.id })} /><SubscriptionConfirmation planHeading={planHeading} planSubtitle={planSubtitle} scopeDescription={scopeDescription} locale={locale} quote={result.quote} plan={result.plan} copy={copy.portal.subscriptionConfirmation} /></>;
+  const sourceCategory = content.categories.find(item => item.id === (result.sourcePlan?.category || result.sourcePlan?.scopeId));
+  const upgradeSource = result.sourceSubscription && result.sourcePlan ? { name: `${copy.pricingDesign.category} · ${sourceCategory?.labels[locale] || result.sourcePlan.name}`, validTo: result.sourceSubscription.validTo } : undefined;
+  return <><PricingPage params={Promise.resolve({ locale })} searchParams={Promise.resolve({ planId: result.plan.id })} /><SubscriptionConfirmation upgradeSource={upgradeSource} planHeading={planHeading} planSubtitle={planSubtitle} scopeDescription={scopeDescription} locale={locale} quote={result.quote} plan={result.plan} copy={copy.portal.subscriptionConfirmation} /></>;
 }

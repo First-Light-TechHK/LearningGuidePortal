@@ -36,6 +36,7 @@ export type ProductLesson = {
   title: string;
   body: string;
   durationMinutes: number;
+  videoDurationSeconds?: number | null;
   isPublic: boolean;
 };
 
@@ -83,6 +84,8 @@ export type ProductOrder = {
   userId: string;
   planId: string;
   quoteId: string;
+  servicePeriodStart?: string | null;
+  servicePeriodEnd?: string | null;
   amountMinor: number;
   currency: "usd";
   status: "paid" | "pending" | "failed" | "canceled" | "refunded";
@@ -871,7 +874,7 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
 
 function upgradeCalculation(data: ProductData, userId: string, subscriptionId: string) {
   const source = data.subscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
-  if (!source || source.source !== "purchase" || source.scope !== "category" || source.device !== "pc" || source.state !== "active") {
+  if (!source || source.source !== "purchase" || source.scope !== "category" || source.device !== "pc" || source.state !== "active" || new Date(source.validTo) <= new Date()) {
     throw new Error("Only an active PC category subscription can be upgraded.");
   }
   const sourcePlan = data.plans.find((item) => item.id === source.planId);
@@ -881,13 +884,14 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
   if (data.subscriptions.some((item) => item.userId === userId && item.scope === "everything" && item.device === "pc" && ["active", "cancel_at_period_end", "grace"].includes(item.state))) {
     throw new Error("You already have PC Everything access.");
   }
-  const startedAt = new Date(source.validFrom).getTime();
-  const endsAt = new Date(source.validTo).getTime();
-  const nowTime = Date.now();
-  const totalDays = Math.max(1, Math.ceil((endsAt - startedAt) / 86_400_000));
-  const remainingDays = Math.max(0, Math.ceil((endsAt - nowTime) / 86_400_000));
-  const creditMinor = Math.min(sourcePlan.amountMinor, Math.floor(sourcePlan.amountMinor * remainingDays / totalDays));
-  return { source, sourcePlan, target, creditMinor, amountMinor: Math.max(0, target.amountMinor - creditMinor) };
+  const paidOrder = data.orders.filter(item => item.userId === userId && item.planId === source.planId && item.status === "paid" && item.kind !== "trial_activation"
+    && (source.stripeSubscriptionId ? item.stripeSubscriptionId === source.stripeSubscriptionId : !item.stripeSubscriptionId))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (!paidOrder) throw new Error("The source subscription payment could not be verified.");
+  const creditMinor = paidOrder.amountMinor;
+  const amountMinor = target.amountMinor - creditMinor;
+  if (amountMinor <= 0) throw new Error("The Everything price must be greater than the amount paid for the source Category.");
+  return { source, sourcePlan, target, creditMinor, amountMinor };
 }
 
 export async function createUpgradeQuote(userId: string, subscriptionId: string) {
@@ -916,7 +920,9 @@ export async function getQuoteForUser(userId: string, quoteId: string) {
   const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
   if (!quote || new Date(quote.expiresAt) <= new Date()) return null;
   const plan = data.plans.find((item) => item.id === quote.planId);
-  return plan ? { quote, plan } : null;
+  const source = quote.kind === "upgrade" ? data.subscriptions.find(item => item.id === quote.sourceSubscriptionId && item.userId === userId) : undefined;
+  const sourcePlan = source ? data.plans.find(item => item.id === source.planId) : undefined;
+  return plan ? { quote, plan, sourceSubscription: source, sourcePlan } : null;
 }
 
 export async function completeDemoCheckout(userId: string, quoteId: string) {
@@ -950,6 +956,8 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     order.failureReason = null;
     const validFrom = now();
     const subscription = subscriptionForPlan(userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: null });
+    order.servicePeriodStart = subscription.validFrom;
+    order.servicePeriodEnd = subscription.validTo;
     const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
     data.subscriptions.unshift(subscription);
     data.subscriptions.forEach((item) => { if (item.userId === userId && item.source === "trial" && item.state === "active" && item.planId === plan.id) item.state = "expired"; });
@@ -965,29 +973,28 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
 function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, targetPlan: ProductPlan) {
   const sourceId = order.sourceSubscriptionId;
   if (!sourceId) throw new Error("The source subscription is missing.");
-  const calculation = upgradeCalculation(data, userId, sourceId);
-  if (calculation.target.id !== targetPlan.id || calculation.amountMinor !== order.amountMinor) throw new Error("The upgrade quote is no longer valid. Please calculate the price again.");
   if (order.status === "paid") {
     const existing = data.subscriptions.find((item) => item.userId === userId && item.planId === targetPlan.id && item.source === "purchase" && item.state !== "expired");
     const entitlement = data.entitlements.find((item) => item.userId === userId && item.source === "purchase" && item.state === "active" && item.scope === "everything");
     if (existing && entitlement) return { order, subscription: existing, entitlement };
   }
+  const calculation = upgradeCalculation(data, userId, sourceId);
+  if (calculation.target.id !== targetPlan.id || calculation.amountMinor !== order.amountMinor) throw new Error("The upgrade quote is no longer valid. Please calculate the price again.");
   if (!(["pending", "paid"] as string[]).includes(order.status)) throw new Error("This upgrade payment attempt cannot be completed.");
   const source = data.subscriptions.find((item) => item.id === sourceId && item.userId === userId);
   if (!source) throw new Error("The source subscription could not be found.");
   source.state = "expired";
-  source.cancelAtPeriodEnd = false;
+  source.cancelAtPeriodEnd = true;
   data.entitlements.forEach((item) => {
     if (item.userId === userId && item.state === "active" && entitlementMatchesSubscription(item, source)) item.state = "expired";
   });
   order.status = "paid";
   order.failureReason = null;
   const validFrom = now();
-  const subscription = subscriptionForPlan(userId, targetPlan, "purchase", validFrom, addMonths(validFrom, targetPlan.termMonths), { stripeSubscriptionId: order.stripeSubscriptionId || null });
+  const subscription = subscriptionForPlan(userId, targetPlan, "purchase", validFrom, source.validTo, { stripeSubscriptionId: order.stripeSubscriptionId || null });
+  order.servicePeriodStart = subscription.validFrom;
+  order.servicePeriodEnd = subscription.validTo;
   const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo);
-  data.entitlements.forEach((item) => {
-    if (item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, targetPlan)) item.state = "expired";
-  });
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Subscription upgraded", body: "Your PC Everything access is now available.", readAt: null, createdAt: now() });
@@ -1192,7 +1199,7 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     if (trialEntitlement) trialEntitlement.state = "expired";
     const validFrom = now();
     const subscription = subscriptionForPlan(trial.userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: trial.stripeCustomerId || null, graceEndsAt: null });
-    const order: ProductOrder = { id: id("order"), userId: trial.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
+    const order: ProductOrder = { id: id("order"), userId: trial.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: subscription.validFrom, servicePeriodEnd: subscription.validTo, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
     const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo);
     data.subscriptions.unshift(subscription);
     data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
@@ -1222,12 +1229,14 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     const initialOrder = data.orders.find((order) => order.stripeSubscriptionId === input.subscriptionId && order.kind === "purchase" && !order.stripeInvoiceId);
     if (initialOrder) {
       initialOrder.stripeInvoiceId = input.invoiceId;
+      initialOrder.servicePeriodStart = start;
+      initialOrder.servicePeriodEnd = end;
       initialOrder.stripePaymentIntentId = input.paymentIntentId || initialOrder.stripePaymentIntentId || null;
       initialOrder.lastStripeStatus = "paid";
       initialOrder.lastSyncedAt = now();
       return initialOrder;
     }
-    const order: ProductOrder = { id: id("order"), userId: subscription.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
+    const order: ProductOrder = { id: id("order"), userId: subscription.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: start, servicePeriodEnd: end, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
     data.orders.unshift(order);
     data.notifications.unshift({ id: id("notification"), userId: subscription.userId, title: "Subscription renewed", body: "Your subscription payment was successful and course access continues.", readAt: null, createdAt: now() });
     return order;
@@ -1288,6 +1297,8 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   order.stripePaymentIntentId = stripePaymentIntentId || order.stripePaymentIntentId || null;
   const validFrom = now();
   const subscription = subscriptionForPlan(userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: stripeSubscriptionId || null, stripeCustomerId: stripeCustomerId || null });
+  order.servicePeriodStart = subscription.validFrom;
+  order.servicePeriodEnd = subscription.validTo;
   const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
   data.subscriptions.unshift(subscription);
   const trial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && item.state === "active");
@@ -1354,6 +1365,7 @@ export async function resumeSubscription(userId: string, subscriptionId: string)
   return editData((data) => {
     const subscription = data.subscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
     if (!subscription) throw new Error("Subscription not found.");
+    if (subscription.source === "purchase") throw new Error("Auto-renewal cannot be restored. You can purchase a new plan after the current period ends.");
     if (!["trial_canceled", "cancel_at_period_end"].includes(subscription.state) || new Date(subscription.validTo) <= new Date()) throw new Error("This subscription cannot be resumed.");
     subscription.state = "active";
     subscription.cancelAtPeriodEnd = false;
@@ -1374,8 +1386,7 @@ export async function getLearningOverview(userId: string) {
       if (["active", "cancel_at_period_end", "grace"].includes(subscription.state) && new Date(subscription.validTo) <= currentTime) subscription.state = "expired";
     });
     const records = data.studyRecords.filter((record) => record.userId === userId);
-    // My Learning is a study history, not an access list. Access appears here only
-    // after the learner opens the full course and a Study Record exists.
+    // Preview and paid study share one record; purchasing access must not reset progress.
     const courseIds = [...new Set(records.map((record) => record.courseId))];
     const courses = courseIds.map((courseId) => {
       const record = records.find((item) => item.courseId === courseId);
@@ -1383,6 +1394,7 @@ export async function getLearningOverview(userId: string) {
       const entitlement = activeEntitlement(data, userId, courseId);
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
       const completedLessonIds = data.studyEvents.filter((event) => event.userId === userId && event.courseId === courseId && event.event === "complete").map((event) => event.lessonId);
+      const previewLessons = lessons.filter((lesson) => lesson.isPublic);
       return {
         id: record?.id || `access_${userId}_${courseId}`,
         userId,
@@ -1400,6 +1412,8 @@ export async function getLearningOverview(userId: string) {
         progress: record?.progress || 0,
         completedAt: record?.completedAt || null,
         completedLessonIds: [...new Set(completedLessonIds)],
+        nextPreviewLessonId: previewLessons.find((lesson) => !completedLessonIds.includes(lesson.id))?.id || null,
+        previewAvailable: previewLessons.length > 0,
         courseTitle: course?.title || courseId,
         entitlement,
       };
@@ -1518,15 +1532,16 @@ export async function applyStripeOrderState(input: { orderId: string; operatorId
   });
 }
 
-export async function recordStudyEvent(input: { userId: string; courseId: string; lessonId: string; event: ProductStudyEvent["event"]; seconds: number; clientEventId: string }) {
+export async function recordStudyEvent(input: { userId: string; courseId: string; lessonId: string; event: ProductStudyEvent["event"]; seconds: number; clientEventId: string }, access: "paid" | "preview" = "paid") {
   return editData((data) => {
     if (!input.clientEventId.trim()) throw new Error("A client event id is required.");
     if (!["open", "video_progress", "text_progress", "complete"].includes(input.event)) throw new Error("Invalid study event.");
-    if (!activeEntitlement(data, input.userId, input.courseId)) throw new Error("Course access is required.");
+    if (access === "paid" && !activeEntitlement(data, input.userId, input.courseId)) throw new Error("Course access is required.");
     const course = data.courses.find((item) => item.id === input.courseId);
     if (!course || course.status !== "published") throw new Error("Course is not available.");
     const lesson = course?.sections.flatMap((section) => section.lessons).find((item) => item.id === input.lessonId);
     if (!lesson) throw new Error("Lesson not found.");
+    if (access === "preview" && !lesson.isPublic) throw new Error("This lesson is outside the preview range.");
     const existingClientEvent = data.studyEvents.some((event) => event.userId === input.userId && event.clientEventId === input.clientEventId);
     if (existingClientEvent) {
       return data.studyRecords.find((record) => record.userId === input.userId && record.courseId === input.courseId) || null;
@@ -1597,7 +1612,7 @@ export async function createCourseForOperator(input: { title: string; descriptio
   });
 }
 
-export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; isPublic?: boolean }) {
+export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }) {
   return editData((data) => {
     const course = data.courses.find((item) => item.id === input.courseId);
     if (!course) throw new Error("Course not found.");
@@ -1607,11 +1622,12 @@ export async function addLessonToCourse(input: { courseId: string; title: string
     if (!title) throw new Error("Lesson title is required.");
     if (!body) throw new Error("Lesson content is required.");
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 600) throw new Error("Lesson duration must be between 1 and 600 minutes.");
+    if (input.videoDurationSeconds != null && (!Number.isInteger(input.videoDurationSeconds) || input.videoDurationSeconds < 0 || input.videoDurationSeconds > 36000)) throw new Error("Video duration must be a whole number between 0 and 36000 seconds.");
     if (course.sections.some((section) => section.lessons.some((lesson) => lesson.title.toLowerCase() === title.toLowerCase()))) throw new Error("A lesson with this title already exists.");
     const section = course.sections[0] || { id: id("section"), title: "Course content", lessons: [] };
     if (!course.sections.length) course.sections.push(section);
     if (input.isPublic) course.sections.forEach((item) => item.lessons.forEach((lesson) => { lesson.isPublic = false; }));
-    const lesson: ProductLesson = { id: `${course.id}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("lesson")}`, title, body, durationMinutes, isPublic: Boolean(input.isPublic) };
+    const lesson: ProductLesson = { id: `${course.id}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("lesson")}`, title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
     section.lessons.push(lesson);
     course.updatedAt = now();
     return lesson;
