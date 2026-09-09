@@ -1,5 +1,6 @@
 import { secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
+import { redirectToOAuthOrigin } from "@/services/oauthOrigin";
 import { NextResponse } from "next/server";
 import { localeFrom } from "@/lib/i18n/config";
 import { createSession, getOrCreateSocialUser } from "@/services/productStore";
@@ -8,6 +9,8 @@ import { publicAppOrigin, safeReturnTo } from "@/services/runtimeConfig";
 import { googleConfigured, localSocialLoginEnabled, localSocialProfile, makeOAuthState, OAUTH_STATE_COOKIE } from "@/services/oauthService";
 
 export async function GET(request: Request) {
+  const originRedirect = redirectToOAuthOrigin(request);
+  if (originRedirect) return originRedirect;
   const requestId = randomUUID();
   const url = new URL(request.url);
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
@@ -31,6 +34,7 @@ export async function GET(request: Request) {
     const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     googleUrl.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID as string, redirect_uri: callback, response_type: "code", scope: "openid email profile", state: state.state, nonce: state.nonce, code_challenge: state.codeChallenge, code_challenge_method: "S256", access_type: "online", prompt: "select_account" }).toString();
     const response = NextResponse.redirect(googleUrl);
+    response.headers.set("Cache-Control", "no-store");
     response.cookies.set(OAUTH_STATE_COOKIE, state.cookieValue, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: 600 });
     return response;
   } catch (error) {

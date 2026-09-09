@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: "./tests/integration",
   workers: 1,
   projects: [
+    { name: "oauth-origin", testMatch: "oauth-origin.spec.ts" },
     { name: "email-google", testMatch: "email-verification.spec.ts" },
     { name: "wechat", testMatch: "wechat-login.spec.ts" },
   ],
