@@ -1,5 +1,5 @@
 # 唯一 App Runner 发布口：workflow_dispatch only。禁止 push / pull_request。
-# ci.yml 只测、永不 start-deployment（避免与本文件双打）。
+# Verify (ci.yml) 只测、永不 start-deployment（避免与本文件双打）。
 # 竞态修复：GitHub concurrency 排队等（不取消前一个）+ 等到 Status=RUNNING 再 start-deployment；
 # 若仍撞 InvalidRequestException / not-RUNNING，继续等并重试，不在第一次碰撞失败。
 
