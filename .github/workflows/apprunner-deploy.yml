@@ -1,5 +1,5 @@
-# 正式部署走 ci.yml（test 通过后才 start-deployment）。
-# 本文件只留 workflow_dispatch 手动救急，避免双部署（ARCH-02）。
+# 手动救急部署。禁止 push / pull_request 触发（避免再走云提交）。
+# 日常门禁只在 ci.yml（tests only）。本 workflow 必须保持 workflow_dispatch only。
 
 name: Deploy to App Runner
 
