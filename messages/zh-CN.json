@@ -344,6 +344,26 @@
       }
     ]
   },
+  "studyGroupsPage": {
+    "title": "学习小组",
+    "description": "围绕同一门课程或问题，与其他学习者一起学习。",
+    "statusTitle": "学习小组功能正在准备中",
+    "statusDescription": "当前版本已经提供学习小组入口。创建小组、邀请成员和共享讨论将在小组规则及课程权限确定后加入。",
+    "options": [
+      {
+        "title": "创建学习小组",
+        "description": "选择课程主题，邀请其他学习者，并约定小组的学习方式。"
+      },
+      {
+        "title": "加入学习小组",
+        "description": "后续可以通过邀请或小组目录加入学习小组。"
+      },
+      {
+        "title": "一起学习",
+        "description": "讨论课程内容、比较理解，并在需要个人帮助时回到 AI Tutor。"
+      }
+    ]
+  },
   "legal": {
     "privacyTitle": "隐私政策",
     "privacyIntro": "Learning Guide 使用账号、课程进度和支付状态信息来提供服务。",

@@ -1,4 +1,5 @@
 import { secureAuthCookie } from "@/services/runtimeConfig";
+import { redirectToOAuthOrigin } from "@/services/oauthOrigin";
 import { NextResponse } from "next/server";
 import { localeFrom } from "@/lib/i18n/config";
 import { createSession, getOrCreateSocialUser } from "@/services/productStore";
@@ -7,6 +8,8 @@ import { publicAppOrigin, safeReturnTo } from "@/services/runtimeConfig";
 import { localSocialLoginEnabled, localSocialProfile, makeOAuthState, OAUTH_STATE_COOKIE, wechatConfigured } from "@/services/oauthService";
 
 export async function GET(request: Request) {
+  const originRedirect = redirectToOAuthOrigin(request);
+  if (originRedirect) return originRedirect;
   const url = new URL(request.url);
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/account/my-learning`);

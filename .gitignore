@@ -1,4 +1,6 @@
 .next
+.next-ui-check
+.next-stripe-sandbox
 test-results
 node_modules
 data

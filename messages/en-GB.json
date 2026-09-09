@@ -344,6 +344,26 @@
       }
     ]
   },
+  "studyGroupsPage": {
+    "title": "Study Groups",
+    "description": "Learn with other people around a shared course or question.",
+    "statusTitle": "Study Groups are being prepared",
+    "statusDescription": "The current release includes the Study Groups entry point. Group creation, invitations and shared discussion will be added once the group rules and course permissions are agreed.",
+    "options": [
+      {
+        "title": "Create a study group",
+        "description": "Set a course focus, invite other learners and agree how the group will study together."
+      },
+      {
+        "title": "Join a study group",
+        "description": "Join through an invitation or a group directory when those controls are available."
+      },
+      {
+        "title": "Study together",
+        "description": "Discuss course ideas, compare understanding and return to the AI Tutor when you need individual help."
+      }
+    ]
+  },
   "legal": {
     "privacyTitle": "Privacy Policy",
     "privacyIntro": "Learning Guide uses account, course progress and payment-status information to provide the service.",
