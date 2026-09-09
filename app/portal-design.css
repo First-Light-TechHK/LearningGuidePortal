@@ -75,7 +75,7 @@ dialog.subscription-confirmation.upgrade-confirmation .subscription-consents lab
 .portal-course-link { display:inline-flex; align-items:center; gap:5px; color:#1660d8; text-decoration:none; font-size:13px; line-height:18px; flex-shrink:0; }
 @media(max-width:720px) { .portal-section.portal-section-courses,.portal-section.portal-catalog-courses { width:calc(100% - 40px); } }
 .public-lesson-actions { display:flex; flex-wrap:wrap; gap:20px; align-items:center; margin-top:24px; }
-.portal-account-page.subscription-design-page > .portal-section { padding:50px 150px 80px 64px; min-height:1150px; }
+.portal-account-page.subscription-design-page > .portal-section { padding-top:50px; min-height:1150px; }
 .subscription-design-page .portal-section > h1 { margin:0; line-height:40.3px; }
 .subscription-page-intro { margin:1.7px 0 0; font-size:16px; line-height:20.8px; color:#64748b; }
 .subscription-design-page .subscription-section { margin-top:53.2px; gap:0; }
@@ -116,7 +116,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .cancellation-dialog .subscription-modal-actions button { min-height:44px; }
 @media(max-width:540px) { dialog.cancellation-dialog { padding:24px; min-height:0; } .cancellation-dialog .subscription-modal-close { top:24px; right:24px; } }
 .settings-design-form .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-.portal-account-page.settings-design-page > .account-settings-page { padding:50px 150px 80px 64px; }
+.portal-account-page.settings-design-page > .account-settings-page { padding-top:50px; }
 .settings-design-page .account-settings-page > h1 { margin:0; line-height:40.3px; }
 .settings-page-intro { margin:1.7px 0 0; color:#64748b; font-size:16px; line-height:20.8px; }
 .portal-account-page .settings-form.settings-design-form { display:grid; gap:20px; margin-top:33.2px; padding:0; border:0; background:transparent; }
@@ -150,7 +150,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 @media(max-width:1320px) { .portal-account-page.settings-design-page > .account-settings-page { padding-right:40px; } .settings-profile-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } .settings-design-form .avatar-settings { flex-wrap:wrap; } }
 @media(max-width:900px) { .settings-profile-grid,.settings-details-grid { grid-template-columns:minmax(0,1fr); } .settings-profile-grid { margin-top:20px; } .settings-design-form .avatar-settings { padding-top:0; } .settings-profile-fields { gap:20px; } }
 @media(max-width:720px) { .portal-account-page.settings-design-page > .account-settings-page { padding:28px 20px 48px; } .settings-design-section,.settings-design-form .settings-password { padding:19px; } .settings-design-form .avatar-settings { gap:16px; } .settings-profile-section,.settings-details-section { min-height:0; } }
-.portal-account-page.overview-design-page > .account-dashboard { padding-top:50px; padding-right:150px; min-height:1150px; }
+.portal-account-page.overview-design-page > .account-dashboard { padding-top:50px; min-height:1150px; }
 .overview-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; min-height:110px; }
 .overview-heading h1 { margin:0; line-height:40.3px; }
 .overview-heading p { margin:1.7px 0 0; font-size:16px; line-height:20.8px; color:#64748b; }
@@ -256,16 +256,16 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 }
 .portal-nav a { min-height:67px; }
 .portal-header-cta { min-height:36px; background:#155dfc; font-weight:500; }
-.portal-account-page { display:grid; grid-template-columns:280px minmax(0,1fr); grid-template-rows:auto 1fr auto; background:#f8fafd; }
+.portal-account-page { display:grid; grid-template-columns:minmax(40px,1fr) 280px minmax(0,min(1160px,calc(100% - 80px - 280px))) minmax(40px,1fr); grid-template-rows:auto 1fr auto; background:#f8fafd; }
 .portal-account-page > .portal-header,.portal-account-page > .portal-footer { grid-column:1 / -1; }
-.portal-account-page > .account-nav { grid-column:1; grid-row:2; width:280px; max-width:none; margin:0; padding:40px 28px; background:white; border:0; border-right:1px solid #dbe3f0; display:flex; flex-direction:column; flex-wrap:nowrap; gap:8px; align-items:stretch; }
+.portal-account-page > .account-nav { grid-column:2; grid-row:2; width:280px; max-width:none; margin:0; padding:40px 28px; background:white; border:0; border-right:1px solid #dbe3f0; display:flex; flex-direction:column; flex-wrap:nowrap; gap:8px; align-items:stretch; }
 .account-nav-title { margin:0 8px 6px; color:#94a3b8; font-size:12px; font-weight:600; }
 .portal-account-page > .account-nav > a { display:flex; min-height:44px; padding:12px 14px; font-size:15px; font-weight:500; line-height:20px; border:0; border-radius:8px; color:#475569; text-decoration:none; }
 .portal-account-page > .account-nav > a[aria-current="page"] { color:#1660d8; background:#e8f1ff; font-weight:600; }
 .account-nav-support { margin-top:auto; padding:20px 16px; background:#e8f1ff; border-radius:8px; }
 .account-nav-support strong { font-size:16px; color:#15233a; }
 .account-nav-support p,.account-nav-support a { font-size:13px; line-height:20px; }
-.portal-account-page > .portal-section,.portal-account-page > .account-dashboard { grid-column:2; grid-row:2; width:auto; max-width:none; margin:0; padding:44px 64px 80px; min-height:900px; display:block; }
+.portal-account-page > .portal-section,.portal-account-page > .account-dashboard { grid-column:3; grid-row:2; width:auto; max-width:none; margin:0; padding:44px 64px 80px; min-height:900px; display:block; }
 .portal-account-page h1 { font-size:31px; font-weight:600; color:#15233a; line-height:1.3; }
 .portal-account-page .account-panel { padding:0; border:0; box-shadow:none; background:transparent; }
 .portal-account-page .account-learning-list { gap:22px; }
@@ -273,7 +273,7 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 .portal-account-page .account-learning-card > .course-thumbnail { width:172px; height:130px; border-radius:8px; }
 .portal-account-page .account-learning-card-content { min-width:0; padding:0; }
 .portal-account-page .account-learning-card h3 { font-size:21px; font-weight:600; }
-.portal-account-page .settings-form { width:100%; max-width:946px; border:1px solid #dbe3f0; box-shadow:none; padding:24px; }
+.portal-account-page .settings-form { width:100%; max-width:none; border:1px solid #dbe3f0; box-shadow:none; padding:24px; }
 .portal-page .portal-footer { background:#14387d; padding:54px 40px 50px; box-sizing:border-box; }
 .pricing-design-page .portal-footer { background:#12337d; }
 .portal-footer-grid { width:100%; max-width:1240px; margin:0 auto; grid-template-columns:420px 195px 195px minmax(0,1fr); gap:40px; }
@@ -289,7 +289,7 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 @media(max-width:1320px) { .portal-footer-grid { grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)); gap:24px; } }
 .portal-explore-more { display:flex; justify-content:center; margin-top:36px; }
 @media(max-width:1100px) {
- .portal-account-page { grid-template-columns:230px minmax(0,1fr); }
+ .portal-account-page { grid-template-columns:minmax(40px,1fr) 230px minmax(0,min(1210px,calc(100% - 80px - 230px))) minmax(40px,1fr); }
  .portal-account-page > .account-nav { width:230px; padding:32px 16px; }
  .portal-account-page > .portal-section,.portal-account-page > .account-dashboard { padding:36px 28px 60px; }
  .portal-account-page .account-learning-card { gap:16px; grid-template-columns:130px minmax(0,1fr); padding:18px; }

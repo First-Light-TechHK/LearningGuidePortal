@@ -6,6 +6,7 @@ import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
+import type { OverviewCta } from "@/lib/myLearningOverview";
 import { currentProductUser } from "@/services/productAuth";
 import { getLearningOverview, getPortalContent } from "@/services/productStore";
 
@@ -32,6 +33,40 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
   const access = accessLabels.length
     ? design.currentAccess.replace("{scope}", hasEverything ? messages.pricingDesign.everything : [...new Set(accessLabels)].join(" · "))
     : design.noAccess;
+
+  function ctaHref(item: (typeof overview.courses)[number], cta: OverviewCta) {
+    if (cta === "continue_learning" || cta === "review_course") return `/${locale}/account/learn/${item.courseId}`;
+    if (cta === "continue_preview") {
+      const lessonId = item.nextPreviewLessonId || item.currentLessonId;
+      return `/${locale}/portal/courses/${item.courseId}/public-lesson${lessonId ? `?lessonId=${encodeURIComponent(lessonId)}` : ""}`;
+    }
+    if (cta === "view_course") return `/${locale}/portal/courses/${item.courseId}`;
+    if (cta === "view_plans") return `/${locale}/pricing?courseId=${encodeURIComponent(item.courseId)}`;
+    if (cta === "browse_courses") return `/${locale}/portal/courses`;
+    return null;
+  }
+
+  function ctaLabel(cta: OverviewCta) {
+    if (cta === "continue_learning") return design.continue;
+    if (cta === "review_course") return design.review;
+    if (cta === "continue_preview") return design.continuePreview;
+    if (cta === "view_plans") return copy.viewPlans;
+    if (cta === "view_course") return messages.portal.viewCourse;
+    if (cta === "browse_courses") return messages.portal.viewCourses;
+    return null;
+  }
+
+  function stateLabel(item: (typeof overview.courses)[number]) {
+    if (item.cardState === "previewing") return design.previewAvailable;
+    if (item.cardState === "preview_limit") return design.previewLimit;
+    if (item.cardState === "completed") return copy.completed;
+    if (item.cardState === "progress_failed") return design.progressUnavailable;
+    if (item.cardState === "no_access_history") return design.outsideAccess;
+    return copy.inProgress;
+  }
+
+  const emptyCopy = overview.emptyState === "no_preview" ? copy.noPreviewCourses : copy.noCourses;
+
   return (
     <main className="portal-page portal-account-page overview-design-page">
       <PortalHeader locale={locale} active="my-learning" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
@@ -41,27 +76,25 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
         <section aria-labelledby="continue-heading">
           <div className="overview-section-heading"><h2 id="continue-heading">{design.yourLearning}</h2><p>{design.courseStates}</p></div>
           {overview.courses.length ? <div className="account-learning-list">{overview.courses.map((item) => {
-            const withdrawn = item.courseStatus !== "published";
-            const canStudy = Boolean(item.entitlement) && !withdrawn;
-            const canPreview = !canStudy && !withdrawn && Boolean(item.nextPreviewLessonId);
-            const previewLimit = !canStudy && item.previewAvailable && !item.nextPreviewLessonId;
-            const completed = Boolean(item.completedAt) || item.progress === 100;
-            const progress = Math.max(0, Math.min(100, item.progress));
-            const current = completed ? copy.completed : item.currentLessonTitle ? `${copy.currentLesson}: ${item.currentLessonTitle}` : copy.inProgress;
+            const label = ctaLabel(item.cta);
+            const href = ctaHref(item, item.cta);
+            const primary = item.cta === "continue_learning" || item.cta === "continue_preview";
             return <article className="account-learning-card overview-course" key={item.id}>
               <CourseThumbnail slug={item.courseId} title={item.courseTitle} />
               <div className="account-learning-card-content">
                 <h3>{item.courseTitle}</h3>
-                {withdrawn ? <p className="course-withdrawn-label">{copy.courseWithdrawn}</p> : <>
-                  <p className="overview-course-meta">{categoryLabel(item.courseCategory)} · {item.lessonCount} {copy.lessons.toLowerCase()} · {canPreview ? design.previewAvailable : previewLimit ? design.previewLimit : completed ? copy.completed : copy.inProgress}</p>
-                  <p className="overview-course-description" title={canStudy ? item.courseDescription : canPreview ? design.previewDescription : design.outsideAccess}>{canStudy ? item.courseDescription : canPreview ? design.previewDescription : previewLimit ? design.previewLimit : design.outsideAccess}</p>
-                  <div className="overview-course-progress" role="progressbar" aria-label={`${item.courseTitle}: ${copy.progress}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div>
-                  <div className="overview-progress-labels"><span>{completed ? copy.completed : `${progress}%`}</span><span>{current}</span></div>
+                {item.cardState === "withdrawn" ? <p className="course-withdrawn-label">{copy.courseWithdrawn}</p> : <>
+                  <p className="overview-course-meta">{categoryLabel(item.courseCategory)} · {item.lessonCount} {copy.lessons.toLowerCase()} · {stateLabel(item)}</p>
+                  <p className="overview-course-description" title={item.cardState === "learning" || item.cardState === "completed" ? item.courseDescription : item.cardState === "previewing" ? design.previewDescription : item.cardState === "progress_failed" ? design.progressUnavailable : design.outsideAccess}>{item.cardState === "learning" || item.cardState === "completed" ? item.courseDescription : item.cardState === "previewing" ? design.previewDescription : item.cardState === "preview_limit" ? design.previewLimit : item.cardState === "progress_failed" ? design.progressUnavailable : design.outsideAccess}</p>
+                  {item.progressFailed || item.progress == null ? null : <>
+                    <div className="overview-course-progress" role="progressbar" aria-label={`${item.courseTitle}: ${copy.progress}`} aria-valuenow={item.progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${item.progress}%` }} /></div>
+                    <div className="overview-progress-labels"><span>{item.cardState === "completed" ? copy.completed : `${item.progress}%`}</span><span>{item.cardState === "completed" ? copy.completed : item.currentLessonTitle ? `${copy.currentLesson}: ${item.currentLessonTitle}` : copy.inProgress}</span></div>
+                  </>}
                 </>}
               </div>
-              {!withdrawn ? <Link className={`portal-button ${(canStudy && !completed) || canPreview ? "portal-button-primary" : "portal-button-secondary"} account-learning-action`} href={canStudy ? `/${locale}/account/learn/${item.courseId}` : canPreview ? `/${locale}/portal/courses/${item.courseId}/public-lesson?lessonId=${encodeURIComponent(item.nextPreviewLessonId!)}` : `/${locale}/pricing?courseId=${encodeURIComponent(item.courseId)}`}>{canStudy ? completed ? design.review : design.continue : canPreview ? design.continuePreview : copy.viewPlans}</Link> : null}
+              {href && label ? <Link className={`portal-button ${primary ? "portal-button-primary" : "portal-button-secondary"} account-learning-action`} href={href}>{label}</Link> : null}
             </article>;
-          })}</div> : <div className="account-empty-state"><p>{copy.noCourses}</p><Link prefetch={false} className="portal-button portal-button-primary" href={`/${locale}/portal/courses`}>{messages.portal.viewCourses}</Link></div>}
+          })}</div> : <div className="account-empty-state"><p>{emptyCopy}</p><Link prefetch={false} className="portal-button portal-button-primary" href={`/${locale}/portal/courses`}>{messages.portal.viewCourses}</Link></div>}
           {overview.courses.length ? <p className="overview-list-caption">{design.allCourses}</p> : null}
         </section>
       </section>

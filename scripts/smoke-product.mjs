@@ -130,14 +130,12 @@ result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.entitlements.some((entitlement) => entitlement.scope === "everything"), "upgrade did not replace category access with PC Everything access");
 
 result = await request("/api/study/events", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", lessonId: "pleasure-and-the-good-life", event: "complete", seconds: 1500, clientEventId: `complete-${stamp}` }) });
-assert(result.status === 200 && result.body.record.progress === 56, "course progress calculation failed");
+assert(result.status === 200 && result.body.record.progress === 50, "course progress must be unique opened Learning Points (1/2 = 50), not lesson seconds");
 result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.courses[0]?.courseId === "epicureanism", "My Learning failed");
-const notification = result.body.overview.notifications[0];
-result = await request("/api/my-learning/notifications/read", { method: "POST", headers: json, body: JSON.stringify({ notificationId: notification.id, read: true }) });
-assert(result.status === 200 && result.body.notification.readAt, "notification read failed");
-result = await request("/api/my-learning/notifications/read", { method: "POST", headers: json, body: JSON.stringify({ notificationId: notification.id, read: false }) });
-assert(result.status === 200 && result.body.notification.readAt === null, "notification unread failed");
+assert(result.body.overview.notificationsPlaceholder === true && result.body.overview.notifications.length === 0, "My Learning notifications must stay a placeholder");
+result = await request("/api/my-learning/notifications");
+assert(result.status === 200 && result.body.placeholder === true && result.body.unreadCount === 0, "notification inbox must not be exposed");
 for (const path of ["/en-GB/account/my-learning", "/en-GB/account/my-learning/subscription", "/en-GB/account/my-learning/notifications", "/en-GB/account/my-learning/settings", "/en-GB/account/my-learning/help", "/en-GB/account/learn/epicureanism", "/en-GB/privacy-policy", "/en-GB/terms-of-service", "/en-GB/cookie-policy"]) {
   assert((await request(path)).status === 200, `${path} did not return 200`);
 }
