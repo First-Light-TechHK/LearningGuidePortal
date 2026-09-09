@@ -7,7 +7,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { PortalLanguageLink } from "@/components/portal/PortalLanguageLink";
 import { AccountMenu } from "@/components/portal/AccountMenu";
 
-type HeaderSection = "courses" | "my-learning" | "pricing";
+type HeaderSection = "courses" | "study-groups" | "my-learning" | "pricing";
 
 export function PortalHeader({ locale, active, signedIn = false, displayName, avatarUrl }: { locale: Locale; active?: HeaderSection; signedIn?: boolean; displayName?: string; avatarUrl?: string }) {
   const messages = getMessages(locale);
@@ -23,7 +23,7 @@ export function PortalHeader({ locale, active, signedIn = false, displayName, av
         </Link>
         <nav className="portal-nav" aria-label="Primary navigation">
           <Link prefetch={false} className={active === "courses" ? "active" : ""} href={`/${locale}/portal/courses`}>{copy.navigation.courses}</Link>
-          <Link prefetch={false} href={`/${locale}/portal/faq`}>{copy.navigation.studyGroups}</Link>
+          <Link prefetch={false} className={active === "study-groups" ? "active" : ""} href={`/${locale}/portal/study-groups`}>{copy.navigation.studyGroups}</Link>
           <Link prefetch={false} className={active === "pricing" ? "active" : ""} href={`/${locale}/pricing`}>{copy.navigation.pricing}</Link>
         </nav>
         <div className="portal-header-actions">
