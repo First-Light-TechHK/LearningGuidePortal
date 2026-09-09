@@ -38,6 +38,8 @@ jobs:
   coderabbit:
     name: CodeRabbit
     needs: lint
+    permissions:
+      contents: read
     uses: ./.github/workflows/coderabbit.yml
     with:
       event_name: ${{ github.event_name }}
