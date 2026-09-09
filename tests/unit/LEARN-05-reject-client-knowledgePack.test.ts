@@ -8,10 +8,7 @@ import { buildSystemPrompt } from "../../lib/chatSystemPrompt";
 test("LEARN-05: client knowledgePack is not copied into the system prompt", async () => {
   const prompt = await buildSystemPrompt({
     topic: "Epicureanism",
-    model: "test-model",
     mode: "lecture",
-    message: "hello",
-    history: [],
     prompts: { base: "base", lecture: "lecture", socratic: "socratic" },
     knowledgePack: { evil: "ATTACK_PACK_MUST_NOT_APPEAR" },
     sources: "ATTACK_SOURCE_MUST_NOT_APPEAR",

@@ -7,20 +7,21 @@ import { afterEach, test } from "node:test";
 
 const originalAppEnv = process.env.APP_ENV;
 const originalNodeEnv = process.env.NODE_ENV;
+const env = process.env as { NODE_ENV?: string; APP_ENV?: string };
 
 afterEach(() => {
   if (originalAppEnv === undefined) delete process.env.APP_ENV;
   else process.env.APP_ENV = originalAppEnv;
-  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-  else process.env.NODE_ENV = originalNodeEnv;
+  if (originalNodeEnv === undefined) delete env.NODE_ENV;
+  else env.NODE_ENV = originalNodeEnv;
 });
 
 async function loadConfig() {
-  return import("../../services/runtimeConfig.ts");
+  return import("../../services/runtimeConfig");
 }
 
 test("AUTH-03: APP_ENV=PRODUCTION is a production environment", async () => {
-  process.env.NODE_ENV = "production";
+  env.NODE_ENV = "production";
   process.env.APP_ENV = "PRODUCTION";
   const { isProductionEnvironment, appEnvironment } = await loadConfig();
   assert.equal(appEnvironment(), "PRODUCTION");
