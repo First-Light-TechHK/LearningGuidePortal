@@ -110,3 +110,7 @@ Production build and bilingual local payment-return tests passed. Chromium and F
 - Billing-recovery suite: mocked Stripe SDK responses, including ownership mismatch and paid/missing invoices. No network payment is performed.
 - Cookie-policy suite: 40 environment/protocol/host combinations. The two isolated `.mjs` suites importing TypeScript require a Node version with native type stripping, as provided by the current local Node 26 runtime.
 - Product smoke suite uses local social-login and payment substitutes. Its passing result must not be described as live Google, WeChat or Stripe verification.
+
+## Production deployment, 9 September 2026
+
+Production now runs from GitHub main via a single App Runner service (`learning-guide-portal`), configured with automatic deployments on push to main. Manual image builds are retired.
