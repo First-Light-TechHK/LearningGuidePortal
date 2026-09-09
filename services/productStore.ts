@@ -965,10 +965,9 @@ function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) 
   if (existing && !currentTrial) throw new Error("This plan already has active access.");
   const previousTrial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial");
   if (previousTrial) {
-    if (previousTrial.state === "trial_canceled" || new Date(previousTrial.validTo) <= new Date()) {
-      const canceled = previousTrial.state === "trial_canceled";
-      if (!canceled) previousTrial.state = "expired";
-      throw new Error(canceled ? "The three-day trial has already been used for this plan." : "The three-day trial has ended.");
+    if (new Date(previousTrial.validTo) <= new Date()) {
+      previousTrial.state = "expired";
+      throw new Error("The three-day trial has ended.");
     }
     previousTrial.state = "active";
     const previousEntitlement = data.entitlements.find((item) => item.userId === userId && item.source === "trial" && item.validTo === previousTrial.validTo);
@@ -1003,10 +1002,6 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
-    if (kind === "purchase") {
-      const alreadyActive = data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date());
-      if (alreadyActive) throw new Error("This plan already has active access.");
-    }
     const quote: ProductQuote = { id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
     return { quote, plan };
@@ -1103,8 +1098,9 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     data.subscriptions.unshift(subscription);
     data.subscriptions.forEach((item) => { if (item.userId === userId && item.source === "trial" && item.state === "active" && item.planId === plan.id) item.state = "expired"; });
     data.entitlements.forEach((item) => {
-      if (item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
+      if (item.userId === userId && item.source === "trial" && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
     });
+    data.entitlements = data.entitlements.filter((item) => !(item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
     data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
     return { order, subscription, entitlement };
@@ -1235,7 +1231,7 @@ export async function completeDemoTrialOrder(userId: string, orderId: string) {
     if (!order) throw new Error("Trial order not found.");
     const plan = data.plans.find((item) => item.id === order.planId);
     if (!plan) throw new Error("Plan not found.");
-    if (order.status !== "pending") throw new Error("This trial payment attempt cannot be completed.");
+    if (!["pending", "paid"].includes(order.status)) throw new Error("This trial payment attempt cannot be completed.");
     const result = grantTrialAccess(data, userId, plan);
     order.status = "paid";
     order.failureReason = null;
@@ -1321,9 +1317,7 @@ export async function activateStripeTrial(input: { eventId?: string; eventType?:
     const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: input.customerId || null, graceEndsAt: null });
     const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
     data.subscriptions.unshift(subscription);
-    data.entitlements.forEach((item) => {
-      if (item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
-    });
+    data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
     data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Trial activated", body: `${plan.name} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
     return order;
@@ -1332,7 +1326,6 @@ export async function activateStripeTrial(input: { eventId?: string; eventType?:
 
 export async function convertStripeTrial(input: { subscriptionId: string; invoiceId: string; amountMinor: number; paymentIntentId?: string | null }) {
   return editData((data) => {
-    if (input.amountMinor <= 0) return null;
     const trial = data.subscriptions.find((item) => item.stripeSubscriptionId === input.subscriptionId && item.source === "trial" && item.state !== "expired");
     if (!trial) return null;
     const plan = data.plans.find((item) => item.id === trial.planId);
@@ -1345,9 +1338,7 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     const order: ProductOrder = { id: id("order"), userId: trial.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: subscription.validFrom, servicePeriodEnd: subscription.validTo, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
     const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo);
     data.subscriptions.unshift(subscription);
-    data.entitlements.forEach((item) => {
-      if (item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
-    });
+    data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
     data.orders.unshift(order);
     data.notifications.unshift({ id: id("notification"), userId: trial.userId, title: "Subscription active", body: "Your trial has converted and course access continues.", readAt: null, createdAt: now() });
@@ -1361,14 +1352,12 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     if (paidOrder) return paidOrder;
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === input.subscriptionId && item.source === "purchase");
     if (!subscription) return null;
-    if (data.orders.some((order) => order.stripeSubscriptionId === input.subscriptionId && order.status === "refunded")) return null;
     const plan = data.plans.find((item) => item.id === subscription.planId);
     if (!plan) throw new Error("Plan not found.");
     const start = input.currentPeriodStart || now();
     const end = input.currentPeriodEnd || addMonths(start, plan.termMonths);
-    const keepCancelAtPeriodEnd = subscription.cancelAtPeriodEnd || subscription.state === "cancel_at_period_end";
-    if (!keepCancelAtPeriodEnd) subscription.state = "active";
-    subscription.cancelAtPeriodEnd = keepCancelAtPeriodEnd;
+    subscription.state = "active";
+    subscription.cancelAtPeriodEnd = false;
     subscription.validFrom = start;
     subscription.validTo = end;
     subscription.graceEndsAt = null;
@@ -1417,8 +1406,9 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
     graceEnd.setUTCDate(graceEnd.getUTCDate() + TRIAL_DAYS);
     subscription.state = "grace";
     subscription.graceEndsAt = graceEnd.toISOString();
+    subscription.validTo = graceEnd.toISOString();
     const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.state === "active");
-    if (entitlement && new Date(entitlement.validTo) < graceEnd) entitlement.validTo = subscription.validTo;
+    if (entitlement) entitlement.validTo = subscription.validTo;
     data.notifications.unshift({ id: id("notification"), userId: subscription.userId, title: "Payment requires attention", body: "Your course access remains available while payment is resolved.", readAt: null, createdAt: now() });
     return subscription;
   });
@@ -1428,7 +1418,6 @@ export async function attachStripeCheckoutSession(userId: string, orderId: strin
   return editData((data) => {
     const order = data.orders.find((item) => item.id === orderId && item.userId === userId);
     if (!order) throw new Error("Order not found.");
-    if (order.stripeCheckoutSessionId) return order;
     order.stripeCheckoutSessionId = sessionId;
     return order;
   });
@@ -1454,8 +1443,9 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   const trial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && item.state === "active");
   if (trial) trial.state = "expired";
   data.entitlements.forEach((item) => {
-    if (item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
+    if (item.userId === userId && item.source === "trial" && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
   });
+  data.entitlements = data.entitlements.filter((item) => !(item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
   return order;
