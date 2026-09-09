@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildSystemPrompt } from "../../app/api/chat/route";
+import { buildSystemPrompt } from "../../lib/chatSystemPrompt";
 
 // Break: /api/chat treating client knowledgePack as trusted prompt input
 // (LEARN-05 / SEC-KS-001). Phase 1: browser must not upload a pack.

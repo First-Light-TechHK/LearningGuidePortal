@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { studyEventHttpStatus } from "../../app/api/study/events/route";
+import { studyEventHttpStatus } from "../../lib/studyEventHttpStatus";
 
 // Review corner (no new BugID): handbook wants 403 when signed-in study/events
 // has no entitlement; the route currently collapses that to 400.
