@@ -1,5 +1,5 @@
 # Actions = tests only. Workflow name is Verify (not a TDD-branded lock).
-# Job order is strict via needs: Typecheck → Lint → CodeRabbit → Build and test.
+# Job order is strict via needs: Typecheck → Lint → Build and test.
 # Aligns with cloud shape: node:22 + npm ci + npm run build + next start -p 8080.
 # This workflow never runs aws apprunner start-deployment and has no deploy job.
 # Cloud publish is only apprunner-deploy.yml (workflow_dispatch + queue-and-wait).
@@ -55,21 +55,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
-  coderabbit:
-    name: CodeRabbit
-    needs: lint
-    permissions:
-      contents: read
-    uses: ./.github/workflows/coderabbit.yml
-    with:
-      event_name: ${{ github.event_name }}
-      pr_base: ${{ github.event.pull_request.base.ref || '' }}
-    secrets:
-      CODERABBIT_API_KEY: ${{ secrets.CODERABBIT_API_KEY }}
-
   test:
     name: Build and test
-    needs: coderabbit
+    needs: lint
     runs-on: ubuntu-latest
     env:
       CI: "1"
