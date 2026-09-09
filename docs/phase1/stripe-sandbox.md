@@ -2,7 +2,7 @@
 
 ## Scope
 
-This configuration uses Stripe test keys and local LG storage. No AWS configuration, live Stripe price, live subscription or account-wide Managed Payments setting was changed.
+This configuration uses Stripe test keys. Local development uses local storage; the AWS DEV site uses its existing PostgreSQL and S3 storage. No live Stripe price, live subscription or account-wide Managed Payments setting was changed.
 
 Set these in the ignored `.env.local`:
 
@@ -36,6 +36,24 @@ node --env-file=.env.local --import tsx --require ./scripts/register-tsconfig-pa
 ```
 
 The command validates all prices before writing. It upserts the matching local plans and expires old quotes for changed prices. Existing orders, subscriptions and payments retain their history. Unmapped single-course/mobile plans are not offered by the sandbox catalogue; they were not deleted.
+
+## AWS sandbox
+
+The existing Singapore App Runner service uses `PAYMENT_MODE=stripe` and `STRIPE_SANDBOX=1`. Its public origin remains `https://www.ilovelearningguide.com`. Google, WeChat, email verification and storage configuration are preserved.
+
+The test API key and the AWS endpoint's signing secret are stored separately in AWS Secrets Manager. The App Runner instance role has read permission for these two secrets. Never use the local CLI signing secret on AWS.
+
+The dedicated test webhook is `https://www.ilovelearningguide.com/api/payment/webhook`. It receives Checkout completion, asynchronous success/failure, expiry, invoice-paid and invoice-payment-failed events. Stripe's account-wide settings are unchanged.
+
+For an authorised operator with the AWS DEV database environment loaded, catalogue synchronisation is:
+
+```sh
+CONFIRM_SANDBOX_CATALOGUE=learning-guide/dev node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/sync-stripe-sandbox.ts --cloud
+```
+
+The command requires `APP_ENV=DEV`, the exact DEV data prefix, `STRIPE_SANDBOX=1` and a test API key. It validates all eight Stripe prices first, then updates only matching plans and affected outstanding quotes within a PostgreSQL transaction. It does not import local users or replace the cloud dataset. Run during a quiet maintenance period: the existing application's whole-document storage is not a substitute for a fully transactional order database across multiple instances.
+
+App Runner automatic deployment is disabled, matching the repository's manual-release workflow. Pushes run verification; release is an explicit operation after verification. A configuration update alone does not necessarily fetch the latest Git commit, so deploy the application source explicitly and verify the resulting site.
 
 ## Run locally
 
@@ -81,3 +99,22 @@ For an isolated production-build check, stop only this sandbox server, run `NEXT
 | Build | Isolated Next.js production build using sandbox configuration | Passed with existing lint warnings |
 
 The successful sandbox subscription remains available for inspection. No real money was charged. Full declined-card, 3-D Secure, renewal, refund, upgrade and trial-lifecycle acceptance is not established by these results.
+
+## AWS verification, 9 September 2026
+
+Application commit: `7c733fc`. App Runner configuration operation `7974f52ee30f43ba8ff989628fac11d5` and source deployment `bd582dc273e941329e739086ef79e60b` both succeeded. The source deployment was necessary: the configuration-only update retained the previous application build. A preliminary attempt on that older build was rejected by Stripe's Managed Payments validation and did not take payment or grant access.
+
+Tests below used the public AWS site, actual Stripe test Checkout, the dedicated HTTPS webhook and the AWS database. Two isolated test accounts were prepared with the application's registration and email-verification functions; these payment tests do not constitute a new acceptance test of email delivery or social login.
+
+| Check | Observed result |
+| --- | --- |
+| USD 99 Everything purchase | Hosted Checkout accepted the Stripe test card and returned to LG's purchase-complete page. `livemode=false`; payment status `paid`. |
+| Persisted order | `order_1788953288226_db989b47` is `paid`, USD 99, with the Stripe subscription and invoice references. |
+| Signed webhook processing | `checkout.session.completed` event `evt_1UDjfpLrOEkdi8OVl9CwIngD` and `invoice.paid` event `evt_1UDjfoLrOEkdi8OVXERUvKL3` have persisted processing receipts. |
+| Course access | Exactly one active Everything entitlement and one active six-month subscription for the purchasing test account, ending 9 March 2027. |
+| Expired USD 39 Checkout | Separate learner and actual Stripe session, explicitly expired through the test API. `order_1788953436143_61f218d8` is `canceled`; no entitlement or subscription exists for that learner. |
+| Expiry webhook | `evt_1UDji6LrOEkdi8OVHgpxpp9e` was processed and stored as `checkout.session.expired`. |
+| UI regression | All 198 selected Figma property checks passed on the AWS sign-in page across Chromium, Firefox and WebKit. This is not full-site pixel-equivalence certification. |
+| Existing configuration | PostgreSQL/S3, Google, WeChat and email remain configured; email verification remains required. No authentication setting was relaxed. |
+
+The site remains DEV with Stripe sandbox payments. These checks establish successful purchase and expired-session behaviour, not full production payment-lifecycle acceptance. Live charging is not enabled.
