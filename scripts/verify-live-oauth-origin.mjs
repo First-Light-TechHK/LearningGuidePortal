@@ -4,7 +4,9 @@ import { chromium, firefox, webkit } from "playwright";
 // Real browser cookies and live callbacks; provider consent is deliberately cancelled.
 // No user accounts are created and no Google/WeChat credentials are used by this script.
 for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
-  const browser = await engine.launch();
+  const browser = await engine.launch({
+    ...(process.env.BROWSER_PROXY ? { proxy: { server: process.env.BROWSER_PROXY } } : {}),
+  });
   try {
     for (const host of ["ilovelearningguide.com", "www.ilovelearningguide.com"]) {
       for (const preference of [null, "essential", "optional"]) {
@@ -38,4 +40,3 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     }
   } finally { await browser.close(); }
 }
-
