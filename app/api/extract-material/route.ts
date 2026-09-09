@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import mammoth from "mammoth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const form = await request.formData();
   const file = form.get("file");
 

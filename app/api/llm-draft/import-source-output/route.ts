@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { createImportSourceOutput } from "@/services/importSourceOutputStore";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 import type { RequestedSelectableSource } from "@/services/selectableSourceStore";
@@ -11,6 +12,8 @@ type ImportSourceOutputRequest = {
 };
 
 export async function POST(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const body = (await request.json()) as ImportSourceOutputRequest;
     const ctx = normaliseContext(body.courseId, body.knowledgeId);

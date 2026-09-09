@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { generateIncrementalDraft } from "@/lib/extract";
 import { assertConfiguredModel } from "@/services/modelStore";
 import { saveRequirements, saveSelectedModel } from "@/services/draftStore";
@@ -6,6 +7,8 @@ import { normaliseContext } from "@/services/sourceMaterialStore";
 import type { RequestedSelectableSource } from "@/services/selectableSourceStore";
 
 export async function POST(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       requirements?: string;

@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { createKnowledge, listKnowledge } from "@/services/knowledgeStore";
 
-export async function GET(_: Request, { params }: { params: Promise<{ courseId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const { courseId } = await params;
   return NextResponse.json({ knowledge: await listKnowledge(courseId) });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { courseId } = await params;
     const { title } = (await request.json()) as { title?: string };

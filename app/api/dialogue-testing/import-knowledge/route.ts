@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { createImportSourceOutput } from "@/services/importSourceOutputStore";
 import { createRelease } from "@/services/releaseStore";
 import { normaliseContext, saveFiles } from "@/services/sourceMaterialStore";
 import { createWikiFromImportSourceOutput } from "@/services/wikiStore";
 
 export async function POST(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const form = await request.formData();
     const ctx = normaliseContext(

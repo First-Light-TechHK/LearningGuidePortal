@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -59,6 +60,8 @@ async function saveFiles(form: FormData, field: string, topic: string, kind: "fi
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const form = await request.formData();
     const topic = String(form.get("topic") || "Epicureanism").trim();

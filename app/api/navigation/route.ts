@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { listCourses } from "@/services/courseStore";
 import { listKnowledge } from "@/services/knowledgeStore";
 import { getSourceMaterialCounts } from "@/services/sourceMaterialStore";
 
 export async function GET(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const url = new URL(request.url);
   const selectedCourseId = url.searchParams.get("courseId") || "philosophy";
   const selectedKnowledgeId = url.searchParams.get("knowledgeId") || "epicureanism";

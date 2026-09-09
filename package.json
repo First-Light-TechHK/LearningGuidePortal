@@ -7,7 +7,13 @@
     "build": "next build",
     "start": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next start",
     "lint": "eslint .",
-    "test:auth": "playwright test --config=playwright.auth.config.ts",
+    "test:auth": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.auth.config.ts",
+    "test:unit": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/*.test.ts",
+    "test:integration": "npm run test:auth",
+    "test:e2e": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.e2e.config.ts",
+    "test:ci": "npx tsc --noEmit && npm run test:unit && npm run test:integration",
+    "test:local": "npm run test:e2e && npm run smoke:product",
+    "test:smoke:ci": "node scripts/smoke-product.mjs",
     "setup:local": "node scripts/setup-local.mjs",
     "smoke:product": "node scripts/smoke-product.mjs",
     "preflight:production": "node scripts/preflight-production.mjs",
@@ -46,6 +52,8 @@
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.0.4",
     "playwright": "^1.61.0",
+    "tsconfig-paths": "^3.15.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.2"
   }
 }

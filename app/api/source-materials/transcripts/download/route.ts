@@ -1,9 +1,12 @@
 import path from "path";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { NextResponse } from "next/server";
 import { readBinary } from "@/services/fileStore";
 import { normaliseContext, transcriptFilePath } from "@/services/sourceMaterialStore";
 
 export async function GET(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const url = new URL(request.url);
     const ctx = normaliseContext(url.searchParams.get("courseId"), url.searchParams.get("knowledgeId"));

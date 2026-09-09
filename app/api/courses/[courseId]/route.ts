@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { deleteCourse, renameCourse } from "@/services/courseStore";
 
 export async function PUT(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { courseId } = await params;
     const { title } = (await request.json()) as { title?: string };
@@ -12,7 +15,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ cour
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ courseId: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const { courseId } = await params;
   await deleteCourse(courseId);
   return NextResponse.json({ ok: true });

@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { saveDraft, WikiDraft } from "../../../lib/wiki-store";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const body = (await request.json()) as { topic?: string; draft?: WikiDraft };
   if (!body.draft) {
     return Response.json({ error: "Draft is required." }, { status: 400 });

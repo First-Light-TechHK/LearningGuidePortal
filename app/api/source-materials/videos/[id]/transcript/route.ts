@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 import { parseVideoTranscript } from "@/services/transcriptProvider";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const body = await request.json().catch(() => ({}));
     const url = new URL(request.url);

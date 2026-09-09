@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 import { addWikiEntry } from "@/services/wikiStore";
 
 export async function POST(request: Request, { params }: { params: Promise<{ pageId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { pageId } = await params;
     const body = (await request.json()) as { courseId?: string; knowledgeId?: string; title?: string; content?: string };
