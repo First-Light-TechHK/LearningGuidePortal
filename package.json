@@ -6,6 +6,7 @@
     "dev": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next dev",
     "build": "next build",
     "start": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next start",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:auth": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.auth.config.ts",
     "test:unit": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/*.test.ts",
