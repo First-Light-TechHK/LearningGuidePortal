@@ -22,15 +22,21 @@ export default async function CourseDetailPage({
   const learningCopy = getMessages(locale).learning;
   const design = getMessages(locale).overviewDesign;
 
-  function ctaHref(cta: CoursePageCta) {
+  function ctaHref(cta: CoursePageCta, lessonId?: string | null) {
     if (!course || !cta) return null;
     if (cta === "continue_learning") return `/${locale}/account/learn/${course.id}`;
     if (cta === "start_preview" || cta === "continue_preview") {
-      const lessonId = page.nextPreviewLessonId;
-      return `/${locale}/portal/courses/${course.id}/public-lesson${lessonId ? `?lessonId=${encodeURIComponent(lessonId)}` : ""}`;
+      const target = lessonId || page.nextPreviewLessonId;
+      return `/${locale}/portal/courses/${course.id}/public-lesson${target ? `?lessonId=${encodeURIComponent(target)}` : ""}`;
     }
     if (cta === "view_plans") return `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`;
     return null;
+  }
+
+  function syllabusHref(lesson: (typeof page.syllabus)[number]) {
+    if (!course || !lesson.openable) return null;
+    if (lesson.access === "entitled") return `/${locale}/account/learn/${course.id}`;
+    return `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(lesson.lessonId)}`;
   }
 
   function ctaLabel(cta: CoursePageCta) {
@@ -49,7 +55,10 @@ export default async function CourseDetailPage({
 
   const href = ctaHref(page.cta);
   const label = ctaLabel(page.cta);
+  const secondaryHref = ctaHref(page.secondaryCta);
+  const secondaryLabel = ctaLabel(page.secondaryCta);
   const identity = page.identity;
+  const catalogHref = `/${locale}/portal/courses`;
 
   return (
     <main className="portal-page portal-course-detail-page" data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
@@ -58,6 +67,7 @@ export default async function CourseDetailPage({
         <section className="portal-section portal-section-first" data-course-failed="true">
           <h1>{copy.courseUnavailable}</h1>
           <p>{copy.courseUnavailableDescription}</p>
+          <Link className="portal-text-link" href={catalogHref}>{copy.viewCourses}</Link>
         </section>
       ) : (
         <>
@@ -69,6 +79,7 @@ export default async function CourseDetailPage({
               <p>{course?.description || ""}</p>
               <div className="course-detail-stats">
                 <span data-lesson-count={identity.lessonCount}>{identity.lessonCount} {copy.lessons.toLowerCase()}</span>
+                <span data-total-minutes={identity.totalMinutes}>{identity.totalMinutes} {learningCopy.minutes}</span>
                 <span data-preview-available={identity.previewAvailable ? "true" : "false"}>{identity.previewAvailable ? design.previewAvailable : learningCopy.viewPlans}</span>
               </div>
             </div>
@@ -87,14 +98,17 @@ export default async function CourseDetailPage({
                 </div>
                 <div className="course-lesson-index" data-syllabus="true">
                   <h2>{copy.lessons || "Lessons"}</h2>
-                  {page.syllabus.map((lesson, index) => (
-                    <div className="course-lesson-row" key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access}>
-                      <div>
-                        <strong>{index + 1}. {lesson.title}</strong>
+                  {page.syllabus.map((lesson, index) => {
+                    const lessonHref = syllabusHref(lesson);
+                    return (
+                      <div className="course-lesson-row" key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
+                        <div>
+                          {lessonHref ? <Link href={lessonHref}><strong>{index + 1}. {lesson.title}</strong></Link> : <strong>{index + 1}. {lesson.title}</strong>}
+                        </div>
+                        <span className={lesson.access === "locked" ? "lesson-access-locked" : "lesson-access-open"}>{accessLabel(lesson.access)}</span>
                       </div>
-                      <span className={lesson.access === "locked" ? "lesson-access-locked" : "lesson-access-open"}>{accessLabel(lesson.access)}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <aside className="course-detail-aside">
@@ -103,6 +117,7 @@ export default async function CourseDetailPage({
                     <p className="portal-eyebrow">{identity.track}</p>
                     <strong>{label}</strong>
                     <Link className="portal-button portal-button-primary" data-course-cta-link={page.cta || ""} href={href}>{label}</Link>
+                    {secondaryHref && secondaryLabel ? <Link className="portal-button portal-button-secondary" data-course-secondary-cta={page.secondaryCta || ""} href={secondaryHref}>{secondaryLabel}</Link> : null}
                   </div>
                 ) : null}
               </aside>

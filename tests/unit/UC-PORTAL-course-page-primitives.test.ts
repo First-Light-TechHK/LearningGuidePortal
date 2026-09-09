@@ -50,6 +50,7 @@ test("UC-PORTAL-1: course identity comes from the product store, not KS leftover
   assert.equal(identity.track, "European Humanities");
   assert.equal(identity.lessonCount, 2);
   assert.equal(identity.previewAvailable, true);
+  assert.equal(identity.totalMinutes, 45);
   assert.notEqual(identity.track, "Course");
 });
 
@@ -60,8 +61,11 @@ test("UC-PORTAL-1: visitor syllabus is previewable vs locked", async () => {
 
   assert.equal(page.syllabus.length, 2);
   assert.equal(preview?.access, "previewable");
+  assert.equal(preview?.openable, true);
   assert.equal(locked?.access, "locked");
+  assert.equal(locked?.openable, false);
   assert.equal(page.cta, "start_preview");
+  assert.equal(page.secondaryCta, "view_plans");
   assert.equal(page.accessState, "none");
 });
 
@@ -75,6 +79,7 @@ test("ML-FR-004: opening a preview LP records unique progress and switches CTA t
 
   const page = await store.getCoursePage(COURSE_ID, user.id);
   assert.equal(page.cta, "continue_preview");
+  assert.equal(page.secondaryCta, "view_plans");
   assert.equal(page.openedLearningPointCount, 1);
   assert.equal(page.totalLearningPoints, 2);
   assert.equal(page.progress, 50);
@@ -112,7 +117,8 @@ test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learni
   const page = await store.getCoursePage(COURSE_ID, user.id);
   assert.equal(page.accessState, "active");
   assert.equal(page.cta, "continue_learning");
-  assert.ok(page.syllabus.every((item) => item.access === "entitled"));
+  assert.equal(page.secondaryCta, null);
+  assert.ok(page.syllabus.every((item) => item.access === "entitled" && item.openable));
 });
 
 test("UC-PORTAL-5: expired access is View plans and private LPs lock again", async () => {

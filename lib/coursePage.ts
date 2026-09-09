@@ -18,12 +18,14 @@ export type CourseIdentity = {
   track: string;
   lessonCount: number;
   previewAvailable: boolean;
+  totalMinutes: number;
 };
 
 export type CourseSyllabusItem = {
   lessonId: string;
   title: string;
   access: SyllabusAccess;
+  openable: boolean;
 };
 
 export type CoursePage = {
@@ -31,6 +33,7 @@ export type CoursePage = {
   identity: CourseIdentity | null;
   syllabus: CourseSyllabusItem[];
   cta: CoursePageCta;
+  secondaryCta: CoursePageCta;
   accessState: AccessState;
   openedLearningPointCount: number;
   totalLearningPoints: number;
@@ -42,7 +45,7 @@ type CourseLike = {
   title: string;
   category?: string | null;
   status: string;
-  sections: Array<{ lessons: Array<{ id: string; title: string; isPublic: boolean }> }>;
+  sections: Array<{ lessons: Array<{ id: string; title: string; isPublic: boolean; durationMinutes?: number }> }>;
 };
 
 /** D1.1 Identity is title / track / lesson count / preview-available from the store. */
@@ -53,6 +56,7 @@ export function courseIdentityFrom(course: CourseLike): CourseIdentity {
     track: course.category || "European Humanities",
     lessonCount: lessons.length,
     previewAvailable: lessons.some((lesson) => lesson.isPublic),
+    totalMinutes: lessons.reduce((total, lesson) => total + (lesson.durationMinutes || 0), 0),
   };
 }
 
@@ -90,12 +94,18 @@ export function resolveCoursePageCta(input: {
   return "view_plans";
 }
 
+/** D1.4 From public content a visitor can still View plans (UC-PORTAL-2). */
+export function resolveCoursePageSecondaryCta(cta: CoursePageCta): CoursePageCta {
+  return cta === "start_preview" || cta === "continue_preview" ? "view_plans" : null;
+}
+
 export function emptyFailedCoursePage(): CoursePage {
   return {
     pageState: "failed",
     identity: null,
     syllabus: [],
     cta: null,
+    secondaryCta: null,
     accessState: "none",
     openedLearningPointCount: 0,
     totalLearningPoints: 0,
@@ -119,26 +129,27 @@ export function buildCoursePage(input: {
   const previewLessonIds = previewLessons.map((lesson) => lesson.id);
   const completedPreviewIds = previewLessonIds.filter((id) => input.completedLessonIds.includes(id));
   const computed = courseProgressFromUniqueLearningPoints(input.openedLessonIds.length, lessons.length);
+  const cta = resolveCoursePageCta({
+    pageState,
+    hasLiveEntitlement: input.hasLiveEntitlement,
+    accessEnded: input.accessEnded,
+    previewLessonIds,
+    openedLessonIds: input.openedLessonIds,
+    completedPreviewIds,
+  });
   return {
     pageState,
     identity: courseIdentityFrom(input.course),
-    syllabus: lessons.map((lesson) => ({
-      lessonId: lesson.id,
-      title: lesson.title,
-      access: syllabusAccessForLesson({
+    syllabus: lessons.map((lesson) => {
+      const access = syllabusAccessForLesson({
         pageState,
         hasLiveEntitlement: input.hasLiveEntitlement,
         isPublic: lesson.isPublic,
-      }),
-    })),
-    cta: resolveCoursePageCta({
-      pageState,
-      hasLiveEntitlement: input.hasLiveEntitlement,
-      accessEnded: input.accessEnded,
-      previewLessonIds,
-      openedLessonIds: input.openedLessonIds,
-      completedPreviewIds,
+      });
+      return { lessonId: lesson.id, title: lesson.title, access, openable: access === "previewable" || access === "entitled" };
     }),
+    cta,
+    secondaryCta: resolveCoursePageSecondaryCta(cta),
     accessState: input.accessState,
     openedLearningPointCount: input.openedLessonIds.length,
     totalLearningPoints: lessons.length,
