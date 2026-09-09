@@ -25,13 +25,21 @@ test("email registration requires a one-time verification token before sign-in",
     const session = await store.createSession(signedIn.id);
     expect((await store.getUserBySessionToken(session.token))?.id).toBe(user.id);
 
-    await expect(store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-conflict", email: user.email, nickname: "Google User", locale: "en-GB" })).rejects.toMatchObject({ code: "account_conflict" });
+    const pendingGoogleConflict = await store.registerUser({ email: "pending-google@example.test", password: "strong-password", nickname: "Pending Google", locale: "en-GB" });
+    await expect(store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-conflict", email: pendingGoogleConflict.email, nickname: "Google User", locale: "en-GB" })).rejects.toMatchObject({ code: "account_conflict" });
     const googleUser = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google@example.test", nickname: "Google User", locale: "en-GB" });
     expect(googleUser.status).toBe("active");
     expect(googleUser.emailVerifiedAt).toBeTruthy();
     expect(googleUser.passwordHash).toBeNull();
     expect((await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google-renamed@example.test", locale: "en-GB" })).id).toBe(googleUser.id);
     await expect(store.authenticateUser("google-renamed@example.test", "not-a-password")).rejects.toThrow("Email or password is incorrect");
+    const reset = await store.requestPasswordReset("google-renamed@example.test");
+    expect(reset.token).toBeTruthy();
+    await store.resetPassword(reset.token!, "another-strong-password");
+    await expect(store.authenticateUser("google-renamed@example.test", "another-strong-password")).resolves.toMatchObject({ id: googleUser.id });
+    const linkedExisting = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-existing-email", email: user.email, nickname: "Google User", locale: "en-GB" });
+    expect(linkedExisting.id).toBe(user.id);
+    expect(await store.socialProvidersForUser(user.id)).toContain("google");
   } finally {
     process.chdir(originalCwd);
     await rm(isolatedCwd, { recursive: true, force: true });

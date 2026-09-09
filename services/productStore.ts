@@ -461,6 +461,13 @@ export async function getUserById(userId: string) {
   return data.users.find((user) => user.id === userId) || null;
 }
 
+export async function getActiveUserByEmail(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return null;
+  const data = await ensureProductData();
+  return data.users.find((user) => user.email === email && user.status === "active") || null;
+}
+
 export async function getPortalContent(): Promise<PortalContent> {
   return (await ensureProductData()).portalContent || defaultPortalContent;
 }
@@ -566,7 +573,19 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       if (email && user.email !== email && !data.users.some((item) => item.id !== user.id && item.email === email)) user.email = email;
       return user;
     }
-    if (email && data.users.some((item) => item.email === email)) throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
+    const emailUser = email ? data.users.find((item) => item.email === email) : null;
+    if (emailUser) {
+      // The Google profile has already passed verified-email validation. It can
+      // therefore be attached to an existing verified email account, including
+      // an account that was originally created through Google without a
+      // password. Pending, disabled and WeChat accounts still require the
+      // explicit conflict path.
+      if (input.provider === "google" && emailUser.status === "active" && emailUser.emailVerifiedAt) {
+        data.accounts.push({ id: id("account"), userId: emailUser.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
+        return emailUser;
+      }
+      throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
+    }
     const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
     const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: input.provider === "google" && process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
@@ -654,7 +673,9 @@ export async function verifyEmailToken(rawToken: string) {
 export async function requestPasswordReset(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
-  const user = data.users.find((item) => item.email === email && item.status === "active" && item.passwordHash);
+  // A Google-created account has no password initially. Its verified provider
+  // email is sufficient to request a reset and establish email/password login.
+  const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
   if (!user) return { accepted: true, token: null };
   return { accepted: true, token: await issueToken("passwordResetTokens", user.id) };
 }
