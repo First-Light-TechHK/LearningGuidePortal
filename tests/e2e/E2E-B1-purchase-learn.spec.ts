@@ -19,7 +19,9 @@ test.describe("E2E-B1-004", () => {
     const email = freshEmail("004");
     const check = await request.post("/api/auth/check-email", { data: { email } });
     expect(check.status()).toBe(200);
-    expect((await check.json()).exists).toBe(false);
+    const checkBody = await check.json();
+    expect(checkBody.ok).toBeTruthy();
+    expect("exists" in checkBody).toBe(false);
 
     const registered = await request.post("/api/auth/register", {
       data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },

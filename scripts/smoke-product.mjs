@@ -48,12 +48,12 @@ result = await request("/api/auth/logout", { method: "POST" });
 assert(result.status === 200 && result.body.ok, "logout after local WeChat sign-in failed");
 
 result = await request("/api/auth/check-email", { method: "POST", headers: json, body: JSON.stringify({ email: `new-${stamp}@example.com` }) });
-assert(result.status === 200 && result.body.exists === false, "email-first auth entry should identify a new email");
+assert(result.status === 200 && result.body.ok === true && result.body.exists === undefined, "email-first auth entry must not disclose whether an email is new");
 
 result = await request("/api/auth/register", { method: "POST", headers: json, body: JSON.stringify({ email, password: "Passw0rd!123", nickname: "Smoke User", locale: "en-GB" }) });
 assert(result.status === 200 && result.body.ok, "registration failed");
 result = await request("/api/auth/check-email", { method: "POST", headers: json, body: JSON.stringify({ email }) });
-assert(result.status === 200 && result.body.exists === true, "email-first auth entry should identify an existing email");
+assert(result.status === 200 && result.body.ok === true && result.body.exists === undefined, "email-first auth entry must not disclose whether an email already exists");
 result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.courses.length === 0, "My Learning should be empty before a study record exists");
 

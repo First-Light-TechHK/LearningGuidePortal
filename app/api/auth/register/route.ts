@@ -27,6 +27,9 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Registration failed.";
+    if (message.includes("already exists")) {
+      return NextResponse.json({ ok: true, data: { verificationRequired: emailVerificationRequired() }, requestId });
+    }
     const tooSoon = message.includes("wait before requesting");
     return NextResponse.json({ ok: false, code: tooSoon ? "VERIFICATION_RATE_LIMITED" : "REGISTRATION_FAILED", message, requestId }, { status: tooSoon ? 429 : 400 });
   }
