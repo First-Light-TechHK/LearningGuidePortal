@@ -1,9 +1,12 @@
-# Actions = 云构建 / 生产 Node（对齐 Dockerfile：node:22 + npm ci + npm run build +
-# NODE_ENV=production npm run start -- -p 8080）。
-# 本机 PAYMENT_MODE=demo / next dev / 3011 禁止当本 workflow 默认 env。
-# demo e2e 与 smoke:product 不在 Actions（它们断言 DEV+demo，只属于开发者机器）。
+# Actions = tests only. Workflow name is Verify (not a TDD-branded lock).
+# Job order is strict via needs: Lint → CodeRabbit → Build and test.
+# Aligns with cloud shape: node:22 + npm ci + npm run build + next start -p 8080.
+# This workflow never runs aws apprunner start-deployment and has no deploy job.
+# Cloud publish is only apprunner-deploy.yml (workflow_dispatch + queue-and-wait).
+# Local PAYMENT_MODE=demo / next dev / 3011 is not this workflow's default env.
+# smoke:product, test:e2e, ast-grep, semgrep, and knip stay off Actions.
 
-name: CI
+name: Verify
 
 on:
   pull_request:
@@ -13,8 +16,40 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    env:
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+  coderabbit:
+    name: CodeRabbit
+    needs: lint
+    permissions:
+      contents: read
+    uses: ./.github/workflows/coderabbit.yml
+    with:
+      event_name: ${{ github.event_name }}
+      pr_base: ${{ github.event.pull_request.base.ref || '' }}
+    secrets:
+      CODERABBIT_API_KEY: ${{ secrets.CODERABBIT_API_KEY }}
+
   test:
-    name: Cloud build and test
+    name: Build and test
+    needs: coderabbit
     runs-on: ubuntu-latest
     env:
       CI: "1"
@@ -32,7 +67,7 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Cloud builder
+      - name: Build
         run: npm run build
 
       - name: Typecheck, unit, integration
@@ -89,21 +124,3 @@ jobs:
             exit 0
           fi
           npm run preflight:production
-
-  deploy:
-    name: Trigger App Runner deployment
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'First-Light-TechHK/LearningGuidePortal'
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
-
-      - name: Start deployment from main
-        run: |
-          aws apprunner start-deployment \
-            --service-arn arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad

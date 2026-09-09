@@ -2252,6 +2252,16 @@ body { background: #fff; color: var(--lg-ink); }
 .public-placeholder-page { min-height: 420px; }
 .public-placeholder-page h1 { margin: 0; color: var(--lg-ink); }
 .public-placeholder-page > p:last-child { margin-top: 18px; color: var(--lg-muted); font-size: 16px; }
+.study-groups-page h1 { margin: 0; color: var(--lg-ink); }
+.study-groups-page .portal-lead { max-width: 680px; }
+.study-groups-status { max-width: 780px; margin-top: 34px; padding: 22px 24px; border: 1px solid var(--lg-line); border-left: 4px solid var(--lg-blue); border-radius: 10px; background: #f8fbff; }
+.study-groups-status strong { display: block; color: var(--lg-ink); font-size: 18px; line-height: 1.35; }
+.study-groups-status p { margin: 8px 0 0; color: var(--lg-muted); line-height: 1.6; }
+.study-groups-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; max-width: 980px; margin-top: 24px; }
+.study-groups-option { min-height: 166px; padding: 22px; border: 1px solid var(--lg-line); border-radius: 10px; background: #fff; box-shadow: 0 3px 8px rgb(16 24 40 / 4%); }
+.study-groups-option h2 { margin: 0; color: var(--lg-ink); font-size: 20px; line-height: 1.35; }
+.study-groups-option p { margin: 12px 0 0; color: var(--lg-muted); line-height: 1.6; }
+@media (max-width: 760px) { .study-groups-options { grid-template-columns: 1fr; } }
 .subscription-confirmation { max-width: 860px; margin-inline: auto; }
 .subscription-confirmation-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; margin: 2rem 0; border: 1px solid #d9e0ea; background: #d9e0ea; }
 .subscription-confirmation-summary > div { display: grid; gap: .45rem; min-height: 100px; padding: 1rem; background: #fff; }
