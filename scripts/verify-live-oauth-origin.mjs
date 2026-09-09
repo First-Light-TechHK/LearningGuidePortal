@@ -17,8 +17,13 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
           await page.locator(".cookie-consent-actions button").nth(preference === "essential" ? 0 : 1).click();
         }
         let authorization;
+        page.on("request", request => {
+          const target = new URL(request.url());
+          if (target.hostname === "accounts.google.com" && target.searchParams.has("redirect_uri")) authorization = target;
+        });
         await page.route("https://accounts.google.com/**", async route => {
-          authorization = new URL(route.request().url());
+          const target = new URL(route.request().url());
+          if (target.searchParams.has("redirect_uri")) authorization = target;
           await route.fulfill({ contentType: "text/html", body: "<p>Provider boundary</p>" });
         });
         await page.locator('a[href^="/api/auth/google?"]').click();
