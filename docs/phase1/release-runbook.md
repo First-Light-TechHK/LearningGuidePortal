@@ -52,7 +52,10 @@ GitHub pull request
 
 ### WeChat login smoke test
 
-- Use the configured HTTPS origin for both the login page and `/api/auth/wechat/callback`; set `LOCAL_SOCIAL_LOGIN=0`. `configured` health status checks presence of credentials, not provider acceptance.
+- In WeChat Open Platform, confirm the website application is approved for website login and its authorised domain is the hostname only, for example `www.ilovelearningguide.com`.
+- Use the configured HTTPS origin for both the login page and `/api/auth/wechat/callback`; set `LOCAL_SOCIAL_LOGIN=0`. The application sends the full callback URL to WeChat at runtime.
+- Scan the QR code with a real WeChat account, approve access, confirm the browser returns to the requested page, confirm a session cookie is issued, and confirm the new user has no fabricated email address.
+- `configured` health status checks presence of credentials, not provider acceptance; this real QR test remains mandatory.
 - Run `npm run test:auth` and `npm run build` before deploying. Tests use fake provider responses and isolated temporary stores, never real credentials.
 - On the target domain, scan and confirm: first sign-in creates one student Account, repeated sign-in retains userId, and `/api/auth/me` accepts the Session even when email is absent. Check both locales and returnTo from Purchase/My Learning.
 - Cancel/expire the QR flow, retry, and verify that failures clear the temporary cookie without issuing a Session. Verify disabled accounts cannot sign in and expired/missing Entitlement still denies protected course access.

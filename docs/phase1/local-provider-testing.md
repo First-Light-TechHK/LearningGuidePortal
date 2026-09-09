@@ -95,13 +95,19 @@ WECHAT_APP_ID=...
 WECHAT_APP_SECRET=...
 ```
 
-Register:
+In the WeChat Open Platform website-application settings, register the **authorised callback domain**, not the full callback URL. Enter the hostname only, with no scheme, path or trailing slash:
+
+```text
+your-dev-domain.example.com
+```
+
+The application still sends this full, HTTPS callback URL in the OAuth request:
 
 ```text
 https://your-dev-domain.example.com/api/auth/wechat/callback
 ```
 
-The route uses the WeChat Open Platform QR login endpoint with `scope=snsapi_login`, validates the state cookie, exchanges the code through WeChat and stores the provider subject. WeChat may not return an email address; the application therefore uses the stable provider subject as the identity key and does not merge it automatically with an existing password account.
+The route uses the WeChat Open Platform QR login endpoint with `scope=snsapi_login`, URL-encodes the callback URL, validates the signed state cookie, exchanges the one-time code through WeChat and stores the provider subject. WeChat may not return an email address; the application therefore uses the stable provider subject as the identity key and does not merge it automatically with an existing password account. The WeChat code is exchanged only on the server; `WECHAT_APP_SECRET`, access tokens and the one-time code never reach the browser.
 
 ## 4. Stripe Test Mode
 
@@ -137,7 +143,7 @@ For a three-day trial, use the **Start trial** action. It creates a Stripe subsc
 |---|---|---|
 | Provider buttons are absent | Credentials are missing or `LOCAL_SOCIAL_LOGIN=0` without real credentials | Set the complete provider pair and restart |
 | Google `redirect_uri_mismatch` | Browser host differs from registered host | Use one exact `NEXT_PUBLIC_APP_URL` and register its callback |
-| WeChat QR does not return | Plain localhost is not an authorised HTTPS website domain | Use a registered HTTPS development domain |
+| WeChat QR does not return | The browser host is not the authorised HTTPS website domain, or the console was given a full URL instead of a hostname | Register the hostname only, then use the same HTTPS origin in `NEXT_PUBLIC_APP_URL` |
 | Stripe checkout returns 503 | Secret, webhook secret or `NEXT_PUBLIC_APP_URL` is missing | Check `/api/health/config` |
 | Stripe payment is successful but access is absent | Stripe CLI is not forwarding the webhook or signing secret is wrong | Keep `npm run stripe:listen` running and update `STRIPE_WEBHOOK_SECRET` |
 | Local user is redirected but not signed in | `localhost` and `127.0.0.1` were mixed | Use one host for the complete browser flow |

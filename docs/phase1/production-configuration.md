@@ -44,20 +44,23 @@ Set these as App Runner environment variables or Secrets Manager references for 
 
 ## Provider callback registration
 
-Register the exact URLs below. The scheme, host, path and trailing slash must match the value sent by the application.
+Google and WeChat use different registration rules. Google requires the complete redirect URI. WeChat Open Platform website applications require the authorised **domain name only**; the application then sends the complete callback URI at runtime.
 
 ```text
 Google:
 https://learn.example.com/api/auth/google/callback
 
-WeChat Open Platform:
+WeChat Open Platform authorised domain:
+learn.example.com
+
+WeChat callback sent by the application:
 https://learn.example.com/api/auth/wechat/callback
 
 Stripe webhook:
 https://learn.example.com/api/payment/webhook
 ```
 
-Google must be configured as a Web application OAuth client. WeChat must be an Open Platform website application that supports `snsapi_login`. Stripe must send at least these events to the webhook:
+Google must be configured as a Web application OAuth client. WeChat must be an Open Platform website application that supports `snsapi_login`; its authorised domain must be the same hostname as `NEXT_PUBLIC_APP_URL` and must not include `https://`, a path or a trailing slash. Stripe must send at least these events to the webhook:
 
 ```text
 checkout.session.completed
