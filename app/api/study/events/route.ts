@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
+import { studyEventHttpStatus } from "@/lib/studyEventHttpStatus";
 import { currentProductUser } from "@/services/productAuth";
 import { recordStudyEvent } from "@/services/productStore";
-
-export function studyEventHttpStatus(error: unknown) {
-  return error instanceof Error && error.message === "Course access is required." ? 403 : 400;
-}
 
 export async function POST(request: Request) {
   const user = await currentProductUser();
