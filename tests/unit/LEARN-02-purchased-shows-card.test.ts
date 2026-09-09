@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 // LEARN-02 design lock: purchased-never-studied stays off the course list
-// (do not write "must show a card"). Review corner: preview must not mint a
-// My Learning card while entitlement is empty.
+// (do not write "must show a card"). The handbook also said preview must not
+// mint a card; ML-FR-004 / PRD wins on integrate/offline — preview-range
+// entry lists a card. That conflict is recorded, not re-locked here.
 
 const PLAN_ID = "epicureanism-pc-6";
 const COURSE_ID = "epicureanism";
@@ -49,7 +50,7 @@ test("LEARN-02 design: purchased with no studyRecord does not invent a course ca
   assert.equal(overview.courses.length, 0);
 });
 
-test("LEARN-02 corner: preview without entitlement does not create a My Learning card", async () => {
+test("LEARN-02 / ML-FR-004: preview-range entry lists a card even without entitlement", async () => {
   const user = await store.registerUser({
     email: "learn-02-preview@example.test",
     password: "password1",
@@ -68,5 +69,6 @@ test("LEARN-02 corner: preview without entitlement does not create a My Learning
 
   const overview = await store.getLearningOverview(user.id);
   assert.equal(overview.entitlements.length, 0);
-  assert.equal(overview.courses.length, 0);
+  assert.equal(overview.courses.length, 1);
+  assert.equal(overview.courses[0]?.cardState, "previewing");
 });
