@@ -5,6 +5,13 @@ import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTE
 import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment } from "./runtimeConfig";
 import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
+import {
+  accessStateFromSubscriptions,
+  courseProgressFromUniqueLearningPoints,
+  overviewEmptyState,
+  resolveOverviewCard,
+  uniqueOpenedLearningPointIds,
+} from "@/lib/myLearningOverview";
 
 const scrypt = promisify(scryptCallback);
 const PRODUCT_DIR = path.join(SYSTEM_ROOT, "learning_guide");
@@ -1410,15 +1417,33 @@ export async function getLearningOverview(userId: string) {
       if (["active", "cancel_at_period_end", "grace"].includes(subscription.state) && new Date(subscription.validTo) <= currentTime) subscription.state = "expired";
     });
     const records = data.studyRecords.filter((record) => record.userId === userId);
-    // Preview and paid study share one record; purchasing access must not reset progress.
+    // D2.4 Preview and paid study share one record; purchasing access must not reset unique LPs.
     const courseIds = [...new Set(records.map((record) => record.courseId))];
+    const subscriptions = data.subscriptions.filter((item) => item.userId === userId).map((subscription) => ({ ...subscription, plan: data.plans.find((plan) => plan.id === subscription.planId) || null }));
+    const accessState = accessStateFromSubscriptions(subscriptions);
     const courses = courseIds.map((courseId) => {
       const record = records.find((item) => item.courseId === courseId);
       const course = data.courses.find((item) => item.id === courseId);
-      const entitlement = activeEntitlement(data, userId, courseId);
+      const entitlement = course ? activeEntitlement(data, userId, courseId) : null;
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
-      const completedLessonIds = data.studyEvents.filter((event) => event.userId === userId && event.courseId === courseId && event.event === "complete").map((event) => event.lessonId);
+      const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === courseId);
+      const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
+      const computed = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
+      const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
       const previewLessons = lessons.filter((lesson) => lesson.isPublic);
+      const previewLessonIds = previewLessons.map((lesson) => lesson.id);
+      const completedPreviewIds = previewLessonIds.filter((id) => completedLessonIds.includes(id));
+      const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && (!course || entitlementCoversCourse(item, course)));
+      const { cardState, cta } = resolveOverviewCard({
+        courseStatus: course?.status,
+        progressFailed: computed.progressFailed,
+        completed: computed.completed,
+        hasLiveEntitlement: Boolean(entitlement),
+        previewLessonIds,
+        openedLessonIds,
+        completedPreviewIds,
+        accessEnded,
+      });
       return {
         id: record?.id || `access_${userId}_${courseId}`,
         userId,
@@ -1433,20 +1458,35 @@ export async function getLearningOverview(userId: string) {
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
         courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,
-        progress: record?.progress || 0,
-        completedAt: record?.completedAt || null,
+        openedLearningPointCount: openedLessonIds.length,
+        totalLearningPoints: lessons.length,
+        progress: computed.progress,
+        progressFailed: computed.progressFailed,
+        completedAt: computed.completed ? record?.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
-        nextPreviewLessonId: previewLessons.find((lesson) => !completedLessonIds.includes(lesson.id))?.id || null,
+        nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,
         courseTitle: course?.title || courseId,
         entitlement,
+        cardState,
+        cta,
       };
     });
-    const subscriptions = data.subscriptions.filter((item) => item.userId === userId).map((subscription) => ({ ...subscription, plan: data.plans.find((plan) => plan.id === subscription.planId) || null }));
+    const empty = overviewEmptyState(courses.length, accessState);
     const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: data.plans.find((plan) => plan.id === order.planId) || null }));
-    const notifications = data.notifications.filter((item) => item.userId === userId).slice(0, 20);
     const entitlements = data.entitlements.filter((item) => item.userId === userId && item.state === "active" && new Date(item.validTo) > currentTime);
-    return { courses, subscriptions, orders, notifications, entitlements };
+    return {
+      courses,
+      subscriptions,
+      orders,
+      notifications: [],
+      unreadCount: 0,
+      notificationsPlaceholder: true,
+      entitlements,
+      accessState,
+      emptyState: empty.emptyState,
+      emptyCta: empty.emptyCta,
+    };
   });
 }
 
@@ -1584,8 +1624,12 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
     record.currentLessonId = input.lessonId;
     record.totalSeconds += seconds;
     record.totalSeconds = Math.min(totalCourseSeconds, record.totalSeconds);
-    record.progress = Math.min(100, Math.round((record.totalSeconds / Math.max(60, totalCourseSeconds)) * 100));
-    if (record.progress >= 100) record.completedAt = record.completedAt || now();
+    const lessons = course.sections.flatMap((section) => section.lessons);
+    const openedIds = uniqueOpenedLearningPointIds(data.studyEvents.filter((event) => event.userId === input.userId && event.courseId === input.courseId));
+    const computed = courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
+    // D2.1 stored progress follows unique LPs; seconds stay on the record for study telemetry only.
+    record.progress = computed.progress ?? 0;
+    record.completedAt = computed.completed ? record.completedAt || now() : null;
     record.updatedAt = now();
     return record;
   });
