@@ -576,11 +576,14 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
     const emailUser = email ? data.users.find((item) => item.email === email) : null;
     if (emailUser) {
       // The Google profile has already passed verified-email validation. It can
-      // therefore be attached to an existing verified email account, including
-      // an account that was originally created through Google without a
-      // password. Pending, disabled and WeChat accounts still require the
-      // explicit conflict path.
-      if (input.provider === "google" && emailUser.status === "active" && emailUser.emailVerifiedAt) {
+      // therefore be attached to an existing active or pending email account,
+      // including an account that was originally created through Google
+      // without a password. A pending email account becomes active here because
+      // Google's verified identity proves control of the same address. Disabled
+      // and WeChat accounts still require the explicit conflict path.
+      if (input.provider === "google" && (emailUser.status === "active" || emailUser.status === "pending") && (emailUser.status === "pending" || emailUser.emailVerifiedAt)) {
+        emailUser.status = "active";
+        emailUser.emailVerifiedAt ||= now();
         data.accounts.push({ id: id("account"), userId: emailUser.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
         return emailUser;
       }

@@ -25,8 +25,12 @@ test("email registration requires a one-time verification token before sign-in",
     const session = await store.createSession(signedIn.id);
     expect((await store.getUserBySessionToken(session.token))?.id).toBe(user.id);
 
-    const pendingGoogleConflict = await store.registerUser({ email: "pending-google@example.test", password: "strong-password", nickname: "Pending Google", locale: "en-GB" });
-    await expect(store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-conflict", email: pendingGoogleConflict.email, nickname: "Google User", locale: "en-GB" })).rejects.toMatchObject({ code: "account_conflict" });
+    const pendingGoogleAccount = await store.registerUser({ email: "pending-google@example.test", password: "strong-password", nickname: "Pending Google", locale: "en-GB" });
+    const linkedPendingGoogle = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-pending", email: pendingGoogleAccount.email, nickname: "Google User", locale: "en-GB" });
+    expect(linkedPendingGoogle.id).toBe(pendingGoogleAccount.id);
+    expect(linkedPendingGoogle.status).toBe("active");
+    expect(linkedPendingGoogle.emailVerifiedAt).toBeTruthy();
+    await expect(store.authenticateUser(pendingGoogleAccount.email, "strong-password")).resolves.toMatchObject({ id: pendingGoogleAccount.id });
     const googleUser = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google@example.test", nickname: "Google User", locale: "en-GB" });
     expect(googleUser.status).toBe("active");
     expect(googleUser.emailVerifiedAt).toBeTruthy();
