@@ -1,3 +1,5 @@
+export {};
+
 async function main() {
   const email = process.argv[2];
   const password = process.argv[3];
