@@ -28,7 +28,7 @@ export function PortalHeader({ locale, active, signedIn = false, displayName, av
         </nav>
         <div className="portal-header-actions">
           <Suspense fallback={<span className="portal-language">{copy.navigation.language}</span>}><PortalLanguageLink locale={locale} label={copy.navigation.language} /></Suspense>
-          {signedIn ? <Link prefetch={false} className="portal-header-link portal-header-my-learning" href={`/${locale}/account/my-learning`}>{copy.myLearning}</Link> : <Link prefetch={false} className="portal-header-link" href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}
+          {signedIn ? <Link prefetch={false} className="portal-header-link" href={`/${locale}/account/my-learning`}>{copy.myLearning}</Link> : <Link prefetch={false} className="portal-header-link" href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}
           {signedIn ? <Link prefetch={false} className="portal-header-icon-link" href={`/${locale}/account/my-learning/notifications`} aria-label={copy.notifications}><Bell size={18} strokeWidth={1.8} /></Link> : null}
           {signedIn ? null : <Link prefetch={false} className="portal-button portal-button-primary portal-header-cta" href={startHref}>{copy.navigation.getStarted}</Link>}
           {signedIn ? <AccountMenu locale={locale} displayName={displayName} avatarUrl={avatarUrl} labels={{ myLearning: copy.myLearning, settings: messages.account.settings, notifications: copy.notifications, signOut: messages.learning.signOut }} /> : null}
