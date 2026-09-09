@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
 import { recordStudyEvent } from "@/services/productStore";
 
+export function studyEventHttpStatus(error: unknown) {
+  return error instanceof Error && error.message === "Course access is required." ? 403 : 400;
+}
+
 export async function POST(request: Request) {
   const user = await currentProductUser();
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
@@ -11,6 +15,6 @@ export async function POST(request: Request) {
     const record = await recordStudyEvent({ userId: user.id, courseId: body.courseId, lessonId: body.lessonId, event: body.event, seconds: body.seconds || 0, clientEventId: body.clientEventId });
     return NextResponse.json({ ok: true, record });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Study event failed." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Study event failed." }, { status: studyEventHttpStatus(error) });
   }
 }

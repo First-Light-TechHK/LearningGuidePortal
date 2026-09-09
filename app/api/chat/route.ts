@@ -35,7 +35,7 @@ function lastTurns(history: ChatMessage[]) {
   return history.slice(-6);
 }
 
-async function buildSystemPrompt(body: RequestBody) {
+export async function buildSystemPrompt(body: RequestBody) {
   const modePrompt = body.mode === "lecture" ? body.prompts.lecture : body.prompts.socratic;
   const publishedWiki = await readPublishedWiki(body.topic || "Epicureanism");
   return [
@@ -46,9 +46,9 @@ async function buildSystemPrompt(body: RequestBody) {
     "PUBLISHED KS WIKI MARKDOWN FOR THIS TOPIC:",
     publishedWiki.markdown || "No published wiki markdown found for this topic yet.",
     "COURSE PACK JSON:",
-    JSON.stringify(body.knowledgePack, null, 2),
+    "Client-supplied knowledge packs are ignored. Use only the published wiki markdown above.",
     "SOURCE EXCERPTS:",
-    body.sources,
+    "",
     "PROMPT CONTRACT:",
     "- First validate whether the student turn is relevant to the current topic or the course context.",
     "- If relevant, use the course pack and source excerpts.",

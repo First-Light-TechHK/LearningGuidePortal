@@ -28,10 +28,7 @@ export async function GET() {
     enabled,
     hasDatabaseUrl,
     hasBucket,
-    bucket: process.env.DATA_S3_BUCKET || null,
-    prefix: process.env.DATA_S3_PREFIX || null,
     table,
-    rowCount,
     dbError
   });
 }

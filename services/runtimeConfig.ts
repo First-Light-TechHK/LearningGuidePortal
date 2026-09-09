@@ -3,7 +3,7 @@ export function appEnvironment() {
 }
 
 export function isProductionEnvironment() {
-  return ["PROD", "PPE/PROD"].includes(appEnvironment());
+  return ["PROD", "PPE/PROD", "PRODUCTION"].includes(appEnvironment());
 }
 
 export function secureAuthCookie(request: Request) {

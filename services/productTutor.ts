@@ -20,8 +20,13 @@ async function readPrompt(name: string) {
   try { return await readFile(path.join(process.cwd(), "prompts", "chat_testing", name), "utf8"); } catch { return ""; }
 }
 
-async function readKnowledge() {
-  const root = path.join(process.cwd(), "knowledge", "epicureanism");
+function isEpicureanism(course: ProductCourse) {
+  return course.id === "epicureanism" || course.slug === "epicureanism";
+}
+
+async function readKnowledge(course: ProductCourse) {
+  // D1 LEARN-03: load the pack for this course, not a hardcoded Epicureanism root.
+  const root = path.join(process.cwd(), "knowledge", course.slug || course.id);
   const files = ["knowledge-pack.json", "canon-excerpts.md", "sources.md"];
   const parts: string[] = [];
   for (const file of files) {
@@ -33,7 +38,7 @@ async function readKnowledge() {
 function localeName(locale: TutorInput["locale"]) { return locale === "zh-CN" ? "Simplified Chinese" : "British English"; }
 
 async function buildPrompt(input: TutorInput, conversation: ProductConversation) {
-  const [base, mode, knowledge] = await Promise.all([readPrompt("BasePrompt"), readPrompt(input.mode === "lecture" ? "LecturePrompt" : "SocraticPrompt"), readKnowledge()]);
+  const [base, mode, knowledge] = await Promise.all([readPrompt("BasePrompt"), readPrompt(input.mode === "lecture" ? "LecturePrompt" : "SocraticPrompt"), readKnowledge(input.course)]);
   return [
     base,
     mode,
@@ -50,14 +55,19 @@ async function buildPrompt(input: TutorInput, conversation: ProductConversation)
 }
 
 function fallbackAnswer(input: TutorInput) {
-  if (/pleasure|享乐|快乐|欲望/i.test(input.message)) {
+  if (isEpicureanism(input.course) && /pleasure|享乐|快乐|欲望/i.test(input.message)) {
     return input.mode === "socratic"
       ? "先区分两件事：一种快乐是强烈而短暂的刺激，另一种是没有痛苦和不安的稳定状态。你认为 Epicurus 为什么会更重视后者？"
       : "Epicurus does not equate pleasure with luxury or constant stimulation. He treats stable freedom from bodily pain and mental disturbance as the practical aim. That is why a simple meal or friendship may be more valuable than an intense experience that creates anxiety later. The key test is what a choice does to future freedom from pain and fear.";
   }
+  if (isEpicureanism(input.course)) {
+    return input.mode === "socratic"
+      ? "先把问题放回本课的区分中：你是在问 Epicurus 的原始论证，还是后来对它的批评？你会先选择哪一个？"
+      : "Start with the distinction used in this lesson, then apply it to the question. The tutor will keep the discussion within the course material and will separate Epicurus' own argument from later objections.";
+  }
   return input.mode === "socratic"
-    ? "先把问题放回本课的区分中：你是在问 Epicurus 的原始论证，还是后来对它的批评？你会先选择哪一个？"
-    : "Start with the distinction used in this lesson, then apply it to the question. The tutor will keep the discussion within the course material and will separate Epicurus' own argument from later objections.";
+    ? `先把问题放回本课（${input.course.title} / ${input.lesson.title}）的区分中：你会先抓住哪一个要点？`
+    : `Start with the distinction used in this lesson (${input.lesson.title}), then apply it to the question. Stay inside ${input.course.title}.`;
 }
 
 function streamText(text: string) {
