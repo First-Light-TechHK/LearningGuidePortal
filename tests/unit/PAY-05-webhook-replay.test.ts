@@ -3,8 +3,11 @@ import { after, before, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { payBlockedSkip, stripeEventsHaveTableUnique } from "./pay-strict-blocked";
 
-// Store lock for PAY-05 replay. Table-level UNIQUE is still missing — do not Closed.
+// PAY-05 Blocked: 支付过程开发未完成，完成后再解除.
+// EX-009: duplicate success events must not fulfil twice.
+// Need table UNIQUE on stripe_events (or claim-after). JSON array is not UNIQUE.
 
 const PLAN_ID = "epicureanism-pc-6";
 const COURSE_ID = "epicureanism";
@@ -30,29 +33,41 @@ after(async () => {
   }
 });
 
-test("PAY-05 store: replaying the same event.id must not grant twice", async () => {
-  const user = await store.registerUser({
-    email: "pay-05-replay@example.test",
-    password: "password1",
-    nickname: "Pay Five",
-  });
-  await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
-  const quote = await store.createQuote(user.id, PLAN_ID);
-  await store.createPendingStripeOrder(user.id, quote.quote.id);
-  const input = {
-    eventId: "evt_pay05_same",
-    eventType: "checkout.session.completed",
-    sessionId: "cs_pay05",
-    userId: user.id,
-    quoteId: quote.quote.id,
-    planId: PLAN_ID,
-    subscriptionId: "sub_pay05",
-  };
-  const first = await store.fulfilStripeCheckout(input);
-  const second = await store.fulfilStripeCheckout(input);
-  assert.equal(first.duplicate, false);
-  assert.equal(second.duplicate, true);
-  const entitlements = (await store.ensureProductData()).entitlements.filter((item) => item.userId === user.id && item.state === "active");
-  assert.equal(entitlements.length, 1);
-  assert.equal((await store.checkEntitlement(user.id, COURSE_ID)).allowed, true);
-});
+test(
+  "PAY-05: duplicate success events must not fulfil twice; stripe_events UNIQUE required",
+  { skip: payBlockedSkip("PAY-05") },
+  async () => {
+    assert.equal(
+      stripeEventsHaveTableUnique(),
+      true,
+      "EX-009: stripe_events must have table-level UNIQUE; product.json stripeEvents[] / in-process claim is not enough",
+    );
+
+    const user = await store.registerUser({
+      email: "pay-05-replay@example.test",
+      password: "password1",
+      nickname: "Pay Five",
+    });
+    await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
+    const quote = await store.createQuote(user.id, PLAN_ID);
+    await store.createPendingStripeOrder(user.id, quote.quote.id);
+    const input = {
+      eventId: "evt_pay05_same",
+      eventType: "checkout.session.completed",
+      sessionId: "cs_pay05",
+      userId: user.id,
+      quoteId: quote.quote.id,
+      planId: PLAN_ID,
+      subscriptionId: "sub_pay05",
+    };
+    const first = await store.fulfilStripeCheckout(input);
+    const second = await store.fulfilStripeCheckout(input);
+    assert.equal(first.duplicate, false);
+    assert.equal(second.duplicate, true);
+    const entitlements = (await store.ensureProductData()).entitlements.filter(
+      (item) => item.userId === user.id && item.state === "active",
+    );
+    assert.equal(entitlements.length, 1);
+    assert.equal((await store.checkEntitlement(user.id, COURSE_ID)).allowed, true);
+  },
+);
