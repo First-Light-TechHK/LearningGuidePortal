@@ -136,6 +136,9 @@
     "oauthAccountConflict": "An account already uses this email. Sign in with your email and password before linking Google.",
     "oauthAccountDisabled": "This Learning Guide account has been disabled.",
     "oauthEmailUnverified": "Google did not provide a verified email address.",
+    "oauthCancelled": "WeChat sign-in was cancelled. Please try again.",
+    "oauthIdentityConflict": "Your WeChat identity has conflicting account links. Please contact support.",
+    "oauthStateExpired": "Your sign-in request has expired or is invalid. Please start again.",
     "oauthError": "The provider sign-in could not be completed. Please try again or use email and password."
   },
   "learning": {

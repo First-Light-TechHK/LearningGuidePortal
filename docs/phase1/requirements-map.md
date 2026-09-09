@@ -10,6 +10,8 @@ Email registration is implemented in `services/productStore.ts`, `services/email
 
 Google registration and sign-in are implemented in `services/oauthService.ts`, `app/api/auth/google`, and `app/api/auth/google/callback`. The server-side Authorization Code flow uses signed state, OIDC nonce, PKCE and verified ID Token claims. Accounts are keyed by `(provider, providerSubject)` and are never merged automatically by email.
 
+WeChat website login is implemented in `contracts/wechat.ts`, `services/wechatOAuthService.ts`, `services/productStore.ts`, and `app/api/auth/wechat/*`. The stable subject is `appId:openid`, with UnionID stored separately. Accounts without email are supported without inventing verified addresses; Stripe Checkout omits absent customer email. Legacy identity migration preserves userId and refuses ambiguous matches. Callback success/failure clears the transaction cookie and uses localised sign-in errors. Service and Route Handler integration coverage: `tests/integration/wechat-login.spec.ts`; run `npm run test:auth`. Real QR smoke testing remains required in the target environment. This change retains the existing JSON product persistence; it does not complete the separate relational/multi-instance production migration.
+
 | PRD | 页面 | 服务 / Basic Components | 主要数据 | 先完成的验收 |
 |---|---|---|---|---|
 | Portal | `/`、`/courses`、`/courses/:course_slug`、`/courses/:course_slug/public-lesson`、`/pricing`、`/subscription/confirm`、Stripe result、`/learn/:course_id`、FAQ、legal | Portal、Course Management、Purchase、User Authentication、Rule Engine | Course、Section、Lesson、Plan、Entitlement、FAQ、Cookie Consent | 游客可浏览已发布课程和 Public First Lesson；完整 Course 必须再次由服务端检查 Entitlement |

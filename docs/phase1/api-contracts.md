@@ -6,6 +6,8 @@ Email registration uses `POST /api/auth/sign-up`, activation uses `POST /api/aut
 
 Google authentication uses `GET /api/auth/google` and `GET /api/auth/google/callback`. The first route creates a signed state/nonce/PKCE transaction and redirects to Google. The callback verifies the transaction and Google ID Token before calling the User Authentication service and creating the application Session cookie. Existing email accounts are not automatically linked.
 
+WeChat uses `GET /api/auth/wechat?locale=en-GB&returnTo=/en-GB/account/my-learning` and `GET /api/auth/wechat/callback?code=...&state=...`. Callbacks return a 303 redirect and expire the transaction cookie on success and failure. Failures preserve a validated locale/returnTo and use `oauthError=state|cancelled|disabled|wechat-conflict|wechat`. The trusted identity contract is `contracts/wechat.ts`: subject is always `appId:openid`; UnionID is metadata. WeChat users may have `email: null` and `emailVerifiedAt: null`; an active linked WeChat account can hold a Session without email verification. Email/password authentication still requires verified email. No accounts are merged by profile or email. Provider tokens and codes are never returned to the client.
+
 ```ts
 type ApiResult<T> =
   | { ok: true; data: T; requestId: string }

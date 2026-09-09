@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next start",
     "lint": "eslint .",
-    "test:auth": "playwright test tests/integration/email-verification.spec.ts --workers=1",
+    "test:auth": "playwright test --config=playwright.auth.config.ts",
     "setup:local": "node scripts/setup-local.mjs",
     "smoke:product": "node scripts/smoke-product.mjs",
     "preflight:production": "node scripts/preflight-production.mjs",

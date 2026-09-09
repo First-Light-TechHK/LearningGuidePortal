@@ -47,6 +47,10 @@ erDiagram
 
 ## 3. 状态规则
 
+WeChat Account additions: `wechatAppId`, `wechatOpenId`, optional `wechatUnionId`; `providerSubject` is `${appId}:${openid}`. `User.email` is nullable; absent email means `emailVerifiedAt = null`. An active linked WeChat account is sufficient for application Session validation, while password login continues to require verified email.
+
+The current JSON store migrates a legacy unscoped OpenID/UnionID on the next successful provider authentication, using only IDs returned by WeChat. It retains userId and associated records, clears legacy `wechat-*@local.invalid` email and verification, and rejects multiple matching Accounts. Existing real contact email is preserved. With missing UnionID, a legacy UnionID-only identity cannot be recovered until WeChat returns that ID. Before changing AppID or enabling multi-instance traffic, reconcile legacy Accounts and migrate to relational repositories with unique `(provider, provider_subject)` constraints. No SQL alteration is applied here: this checkout currently stores product records in JSON through `app_files`, not relational users/accounts tables.
+
 ```text
 Trial Active -> Trial Canceled -> Trial Active（原 trial_end_at 之前可恢复）
 Trial Active -> Trial Expired

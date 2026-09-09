@@ -136,6 +136,9 @@
     "oauthAccountConflict": "该邮箱已经关联 Learning Guide 账号。请先使用邮箱和密码登录，再绑定 Google。",
     "oauthAccountDisabled": "该 Learning Guide 账号已被禁用。",
     "oauthEmailUnverified": "Google 没有提供已验证的邮箱地址。",
+    "oauthCancelled": "微信登录已取消，请重新尝试。",
+    "oauthStateExpired": "登录请求已过期或无效，请重新发起登录。",
+    "oauthIdentityConflict": "微信身份关联存在冲突，请联系支持团队处理。",
     "oauthError": "第三方登录没有完成，请重试或使用邮箱和密码。"
   },
   "learning": {

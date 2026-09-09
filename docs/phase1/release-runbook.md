@@ -50,6 +50,15 @@ GitHub pull request
 
 ## 5. 回滚
 
+### WeChat login smoke test
+
+- Use the configured HTTPS origin for both the login page and `/api/auth/wechat/callback`; set `LOCAL_SOCIAL_LOGIN=0`. `configured` health status checks presence of credentials, not provider acceptance.
+- Run `npm run test:auth` and `npm run build` before deploying. Tests use fake provider responses and isolated temporary stores, never real credentials.
+- On the target domain, scan and confirm: first sign-in creates one student Account, repeated sign-in retains userId, and `/api/auth/me` accepts the Session even when email is absent. Check both locales and returnTo from Purchase/My Learning.
+- Cancel/expire the QR flow, retry, and verify that failures clear the temporary cookie without issuing a Session. Verify disabled accounts cannot sign in and expired/missing Entitlement still denies protected course access.
+- Test paid and trial Checkout with an absent email; no placeholder address is sent. Do not treat a Checkout contact email as verified application email.
+- Legacy subjects migrate lazily on successful login; back up product data before rollout. Do not roll back to code that requires verified email for all Sessions after no-email accounts exist. Prefer a forward fix or a tested compatibility build; preserve Orders and learning records.
+
 - 应用错误：把 App Runner 指回上一个已验证 image digest。
 - 数据库错误：先停止继续发布，按 migration 的反向操作或备份恢复方案处理；不得直接删除生产表。
 - Stripe/Entitlement 错误：停止新 checkout，保留 webhook 接收，修复后按 Stripe 当前对象重新同步；不得手工在页面上“补开权限”。

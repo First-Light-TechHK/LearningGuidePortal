@@ -43,7 +43,7 @@ assert(result.status === 200 && result.body.ok, "logout after local Google sign-
 result = await request(`/api/auth/wechat?locale=en-GB&returnTo=${encodeURIComponent("/en-GB/account/my-learning")}`);
 assert(result.status === 307 && result.location?.endsWith("/en-GB/account/my-learning") && new URL(result.location, base).origin === new URL(base).origin, "local WeChat sign-in did not redirect on the current host");
 result = await request("/api/auth/me");
-assert(result.status === 200 && result.body.user?.email === "wechat.local@example.test", "local WeChat session failed");
+assert(result.status === 200 && Boolean(result.body.user?.id) && result.body.user.email === null, "local WeChat session failed");
 result = await request("/api/auth/logout", { method: "POST" });
 assert(result.status === 200 && result.body.ok, "logout after local WeChat sign-in failed");
 

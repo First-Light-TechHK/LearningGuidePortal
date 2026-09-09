@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import path from "path";
 import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
+import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment } from "./runtimeConfig";
 import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
 
@@ -14,7 +15,7 @@ const TRIAL_DAYS = 3;
 export type Locale = "en-GB" | "zh-CN";
 export type ProductUser = {
   id: string;
-  email: string;
+  email: string | null;
   passwordHash: string | null;
   nickname: string;
   locale: Locale;
@@ -171,7 +172,7 @@ export type ProductNotification = {
 };
 export type ProductSession = { id: string; tokenHash: string; userId: string; expiresAt: string; createdAt: string };
 export type ProductToken = { id: string; userId: string; tokenHash: string; expiresAt: string; usedAt: string | null; createdAt: string };
-export type ProductAccount = { id: string; userId: string; provider: "google" | "wechat"; providerSubject: string; createdAt: string };
+export type ProductAccount = { id: string; userId: string; provider: "google" | "wechat"; providerSubject: string; wechatAppId?: string; wechatOpenId?: string; wechatUnionId?: string; createdAt: string };
 
 export class ProductAuthError extends Error {
   constructor(public readonly code: "account_conflict" | "account_disabled" | "account_unavailable", message: string) {
@@ -511,7 +512,7 @@ export async function registerUser(input: { email: string; password: string; loc
       existing.nickname = nickname;
       existing.locale = input.locale === "zh-CN" ? "zh-CN" : "en-GB";
       existing.emailVerifiedAt = null;
-      return existing;
+      return { ...existing, email };
     }
     const user: ProductUser = {
       id: id("user"),
@@ -525,28 +526,48 @@ export async function registerUser(input: { email: string; password: string; loc
       createdAt: now(),
     };
     data.users.push(user);
-    return user;
+    return { ...user, email };
   });
 }
 
-export async function getOrCreateSocialUser(input: { provider: "google" | "wechat"; providerSubject: string; email: string; nickname?: string; locale?: Locale }) {
-  const email = input.email.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("The provider did not return a usable email address.");
+export async function getOrCreateSocialUser(input: SocialUserInput) {
+  const email = input.provider === "wechat" ? null : input.email?.trim().toLowerCase() || null;
+  if (input.provider === "google" && (!email || !/^\S+@\S+\.\S+$/.test(email))) throw new Error("The provider did not return a usable email address.");
   return editData(async (data) => {
-    const account = data.accounts.find((item) => item.provider === input.provider && item.providerSubject === input.providerSubject);
+    let account = data.accounts.find((item) => item.provider === input.provider && item.providerSubject === input.providerSubject);
+    if (input.provider === "wechat" && input.wechat) {
+      const { appId, openId, unionId } = input.wechat;
+      if (input.providerSubject !== `${appId}:${openId}`) throw new ProductAuthError("account_unavailable", "Invalid provider identity.");
+      // Migrate only legacy unscoped subjects proven by the current provider response.
+      const legacy = data.accounts.filter((item) => item.provider === "wechat" && !item.wechatAppId &&
+        (item.providerSubject === openId || (unionId && item.providerSubject === unionId)));
+      const matches = [...new Set([...(account ? [account] : []), ...legacy])];
+      if (matches.length > 1) throw new ProductAuthError("account_conflict", "Provider identity requires account review.");
+      account = matches[0];
+      if (account) {
+        account.providerSubject = input.providerSubject;
+        account.wechatAppId = appId;
+        account.wechatOpenId = openId;
+        if (unionId) account.wechatUnionId = unionId;
+      }
+    }
     if (account) {
       const user = data.users.find((item) => item.id === account.userId);
       if (!user) throw new ProductAuthError("account_unavailable", "This account is not available.");
       if (user.status === "disabled") throw new ProductAuthError("account_disabled", "This account has been disabled.");
       if (user.status !== "active") throw new ProductAuthError("account_unavailable", "This account is not available.");
-      if (user.email !== email && !data.users.some((item) => item.id !== user.id && item.email === email)) user.email = email;
+      if (input.provider === "wechat" && user.email?.startsWith("wechat-") && user.email.endsWith("@local.invalid")) {
+        user.email = null;
+        user.emailVerifiedAt = null;
+      }
+      if (email && user.email !== email && !data.users.some((item) => item.id !== user.id && item.email === email)) user.email = email;
       return user;
     }
-    if (data.users.some((item) => item.email === email)) throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
+    if (email && data.users.some((item) => item.email === email)) throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
     const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
-    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: now(), createdAt: now() };
+    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: input.provider === "google" && process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
-    data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
+    data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, wechatAppId: input.wechat?.appId, wechatOpenId: input.wechat?.openId, wechatUnionId: input.wechat?.unionId, createdAt: now() });
     data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
     return user;
   });
@@ -604,8 +625,8 @@ export async function requestEmailVerification(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === email && item.status === "pending");
-  if (!user) return { accepted: true as const, user: null, token: null };
-  return { accepted: true as const, user, token: await issueEmailVerificationToken(user.id, true) };
+  if (!user?.email) return { accepted: true as const, user: null, token: null };
+  return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true) };
 }
 
 export async function verifyEmailToken(rawToken: string) {
@@ -727,7 +748,7 @@ export async function getUserBySessionToken(token: string | undefined) {
   const data = await ensureProductData();
   const session = data.sessions.find((item) => item.tokenHash === hashToken(token) && new Date(item.expiresAt) > new Date());
   if (!session) return null;
-  return data.users.find((user) => user.id === session.userId && user.status === "active" && Boolean(user.emailVerifiedAt)) || null;
+  return data.users.find((user) => user.id === session.userId && user.status === "active" && (Boolean(user.emailVerifiedAt) || data.accounts.some((account) => account.userId === user.id && account.provider === "wechat"))) || null;
 }
 
 export async function deleteSession(token: string | undefined) {

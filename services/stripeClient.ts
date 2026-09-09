@@ -25,7 +25,7 @@ export async function getSubscriptionPaymentUrl(subscriptionId: string, customer
 export async function createHostedCheckout(input: {
   origin: string;
   locale: "en-GB" | "zh-CN";
-  userEmail: string;
+  userEmail: string | null;
   orderId: string;
   userId: string;
   quoteId: string;
@@ -42,7 +42,7 @@ export async function createHostedCheckout(input: {
   const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
-    customer_email: input.userEmail,
+    customer_email: input.userEmail || undefined,
     line_items: [{
       quantity: 1,
       price_data: {
@@ -64,7 +64,7 @@ export async function createHostedCheckout(input: {
 export async function createHostedUpgradeCheckout(input: {
   origin: string;
   locale: "en-GB" | "zh-CN";
-  userEmail: string;
+  userEmail: string | null;
   orderId: string;
   userId: string;
   quoteId: string;
@@ -76,7 +76,7 @@ export async function createHostedUpgradeCheckout(input: {
 }) {
   const session = await getStripe().checkout.sessions.create({
     mode: "payment",
-    customer_email: input.userEmail,
+    customer_email: input.userEmail || undefined,
     line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName } } }],
     metadata: { kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
     success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
@@ -89,7 +89,7 @@ export async function createHostedUpgradeCheckout(input: {
 export async function createHostedTrialCheckout(input: {
   origin: string;
   locale: "en-GB" | "zh-CN";
-  userEmail: string;
+  userEmail: string | null;
   orderId: string;
   userId: string;
   quoteId: string;
@@ -106,7 +106,7 @@ export async function createHostedTrialCheckout(input: {
   const scopeType = input.scopeType || (input.courseId === "*" ? "everything" : "course");
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
-    customer_email: input.userEmail,
+    customer_email: input.userEmail || undefined,
     payment_method_collection: "always",
     line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName }, recurring: { interval: "month", interval_count: input.termMonths } } }],
     metadata: { kind: "trial_activation", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, courseId: input.courseId, scopeType, scopeId: input.scopeId || input.courseId },

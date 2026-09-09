@@ -121,19 +121,4 @@ export async function fetchGoogleProfile(code: string, redirectUri: string, tran
   }
 }
 
-export async function fetchWeChatProfile(code: string) {
-  const appId = process.env.WECHAT_APP_ID?.trim();
-  const appSecret = process.env.WECHAT_APP_SECRET?.trim();
-  if (!appId || !appSecret) throw new Error("WeChat sign-in is not configured.");
-  const tokenUrl = new URL("https://api.weixin.qq.com/sns/oauth2/access_token");
-  tokenUrl.search = new URLSearchParams({ appid: appId, secret: appSecret, code, grant_type: "authorization_code" }).toString();
-  const tokenResponse = await fetch(tokenUrl);
-  const token = await tokenResponse.json() as { access_token?: string; openid?: string; unionid?: string; errcode?: number };
-  if (!tokenResponse.ok || !token.access_token || !token.openid) throw new Error("WeChat sign-in could not be completed.");
-  const profileUrl = new URL("https://api.weixin.qq.com/sns/userinfo");
-  profileUrl.search = new URLSearchParams({ access_token: token.access_token, openid: token.openid, lang: "en" }).toString();
-  const profileResponse = await fetch(profileUrl);
-  const profile = await profileResponse.json() as { nickname?: string; unionid?: string; openid?: string; errcode?: number };
-  if (!profileResponse.ok || profile.errcode || !profile.openid) throw new Error("WeChat profile could not be read.");
-  return { subject: profile.unionid || token.unionid || profile.openid, email: `wechat-${profile.unionid || token.unionid || profile.openid}@local.invalid`, nickname: profile.nickname };
-}
+export { fetchWeChatProfile, WeChatOAuthError } from "./wechatOAuthService";

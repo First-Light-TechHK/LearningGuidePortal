@@ -112,5 +112,10 @@ export function appOrigin(request?: Request) {
 }
 
 export function safeReturnTo(value: string | null | undefined, fallback: string) {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : fallback;
+  if (!value || !value.startsWith("/") || /[\\\x00-\x20]/.test(value)) return fallback;
+  try {
+    const base = "https://return.invalid";
+    const parsed = new URL(value, base);
+    return parsed.origin === base ? `${parsed.pathname}${parsed.search}${parsed.hash}` : fallback;
+  } catch { return fallback; }
 }
