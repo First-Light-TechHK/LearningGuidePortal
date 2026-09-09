@@ -3,7 +3,8 @@ import path from "path";
 import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
 import type { SocialUserInput } from "@/contracts/wechat";
-import { isProductionEnvironment } from "./runtimeConfig";
+import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
+import { configuredStripePrice } from "./stripePrices";
 import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
@@ -856,9 +857,29 @@ export function publicFirstLesson(course: ProductCourse) {
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
   return data.plans.filter((plan) => {
+    if (paymentMode() === "stripe" && process.env.STRIPE_SANDBOX === "1" && !configuredStripePrice(plan.id)) return false;
     const scope = planScope(plan);
     if (courseId) return plan.device === "pc" && scope.scope === "course" && scope.scopeId === courseId;
     return (plan.device === "pc" && ["course", "category", "everything"].includes(scope.scope)) || (plan.device === "mobile" && scope.scope === "everything");
+  });
+}
+
+export async function syncSandboxStripePlans(plans: ProductPlan[]) {
+  if (isProductionEnvironment() || process.env.STRIPE_SANDBOX !== "1" || process.env.STORAGE_BACKEND !== "local" || !process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) {
+    throw new Error("Catalogue synchronisation is restricted to local Stripe sandbox storage.");
+  }
+  return editData(data => {
+    const changed = new Set<string>();
+    for (const plan of plans) {
+      const existing = data.plans.find(item => item.id === plan.id);
+      if (!existing || existing.amountMinor !== plan.amountMinor || existing.currency !== plan.currency) changed.add(plan.id);
+      if (existing) Object.assign(existing, plan);
+      else data.plans.push(plan);
+    }
+    for (const quote of data.quotes) {
+      if (changed.has(quote.planId)) quote.expiresAt = now();
+    }
+    return { plans: plans.length, changed: [...changed] };
   });
 }
 
@@ -1292,7 +1313,8 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
 
 export async function applyStripePaidInvoice(input: { subscriptionId: string; invoiceId: string; amountMinor: number; paymentIntentId?: string | null; currentPeriodStart?: string | null; currentPeriodEnd?: string | null }) {
   return editData((data) => {
-    if (data.orders.some((order) => order.stripeInvoiceId === input.invoiceId)) return null;
+    const paidOrder = data.orders.find((order) => order.stripeInvoiceId === input.invoiceId);
+    if (paidOrder) return paidOrder;
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === input.subscriptionId && item.source === "purchase");
     if (!subscription) return null;
     const plan = data.plans.find((item) => item.id === subscription.planId);
@@ -1327,6 +1349,7 @@ export async function markStripeTrialGrace(subscriptionId: string) {
   return editData((data) => {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "trial" && item.state !== "expired");
     if (!subscription) return null;
+    if (subscription.state === "grace") return subscription;
     const graceEnd = new Date();
     graceEnd.setUTCDate(graceEnd.getUTCDate() + TRIAL_DAYS);
     subscription.state = "grace";
@@ -1343,6 +1366,7 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
   return editData((data) => {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "purchase" && item.state !== "expired");
     if (!subscription) return null;
+    if (subscription.state === "grace") return subscription;
     const graceEnd = new Date();
     graceEnd.setUTCDate(graceEnd.getUTCDate() + TRIAL_DAYS);
     subscription.state = "grace";
@@ -1392,14 +1416,17 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   return order;
 }
 
-export async function fulfilStripeCheckout(input: { eventId: string; eventType: string; sessionId: string; userId: string; quoteId: string; planId: string; subscriptionId?: string; customerId?: string; paymentIntentId?: string }) {
+export async function fulfilStripeCheckout(input: { eventId: string; eventType: string; sessionId: string; userId: string; quoteId: string; planId: string; amountMinor?: number; currency?: string; subscriptionId?: string; customerId?: string; paymentIntentId?: string }) {
   return editData((data) => {
     data.stripeEvents ||= [];
     if (data.stripeEvents.some((item) => item.id === input.eventId)) return { duplicate: true, order: null };
     data.stripeEvents.unshift({ id: input.eventId, type: input.eventType, processedAt: now() });
     const order = data.orders.find((item) => item.userId === input.userId && (item.stripeCheckoutSessionId === input.sessionId || item.quoteId === input.quoteId));
     const plan = data.plans.find((item) => item.id === input.planId);
-    if (!order || !plan) return { duplicate: false, order: null };
+    if (!order || !plan) throw new Error("Checkout order or plan not found; retry this event.");
+    if (order.paymentMode !== "stripe" || order.planId !== plan.id) throw new Error("Checkout does not match the order.");
+    if (input.amountMinor !== undefined && input.amountMinor !== order.amountMinor) throw new Error("Checkout amount does not match the order.");
+    if (input.currency !== undefined && input.currency !== order.currency) throw new Error("Checkout currency does not match the order.");
     if (order.kind === "upgrade") {
       order.stripeCheckoutSessionId = input.sessionId;
       order.stripeSubscriptionId = input.subscriptionId || order.stripeSubscriptionId || null;
@@ -1412,12 +1439,32 @@ export async function fulfilStripeCheckout(input: { eventId: string; eventType: 
   });
 }
 
-export async function claimStripeEvent(eventId: string, eventType: string) {
+export async function stripeEventProcessed(eventId: string) {
+  const data = await ensureProductData();
+  return data.stripeEvents.some(item => item.id === eventId);
+}
+
+export async function completeStripeEvent(eventId: string, eventType: string) {
   return editData((data) => {
     data.stripeEvents ||= [];
     if (data.stripeEvents.some((item) => item.id === eventId)) return false;
     data.stripeEvents.unshift({ id: eventId, type: eventType, processedAt: now() });
     return true;
+  });
+}
+
+export async function recordStripeCheckoutFailure(input: { eventId: string; eventType: string; orderId: string; sessionId: string; status: "failed" | "canceled" }) {
+  return editData(data => {
+    if (data.stripeEvents.some(item => item.id === input.eventId)) return;
+    const order = data.orders.find(item => item.id === input.orderId && item.paymentMode === "stripe");
+    if (!order) throw new Error("Checkout order not found; retry this event.");
+    if (order.stripeCheckoutSessionId !== input.sessionId) throw new Error("Checkout session does not match the order.");
+    if (order.status !== "paid" && order.status !== "refunded") {
+      order.status = input.status;
+      order.lastStripeStatus = input.status;
+      order.failureReason = input.eventType;
+    }
+    data.stripeEvents.unshift({ id: input.eventId, type: input.eventType, processedAt: now() });
   });
 }
 

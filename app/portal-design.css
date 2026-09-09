@@ -5,17 +5,18 @@
 .portal-auth-heading .portal-brand-lockup { min-height:40px; font-size:24px; line-height:32px; gap:8px; }
 .portal-auth-page .portal-auth-heading h1 { margin:28px 0 8.5px; font-size:30px; line-height:36px; }
 .portal-auth-page .portal-auth-heading p { line-height:20px; }
-.portal-auth-stage .portal-form.auth-credential-form { display:flex; flex-direction:column; gap:0; padding:32px; }
+.portal-auth-stage .portal-form.auth-credential-form { display:flex; flex-direction:column; gap:0; padding:32px; border-radius:14px; box-shadow:0 4px 6px -4px rgb(0 0 0 / 10%),0 10px 15px -3px rgb(0 0 0 / 10%); }
 .auth-fields { display:grid; gap:20px; }
-.auth-credential-form .auth-fields > label { display:grid; gap:8px; margin:0; font-size:14px; line-height:20px; font-weight:400; }
+.auth-credential-form .auth-fields > label { display:grid; gap:8px; margin:0; font-size:14px; line-height:20px; font-weight:500; color:#364153; }
 .auth-input { position:relative; display:block; }
-.portal-auth-stage .auth-input input { min-height:50px; height:50px; padding:12px 40px; font-size:16px; }
+.portal-auth-stage .auth-input input { min-height:50px; height:50px; padding:12px 40px; font-size:16px; font-weight:400; border-radius:10px; border-color:#d1d5dc; }
 .auth-input > svg { position:absolute; left:12px; top:15px; color:#98a2b3; pointer-events:none; }
 .auth-password-toggle { position:absolute; right:0; top:0; height:50px; width:40px; display:grid; place-items:center; padding:0; color:#98a2b3; background:transparent; border:0; cursor:pointer; }
 .auth-options { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:24px; min-height:20px; font-size:14px; line-height:20px; }
 .portal-auth-stage .auth-options label { display:flex; align-items:center; gap:8px; margin:0; }
 .portal-auth-stage .auth-options input[type=checkbox] { height:16px; width:16px; min-height:16px; margin:0; }
-.auth-credential-form .auth-submit { margin-top:24px; }
+.auth-credential-form .auth-submit { margin-top:24px; font-weight:500; border-radius:10px; background:#155dfc; box-shadow:0 1px 2px -1px rgb(0 0 0 / 10%),0 1px 3px rgb(0 0 0 / 10%); }
+.auth-credential-form .auth-options label,.auth-credential-form .auth-options a { font-weight:500; }
 .auth-credential-form .auth-provider-options { margin-top:24px; }
 .auth-provider-options.auth-provider-icons { display:block; padding-top:0; border-top:0; }
 .auth-provider-divider { display:flex; align-items:center; gap:8px; color:#64748b; font-size:14px; line-height:20px; }
@@ -239,6 +240,20 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 .settings-disabled-options label { overflow-wrap:break-word; }
 .portal-header { min-height:68px; padding:0 40px; box-sizing:border-box; }
 .portal-header-inner { min-height:67px; width:100%; max-width:1440px; gap:30px; }
+.portal-header .portal-brand { font-weight:600 !important; color:#0a0a0a !important; gap:8px; }
+.portal-header .portal-brand-mark { width:24px; height:24px; }
+.portal-header .portal-nav { gap:30px; }
+.portal-header .portal-nav a,.portal-header .portal-header-link { font-weight:500; color:#4a5565; }
+.portal-header .portal-nav a.active,.portal-header .portal-nav a:hover { color:#155dfc; }
+.portal-header .portal-language { width:42px; min-height:22px; height:22px; padding:0 7px; border-radius:4px; background:#d9d9d9; color:#4a5565 !important; font-size:14px; font-weight:500; box-sizing:border-box; }
+.portal-language svg { width:8px; flex-shrink:0; }
+.portal-header .portal-header-cta { height:36px; min-height:36px; padding:0 15px; border-radius:10px; font-weight:500; }
+@media(min-width:1100px) {
+ .portal-header--visitor .portal-header-inner { display:grid; grid-template-columns:182.0390625px 1fr 297px; }
+ .portal-header--visitor .portal-header-actions { display:grid; grid-template-columns:79.7109375px 76.953125px 108.3359375px; column-gap:16px; width:297px; margin:0; }
+ .portal-header--visitor .portal-header-link { display:flex; align-items:center; justify-content:center; width:76.953125px; height:36px; }
+ .portal-header--visitor .portal-header-cta { width:108.3359375px; }
+}
 .portal-nav a { min-height:67px; }
 .portal-header-cta { min-height:36px; background:#155dfc; font-weight:500; }
 .portal-account-page { display:grid; grid-template-columns:minmax(40px,1fr) 280px minmax(0,min(1160px,calc(100% - 80px - 280px))) minmax(40px,1fr); grid-template-rows:auto 1fr auto; background:#f8fafd; }
