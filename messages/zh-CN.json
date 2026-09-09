@@ -241,11 +241,11 @@
     "subscription": "我的订阅",
     "notifications": "通知中心",
     "settings": "个人设置",
-    "help": "帮助中心 / 常见问题",
+    "help": "帮助中心",
     "menu": "账户菜单",
     "supportDescription": "获取客户支持。",
     "contact": "联系我们",
-    "contactAction": "联系客服"
+    "contactAction": "打开支持会话  →"
   },
   "notificationsPage": {
     "title": "通知中心",
@@ -258,9 +258,9 @@
   "settingsPage": {
     "title": "个人设置",
     "avatar": "头像",
-    "uploadAvatar": "上传图片",
+    "uploadAvatar": "上传照片",
     "removeAvatar": "使用默认头像",
-    "nickname": "姓名",
+    "nickname": "昵称",
     "email": "邮箱",
     "country": "国家/地区",
     "countryPlaceholder": "请选择国家/地区",
@@ -575,6 +575,8 @@
     "previewAvailable": "可预览",
     "previewLimit": "已完成预览内容",
     "previewDescription": "继续学习开放预览的课程内容。",
+    "previewSubhead": "已进入试看范围的课程，可在配置的试看范围内继续学习。",
+    "previewedCourses": "试看课程",
     "previewSaveError": "学习进度保存失败，请重试。",
     "progressUnavailable": "暂时无法加载学习进度。",
     "welcome": "欢迎回来，{name}",

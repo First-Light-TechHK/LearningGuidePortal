@@ -26,7 +26,7 @@ for (const [engineName, engine] of Object.entries({ chromium, firefox, webkit })
     assert.ok(await page.getByLabel("Email", {exact:true}).isDisabled());
     await page.locator('input[type="file"]').setInputFiles({name:"invalid.txt",mimeType:"text/plain",buffer:Buffer.from("invalid image")});
     assert.equal(await page.locator(".settings-profile-section").getByRole("alert").textContent(),"Use a JPG or PNG image.");
-    await page.getByLabel("Name", {exact:true}).fill("Updated Name");
+    await page.getByLabel("Nickname", {exact:true}).fill("Updated Name");
     await page.getByLabel("Country", {exact:true}).selectOption("Ireland");
     await page.locator(".settings-interest-menu summary").click();
     const options = page.locator(".settings-interest-menu input");
@@ -39,7 +39,7 @@ for (const [engineName, engine] of Object.entries({ chromium, firefox, webkit })
     await page.getByRole("button", {name:"Save changes",exact:true}).click();
     await page.getByRole("status").filter({hasText:"Settings saved."}).waitFor();
     await page.reload({waitUntil:"networkidle"});
-    assert.equal(await page.getByLabel("Name",{exact:true}).inputValue(),"Updated Name");
+    assert.equal(await page.getByLabel("Nickname",{exact:true}).inputValue(),"Updated Name");
     assert.equal(await page.getByLabel("Country",{exact:true}).inputValue(),"Ireland");
     const user = (await (await api.get(`${base}/api/me/profile`)).json()).user;
     assert.deepEqual(user.areasOfInterest,["Science","History","Philosophy","Mathematics","Literature"]);

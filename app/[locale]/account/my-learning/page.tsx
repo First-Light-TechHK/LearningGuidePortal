@@ -66,20 +66,23 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
   }
 
   const emptyCopy = overview.emptyState === "no_preview" ? copy.noPreviewCourses : copy.noCourses;
+  const previewOnly = overview.courses.length
+    ? overview.courses.every((item) => item.cardState === "previewing" || item.cardState === "preview_limit")
+    : overview.emptyState === "no_preview";
 
   return (
     <main className="portal-page portal-account-page overview-design-page">
       <PortalHeader locale={locale} active="my-learning" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
       <AccountNav locale={locale} copy={messages.account} />
       <section className="account-dashboard" aria-labelledby="my-learning-heading">
-        <div className="overview-heading"><div><h1 id="my-learning-heading">{design.welcome.replace("{name}", user.nickname)}</h1><p>{design.description}</p></div><span className="overview-access">{access}</span></div>
+        <div className="overview-heading"><div><h1 id="my-learning-heading">{design.welcome.replace("{name}", user.nickname)}</h1><p>{previewOnly ? design.previewSubhead : design.description}</p></div><span className="overview-access">{access}</span></div>
         <section aria-labelledby="continue-heading">
-          <div className="overview-section-heading"><h2 id="continue-heading">{design.yourLearning}</h2><p>{design.courseStates}</p></div>
+          <div className="overview-section-heading"><h2 id="continue-heading">{design.yourLearning}</h2><p>{previewOnly ? design.previewedCourses : design.courseStates}</p></div>
           {overview.courses.length ? <div className="account-learning-list">{overview.courses.map((item) => {
             const label = ctaLabel(item.cta);
             const href = ctaHref(item, item.cta);
             const primary = item.cta === "continue_learning" || item.cta === "continue_preview";
-            return <article className="account-learning-card overview-course" key={item.id}>
+            return <article className={`account-learning-card overview-course${item.cardState === "completed" ? " overview-course-completed" : ""}`} key={item.id}>
               <CourseThumbnail slug={item.courseId} title={item.courseTitle} />
               <div className="account-learning-card-content">
                 <h3>{item.courseTitle}</h3>

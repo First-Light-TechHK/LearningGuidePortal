@@ -240,12 +240,12 @@
     "overview": "Overview",
     "subscription": "My Subscription",
     "notifications": "Notification Center",
-    "settings": "Personal settings",
-    "help": "Help Center / FAQ",
+    "settings": "Personal Settings",
+    "help": "Help Center",
     "menu": "Account menu",
     "supportDescription": "Get support from our team.",
     "contact": "Contact us",
-    "contactAction": "Contact support"
+    "contactAction": "Open support chat  →"
   },
   "notificationsPage": {
     "title": "Notification centre",
@@ -256,11 +256,11 @@
     "viewAll": "View all notifications"
   },
   "settingsPage": {
-    "title": "Personal settings",
+    "title": "Personal Settings",
     "avatar": "Profile image",
-    "uploadAvatar": "Upload image",
+    "uploadAvatar": "Upload photo",
     "removeAvatar": "Use default",
-    "nickname": "Name",
+    "nickname": "Nickname",
     "email": "Email",
     "country": "Country",
     "countryPlaceholder": "Select your country",
@@ -575,6 +575,8 @@
     "previewAvailable": "Preview available",
     "previewLimit": "Preview limit reached",
     "previewDescription": "Continue within the configured preview range.",
+    "previewSubhead": "Previewed courses are available within their configured preview range.",
+    "previewedCourses": "Previewed courses",
     "previewSaveError": "Your progress could not be saved. Please try again.",
     "progressUnavailable": "Learning progress could not be loaded.",
     "welcome": "Welcome back, {name}",
