@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentProductUserFromRequest } from "@/services/productAuth";
 
 const GEMINI_MODEL = /^google\/gemini-/i;
 
 export async function POST(req: NextRequest) {
+  const user = await currentProductUserFromRequest(req);
+  if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "Missing OPENROUTER_API_KEY" }, { status: 500 });

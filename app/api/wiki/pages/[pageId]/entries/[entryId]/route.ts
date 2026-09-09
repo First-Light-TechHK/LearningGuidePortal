@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 import { deleteWikiEntry, updateWikiEntry } from "@/services/wikiStore";
 
 export async function PUT(request: Request, { params }: { params: Promise<{ pageId: string; entryId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { pageId, entryId } = await params;
     const body = (await request.json()) as { courseId?: string; knowledgeId?: string; title?: string; content?: string };
@@ -14,6 +17,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ page
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ pageId: string; entryId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { pageId, entryId } = await params;
     const url = new URL(request.url);

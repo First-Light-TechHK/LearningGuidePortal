@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { downloadRelease } from "@/services/releaseStore";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 
 export async function GET(request: Request, { params }: { params: Promise<{ releaseId: string }> }) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { releaseId } = await params;
     const url = new URL(request.url);

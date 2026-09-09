@@ -1,6 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { readPublishedWiki } from "../../lib/wiki-store";
 import { fetchOpenRouter, openRouterErrorMessage } from "../../../services/openRouterClient";
+import { currentProductUserFromRequest } from "../../../services/productAuth";
 
 export const runtime = "nodejs";
 
@@ -60,6 +61,8 @@ async function buildSystemPrompt(body: RequestBody) {
 }
 
 export async function POST(request: NextRequest) {
+  const user = await currentProductUserFromRequest(request);
+  if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   const body = (await request.json()) as RequestBody;
   const apiKey = process.env.OPENROUTER_API_KEY;
 

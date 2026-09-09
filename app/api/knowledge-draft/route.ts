@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { saveDraft } from "../../lib/wiki-store";
 
 export const runtime = "nodejs";
@@ -89,6 +90,8 @@ ${trimForPrompt(content, 12000)}
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const body = (await request.json()) as Body;
   const apiKey = process.env.OPENROUTER_API_KEY;
 

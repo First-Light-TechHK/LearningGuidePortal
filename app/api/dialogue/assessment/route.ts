@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { assessStandaloneDialogue, getLatestStandaloneDialogueAssessment, type DialogueAssessmentResult } from "@/services/dialogueTestingStore";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 
 export async function GET(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const ctx = normaliseContext(searchParams.get("courseId") || undefined, searchParams.get("knowledgeId") || undefined);
@@ -13,6 +16,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       courseId?: string;

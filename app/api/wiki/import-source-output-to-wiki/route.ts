@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { normaliseContext } from "@/services/sourceMaterialStore";
 import { createWikiFromImportSourceOutput } from "@/services/wikiStore";
 
 export async function POST(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const { courseId, knowledgeId, importSourceMarkdown } = (await request.json()) as {
       courseId?: string;

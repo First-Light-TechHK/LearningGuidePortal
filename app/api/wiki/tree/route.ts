@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { WIKI_STORE_ROOT } from "../../../lib/wiki-store";
@@ -20,7 +21,9 @@ const DEFAULT_TREE = [
   }
 ];
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   try {
     const text = await fs.readFile(TREE_FILE, "utf8");
     return Response.json({ tree: JSON.parse(text) });
@@ -30,6 +33,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const body = await request.json();
   await fs.mkdir(WIKI_STORE_ROOT, { recursive: true });
   await fs.writeFile(TREE_FILE, JSON.stringify(body.tree || DEFAULT_TREE, null, 2), "utf8");

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectIfUnauthenticated } from "@/services/productAuth";
 import { getSourceMaterials, normaliseContext } from "@/services/sourceMaterialStore";
 import { readDraftMeta, readGeneratedOutput, readImportSourceOutput, readIncrementalOutput, readOpenRouterDebug, readRequirements, readSelectedModel } from "@/services/draftStore";
 import { resolveModelMaxCompletionTokens } from "@/services/openRouterModelLimits";
@@ -13,6 +14,8 @@ function finishReasonFromDebug(debug: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
+  const denied = await rejectIfUnauthenticated(request);
+  if (denied) return denied;
   const url = new URL(request.url);
   const ctx = normaliseContext(url.searchParams.get("courseId"), url.searchParams.get("knowledgeId"));
   const requirements = await readRequirements(ctx.courseId, ctx.knowledgeId);
