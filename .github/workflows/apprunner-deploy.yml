@@ -1,10 +1,16 @@
-# 手动救急部署。禁止 push / pull_request 触发（避免再走云提交）。
-# 日常门禁只在 ci.yml（tests only）。本 workflow 必须保持 workflow_dispatch only。
+# 唯一 App Runner 发布口：workflow_dispatch only。禁止 push / pull_request。
+# ci.yml 只测、永不 start-deployment（避免与本文件双打）。
+# 竞态修复：GitHub concurrency 排队等（不取消前一个）+ 等到 Status=RUNNING 再 start-deployment；
+# 若仍撞 InvalidRequestException / not-RUNNING，继续等并重试，不在第一次碰撞失败。
 
 name: Deploy to App Runner
 
 on:
   workflow_dispatch:
+
+concurrency:
+  group: apprunner-deploy-learning-guide-portal
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -13,6 +19,7 @@ jobs:
   deploy:
     name: Trigger App Runner deployment
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
     steps:
       - name: Configure AWS credentials
@@ -22,7 +29,58 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-1
 
-      - name: Start deployment from main
+      - name: Queue-wait until RUNNING, then start-deployment
+        env:
+          APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
         run: |
-          aws apprunner start-deployment \
-            --service-arn arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
+          set -u
+          deadline=$((SECONDS + 1500))
+          sleep_s=20
+
+          describe_status() {
+            aws apprunner describe-service \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --query 'Service.Status' \
+              --output text
+          }
+
+          wait_until_running() {
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              status="$(describe_status || true)"
+              echo "App Runner Status=${status:-unknown}"
+              case "$status" in
+                RUNNING)
+                  return 0
+                  ;;
+                PAUSED|DELETED|DELETE_FAILED|CREATE_FAILED)
+                  echo "service is not deployable (Status=$status); not waiting further"
+                  return 1
+                  ;;
+              esac
+              echo "not RUNNING (OPERATION in progress or equivalent); queue/wait ${sleep_s}s"
+              sleep "$sleep_s"
+            done
+            echo "timeout: waited 25m for Status=RUNNING"
+            return 1
+          }
+
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if ! wait_until_running; then
+              exit 1
+            fi
+            if out="$(aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN" 2>&1)"; then
+              printf '%s\n' "$out"
+              echo "start-deployment accepted"
+              exit 0
+            fi
+            printf '%s\n' "$out"
+            if printf '%s\n' "$out" | grep -Eqi 'InvalidRequestException|isn.?t in RUNNING|not in RUNNING'; then
+              echo "start-deployment collided (service not RUNNING); wait and retry, do not fail"
+              sleep "$sleep_s"
+              continue
+            fi
+            echo "start-deployment failed with a non-collision error"
+            exit 1
+          done
+          echo "timeout: waited 25m to accept start-deployment"
+          exit 1

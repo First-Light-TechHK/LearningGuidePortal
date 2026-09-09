@@ -1,6 +1,8 @@
 # Actions = tests only（typecheck / unit / integration / test:ci）。
 # 对齐云构建形态：node:22 + npm ci + npm run build + next start -p 8080 探活。
-# 不部署到 App Runner / 云。本机 PAYMENT_MODE=demo / next dev / 3011 不是本 workflow 默认 env。
+# 本 workflow 永不 aws apprunner start-deployment、无 deploy job。
+# 云发布只在 apprunner-deploy.yml（workflow_dispatch + 排队等 RUNNING）。
+# 本机 PAYMENT_MODE=demo / next dev / 3011 不是本 workflow 默认 env。
 # demo e2e 与 smoke:product 不在 Actions（它们断言 DEV+demo，只属于开发者机器）。
 
 name: CI
