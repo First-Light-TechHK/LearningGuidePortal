@@ -1,6 +1,12 @@
 name: Deploy SIT
 on:
   workflow_dispatch:
+    inputs:
+      deployment_source:
+        description: App Runner source type already configured for SIT
+        type: choice
+        default: source
+        options: [source, image]
 permissions:
   contents: read
   actions: read
@@ -26,6 +32,7 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA" --jq '.workflow_runs | any(.conclusion == "success")' | grep -qx true
       - name: Build and publish the exact source as an ECR image
+        if: inputs.deployment_source == 'image'
         run: node scripts/publish-sit-image.mjs
       - name: Verify revision, deploy and await readiness
         env:

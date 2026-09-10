@@ -22,7 +22,7 @@
     "seed:science": "npx --yes tsx scripts/seed-science.ts",
     "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs",
-    "test:payment": "playwright test --config=playwright.payment.config.ts"
+    "test:payment": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.payment.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
