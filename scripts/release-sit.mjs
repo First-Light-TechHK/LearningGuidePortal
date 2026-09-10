@@ -24,8 +24,14 @@ if (!summary) throw new Error('SIT must be provisioned first');
 const current = aws('apprunner','describe-service', { ServiceArn: summary.ServiceArn }).Service;
 if (current.Status !== 'RUNNING') throw new Error('Another deployment is in progress; retry after it completes');
 const source = current.SourceConfiguration;
-source.CodeRepository.SourceCodeVersion = { Type: 'BRANCH', Value: branch };
-source.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables.APP_VERSION = sha;
+if (source.ImageRepository) {
+  if (!/^851987565851\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com\/learning-guide-portal@sha256:[a-f0-9]{64}$/.test(process.env.SIT_IMAGE || '')) throw new Error('A digest-pinned SIT_IMAGE is required');
+  source.ImageRepository.ImageIdentifier = process.env.SIT_IMAGE;
+  source.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables.APP_VERSION = sha;
+} else {
+  source.CodeRepository.SourceCodeVersion = { Type: 'BRANCH', Value: branch };
+  source.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables.APP_VERSION = sha;
+}
 source.AutoDeploymentsEnabled = false;
 const update = aws('apprunner','update-service', { ServiceArn: summary.ServiceArn, SourceConfiguration: source });
 console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.OperationId, sha, branch }));

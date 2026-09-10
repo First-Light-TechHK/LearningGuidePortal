@@ -6,7 +6,7 @@ SIT is a separate Learning Guide Phase 1 environment. It does not deploy KS Phas
 
 - Account: `851987565851`; region: `ap-southeast-1`.
 - CloudFormation stack: `learning-guide-sit`; template: `deploy/sit-infrastructure.yml`.
-- App Runner: `learning-guide-sit`, Node.js 22, 1 vCPU, 2 GiB; minimum 1 and maximum 2 instances. No automatic deployment.
+- App Runner: `learning-guide-sit`, Node.js 22, 1 vCPU, 2 GiB; minimum 1 and maximum 2 instances. No automatic deployment. SIT uses the existing Dockerfile and ECR repository with an immutable image digest; DEV continues using its existing GitHub source configuration.
 - RDS: `learning-guide-sit`, PostgreSQL 16.13, db.t4g.micro, 20 GiB gp3, encrypted, seven-day backups. Private address only. TCP 5432 is allowed only from the SIT application security group.
 - Separate database `learning_guide_sit` and restricted `lg_sit_app` login. The application does not use the RDS administrator credential. Tables: `app_files`, `product_payment_keys` (migration 009).
 - S3: `learning-guide-sit-851987565851`, prefix `learning-guide/sit`; versioned, public access blocked, HTTPS required. Runtime IAM cannot read the DEV bucket.
@@ -30,8 +30,8 @@ Intended origin: `https://sit.ilovelearningguide.com`. The customer manages DNSP
 ## Release process
 
 1. Commit the change and push the release branch. `Verify` runs typecheck, lint, build, unit, authentication and payment tests. The missing-configuration health test expects 503 and is not evidence of deployment readiness.
-2. The initial operator deployment uses `node scripts/provision-sit.mjs --deploy` only after Verify passes for that exact revision. Subsequent releases use the `Deploy SIT` workflow or `node scripts/release-sit.mjs`.
-3. The release script requires a successful Verify run for the exact SHA, confirms the branch tip, updates only the SIT service and stamps `APP_VERSION`. Do not push more commits to the release branch during a build.
+2. Build and publish with `node scripts/publish-sit-image.mjs`. It requires a clean committed working tree, creates the linux/amd64 image, labels the SHA and returns the ECR digest. Initial deployment sets `SIT_IMAGE` to this digest and runs `node scripts/provision-sit.mjs --deploy`. Subsequent releases use `Deploy SIT`, which requires Verify, builds/pushes the image and runs `node scripts/release-sit.mjs`.
+3. The release script requires a successful Verify run for the exact SHA, confirms the branch tip, updates only the SIT service to the pinned image and stamps `APP_VERSION`. Do not push more commits to the release branch during a build. The first operator deployment may use recorded local test results when GitHub write access is unavailable; this exception must be stated in the deployment record, not reported as a successful CI run.
 4. It waits for the exact App Runner operation to succeed, then requires `/api/health` to return HTTP 200, `environment=SIT`, the expected SHA, and successful database, migration and S3 checks. A failed operation, missing dependency or branch movement fails the release.
 5. Exercise email verification/reset, Google/WeChat consent, every plan, sandbox Checkout/webhook and resulting entitlement, failed/cancelled payments, renewal/cancellation, cross-user isolation, My Learning and both locales. Provider consent and DNS readiness are separate acceptance conditions, not implied by configured credentials.
 6. Save the SHA, operation ID, test results and known outstanding external actions. Roll back to a previously verified source revision using the same process. Do not roll back payment data or drop tables.
