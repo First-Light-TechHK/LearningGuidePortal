@@ -1,4 +1,5 @@
 import { Pool, type QueryResultRow } from "pg";
+import { readFileSync } from "node:fs";
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -13,7 +14,10 @@ export function getPool() {
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
-      ssl: disableSsl ? undefined : { rejectUnauthorized: false }
+      ssl: disableSsl ? undefined : {
+        rejectUnauthorized: true,
+        ...(process.env.DATABASE_CA_FILE ? { ca: readFileSync(process.env.DATABASE_CA_FILE, "utf8") } : {})
+      }
     });
   }
   return pool;

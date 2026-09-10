@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import { localeFrom, type Locale } from "@/lib/i18n/config";
-import { isProductionEnvironment } from "./runtimeConfig";
+import { appEnvironment } from "./runtimeConfig";
 
 export const OAUTH_STATE_COOKIE = "learning_guide_oauth_state";
 const OAUTH_TRANSACTION_SECONDS = 10 * 60;
@@ -38,7 +38,7 @@ export function wechatConfigured() {
 }
 
 export function localSocialLoginEnabled() {
-  return !isProductionEnvironment() && process.env.LOCAL_SOCIAL_LOGIN !== "0";
+  return appEnvironment() === "DEV" && process.env.LOCAL_SOCIAL_LOGIN !== "0";
 }
 
 export function googleEnabled() {

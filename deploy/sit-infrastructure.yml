@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Learning Guide isolated SIT network, database and storage
+Resources:
+  PrivateA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: vpc-0e4646b77db78a062
+      CidrBlock: 172.31.64.0/24
+      AvailabilityZone: ap-southeast-1a
+      MapPublicIpOnLaunch: false
+      Tags: [{Key: Name, Value: learning-guide-sit-a}]
+  PrivateB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: vpc-0e4646b77db78a062
+      CidrBlock: 172.31.65.0/24
+      AvailabilityZone: ap-southeast-1b
+      MapPublicIpOnLaunch: false
+      Tags: [{Key: Name, Value: learning-guide-sit-b}]
+  NatAddress:
+    Type: AWS::EC2::EIP
+    Properties: {Domain: vpc}
+  Nat:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatAddress.AllocationId
+      SubnetId: subnet-044ae069b8022b47c
+      Tags: [{Key: Name, Value: learning-guide-sit}]
+  Routes:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: vpc-0e4646b77db78a062}
+  Internet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref Routes
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref Nat
+  RouteA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateA, RouteTableId: !Ref Routes}
+  RouteB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateB, RouteTableId: !Ref Routes}
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: vpc-0e4646b77db78a062
+      ServiceName: com.amazonaws.ap-southeast-1.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref Routes]
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Learning Guide SIT application outbound access
+      VpcId: vpc-0e4646b77db78a062
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 465, ToPort: 465, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: 172.31.0.0/16}
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL only from SIT application
+      VpcId: vpc-0e4646b77db78a062
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+  DatabaseSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private SIT database subnets
+      SubnetIds: [!Ref PrivateA, !Ref PrivateB]
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: learning-guide-sit
+      DBName: learning_guide_sit
+      Engine: postgres
+      EngineVersion: '16.13'
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: '20'
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: lg_sit_admin
+      ManageMasterUserPassword: true
+      BackupRetentionPeriod: 7
+      PubliclyAccessible: false
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DatabaseSubnets
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      CopyTagsToSnapshot: true
+      Tags: [{Key: Project, Value: LearningGuide}, {Key: Environment, Value: SIT}]
+  Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: learning-guide-sit-851987565851
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: OldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt Bucket.Arn, !Sub '${Bucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': false}}
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: learning-guide-sit-runtime
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: tasks.apprunner.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: sit-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:learning-guide/sit/*'
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource: !Sub '${Bucket.Arn}/learning-guide/sit/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
+                Condition: {StringLike: {'s3:prefix': ['learning-guide/sit/*']}}
+              - Effect: Allow
+                Action: ses:SendEmail
+                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/learningguide@163.com'
+  Connector:
+    Type: AWS::AppRunner::VpcConnector
+    Properties:
+      VpcConnectorName: learning-guide-sit
+      Subnets: [!Ref PrivateA, !Ref PrivateB]
+      SecurityGroups: [!Ref AppSecurityGroup]
+  Scaling:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: learning-guide-sit
+      MinSize: 1
+      MaxSize: 2
+      MaxConcurrency: 50
+Outputs:
+  DatabaseHost: {Value: !GetAtt Database.Endpoint.Address}
+  MasterSecret: {Value: !GetAtt Database.MasterUserSecret.SecretArn}
+  ConnectorArn: {Value: !GetAtt Connector.VpcConnectorArn}
+  AppRoleArn: {Value: !GetAtt AppRole.Arn}
+  ScalingArn: {Value: !GetAtt Scaling.AutoScalingConfigurationArn}
+  BucketName: {Value: !Ref Bucket}
+  AppSecurityGroup: {Value: !Ref AppSecurityGroup}
+  PrivateSubnet: {Value: !Ref PrivateA}

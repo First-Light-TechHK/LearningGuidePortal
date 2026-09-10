@@ -8,6 +8,16 @@ export function isProductionEnvironment() {
   return ["PROD", "PPE/PROD"].includes(appEnvironment());
 }
 
+export function isManagedEnvironment() {
+  return ["SIT", "UAT", "PROD", "PPE/PROD", "PRODUCTION"].includes(appEnvironment());
+}
+
+export function localResetPreviewAllowed(request: Request) {
+  const url = new URL(request.url);
+  return appEnvironment() === "DEV" && process.env.STORAGE_BACKEND === "local"
+    && url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+}
+
 export function secureAuthCookie(request: Request) {
   if (appEnvironment() !== "DEV") return true;
   const url = new URL(request.url);
@@ -15,7 +25,7 @@ export function secureAuthCookie(request: Request) {
 }
 
 export function emailVerificationRequired() {
-  if (isProductionEnvironment()) return true;
+  if (isManagedEnvironment()) return true;
   return process.env.EMAIL_VERIFICATION_REQUIRED?.trim() !== "0";
 }
 
@@ -27,7 +37,7 @@ export function publicAppOrigin(request?: Request) {
   // Server redirects must use runtime configuration when one image is promoted across environments.
   const environment = process.env;
   const configured = environment.NEXT_PUBLIC_APP_URL?.trim();
-  if (isProductionEnvironment()) {
+  if (isManagedEnvironment()) {
     if (!configured) throw new Error("NEXT_PUBLIC_APP_URL is required in production.");
     let parsed: URL;
     try {
@@ -55,8 +65,8 @@ function hasEnv(name: string) {
 }
 
 export function runtimeConfiguration() {
-  const production = isProductionEnvironment();
-  const socialLocal = !production && process.env.LOCAL_SOCIAL_LOGIN !== "0";
+  const production = isManagedEnvironment();
+  const socialLocal = appEnvironment() === "DEV" && process.env.LOCAL_SOCIAL_LOGIN !== "0";
   const google = hasEnv("GOOGLE_CLIENT_ID") && hasEnv("GOOGLE_CLIENT_SECRET");
   const wechat = hasEnv("WECHAT_APP_ID") && hasEnv("WECHAT_APP_SECRET");
   const stripeSecret = hasEnv("STRIPE_SECRET_KEY");
@@ -70,6 +80,10 @@ export function runtimeConfiguration() {
   const payment = paymentMode();
   const required: string[] = [];
   if (production && !publicUrl) required.push("NEXT_PUBLIC_APP_URL");
+  if (production && publicUrl && !/^https:\/\//i.test(process.env.NEXT_PUBLIC_APP_URL || "")) required.push("HTTPS NEXT_PUBLIC_APP_URL");
+  if (production && process.env.LOCAL_SOCIAL_LOGIN !== "0") required.push("LOCAL_SOCIAL_LOGIN=0");
+  if (production && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
+  if (["SIT", "UAT"].includes(appEnvironment()) && (process.env.STRIPE_SANDBOX !== "1" || !process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_"))) required.push("Stripe sandbox test credentials");
   if (production && !persistentStorage) required.push("DATABASE_URL + DATA_S3_BUCKET (and STORAGE_BACKEND must not be local)");
   if (production && payment !== "stripe") required.push("PAYMENT_MODE=stripe");
   if (production && payment === "stripe" && !stripeSecret) required.push("STRIPE_SECRET_KEY");
@@ -82,7 +96,8 @@ export function runtimeConfiguration() {
   if ((google || wechat) && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
   return {
     environment: appEnvironment(),
-    production,
+    production: isProductionEnvironment(),
+    managed: production,
     publicUrl: publicUrl ? "configured" : "missing",
     storage: persistentStorage ? "postgresql+s3" : "local",
     payment: {
@@ -108,7 +123,7 @@ export function runtimeConfiguration() {
 export function appOrigin(request?: Request) {
   // In local development the browser host is authoritative. This keeps redirects and
   // cookies on 127.0.0.1 when the developer opened that host instead of localhost.
-  if (!isProductionEnvironment()) {
+  if (!isManagedEnvironment()) {
     const host = request?.headers.get("x-forwarded-host") || request?.headers.get("host");
     const protocol = request?.headers.get("x-forwarded-proto") || new URL(request?.url || "http://localhost:3000").protocol.replace(":", "");
     if (host) return `${protocol}://${host}`;
