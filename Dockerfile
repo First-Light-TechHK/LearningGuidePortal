@@ -25,7 +25,9 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/knowledge ./knowledge
 COPY --from=builder /app/prompts ./prompts
 COPY --from=builder /app/config ./config
+COPY --from=builder /app/deploy/rds-ap-southeast-1.pem ./deploy/rds-ap-southeast-1.pem
 COPY --from=builder /app/next.config.ts ./next.config.ts
+RUN mkdir -p /app/data && chown -R nextjs:nextjs /app/data /app/.next
 USER nextjs
 EXPOSE 8080
 CMD ["npm", "run", "start", "--", "-p", "8080"]
