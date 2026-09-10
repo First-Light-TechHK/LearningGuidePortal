@@ -44,7 +44,7 @@ function secret(key, value) {
 }
 secret('DATABASE_URL', `postgresql://lg_sit_app:${randomBytes(32).toString('hex')}@${out.DatabaseHost}:5432/learning_guide_sit`);
 secret('SESSION_SECRET', randomBytes(48).toString('hex'));
-for (const key of ['GOOGLE_CLIENT_SECRET','WECHAT_APP_ID','WECHAT_APP_SECRET','SMTP_PASS','OPENROUTER_API_KEY','STRIPE_SECRET_KEY']) {
+for (const key of ['GOOGLE_CLIENT_SECRET','WECHAT_APP_ID','WECHAT_APP_SECRET','OPENROUTER_API_KEY','STRIPE_SECRET_KEY']) {
   if (!original[key]) throw new Error(`Source credential missing: ${key}`);
   secret(key, original[key]);
 }
@@ -126,6 +126,7 @@ if (process.argv.includes('--bootstrap')) {
 if (process.argv.includes('--deploy')) {
   const sha = execFileSync('git', ['rev-parse','HEAD'], { encoding: 'utf8' }).trim();
   const variables = Object.fromEntries(Object.entries(config.RuntimeEnvironmentVariables).filter(([key]) => !/(SECRET|PASSWORD|TOKEN|DATABASE_URL|SMTP_PASS|OPENROUTER_API_KEY|WECHAT_APP_ID)/.test(key)));
+  for (const key of Object.keys(variables)) if (key.startsWith('SMTP_')) delete variables[key];
   Object.assign(variables, { APP_ENV: 'SIT', NODE_ENV: 'production', APP_VERSION: sha, NEXT_PUBLIC_APP_URL: 'https://sit.ilovelearningguide.com', OPENROUTER_SITE_URL: 'https://sit.ilovelearningguide.com', DATA_S3_BUCKET: out.BucketName, DATA_S3_PREFIX: 'learning-guide/sit', STORAGE_BACKEND: 'postgresql', DATABASE_CA_FILE: 'deploy/rds-ap-southeast-1.pem', PAYMENT_MODE: 'stripe', STRIPE_SANDBOX: '1', LOCAL_SOCIAL_LOGIN: '0', EMAIL_VERIFICATION_REQUIRED: '1' });
   let sourceConfig = { ...source.SourceConfiguration, AutoDeploymentsEnabled: false, CodeRepository: { ...source.SourceConfiguration.CodeRepository, SourceCodeVersion: { Type: 'BRANCH', Value: 'codex/sit-deployment' }, CodeConfiguration: { ConfigurationSource: 'API', CodeConfigurationValues: { Runtime: 'NODEJS_22', BuildCommand: 'npm ci && npm run build', StartCommand: 'npm run start -- -p 8080', Port: '8080', RuntimeEnvironmentVariables: variables, RuntimeEnvironmentSecrets: secretArns } } } };
   if (process.env.SIT_IMAGE) {

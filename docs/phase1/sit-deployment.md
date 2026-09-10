@@ -23,7 +23,7 @@ Intended origin: `https://sit.ilovelearningguide.com`. The customer manages DNSP
 
 - Google authorised redirect URI: `https://sit.ilovelearningguide.com/api/auth/google/callback`.
 - WeChat website-login authorised domain: `sit.ilovelearningguide.com`; callback: `https://sit.ilovelearningguide.com/api/auth/wechat/callback`. Confirm the provider supports adding SIT without replacing the current site's approved domain. Otherwise create a separate approved SIT website application.
-- Email: SMTP `smtp.163.com:465`, TLS, `learningguide@163.com`. SMTP password is a Secrets Manager reference. Registration and reset links use the configured SIT origin. No remote response includes a reset token.
+- Email: AWS SES sandbox, verified sender `learningguide@163.com`. The user approved restriction to verified test recipients. SMTP was tested and rejected authentication (535); SMTP variables are deliberately absent from SIT. Registration and reset links use the configured SIT origin. No remote response includes a reset token. Verify each tester's email in SES before testing; wider sending requires SES production access approval.
 - Stripe: sandbox only, eight recurring USD lookup keys. Endpoint: `https://sit.ilovelearningguide.com/api/payment/webhook`, separate signing secret. Events: Checkout completed, async succeeded/failed, expired; invoice paid/failed; subscription updated/deleted. The browser return cannot grant access.
 - No secrets are placed in this document or Git. Do not replace test keys with live keys in SIT.
 
