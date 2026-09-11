@@ -1,7 +1,6 @@
 # Native Overlay. Do not vendor overlay/. Pin overlay-v1.0.0.
 # validate + overlay run (armed only). draft/blocked stay never_red.
 # npm ci is only so armed product_command can execute. Do not add test:io to Verify.
-# overlay-run-existing.py is not this gate.
 
 name: overlay-check
 
