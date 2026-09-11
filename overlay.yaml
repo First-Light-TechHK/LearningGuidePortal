@@ -1,6 +1,7 @@
 # Overlay thin config for upstream CI. Pin is this repo SHA, not main/HEAD.
 # Adopter thin file only — do not vendor overlay/.
-# overlay-check is native overlay validate + overlay run (armed only).
+# overlay-check checks out overlay-v1.0.0 and runs overlay-run-existing.py.
+# That script is the workflow gate, not Overlay select armed.
 schema: overlay-config/v1
 product:
   repo: First-Light-TechHK/LearningGuidePortal

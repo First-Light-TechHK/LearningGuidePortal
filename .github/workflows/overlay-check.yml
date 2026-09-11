@@ -1,7 +1,9 @@
-# Native Overlay. Do not vendor overlay/. Pin overlay-v1.0.0.
-# validate + overlay run (armed only). draft/blocked stay never_red.
-# npm ci is only so armed product_command can execute. Do not add test:io to Verify.
-# overlay-run-existing.py is not this gate.
+# Overlay stays in this workflow. Do not copy AIOps / overlay/ into the product tree.
+# Pin overlay-v1.0.0. Checkout that tag into _aiops and validate.
+# Discovery of this repo's tests is in .github/scripts/overlay-run-existing.py:
+# cases.md ## function_id → tests/io/<suite-id>.test.ts or tests/unit/<id>-*.test.ts.
+# That script is the workflow gate, not Overlay select armed.
+# Do not scan tests/e2e or tests/integration. Do not add those to Verify.
 
 name: overlay-check
 
@@ -51,7 +53,8 @@ jobs:
       - name: Install product dependencies
         run: npm ci
 
-      - name: overlay run
-        run: |
-          mkdir -p receipts
-          python -m overlay run --branch main --root . --workdir . --write-receipt receipts/
+      - name: Discover Overlay-named tests
+        run: python .github/scripts/overlay-run-existing.py --discover --root .
+
+      - name: Run discovered suite tests
+        run: python .github/scripts/overlay-run-existing.py --root .
