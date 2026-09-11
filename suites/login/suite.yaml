@@ -1,14 +1,14 @@
 id: login
 title: Registration and Authentication
-status: draft
+status: armed
 kind: functional
 subject: product
 source: inbox/login.md
 packages:
   - modules/user-registration
   - app/api/auth
-reviewed_by: null
-reviewed_at: null
+reviewed_by: LibertychaserUS
+reviewed_at: 2026-09-11T11:20:00Z
 blocked_reason: null
-armed_reason: null
+armed_reason: Overlay suite armed; product_command is tests/io/login.test.ts
 product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/login.test.ts
