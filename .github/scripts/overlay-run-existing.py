@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Run suite product_command when the named test files exist on this checkout.
+"""Run every suite product_command. Do not skip. Do not mark blocked.
 
+Missing files or a failing command fail the job. Zero runs is idle.
 This is the product workflow runner, not Overlay-armed select.
-Do not vendor overlay/. Missing test files are skipped, not faked green.
-Zero runs is idle and must fail.
 """
 
 from __future__ import annotations
@@ -47,7 +46,6 @@ def main() -> int:
     root = Path.cwd()
     ran = 0
     failed: list[str] = []
-    skipped: list[str] = []
 
     docs = suite_docs(root)
     if not docs:
@@ -58,23 +56,23 @@ def main() -> int:
         suite_id = str(doc.get("id") or path.parent.name)
         command = str(doc.get("product_command") or "").strip()
         if not command:
-            skipped.append(f"{suite_id}:no_command")
-            print(f"skip {suite_id}: no product_command", file=sys.stderr)
+            print(f"fail {suite_id}: suite.yaml has no product_command", file=sys.stderr)
+            failed.append(f"{suite_id}:no_command")
             continue
 
         named = test_paths(command)
         if not named:
-            skipped.append(f"{suite_id}:no_test_paths")
-            print(f"skip {suite_id}: product_command has no test paths", file=sys.stderr)
+            print(f"fail {suite_id}: product_command has no test paths", file=sys.stderr)
+            failed.append(f"{suite_id}:no_test_paths")
             continue
 
         missing = [item for item in named if not (root / item).exists()]
         if missing:
-            skipped.append(f"{suite_id}:missing:{','.join(missing)}")
             print(
-                f"skip {suite_id}: test files not on this checkout: {', '.join(missing)}",
+                f"fail {suite_id}: test files missing: {', '.join(missing)}",
                 file=sys.stderr,
             )
+            failed.append(f"{suite_id}:missing")
             continue
 
         print(f"run {suite_id}: {command}", flush=True)
@@ -86,23 +84,17 @@ def main() -> int:
         else:
             print(f"pass {suite_id}", flush=True)
 
-    print(
-        f"overlay-run-existing: ran={ran} failed={len(failed)} skipped={len(skipped)}",
-        flush=True,
-    )
-    if skipped:
-        print("skipped: " + "; ".join(skipped), file=sys.stderr)
+    print(f"overlay-run-existing: ran={ran} failed={len(failed)}", flush=True)
     if ran < 1:
         print(
-            "overlay-check is idle: no suite product_command ran. "
-            "Green must not mean I/O passed.",
+            "overlay-check is idle: no suite product_command ran.",
             file=sys.stderr,
         )
         return 1
     if failed:
         print("failed: " + "; ".join(failed), file=sys.stderr)
         return 1
-    print(f"overlay-check executed {ran} suite product_command(s) from this checkout.")
+    print(f"overlay-check executed {ran} suite product_command(s).")
     return 0
 
 
