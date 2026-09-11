@@ -1,5 +1,6 @@
 # Overlay thin config for upstream CI. Pin is this repo SHA, not main/HEAD.
 # Adopter thin file only — do not vendor overlay/.
+# overlay-check is native overlay validate + overlay run (armed only).
 schema: overlay-config/v1
 product:
   repo: First-Light-TechHK/LearningGuidePortal

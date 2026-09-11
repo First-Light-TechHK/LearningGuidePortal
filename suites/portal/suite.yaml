@@ -1,14 +1,14 @@
 id: portal
 title: Portal course page primitives
-status: draft
+status: armed
 kind: functional
 subject: product
 source: inbox/portal.md
 packages:
   - modules/portal
   - modules/course-management
-reviewed_by: null
-reviewed_at: null
+reviewed_by: LibertychaserUS
+reviewed_at: 2026-09-11T11:03:00Z
 blocked_reason: null
-armed_reason: null
+armed_reason: unit product_command passes (UC-PORTAL course page primitives)
 product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/UC-PORTAL-course-page-primitives.test.ts
