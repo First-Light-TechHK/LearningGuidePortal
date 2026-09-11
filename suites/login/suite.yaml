@@ -1,0 +1,14 @@
+id: login
+title: Registration and Authentication
+status: draft
+kind: functional
+subject: product
+source: inbox/login.md
+packages:
+  - modules/user-registration
+  - app/api/auth
+reviewed_by: null
+reviewed_at: null
+blocked_reason: null
+armed_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/login.test.ts

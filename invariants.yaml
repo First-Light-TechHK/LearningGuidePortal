@@ -1,0 +1,24 @@
+schema: overlay-invariants/v1
+items:
+  - id: INV-unauth-no-grant
+    text: A missing, forged, or kicked session cannot create a quote, order, or entitlement.
+    function_ids:
+      - AUTH-06
+      - PAY-01
+      - PAY-02
+      - PAY-08
+    span: interaction
+  - id: INV-browser-not-price
+    text: Quote and checkout amounts are computed on the server; the browser cannot set the price.
+    function_ids:
+      - PAY-01
+      - PAY-03
+      - PAY-09
+    span: local
+  - id: INV-one-charge
+    text: Repeating a completed confirmation, an unmatched paid webhook, or a cancelled demo trial does not grant a second entitlement.
+    function_ids:
+      - PAY-04
+      - PAY-05
+      - PAY-10
+    span: interaction

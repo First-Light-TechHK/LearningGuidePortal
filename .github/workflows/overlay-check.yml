@@ -1,0 +1,39 @@
+# Thin Overlay caller. Do not copy the workshop ci.yml / pr-title / sop-lock.
+# Pin overlay-v1.0.0. Do not pin main. Do not vendor overlay/.
+# Do not workflow_call Verify. Draft / blocked suites must not redden this job.
+# branch=main so cursor/* PRs still select main's armed set.
+# overlay-v1.0.0 installs the product requirements.txt first; PyYAML lives there
+# so validate can import yaml. Do not add test:io to Verify.
+
+name: overlay-check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  overlay:
+    uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0
+    with:
+      enable_run: true
+      root: "."
+      branch: main
+      tool_repository: LibertychaserUS/AIOps
+      tool_ref: overlay-v1.0.0
+
+  overlay-check:
+    name: overlay-check
+    needs: overlay
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate
+        run: |
+          if [ "${{ needs.overlay.result }}" != "success" ]; then
+            echo "overlay reusable workflow failed"
+            exit 1
+          fi
+          echo "overlay-check passed"

@@ -1,0 +1,135 @@
+schema: overlay-trace/v1
+suite: payment
+items:
+  - function_id: PAY-01
+    level: integration
+    case_id: PAY-01/io/functional
+    type: functional
+    span: interaction
+    relates:
+      - AUTH-06
+  - function_id: PAY-01
+    level: integration
+    case_id: PAY-01/io/negative
+    type: negative
+  - function_id: PAY-01
+    level: integration
+    case_id: PAY-01/io/edge
+    type: edge
+  - function_id: PAY-02
+    level: integration
+    case_id: PAY-02/io/functional
+    type: functional
+  - function_id: PAY-02
+    level: smoke
+    case_id: PAY-02/io/negative
+    type: negative
+    span: interaction
+    relates:
+      - AUTH-06
+  - function_id: PAY-02
+    level: integration
+    case_id: PAY-02/io/edge
+    type: edge
+  - function_id: PAY-03
+    level: integration
+    case_id: PAY-03/io/functional
+    type: functional
+  - function_id: PAY-03
+    level: integration
+    case_id: PAY-03/io/negative
+    type: negative
+  - function_id: PAY-03
+    level: integration
+    case_id: PAY-03/io/edge
+    type: edge
+  - function_id: PAY-04
+    level: integration
+    case_id: PAY-04/io/functional
+    type: functional
+  - function_id: PAY-04
+    level: integration
+    case_id: PAY-04/io/negative
+    type: negative
+  - function_id: PAY-04
+    level: integration
+    case_id: PAY-04/io/edge
+    type: edge
+  - function_id: PAY-05
+    level: integration
+    case_id: PAY-05/io/functional
+    type: functional
+  - function_id: PAY-05
+    level: integration
+    case_id: PAY-05/io/negative
+    type: negative
+  - function_id: PAY-05
+    level: integration
+    case_id: PAY-05/io/edge
+    type: edge
+  - function_id: PAY-06
+    level: integration
+    case_id: PAY-06/io/functional
+    type: functional
+  - function_id: PAY-06
+    level: integration
+    case_id: PAY-06/io/negative
+    type: negative
+  - function_id: PAY-06
+    level: integration
+    case_id: PAY-06/io/edge
+    type: edge
+  - function_id: PAY-07
+    level: integration
+    case_id: PAY-07/io/functional
+    type: functional
+  - function_id: PAY-07
+    level: integration
+    case_id: PAY-07/io/negative
+    type: negative
+  - function_id: PAY-07
+    level: integration
+    case_id: PAY-07/io/edge
+    type: edge
+  - function_id: PAY-08
+    level: integration
+    case_id: PAY-08/io/functional
+    type: functional
+  - function_id: PAY-08
+    level: smoke
+    case_id: PAY-08/io/negative
+    type: negative
+    span: interaction
+    relates:
+      - AUTH-06
+  - function_id: PAY-08
+    level: integration
+    case_id: PAY-08/io/edge
+    type: edge
+  - function_id: PAY-09
+    level: integration
+    case_id: PAY-09/io/functional
+    type: functional
+  - function_id: PAY-09
+    level: integration
+    case_id: PAY-09/io/negative
+    type: negative
+  - function_id: PAY-09
+    level: integration
+    case_id: PAY-09/io/edge
+    type: edge
+  - function_id: PAY-10
+    level: integration
+    case_id: PAY-10/io/functional
+    type: functional
+    span: interaction
+    relates:
+      - AUTH-06
+  - function_id: PAY-10
+    level: integration
+    case_id: PAY-10/io/negative
+    type: negative
+  - function_id: PAY-10
+    level: integration
+    case_id: PAY-10/io/edge
+    type: edge

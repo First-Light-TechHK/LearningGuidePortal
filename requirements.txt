@@ -1,1 +1,4 @@
 youtube-transcript-api==1.2.4
+# overlay-v1.0.0 CI installs this file instead of AIOps requirements.txt.
+# Keep PyYAML so overlay validate can import yaml without vendoring overlay/.
+PyYAML>=6.0.1,<7

@@ -1,0 +1,81 @@
+schema: overlay-trace/v1
+suite: login
+items:
+  - function_id: AUTH-01
+    level: integration
+    case_id: AUTH-01/io/functional
+    type: functional
+  - function_id: AUTH-01
+    level: integration
+    case_id: AUTH-01/io/negative
+    type: negative
+  - function_id: AUTH-01
+    level: integration
+    case_id: AUTH-01/io/edge
+    type: edge
+  - function_id: AUTH-02
+    level: integration
+    case_id: AUTH-02/io/functional
+    type: functional
+  - function_id: AUTH-02
+    level: integration
+    case_id: AUTH-02/io/negative
+    type: negative
+  - function_id: AUTH-02
+    level: integration
+    case_id: AUTH-02/io/edge
+    type: edge
+  - function_id: AUTH-03
+    level: integration
+    case_id: AUTH-03/io/functional
+    type: functional
+  - function_id: AUTH-03
+    level: integration
+    case_id: AUTH-03/io/negative
+    type: negative
+  - function_id: AUTH-03
+    level: integration
+    case_id: AUTH-03/io/edge
+    type: edge
+  - function_id: AUTH-04
+    level: integration
+    case_id: AUTH-04/io/functional
+    type: functional
+  - function_id: AUTH-04
+    level: integration
+    case_id: AUTH-04/io/negative
+    type: negative
+  - function_id: AUTH-04
+    level: integration
+    case_id: AUTH-04/io/edge
+    type: edge
+  - function_id: AUTH-05
+    level: integration
+    case_id: AUTH-05/io/functional
+    type: functional
+  - function_id: AUTH-05
+    level: integration
+    case_id: AUTH-05/io/negative
+    type: negative
+  - function_id: AUTH-05
+    level: integration
+    case_id: AUTH-05/io/edge
+    type: edge
+  - function_id: AUTH-06
+    level: integration
+    case_id: AUTH-06/io/functional
+    type: functional
+    span: interaction
+    relates:
+      - PAY-09
+  - function_id: AUTH-06
+    level: integration
+    case_id: AUTH-06/io/negative
+    type: negative
+    span: interaction
+    relates:
+      - PAY-09
+  - function_id: AUTH-06
+    level: integration
+    case_id: AUTH-06/io/edge
+    type: edge

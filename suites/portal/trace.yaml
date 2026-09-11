@@ -1,0 +1,15 @@
+schema: overlay-trace/v1
+suite: portal
+items:
+  - function_id: UC-PORTAL-1
+    level: unit
+    case_id: UC-PORTAL-1/unit/01
+    type: functional
+  - function_id: UC-PORTAL-1
+    level: unit
+    case_id: UC-PORTAL-1/unit/02
+    type: negative
+  - function_id: UC-PORTAL-1
+    level: unit
+    case_id: UC-PORTAL-1/unit/03
+    type: edge

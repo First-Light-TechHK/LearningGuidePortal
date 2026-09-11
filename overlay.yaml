@@ -1,0 +1,17 @@
+# Overlay thin config for upstream CI. Pin is this repo SHA, not main/HEAD.
+# Adopter thin file only — do not vendor overlay/.
+schema: overlay-config/v1
+product:
+  repo: First-Light-TechHK/LearningGuidePortal
+  default_ref: 8a0c506f90deef51f5c54ae3bc85e341a74b4e3c
+branches:
+  main:
+    run: [functional, regression]
+kinds:
+  concurrency: later
+  agent: later
+never_red_statuses:
+  - draft
+  - blocked
+forbid_hosts:
+  - ilovelearningguide.com

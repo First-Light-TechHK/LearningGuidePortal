@@ -1,0 +1,15 @@
+id: payment
+title: Payment Management
+status: draft
+kind: functional
+subject: product
+source: inbox/payment.md
+packages:
+  - modules/payment-management
+  - modules/subscription-management
+  - modules/order-management
+reviewed_by: null
+reviewed_at: null
+blocked_reason: null
+armed_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/payment.test.ts
