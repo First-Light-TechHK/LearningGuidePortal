@@ -1,10 +1,8 @@
 # Overlay stays in this workflow. Do not copy AIOps / overlay/ into the product tree.
-# Pin overlay-v1.0.0. Checkout that tag into _aiops, validate existing
-# overlay.yaml + inbox/ + suites/, then run every suite product_command
-# from THIS checkout. tests/io must live in this repo next to the suites.
-# Do not fetch a fork feature branch. Do not skip. Do not mark blocked.
-# That run is workflow-owned, not Overlay-armed. Do not write reviewed_by.
-# Do not workflow_call Verify. Do not add test:io to Verify.
+# Pin overlay-v1.0.0. Checkout that tag into _aiops and validate.
+# Discovery of this repo's tests is in .github/scripts/overlay-run-existing.py:
+# cases.md ## function_id → tests/io/<suite-id>.test.ts or tests/unit/<id>-*.test.ts.
+# Do not scan tests/e2e or tests/integration. Do not add those to Verify.
 
 name: overlay-check
 
@@ -54,5 +52,8 @@ jobs:
       - name: Install product dependencies
         run: npm ci
 
-      - name: Run every suite product_command
-        run: python .github/scripts/overlay-run-existing.py
+      - name: Discover Overlay-named tests
+        run: python .github/scripts/overlay-run-existing.py --discover --root .
+
+      - name: Run discovered suite tests
+        run: python .github/scripts/overlay-run-existing.py --root .
