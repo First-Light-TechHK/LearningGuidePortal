@@ -1,8 +1,8 @@
 # Overlay stays in this workflow. Do not copy AIOps / overlay/ into the product tree.
 # Pin overlay-v1.0.0. Checkout that tag into _aiops, validate existing
-# overlay.yaml + inbox/ + suites/, then run every suite product_command.
-# If this checkout has no tests/io, fetch those files in the runner so
-# login/payment actually enter the HTTP chain. Do not skip. Do not mark blocked.
+# overlay.yaml + inbox/ + suites/, then run every suite product_command
+# from THIS checkout. tests/io must live in this repo next to the suites.
+# Do not fetch a fork feature branch. Do not skip. Do not mark blocked.
 # That run is workflow-owned, not Overlay-armed. Do not write reviewed_by.
 # Do not workflow_call Verify. Do not add test:io to Verify.
 
@@ -32,31 +32,6 @@ jobs:
           ref: overlay-v1.0.0
           path: _aiops
           persist-credentials: false
-
-      - name: Fetch tests/io when this checkout lacks them
-        if: ${{ hashFiles('tests/io/login.test.ts', 'tests/io/payment.test.ts') == '' }}
-        uses: actions/checkout@v4
-        with:
-          repository: LibertychaserUS/LearningGuidePortal
-          ref: cursor/overlay-workflow-run-2e0c
-          path: _io_fetch
-          persist-credentials: false
-          sparse-checkout: |
-            tests/io
-          sparse-checkout-cone-mode: true
-
-      - name: Place tests/io into the runner tree
-        if: ${{ hashFiles('tests/io/login.test.ts', 'tests/io/payment.test.ts') == '' }}
-        run: |
-          set -euo pipefail
-          if [ ! -f _io_fetch/tests/io/login.test.ts ] || [ ! -f _io_fetch/tests/io/payment.test.ts ]; then
-            echo "login/payment product_command needs tests/io; fetch failed."
-            exit 1
-          fi
-          mkdir -p tests/io
-          cp _io_fetch/tests/io/harness.ts _io_fetch/tests/io/login.test.ts _io_fetch/tests/io/payment.test.ts tests/io/
-          echo "placed tests/io from LibertychaserUS/LearningGuidePortal@cursor/overlay-workflow-run-2e0c"
-          ls -la tests/io
 
       - name: Set up Python
         uses: actions/setup-python@v5
