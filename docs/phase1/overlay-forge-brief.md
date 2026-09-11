@@ -1,3 +1,3 @@
 # Learning Guide × Overlay / Forge
 
-**overlay-check 是原生 Overlay：** 同一份 `.github/workflows/overlay-check.yml` 跑 `overlay validate` + `overlay run`。只执行 **armed**。`draft` / `blocked` 丢掉、不当红。不要再接 `overlay-run-existing.py`。portal / my-learning 已 armed（unit）。login / payment 仍是 draft：源仓 I/O 还没绿（resetUrl 等），harness 未就绪前不能进门。
+**workflow 门禁 ≠ Overlay armed：** `.github/scripts/overlay-run-existing.py` 是 overlay-check 的 workflow gate，不是 Overlay `select` 的 armed 选择。脚本读 `overlay.yaml` 的 `never_red_statuses`（默认 `draft`, `blocked`），并仍发现/跑 login、payment。在这两套绿之前，只有已经绿的 `my-learning`、`portal` 硬红；login/payment 失败记 observe，不让 job 红。不要写 `reviewed_by`，不要把 `status` 写成 `armed`。

@@ -160,12 +160,7 @@ export function takeSetCookie(response: Response) {
 }
 
 export function jsonRequest(method: string, url: string, body?: unknown, extraHeaders?: Record<string, string>) {
-  const parsed = new URL(url);
-  const headers: Record<string, string> = {
-    origin: parsed.origin,
-    host: parsed.host,
-    ...extraHeaders
-  };
+  const headers: Record<string, string> = { ...extraHeaders };
   if (body !== undefined) headers["content-type"] = "application/json";
   if (cookieJar().size > 0) {
     headers.cookie = [...cookieJar().entries()].map(([name, value]) => `${name}=${value}`).join("; ");
