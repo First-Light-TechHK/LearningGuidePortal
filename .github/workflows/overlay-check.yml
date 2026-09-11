@@ -46,12 +46,6 @@ jobs:
       - name: overlay validate
         run: python -m overlay validate --root .
 
-      - name: overlay select (record only)
-        run: |
-          mkdir -p receipts
-          python -m overlay select --branch main --root . --write-receipt receipts/
-          echo "select is a record. workflow still runs every suite product_command."
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
