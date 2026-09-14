@@ -38,6 +38,7 @@ test.beforeAll(async () => {
   stripe.prices.list = (async (input: { lookup_keys: string[] }) => ({ data: input.lookup_keys.map(key => catalog.get(key)).filter(Boolean) })) as typeof stripe.prices.list;
   stripe.prices.retrieve = (async (id: string) => [...catalog.values()].find(item => item.id === id)) as typeof stripe.prices.retrieve;
   stripe.checkout.sessions.create = (async (input: Stripe.Checkout.SessionCreateParams, options?: Stripe.RequestOptions) => {
+    expect(input.success_url).toBe(`https://payment.example.test/en-GB/account/my-learning/subscription?orderId=${encodeURIComponent(String(input.metadata?.orderId))}`);
     requests.push({ input, options });
     const id = "cs_" + options?.idempotencyKey;
     if (!sessions.has(id)) sessions.set(id, { id, url: "https://checkout.stripe.test/" + id, status: "open", payment_status: "unpaid", mode: input.mode, metadata: input.metadata, currency: "usd" } as Stripe.Checkout.Session);
@@ -97,6 +98,21 @@ test("all eight lookup keys produce the correct subscription period and server p
     expect(call.input.managed_payments).toEqual({ enabled: false });
     expect(call.options?.idempotencyKey).toContain(result.order.id);
   }
+});
+
+test("subscription records use purchased product imagery and term, including legacy prices", async () => {
+  const price = catalog.get("chinese-humanities-pc-6")!;
+  price.product = { id: "prod_chinese", name: "Chinese Humanities", images: ["https://images.example.test/chinese.jpg"] } as Stripe.Product;
+  const result = await checkout("chinese-humanities-pc-6");
+  expect(result.order.price).toMatchObject({ productName: "Chinese Humanities", productImage: "https://images.example.test/chinese.jpg", termMonths: 6 });
+  const { presentSubscriptionOrders } = await import("../../services/subscriptionPresentationService");
+  const overview = await store.getLearningOverview(result.buyer.id);
+  const orders = await presentSubscriptionOrders(overview.orders);
+  expect(orders[0].presentation).toEqual({ name: "Chinese Humanities", image: "https://images.example.test/chinese.jpg", termMonths: 6 });
+  const { productName, productImage, ...legacyPrice } = result.order.price!;
+  const legacy = await presentSubscriptionOrders([{ ...overview.orders[0], price: legacyPrice }]);
+  expect(legacy[0].presentation).toEqual(orders[0].presentation);
+
 });
 
 test("wrong yearly interval, inactive, metered and missing prices fail closed", async () => {

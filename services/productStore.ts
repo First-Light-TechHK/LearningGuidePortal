@@ -718,14 +718,19 @@ export async function verifyEmailToken(rawToken: string) {
   });
 }
 
-export async function requestPasswordReset(emailValue: string) {
+export async function requestPasswordReset(emailValue: string, enforceCooldown = false) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
   // A Google-created account has no password initially. Its verified provider
   // email is sufficient to request a reset and establish email/password login.
   const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
   if (!user) return { accepted: true, token: null };
-  return { accepted: true, token: await issueToken("passwordResetTokens", user.id) };
+  try {
+    return { accepted: true, token: await issueToken("passwordResetTokens", user.id, enforceCooldown) };
+  } catch (error) {
+    if (enforceCooldown && error instanceof Error && error.message === "Please wait before requesting another verification email.") return { accepted: true, token: null };
+    throw error;
+  }
 }
 
 export async function resetPassword(rawToken: string, newPassword: string) {
@@ -1644,7 +1649,7 @@ export async function getLearningOverview(userId: string) {
       };
     });
     const empty = overviewEmptyState(courses.length, accessState);
-    const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: data.plans.find((plan) => plan.id === order.planId) || null }));
+    const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: order.planSnapshot || data.plans.find((plan) => plan.id === order.planId) || null }));
     const entitlements = data.entitlements.filter((item) => item.userId === userId && item.state === "active" && new Date(item.validTo) > currentTime);
     return {
       courses,

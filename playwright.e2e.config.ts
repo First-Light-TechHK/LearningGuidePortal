@@ -54,6 +54,7 @@ export default defineConfig({
       ...chromium,
       testMatch: [
         "**/E2E-B1-visitor-auth.spec.ts",
+        "**/password-reset.spec.ts",
         "**/E2E-B1-negative.spec.ts",
         "**/PAY-stripe.skip.spec.ts",
       ],

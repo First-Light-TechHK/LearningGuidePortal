@@ -4,6 +4,14 @@
 
 ## 1. 环境
 
+### Password reset mail in DEV/SIT/UAT/production
+
+- Configure `NEXT_PUBLIC_APP_URL` as the externally reachable application origin. Mail links use this origin; localhost links must be opened on the machine running the application.
+- Configure SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, optionally `SMTP_FROM`, `SMTP_PORT`, `SMTP_SECURE`) or SES (`SES_FROM_EMAIL`, `AWS_REGION` and AWS credentials/role with send permission). Configured delivery is used in every environment, including DEV. Presence of configuration does not establish successful provider delivery.
+- Keep `LOCAL_PASSWORD_RESET_PREVIEW` unset for mail verification. Without configured delivery, requests fail visibly; only explicit `APP_ENV=DEV` plus `LOCAL_PASSWORD_RESET_PREVIEW=1` enables direct development links. Never enable a preview in a shared environment.
+- Run the password-reset project in `playwright.auth.config.ts`, the bilingual `tests/e2e/password-reset.spec.ts`, and `npm run build`. Automated mail tests replace the transport and do not send real messages.
+- Smoke test with an authorised test mailbox: submit from password sign-in, confirm the check-email page and cooldown, receive the message, follow the link, reset, sign in and return to the original URL. Verify reissue invalidates the previous link, expired/used tokens fail, and old sessions are revoked. Check both locales and spam folders. No real mailbox delivery or Figma acceptance is implied by automated tests.
+
 | 环境 | 用途 | 数据 | 发布方式 |
 |---|---|---|---|
 | DEV | 开发人员联调 | 测试数据，可重置 | pull request 合并后自动部署 |

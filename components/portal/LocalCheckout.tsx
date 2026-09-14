@@ -22,7 +22,7 @@ export function LocalCheckout({ orderId, quoteId, locale, copy }: { orderId: str
       const data = await response.json() as { ok?: boolean; error?: string; status?: string };
       if (!response.ok || !data.ok) throw new Error(data.error || copy.error);
       window.location.assign(action === "complete"
-        ? `/${locale}/portal/payment/success?orderId=${encodeURIComponent(orderId)}`
+        ? `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(orderId)}`
         : `/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteId)}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : copy.error);
