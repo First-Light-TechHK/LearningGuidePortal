@@ -19,7 +19,8 @@ export async function GET(request: Request) {
       const profile = localSocialProfile("wechat");
       const user = await getOrCreateSocialUser({ provider: "wechat", providerSubject: profile.subject, email: null, nickname: profile.nickname, locale });
       const session = await createSession(user.id);
-      const response = NextResponse.redirect(new URL(returnTo, publicAppOrigin(request)));
+      const destination = !user.email || !user.emailVerifiedAt ? `/${locale}/portal/bind-email?returnTo=${encodeURIComponent(returnTo)}` : returnTo;
+      const response = NextResponse.redirect(new URL(destination, publicAppOrigin(request)));
       response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
       return response;
     } catch (error) {

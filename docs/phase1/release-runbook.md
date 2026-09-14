@@ -70,6 +70,11 @@ GitHub pull request
 
 ### WeChat login smoke test
 
+- Mandatory email binding supersedes the earlier no-email Session acceptance checks below. Newly created and existing unbound WeChat users must receive a binding prompt before Purchase/My Learning. Check that direct protected API requests fail while unbound.
+- Configure SMTP/SES and the trusted `NEXT_PUBLIC_APP_URL` in DEV/SIT/UAT/production. Use an authorised mailbox to verify delivery, 24-hour validity, 60-second resend, changing email, invalidation of old links, ownership conflicts, and successful duplicate clicks. Confirm userId and prior orders/subscriptions remain unchanged.
+- Verify the email link in the original browser and in a different browser: original session becomes usable; another browser is prompted to sign in with WeChat and receives no session from the binding endpoint. Original waiting page refreshes after binding. Check locale and returnTo continuity, sign-out, interruption and resumption.
+- Run authentication tests, bilingual binding browser tests, and build. Automated transport tests do not prove mailbox delivery. Record real QR/mail smoke and Figma acceptance before rollout.
+
 - In WeChat Open Platform, confirm the website application is approved for website login and its authorised domain is the hostname only, for example `www.ilovelearningguide.com`.
 - Use the configured HTTPS origin for both the login page and `/api/auth/wechat/callback`; set `LOCAL_SOCIAL_LOGIN=0`. The application sends the full callback URL to WeChat at runtime.
 - Scan the QR code with a real WeChat account, approve access, confirm the browser returns to the requested page, confirm a session cookie is issued, and confirm the new user has no fabricated email address.

@@ -8,6 +8,7 @@ export default defineConfig({
   testDir: "./tests/integration",
   workers: 1,
   projects: [
+    { name: "email-binding", testMatch: "email-binding.spec.ts" },
     { name: "password-reset", testMatch: "password-reset.spec.ts" },
     { name: "oauth-origin", testMatch: "oauth-origin.spec.ts" },
     { name: "email-google", testMatch: "email-verification.spec.ts" },

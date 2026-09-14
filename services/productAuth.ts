@@ -10,14 +10,19 @@ export async function currentProductUser(): Promise<ProductUser | null> {
   return getUserBySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
 }
 
-export async function currentProductUserFromRequest(request: Request): Promise<ProductUser | null> {
+export async function currentProductUserFromRequest(request: Request, allowEmailBinding = false): Promise<ProductUser | null> {
   const header = request.headers.get("cookie") ?? "";
   const token = header
     .split(";")
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
     ?.slice(SESSION_COOKIE.length + 1);
-  return getUserBySessionToken(token);
+  return getUserBySessionToken(token, allowEmailBinding);
+}
+
+export async function currentEmailBindingUser() {
+  const cookieStore = await cookies();
+  return getUserBySessionToken(cookieStore.get(SESSION_COOKIE)?.value, true);
 }
 
 export async function rejectIfUnauthenticated(request: Request) {
