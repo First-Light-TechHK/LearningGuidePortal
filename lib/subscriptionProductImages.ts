@@ -19,6 +19,7 @@ function productKey(plan: SubscriptionPlanLike) {
   const normalised = label.toLowerCase();
   if (normalised.includes("chinese humanities")) return "chinese humanities";
   if (normalised.includes("european humanities")) return "european humanities";
+  if (normalised.includes("epicureanism")) return "european humanities";
   if (normalised.includes("science")) return "science";
   if (normalised.includes("everything")) return "everything";
   return null;
