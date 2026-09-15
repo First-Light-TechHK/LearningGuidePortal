@@ -67,6 +67,26 @@ items:
     level: integration
     case_id: PAY-05/io/edge
     type: edge
+  - function_id: PAY-05
+    level: integration
+    case_id: PAY-05/io/concurrent-complete
+    type: edge
+  - function_id: PAY-01
+    level: unit
+    case_id: PAY-01/unit/zero-invoice
+    type: edge
+  - function_id: PAY-06
+    level: unit
+    case_id: PAY-06/unit/grace-anchor
+    type: edge
+  - function_id: PAY-07
+    level: unit
+    case_id: PAY-07/unit/invoice-keeps-cancel
+    type: edge
+  - function_id: PAY-08
+    level: unit
+    case_id: PAY-08/unit/expire-not-delete
+    type: edge
   - function_id: PAY-06
     level: integration
     case_id: PAY-06/io/functional

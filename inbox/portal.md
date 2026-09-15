@@ -32,4 +32,4 @@ Published course pages for tourists: store identity, syllabus lock or preview, a
 
 # Notes
 
-Excerpt only. Suite stays `draft` until a human arms it. Id is copied from `UC-PORTAL-course-page-primitives.test.ts`.
+Excerpt only. Suite is active. Id is copied from `UC-PORTAL-course-page-primitives.test.ts`. HTTP I/O for published-only catalogue, tourist access, and unpublished slug lives in `tests/io/portal.test.ts`.

@@ -1,18 +1,18 @@
-# Local Overlay config. Pin is this repo SHA, not main/HEAD.
-# Adopter thin file only — do not vendor overlay/.
-# overlay-check is native overlay validate + overlay run (armed only).
+# Overlay 薄配置（接入方文件；不要 vendor overlay/）。
+# overlay-check：validate + cover + run。active 跑，blocked 丢掉不当红。
 schema: overlay-config/v1
 product:
   repo: First-Light-TechHK/LearningGuidePortal
-  default_ref: 8a0c506f90deef51f5c54ae3bc85e341a74b4e3c
+  default_ref: ec9e12990fa700b034829fd2fd4af12d955bd40e
 branches:
   main:
+    run: [functional, regression]
+  default:
     run: [functional, regression]
 kinds:
   concurrency: later
   agent: later
 never_red_statuses:
-  - draft
   - blocked
 forbid_hosts:
   - ilovelearningguide.com

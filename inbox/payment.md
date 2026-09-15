@@ -1,7 +1,7 @@
 ---
 id: payment
 kind: prd
-readiness: not-ready
+readiness: ready
 source:
   repo: LibertychaserUS/LearningGuidePortal
   path: docs/phase1/source-prd/Payment_Management_PRD_v1.0_0814.docx
@@ -15,7 +15,7 @@ locale: en-GB
 
 # Intent
 
-Payment and entitlements. Cases are black-box I/O against quote, checkout, demo confirm, trial, subscription, entitlement, and webhook. The suite stays draft so Overlay does not gate on live Stripe.
+Payment and entitlements. Cases are black-box I/O against quote, checkout, demo confirm, trial, subscription, entitlement, and webhook. The suite is active. Spec I/O is the authority; product red means fix the product.
 
 # In scope
 
@@ -47,4 +47,4 @@ Payment and entitlements. Cases are black-box I/O against quote, checkout, demo 
 
 # Notes
 
-`readiness: not-ready` is a hint only. Do not arm until Stripe webhook paths are claimed testable. PAY-01..07 Stripe internals stay specified; executable I/O covers the HTTP-visible subset in `tests/io/payment.test.ts`.
+Suite is active. PAY-01..07 Stripe internals stay specified; executable I/O covers the HTTP-visible subset in `tests/io/payment.test.ts`. Do not rewrite PAY-10 to accept a second complete after cancel.

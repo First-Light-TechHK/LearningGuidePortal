@@ -1,7 +1,7 @@
 ---
 id: login
 kind: prd
-readiness: not-ready
+readiness: ready
 source:
   repo: LibertychaserUS/LearningGuidePortal
   path: docs/phase1/source-prd/Registration_Authentication_PRD_v1.0_0814.docx
@@ -14,7 +14,7 @@ locale: en-GB
 
 # Intent
 
-Registration and session. Cases are black-box I/O against `/api/auth/*`. The suite stays draft so Overlay does not gate until a human arms it.
+Registration and session. Cases are black-box I/O against `/api/auth/*`. The suite is active. Spec I/O is the authority; product red means fix the product.
 
 # In scope
 
@@ -43,4 +43,4 @@ Registration and session. Cases are black-box I/O against `/api/auth/*`. The sui
 
 # Notes
 
-`readiness: not-ready` is a hint only. Do not arm until live login is claimed testable. Executable I/O lives in `tests/io/login.test.ts`.
+Suite is active. Executable I/O lives in `tests/io/login.test.ts`. Do not rewrite AUTH-01 / AUTH-02 to accept `exists`, `resetUrl`, or 503.

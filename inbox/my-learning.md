@@ -32,4 +32,4 @@ Signed-in My Learning overview: entitled or preview-started course cards and uni
 
 # Notes
 
-Excerpt only. Do not vendor the docx. Suite stays `draft` until a human arms it. Ids come from existing unit tests, not a second numbering system.
+Excerpt only. Do not vendor the docx. Suite is active. Ids come from existing unit tests, not a second numbering system. HTTP I/O for the signed-out leaf, post-purchase overview, and expired entitlement lives in `tests/io/my-learning.test.ts`.

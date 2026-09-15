@@ -4,9 +4,12 @@ items:
     text: A missing, forged, or kicked session cannot create a quote, order, or entitlement.
     function_ids:
       - AUTH-06
+      - AUTH-04
+      - ORDER-01
       - PAY-01
       - PAY-02
       - PAY-08
+      - ML-FR-004
     span: interaction
   - id: INV-browser-not-price
     text: Quote and checkout amounts are computed on the server; the browser cannot set the price.
@@ -21,4 +24,11 @@ items:
       - PAY-04
       - PAY-05
       - PAY-10
+      - TRIAL-02
+    span: interaction
+  - id: INV-expired-no-learn
+    text: An entitlement whose validTo is in the past cannot pass entitlements/check or write a paid study event.
+    function_ids:
+      - ML-FR-004
+      - PAY-09
     span: interaction

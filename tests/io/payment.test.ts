@@ -10,6 +10,7 @@ import {
   PLAN_ID,
   SERVER_AMOUNT_MINOR,
   TRIAL_MS,
+  callRoute,
   clearCookies,
   isolate,
   jsonRequest,
@@ -61,7 +62,7 @@ async function signIn(label: string) {
 
 async function entitlementAllowed(device?: "pc" | "mobile") {
   const suffix = device ? `&device=${device}` : "";
-  const response = await entitlements.GET(jsonRequest("GET", `http://localhost/api/entitlements/check?courseId=${COURSE_ID}${suffix}`));
+  const response = await callRoute(entitlements.GET, jsonRequest("GET", `http://localhost/api/entitlements/check?courseId=${COURSE_ID}${suffix}`));
   const body = await response.json();
   return { status: response.status, allowed: Boolean(body.entitlement?.allowed), source: body.entitlement?.source, validTo: body.entitlement?.validTo, body };
 }
@@ -353,7 +354,7 @@ test("PAY-06 edge: an unknown event type is ignored", async () => {
 test("PAY-07 functional: cancelling a paid purchase keeps access until the period ends", async () => {
   await signIn("pay07-cancel");
   await purchase(COURSE_PLAN);
-  const listed = await subscription.GET(jsonRequest("GET", "http://localhost/api/subscription"));
+  const listed = await callRoute(subscription.GET, jsonRequest("GET", "http://localhost/api/subscription"));
   const current = (await listed.json()).subscriptions.find((item: { source?: string; state?: string }) => item.source === "purchase");
   assert.ok(current);
   const cancelled = await subscription.POST(jsonRequest("POST", "http://localhost/api/subscription", {
@@ -369,7 +370,7 @@ test("PAY-07 functional: cancelling a paid purchase keeps access until the perio
 test("PAY-07 negative: a paid purchase cannot be resumed", async () => {
   await signIn("pay07-resume");
   await purchase(COURSE_PLAN);
-  const listed = await subscription.GET(jsonRequest("GET", "http://localhost/api/subscription"));
+  const listed = await callRoute(subscription.GET, jsonRequest("GET", "http://localhost/api/subscription"));
   const current = (await listed.json()).subscriptions.find((item: { source?: string }) => item.source === "purchase");
   await subscription.POST(jsonRequest("POST", "http://localhost/api/subscription", {
     subscriptionId: current.id,
@@ -401,7 +402,7 @@ test("PAY-08 edge: the previous subscription row remains after an overlapping pu
   await signIn("pay08-keep");
   await purchase(COURSE_PLAN);
   await purchase(CATEGORY_PLAN);
-  const listed = await subscription.GET(jsonRequest("GET", "http://localhost/api/subscription"));
+  const listed = await callRoute(subscription.GET, jsonRequest("GET", "http://localhost/api/subscription"));
   const rows = (await listed.json()).subscriptions as Array<{ planId?: string; state?: string }>;
   assert.ok(rows.length >= 2);
   assert.ok(rows.some((item) => item.planId === COURSE_PLAN));
@@ -457,7 +458,7 @@ test("PAY-10 negative: a second complete after trial cancel does not revive acce
     orderId: started.orderId,
     action: "complete"
   }));
-  const listed = await subscription.GET(jsonRequest("GET", "http://localhost/api/subscription"));
+  const listed = await callRoute(subscription.GET, jsonRequest("GET", "http://localhost/api/subscription"));
   const current = (await listed.json()).subscriptions.find((item: { source?: string }) => item.source === "trial");
   const cancelled = await subscription.POST(jsonRequest("POST", "http://localhost/api/subscription", {
     subscriptionId: current.id,

@@ -13,3 +13,15 @@ items:
     level: unit
     case_id: UC-PORTAL-1/unit/03
     type: edge
+  - function_id: UC-PORTAL-1
+    level: integration
+    case_id: UC-PORTAL-1/io/functional
+    type: functional
+  - function_id: UC-PORTAL-1
+    level: integration
+    case_id: UC-PORTAL-1/io/negative
+    type: negative
+  - function_id: UC-PORTAL-1
+    level: integration
+    case_id: UC-PORTAL-1/io/edge
+    type: edge

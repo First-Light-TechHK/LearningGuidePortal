@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import {
   PASSWORD,
   SESSION_COOKIE,
+  callRoute,
   clearCookies,
   getCookie,
   isolate,
@@ -179,7 +180,7 @@ test("AUTH-02 edge: sign-in without credentials is 401 and does not set a sessio
   const body = await response.json();
   assert.equal(response.status, 401);
   assert.equal(body.code, "AUTHENTICATION_FAILED");
-  assert.equal((await me.GET(jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
+  assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
 });
 
 test("AUTH-03 functional: APP_ENV=PRODUCTION does not leak a reset URL", async () => {
@@ -209,11 +210,11 @@ test("AUTH-03 negative: APP_ENV=PRODUCTION does not issue a local social session
   process.env.NEXT_PUBLIC_APP_URL = "https://localhost";
   clearCookies();
   try {
-    const response = await google.GET(jsonRequest("GET", "https://localhost/api/auth/google?locale=en-GB"));
+    const response = await callRoute(google.GET, jsonRequest("GET", "https://localhost/api/auth/google?locale=en-GB"));
     takeSetCookie(response);
     assert.equal(response.status, 503);
     assert.equal(getCookie(SESSION_COOKIE), undefined);
-    assert.equal((await me.GET(jsonRequest("GET", "https://localhost/api/auth/me")).then((item) => item.json())).user, null);
+    assert.equal((await callRoute(me.GET, jsonRequest("GET", "https://localhost/api/auth/me")).then((item) => item.json())).user, null);
   } finally {
     process.env.APP_ENV = previousEnv;
     process.env.LOCAL_SOCIAL_LOGIN = previousSocial;
@@ -246,10 +247,10 @@ test("AUTH-04 functional: registering the operator email stays a student", async
     }));
     takeSetCookie(response);
     assert.equal(response.status, 200);
-    const mine = await me.GET(jsonRequest("GET", "http://localhost/api/auth/me"));
+    const mine = await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"));
     const body = await mine.json();
     assert.equal(body.user.role, "student");
-    const office = await backoffice.GET(jsonRequest("GET", "http://localhost/api/backoffice/courses"));
+    const office = await callRoute(backoffice.GET, jsonRequest("GET", "http://localhost/api/backoffice/courses"));
     assert.equal(office.status, 403);
   } finally {
     delete process.env.BACKOFFICE_OPERATOR_EMAIL;
@@ -260,9 +261,9 @@ test("AUTH-04 negative: matching the operator email later does not open backoffi
   const { email } = await registerAccount("auth04-live");
   process.env.BACKOFFICE_OPERATOR_EMAIL = email;
   try {
-    const office = await backoffice.GET(jsonRequest("GET", "http://localhost/api/backoffice/courses"));
+    const office = await callRoute(backoffice.GET, jsonRequest("GET", "http://localhost/api/backoffice/courses"));
     assert.equal(office.status, 403);
-    const mine = await me.GET(jsonRequest("GET", "http://localhost/api/auth/me"));
+    const mine = await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"));
     assert.equal((await mine.json()).user.role, "student");
   } finally {
     delete process.env.BACKOFFICE_OPERATOR_EMAIL;
@@ -271,7 +272,7 @@ test("AUTH-04 negative: matching the operator email later does not open backoffi
 
 test("AUTH-04 edge: unauthenticated backoffice is 403", async () => {
   clearCookies();
-  const response = await backoffice.GET(jsonRequest("GET", "http://localhost/api/backoffice/courses"));
+  const response = await callRoute(backoffice.GET, jsonRequest("GET", "http://localhost/api/backoffice/courses"));
   assert.equal(response.status, 403);
 });
 
@@ -296,12 +297,12 @@ test("AUTH-05 functional: a second register does not take over the first passwor
   const owner = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: PASSWORD }));
   takeSetCookie(owner);
   assert.equal(owner.status, 200);
-  assert.equal((await me.GET(jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user.email, email);
+  assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user.email, email);
   clearCookies();
   const attacker = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: "attacker9" }));
   takeSetCookie(attacker);
   assert.equal(attacker.status, 401);
-  assert.equal((await me.GET(jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
+  assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
 });
 
 test("AUTH-05 edge: concurrent same-email register keeps one working password", async () => {
@@ -357,9 +358,9 @@ test("AUTH-06 functional: a second sign-in invalidates the first session", async
   assert.ok(secondToken);
   assert.notEqual(firstToken, secondToken);
   setCookie(SESSION_COOKIE, firstToken);
-  assert.equal((await me.GET(jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
+  assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
   setCookie(SESSION_COOKIE, secondToken);
-  assert.equal((await me.GET(jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user.email, email);
+  assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user.email, email);
 });
 
 test("AUTH-06 negative: changing password invalidates the previous session", async () => {
@@ -371,7 +372,7 @@ test("AUTH-06 negative: changing password invalidates the previous session", asy
     newPassword: "Passw0rd!999"
   }));
   assert.equal(changed.status, 200);
-  assert.equal((await me.GET(jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
+  assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
   const gated = await quote.POST(jsonRequest("POST", "http://localhost/api/purchase/quote", { planId: "everything-pc-6" }));
   assert.equal(gated.status, 401);
 });
@@ -379,7 +380,7 @@ test("AUTH-06 negative: changing password invalidates the previous session", asy
 test("AUTH-06 edge: a forged session cookie does not restore a user", async () => {
   clearCookies();
   setCookie(SESSION_COOKIE, "forged-session-token");
-  const response = await me.GET(jsonRequest("GET", "http://localhost/api/auth/me"));
+  const response = await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"));
   assert.equal((await response.json()).user, null);
   const gated = await quote.POST(jsonRequest("POST", "http://localhost/api/purchase/quote", { planId: "everything-pc-6" }));
   assert.equal(gated.status, 401);

@@ -159,8 +159,16 @@ export function takeSetCookie(response: Response) {
   }
 }
 
+type RouteHandler = ((request: Request) => Response | Promise<Response>) | (() => Response | Promise<Response>);
+
+export async function callRoute(handler: RouteHandler, request: Request) {
+  if (handler.length === 0) return (handler as () => Response | Promise<Response>)();
+  return handler(request);
+}
+
 export function jsonRequest(method: string, url: string, body?: unknown, extraHeaders?: Record<string, string>) {
-  const headers: Record<string, string> = { ...extraHeaders };
+  const parsed = new URL(url);
+  const headers: Record<string, string> = { origin: parsed.origin, host: parsed.host, ...extraHeaders };
   if (body !== undefined) headers["content-type"] = "application/json";
   if (cookieJar().size > 0) {
     headers.cookie = [...cookieJar().entries()].map(([name, value]) => `${name}=${value}`).join("; ");
