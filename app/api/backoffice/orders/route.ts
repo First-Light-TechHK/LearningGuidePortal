@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { currentOperatorUser } from "@/services/productAuth";
 import { applyStripeOrderState, isOperator, listOperatorOrders, recordOrderActivity, refundDemoOrder, refundOrder } from "@/services/productStore";
 import { createFullRefund, retrieveCheckoutState } from "@/services/stripeClient";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const user = await currentProductUser();
+  const user = await currentOperatorUser();
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   const params = new URL(request.url).searchParams;
   return NextResponse.json({ ok: true, orders: await listOperatorOrders({ search: params.get("search") || undefined, status: params.get("status") || undefined, paymentMode: params.get("paymentMode") || undefined }) });
 }
 
 export async function POST(request: Request) {
-  const user = await currentProductUser();
+  const user = await currentOperatorUser();
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   try {
     const body = await request.json() as { orderId?: string; action?: "refund" | "resynchronise"; reason?: string };

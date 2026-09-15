@@ -442,6 +442,12 @@
     "restricted": "无权访问",
     "operatorRequired": "此区域需要 Course Manager/Operator 权限。",
     "returnToPortal": "返回 Portal",
+    "signInHint": "此域名仅用于 Learning Guide 后台。请使用运营邮箱登录。此处不提供 Google 或微信登录。",
+    "signInFailed": "运营登录失败。",
+    "firstOperator": "首次创建运营账号",
+    "haveOperator": "已有运营账号？去登录",
+    "createOperator": "创建运营账号",
+    "verifyEmail": "请查收邮件完成运营邮箱验证，然后回到这里登录。",
     "payment": {
       "title": "Payment Management",
       "description": "配置 Purchase 使用的 Stripe 展示设置。Secret Key 只从服务端环境变量或 AWS Secrets Manager 读取，不会在这里保存或返回。",
