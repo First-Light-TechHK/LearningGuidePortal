@@ -519,7 +519,22 @@
     "saving": "Saving...",
     "saved": "Changes saved.",
     "failed": "Save failed.",
-    "heading": "Portal content"
+    "heading": "Portal content",
+    "intro": "Write the homepage in one language, then translate once into the other. Banner pictures are shared: upload a file or pick one from the library.",
+    "sourceLanguage": "Write in",
+    "translateOnce": "Translate once",
+    "translating": "Translating...",
+    "translated": "Translated. This will not run again until the source copy changes.",
+    "alreadyTranslated": "Already translated from the current source copy.",
+    "translateFailed": "Translation failed.",
+    "chooseImage": "Choose from library",
+    "uploadImage": "Upload image",
+    "library": "Image library",
+    "closeLibrary": "Close",
+    "sharedImage": "Banner image (shared across languages)",
+    "english": "English (UK)",
+    "chinese": "Simplified Chinese",
+    "preview": "Preview"
   },
   "pricingDesign": {
     "heading": "Choose the plan that suits your learning",

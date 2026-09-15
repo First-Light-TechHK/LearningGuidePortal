@@ -59,5 +59,6 @@ test("admin hosts keep backoffice and send portal traffic there", () => {
     const portal = adminHostDecision(request("https://" + host + "/en-GB/portal/sign-in", host));
     assert.equal(portal.status, 307);
     assert.equal(portal.location, "/en-GB/backoffice");
+    assert.equal(adminHostDecision(request("https://" + host + "/api/portal-media/media_aaaaaaaaaaaaaaaa", host)).allow, true);
   }
 });

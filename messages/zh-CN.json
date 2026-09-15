@@ -519,7 +519,22 @@
     "saving": "保存中……",
     "saved": "修改已保存。",
     "failed": "保存失败。",
-    "heading": "门户内容"
+    "heading": "门户内容",
+    "intro": "先用一种语言撰写首页文案，再一键翻译到另一种语言。横幅图片共用：可上传，也可从图片库选择。",
+    "sourceLanguage": "撰写语言",
+    "translateOnce": "翻译一次",
+    "translating": "翻译中……",
+    "translated": "已翻译。源文案未改动前不会再次翻译。",
+    "alreadyTranslated": "当前源文案已经翻译过。",
+    "translateFailed": "翻译失败。",
+    "chooseImage": "从图片库选择",
+    "uploadImage": "上传图片",
+    "library": "图片库",
+    "closeLibrary": "关闭",
+    "sharedImage": "横幅图片（两种语言共用）",
+    "english": "English (UK)",
+    "chinese": "简体中文",
+    "preview": "预览"
   },
   "pricingDesign": {
     "heading": "选择适合您的学习方案",
