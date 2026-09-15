@@ -34,9 +34,57 @@
 头：`LibertychaserUS:cursor/lg-upstream-of-9bdf`  
 底：`First-Light-TechHK:main`
 
-本包 pin 已发布针 `overlay-v2.0.0` / `forge-v1.1.3`，六套 `active`，`forge.yaml` 只保护 `main`。不直推 `upstream`。不合入。不 live-apply。合入后由人持 `FORGE_GITHUB_TOKEN` 对本仓 `forge.yaml` 跑 `forge apply`，才会出现 GitHub Ruleset。
+本包 tip：`1f2b215`（另有 brief 提交时以 HEAD 为准）。pin 已发布针 `overlay-v2.0.0` / `forge-v1.1.3`，六套 `active`，`forge.yaml` 只保护 `main`。不直推 `upstream`。不合入。不 live-apply。合入后由人持 `FORGE_GITHUB_TOKEN` 对本仓 `forge.yaml` 跑 `forge apply`，才会出现 GitHub Ruleset。
 
-`7f42330` / `ec9e129` 的规格锁：reset confirm、email-binding、subscription portal 的公开 JSON。产品代码不改。
+下面整段可粘进源仓 draft PR。
+
+标题：
+
+```text
+feat: land Overlay 2.0.0 and Forge 1.1.3 with spec I/O
+```
+
+正文：
+
+```text
+## 做了什么
+
+- 新增 `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。
+- 新增 `.github/workflows/forge-check.yml`：pin `forge-v1.1.3`，跑 `forge check` + `forge status --check-state`。
+- 改 `.github/workflows/overlay-check.yml`：pin `overlay-v2.0.0`，`validate` + `cover` + `typecheck:io` + `run`。不改 Verify，不把 `test:io` 加进 `test:ci`。
+- 改 `overlay.yaml`：`product.repo` = First-Light；`default_ref` = `ec9e129`；`never_red_statuses: [blocked]`。
+- 六套 `active`（`overlay-suite/v2`）：login / payment / portal / my-learning / order / visitor-trial。inbox / cases / invariants 同步。
+- `package.json` 只加 `typecheck:io` 与 `test:io`。新增 `tsconfig.io.json`、`docs/STATE.md`、本 brief。
+- 已有 `tests/io/login.test.ts` / `payment.test.ts` 断言不动；0 参 `GET` 只套 `callRoute`。补 portal / order / my-learning / visitor-trial I/O。
+- 按 `7f42330` / `ec9e129` 补 reset confirm、email-binding、subscription portal 的公开 JSON 锁。不改 `app/` `services/`。
+
+## 为什么
+
+源仓 Overlay 仍是 v1 / `armed` / 四套。fork 已是 v2 / `active` / 六套。回灌只带 Forge + Overlay + 规格黑盒测试，不搬产品。套件 `active` 后 overlay-check 会跑叶子；产品漏 `exists` / 503 / 第二次 complete 必须红，不改测试。
+
+## 动了哪些门
+
+overlay-check、forge-check
+
+## 怎么验
+
+```text
+PYTHONPATH=/tmp/AIOps python3 -m overlay validate --root .
+PYTHONPATH=/tmp/AIOps python3 -m overlay cover --root .
+PYTHONPATH=/tmp/AIOps python3 -m forge check --root . --title "feat: land Overlay 2.0.0 and Forge 1.1.3 with spec I/O"
+npx tsc --noEmit -p tsconfig.io.json
+```
+
+六套 `active` 都会入选。预期 overlay-check 红：AUTH-01 `exists`、AUTH-02 无邮件 503、PAY-10 / TRIAL-02。要绿改产品。合入后：`python3 -m forge apply --repo First-Light-TechHK/LearningGuidePortal --path forge.yaml`（人，持 `FORGE_GITHUB_TOKEN`）。
+
+## 不做什么
+
+不改 Verify / `test:ci`。不 vendor `overlay/` `forge/`。不 pin `main`。不改密码重置 / 订阅展示 / 微信绑邮箱产品。不直推 `main`。不 live-apply。不改规格叶子去迁就现状。
+
+## 分工
+
+开 PR：人（比较链）。审：人。合 `main`：人。`forge apply` 保护 `main`：人 / `$manage-repo`。agent 不推 `upstream`、不合入、不 apply。
+```
 
 ## 刻意没做的
 
