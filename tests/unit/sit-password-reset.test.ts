@@ -22,8 +22,8 @@ test('SIT emails reset links on its trusted origin and never returns a token', a
     const known = await POST(request(user.email!));
     const unknown = await POST(request('unknown@example.test'));
     assert.equal(known.status, 200);
-    assert.deepEqual(await known.json(), { ok: true, resetUrl: null });
-    assert.deepEqual(await unknown.json(), { ok: true, resetUrl: null });
+    assert.deepEqual(await known.json(), { ok: true, accepted: true, retryAfter: 60, resetUrl: null });
+    assert.deepEqual(await unknown.json(), { ok: true, accepted: true, retryAfter: 60, resetUrl: null });
     assert.equal(mails.length, 1);
     assert.ok(mails[0].text.includes('https://sit.ilovelearningguide.com/en-GB/portal/reset-password?token='));
     assert.ok(!mails[0].text.includes('untrusted.invalid'));

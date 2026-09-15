@@ -1,4 +1,4 @@
-import { currentProductUserFromRequest } from "@/services/productAuth";
+import { currentAuthorRequest } from "@/services/productAuth";
 import { assertMediaUploadOrigin, courseMediaErrorResponse, readCourseMediaUpload, requireCourseMediaManager, uploadCourseMedia } from "@/services/courseMedia";
 
 export const runtime = "nodejs";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
   const requestId = crypto.randomUUID();
   try {
-    const user = await currentProductUserFromRequest(request);
+    const user = await currentAuthorRequest(request);
     const { courseId } = await params;
     assertMediaUploadOrigin(request);
     await requireCourseMediaManager(user, courseId);

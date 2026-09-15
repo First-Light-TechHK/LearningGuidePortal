@@ -1,0 +1,13 @@
+schema: overlay-suite/v2
+id: payment
+title: Payment Management
+status: active
+kind: functional
+subject: product
+source: inbox/payment.md
+packages:
+  - modules/payment-management
+  - modules/subscription-management
+  - modules/order-management
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/payment.test.ts

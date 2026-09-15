@@ -58,7 +58,7 @@ async function subscriptionCheckout(input: SubscriptionCheckoutInput, trial: boo
     line_items: [{ price: input.price.stripePriceId, quantity: 1 }], metadata,
     ...(trial ? { payment_method_collection: "always" as const } : {}),
     subscription_data: { metadata, ...(trial ? { trial_period_days: 3 } : {}) },
-    success_url: input.origin + "/" + input.locale + "/portal/payment/success?orderId=" + encodeURIComponent(input.orderId),
+    success_url: input.origin + "/" + input.locale + "/account/my-learning/subscription?orderId=" + encodeURIComponent(input.orderId),
     cancel_url: input.origin + "/" + input.locale + "/portal/subscription/confirmation?quoteId=" + encodeURIComponent(input.quoteId),
   }, { idempotencyKey: "learning-guide-checkout-" + input.orderId });
   if (!session.url) throw new PaymentError("payment_unavailable", 502);
@@ -85,7 +85,7 @@ export async function createHostedUpgradeCheckout(input: {
     customer_email: input.userEmail || undefined,
     line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName } } }],
     metadata: { app: "learning_guide", kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
-    success_url: `${input.origin}/${input.locale}/portal/payment/success?orderId=${encodeURIComponent(input.orderId)}`,
+    success_url: `${input.origin}/${input.locale}/account/my-learning/subscription?orderId=${encodeURIComponent(input.orderId)}`,
     cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`
   }, { idempotencyKey: "learning-guide-upgrade-" + input.orderId });
   if (!session.url) throw new Error("Stripe did not return a checkout URL.");

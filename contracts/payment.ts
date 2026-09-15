@@ -4,6 +4,9 @@ export type StripePriceSnapshot = {
   amountMinor: number;
   currency: "usd";
   termMonths: 6 | 12;
+  productName?: string;
+  productImage?: string | null;
+  stripeProductId?: string;
 };
 
 export const subscriptionPrices = [

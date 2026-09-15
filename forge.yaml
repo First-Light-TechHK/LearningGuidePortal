@@ -1,0 +1,27 @@
+# Forge 薄配置（接入方文件；不要 vendor forge/）。
+# 源仓目前只有 main。第一次只保护 main。
+# required_checks 是 CI job 名，不是 workflow 名 Verify。
+# 第一次不设 deny_paths：本单要改 overlay-check.yml 并新增 forge-check.yml。
+schema: forge-config/v1
+protect:
+  - main
+agent_branch_prefixes:
+  - cursor/
+  - copilot/
+  - agent/
+branches:
+  main:
+    required_checks:
+      - Typecheck
+      - Lint
+      - Build and test
+      - overlay-check
+      - forge-check
+    approvals: 1
+    code_owners: false
+title:
+  scopes: any
+docs_sync:
+  - paths: [suites/**, inbox/**, invariants.yaml, overlay.yaml, forge.yaml]
+    require: [docs/phase1/overlay-forge-brief.md]
+forbidden_live_repos: []

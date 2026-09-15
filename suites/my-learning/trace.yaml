@@ -1,0 +1,34 @@
+schema: overlay-trace/v1
+suite: my-learning
+items:
+  - function_id: ML-FR-004
+    level: unit
+    case_id: ML-FR-004/unit/01
+    type: functional
+  - function_id: ML-FR-004
+    level: unit
+    case_id: ML-FR-004/unit/02
+    type: negative
+  - function_id: ML-FR-004
+    level: unit
+    case_id: ML-FR-004/unit/03
+    type: edge
+  - function_id: ML-FR-004
+    level: integration
+    case_id: ML-FR-004/interaction/01
+    type: edge
+    span: interaction
+    relates:
+      - ML-FR-007
+  - function_id: ML-FR-007
+    level: unit
+    case_id: ML-FR-007/unit/01
+    type: functional
+  - function_id: ML-FR-007
+    level: unit
+    case_id: ML-FR-007/unit/02
+    type: negative
+  - function_id: ML-FR-007
+    level: unit
+    case_id: ML-FR-007/unit/03
+    type: edge

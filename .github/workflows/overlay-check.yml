@@ -1,0 +1,72 @@
+# 原生 Overlay 门：checkout 发布针 → overlay validate → npm ci → overlay run。
+# 不 vendor overlay/。针是 tag overlay-v2.0.0（不要 pin main）。
+# select 按分支策略（pull_request 用 base_ref，push 用 ref_name，未知回落 default）。
+# active 套件跑，blocked 丢掉并打印 reason。npm ci 为 typecheck:io 与 product_command 能执行。
+# 不要把 test:io 加进 Verify。
+
+name: overlay-check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  overlay-check:
+    name: overlay-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout product
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout Overlay overlay-v2.0.0
+        uses: actions/checkout@v4
+        with:
+          repository: LibertychaserUS/AIOps
+          ref: overlay-v2.0.0
+          path: _aiops
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Overlay
+        run: |
+          pip install -r _aiops/requirements.txt
+          echo "PYTHONPATH=${GITHUB_WORKSPACE}/_aiops" >> "$GITHUB_ENV"
+
+      - name: overlay validate
+        run: python -m overlay validate --root .
+
+      - name: overlay cover
+        run: python -m overlay cover --root .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install product dependencies
+        run: npm ci
+
+      - name: Typecheck I/O
+        run: npx tsc --noEmit -p tsconfig.io.json
+
+      - name: overlay run
+        run: |
+          mkdir -p receipts
+          python -m overlay run --root . --workdir . --write-receipt receipts/
+
+      - name: Upload run receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlay-run
+          path: receipts/
+          if-no-files-found: error

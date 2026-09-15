@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const cwd = process.cwd(), oldBackend = process.env.STORAGE_BACKEND, oldOperator = process.env.BACKOFFICE_OPERATOR_EMAIL;
+const oldAdminHosts = process.env.ADMIN_HOSTS;
 const origin = "http://localhost:3097";
 let directory: string;
 let store: typeof import("../../services/productStore");
@@ -15,6 +16,7 @@ let catalogue: typeof import("../../app/api/backoffice/courses/catalogue/route")
 before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lg-course-ownership-")); process.chdir(directory);
   process.env.STORAGE_BACKEND = "local"; process.env.BACKOFFICE_OPERATOR_EMAIL = "operator@ownership.test";
+  process.env.ADMIN_HOSTS = "localhost";
   store = await import("../../services/productStore");
   collection = await import("../../app/api/backoffice/courses/route");
   detail = await import("../../app/api/backoffice/courses/[courseId]/route");
@@ -25,10 +27,11 @@ after(async () => {
   process.chdir(cwd);
   if (oldBackend === undefined) delete process.env.STORAGE_BACKEND; else process.env.STORAGE_BACKEND = oldBackend;
   if (oldOperator === undefined) delete process.env.BACKOFFICE_OPERATOR_EMAIL; else process.env.BACKOFFICE_OPERATOR_EMAIL = oldOperator;
+  if (oldAdminHosts === undefined) delete process.env.ADMIN_HOSTS; else process.env.ADMIN_HOSTS = oldAdminHosts;
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 function request(token: string, method: string, body?: unknown, suppliedOrigin = origin) {
-  return new Request(origin + "/api/backoffice/courses", { method, headers: { origin: suppliedOrigin, cookie: "learning_guide_session=" + token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  return new Request(origin + "/api/backoffice/courses", { method, headers: { host: new URL(origin).host, origin: suppliedOrigin, cookie: "learning_guide_admin_session=" + token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 }
 
 test("ownership and lifecycle routes retain one login, prevent escalation and isolate every teacher mutation", async () => {

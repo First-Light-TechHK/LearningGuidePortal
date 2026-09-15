@@ -1,11 +1,11 @@
-import Link from "next/link";
 import { PasswordResetRequestForm } from "@/components/portal/PasswordResetRequestForm";
-import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { PortalHeader } from "@/components/portal/PortalHeader";
+import { safeReturnTo } from "@/services/runtimeConfig";
 
-export default async function ForgotPasswordPage({ params }: { params: Promise<{ locale: string }> }) {
+export default async function ForgotPasswordPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ email?: string; returnTo?: string }> }) {
   const locale = localeFrom((await params).locale);
-  const messages = getMessages(locale);
-  return <main className="portal-page portal-auth-page"><PortalHeader locale={locale} /><div className="portal-auth-stage"><div className="portal-auth-card"><div className="portal-auth-heading"><span className="portal-brand-mark" aria-hidden="true">LG</span></div><PasswordResetRequestForm copy={messages.auth} /><Link className="portal-auth-back" href={`/${locale}/portal/sign-in`}>{messages.auth.haveAccount}</Link></div></div></main>;
+  const query = await searchParams;
+  const returnTo = safeReturnTo(query.returnTo, `/${locale}/account/my-learning`);
+  return <main className="portal-page portal-auth-page"><PortalHeader locale={locale} /><div className="portal-auth-stage"><div className="portal-auth-card"><PasswordResetRequestForm locale={locale} returnTo={returnTo} initialEmail={query.email} /></div></div></main>;
 }

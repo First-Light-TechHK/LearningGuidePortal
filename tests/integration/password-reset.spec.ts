@@ -1,0 +1,61 @@
+import { expect, test } from "playwright/test";
+import { mkdtemp, rm, readFile, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import nodemailer from "nodemailer";
+
+test("DEV reset sends mail, preserves destination, throttles and consumes tokens once", async () => {
+  const cwd = process.cwd();
+  const env = { ...process.env };
+  const directory = await mkdtemp(path.join(tmpdir(), "learning-guide-reset-"));
+  const originalTransport = nodemailer.createTransport;
+  const mails: Array<{ text: string; subject: string; to: string }> = [];
+  nodemailer.createTransport = (() => ({ sendMail: async (mail: typeof mails[number]) => { mails.push(mail); } })) as unknown as typeof nodemailer.createTransport;
+  process.chdir(directory);
+  Object.assign(process.env, { APP_ENV: "DEV", STORAGE_BACKEND: "local", SMTP_HOST: "smtp.example.test", SMTP_USER: "test", SMTP_PASS: "fake", NEXT_PUBLIC_APP_URL: "http://localhost:3027" });
+  try {
+    const store = await import("../../services/productStore");
+    const { POST } = await import("../../app/api/auth/password-reset/request/route");
+    const confirm = (await import("../../app/api/auth/password-reset/confirm/route")).POST;
+    const user = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "reset-test", email: "reset@example.test", locale: "zh-CN" });
+    const session = await store.createSession(user.id);
+    const request = (email: string, returnTo = "/zh-CN/pricing?term=12#plans") => POST(new Request("http://localhost:3027/api/auth/password-reset/request", { method: "POST", headers: { origin: "http://localhost:3027" }, body: JSON.stringify({ email, locale: "zh-CN", returnTo }) }));
+    const response = await request(user.email!);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, accepted: true, retryAfter: 60, resetUrl: null });
+    expect(mails).toHaveLength(1);
+    expect(mails[0].subject).toContain("重置");
+    const link = new URL(mails[0].text.match(/http[^\s]+/)![0]);
+    expect(link.searchParams.get("returnTo")).toBe("/zh-CN/pricing?term=12#plans");
+    await request(user.email!);
+    await request("absent@example.test");
+    expect(mails).toHaveLength(1);
+    const token = link.searchParams.get("token")!;
+    const finish = (value: string) => confirm(new Request("http://localhost:3027/api/auth/password-reset/confirm", { method: "POST", body: JSON.stringify({ token: value, newPassword: "Changed-password-123" }) }));
+    expect((await finish("invalid")).status).toBe(400);
+    expect((await finish(token)).status).toBe(200);
+    expect((await finish(token)).status).toBe(400);
+    expect(await store.getUserBySessionToken(session.token)).toBeNull();
+    expect((await store.authenticateUser(user.email!, "Changed-password-123")).id).toBe(user.id);
+    const first = await store.requestPasswordReset(user.email!);
+    const second = await store.requestPasswordReset(user.email!);
+    await expect(store.resetPassword(first.token!, "Changed-password-456")).rejects.toThrow("invalid or has expired");
+    expect(second.token).toBeTruthy();
+    const productFile = path.join(directory, "data/knowledge_system/learning_guide/product.json");
+    const records = JSON.parse(await readFile(productFile, "utf8"));
+    for (const record of records.passwordResetTokens) record.expiresAt = "2000-01-01T00:00:00.000Z";
+    await writeFile(productFile, JSON.stringify(records));
+    await expect(store.resetPassword(second.token!, "Changed-password-456")).rejects.toThrow("invalid or has expired");
+    const other = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "reset-other", email: "other@example.test" });
+    await request(other.email!, "https://evil.example/path");
+    expect(new URL(mails[1].text.match(/http[^\s]+/)![0]).searchParams.get("returnTo")).toBe("/zh-CN/account/my-learning");
+    delete process.env.SMTP_HOST; delete process.env.SES_FROM_EMAIL; delete process.env.LOCAL_PASSWORD_RESET_PREVIEW;
+    expect((await request(user.email!)).status).toBe(503);
+    process.env.APP_ENV = "PROD"; process.env.LOCAL_PASSWORD_RESET_PREVIEW = "1"; process.env.NEXT_PUBLIC_APP_URL = "https://reset.example.test";
+    expect((await request(user.email!)).status).toBe(503);
+  } finally {
+    nodemailer.createTransport = originalTransport;
+    process.chdir(cwd); process.env = env;
+    if (path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true });
+  }
+});

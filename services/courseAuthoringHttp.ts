@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { currentProductUserFromRequest } from "./productAuth";
+import { currentAuthorRequest } from "./productAuth";
+import { requestOriginMatches } from "./adminHost";
 import { canAuthorCourses } from "./backofficeAccess";
 import { AuthoringError } from "./courseAuthoring";
 
@@ -10,13 +11,10 @@ class OversizedAuthoringBody extends AuthoringError {
 }
 
 export async function authoringActor(request: Request, mutation = false) {
-  const user = await currentProductUserFromRequest(request);
+  const user = await currentAuthorRequest(request);
   if (!user || !canAuthorCourses(user)) throw new AuthoringError("restricted");
   if (mutation) {
-    try {
-      const origin = request.headers.get("origin"), parsed = new URL(origin || "");
-      if (!["http:", "https:"].includes(parsed.protocol) || parsed.origin !== origin || parsed.host !== (request.headers.get("host") || new URL(request.url).host)) throw new Error();
-    } catch { throw new AuthoringError("restricted"); }
+    if (!requestOriginMatches(request)) throw new AuthoringError("restricted");
   }
   return user;
 }

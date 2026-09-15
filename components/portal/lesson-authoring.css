@@ -61,4 +61,18 @@
 .la-content-nav { display:flex; gap:8px; flex-wrap:wrap; border-bottom:1px solid var(--la-line); padding-bottom:12px; }.la-content-nav button { text-align:left; max-width:100%; overflow-wrap:anywhere; }.la-content-nav button[aria-current=step] { color:#0c6256; background:#e3f1ec; border-color:#529987; }.la-content-nav span { color:#65756e; font-variant-numeric:tabular-nums; }
 .la-exercise { display:grid; gap:14px; }.la-option { display:flex!important; flex-direction:row!important; align-items:center; gap:10px; padding:10px; margin:6px 0; border:1px solid var(--la-line); border-radius:4px; }.la-option > span { flex:1; overflow-wrap:anywhere; }.la-option > strong { color:#126548; font-size:12px; }.la-option.la-correct { background:#edf8f0; border-color:#7bad8b; }.la-answer { background:#edf8f0; padding:14px; border-left:3px solid #428961; }
 .la-model { position:relative; width:100%; }.la-model-canvas { width:100%; height:clamp(280px,55vh,600px); background:#f3f6f5; }.la-model-canvas canvas { display:block; width:100%; height:100%; touch-action:none; }.la-model-status { position:absolute; inset:35% 20px auto; text-align:center; pointer-events:none; }.la-model-tools { position:absolute; top:10px; right:10px; display:flex; gap:6px; }
+.la-pdf { width:100%; min-width:0; }
+.la-pdf-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:8px 0; }
+.la-pdf-toolbar-spacer { flex:1; }
+.la-pdf .la-pdf-page-input { flex:0 0 60px; width:60px; }
+.la-pdf .la-pdf-page-input input { height:34px; padding:4px 6px!important; font-variant-numeric:tabular-nums; }
+.la-pdf-page-count { font-size:12px; font-variant-numeric:tabular-nums; }
+.la-pdf-zoom { width:46px; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; }
+.la-pdf-viewport { position:relative; width:100%; min-height:280px; max-height:70dvh; overflow:auto; padding:12px; background:#edf1ef; overscroll-behavior:contain; }
+.la-pdf-page { min-width:100%; width:max-content; margin:0 auto; }
+.la-pdf-canvas { display:block; background:white; }
+.la-pdf-status { padding:60px 12px; text-align:center; }
+.la-pdf-open { display:inline-flex; align-items:center; gap:6px; margin-top:10px; color:#136f8e; }
+.la-pdf-sr { position:absolute!important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+@media(max-width:600px) { .la-pdf-toolbar { gap:4px; }.la-pdf-toolbar-spacer { flex-basis:100%; height:0; }.la-pdf-viewport { max-height:65dvh; } }
 @media(max-width:600px) { .la-columns { grid-template-columns:1fr; }.la-content-group > .la-heading { flex-wrap:wrap; }.la-content-group > .la-heading > label { flex-basis:calc(100% - 36px); }.la-content-group > .la-heading > .la-actions { margin-left:auto; }.la-rich .tiptap { padding:12px; }.la-toolbar { padding:4px; gap:2px; }.la-toolbar > select { max-width:145px; font-size:12px; }.la-modal { padding:14px; }.la-upload .la-file { width:100%; justify-content:center; }.la-option { flex-wrap:wrap; }.la-option > strong { flex-basis:100%; }.la-prose h1 { font-size:25px; } }

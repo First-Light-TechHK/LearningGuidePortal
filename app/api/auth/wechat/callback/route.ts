@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
     const code = url.searchParams.get("code");
     if (!code || url.searchParams.has("error")) throw new WeChatOAuthError("cancelled");
     const session = await signInWithWeChat(code, locale);
-    const response = redirect(new URL(returnTo, origin));
+    const destination = session.needsEmailBinding ? `/${locale}/portal/bind-email?returnTo=${encodeURIComponent(returnTo)}` : returnTo;
+    const response = redirect(new URL(destination, origin));
     response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: SESSION_MAX_AGE });
     return response;
   } catch (error) {

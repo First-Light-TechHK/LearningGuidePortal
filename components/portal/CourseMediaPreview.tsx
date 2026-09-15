@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
+import { CourseUploadActivity } from './CourseUploadActivity';
 import './lesson-authoring.css';
 
 const CourseModelPreview = dynamic(() => import('./CourseModelPreview').then(m => m.CourseModelPreview), { ssr: false });
+const CoursePdfPreview = dynamic(() => import('./CoursePdfPreview').then(m => m.CoursePdfPreview), { ssr: false });
 
 export function safeMediaUrl(value: string | undefined): string {
   if (!value || /[\u0000-\u0020\\]/.test(value)) return '';
@@ -80,10 +82,12 @@ export function LessonModal({ title, locale, onClose, children }: { title: strin
 
 export function MediaUpload({ courseId, value, onChange, accept, locale }: { courseId: string; value: string; onChange: (url: string) => void; accept: string; locale: LessonLocale }) {
   const t = lessonMessages(locale), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const beginUpload = useContext(CourseUploadActivity);
   const controller = useRef<AbortController | null>(null), latest = useRef(onChange); latest.current = onChange;
   useEffect(() => () => controller.current?.abort(), []);
   async function upload(file: File) {
     controller.current?.abort(); const request = new AbortController(); controller.current = request;
+    const finishUpload = beginUpload?.();
     setBusy(true); setError('');
     try {
       const form = new FormData(); form.append('file', file);
@@ -92,7 +96,7 @@ export function MediaUpload({ courseId, value, onChange, accept, locale }: { cou
       if (!response.ok || result.ok !== true || !safeMediaUrl(result.data?.url)) throw new Error('upload');
       if (!request.signal.aborted) latest.current(result.data.url);
     } catch { if (!request.signal.aborted) setError(t.uploadFailed); }
-    finally { if (!request.signal.aborted) setBusy(false); }
+    finally { finishUpload?.(); if (!request.signal.aborted) setBusy(false); }
   }
   return <div className="la-upload"><label>{t.url}<input type="text" value={value} disabled={busy} onChange={e => onChange(e.target.value)} aria-invalid={!!value && !safeMediaUrl(value)}/></label><label className="la-file"><Upload size={16}/>{busy ? t.uploading : t.upload}<input type="file" accept={accept} disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(file); }}/></label>{(error || (value && !safeMediaUrl(value))) && <p role="alert">{error || t.invalidUrl}</p>}</div>;
 }
@@ -106,7 +110,7 @@ export function CourseMediaPreview({ type, url, title = '', locale }: { type: 'v
     {type === 'image' && <img src={src} alt={title} onError={() => setFailed(true)}/>}
     {type === 'video' && <video src={src} controls playsInline preload="metadata" onError={() => setFailed(true)}/>}
     {type === 'audio' && <audio src={src} controls preload="metadata" onError={() => setFailed(true)}/>}
-    {type === 'pdf' && <><iframe src={src} title={title || t.pdf} sandbox="" referrerPolicy="no-referrer"/><a href={src} target="_blank" rel="noopener noreferrer">{t.openPdf}</a></>}
+    {type === 'pdf' && <CoursePdfPreview url={src} title={title} locale={locale}/>}
     {type === 'model3d' && <CourseModelPreview url={src} locale={locale} title={title}/>}
   </div>;
 }

@@ -17,14 +17,31 @@ export async function resolveSubscriptionPrice(planId: string): Promise<StripePr
   const lookupKey = mapping && process.env[mapping.env]?.trim();
   if (!mapping || !lookupKey) throw new PaymentError("price_unavailable", 503);
   try {
-    const result = lookupKey.startsWith("price_") ? { data: [await getStripe().prices.retrieve(lookupKey)] } : await getStripe().prices.list({ lookup_keys: [lookupKey], active: true, limit: 2 });
+    const result = lookupKey.startsWith("price_") ? { data: [await getStripe().prices.retrieve(lookupKey, { expand: ["product"] })] } : await getStripe().prices.list({ lookup_keys: [lookupKey], active: true, limit: 2, expand: ["data.product"] });
     if (result.data.length !== 1) throw new PaymentError("price_unavailable", 503);
     const price = result.data[0];
     validateSubscriptionPrice(price, mapping.termMonths);
-    return { stripePriceId: price.id, lookupKey, amountMinor: price.unit_amount!, currency: "usd", termMonths: mapping.termMonths };
+    return { stripePriceId: price.id, lookupKey, amountMinor: price.unit_amount!, currency: "usd", termMonths: mapping.termMonths, ...stripeProductPresentation(price) };
   } catch (error) {
     if (error instanceof PaymentError) throw error;
     // Never expose provider URLs, request bodies or credentials to the browser.
     throw new PaymentError("price_unavailable", 503);
   }
+}
+
+export function stripeProductPresentation(price: Stripe.Price) {
+  const product = price.product;
+  if (!product || typeof product === "string" || product.deleted) return {};
+  const productImage = product.images?.find(url => {
+    try { return new URL(url).protocol === "https:"; } catch { return false; }
+  }) || null;
+  return { stripeProductId: product.id, productName: product.name, productImage };
+}
+
+// Historical orders predate product snapshots. Resolve their pinned Price, not today's plan.
+export async function getHistoricalProductPresentation(priceId: string) {
+  try {
+    const price = await getStripe().prices.retrieve(priceId, { expand: ["product"] });
+    return stripeProductPresentation(price);
+  } catch { return {}; }
 }

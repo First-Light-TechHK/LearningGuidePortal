@@ -1,0 +1,13 @@
+schema: overlay-suite/v2
+id: visitor-trial
+title: Visitor / Trial
+status: active
+kind: functional
+subject: product
+source: inbox/visitor-trial.md
+packages:
+  - modules/subscription-management
+  - modules/payment-management
+  - modules/portal
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/visitor-trial.test.ts

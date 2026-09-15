@@ -47,5 +47,5 @@ export async function signInWithWeChat(code: string, locale: Locale) {
   const profile = await fetchWeChatProfile(code);
   const user = await getOrCreateSocialUser({ provider: "wechat", providerSubject: profile.subject,
     nickname: profile.nickname, locale, wechat: profile });
-  return createSession(user.id);
+  return { ...await createSession(user.id), needsEmailBinding: !user.email || !user.emailVerifiedAt };
 }

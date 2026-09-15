@@ -243,6 +243,7 @@ export type ProductData = {
   stripeEvents: Array<{ id: string; type: string; processedAt: string }>;
   verificationTokens: ProductToken[];
   passwordResetTokens: ProductToken[];
+  emailBindingTokens: Array<ProductToken & { email: string }>;
   paymentSettings: ProductPaymentSettings;
   orderActivities: ProductOrderActivity[];
   accounts: ProductAccount[];
@@ -330,6 +331,7 @@ function defaultData(): ProductData {
     notifications: [],
     stripeEvents: [],
     verificationTokens: [],
+    emailBindingTokens: [],
     passwordResetTokens: [],
     paymentSettings: defaultPaymentSettings(),
     orderActivities: [],
@@ -413,6 +415,7 @@ export async function ensureProductData() {
   if (current?.version === 1) {
     if (!current.stripeEvents) current.stripeEvents = [];
     if (!current.verificationTokens) current.verificationTokens = [];
+    current.emailBindingTokens ||= [];
     if (!current.passwordResetTokens) current.passwordResetTokens = [];
     if (!current.paymentSettings) current.paymentSettings = defaultPaymentSettings();
     if (!current.orderActivities) current.orderActivities = [];
@@ -727,14 +730,19 @@ export async function verifyEmailToken(rawToken: string) {
   });
 }
 
-export async function requestPasswordReset(emailValue: string) {
+export async function requestPasswordReset(emailValue: string, enforceCooldown = false) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
   // A Google-created account has no password initially. Its verified provider
   // email is sufficient to request a reset and establish email/password login.
   const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
   if (!user) return { accepted: true, token: null };
-  return { accepted: true, token: await issueToken("passwordResetTokens", user.id) };
+  try {
+    return { accepted: true, token: await issueToken("passwordResetTokens", user.id, enforceCooldown) };
+  } catch (error) {
+    if (enforceCooldown && error instanceof Error && error.message === "Please wait before requesting another verification email.") return { accepted: true, token: null };
+    throw error;
+  }
 }
 
 export async function resetPassword(rawToken: string, newPassword: string) {
@@ -824,12 +832,47 @@ export async function createSession(userId: string) {
   return { token, expiresAt: session.expiresAt };
 }
 
-export async function getUserBySessionToken(token: string | undefined) {
+export async function getUserBySessionToken(token: string | undefined, allowEmailBinding = false) {
   if (!token) return null;
   const data = await ensureProductData();
   const session = data.sessions.find((item) => item.tokenHash === hashToken(token) && new Date(item.expiresAt) > new Date());
   if (!session) return null;
-  return data.users.find((user) => user.id === session.userId && user.status === "active" && (Boolean(user.emailVerifiedAt) || data.accounts.some((account) => account.userId === user.id && account.provider === "wechat"))) || null;
+  return data.users.find((user) => user.id === session.userId && user.status === "active" && ((Boolean(user.email) && Boolean(user.emailVerifiedAt)) || (allowEmailBinding && data.accounts.some((account) => account.userId === user.id && account.provider === "wechat")))) || null;
+}
+
+export async function issueEmailBinding(userId: string, emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error("invalid_email");
+  return editData(data => {
+    const user = data.users.find(user => user.id === userId && user.status === "active");
+    if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
+    if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
+    if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
+    const latest = data.emailBindingTokens.find(token => token.userId === userId);
+    if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
+    const rawToken = randomBytes(32).toString("base64url");
+    // Remove superseded links so they cannot be mistaken for successful replays.
+    data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
+    data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+    return { token: rawToken, email };
+  });
+}
+
+export async function confirmEmailBinding(rawToken: string) {
+  return editData(data => {
+    const token = data.emailBindingTokens.find(token => token.tokenHash === hashToken(rawToken));
+    if (!token) throw new Error("invalid_link");
+    const user = data.users.find(user => user.id === token.userId && user.status === "active");
+    if (!user) throw new Error("invalid_link");
+    if (token.usedAt && user.email === token.email && user.emailVerifiedAt) return { userId: user.id, alreadyBound: true };
+    if (token.usedAt || new Date(token.expiresAt) <= new Date()) throw new Error("invalid_link");
+    if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
+    if (data.users.some(other => other.id !== user.id && other.email?.toLowerCase() === token.email)) throw new Error("email_in_use");
+    user.email = token.email;
+    user.emailVerifiedAt = now();
+    token.usedAt = now();
+    return { userId: user.id, alreadyBound: false };
+  });
 }
 
 export async function deleteSession(token: string | undefined) {
@@ -1653,7 +1696,7 @@ export async function getLearningOverview(userId: string) {
       };
     });
     const empty = overviewEmptyState(courses.length, accessState);
-    const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: data.plans.find((plan) => plan.id === order.planId) || null }));
+    const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: order.planSnapshot || data.plans.find((plan) => plan.id === order.planId) || null }));
     const entitlements = data.entitlements.filter((item) => item.userId === userId && item.state === "active" && new Date(item.validTo) > currentTime);
     return {
       courses,

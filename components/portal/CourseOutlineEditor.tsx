@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowUp, ArrowDown, Plus, Save, X, Trash2, Eye, Pencil } from "lucide-react";
 import type { CourseDraftInput, CatalogueEntry } from "@/contracts/course-authoring";
 import type { ProductCourse } from "@/services/productStore";
@@ -9,6 +9,7 @@ import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages
 import { CourseMetadataEditor } from "./CourseMetadataEditor";
 import { LessonContentEditor } from "./LessonContentEditor";
 import { LessonContentPlayer } from "./LessonContentPlayer";
+import { CourseUploadActivity } from "./CourseUploadActivity";
 
 type Copy = ReturnType<typeof getMessages>["authoring"];
 export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue = [], locale = "en-GB" }: { course: ProductCourse; copy: Copy; onSaved: () => Promise<void>; onClose: () => void; catalogue?: CatalogueEntry[]; locale?: "en-GB" | "zh-CN" }) {
@@ -17,7 +18,14 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
   const [draft, setDraft] = useState<CourseDraftInput>(() => draftOf(course));
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [uploading, setUploading] = useState(false), [preview, setPreview] = useState(false), [saved, setSaved] = useState(false);
+  const [coverUploading, setUploading] = useState(false), [preview, setPreview] = useState(false), [saved, setSaved] = useState(false);
+  const [nestedUploads, setNestedUploads] = useState(0);
+  const uploading = coverUploading || nestedUploads > 0;
+  const beginUpload = useCallback(() => {
+    setNestedUploads(count => count + 1);
+    let pending = true;
+    return () => { if (pending) { pending = false; setNestedUploads(count => count - 1); } };
+  }, []);
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", guard);
@@ -31,7 +39,9 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
   function move<T>(items: T[], index: number, delta: number) { const target = index + delta; if (target >= 0 && target < items.length) [items[index], items[target]] = [items[target], items[index]]; }
   function close() { if (!dirty || window.confirm(copy.discard)) onClose(); }
   async function save(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault();
+    if (busy || uploading) return;
+    setBusy(true); setError("");
     try {
       const response = await fetch(`/api/backoffice/courses/${encodeURIComponent(course.id)}/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) });
       const result = await response.json();
@@ -44,11 +54,11 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
     } catch { setError(copy.errors.failed); } finally { setBusy(false); }
   }
   const orderButtons = (index: number, count: number, reorder: (delta: number) => void) => <span className="authoring-actions"><button type="button" title={copy.up} aria-label={copy.up} disabled={busy || index === 0} onClick={() => reorder(-1)}><ArrowUp size={18}/></button><button type="button" title={copy.down} aria-label={copy.down} disabled={busy || index === count - 1} onClick={() => reorder(1)}><ArrowDown size={18}/></button></span>;
-  return <form className="backoffice-form authoring-editor" onSubmit={save}>
-    <header className="authoring-heading"><h2>{copy.heading}</h2><div className="authoring-actions"><button type="button" title={preview ? messages.edit : messages.preview} aria-label={preview ? messages.edit : messages.preview} onClick={() => setPreview(!preview)}>{preview ? <Pencil size={18}/> : <Eye size={18}/>}</button><button type="button" title={copy.close} aria-label={copy.close} onClick={close} disabled={busy || uploading}><X size={20}/></button></div></header>
+  return <CourseUploadActivity.Provider value={beginUpload}><form className="backoffice-form authoring-editor" onSubmit={save}>
+    <header className="authoring-heading"><h2>{copy.heading}</h2><div className="authoring-actions"><button type="button" title={preview ? messages.edit : messages.preview} aria-label={preview ? messages.edit : messages.preview} disabled={busy || uploading} onClick={() => setPreview(!preview)}>{preview ? <Pencil size={18}/> : <Eye size={18}/>}</button><button type="button" title={copy.close} aria-label={copy.close} onClick={close} disabled={busy || uploading}><X size={20}/></button></div></header>
     {error && <p role="alert" className="portal-form-error">{error}</p>}
     {saved && <p role="status">{messages.saved}</p>}
-    {preview ? <div className="course-draft-preview"><h2>{draft.title}</h2><p>{draft.subtitle}</p><p>{draft.description}</p>{draft.sections.map(section => <section key={section.id}><h3>{section.title}</h3>{section.lessons.map(lesson => <article key={lesson.id}><h4>{lesson.title}</h4>{lesson.contents?.length ? <LessonContentPlayer contents={lesson.contents} locale={locale}/> : <p style={{ whiteSpace: "pre-wrap" }}>{lesson.body}</p>}</article>)}</section>)}</div> : <fieldset disabled={busy || uploading}>
+    {preview ? <div className="course-draft-preview"><h2>{draft.title}</h2><p>{draft.subtitle}</p><p>{draft.description}</p>{draft.sections.map(section => <section key={section.id}><h3>{section.title}</h3>{section.lessons.map(lesson => <article key={lesson.id}><h4>{lesson.title}</h4>{lesson.contents?.length ? <LessonContentPlayer contents={lesson.contents} locale={locale}/> : <p style={{ whiteSpace: "pre-wrap" }}>{lesson.body}</p>}</article>)}</section>)}</div> : <fieldset disabled={busy || uploading} inert={busy || uploading}>
       <label>{copy.title}<input required maxLength={255} value={draft.title} onChange={event => edit(next => { next.title = event.target.value; })}/></label>
       <label>{copy.description}<textarea maxLength={5000} rows={3} value={draft.description} onChange={event => edit(next => { next.description = event.target.value; })}/></label>
       <CourseMetadataEditor courseId={course.id} value={draft} locale={locale} catalogue={catalogue} onUploadingChange={setUploading} onChange={patch => edit(next => { Object.assign(next, patch); })}/>
@@ -68,5 +78,5 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
       <button className="portal-button portal-button-secondary" type="button" onClick={() => edit(next => { next.sections.push({ id: `new-${crypto.randomUUID()}`, title: copy.newSection, lessons: [] }); })}><Plus size={16}/>{copy.addSection}</button>
     </fieldset>}
     <button className="portal-button portal-button-primary" type="submit" disabled={busy || uploading || !dirty}><Save size={16}/>{busy ? copy.saving : copy.save}</button>
-  </form>;
+  </form></CourseUploadActivity.Provider>;
 }

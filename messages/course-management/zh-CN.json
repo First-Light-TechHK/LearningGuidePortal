@@ -58,6 +58,7 @@
   "richText": "富文本内容",
   "convert": "转换为富文本",
   "profile": "个人资料",
+  "signInHint": "请使用已验证的课程作者或运营管理员账号登录。",
   "dashboard": "概览",
   "aiSettings": "AI 设置",
   "email": "邮箱",

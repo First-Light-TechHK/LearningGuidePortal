@@ -76,11 +76,21 @@ export function sendVerificationEmail(input: { to: string; url: string; locale?:
   });
 }
 
-export function sendPasswordResetEmail(input: { to: string; url: string }) {
+export function sendEmailBindingEmail(input: { to: string; url: string; locale: "en-GB" | "zh-CN" }) {
+  const chinese = input.locale === "zh-CN";
+  const title = chinese ? "验证并绑定您的邮箱" : "Verify and bind your email";
+  const description = chinese ? "请确认将此邮箱绑定到您的 Learning Guide 微信账号。链接 24 小时内有效。" : "Confirm this email for your Learning Guide WeChat account. This link expires in 24 hours.";
+  const url = input.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return sendEmail({ to: input.to, subject: title, text: `${description}\n\n${input.url}`, html: `<p>${description}</p><p><a href="${url}">${title}</a></p>` });
+}
+
+export function sendPasswordResetEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
+  const chinese = input.locale === "zh-CN";
+  const htmlUrl = input.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   return sendEmail({
     to: input.to,
-    subject: "Reset your Learning Guide password",
-    text: `Reset your Learning Guide password by opening this link:\n\n${input.url}\n\nThis link expires in one hour.`,
-    html: `<p>Reset your Learning Guide password by opening this link:</p><p><a href="${input.url}">Reset password</a></p><p>This link expires in one hour.</p>`
+    subject: chinese ? "重置您的 Learning Guide 密码" : "Reset your Learning Guide password",
+    text: chinese ? `请打开以下链接重置密码：\n\n${input.url}\n\n链接将在一小时后失效，只能使用一次。` : `Reset your Learning Guide password:\n\n${input.url}\n\nThis link expires in one hour and can only be used once.`,
+    html: chinese ? `<p>请点击链接重置密码：</p><p><a href="${htmlUrl}">重置密码</a></p><p>链接将在一小时后失效，只能使用一次。</p>` : `<p><a href="${htmlUrl}">Reset password</a></p><p>This link expires in one hour and can only be used once.</p>`
   });
 }

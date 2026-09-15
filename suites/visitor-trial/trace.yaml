@@ -1,0 +1,36 @@
+schema: overlay-trace/v1
+suite: visitor-trial
+items:
+  - function_id: TRIAL-01
+    level: integration
+    case_id: TRIAL-01/io/functional
+    type: functional
+    span: interaction
+    relates:
+      - AUTH-06
+  - function_id: TRIAL-01
+    level: integration
+    case_id: TRIAL-01/io/negative
+    type: negative
+  - function_id: TRIAL-01
+    level: integration
+    case_id: TRIAL-01/io/edge
+    type: edge
+    span: interaction
+    relates:
+      - TRIAL-02
+  - function_id: TRIAL-02
+    level: integration
+    case_id: TRIAL-02/io/functional
+    type: functional
+  - function_id: TRIAL-02
+    level: integration
+    case_id: TRIAL-02/io/negative
+    type: negative
+    span: interaction
+    relates:
+      - TRIAL-01
+  - function_id: TRIAL-02
+    level: integration
+    case_id: TRIAL-02/io/edge
+    type: edge

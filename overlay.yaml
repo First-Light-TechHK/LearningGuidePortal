@@ -1,0 +1,18 @@
+# Overlay 薄配置（接入方文件；不要 vendor overlay/）。
+# overlay-check：validate + cover + run。active 跑，blocked 丢掉不当红。
+schema: overlay-config/v1
+product:
+  repo: First-Light-TechHK/LearningGuidePortal
+  default_ref: ec9e12990fa700b034829fd2fd4af12d955bd40e
+branches:
+  main:
+    run: [functional, regression]
+  default:
+    run: [functional, regression]
+kinds:
+  concurrency: later
+  agent: later
+never_red_statuses:
+  - blocked
+forbid_hosts:
+  - ilovelearningguide.com

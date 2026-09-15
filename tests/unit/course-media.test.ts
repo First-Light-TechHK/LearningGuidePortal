@@ -9,6 +9,11 @@ import type { ProductUser } from "../../services/productStore";
 const cwd = process.cwd();
 const oldBackend = process.env.STORAGE_BACKEND;
 const oldEnvironment = process.env.APP_ENV;
+const oldAdminHosts = process.env.ADMIN_HOSTS;
+const adminHost = "admin.media.test";
+const learnerHost = "learner.media.test";
+const adminCookie = "learning_guide_admin_session";
+const learnerCookie = "learning_guide_session";
 let directory: string;
 let media: typeof import("../../services/courseMedia");
 let store: typeof import("../../services/productStore");
@@ -16,7 +21,7 @@ let files: typeof import("../../services/fileStore");
 let post: typeof import("../../app/api/backoffice/courses/[courseId]/media/route").POST;
 let get: typeof import("../../app/api/course-media/[courseId]/[assetId]/route").GET;
 let teacher: ProductUser, otherTeacher: ProductUser, student: ProductUser;
-let teacherToken: string, otherToken: string, studentToken: string;
+let teacherToken: string, teacherLearnerToken: string, otherToken: string, studentToken: string;
 const courseId = "media-test-course";
 const otherCourseId = "other-media-course";
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
@@ -33,6 +38,7 @@ async function editFixture(edit: (data: Awaited<ReturnType<typeof store.ensurePr
 before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lg-course-media-"));
   process.chdir(directory); process.env.STORAGE_BACKEND = "local"; process.env.APP_ENV = "test";
+  process.env.ADMIN_HOSTS = adminHost;
   store = await import("../../services/productStore");
   files = await import("../../services/fileStore");
   media = await import("../../services/courseMedia");
@@ -47,6 +53,7 @@ before(async () => {
     data.courses.push(...[courseId, otherCourseId].map(id => ({ id, slug: id, title: id, description: "Test", status: "draft" as const, authorIds: [id === courseId ? teacher.id : otherTeacher.id], sections: [{ id: "section", title: "Section", lessons: [{ id: "preview", title: "Preview", body: "", isPublic: true, durationMinutes: 5, contents: [] }, { id: "paid", title: "Paid", body: "", isPublic: false, durationMinutes: 5, contents: [] }] }], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })));
   });
   teacherToken = (await store.createSession(teacher.id)).token;
+  teacherLearnerToken = (await store.createSession(teacher.id)).token;
   otherToken = (await store.createSession(otherTeacher.id)).token;
   studentToken = (await store.createSession(student.id)).token;
 });
@@ -55,11 +62,17 @@ after(async () => {
   process.chdir(cwd);
   if (oldBackend === undefined) delete process.env.STORAGE_BACKEND; else process.env.STORAGE_BACKEND = oldBackend;
   if (oldEnvironment === undefined) delete process.env.APP_ENV; else process.env.APP_ENV = oldEnvironment;
+  if (oldAdminHosts === undefined) delete process.env.ADMIN_HOSTS; else process.env.ADMIN_HOSTS = oldAdminHosts;
   await rm(directory, { recursive: true, force: true });
 });
 
-function fetchAsset(asset: CourseMediaAsset, token = "", headers: Record<string, string> = {}, id = asset.courseId, method = "GET") {
-  return get(new Request(`http://localhost:3014/api/course-media/${id}/${asset.id}`, { method, headers: { cookie: `learning_guide_session=${token}`, ...headers } }), { params: Promise.resolve({ courseId: id, assetId: asset.id }) });
+function fetchAsset(asset: CourseMediaAsset, token = "", headers: Record<string, string> = {}, id = asset.courseId, method = "GET", transport: { host?: string; cookieName?: string } = {}) {
+  const host = transport.host || learnerHost, cookieName = transport.cookieName || learnerCookie;
+  return get(new Request(`https://${host}/api/course-media/${id}/${asset.id}`, { method, headers: { host, cookie: `${cookieName}=${token}`, ...headers } }), { params: Promise.resolve({ courseId: id, assetId: asset.id }) });
+}
+
+function fetchAdminAsset(asset: CourseMediaAsset, token: string, headers: Record<string, string> = {}, id = asset.courseId, method = "GET") {
+  return fetchAsset(asset, token, headers, id, method, { host: adminHost, cookieName: adminCookie });
 }
 
 test("validates raster/PDF/audio/OBJ formats and refuses extension, MIME and signature spoofing", () => {
@@ -88,17 +101,20 @@ test("GLB validation requires a self-contained binary v2 container", () => {
   assert.throws(() => media.validateCourseMediaFile(input(broken, "model.glb", "model/gltf-binary")), media.CourseMediaError);
 });
 
-test("upload route checks session, teacher ownership, origin and stores one private asset", async () => {
-  const invoke = (token: string, origin = "http://localhost:3014", file = input()) => {
+test("upload route checks admin host/cookie, teacher ownership, origin and stores one private asset", async () => {
+  const invoke = (token: string, origin = `https://${adminHost}`, file = input(), host = adminHost, cookieName = adminCookie) => {
     const form = new FormData(); form.append("file", new Blob([new Uint8Array(file.bytes)], { type: file.type }), file.name); form.append("usage", "content-image");
-    return post(new Request(`http://localhost:3014/api/backoffice/courses/${courseId}/media`, { method: "POST", headers: { origin, cookie: `learning_guide_session=${token}` }, body: form }), { params: Promise.resolve({ courseId }) });
+    return post(new Request(`https://${host}/api/backoffice/courses/${courseId}/media`, { method: "POST", headers: { host, origin, cookie: `${cookieName}=${token}` }, body: form }), { params: Promise.resolve({ courseId }) });
   };
   assert.equal((await invoke("")).status, 403);
   assert.equal((await invoke(studentToken)).status, 403);
   assert.equal((await invoke(otherToken)).status, 403);
   assert.equal((await invoke(teacherToken, "https://evil.test")).status, 403);
   assert.equal((await invoke(teacherToken, "")).status, 403);
-  assert.equal((await invoke(teacherToken, "http://localhost:3014", input(Buffer.from("<html>unsafe</html>")))).status, 415);
+  assert.equal((await invoke(teacherToken, `https://${adminHost}`, input(Buffer.from("<html>unsafe</html>")))).status, 415);
+  assert.equal((await invoke(teacherLearnerToken, `https://${adminHost}`, input(), adminHost, learnerCookie)).status, 403);
+  assert.equal((await invoke(teacherLearnerToken, `https://${learnerHost}`, input(), learnerHost, learnerCookie)).status, 403);
+  assert.equal((await invoke(teacherToken, `https://${learnerHost}`, input(), learnerHost, adminCookie)).status, 403);
   const response = await invoke(teacherToken);
   assert.equal(response.status, 201);
   const result = await response.json();
@@ -106,12 +122,12 @@ test("upload route checks session, teacher ownership, origin and stores one priv
   assert.equal(result.data.mimeType, "image/png");
   assert.match(result.data.url, /^\/api\/course-media\/media-test-course\//);
   assert.equal("uploadedBy" in result.data, false);
-  const retrieved = await fetchAsset(result.data, teacherToken);
+  const retrieved = await fetchAdminAsset(result.data, teacherToken);
   assert.equal(retrieved.status, 200);
   assert.deepEqual(Buffer.from(await retrieved.arrayBuffer()), png);
   assert.equal((await fetchAsset(result.data)).status, 404);
-  assert.equal((await fetchAsset(result.data, otherToken)).status, 404);
-  assert.equal((await fetchAsset(result.data, otherToken, {}, otherCourseId)).status, 404);
+  assert.equal((await fetchAdminAsset(result.data, otherToken)).status, 404);
+  assert.equal((await fetchAdminAsset(result.data, otherToken, {}, otherCourseId)).status, 404);
 });
 
 test("public preview allows only referenced assets of a published course; paid access never exposes unattached uploads", async () => {
@@ -207,7 +223,7 @@ test("inactive content never grants learner media access, even with a live entit
     content.active = true; content.nodes[0].active = false;
   });
   assert.equal((await fetchAsset(asset)).status, 404);
-  assert.equal((await fetchAsset(asset, teacherToken)).status, 200);
+  assert.equal((await fetchAdminAsset(asset, teacherToken)).status, 200);
 });
 
 test("explicit test environment permits local storage but managed production fails closed", async () => {
@@ -227,7 +243,7 @@ test("explicit test environment permits local storage but managed production fai
 
 test("media GET and HEAD use private responses with bounded RFC byte ranges", async () => {
   const asset = await media.uploadCourseMedia(teacher, courseId, input(Buffer.from([0xff, 0xfb, 0x90, 0x64, 1, 2, 3, 4]), "sound.mp3", "audio/mpeg"));
-  const response = await fetchAsset(asset, teacherToken, { range: "bytes=2-5" });
+  const response = await fetchAdminAsset(asset, teacherToken, { range: "bytes=2-5" });
   assert.equal(response.status, 206);
   assert.equal(response.headers.get("content-range"), "bytes 2-5/8");
   assert.equal(response.headers.get("content-length"), "4");
@@ -235,19 +251,65 @@ test("media GET and HEAD use private responses with bounded RFC byte ranges", as
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.match(response.headers.get("content-security-policy")!, /sandbox/);
   assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [0x90, 0x64, 1, 2]);
-  assert.equal((await fetchAsset(asset, teacherToken, { range: "bytes=-3" })).headers.get("content-range"), "bytes 5-7/8");
-  assert.equal((await fetchAsset(asset, teacherToken, { range: "bytes=7-" })).headers.get("content-length"), "1");
-  assert.equal((await fetchAsset(asset, teacherToken, { range: "bytes=0-999" })).headers.get("content-length"), "8");
+  assert.equal((await fetchAdminAsset(asset, teacherToken, { range: "bytes=-3" })).headers.get("content-range"), "bytes 5-7/8");
+  assert.equal((await fetchAdminAsset(asset, teacherToken, { range: "bytes=7-" })).headers.get("content-length"), "1");
+  assert.equal((await fetchAdminAsset(asset, teacherToken, { range: "bytes=0-999" })).headers.get("content-length"), "8");
   for (const range of ["bytes=99-100", "bytes=2-1", "bytes=-0", "bytes=0-1,4-5", "items=0-1", "bytes=99999999999999999999-"]) {
-    const response = await fetchAsset(asset, teacherToken, { range });
+    const response = await fetchAdminAsset(asset, teacherToken, { range });
     assert.equal(response.status, 416);
     assert.equal(response.headers.get("content-range"), "bytes */8");
   }
-  assert.equal((await fetchAsset(asset, teacherToken, { range: "bytes=0-1", "if-range": '"old-etag"' })).status, 200);
-  const head = await fetchAsset(asset, teacherToken, {}, courseId, "HEAD");
+  assert.equal((await fetchAdminAsset(asset, teacherToken, { range: "bytes=0-1", "if-range": '"old-etag"' })).status, 200);
+  const head = await fetchAdminAsset(asset, teacherToken, {}, courseId, "HEAD");
   assert.equal(head.status, 200);
   assert.equal(head.headers.get("content-length"), "8");
   assert.equal((await head.arrayBuffer()).byteLength, 0);
+});
+
+test("teacher learner cookie cannot bypass publication or entitlement through admin preview", async () => {
+  const id = "media-transport-course";
+  await editFixture(data => {
+    data.courses.push({ id, slug: id, title: "Transport regression", description: "Test", status: "draft", authorIds: [teacher.id], sections: [{ id: "transport-section", title: "Section", lessons: [
+      { id: "transport-preview", title: "Preview", body: "", isPublic: true, durationMinutes: 5, contents: [] },
+      { id: "transport-paid", title: "Paid", body: "", isPublic: false, durationMinutes: 5, contents: [] },
+    ] }], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  });
+  const preview = await media.uploadCourseMedia(teacher, id, input());
+  const paid = await media.uploadCourseMedia(teacher, id, input());
+  const orphan = await media.uploadCourseMedia(teacher, id, input());
+  await editFixture(data => {
+    const course = data.courses.find(course => course.id === id)!;
+    course.sections[0].lessons[0].contents = contents(preview);
+    course.sections[0].lessons[1].contents = contents(paid);
+  });
+  const draft = (await store.getProductCourse(id))!;
+  assert.equal(await media.canReadCourseMedia(teacher, draft, orphan.id), false);
+  assert.equal(await media.canReadCourseMedia(teacher, draft, orphan.id, true), true);
+  for (const asset of [preview, paid, orphan]) {
+    assert.equal((await fetchAdminAsset(asset, teacherToken)).status, 200);
+    assert.equal((await fetchAsset(asset, teacherLearnerToken)).status, 404);
+    assert.equal((await fetchAsset(asset, teacherLearnerToken, {}, id, "GET", { host: adminHost })).status, 404);
+    assert.equal((await fetchAsset(asset, teacherToken, {}, id, "GET", { cookieName: adminCookie })).status, 404);
+  }
+  assert.equal((await fetchAsset(orphan, teacherLearnerToken, { range: "bytes=0-3" })).status, 404);
+  assert.equal((await fetchAsset(orphan, teacherLearnerToken, {}, id, "HEAD")).status, 404);
+  const bothCookies = `${adminCookie}=${teacherToken}; ${learnerCookie}=${teacherLearnerToken}`;
+  assert.equal((await fetchAsset(orphan, "", { cookie: bothCookies })).status, 404);
+  assert.equal((await fetchAdminAsset(orphan, "", { cookie: bothCookies })).status, 200);
+  await editFixture(data => { data.courses.find(course => course.id === id)!.status = "published"; });
+  assert.equal((await fetchAsset(preview, teacherLearnerToken)).status, 200);
+  assert.equal((await fetchAsset(paid, teacherLearnerToken)).status, 404);
+  assert.equal((await fetchAsset(orphan, teacherLearnerToken)).status, 404);
+  await editFixture(data => {
+    data.entitlements.push({ id: "teacher-media-access", userId: teacher.id, courseId: id, scope: "course", scopeId: id, device: "pc", source: "purchase", state: "active", validTo: new Date(Date.now() + 3600_000).toISOString() });
+  });
+  assert.equal((await fetchAsset(paid, teacherLearnerToken)).status, 200);
+  assert.equal((await fetchAsset(orphan, teacherLearnerToken)).status, 404);
+  assert.equal((await fetchAsset(paid, teacherLearnerToken, {}, id, "GET", { host: adminHost })).status, 404);
+  await editFixture(data => { data.entitlements.find(item => item.id === "teacher-media-access")!.validTo = new Date(0).toISOString(); });
+  assert.equal((await fetchAsset(paid, teacherLearnerToken)).status, 404);
+  assert.equal((await fetchAsset(preview, teacherLearnerToken)).status, 200);
+  assert.equal((await fetchAdminAsset(orphan, teacherToken)).status, 200);
 });
 
 test("multipart streaming enforces the server cap even with no Content-Length and rejects duplicate fields", async () => {

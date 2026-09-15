@@ -1,0 +1,12 @@
+schema: overlay-suite/v2
+id: login
+title: Registration and Authentication
+status: active
+kind: functional
+subject: product
+source: inbox/login.md
+packages:
+  - modules/user-registration
+  - app/api/auth
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/login.test.ts

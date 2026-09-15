@@ -8,8 +8,8 @@ import type { LessonContent } from "../../contracts/lesson-content";
 import type { ProductCourse, ProductData, ProductUser } from "../../services/productStore";
 
 const cwd = process.cwd();
-const environment = { STORAGE_BACKEND: process.env.STORAGE_BACKEND, APP_ENV: process.env.APP_ENV, PAYMENT_MODE: process.env.PAYMENT_MODE, BACKOFFICE_OPERATOR_EMAIL: process.env.BACKOFFICE_OPERATOR_EMAIL };
-const origin = "http://127.0.0.1:3016";
+const environment = { STORAGE_BACKEND: process.env.STORAGE_BACKEND, APP_ENV: process.env.APP_ENV, PAYMENT_MODE: process.env.PAYMENT_MODE, BACKOFFICE_OPERATOR_EMAIL: process.env.BACKOFFICE_OPERATOR_EMAIL, ADMIN_HOSTS: process.env.ADMIN_HOSTS };
+const origin = "http://localhost:3016";
 let directory: string;
 let store: typeof import("../../services/productStore");
 let files: typeof import("../../services/fileStore");
@@ -23,7 +23,7 @@ const inputFor = (course: ProductCourse): CourseDraftInput => ({ expectedUpdated
 before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lgteacher-persistence-"));
   process.chdir(directory);
-  Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "DEV", PAYMENT_MODE: "demo", BACKOFFICE_OPERATOR_EMAIL: "operator@lgteacher.test" });
+  Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "DEV", PAYMENT_MODE: "demo", BACKOFFICE_OPERATOR_EMAIL: "operator@lgteacher.test", ADMIN_HOSTS: "localhost" });
   store = await import("../../services/productStore");
   files = await import("../../services/fileStore");
   put = (await import("../../app/api/backoffice/courses/[courseId]/draft/route")).PUT;
@@ -47,9 +47,9 @@ after(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-async function invoke(courseId: string, body: unknown, name = "teacher", requestOrigin: string | null = origin) {
+async function invoke(courseId: string, body: unknown, name = "teacher", requestOrigin: string | null = origin, cookieName = "learning_guide_admin_session") {
   const headers = new Headers({ "content-type": "application/json", host: new URL(origin).host });
-  if (token[name]) headers.set("cookie", `learning_guide_session=${token[name]}`);
+  if (token[name]) headers.set("cookie", `${cookieName}=${token[name]}`);
   if (requestOrigin !== null) headers.set("origin", requestOrigin);
   return put(new Request(`${origin}/api/backoffice/courses/${courseId}/draft`, { method: "PUT", headers, body: JSON.stringify(body) }), { params: Promise.resolve({ courseId }) });
 }
@@ -75,6 +75,11 @@ test("LGTeacher: real draft route and file store enforce ownership, persistence,
     for (const invalidOrigin of [null, "https://foreign.test", `${origin}/path`, "null"]) {
       assert.equal((await invoke(course.id, draft, "teacher", invalidOrigin)).status, 403);
     }
+  });
+  await t.test("learner sessions cannot write through the admin-host route", async () => {
+    const before = await persisted();
+    assert.equal((await invoke(course.id, draft, "teacher", origin, "learning_guide_session")).status, 403);
+    assert.deepEqual(await persisted(), before);
   });
   await t.test("teacher saves actual structured content through the route", async () => {
     const response = await invoke(course.id, draft);

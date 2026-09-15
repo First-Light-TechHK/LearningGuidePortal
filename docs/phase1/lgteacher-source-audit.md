@@ -83,9 +83,25 @@ and isolated local storage are used; no source credentials or live user data.
 
 ## Execution Status
 
-Application and browser runs are **not authorised yet**: the parent must confirm
-the integration build is ready. Do not infer readiness from a BUILD_ID alone.
-This document will record actual commands/results after that confirmation.
+The parent authorised the baseline build and tests. The owned unit/route/service
+suite passed **29/29**, with no skips. The strengthened browser suite against
+baseline build `_JvY_otvVbnTi4wJ7vaEn` completed **9 passed, 1 failed**.
+The remaining failure is a **blank PDF preview**, despite valid persisted PDF
+bytes, successful HTTP responses, and the iframe/link being present. Repeated
+pixel sampling still found no visible document. This is an unresolved browser
+rendering result, not proof of the root cause or of failure in every browser.
+
+The parent subsequently identified missing `origin/main` admin-host/admin-session
+and email-binding work, which is now present in the shared working tree while
+the parallel integration continues. These baseline results do **not**
+verify that merge, `learning_guide_admin_session`, explicit `ADMIN_HOSTS`, or the
+post-build lesson-key changes. A new parent-confirmed build and rerun are required.
+The owned runner and persistence fixtures have been adapted to the admin cookie,
+with `ADMIN_HOSTS=localhost` and a separate `127.0.0.1` learner host. Added
+assertions reject learner-cookie authoring and admin-cookie authoring on the
+learner host. These adaptations are not yet executed against a merged build.
+TypeScript checking with `npx tsc --noEmit --incremental false` passed after the
+fixture adaptation. New browser reports record the build ID and both hosts.
 The browser runner uses port 3016 by default, configurable `LGTEACHER_TEST_PORT`
 and `NEXT_DIST_DIR` (also accepts `NEXTDIST`), an isolated temporary product
 store, bounded startup/shutdown, and refuses an already occupied port.
@@ -94,7 +110,7 @@ real external providers, source account migration, deployment or Figma parity.
 
 ### Owned Test Inventory
 
-| File | Assertions prepared; execution pending |
+| File | Baseline coverage |
 | --- | --- |
 | `tests/unit/lgteacher-access.test.ts` | Teacher/owner/operator boundaries; student, missing identity and inactive status; configured operator email verification |
 | `tests/unit/lgteacher-content.test.ts` | Structured groups/nodes; sanitiser attacks; course-scoped media syntax; duplicate IDs and limits; quiz validity; checked task lists and inline references; inactive-content filtering; stale draft and explicit archival |
@@ -104,19 +120,20 @@ real external providers, source account migration, deployment or Figma parity.
 
 Static inspection of the owned TypeScript files reported **zero diagnostics**
 after correcting the conversation fixture and the PDF fixture variable name.
-This is not a test pass. The parent separately reports its
+Static inspection alone is not a test pass. The parent separately reports its
 `course-authoring-learner-boundary.test.ts` passed, covering the public metadata
 allowlist and structured lesson/exercise payload sent to the provider; that file
 is outside this audit agent's ownership and has not been modified here.
 
 The parallel implementation has since introduced `active` flags, task-list
-sanitisation and an explicit DEV local-media policy. The tests target those
-contracts; runtime correctness remains unverified until execution. New inline
+sanitisation and an explicit local-media test policy. The baseline tests exercise
+those contracts with the results above. New inline
 instances use `data-node-id` references. There is no tested automatic conversion
 of the source's raw `data-instance-*` attribute payloads, so source-data migration
 parity is still not established.
 
-After parent confirmation only:
+Commands executed after parent confirmation (require a fresh confirmation for
+the merged build):
 
 ```sh
 node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/lgteacher-*.test.ts
@@ -130,4 +147,24 @@ path to a persistent temporary report directory containing `results.json`,
 `server.log` and screenshots. It records failures and returns non-zero; it does
 not edit pre-existing tests or suppress failing application responses. PDF
 coverage checks returned bytes, iframe/link integration and screenshots, not
-pixel-perfect acceptance of every browser's built-in PDF viewer.
+pixel-perfect acceptance of every browser's built-in PDF viewer. A subsequent
+nonblank-pixel assertion exposed the unresolved blank iframe and correctly made
+the strengthened runner fail.
+
+### Baseline Evidence
+
+- Unit command above: 29 passed, 0 failed, 0 skipped.
+- Initial browser iterations exposed test-selector issues: live Tiptap nodes
+  differ from serialised HTML, nested summary elements need direct-child
+  selection, wrapped select labels include option text, and the frozen player
+  requires content navigation. These were corrected in the owned script, without
+  modifying application code or existing tests.
+- A 9/9 assertion run was superseded after manual inspection found its PDF image
+  blank. The runner now waits and checks interior screenshot pixels explicitly.
+- Authoritative strengthened report: [results.json](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/results.json).
+- PDF failure: [desktop screenshot](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/pdf-desktop.png).
+- Passing OBJ evidence: [desktop](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/obj-desktop.png), [mobile](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/obj-mobile.png). Pixel diversity/framing, drag and auto-rotation were asserted at both sizes.
+- Timed-video exercise trigger, pause, answer and resume passed using the locally
+  recorded WebM, not synthetic media-event dispatch or mocked application APIs.
+- Each runner terminated its server and removed its temporary product store.
+  A final `lsof -nP -iTCP:3016 -sTCP:LISTEN` found no listener.

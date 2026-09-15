@@ -5,6 +5,46 @@ import path from "path";
 
 const PASSWORD = "Passw0rd!123";
 
+test("header sign-in returns to the source page including query and hash", async ({ page }) => {
+  const source = "/en-GB/portal/courses?category=science&sort=title#courses";
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { exists: true } }));
+  await page.route("**/api/auth/login", route => route.fulfill({ json: { ok: true } }));
+  await page.goto(source);
+  const login = page.locator(".portal-header-link").first();
+  await expect(login).toHaveAttribute("href", `/en-GB/portal/sign-in?returnTo=${encodeURIComponent(source)}`);
+  await login.click();
+  await expect(page.locator(".portal-header-link").first()).toHaveAttribute("href", `/en-GB/portal/sign-in?returnTo=${encodeURIComponent(source)}`);
+  await page.locator('input[type="email"]').fill("return-test@example.test");
+  await page.locator(".auth-entry-form button[type=submit], .auth-entry-form button.portal-button").click();
+  await page.waitForURL(url => url.searchParams.get("step") === "password");
+  await page.waitForLoadState("networkidle");
+  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe(source);
+  await page.locator("button.auth-submit").click();
+  await page.waitForURL(url => url.pathname + url.search + url.hash === source);
+});
+
+test("Remember me restores only email after logout and clears on opt-out", async ({ page }) => {
+  const email = "remember-test@example.test";
+  await page.route("**/api/auth/login", route => route.fulfill({ json: { ok: true } }));
+  await page.goto("/en-GB/portal/sign-in?step=password&returnTo=/en-GB/portal");
+  await expect(page.locator(".portal-header-link").first()).toHaveAttribute("href", "/en-GB/portal/sign-in?returnTo=%2Fen-GB%2Fportal");
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
+  await page.getByRole("checkbox", { name: "Remember me" }).check();
+  await page.locator('button[type="submit"], button.auth-submit').click();
+  await page.waitForURL("**/en-GB/portal");
+  await page.request.post("/api/auth/logout");
+  await page.goto("/en-GB/portal/sign-in?step=password");
+  await expect(page.locator('input[type="email"]')).toHaveValue(email);
+  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
+  await expect(page.getByRole("checkbox", { name: "Remember me" })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Remember me" }).uncheck();
+  await page.reload();
+  await expect(page.locator('input[type="email"]')).toHaveValue("");
+  await expect(page.getByRole("checkbox", { name: "Remember me" })).not.toBeChecked();
+});
+
 const publicPaths = [
   "/en-GB/portal",
   "/zh-CN/portal",

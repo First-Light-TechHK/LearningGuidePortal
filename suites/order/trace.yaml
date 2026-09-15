@@ -1,0 +1,30 @@
+schema: overlay-trace/v1
+suite: order
+items:
+  - function_id: ORDER-01
+    level: integration
+    case_id: ORDER-01/io/functional
+    type: functional
+  - function_id: ORDER-01
+    level: integration
+    case_id: ORDER-01/io/negative
+    type: negative
+  - function_id: ORDER-01
+    level: integration
+    case_id: ORDER-01/io/edge
+    type: edge
+  - function_id: ORDER-02
+    level: integration
+    case_id: ORDER-02/io/functional
+    type: functional
+    span: interaction
+    relates:
+      - ORDER-01
+  - function_id: ORDER-02
+    level: integration
+    case_id: ORDER-02/io/negative
+    type: negative
+  - function_id: ORDER-02
+    level: integration
+    case_id: ORDER-02/io/edge
+    type: edge

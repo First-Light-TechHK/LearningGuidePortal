@@ -29,7 +29,7 @@ test("draft API authorises, persists and rejects stale, cross-origin and student
   const studentToken = (await store.createSession(student.id)).token;
   const course = await store.createCourseForOperator({ title: "Authoring test" });
   const body = { expectedUpdatedAt: course.updatedAt, title: "Updated title", description: "Text", sections: [{ id: "new-section", title: "Section", lessons: [{ id: "new-lesson", title: "Lesson", body: "Lesson body", durationMinutes: 10, isPublic: true }] }] };
-  const invoke = (token: string, origin = "http://localhost:3014") => put(new Request(`http://localhost:3014/api/backoffice/courses/${course.id}/draft`, { method: "PUT", headers: { origin, cookie: `learning_guide_session=${token}` }, body: JSON.stringify(body) }), { params: Promise.resolve({ courseId: course.id }) });
+  const invoke = (token: string, origin = "http://localhost:3014") => put(new Request(`http://localhost:3014/api/backoffice/courses/${course.id}/draft`, { method: "PUT", headers: { origin, host: "localhost:3014", cookie: `learning_guide_admin_session=${token}` }, body: JSON.stringify(body) }), { params: Promise.resolve({ courseId: course.id }) });
   assert.equal((await invoke("")).status, 403);
   assert.equal((await invoke(studentToken)).status, 403);
   assert.equal((await invoke(operatorToken, "https://other.test")).status, 403);

@@ -6,6 +6,7 @@ import { vfsReadBuffer, vfsWriteBuffer } from "@/services/persistence/vfs";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
 import { canManageCourse } from "@/services/backofficeAccess";
+import { requestOriginMatches } from "@/services/adminHost";
 import { checkEntitlement, getProductCourse, publicFirstLesson, type ProductCourse, type ProductUser } from "@/services/productStore";
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
 
@@ -215,9 +216,9 @@ function contentsOf(lesson: { id: string }): unknown {
   return (lesson as { contents?: unknown }).contents || [];
 }
 
-export async function canReadCourseMedia(user: ProductUser | null, course: ProductCourse, assetId: string): Promise<boolean> {
+export async function canReadCourseMedia(user: ProductUser | null, course: ProductCourse, assetId: string, allowAuthor = false): Promise<boolean> {
   if (!courseMediaAssetId(`/api/course-media/${course.id}/${assetId}`, course.id) || (user && user.status !== "active")) return false;
-  if (user && canManageCourse(user, course)) return true;
+  if (allowAuthor && user && canManageCourse(user, course)) return true;
   if (course.status !== "published") return false;
   if (courseMediaAssetId(course.cover || course.thumbnailPath, course.id) === assetId) {
     return (await readStoredAsset(course.id, assetId)).asset.fileType === "image";
@@ -267,10 +268,10 @@ export function parseMediaRange(header: string | null, size: number): { start: n
   return { start, end: Math.min(end, size - 1) };
 }
 
-export async function serveCourseMedia(request: Request, user: ProductUser | null, courseId: string, assetId: string): Promise<Response> {
+export async function serveCourseMedia(request: Request, user: ProductUser | null, courseId: string, assetId: string, allowAuthor = false): Promise<Response> {
   assetPath(courseId, assetId);
   const course = await getProductCourse(courseId);
-  if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId)) throw new CourseMediaError("notFound", 404, "Media not found.");
+  if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId, allowAuthor)) throw new CourseMediaError("notFound", 404, "Media not found.");
   const { asset, bytes } = await readStoredAsset(courseId, assetId);
   const headers = new Headers({
     "Content-Type": asset.mimeType,
@@ -298,11 +299,7 @@ export async function serveCourseMedia(request: Request, user: ProductUser | nul
 }
 
 export function assertMediaUploadOrigin(request: Request): void {
-  const origin = request.headers.get("origin");
-  try {
-    const url = new URL(origin || "");
-    if (["http:", "https:"].includes(url.protocol) && url.origin === origin && url.host === (request.headers.get("host") || new URL(request.url).host)) return;
-  } catch { /* Missing and malformed origins are rejected. */ }
+  if (requestOriginMatches(request)) return;
   throw new CourseMediaError("restricted", 403, "A same-origin request is required.");
 }
 

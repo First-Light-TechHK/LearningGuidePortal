@@ -18,6 +18,10 @@ type ApiResult<T> =
 
 ## Portal / User Registration
 
+WeChat callbacks now redirect unbound users to `/{locale}/portal/bind-email?returnTo=...`. `POST /api/auth/email-binding/request` accepts `{ email, locale, returnTo }` and a valid restricted WeChat session, returns `{ ok: true, accepted: true, retryAfter: 60 }`, and never returns the token. Errors use `code`: unauthorised (401), cooldown (429), email_unavailable (503), invalid_email/email_in_use/already_bound (400). `POST /api/auth/email-binding/confirm` accepts `{ token, locale, returnTo }` without requiring a session, verifies ownership, and returns `{ ok: true, alreadyBound, sameUser, continueUrl }`. It never creates a Session; only the matching existing session may continue directly. Other devices/accounts receive a WeChat login URL. Invalid/expired/superseded links and ownership conflicts fail. Normal business APIs reject unverified WeChat sessions. These rules supersede earlier statements permitting no-email authenticated access.
+
+Password reset uses `POST /api/auth/password-reset/request` with `{ email, locale, returnTo }` (`contracts/passwordReset.ts`). Accepted responses are `{ ok: true, accepted: true, retryAfter: 60, resetUrl: null }`, including unknown/ineligible accounts and requests within the per-account cooldown. Invalid input returns 400; unavailable mail delivery returns 503 with `code: email_unavailable`. `services/passwordResetService.ts` sends through configured SMTP/SES in DEV, SIT, UAT and production. A direct preview link is returned only with `APP_ENV=DEV`, `LOCAL_PASSWORD_RESET_PREVIEW=1` and no configured mail transport. With configured delivery, tokens never appear in API responses. Mail links use the configured public origin and a validated local returnTo. Tokens expire after one hour; reissue invalidates prior tokens. Confirmation still uses `{ token, newPassword }`, consumes the token and revokes existing sessions. No database migration is required.
+
 | Method | Path | Request | Server action |
 |---|---|---|---|
 | GET | `/api/portal/courses` | locale、category、page | 只返回 published Course |
@@ -96,4 +100,10 @@ type TutorRequest = {
 
 ## Stripe lookup-key subscriptions
 
+`StripePriceSnapshot` optionally includes `stripeProductId`, `productName`, and `productImage` (HTTPS URL or null). My Subscriptions server rendering adds order `presentation: { name, image, termMonths }`; it uses saved metadata or the historical order's Stripe Price, never a browser-supplied product. Product lookup failures leave imagery empty and preserve the recorded plan/term. This is additive JSON metadata, with no relational migration.
+
+Checkout success URLs (purchase, trial activation and upgrade) are `/{locale}/account/my-learning/subscription?orderId={orderId}` on the trusted Checkout origin. Completed Checkout retries return the same local destination. The order ID selects an owned pending order for UI refresh only; it never proves payment or grants access. Cancellation URLs remain on subscription confirmation.
+
 `POST /api/subscription/quote` accepts `{ planId, kind: "purchase" | "trial" }`. The server resolves the configured lookup key, validates a licensed USD recurring Price with a 6/12-month period, and snapshots Price ID, amount, currency and term. Checkout accepts only the owned quote ID and required consents, never a client-supplied price. All eight Pricing combinations use subscription Checkout. Unavailable/misconfigured prices are disabled; no demo amount is charged as a fallback. Webhooks verify the current provider objects and apply payment, subscription and entitlement state with event deduplication. Existing course/mobile prices are not mapped to category prices.
+
+Portal login links carry `returnTo=<encoded local pathname + query + hash>`. Email entry, password sign-in, registration switches and OAuth links retain it. The sign-in page validates it with `safeReturnTo`; external, protocol-relative and backslash/control-character URLs fall back to My Learning. Login and registration pages are not used as the source when switching auth entry points. No login API payload or database change is required.

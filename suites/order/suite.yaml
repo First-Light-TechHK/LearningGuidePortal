@@ -1,0 +1,12 @@
+schema: overlay-suite/v2
+id: order
+title: Order Management
+status: active
+kind: functional
+subject: product
+source: inbox/order.md
+packages:
+  - modules/order-management
+  - modules/payment-management
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/order.test.ts

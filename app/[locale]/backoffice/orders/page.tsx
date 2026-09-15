@@ -1,17 +1,21 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AccountNav } from "@/components/portal/AccountNav";
 import { OrderManager } from "@/components/portal/OrderManager";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { currentProductUser } from "@/services/productAuth";
-import { isOperator } from "@/services/productStore";
+import { currentOperatorUser } from "@/services/productAuth";
 
 export default async function BackofficeOrdersPage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = localeFrom((await params).locale);
-  const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=/${locale}/backoffice/orders`);
+  if (!await currentOperatorUser()) redirect(`/${locale}/backoffice/sign-in`);
   const messages = getMessages(locale);
-  if (!isOperator(user)) return <main className="portal-page portal-page-narrow"><header className="portal-header"><Link className="portal-brand" href={`/${locale}/portal`}><span className="portal-brand-mark">LG</span><span>{messages.brand}</span></Link></header><section className="portal-detail"><p className="portal-eyebrow">{messages.backoffice.title}</p><h1>{messages.backoffice.restricted}</h1><p className="portal-lead">{messages.backoffice.operatorRequired}</p><Link className="portal-button portal-button-primary" href={`/${locale}/portal`}>{messages.backoffice.returnToPortal}</Link></section></main>;
-  return <main className="portal-page portal-page-narrow"><header className="portal-header"><Link className="portal-brand" href={`/${locale}/portal`}><span className="portal-brand-mark">LG</span><span>{messages.brand}</span></Link><Link href={`/${locale}/backoffice/courses`}>{messages.backoffice.courses}</Link></header><OrderManager copy={messages.backoffice.orders} /></main>;
+  return (
+    <main className="portal-page portal-page-narrow">
+      <header className="portal-header">
+        <span className="portal-brand"><span className="portal-brand-mark">LG</span><span>{messages.backoffice.title}</span></span>
+        <nav className="portal-nav"><Link href={`/${locale}/backoffice/courses`}>{messages.backoffice.courses}</Link></nav>
+      </header>
+      <OrderManager copy={messages.backoffice.orders} />
+    </main>
+  );
 }

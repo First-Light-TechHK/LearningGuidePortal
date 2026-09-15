@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setDefaultResultOrder } from "node:dns";
 import { chromium, type Browser, type BrowserContext, type Locator } from "playwright";
+import sharp from "sharp";
 import type { CourseDraftInput } from "../contracts/course-authoring";
 import type { CourseMediaAsset, LessonNode } from "../contracts/lesson-content";
 import type { Locale, ProductCourse, ProductData } from "../services/productStore";
@@ -18,7 +20,10 @@ import { getCourseManagementMessages } from "../lib/i18n/courseManagementMessage
 // LGTEACHER_BUILD_READY=1 NEXT_DIST_DIR=.next node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/test-lgteacher-complete.ts
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.LGTEACHER_TEST_PORT || "3016");
-const origin = `http://127.0.0.1:${port}`;
+const origin = `http://localhost:${port}`;
+const learnerOrigin = `http://127.0.0.1:${port}`;
+const sessionCookie = "learning_guide_admin_session";
+setDefaultResultOrder("ipv4first");
 const dist = process.env.NEXT_DIST_DIR || process.env.NEXTDIST || ".next";
 const results: Array<{ name: string; status: "passed" | "failed"; detail?: string }> = [];
 let captureFailure: ((name: string) => Promise<void>) | undefined;
@@ -89,7 +94,8 @@ async function localFixtures(browser: Browser, directory: string) {
 
 async function main() {
   assert.equal(process.env.LGTEACHER_BUILD_READY, "1", "Parent must confirm build readiness before setting LGTEACHER_BUILD_READY=1");
-  await access(path.resolve(repo, dist, "BUILD_ID"));
+  const buildId = (await readFile(path.resolve(repo, dist, "BUILD_ID"), "utf8")).trim();
+  assert(buildId, "Production build ID must not be empty");
   await assertFreePort();
   const previousCwd = process.cwd();
   const temporary = await mkdtemp(path.join(tmpdir(), "lgteacher-complete-store-"));
@@ -100,7 +106,7 @@ async function main() {
   let serverError: Error | undefined;
   try {
     process.chdir(temporary);
-    Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "test", LOCAL_EMAIL_PREVIEW: "1", PAYMENT_MODE: "demo", NEXT_DIST_DIR: dist, NEXT_PUBLIC_APP_URL: origin, BACKOFFICE_OPERATOR_EMAIL: "operator@lgteacher-browser.test", LOCAL_SOCIAL_LOGIN: "0" });
+    Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "test", LOCAL_EMAIL_PREVIEW: "1", ADMIN_HOSTS: "localhost", PAYMENT_MODE: "demo", NEXT_DIST_DIR: dist, NEXT_PUBLIC_APP_URL: learnerOrigin, BACKOFFICE_OPERATOR_EMAIL: "operator@lgteacher-browser.test", LOCAL_SOCIAL_LOGIN: "0" });
     const store = await import("../services/productStore");
     const files = await import("../services/fileStore");
     const tokens: Record<string, string> = {}, userIds: Record<string, string> = {};
@@ -136,14 +142,15 @@ async function main() {
       if (serverError) throw serverError;
       assert(server.exitCode === null && server.signalCode === null, "Preview server exited; inspect server.log");
       assert(attempt < 150, "Preview server did not become ready within 60 seconds");
-      try { if ((await fetch(`${origin}/en-GB/portal`, { signal: AbortSignal.timeout(2000) })).ok) break; } catch { /* bounded startup retry */ }
+      try { if ((await fetch(`${origin}/en-GB/backoffice/sign-in`, { signal: AbortSignal.timeout(2000) })).ok) break; } catch { /* bounded startup retry */ }
       await delay(400);
     }
     const contexts = new Map<string, BrowserContext>();
     async function context(name: string) {
       if (!contexts.has(name)) {
         const created = await browser!.newContext({ viewport: { width: 1440, height: 1000 } });
-        if (tokens[name]) await created.addCookies([{ name: "learning_guide_session", value: tokens[name], url: origin }]);
+        if (tokens[name]) await created.addCookies([{ name: sessionCookie, value: tokens[name], url: origin }]);
+        if (name === "learner-cookie") await created.addCookies([{ name: "learning_guide_session", value: tokens.teacher, url: origin }]);
         contexts.set(name, created);
       }
       return contexts.get(name)!;
@@ -174,6 +181,11 @@ async function main() {
       assert.deepEqual((await listed.json()).courses.map((item: ProductCourse) => item.id), [course.id]);
       for (const invalidOrigin of [null, "https://other.test", `${origin}/path`]) assert.equal((await api("teacher", `${endpoint}/draft`, "PUT", draftOf(course), invalidOrigin)).status(), 403);
       assert.equal((await api("teacher", "/api/backoffice/orders")).status(), 403, "Teachers must not inherit financial access");
+      assert.equal((await api("learner-cookie", endpoint)).status(), 403, "Learner cookie must not author on the admin host");
+      const learnerHost = await (await context("teacher")).request.get(`${learnerOrigin}${endpoint}`, { headers: { Cookie: `${sessionCookie}=${tokens.teacher}` }, maxRedirects: 0 });
+      assert.equal(learnerHost.status(), 404, "Admin cookies must not expose authoring on the learner host");
+      const learnerMutation = await (await context("teacher")).request.put(`${learnerOrigin}${endpoint}/draft`, { headers: { Origin: learnerOrigin, Cookie: `${sessionCookie}=${tokens.teacher}` }, data: draftOf(course), maxRedirects: 0 });
+      assert.equal(learnerMutation.status(), 404, "Learner-host authoring writes must remain unavailable");
     });
 
     const page = await (await context("teacher")).newPage();
@@ -182,8 +194,9 @@ async function main() {
       await page.screenshot({ path: path.join(artefacts, `failure-${file}.png`), fullPage: true, timeout: 5000 });
       await writeFile(path.join(artefacts, `failure-${file}.html`), await page.content());
     };
-    const pageErrors: string[] = [], failedRequests: string[] = [];
+    const pageErrors: string[] = [], failedRequests: string[] = [], consoleErrors: string[] = [];
     page.on("pageerror", error => pageErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
     page.on("requestfailed", request => { if (request.url().startsWith(origin) && !request.failure()?.errorText.includes("ERR_ABORTED")) failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`); });
     await page.addInitScript(() => { (window as unknown as { __lgteacherXss: number }).__lgteacherXss = 0; });
     page.on("dialog", dialog => { void dialog.accept(); });
@@ -359,13 +372,40 @@ async function main() {
       await page.waitForFunction(() => { const video = document.querySelector('video.la-lesson-video') as HTMLVideoElement | null; return !!video && video.currentTime > 0.8; });
       await screenshot("preview-desktop");
       await page.setViewportSize({ width: 390, height: 844 }); await screenshot("preview-mobile");
+    });
+
+    await check("PDF preview displays nonblank content on desktop and mobile", async () => {
+      assert(structuredSaved && pdfAsset, "Blocked by unsuccessful structured authoring/save");
+      const { content, t } = await editor("en-GB");
+      await content.getByRole("button", { name: t.preview, exact: true }).click();
+      const player = content.locator(".la-player");
       await selectGroup(player, "Persisted PDF");
-      assert(pdfAsset);
-      assert.equal(await player.locator('iframe[title="Persisted PDF"]').getAttribute("src"), pdfAsset.url);
+      const frame = player.locator('iframe[title="Persisted PDF"]');
+      assert.equal(await frame.getAttribute("src"), pdfAsset.url);
       assert.equal(await player.getByRole("link", { name: t.openPdf, exact: true }).getAttribute("href"), pdfAsset.url);
-      await player.locator('iframe[title="Persisted PDF"]').screenshot({ path: path.join(artefacts, "pdf-mobile.png") });
-      await page.setViewportSize({ width: 1440, height: 1000 });
-      await player.locator('iframe[title="Persisted PDF"]').screenshot({ path: path.join(artefacts, "pdf-desktop.png") });
+      for (const [name, viewport] of [["desktop", { width: 1440, height: 1000 }], ["mobile", { width: 390, height: 844 }]] as const) {
+        await page.setViewportSize(viewport);
+        let visiblePixels = false;
+        let screenshot: Buffer = Buffer.alloc(0);
+        for (let attempt = 0; attempt < 20; attempt++) {
+          screenshot = await frame.screenshot();
+          const { data, info } = await sharp(screenshot).resize(256, 192, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+          let darkest = 255, lightest = 0;
+          const colours = new Set<string>();
+          // Ignore iframe borders: a blank frame must not pass on its outline alone.
+          for (let y = 5; y < info.height - 5; y++) for (let x = 5; x < info.width - 5; x++) {
+            const index = (y * info.width + x) * info.channels;
+            const shade = Math.round((data[index] + data[index + 1] + data[index + 2]) / 3);
+            darkest = Math.min(darkest, shade); lightest = Math.max(lightest, shade);
+            colours.add(`${data[index] >> 3},${data[index + 1] >> 3},${data[index + 2] >> 3}`);
+          }
+          visiblePixels = lightest - darkest > 32 && colours.size > 8;
+          if (visiblePixels) break;
+          await delay(250);
+        }
+        await writeFile(path.join(artefacts, `pdf-${name}.png`), screenshot);
+        assert(visiblePixels, `${name}: PDF bytes/iframe loaded, but the preview remains blank after waiting for rendering`);
+      }
     });
 
     await check("OBJ canvas renders nonblank, rotates and responds to dragging on desktop/mobile", async () => {
@@ -463,7 +503,7 @@ async function main() {
       assert.equal((await api("teacher", `${endpoint}/draft`, "PUT", draftOf(retained))).status(), 400);
     });
     await check("Browser has no uncaught errors or failed same-origin requests", async () => {
-      assert.deepEqual(pageErrors, []); assert.deepEqual(failedRequests, []);
+      assert.deepEqual(pageErrors, []); assert.deepEqual(failedRequests, []); assert.deepEqual(consoleErrors, []);
     });
     for (const item of contexts.values()) await item.close();
   } catch (error) {
@@ -475,7 +515,7 @@ async function main() {
     await new Promise<void>(resolve => log.end(resolve));
     process.chdir(previousCwd);
     await rm(temporary, { recursive: true, force: true });
-    await writeFile(path.join(artefacts, "results.json"), JSON.stringify({ origin, dist, results, limitations: ["Local synthetic fixtures; no external provider or production deployment verification.", "No source data migration or complete Figma parity assertion."] }, null, 2));
+    await writeFile(path.join(artefacts, "results.json"), JSON.stringify({ origin, learnerOrigin, adminHosts: "localhost", sessionCookie, dist, buildId, results, limitations: ["Local synthetic fixtures; no external provider or production deployment verification.", "No source data migration or complete Figma parity assertion."] }, null, 2));
     console.log(`Report: ${path.join(artefacts, "results.json")}`);
     console.log(`${results.filter(item => item.status === "passed").length} passed; ${results.filter(item => item.status === "failed").length} failed`);
     if (results.some(item => item.status === "failed")) process.exitCode = 1;

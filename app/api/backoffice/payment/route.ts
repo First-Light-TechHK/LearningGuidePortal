@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { currentOperatorUser } from "@/services/productAuth";
 import { getPaymentSettings, isOperator, updatePaymentSettings } from "@/services/productStore";
 
 export const dynamic = "force-dynamic";
 
 async function operatorOnly() {
-  const user = await currentProductUser();
+  const user = await currentOperatorUser();
   return user && isOperator(user) ? user : null;
 }
 

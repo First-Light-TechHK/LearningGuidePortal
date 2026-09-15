@@ -1,9 +1,20 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
+
+const REMEMBERED_EMAIL_KEY = "learning-guide.remembered-email";
+
+function rememberEmail(email: string | null) {
+  try {
+    if (email) window.localStorage.setItem(REMEMBERED_EMAIL_KEY, email.trim());
+    else window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+  } catch {
+    // Storage may be disabled; signing in must still work.
+  }
+}
 
 export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError, showTitle = true, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string; showTitle?: boolean; initialEmail?: string }) {
   const [email, setEmail] = useState(initialEmail);
@@ -16,6 +27,19 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
   const labels = getMessages(locale).auth;
   const signIn = mode === "sign-in";
 
+  useEffect(() => {
+    if (!signIn) return;
+    try {
+      const savedEmail = window.localStorage.getItem(REMEMBERED_EMAIL_KEY);
+      if (savedEmail) {
+        if (!initialEmail) setEmail(savedEmail);
+        setRememberMe(true);
+      }
+    } catch {
+      // Use the normal empty form when browser storage is unavailable.
+    }
+  }, [signIn, initialEmail]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -24,6 +48,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe }) });
       const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean } };
       if (!response.ok || !data.ok) throw new Error(data.message || "Request failed.");
+      if (signIn) rememberEmail(rememberMe ? email : null);
       if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email`);
       window.location.assign(returnTo || `/${locale}/account/my-learning`);
     } catch (requestError) {
@@ -41,7 +66,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
         <label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@example.com" /></span></label>
         <label>{copy.password}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete={signIn ? "current-password" : "new-password"} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       </div>
-      {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => setRememberMe(event.target.checked)} />{labels.rememberMe}</label><a href={`/${locale}/portal/forgot-password`}>{copy.forgotPassword}</a></div> : null}
+      {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberEmail(null); }} />{labels.rememberMe}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
       <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{busy ? "..." : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
