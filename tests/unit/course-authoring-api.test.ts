@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { before, after, test } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+const cwd = process.cwd();
+const oldBackend = process.env.STORAGE_BACKEND, oldOperator = process.env.BACKOFFICE_OPERATOR_EMAIL;
+let directory: string;
+let store: typeof import("../../services/productStore");
+let put: typeof import("../../app/api/backoffice/courses/[courseId]/draft/route").PUT;
+before(async () => {
+  directory = await mkdtemp(path.join(tmpdir(), "lg-authoring-")); process.chdir(directory);
+  process.env.STORAGE_BACKEND = "local"; process.env.BACKOFFICE_OPERATOR_EMAIL = "operator@example.test";
+  store = await import("../../services/productStore");
+  put = (await import("../../app/api/backoffice/courses/[courseId]/draft/route")).PUT;
+});
+after(async () => {
+  process.chdir(cwd);
+  if (oldBackend === undefined) delete process.env.STORAGE_BACKEND; else process.env.STORAGE_BACKEND = oldBackend;
+  if (oldOperator === undefined) delete process.env.BACKOFFICE_OPERATOR_EMAIL; else process.env.BACKOFFICE_OPERATOR_EMAIL = oldOperator;
+  await rm(directory, { recursive: true, force: true });
+});
+test("draft API authorises, persists and rejects stale, cross-origin and student writes", async () => {
+  const operator = await store.registerUser({ email: "operator@example.test", password: "password1" });
+  await store.verifyEmailToken(await store.issueEmailVerificationToken(operator.id));
+  const student = await store.registerUser({ email: "student@example.test", password: "password1" });
+  await store.verifyEmailToken(await store.issueEmailVerificationToken(student.id));
+  const operatorToken = (await store.createSession(operator.id)).token;
+  const studentToken = (await store.createSession(student.id)).token;
+  const course = await store.createCourseForOperator({ title: "Authoring test" });
+  const body = { expectedUpdatedAt: course.updatedAt, title: "Updated title", description: "Text", sections: [{ id: "new-section", title: "Section", lessons: [{ id: "new-lesson", title: "Lesson", body: "Lesson body", durationMinutes: 10, isPublic: true }] }] };
+  const invoke = (token: string, origin = "http://localhost:3014") => put(new Request(`http://localhost:3014/api/backoffice/courses/${course.id}/draft`, { method: "PUT", headers: { origin, cookie: `learning_guide_session=${token}` }, body: JSON.stringify(body) }), { params: Promise.resolve({ courseId: course.id }) });
+  assert.equal((await invoke("")).status, 403);
+  assert.equal((await invoke(studentToken)).status, 403);
+  assert.equal((await invoke(operatorToken, "https://other.test")).status, 403);
+  assert.equal((await invoke(operatorToken)).status, 200);
+  assert.equal((await invoke(operatorToken)).status, 409);
+  const saved = (await store.ensureProductData()).courses.find(c => c.id === course.id)!;
+  assert.equal(saved.title, body.title);
+  assert.equal(saved.sections[0].lessons[0].body, "Lesson body");
+  assert.equal(saved.slug, course.slug);
+  assert.match(saved.sections[0].lessons[0].id, /^lesson_/);
+});

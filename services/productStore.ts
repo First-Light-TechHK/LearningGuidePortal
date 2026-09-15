@@ -1841,6 +1841,19 @@ export async function markNotificationRead(userId: string, notificationId: strin
   return setNotificationRead(userId, notificationId, true);
 }
 
+export async function saveCourseDraftForOperator(operatorId: string, courseId: string, input: import("@/contracts/course-authoring").CourseDraftInput) {
+  const { applyCourseDraft, AuthoringError } = await import("@/services/courseAuthoring");
+  return editData(data => {
+    const operator = data.users.find(user => user.id === operatorId);
+    if (!operator || operator.status !== "active" || !isOperator(operator)) throw new AuthoringError("restricted");
+    const index = data.courses.findIndex(course => course.id === courseId);
+    if (index < 0) throw new AuthoringError("notFound");
+    const updated = applyCourseDraft(data.courses[index], input);
+    data.courses[index] = updated;
+    return updated;
+  });
+}
+
 export async function createCourseForOperator(input: { title: string; description?: string; category?: ProductCourse["category"] }) {
   return editData((data) => {
     const title = input.title.trim();

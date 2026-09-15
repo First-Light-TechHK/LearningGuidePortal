@@ -389,6 +389,10 @@
     "rejectOptional": "仅使用必要 Cookie",
     "saved": "Cookie 偏好已保存。"
   },
+  "authoring": {
+    "heading": "编辑课程大纲", "title": "课程名称", "description": "课程简介", "section": "章节名称", "lesson": "课时名称", "body": "课时内容", "duration": "时长（分钟）", "videoDuration": "视频时长（秒）", "publicLesson": "公开首课", "moveTo": "移动到章节", "newLesson": "新课时", "newSection": "新章节", "addLesson": "添加课时", "addSection": "添加章节", "up": "上移", "down": "下移", "close": "关闭编辑器", "save": "保存草稿", "saving": "保存中…", "discard": "放弃未保存的修改？",
+    "errors": { "invalid": "请检查必填内容和时长。已有课时可能关联学习记录，不能删除。", "conflict": "课程已被修改。请关闭编辑器并刷新页面后重新编辑。", "published": "请先取消发布课程，再编辑内容。", "restricted": "需要课程管理员或运营人员权限。", "notFound": "未找到课程。", "failed": "草稿保存失败，请重试。" }
+  },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",
     "courses": "Course Management",

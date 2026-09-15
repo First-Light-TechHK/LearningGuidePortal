@@ -1,6 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { CourseOutlineEditor } from "./CourseOutlineEditor";
+import { getMessages } from "@/lib/i18n/messages";
+import type { ProductCourse } from "@/services/productStore";
 
 type Lesson = { id: string; title: string; body: string; durationMinutes: number; isPublic: boolean };
 type Course = { id: string; title: string; description: string; category?: "Chinese Humanities" | "European Humanities" | "Science"; status: "draft" | "published"; slug: string; sections: Array<{ id: string; title: string; lessons: Lesson[] }> };
@@ -39,6 +42,7 @@ export function CourseManager({ copy, locale }: { copy: Copy; locale: "en-GB" | 
   const [isPublic, setIsPublic] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<ProductCourse | null>(null);
 
   async function load() {
     const response = await fetch("/api/backoffice/courses", { cache: "no-store" });
@@ -128,13 +132,14 @@ export function CourseManager({ copy, locale }: { copy: Copy; locale: "en-GB" | 
               {lessons.length ? <ul className="backoffice-lesson-list">{lessons.map((lesson) => <li key={lesson.id}>{lesson.title}{lesson.isPublic ? ` · ${copy.publicLesson}` : ""}</li>)}</ul> : <span>{copy.noLessons}</span>}
             </div>
             <div className="backoffice-row-actions">
+              <button className="portal-button portal-button-secondary" disabled={busy || Boolean(editing) || course.status === "published"} title={course.status === "published" ? getMessages(locale).authoring.errors.published : undefined} onClick={() => setEditing(course as ProductCourse)} type="button">{getMessages(locale).authoring.heading}</button>
               <button className="portal-button portal-button-secondary" onClick={() => setSelectedCourseId(course.id)} type="button">{copy.addLesson}</button>
               <button className="portal-button portal-button-secondary" disabled={busy} onClick={() => void updateStatus(course)} type="button">{course.status === "published" ? copy.unpublish : copy.publish}</button>
             </div>
           </article>;
         })}
       </div>
-      {selectedCourse ? <form className="backoffice-form lesson-form" onSubmit={addLesson}>
+      {editing ? <CourseOutlineEditor key={editing.id} course={editing} copy={getMessages(locale).authoring} onSaved={load} onClose={() => setEditing(null)}/> : selectedCourse ? <form className="backoffice-form lesson-form" onSubmit={addLesson}>
         <h2>{copy.addLesson}: {selectedCourse.title}</h2>
         <label>{copy.lessonTitle}<input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} required /></label>
         <label>{copy.lessonBody}<textarea value={lessonBody} onChange={(event) => setLessonBody(event.target.value)} rows={8} required /></label>

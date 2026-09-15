@@ -1,5 +1,7 @@
 # Phase 1：API contract
 
+Course-authoring extension: `PUT /api/backoffice/courses/:courseId/draft`, contract `contracts/course-authoring.ts`; active operator and same-origin request required. A stale `expectedUpdatedAt` returns 409. See `lgteacher-integration.md` for response codes and preservation rules.
+
 所有 JSON API 使用：
 
 Email registration uses `POST /api/auth/sign-up`, activation uses `POST /api/auth/verify-email`, and resend uses `POST /api/auth/resend-verification`. Resend always returns an accepted result; only a pending account receives a new link, and issuing that link invalidates the previous one.

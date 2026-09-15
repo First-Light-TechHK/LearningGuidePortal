@@ -1,5 +1,7 @@
 # Phase 1：七份 PRD 实施地图
 
+User-requested LGTeacher integration (15 September 2026): the Course Management extension and its explicit remaining scope are tracked in `lgteacher-integration.md`. `CourseOutlineEditor`, `courseAuthoring` and `/api/backoffice/courses/:courseId/draft` add transactional draft section/lesson editing. This is not yet the full LGTeacher feature set.
+
 本文件把七份 PRD 变成开发任务。它不新增产品范围。
 
 ## 1. 页面和功能

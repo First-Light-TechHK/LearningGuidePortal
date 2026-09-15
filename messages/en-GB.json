@@ -389,6 +389,10 @@
     "rejectOptional": "Use essential cookies only",
     "saved": "Cookie preference saved."
   },
+  "authoring": {
+    "heading": "Edit course outline", "title": "Course title", "description": "Description", "section": "Section title", "lesson": "Lesson title", "body": "Lesson content", "duration": "Duration (minutes)", "videoDuration": "Video duration (seconds)", "publicLesson": "Public first lesson", "moveTo": "Move to section", "newLesson": "New lesson", "newSection": "New section", "addLesson": "Add lesson", "addSection": "Add section", "up": "Move up", "down": "Move down", "close": "Close editor", "save": "Save draft", "saving": "Saving…", "discard": "Discard your unsaved changes?",
+    "errors": { "invalid": "Check the required fields and durations. Existing lessons cannot be removed; they may be linked to learning records.", "conflict": "This course has changed since you opened it. Close the editor and reload before editing again.", "published": "Unpublish the course before editing its content.", "restricted": "Course Manager/Operator access is required.", "notFound": "Course not found.", "failed": "The draft could not be saved. Please retry." }
+  },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",
     "courses": "Course Management",
