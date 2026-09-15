@@ -4,20 +4,26 @@ import { readFileSync } from "node:fs";
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
+export function postgresSsl(connectionString: string) {
+  const disableSsl = process.env.DATABASE_SSL === "0" || /[?&]sslmode=disable\b/i.test(connectionString);
+  if (disableSsl) return undefined;
+  const caFile = process.env.DATABASE_CA_FILE?.trim();
+  if (caFile) return { rejectUnauthorized: true as const, ca: readFileSync(caFile, "utf8") };
+  // App Runner talks to RDS with Amazon's CA, which is not in Node's trust store.
+  // Without DATABASE_CA_FILE, requiring verification throws "self-signed certificate in certificate chain".
+  return { rejectUnauthorized: false as const };
+}
+
 export function getPool() {
   const connectionString = process.env.DATABASE_URL?.trim();
   if (!connectionString) throw new Error("DATABASE_URL is not configured");
   if (!pool) {
-    const disableSsl = process.env.DATABASE_SSL === "0" || /[?&]sslmode=disable\b/i.test(connectionString);
     pool = new Pool({
       connectionString,
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
-      ssl: disableSsl ? undefined : {
-        rejectUnauthorized: true,
-        ...(process.env.DATABASE_CA_FILE ? { ca: readFileSync(process.env.DATABASE_CA_FILE, "utf8") } : {})
-      }
+      ssl: postgresSsl(connectionString)
     });
   }
   return pool;
