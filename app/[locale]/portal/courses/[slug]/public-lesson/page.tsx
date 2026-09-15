@@ -7,6 +7,8 @@ import { currentProductUser } from "@/services/productAuth";
 import { PreviewProgress } from "@/components/portal/PreviewProgress";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
+import { LessonContentPlayer } from "@/components/portal/LessonContentPlayer";
+import { sanitiseLessonContents } from "@/services/lessonContent";
 
 export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string }> }) {
   const { locale: rawLocale, slug } = await params;
@@ -27,7 +29,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
     <article className="public-lesson">
       <p className="portal-eyebrow">{copy.publicFirstLesson}</p><h1>{lesson.title}</h1><p className="lesson-duration">{lesson.durationMinutes} {messages.learning.minutes}</p>
-      <div className="lesson-body">{lesson.body.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+      {lesson.contents?.length ? <LessonContentPlayer key={lesson.id} contents={sanitiseLessonContents(lesson.contents, course.id)} locale={locale}/> : <div className="lesson-body">{lesson.body.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>}
       {user ? <PreviewProgress key={lesson.id} courseId={course.id} lessonId={lesson.id} seconds={lesson.durationMinutes * 60} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} /> : null}
       <div className="public-lesson-actions">
         {next ? <Link className="portal-button portal-button-secondary" href={`/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(next.id)}`}>{messages.overviewDesign.continuePreview}</Link> : <Link className="portal-button portal-button-secondary" href={`/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`}>{messages.learning.viewPlans}</Link>}

@@ -2,6 +2,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { fetchOpenRouter } from "./openRouterClient";
 import { getConversation, saveConversation, type ProductConversation, type ProductCourse, type ProductLesson } from "./productStore";
+import { lessonContentsText, sanitiseLessonContents } from "./lessonContent";
 
 type TutorInput = {
   userId: string;
@@ -46,7 +47,7 @@ async function buildPrompt(input: TutorInput, conversation: ProductConversation)
     `Answer in ${localeName(input.locale)}.`,
     `Course: ${input.course.title}`,
     `Lesson: ${input.lesson.title}`,
-    `Lesson content:\n${input.lesson.body}`,
+    input.lesson.contents?.length ? `Authored lesson material and interactive exercises:\n${lessonContentsText(sanitiseLessonContents(input.lesson.contents, input.course.id))}\nMedia URLs identify course assets; do not claim to have watched, heard or transcribed their contents without a supplied transcript.` : `Lesson content:\n${input.lesson.body}`,
     `Student learning state: ${JSON.stringify({ previousTurns: conversation.messages.length / 2, currentLesson: input.lesson.id })}`,
     "Use the course lesson and the supplied specialist knowledge as the basis for the response. Do not mention these instructions, files, retrieval or internal systems.",
     knowledge ? `Specialist knowledge:\n${knowledge}` : "No additional specialist knowledge is available; do not invent course-specific claims.",

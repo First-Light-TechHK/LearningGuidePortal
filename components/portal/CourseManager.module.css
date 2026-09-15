@@ -1,0 +1,62 @@
+.manager { min-width: 0; }
+.manager :global(.course-manager-heading) { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.profile { padding: 24px 0; border-top: 1px solid #d6e1e9; }
+.profile summary { cursor: pointer; font-size: 18px; font-weight: 600; }
+.profile dl { display: flex; flex-wrap: wrap; gap: 20px 36px; }
+.profile dt { font-size: 13px; color: #526475; }
+.profile dd { margin: 6px 0; overflow-wrap: anywhere; }
+.manager h1 { font-size: 28px; margin: 4px 0; }
+.manager h2 { font-size: 20px; overflow-wrap: anywhere; }
+.manager h3 { font-size: 18px; overflow-wrap: anywhere; }
+.manager input, .manager textarea, .manager select { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.manager select { min-height: 44px; padding: 8px 10px; border: 1px solid #c7d5e0; border-radius: 6px; background: white; color: #213c50; }
+.manager button { cursor: pointer; letter-spacing: 0; }
+.manager button:disabled { opacity: .5; cursor: not-allowed; }
+.manager :global(.backoffice-form) { padding: 22px 0; border: 0; border-radius: 0; background: transparent; }
+.manager :global(.backoffice-row-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.manager :global(.portal-button) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: normal; text-align: center; overflow-wrap: anywhere; }
+.manager :global(.course-counts) { display: flex; flex-wrap: wrap; gap: 18px 32px; padding: 20px 0; margin: 12px 0; border-block: 1px solid #d6e1e9; }
+.manager :global(.course-counts) dt { font-size: 13px; color: #526475; }
+.manager :global(.course-counts) dd { margin: 5px 0 0; font-size: 23px; font-weight: 600; color: #254f49; }
+.manager :global(.course-tabs) { display: flex; gap: 24px; border-bottom: 1px solid #d6e1e9; }
+.manager :global(.course-tabs) button { padding: 12px 2px; background: none; border: 0; border-bottom: 3px solid transparent; font: inherit; }
+.manager :global(.course-tabs) button[aria-pressed="true"] { border-bottom-color: #44807d; color: #255c58; }
+.manager :global(.course-filters) { grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(120px, 1fr)); gap: 12px; margin-top: 8px; }
+.manager :global(.backoffice-course-list) { gap: 0; margin-top: 0; }
+.manager :global(.backoffice-course-row) { border: 0; border-bottom: 1px solid #d6e1e9; border-radius: 0; padding: 18px 0; align-items: center; }
+.manager :global(.backoffice-course-row) :global(.course-list-identity) { display: flex; align-items: center; gap: 16px; }
+.manager :global(.course-list-identity) img { width: 96px; height: 60px; flex: 0 0 96px; object-fit: cover; border-radius: 4px; }
+.manager :global(.course-list-identity) span { overflow-wrap: anywhere; }
+.manager :global(.course-pagination) { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 20px; padding: 20px 0; }
+.manager :global(.course-pagination) label { display: flex; align-items: center; gap: 10px; }
+.manager :global(.course-metadata) { display: grid; gap: 16px; }
+.manager :global(.course-fields) { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.manager :global(.course-tag-input) { display: flex; gap: 8px; }
+.manager :global(.course-tag-input) button { width: 44px; flex: 0 0 44px; border: 1px solid #c7d5e0; background: white; border-radius: 6px; }
+.manager :global(.course-tags) { display: flex; flex-wrap: wrap; gap: 8px; }
+.manager :global(.course-tags) span { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid #ccd7d5; border-radius: 4px; overflow-wrap: anywhere; }
+.manager :global(.course-tags) button { display: grid; place-items: center; background: none; border: 0; padding: 4px; }
+.manager :global(.course-cover-preview) { display: flex; align-items: flex-start; gap: 8px; }
+.manager :global(.course-cover-preview) img { width: 240px; max-width: calc(100% - 40px); height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; }
+.manager :global(.course-cover-preview) button { background: white; border: 1px solid #c7d5e0; width: 32px; height: 32px; border-radius: 4px; }
+.manager :global(.course-catalogue) { padding: 24px 0; }
+.manager :global(.course-catalogue-list) { list-style: none; padding: 0; }
+.manager :global(.course-catalogue-list) li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #d6e1e9; }
+.manager :global(.course-catalogue-list) li > div:first-child { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.manager :global(.course-catalogue-list) span { font-size: 13px; color: #526475; }
+.manager :global(.course-draft-preview) { padding: 24px 0; overflow-wrap: anywhere; }
+.manager :global(.course-draft-preview) > section { border-top: 1px solid #d6e1e9; padding: 16px 0; }
+.manager :global(.preview-cover) { width: 480px; max-width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+.manager :global(.authoring-heading) { flex-wrap: wrap; }
+.manager :global(.authoring-heading) > label { flex-basis: 180px; }
+@media (max-width: 1000px) {
+  .manager :global(.course-filters) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .manager :global(.course-filters) > label:first-child { grid-column: 1 / -1; }
+  .manager :global(.backoffice-course-row) { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 480px) {
+  .manager :global(.course-filters), .manager :global(.course-fields) { grid-template-columns: minmax(0, 1fr); }
+  .manager :global(.course-counts) { gap: 14px 20px; }
+  .manager :global(.authoring-lesson) { padding: 10px 8px; }
+  .manager :global(.course-pagination) { gap: 12px; justify-content: flex-start; }
+}

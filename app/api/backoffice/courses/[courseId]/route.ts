@@ -1,28 +1,36 @@
-import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
-import { addLessonToCourse, isOperator, setCourseStatus } from "@/services/productStore";
+import { addLessonToCourse, getCourseForAuthor, setCourseStatus, type ProductCourse } from "@/services/productStore";
+import { authoringActor, authoringBody, authoringFailure, authoringSuccess } from "@/services/courseAuthoringHttp";
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
-  const user = await currentProductUser();
-  if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
+type Context = { params: Promise<{ courseId: string }> };
+
+export async function GET(request: Request, { params }: Context) {
   try {
-    const { courseId } = await params;
-    const body = await request.json() as { status?: "draft" | "published" };
-    if (body.status !== "draft" && body.status !== "published") return NextResponse.json({ ok: false, error: "Invalid course status." }, { status: 400 });
-    return NextResponse.json({ ok: true, course: await setCourseStatus(courseId, body.status) });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Course update failed." }, { status: 400 });
-  }
+    const user = await authoringActor(request);
+    return authoringSuccess({ course: await getCourseForAuthor(user.id, (await params).courseId) });
+  } catch (error) { return authoringFailure(error); }
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
-  const user = await currentProductUser();
-  if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
+export async function PATCH(request: Request, { params }: Context) {
   try {
-    const { courseId } = await params;
-    const body = await request.json() as { title?: string; body?: string; durationMinutes?: number; videoDurationSeconds?: number | null; isPublic?: boolean };
-    return NextResponse.json({ ok: true, lesson: await addLessonToCourse({ courseId, title: body.title || "", body: body.body || "", durationMinutes: body.durationMinutes || 0, videoDurationSeconds: body.videoDurationSeconds, isPublic: body.isPublic }) });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Lesson creation failed." }, { status: 400 });
-  }
+    const user = await authoringActor(request, true);
+    const body = await authoringBody<{ status: ProductCourse["status"]; expectedUpdatedAt: string }>(request);
+    return authoringSuccess({ course: await setCourseStatus((await params).courseId, body.status, user.id, body.expectedUpdatedAt) });
+  } catch (error) { return authoringFailure(error); }
+}
+
+// DELETE archives the aggregate; purchases, historical progress and KS identities remain intact.
+export async function DELETE(request: Request, { params }: Context) {
+  try {
+    const user = await authoringActor(request, true);
+    const body = await authoringBody<{ expectedUpdatedAt: string }>(request);
+    return authoringSuccess({ course: await setCourseStatus((await params).courseId, "archived", user.id, body.expectedUpdatedAt) });
+  } catch (error) { return authoringFailure(error); }
+}
+
+export async function POST(request: Request, { params }: Context) {
+  try {
+    const user = await authoringActor(request, true);
+    const body = await authoringBody<Parameters<typeof addLessonToCourse>[0]>(request);
+    return authoringSuccess({ lesson: await addLessonToCourse({ ...body, courseId: (await params).courseId }, user.id) }, 201);
+  } catch (error) { return authoringFailure(error); }
 }

@@ -19,6 +19,10 @@ import {
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
+import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
+import type { LessonContent } from "@/contracts/lesson-content";
+import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
+import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 
 const scrypt = promisify(scryptCallback);
 const PRODUCT_DIR = path.join(SYSTEM_ROOT, "learning_guide");
@@ -34,7 +38,7 @@ export type ProductUser = {
   passwordHash: string | null;
   nickname: string;
   locale: Locale;
-  role: "student" | "operator";
+  role: "student" | "teacher" | "operator";
   status: "pending" | "active" | "disabled";
   emailVerifiedAt: string | null;
   avatarPath?: string | null;
@@ -47,6 +51,7 @@ export type ProductUser = {
 };
 
 export type ProductLesson = {
+  contents?: LessonContent[];
   id: string;
   title: string;
   body: string;
@@ -55,15 +60,18 @@ export type ProductLesson = {
   isPublic: boolean;
 };
 
-export type ProductSection = { id: string; title: string; lessons: ProductLesson[] };
-export type ProductCourse = {
+export type ProductSection = { id: string; title: string; lessons: ProductLesson[]; archivedAt?: string };
+export type ProductCourse = CourseMetadata & {
+  authorIds?: string[];
+  archivedSections?: ProductSection[];
+  archivedAt?: string | null;
   id: string;
   slug: string;
   title: string;
   description: string;
   category?: "Chinese Humanities" | "European Humanities" | "Science";
   thumbnailPath?: string | null;
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
   sections: ProductSection[];
   createdAt: string;
   updatedAt: string;
@@ -216,6 +224,8 @@ export type ProductPaymentSettings = {
 };
 
 export type ProductData = {
+  catalogue?: CatalogueEntry[];
+  authoringActivities?: Array<{ id: string; actorId: string; courseId?: string; action: string; createdAt: string; targetUserId?: string }>;
   portalContent?: PortalContent;
   version: 1;
   users: ProductUser[];
@@ -497,8 +507,7 @@ export function publicUser(user: ProductUser) {
 }
 
 export function isOperator(user: ProductUser) {
-  const configuredEmail = process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase();
-  return user.role === "operator" || Boolean(configuredEmail && user.email === configuredEmail);
+  return canOperateBackoffice(user);
 }
 
 export async function getUserById(userId: string) {
@@ -1842,35 +1851,119 @@ export async function markNotificationRead(userId: string, notificationId: strin
 }
 
 export async function saveCourseDraftForOperator(operatorId: string, courseId: string, input: import("@/contracts/course-authoring").CourseDraftInput) {
-  const { applyCourseDraft, AuthoringError } = await import("@/services/courseAuthoring");
-  return editData(data => {
-    const operator = data.users.find(user => user.id === operatorId);
-    if (!operator || operator.status !== "active" || !isOperator(operator)) throw new AuthoringError("restricted");
-    const index = data.courses.findIndex(course => course.id === courseId);
-    if (index < 0) throw new AuthoringError("notFound");
-    const updated = applyCourseDraft(data.courses[index], input);
+  return editData(async data => {
+    const course = managedCourse(data, operatorId, courseId);
+    const index = data.courses.indexOf(course);
+    const updated = applyCourseDraft(course, input);
+    validateCatalogueSelection(data, updated, course);
+    const { assertCourseMediaReferences } = await import("./courseMedia");
+    try {
+      await assertCourseMediaReferences(updated);
+    } catch { throw new AuthoringError("invalid"); }
     data.courses[index] = updated;
+    authoringActivity(data, operatorId, "save-draft", courseId);
     return updated;
   });
 }
 
-export async function createCourseForOperator(input: { title: string; description?: string; category?: ProductCourse["category"] }) {
-  return editData((data) => {
-    const title = input.title.trim();
-    if (!title) throw new Error("Course title is required.");
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("course");
-    if (data.courses.some((course) => course.slug === slug)) throw new Error("A course with this title already exists.");
-    const category = input.category && ["Chinese Humanities", "European Humanities", "Science"].includes(input.category) ? input.category : "European Humanities";
-    const course: ProductCourse = { id: id("course"), slug, title, description: input.description?.trim() || "", category, thumbnailPath: null, status: "draft", sections: [], createdAt: now(), updatedAt: now() };
-    data.courses.unshift(course);
+export const saveCourseDraftForAuthor = saveCourseDraftForOperator;
+
+function managedCourse(data: ProductData, actorId: string, courseId: string) {
+  const actor = data.users.find(user => user.id === actorId);
+  if (!canAuthorCourses(actor)) throw new AuthoringError("restricted");
+  const course = data.courses.find(course => course.id === courseId);
+  if (!course || !canManageCourse(actor, course)) throw new AuthoringError("notFound");
+  return course;
+}
+
+function authoringActivity(data: ProductData, actorId: string, action: string, courseId?: string, targetUserId?: string) {
+  (data.authoringActivities ||= []).push({ id: id("authoring"), actorId, action, courseId, targetUserId, createdAt: now() });
+}
+
+function validateCatalogueSelection(data: ProductData, course: CourseMetadata, previous?: CourseMetadata) {
+  const category = data.catalogue?.find(item => item.id === course.categoryId && item.parentId === null);
+  const subject = data.catalogue?.find(item => item.id === course.subjectId && item.parentId === course.categoryId);
+  if (course.categoryId && (!category || category.status !== "active" && course.categoryId !== previous?.categoryId)) throw new AuthoringError("invalid");
+  if (course.subjectId && (!subject || subject.status !== "active" && course.subjectId !== previous?.subjectId)) throw new AuthoringError("invalid");
+}
+
+export async function listCoursesForAuthor(actorId: string, query: CourseListQuery = {}) {
+  const data = await ensureProductData();
+  const actor = data.users.find(user => user.id === actorId);
+  if (!actor || !canAuthorCourses(actor)) throw new AuthoringError("restricted");
+  return { ...selectAuthorCourses(data.courses, actor, query), operator: canOperateBackoffice(actor) };
+}
+
+export async function getCourseForAuthor(actorId: string, courseId: string) {
+  return managedCourse(await ensureProductData(), actorId, courseId);
+}
+
+export async function getCourseCatalogue(actorId: string) {
+  const data = await ensureProductData();
+  if (!canAuthorCourses(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+  return data.catalogue || [];
+}
+
+export async function saveCatalogueEntry(actorId: string, entryId: string | null, input: CatalogueInput) {
+  return editData(data => {
+    if (!canOperateBackoffice(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+    const catalogue = data.catalogue ||= [];
+    const existing = entryId ? catalogue.find(entry => entry.id === entryId) : undefined;
+    if (entryId && !existing) throw new AuthoringError("notFound");
+    if (existing && input.expectedUpdatedAt !== existing.updatedAt) throw new AuthoringError("conflict");
+    if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 100 || input.description !== undefined && (typeof input.description !== "string" || input.description.length > 1000)) throw new AuthoringError("invalid");
+    const parentId = input.parentId === undefined ? existing?.parentId ?? null : input.parentId;
+    if (existing && parentId !== existing.parentId) throw new AuthoringError("invalid");
+    if (parentId && !catalogue.some(entry => entry.id === parentId && entry.parentId === null && entry.status === "active")) throw new AuthoringError("invalid");
+    const status = input.status ?? existing?.status ?? "active";
+    if (!["active", "archived"].includes(status)) throw new AuthoringError("invalid");
+    if (catalogue.some(entry => entry.id !== entryId && entry.parentId === parentId && entry.status === "active" && entry.name.toLocaleLowerCase() === input.name.trim().toLocaleLowerCase())) throw new AuthoringError("conflict");
+    if (existing && status === "archived" && (catalogue.some(entry => entry.parentId === existing.id && entry.status === "active") || data.courses.some(course => course.status !== "archived" && (course.categoryId === existing.id || course.subjectId === existing.id)))) throw new AuthoringError("inUse");
+    const entry: CatalogueEntry = { id: existing?.id || id(parentId ? "subject" : "category"), name: input.name.trim(), description: input.description?.trim() ?? existing?.description ?? "", parentId, status, createdAt: existing?.createdAt || now(), updatedAt: new Date(Math.max(Date.now(), Date.parse(existing?.updatedAt || "1970-01-01") + 1)).toISOString() };
+    if (existing) catalogue[catalogue.indexOf(existing)] = entry; else catalogue.push(entry);
+    authoringActivity(data, actorId, `catalogue-${status}`);
+    return entry;
+  });
+}
+
+export async function assignCourseOwner(actorId: string, courseId: string, input: { email: string; expectedUpdatedAt: string }) {
+  return editData(data => {
+    if (!canOperateBackoffice(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+    const course = managedCourse(data, actorId, courseId);
+    if (input.expectedUpdatedAt !== course.updatedAt) throw new AuthoringError("conflict");
+    if (typeof input.email !== "string" || input.email.length > 254) throw new AuthoringError("invalid");
+    const owner = data.users.find(user => user.email?.toLowerCase() === input.email.trim().toLowerCase() && user.status === "active" && Boolean(user.emailVerifiedAt));
+    if (!owner) throw new AuthoringError("notFound");
+    if (owner.role === "student") owner.role = "teacher";
+    course.authorIds = [owner.id];
+    course.updatedAt = new Date(Math.max(Date.now(), Date.parse(course.updatedAt) + 1)).toISOString();
+    authoringActivity(data, actorId, "assign-owner", courseId, owner.id);
     return course;
   });
 }
 
-export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }) {
+export async function createCourseForOperator(input: { title: string; description?: string; category?: ProductCourse["category"] } & CourseMetadata, actorId?: string) {
   return editData((data) => {
-    const course = data.courses.find((item) => item.id === input.courseId);
+    if (actorId && !canAuthorCourses(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+    if (typeof input.title !== "string" || input.title.length > 255 || input.description !== undefined && (typeof input.description !== "string" || input.description.length > 5000)) throw new AuthoringError("invalid");
+    const title = input.title.trim();
+    if (!title) throw new AuthoringError("invalid");
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("course");
+    if (data.courses.some((course) => course.slug === slug)) throw new AuthoringError("conflict");
+    const category = input.category && ["Chinese Humanities", "European Humanities", "Science"].includes(input.category) ? input.category : "European Humanities";
+    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", category, thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
+    validateCatalogueSelection(data, course);
+    data.courses.unshift(course);
+    if (actorId) authoringActivity(data, actorId, "create", course.id);
+    return course;
+  });
+}
+
+export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }, actorId?: string) {
+  return editData((data) => {
+    const course = actorId ? managedCourse(data, actorId, input.courseId) : data.courses.find((item) => item.id === input.courseId);
     if (!course) throw new Error("Course not found.");
+    if (course.status !== "draft") throw new AuthoringError(course.status === "archived" ? "archived" : "published");
     const title = input.title.trim();
     const body = input.body.trim();
     const durationMinutes = Math.round(input.durationMinutes);
@@ -1882,20 +1975,31 @@ export async function addLessonToCourse(input: { courseId: string; title: string
     const section = course.sections[0] || { id: id("section"), title: "Course content", lessons: [] };
     if (!course.sections.length) course.sections.push(section);
     if (input.isPublic) course.sections.forEach((item) => item.lessons.forEach((lesson) => { lesson.isPublic = false; }));
-    const lesson: ProductLesson = { id: `${course.id}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("lesson")}`, title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
+    const lesson: ProductLesson = { id: id("lesson"), title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
     section.lessons.push(lesson);
     course.updatedAt = now();
     return lesson;
   });
 }
 
-export async function setCourseStatus(courseId: string, status: ProductCourse["status"]) {
-  return editData((data) => {
-    const course = data.courses.find((item) => item.id === courseId);
+export async function setCourseStatus(courseId: string, status: ProductCourse["status"], actorId?: string, expectedUpdatedAt?: string) {
+  return editData(async (data) => {
+    const course = actorId ? managedCourse(data, actorId, courseId) : data.courses.find((item) => item.id === courseId);
     if (!course) throw new Error("Course not found.");
-    if (status === "published" && !course.sections.some((section) => section.lessons.length > 0)) throw new Error("A Course needs at least one Lesson before it can be published.");
+    if (!["draft", "published", "archived"].includes(status)) throw new AuthoringError("invalid");
+    if (actorId && expectedUpdatedAt !== course.updatedAt) throw new AuthoringError("conflict");
+    if (course.status === "archived" && status === "published") throw new AuthoringError("archived");
+    if (status === "published" && !course.sections.some((section) => section.lessons.length > 0)) throw new AuthoringError("invalid");
+    if (status === "published" && course.sections.some(section => section.lessons.some(lesson => !lesson.body.trim() && !lesson.contents?.length))) throw new AuthoringError("invalid");
+    if (status === "published") {
+      validateCatalogueSelection(data, course);
+      const { assertCourseMediaReferences } = await import("./courseMedia");
+      try { await assertCourseMediaReferences(course); } catch { throw new AuthoringError("invalid"); }
+    }
     course.status = status;
-    course.updatedAt = now();
+    course.archivedAt = status === "archived" ? now() : null;
+    course.updatedAt = new Date(Math.max(Date.now(), Date.parse(course.updatedAt) + 1)).toISOString();
+    if (actorId) authoringActivity(data, actorId, status, course.id);
     return course;
   });
 }

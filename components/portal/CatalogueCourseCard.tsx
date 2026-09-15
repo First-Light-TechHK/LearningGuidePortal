@@ -11,7 +11,7 @@ export function CatalogueCourseCard({ course, category, locale }: { course: Prod
   const lessons = course.sections.flatMap(section => section.lessons);
   const videoMinutes = totalVideoMinutes(lessons);
   return <article className="portal-course-card">
-    <div className="portal-course-image-wrap"><CourseThumbnail slug={course.slug} title={course.title} /></div>
+    <div className="portal-course-image-wrap"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /></div>
     <div className="portal-course-card-body">
       <h3>{course.title}</h3><div className="portal-course-category">{category}</div><p>{course.description}</p>
       <div className="portal-course-card-bottom"><div className="portal-course-meta"><span>{lessons.length} {copy.lessonCount}</span>{videoMinutes === null ? null : <span>{videoMinutes} {copy.minutesShort} {copy.videoDuration}</span>}</div>

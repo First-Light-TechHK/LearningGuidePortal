@@ -72,7 +72,7 @@ export default async function CourseDetailPage({
       ) : (
         <>
           <section className="course-detail-hero">
-            <div className="course-detail-hero-image"><CourseThumbnail slug={course?.slug || slug} title={identity.title} /></div>
+            <div className="course-detail-hero-image"><CourseThumbnail slug={course?.slug || slug} title={identity.title} src={course?.cover || course?.thumbnailPath} /></div>
             <div className="course-detail-hero-copy">
               <p className="portal-course-tag" data-course-track={identity.track}>{identity.track}</p>
               <h1 data-course-title={identity.title}>{identity.title}</h1>
