@@ -1,4 +1,4 @@
-# SIT only. Never runs on push. DEV auto-deploys from apprunner-deploy.yml.
+# SIT only. Never runs on push. DEV auto-deploys from dev-deploy.yml.
 name: Deploy SIT
 on:
   workflow_dispatch:
