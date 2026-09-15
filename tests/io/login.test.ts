@@ -21,10 +21,14 @@ let login: typeof import("../../app/api/auth/login/route");
 let checkEmail: typeof import("../../app/api/auth/check-email/route");
 let resend: typeof import("../../app/api/auth/resend-verification/route");
 let resetRequest: typeof import("../../app/api/auth/password-reset/request/route");
+let resetConfirm: typeof import("../../app/api/auth/password-reset/confirm/route");
+let bindRequest: typeof import("../../app/api/auth/email-binding/request/route");
+let bindConfirm: typeof import("../../app/api/auth/email-binding/confirm/route");
 let google: typeof import("../../app/api/auth/google/route");
 let profile: typeof import("../../app/api/me/profile/route");
 let backoffice: typeof import("../../app/api/backoffice/courses/route");
 let quote: typeof import("../../app/api/purchase/quote/route");
+let subscriptionPortal: typeof import("../../app/api/subscription/portal/route");
 
 before(async () => {
   restore = (await isolate("lg-io-login-")).restore;
@@ -34,10 +38,14 @@ before(async () => {
   checkEmail = await import("../../app/api/auth/check-email/route");
   resend = await import("../../app/api/auth/resend-verification/route");
   resetRequest = await import("../../app/api/auth/password-reset/request/route");
+  resetConfirm = await import("../../app/api/auth/password-reset/confirm/route");
+  bindRequest = await import("../../app/api/auth/email-binding/request/route");
+  bindConfirm = await import("../../app/api/auth/email-binding/confirm/route");
   google = await import("../../app/api/auth/google/route");
   profile = await import("../../app/api/me/profile/route");
   backoffice = await import("../../app/api/backoffice/courses/route");
   quote = await import("../../app/api/purchase/quote/route");
+  subscriptionPortal = await import("../../app/api/subscription/portal/route");
 });
 
 after(async () => {
@@ -384,4 +392,77 @@ test("AUTH-06 edge: a forged session cookie does not restore a user", async () =
   assert.equal((await response.json()).user, null);
   const gated = await quote.POST(jsonRequest("POST", "http://localhost/api/purchase/quote", { planId: "everything-pc-6" }));
   assert.equal(gated.status, 401);
+});
+
+test("AUTH-02 edge: confirm without a token or with a garbage token leaks nothing", async () => {
+  const missing = await resetConfirm.POST(jsonRequest("POST", "http://localhost/api/auth/password-reset/confirm", {}));
+  const garbage = await resetConfirm.POST(jsonRequest("POST", "http://localhost/api/auth/password-reset/confirm", {
+    token: "garbage-reset-token",
+    newPassword: "Passw0rd!999"
+  }));
+  const missingBody = await missing.json() as Record<string, unknown>;
+  const garbageBody = await garbage.json() as Record<string, unknown>;
+  assert.equal(missing.status, 400);
+  assert.equal(garbage.status, 400);
+  assert.equal(missingBody.ok, false);
+  assert.equal(garbageBody.ok, false);
+  assert.equal(missingBody.resetUrl, undefined);
+  assert.equal(garbageBody.resetUrl, undefined);
+  assert.equal(JSON.stringify(missingBody).includes("token="), false);
+  assert.equal(JSON.stringify(garbageBody).includes("token="), false);
+});
+
+test("AUTH-06 / WeChat bind: email-binding request without a session is 401 and grants nothing", async () => {
+  clearCookies();
+  const response = await bindRequest.POST(jsonRequest("POST", "http://localhost/api/auth/email-binding/request", {
+    email: uniqueEmail("bind-unauth"),
+    locale: "en-GB"
+  }));
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 401);
+  assert.equal(body.ok, false);
+  assert.equal("token" in body, false);
+  assert.equal(body.bindUrl, undefined);
+  assert.equal(JSON.stringify(body).includes("token="), false);
+});
+
+test("AUTH-02 edge: signed-in email-binding request JSON has no token", async () => {
+  await registerAccount("bind-req");
+  const response = await bindRequest.POST(jsonRequest("POST", "http://localhost/api/auth/email-binding/request", {
+    email: uniqueEmail("bind-target"),
+    locale: "en-GB"
+  }));
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(body.token, undefined);
+  assert.equal(body.bindUrl, undefined);
+  assert.equal(JSON.stringify(body).includes("token="), false);
+});
+
+test("AUTH-02 edge: email-binding confirm without a token or with a garbage token leaks nothing", async () => {
+  const missing = await bindConfirm.POST(jsonRequest("POST", "http://localhost/api/auth/email-binding/confirm", {}));
+  const garbage = await bindConfirm.POST(jsonRequest("POST", "http://localhost/api/auth/email-binding/confirm", {
+    token: "garbage-bind-token"
+  }));
+  const missingBody = await missing.json() as Record<string, unknown>;
+  const garbageBody = await garbage.json() as Record<string, unknown>;
+  assert.equal(missing.status, 400);
+  assert.equal(garbage.status, 400);
+  assert.equal(missingBody.ok, false);
+  assert.equal(garbageBody.ok, false);
+  assert.equal("token" in missingBody, false);
+  assert.equal("token" in garbageBody, false);
+  assert.equal(JSON.stringify(missingBody).includes("token="), false);
+  assert.equal(JSON.stringify(garbageBody).includes("token="), false);
+});
+
+test("AUTH-06 edge: subscription portal without a session is 401", async () => {
+  clearCookies();
+  const response = await subscriptionPortal.POST(jsonRequest("POST", "http://localhost/api/subscription/portal", {
+    locale: "en-GB",
+    action: "manage"
+  }));
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 401);
+  assert.equal(body.ok, false);
+  assert.equal(body.url, undefined);
 });

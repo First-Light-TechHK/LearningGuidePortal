@@ -27,6 +27,17 @@
 
 不要把这些断言改成迁就现状。
 
+## 提交到 First-Light `main`（已准备好，人开 PR）
+
+比较：https://github.com/First-Light-TechHK/LearningGuidePortal/compare/main...LibertychaserUS:LearningGuidePortal:cursor/lg-upstream-of-9bdf
+
+头：`LibertychaserUS:cursor/lg-upstream-of-9bdf`  
+底：`First-Light-TechHK:main`
+
+本包 pin 已发布针 `overlay-v2.0.0` / `forge-v1.1.3`，六套 `active`，`forge.yaml` 只保护 `main`。不直推 `upstream`。不合入。不 live-apply。合入后由人持 `FORGE_GITHUB_TOKEN` 对本仓 `forge.yaml` 跑 `forge apply`，才会出现 GitHub Ruleset。
+
+`7f42330` / `ec9e129` 的规格锁：reset confirm、email-binding、subscription portal 的公开 JSON。产品代码不改。
+
 ## 刻意没做的
 
 1. 不改 Verify，不把 `test:io` 加进 `test:ci`。
