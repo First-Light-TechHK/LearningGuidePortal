@@ -19,7 +19,7 @@ export default async function BackofficeCoursesPage({ params }: { params: Promis
     return <main className="portal-page portal-page-narrow"><header className="portal-header"><Link className="portal-brand" href={`/${locale}/backoffice/courses`}><span className="portal-brand-mark">LG</span><span>{messages.brand}</span></Link></header><section className="portal-detail"><p className="portal-eyebrow">{messages.backoffice.title}</p><h1>{messages.backoffice.restricted}</h1><p className="portal-lead">{copy.errors.restricted}</p><Link className="portal-button portal-button-primary" href={`/${locale}/backoffice/courses`}>{messages.backoffice.returnToPortal}</Link></section></main>;
   }
   return <main className="portal-page portal-page-narrow">
-    <header className="portal-header">
+    <header className={`portal-header ${styles.header}`}>
       <Link className="portal-brand" href={`/${locale}/backoffice/courses`}><span className="portal-brand-mark">LG</span><span>{messages.brand}</span></Link>
       <nav className="portal-nav"><Link href="#course-overview">{copy.dashboard}</Link><Link href="#author-profile">{copy.profile}</Link>{isOperator(user) && <>
         <Link href={`/${locale}/backoffice/portal`}>{messages.portalEditor.heading}</Link>

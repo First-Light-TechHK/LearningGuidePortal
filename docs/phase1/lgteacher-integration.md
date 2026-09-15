@@ -6,13 +6,15 @@ Source: First-Light-TechHK/LGTeacher, commit `30d8e457621e000605b2941fbd9430f155
 
 This is a native integration into the existing `/{locale}/backoffice/courses` route, CourseManager and CourseOutlineEditor. It is not a second backoffice, Vue application, NestJS service, database or authentication system. Portal editing, order management and payment operations remain in their existing routes. Profile and course summary are sections of the same course-management page.
 
+The merge includes `main` at `e9b658f` and `feat/portal-cms` at `08f84dc`: bilingual portal editing, one-shot translation and the portal image library remain in the existing backoffice. Admin has a separate sign-in and `learning_guide_admin_session` cookie on configured admin hosts. Learner sessions cannot author courses, preview private media as an author, edit the portal or manage payments. Authorised teachers use the admin login for assigned courses; operators retain portal, finance and global KS access.
+
 The existing Next.js application serves editor, APIs, learner pages and tutor. The product aggregate remains in the existing PostgreSQL repository in AWS, or the isolated local development store. Private authored media uses the existing VFS/S3 storage configuration. No Tencent COS credentials, teacher MD5 passwords or separate JWTs are imported.
 
 ## Function Mapping
 
 | Source capability | Integrated destination and behaviour |
 | --- | --- |
-| Teacher login and profile | Existing Learning Guide session and verified account; active teacher role and course assignment; read-only profile |
+| Teacher login and profile | Existing separate admin login/session and verified account; active teacher role and course assignment; read-only profile |
 | Owned course list | Existing CourseManager with search, category/subject/level/status filters, pagination and actual course counts |
 | Course metadata | Title, subtitle, description, cover upload/removal, level, tags, academic category/subject, reference price and discount |
 | Course lifecycle | Create, edit, publish/unpublish; versioned drafts; archival and restore instead of destruction of purchased/studied identities |
@@ -49,6 +51,12 @@ Optional fields extend the existing aggregate; no new table or source-data migra
 
 The [source audit](lgteacher-source-audit.md) records tests and the isolated production-build browser report. Unit/Route Handler tests cover sanitisation, round trips, ownership, inactive users, stale writes, archives, catalogue constraints, media ranges, and tutor/public-data boundaries. Authentication/payment suites use isolated fixtures, not real provider accounts or payments. Browser tests use actual application HTTP routes and persisted local data, including playable video and 3D fixtures, without mocking successful application responses.
 
+Combined verification on 15 September 2026: 163 unit tests, 93 authentication tests and 11 payment tests passed. Production build and type checking passed; lint had no errors. The final authoring browser run passed all 12 checks against build `wb5G7iS5TTLRxnwIRNhHp`, including separate admin login, cookie/host rejection, desktop/mobile PDF rendering and 3D interaction. The catalogue browser run also passed. CMS hardening adds bounded same-origin operator APIs, complete translation-response validation, decoded image validation and immutable per-asset metadata; no extra deployed service is required.
+
+CMS browser checks also passed: `scripts/test-portal-cms-built.ts` exercises actual upload, bilingual save/reload, shared images and responsive layouts against the production build; `scripts/test-portal-cms-ui.mjs` uses explicitly synthetic deferred responses to exercise stale-response races, disabled controls, visible errors, retry and dialog focus. These race tests do not establish live translation-provider acceptance.
+
 Local tests do not establish live AWS storage acceptance, external-provider acceptance, source-data migration or Figma pixel parity.
 
-Dependency audit on 15 September 2026 reports eight pre-existing advisories (one critical, seven high) across Next.js, Nodemailer and transitive packages. Their locked versions are unchanged from the parent commit. The added Tiptap, Three.js and sanitisation packages are not the reported packages. This functional merge does not remediate those existing dependency risks or constitute production security clearance; review and patch them before production promotion.
+The broader `test:io` specification suite is not green: an isolated archive of unmodified upstream `a905035` produced 56 passes and 21 failures out of 77 tests. The combined branch also produced 56 passes and 21 failures. These include pre-existing authentication/session and payment-contract discrepancies. The exact failing set differs at the production-configuration boundary: this branch rejects a missing HTTPS public origin earlier and correctly disables local social login for `APP_ENV=PRODUCTION`, whereas upstream's test expectations differ. The stricter managed-environment checks have been retained. Do not treat the passing authoring/authentication/payment regression suites as clearance of the wider specification suite.
+
+Dependency audit on 15 September 2026 reports eight pre-existing affected dependency entries (one critical, seven high) across Next.js, Nodemailer and transitive packages. Their locked versions are unchanged from the parent commit. The added Tiptap, Three.js, PDF.js and sanitisation packages are not the reported packages. This functional merge does not remediate those existing dependency risks or constitute production security clearance; review and patch them before production promotion.

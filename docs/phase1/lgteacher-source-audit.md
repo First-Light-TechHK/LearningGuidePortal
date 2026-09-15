@@ -83,6 +83,87 @@ and isolated local storage are used; no source credentials or live user data.
 
 ## Execution Status
 
+### Final Verified Build
+
+Following the parent's explicit final-build readiness, the unchanged 12-check
+browser runner tested default `.next` build `wb5G7iS5TTLRxnwIRNhHp` on port 3016:
+**12 passed, 0 failed; exit 0**. The parent reports this build includes the mobile
+layout correction, CMS guards/service fixes and current CMS frontend. The owned
+runner was not changed for this final run. The latest owned unit result remains
+**30/30 passed** from the preceding merged-source run; units were not rerun in
+this final browser-only pass.
+
+Both previous mobile overflow failures now pass at 390x844. The PDF page's
+extracted text, interior pixel variation and dark fixture-text pixels pass on
+desktop and mobile. Manual inspection confirms clear PDF text, a contained
+283px-wide mobile page canvas, wrapped header navigation and a correctly framed
+OBJ modal. OBJ canvas diversity, dragging and auto-rotation also pass at both
+viewport sizes. The earlier blank PDF and 914px mobile overflow are resolved
+for these tested fixtures and views.
+
+Real admin login, HttpOnly admin-cookie issuance, learner-cookie read/write
+rejection on the admin host, and authoring-route isolation on the learner host
+all pass. The suite also passes real persisted rich text, checked task lists,
+inline exercise instances, image/video/OBJ/PDF uploads and media reads, timed
+video trigger/pause/answer/resume, inactive and ownership boundaries, stale
+saves, XSS sanitisation, cross-course media rejection, saved preview in both
+locales, and archival retaining referenced history. No uncaught browser errors,
+console errors or failed same-origin requests were recorded.
+
+- Authoritative final report: [results.json](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/results.json).
+- PDF: [desktop canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/pdf-desktop.png), [mobile canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/pdf-mobile.png), [contained mobile page](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/pdf-page-mobile.png).
+- Editor: [desktop](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/editor-desktop.png), [mobile](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/editor-mobile.png).
+- OBJ: [desktop modal](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/obj-modal-desktop.png), [mobile modal](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/obj-modal-mobile.png).
+
+The runner terminated its server, removed its isolated product store and exited
+successfully. A post-run `lsof -nP -iTCP:3016 -sTCP:LISTEN` found no listener.
+This is evidence for the named LGTeacher regression checks, not comprehensive
+CMS, source-data migration, production-provider, deployment or Figma parity.
+Final commit/push remains the parent's responsibility and is not asserted here.
+
+### Earlier Merged Build
+
+After explicit parent readiness for the `origin/main e9b658f` and portal-CMS
+`08f84dc` merge, the runner tested default `.next` build
+`cJCa31xDfRLqFfj0RZWOT` on port 3016. The owned unit/route/service suite passed
+**30/30**, with no skips. The browser run completed **10 passed, 2 failed**.
+Both failures are horizontal overflow: the editor and the editor's selected PDF
+preview expand the document to **914px at a 390px viewport**. This is not a clean
+mobile acceptance result. The overflow capture includes course metadata labels,
+inputs and field containers at x=34..914, and a header sign-out button extending
+past the viewport. This identifies affected elements, not a confirmed root cause.
+
+The PDF.js replacement now passes actual page-text extraction, nonblank interior
+pixels and dark fixture-text pixels on a light page at both viewport sizes.
+Manual screenshot inspection confirms clear text. However, the mobile canvas
+capture is 837px wide because its outer container still overflows; readability
+of the captured canvas does not establish correct mobile framing.
+
+Real `/api/auth/admin/login` succeeds for the active teacher, sets an HttpOnly
+`learning_guide_admin_session` without issuing a learner cookie, and that cookie
+successfully reads the owned authoring route. Learner cookies cannot read or
+write admin-host authoring routes. Admin cookies do not expose those routes on
+the separate learner host (`127.0.0.1`; `ADMIN_HOSTS=localhost`). Ownership,
+inactive sessions, CSRF, media/ranges, persisted rich task lists and inline
+instances, timed video trigger/pause/answer/resume, XSS and cross-course-media
+rejection, stale saves, historical-record archival, and OBJ pixel/drag/rotation
+checks passed. No uncaught errors, console errors or failed same-origin browser
+requests were recorded. These checks do not cover the parent's later CMS-route
+hardening, deployment or pushing MAIN; another final build/rerun may be needed.
+
+- Latest report: [results.json](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/results.json).
+- Overflow detail: [element bounds](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/editor-mobile-overflow.json).
+- PDF text: [desktop canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/pdf-desktop.png), [mobile canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/pdf-mobile.png), [overflowing mobile page](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/pdf-page-mobile.png).
+- OBJ: [mobile modal](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/obj-modal-mobile.png).
+
+The first merged iteration exposed the layout failure before saving. Layout
+checks now retain their own failures while allowing save and subsequent checks
+to proceed. Another owned assertion was corrected to accept the required bold
+phrase when following task-list text shares the same bold span. No application
+files or existing tests were changed to suppress a failure.
+
+### Earlier Baseline
+
 The parent authorised the baseline build and tests. The owned unit/route/service
 suite passed **29/29**, with no skips. The strengthened browser suite against
 baseline build `_JvY_otvVbnTi4wJ7vaEn` completed **9 passed, 1 failed**.
@@ -99,7 +180,8 @@ post-build lesson-key changes. A new parent-confirmed build and rerun are requir
 The owned runner and persistence fixtures have been adapted to the admin cookie,
 with `ADMIN_HOSTS=localhost` and a separate `127.0.0.1` learner host. Added
 assertions reject learner-cookie authoring and admin-cookie authoring on the
-learner host. These adaptations are not yet executed against a merged build.
+learner host. These adaptations were subsequently exercised in the merged run
+reported above.
 TypeScript checking with `npx tsc --noEmit --incremental false` passed after the
 fixture adaptation. New browser reports record the build ID and both hosts.
 The browser runner uses port 3016 by default, configurable `LGTEACHER_TEST_PORT`

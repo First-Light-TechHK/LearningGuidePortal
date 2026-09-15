@@ -1,27 +1,28 @@
-import { NextResponse } from "next/server";
-import { currentOperatorUser } from "@/services/productAuth";
-import { isOperator } from "@/services/productStore";
 import { listPortalLibrary, PORTAL_MEDIA_MAX_BYTES, savePortalMedia } from "@/services/portalMedia";
+import { portalCmsAccess, portalCmsFailure, portalCmsResponse, PortalCmsBodyTooLarge, readPortalCmsBody } from "@/services/portalCmsHttp";
 
 export const runtime = "nodejs";
 
-export async function GET() {
-  const user = await currentOperatorUser();
-  if (!user || !isOperator(user)) return NextResponse.json({ error: "Operator access required." }, { status: 403 });
-  return NextResponse.json({ library: await listPortalLibrary() });
+export async function GET(request: Request) {
+  const denied = await portalCmsAccess(request);
+  if (denied) return denied;
+  return portalCmsResponse({ library: await listPortalLibrary() });
 }
 
 export async function POST(request: Request) {
-  const user = await currentOperatorUser();
-  if (!user || !isOperator(user)) return NextResponse.json({ error: "Operator access required." }, { status: 403 });
+  const denied = await portalCmsAccess(request, true);
+  if (denied) return denied;
   try {
-    const form = await request.formData();
+    const contentType = request.headers.get("content-type") || "";
+    if (!/^multipart\/form-data\s*;/i.test(contentType)) throw new Error("A multipart image upload is required.");
+    const bytes = await readPortalCmsBody(request, PORTAL_MEDIA_MAX_BYTES + 64 * 1024);
+    const form = await new Response(new Uint8Array(bytes), { headers: { "Content-Type": contentType } }).formData();
     const file = form.get("file");
-    if (!(file instanceof File)) throw new Error("Select an image file.");
-    if (file.size > PORTAL_MEDIA_MAX_BYTES) throw new Error("The image must be 5 MB or smaller.");
+    if (!(file instanceof File) || form.getAll("file").length !== 1) throw new Error("Select one image file.");
+    if (file.size > PORTAL_MEDIA_MAX_BYTES) throw new PortalCmsBodyTooLarge();
     const saved = await savePortalMedia(file.name, Buffer.from(await file.arrayBuffer()));
-    return NextResponse.json({ asset: saved, library: await listPortalLibrary() }, { status: 201 });
+    return portalCmsResponse({ asset: saved, library: await listPortalLibrary() }, 201);
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Image upload failed." }, { status: 400 });
+    return portalCmsFailure(error, "Image upload failed.");
   }
 }

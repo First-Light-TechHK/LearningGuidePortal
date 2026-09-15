@@ -182,6 +182,14 @@ async function main() {
       for (const invalidOrigin of [null, "https://other.test", `${origin}/path`]) assert.equal((await api("teacher", `${endpoint}/draft`, "PUT", draftOf(course), invalidOrigin)).status(), 403);
       assert.equal((await api("teacher", "/api/backoffice/orders")).status(), 403, "Teachers must not inherit financial access");
       assert.equal((await api("learner-cookie", endpoint)).status(), 403, "Learner cookie must not author on the admin host");
+      assert.equal((await api("learner-cookie", `${endpoint}/draft`, "PUT", draftOf(course))).status(), 403, "Learner cookie must not mutate drafts on the admin host");
+      const signedIn = await context("admin-login");
+      const login = await signedIn.request.post(`${origin}/api/auth/admin/login`, { headers: { Origin: origin }, data: { email: "teacher@lgteacher-browser.test", password: "browser-regression1" } });
+      assert.equal(login.status(), 200, await login.text());
+      const loginCookies = await signedIn.cookies(origin);
+      assert(loginCookies.some(cookie => cookie.name === sessionCookie && cookie.httpOnly), "Admin login must issue the HttpOnly admin cookie");
+      assert(!loginCookies.some(cookie => cookie.name === "learning_guide_session"), "Admin login must not issue a learner cookie");
+      assert.equal((await signedIn.request.get(`${origin}${endpoint}`)).status(), 200, "The actual admin-login cookie must author successfully");
       const learnerHost = await (await context("teacher")).request.get(`${learnerOrigin}${endpoint}`, { headers: { Cookie: `${sessionCookie}=${tokens.teacher}` }, maxRedirects: 0 });
       assert.equal(learnerHost.status(), 404, "Admin cookies must not expose authoring on the learner host");
       const learnerMutation = await (await context("teacher")).request.put(`${learnerOrigin}${endpoint}/draft`, { headers: { Origin: learnerOrigin, Cookie: `${sessionCookie}=${tokens.teacher}` }, data: draftOf(course), maxRedirects: 0 });
@@ -215,7 +223,9 @@ async function main() {
     }
     async function screenshot(name: string) {
       await page.screenshot({ path: path.join(artefacts, `${name}.png`), fullPage: true });
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name}: horizontal overflow`);
+      const layout = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, overflowing: Array.from(document.querySelectorAll("body *")).map(element => ({ tag: element.tagName, class: element.className, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, width: element.getBoundingClientRect().width })).filter(element => element.right > innerWidth + 1 && element.width > 0).slice(0, 30) }));
+      if (layout.scrollWidth > layout.width + 1) await writeFile(path.join(artefacts, `${name}-overflow.json`), JSON.stringify(layout, null, 2));
+      assert(layout.scrollWidth <= layout.width + 1, `${name}: horizontal overflow (${layout.scrollWidth}px document at ${layout.width}px viewport)`);
     }
     async function upload(container: Locator, filePath: string) {
       const [response] = await Promise.all([page.waitForResponse(response => response.url().endsWith(`${endpoint}/media`) && response.request().method() === "POST"), container.locator('input[type="file"]').setInputFiles(filePath)]);
@@ -293,8 +303,9 @@ async function main() {
       await inactive.getByLabel(t.title, { exact: true }).first().fill("Inactive group must not render");
       await inactive.locator('[contenteditable="true"]').fill("Inactive persisted content");
       await inactive.getByLabel(t.active, { exact: true }).uncheck();
-      await screenshot("editor-desktop");
-      await page.setViewportSize({ width: 390, height: 844 }); await screenshot("editor-mobile");
+      await check("Editor desktop layout", () => screenshot("editor-desktop"));
+      await page.setViewportSize({ width: 390, height: 844 });
+      await check("Editor mobile layout", () => screenshot("editor-mobile"));
       const [response] = await Promise.all([page.waitForResponse(response => response.url().endsWith(`${endpoint}/draft`) && response.request().method() === "PUT"), outline.getByRole("button", { name: copy.save, exact: true }).click()]);
       assert.equal(response.status(), 200, await response.text());
       await outline.waitFor({ state: "detached" });
@@ -302,7 +313,7 @@ async function main() {
       const saved = course.sections[0].lessons[0].contents!;
       const text = saved.find(item => item.title === "Structured browser text")!;
       assert(text, "Structured text was not saved");
-      assert.match(text.html!, /<strong>Browser persisted rich text<\/strong>/);
+      assert.match(text.html!, /<strong>Browser persisted rich text[^<]*<\/strong>/);
       assert.match(text.html!, /data-node-id=/);
       assert.match(text.html!, /data-type="taskList"/);
       assert.match(text.html!, /data-checked="true"/);
@@ -380,19 +391,27 @@ async function main() {
       await content.getByRole("button", { name: t.preview, exact: true }).click();
       const player = content.locator(".la-player");
       await selectGroup(player, "Persisted PDF");
-      const frame = player.locator('iframe[title="Persisted PDF"]');
-      assert.equal(await frame.getAttribute("src"), pdfAsset.url);
+      const pdf = player.locator(".la-pdf");
+      const canvas = pdf.locator('canvas.la-pdf-canvas[data-pdf-page="1"]');
       assert.equal(await player.getByRole("link", { name: t.openPdf, exact: true }).getAttribute("href"), pdfAsset.url);
       for (const [name, viewport] of [["desktop", { width: 1440, height: 1000 }], ["mobile", { width: 390, height: 844 }]] as const) {
         await page.setViewportSize(viewport);
+        await player.locator('.la-pdf[data-pdf-state="ready"]').waitFor();
+        await pdf.getByText("Local LGTeacher PDF fixture", { exact: true }).waitFor({ state: "attached" });
+        await page.waitForFunction(() => {
+          const pdf = document.querySelector('.la-pdf[data-pdf-state="ready"]');
+          const canvas = pdf?.querySelector('canvas') as HTMLCanvasElement | null;
+          const viewport = pdf?.querySelector('.la-pdf-viewport');
+          return !!canvas && !!viewport && canvas.width > 0 && canvas.height > 0 && Math.abs(canvas.getBoundingClientRect().width - (viewport.clientWidth - 24)) < 2;
+        });
         let visiblePixels = false;
-        let screenshot: Buffer = Buffer.alloc(0);
+        let canvasScreenshot: Buffer = Buffer.alloc(0);
         for (let attempt = 0; attempt < 20; attempt++) {
-          screenshot = await frame.screenshot();
-          const { data, info } = await sharp(screenshot).resize(256, 192, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+          canvasScreenshot = await canvas.screenshot();
+          const { data, info } = await sharp(canvasScreenshot).resize(256, 192, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
           let darkest = 255, lightest = 0;
           const colours = new Set<string>();
-          // Ignore iframe borders: a blank frame must not pass on its outline alone.
+          // Sample only page interiors: toolbar, borders and loading text cannot pass.
           for (let y = 5; y < info.height - 5; y++) for (let x = 5; x < info.width - 5; x++) {
             const index = (y * info.width + x) * info.channels;
             const shade = Math.round((data[index] + data[index + 1] + data[index + 2]) / 3);
@@ -403,8 +422,22 @@ async function main() {
           if (visiblePixels) break;
           await delay(250);
         }
-        await writeFile(path.join(artefacts, `pdf-${name}.png`), screenshot);
-        assert(visiblePixels, `${name}: PDF bytes/iframe loaded, but the preview remains blank after waiting for rendering`);
+        await writeFile(path.join(artefacts, `pdf-${name}.png`), canvasScreenshot);
+        assert(visiblePixels, `${name}: PDF canvas remains blank after waiting for rendering`);
+        const ink = await canvas.evaluate((element: HTMLCanvasElement) => {
+          const pixels = element.getContext("2d")!.getImageData(0, 0, element.width, element.height).data;
+          let dark = 0, white = 0;
+          // The fixture contains only one text line in this known page region.
+          for (let y = Math.floor(element.height * 0.25); y < element.height * 0.5; y++) for (let x = Math.floor(element.width * 0.07); x < element.width * 0.95; x++) {
+            const offset = (y * element.width + x) * 4;
+            const shade = (pixels[offset] + pixels[offset + 1] + pixels[offset + 2]) / 3;
+            if (shade < 160) dark++;
+            if (shade > 240) white++;
+          }
+          return { dark, white };
+        });
+        assert(ink.dark > 100 && ink.white > ink.dark, `${name}: expected readable dark fixture text on a light page, got ${JSON.stringify(ink)}`);
+        await screenshot(`pdf-page-${name}`);
       }
     });
 

@@ -1,4 +1,6 @@
 .manager { min-width: 0; }
+.header:global(.portal-header) { flex-wrap: wrap; }
+.header:global(.portal-header) :global(.portal-nav) { min-width: 0; max-width: 100%; }
 .manager :global(.course-manager-heading) { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .profile { padding: 24px 0; border-top: 1px solid #d6e1e9; }
 .profile summary { cursor: pointer; font-size: 18px; font-weight: 600; }
@@ -13,6 +15,10 @@
 .manager button { cursor: pointer; letter-spacing: 0; }
 .manager button:disabled { opacity: .5; cursor: not-allowed; }
 .manager :global(.backoffice-form) { padding: 22px 0; border: 0; border-radius: 0; background: transparent; }
+.manager :global(.authoring-editor), .manager :global(.authoring-section) { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.manager :global(.authoring-editor) fieldset { grid-template-columns: minmax(0, 1fr); width: 100%; max-width: 100%; box-sizing: border-box; margin-inline: 0; }
+.manager :global(.authoring-lesson) { min-width: 0; }
+.manager :global(.la-model-canvas) canvas { max-width: 100%; }
 .manager :global(.backoffice-row-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .manager :global(.portal-button) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: normal; text-align: center; overflow-wrap: anywhere; }
 .manager :global(.course-counts) { display: flex; flex-wrap: wrap; gap: 18px 32px; padding: 20px 0; margin: 12px 0; border-block: 1px solid #d6e1e9; }
@@ -49,6 +55,11 @@
 .manager :global(.preview-cover) { width: 480px; max-width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
 .manager :global(.authoring-heading) { flex-wrap: wrap; }
 .manager :global(.authoring-heading) > label { flex-basis: 180px; }
+@media (max-width: 1100px) {
+  .header:global(.portal-header) { gap: 8px 20px; padding-top: 16px; padding-bottom: 12px; }
+  .header:global(.portal-header) :global(.portal-nav) { width: 100%; flex-wrap: wrap; gap: 8px 18px; overflow: visible; }
+  .header:global(.portal-header) :global(.portal-nav) > * { min-height: 36px; }
+}
 @media (max-width: 1000px) {
   .manager :global(.course-filters) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .manager :global(.course-filters) > label:first-child { grid-column: 1 / -1; }

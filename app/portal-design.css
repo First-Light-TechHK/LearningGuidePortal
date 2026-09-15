@@ -233,20 +233,31 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 .portal-content-editor label { display:grid; gap:8px; min-width:0; }
 .portal-content-editor input,.portal-content-editor textarea,.portal-content-editor select { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }
 .portal-content-editor fieldset { min-width:0; border:1px solid #dbe3f0; padding:20px; display:grid; gap:16px; }
+.portal-content-editor > .portal-cms-fields { padding:0; margin:0; border:0; gap:24px; }
 .portal-i18n-toolbar { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
 .portal-i18n-toolbar .portal-button { min-height:42px; }
 .portal-i18n-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
 .portal-i18n-grid h2 { margin:0; font-size:16px; }
 .portal-image-picker-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center; }
 .portal-banner-preview { min-height:140px; border-radius:8px; background:#0a1a32 center/cover no-repeat; color:white; padding:20px; display:grid; align-content:end; gap:6px; }
-.portal-image-library-overlay { position:fixed; inset:0; background:rgba(10, 26, 50, .55); display:grid; place-items:center; z-index:40; padding:24px; }
-.portal-image-library-panel { width:min(840px, 100%); max-height:min(80vh, 720px); overflow:auto; background:white; border-radius:12px; padding:24px; display:grid; gap:16px; }
+.portal-image-library-dialog { width:min(840px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:min(80dvh,720px); padding:0; border:0; border-radius:8px; overflow:auto; color:#15233a; background:white; }
+.portal-image-library-dialog::backdrop { background:rgba(10,26,50,.55); }
+.portal-image-library-panel { min-width:0; width:100%; padding:24px; display:grid; gap:16px; }
 .portal-image-library-panel header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-.portal-image-library-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px; }
-.portal-image-library-grid button { min-height:88px; border:2px solid #dbe3f0; border-radius:8px; background:#e8eef7 center/cover no-repeat; color:#15233a; padding:8px; display:flex; align-items:end; }
-.portal-image-library-grid button span { background:rgba(255,255,255,.86); font-size:12px; padding:2px 6px; }
+.portal-image-library-panel header h2 { min-width:0; overflow-wrap:anywhere; font-size:20px; margin:0; }
+.portal-image-library-grid { min-width:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(min(140px,100%),1fr)); gap:12px; }
+.portal-image-library-grid button { min-width:0; height:120px; overflow:hidden; border:2px solid #dbe3f0; border-radius:8px; background:#e8eef7 center/cover no-repeat; color:#15233a; padding:8px; display:flex; align-items:end; }
+.portal-image-library-grid button span { min-width:0; max-width:100%; max-height:100%; overflow:auto; overflow-wrap:anywhere; background:rgba(255,255,255,.86); font-size:12px; padding:2px 6px; text-align:left; }
 .portal-image-library-grid button.active { border-color:#1b4d8f; }
+.portal-image-library-grid button:disabled { opacity:.55; cursor:wait; }
+.portal-image-library-dialog .portal-cms-icon { width:40px; height:40px; min-height:40px; flex:0 0 40px; padding:8px; }
+.portal-image-library-dialog .portal-form-error { margin:0; overflow-wrap:anywhere; }
+.portal-image-library-dialog [role=status] { display:flex; gap:8px; align-items:center; margin:0; }
+.portal-cms-spinner { animation:portal-cms-spin 1s linear infinite; }
+@keyframes portal-cms-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .portal-cms-spinner { animation:none; } }
 @media (max-width:720px) { .portal-i18n-grid { grid-template-columns:1fr; } .portal-image-picker-row { grid-template-columns:1fr; } }
+@media (max-width:420px) { .portal-image-library-panel { padding:16px; }.portal-content-editor > .portal-cms-fields > fieldset { padding:14px; } }
 .settings-form label,.settings-form fieldset,.settings-grid > * { min-width:0; }
 .settings-form input,.settings-form select,.settings-form textarea { min-width:0; max-width:100%; }
 .avatar-settings { flex-wrap:wrap; }
