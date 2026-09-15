@@ -112,6 +112,12 @@ test("subscription records use purchased product imagery and term, including leg
   const { productName, productImage, ...legacyPrice } = result.order.price!;
   const legacy = await presentSubscriptionOrders([{ ...overview.orders[0], price: legacyPrice }]);
   expect(legacy[0].presentation).toEqual(orders[0].presentation);
+  const localFallback = await presentSubscriptionOrders([{
+    ...overview.orders[0],
+    plan: { name: "Science", scope: "category", scopeId: "Science", termMonths: 6 },
+    price: { ...legacyPrice, stripePriceId: "price_science-pc-6", productName: "Science" }
+  }]);
+  expect(localFallback[0].presentation).toEqual({ name: "Science", image: "/portal/subscriptions/science.png", termMonths: 6 });
 
 });
 
