@@ -2,7 +2,8 @@
 # Job order is strict via needs: Typecheck → Lint → Build and test.
 # Aligns with cloud shape: node:22 + npm ci + npm run build + next start -p 8080.
 # This workflow never runs aws apprunner start-deployment and has no deploy job.
-# Cloud publish is only apprunner-deploy.yml (workflow_dispatch + queue-and-wait).
+# DEV publish is apprunner-deploy.yml (push to main + queue-and-wait).
+# SIT publish is sit-deploy.yml (workflow_dispatch only).
 # Local PAYMENT_MODE=demo / next dev / 3011 is not this workflow's default env.
 # smoke:product, test:e2e, ast-grep, semgrep, and knip stay off Actions.
 

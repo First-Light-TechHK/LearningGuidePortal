@@ -1,11 +1,16 @@
-# 唯一 App Runner 发布口：workflow_dispatch only。禁止 push / pull_request。
-# Verify (ci.yml) 只测、永不 start-deployment（避免与本文件双打）。
-# 竞态修复：GitHub concurrency 排队等（不取消前一个）+ 等到 Status=RUNNING 再 start-deployment；
-# 若仍撞 InvalidRequestException / not-RUNNING，继续等并重试，不在第一次碰撞失败。
+# DEV App Runner only (learning-guide-portal / www + admin).
+# Push to main deploys DEV. workflow_dispatch retries DEV. SIT is sit-deploy.yml (manual).
+# Verify (ci.yml) stays tests-only and never calls start-deployment, so a busy
+# App Runner cannot redden CI. Native App Runner auto-deploy is off so this
+# workflow is the only DEV publisher (it queues; GitHub-source auto-deploy drops
+# commits that arrive while a previous operation is in progress).
+# Queue-wait until Status=RUNNING, then start-deployment; retry collisions.
 
 name: Deploy to App Runner
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
