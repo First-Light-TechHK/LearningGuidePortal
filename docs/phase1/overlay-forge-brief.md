@@ -27,16 +27,11 @@
 
 不要把这些断言改成迁就现状。
 
-## 提交到 First-Light `main`（已准备好，人开 PR）
+## 提交到 First-Light `main`（2026-09-15 Oliver：源仓未 apply，快进 `main`，不开 PR）
 
-比较：https://github.com/First-Light-TechHK/LearningGuidePortal/compare/main...LibertychaserUS:LearningGuidePortal:cursor/lg-upstream-of-9bdf
+本包 pin 已发布针 `overlay-v2.0.0` / `forge-v1.1.3`，六套 `active`，`forge.yaml` 只保护 `main`。不 live-apply。Ruleset 仍要人持 `FORGE_GITHUB_TOKEN` 对本仓 `forge.yaml` 跑 `forge apply` 才会出现。
 
-头：`LibertychaserUS:cursor/lg-upstream-of-9bdf`  
-底：`First-Light-TechHK:main`
-
-本包 tip：`1f2b215`（另有 brief 提交时以 HEAD 为准）。pin 已发布针 `overlay-v2.0.0` / `forge-v1.1.3`，六套 `active`，`forge.yaml` 只保护 `main`。不直推 `upstream`。不合入。不 live-apply。合入后由人持 `FORGE_GITHUB_TOKEN` 对本仓 `forge.yaml` 跑 `forge apply`，才会出现 GitHub Ruleset。
-
-下面整段可粘进源仓 draft PR。
+落地说明（不是源仓 PR 正文；源仓这次不开 PR）：
 
 标题：
 
@@ -79,11 +74,11 @@ npx tsc --noEmit -p tsconfig.io.json
 
 ## 不做什么
 
-不改 Verify / `test:ci`。不 vendor `overlay/` `forge/`。不 pin `main`。不改密码重置 / 订阅展示 / 微信绑邮箱产品。不直推 `main`。不 live-apply。不改规格叶子去迁就现状。
+不改 Verify / `test:ci`。不 vendor `overlay/` `forge/`。不 pin AIOps `main`。不改密码重置 / 订阅展示 / 微信绑邮箱产品。不 live-apply。不改规格叶子去迁就现状。这次源仓未 apply，Oliver 授权快进 `main`、不开 PR。
 
 ## 分工
 
-开 PR：人（比较链）。审：人。合 `main`：人。`forge apply` 保护 `main`：人 / `$manage-repo`。agent 不推 `upstream`、不合入、不 apply。
+快进 `main`：agent（Oliver 2026-09-15 授权，因源仓未 apply）。`forge apply` 保护 `main`：人 / `$manage-repo`。agent 不 apply。
 ```
 
 ## 刻意没做的
