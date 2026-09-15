@@ -233,6 +233,20 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 .portal-content-editor label { display:grid; gap:8px; min-width:0; }
 .portal-content-editor input,.portal-content-editor textarea,.portal-content-editor select { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }
 .portal-content-editor fieldset { min-width:0; border:1px solid #dbe3f0; padding:20px; display:grid; gap:16px; }
+.portal-i18n-toolbar { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
+.portal-i18n-toolbar .portal-button { min-height:42px; }
+.portal-i18n-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+.portal-i18n-grid h2 { margin:0; font-size:16px; }
+.portal-image-picker-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center; }
+.portal-banner-preview { min-height:140px; border-radius:8px; background:#0a1a32 center/cover no-repeat; color:white; padding:20px; display:grid; align-content:end; gap:6px; }
+.portal-image-library-overlay { position:fixed; inset:0; background:rgba(10, 26, 50, .55); display:grid; place-items:center; z-index:40; padding:24px; }
+.portal-image-library-panel { width:min(840px, 100%); max-height:min(80vh, 720px); overflow:auto; background:white; border-radius:12px; padding:24px; display:grid; gap:16px; }
+.portal-image-library-panel header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.portal-image-library-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px; }
+.portal-image-library-grid button { min-height:88px; border:2px solid #dbe3f0; border-radius:8px; background:#e8eef7 center/cover no-repeat; color:#15233a; padding:8px; display:flex; align-items:end; }
+.portal-image-library-grid button span { background:rgba(255,255,255,.86); font-size:12px; padding:2px 6px; }
+.portal-image-library-grid button.active { border-color:#1b4d8f; }
+@media (max-width:720px) { .portal-i18n-grid { grid-template-columns:1fr; } .portal-image-picker-row { grid-template-columns:1fr; } }
 .settings-form label,.settings-form fieldset,.settings-grid > * { min-width:0; }
 .settings-form input,.settings-form select,.settings-form textarea { min-width:0; max-width:100%; }
 .avatar-settings { flex-wrap:wrap; }

@@ -10,7 +10,7 @@ import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
 import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
-import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
+import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
   courseProgressFromUniqueLearningPoints,
@@ -517,7 +517,7 @@ export async function getActiveUserByEmail(emailValue: string) {
 }
 
 export async function getPortalContent(): Promise<PortalContent> {
-  return (await ensureProductData()).portalContent || defaultPortalContent;
+  return withSharedBannerImages((await ensureProductData()).portalContent || defaultPortalContent);
 }
 
 export async function savePortalContent(value: unknown): Promise<PortalContent> {
@@ -544,8 +544,16 @@ export async function savePortalContent(value: unknown): Promise<PortalContent> 
       content.categories.some((item) => !expected.includes(item.id) || ["en-GB", "zh-CN"].some((locale) => typeof item.labels?.[locale as Locale] !== "string" || !item.labels[locale as Locale].trim() || item.labels[locale as Locale].length > 80))) throw new Error("Provide one translated label for each supported category.");
   if (!Array.isArray(content.countries) || !content.countries.length || content.countries.length > 300 || content.countries.some((item) => typeof item !== "string" || !item.trim() || item.length > 80)) throw new Error("Provide a valid country list.");
   if (!validUrl(content.supportUrl, true)) throw new Error("Support URL must be a relative path or HTTPS URL.");
+  const translation: PortalTranslation | undefined = content.translation
+    && (content.translation.source === "en-GB" || content.translation.source === "zh-CN")
+    && typeof content.translation.hash === "string"
+    && content.translation.hash.length > 0
+    && content.translation.hash.length < 20000
+    ? { source: content.translation.source, hash: content.translation.hash }
+    : undefined;
+  const normalised = withSharedBannerImages(content);
   return editData((data) => {
-    data.portalContent = { banners: content.banners, categories: content.categories, countries: [...new Set(content.countries)], supportUrl: content.supportUrl };
+    data.portalContent = { banners: normalised.banners, categories: content.categories, countries: [...new Set(content.countries)], supportUrl: content.supportUrl, ...(translation ? { translation } : {}) };
     return data.portalContent;
   });
 }

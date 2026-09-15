@@ -30,6 +30,7 @@ function isAdminAllowedPath(pathname: string) {
   if (pathname.startsWith("/api/health")) return true;
   if (/^\/(?:en-GB|zh-CN)\/portal\/verify-email(?:\/|$)/.test(pathname)) return true;
   if (pathname.startsWith("/_next")) return true;
+  if (pathname.startsWith("/api/portal-media/")) return true;
   if (/\.[a-z0-9]+$/i.test(pathname)) return true;
   return false;
 }
