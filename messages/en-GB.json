@@ -412,6 +412,12 @@
     "restricted": "Access restricted",
     "operatorRequired": "Course Manager/Operator access is required for this area.",
     "returnToPortal": "Return to Portal",
+    "signInHint": "This host is the Learning Guide Backoffice. Sign in with the operator email. Google and WeChat are not available here.",
+    "signInFailed": "Operator sign-in failed.",
+    "firstOperator": "First-time operator setup",
+    "haveOperator": "Already have the operator account? Sign in",
+    "createOperator": "Create operator account",
+    "verifyEmail": "Check your inbox to verify the operator email, then sign in here.",
     "payment": {
       "title": "Payment Management",
       "description": "Configure the Stripe display settings used by Purchase. The secret key is read only from the server environment or AWS Secrets Manager and is never stored or returned here.",

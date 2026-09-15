@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { currentOperatorUser } from "@/services/productAuth";
 import { addLessonToCourse, isOperator, setCourseStatus } from "@/services/productStore";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
-  const user = await currentProductUser();
+  const user = await currentOperatorUser();
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   try {
     const { courseId } = await params;
@@ -16,7 +16,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ courseId: string }> }) {
-  const user = await currentProductUser();
+  const user = await currentOperatorUser();
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   try {
     const { courseId } = await params;
