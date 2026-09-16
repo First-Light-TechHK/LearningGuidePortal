@@ -3,7 +3,7 @@ import { activateStripeTrial, applyStripePaidInvoice, stripeEventProcessed, comp
 import { getStripe } from "@/services/stripeClient";
 
 export async function processLegacyStripeEvent(event: Stripe.Event) {
-    if (process.env.STRIPE_SANDBOX === "1" && event.livemode) return { ok: false, error: "Live events are not allowed in this sandbox." };
+    if (process.env.STRIPE_SANDBOX === "1" && event.livemode) throw new Error("Live events are not allowed in this sandbox.");
     if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
         const session = event.data.object as { id: string; payment_status?: string; amount_total?: number; currency?: string; metadata?: Record<string, string>; subscription?: string | null; customer?: string | null; payment_intent?: string | null };
       const metadata = session.metadata || {};
@@ -36,7 +36,7 @@ export async function processLegacyStripeEvent(event: Stripe.Event) {
           }
         } else {
           const trial = await markStripeTrialGrace(subscriptionId);
-          if (!trial && !await markStripeSubscriptionGrace(subscriptionId)) throw new Error("Subscription is not ready for payment failure processing; retry this event.");
+          if (!trial && !await markStripeSubscriptionGrace(subscriptionId)) return { ok: true, ignored: true };
         }
         await completeStripeEvent(event.id, event.type);
       }

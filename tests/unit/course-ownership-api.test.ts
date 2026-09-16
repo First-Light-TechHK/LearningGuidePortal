@@ -36,7 +36,7 @@ function request(token: string, method: string, body?: unknown, suppliedOrigin =
 
 test("ownership and lifecycle routes retain one login, prevent escalation and isolate every teacher mutation", async () => {
   const register = async (name: string, verified = true) => {
-    const user = await store.registerUser({ email: name + "@ownership.test", password: "password1" });
+    const user = await store.registerUser({ email: name + "@ownership.test", password: "password1", role: name === "operator" ? "operator" : "student" });
     if (verified) await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
     return { user, token: (await store.createSession(user.id)).token };
   };

@@ -28,7 +28,7 @@ before(async () => {
   files = await import("../../services/fileStore");
   put = (await import("../../app/api/backoffice/courses/[courseId]/draft/route")).PUT;
   for (const name of ["operator", "teacher", "foreign", "student", "disabled", "pending"]) {
-    users[name] = await store.registerUser({ email: `${name}@lgteacher.test`, password: "regression-password1" });
+    users[name] = await store.registerUser({ email: `${name}@lgteacher.test`, password: "regression-password1", role: name === "operator" ? "operator" : "student" });
     if (name !== "pending") await store.verifyEmailToken(await store.issueEmailVerificationToken(users[name].id));
     token[name] = (await store.createSession(users[name].id)).token;
   }

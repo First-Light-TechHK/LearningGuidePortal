@@ -29,7 +29,7 @@ before(async () => {
   media = await import("../../services/portalMedia");
   const users: Record<string, string> = {};
   for (const name of ["operator", "teacher", "student", "pending"]) {
-    const user = await store.registerUser({ email: `${name}@cms-admin.test`, password: "password1" });
+    const user = await store.registerUser({ email: `${name}@cms-admin.test`, password: "password1", role: name === "operator" ? "operator" : "student" });
     if (name !== "pending") await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
     users[name] = user.id;
     tokens[name] = (await store.createSession(user.id)).token;

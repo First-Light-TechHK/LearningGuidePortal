@@ -7,7 +7,7 @@ const PASSWORD = "Passw0rd!123";
 
 test("header sign-in returns to the source page including query and hash", async ({ page }) => {
   const source = "/en-GB/portal/courses?category=science&sort=title#courses";
-  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { exists: true } }));
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true } }));
   await page.route("**/api/auth/login", route => route.fulfill({ json: { ok: true } }));
   await page.goto(source);
   const login = page.locator(".portal-header-link").first();

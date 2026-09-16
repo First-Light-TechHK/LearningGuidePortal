@@ -3,9 +3,7 @@ import type { ProductCourse, ProductUser } from "./productStore";
 type AccessUser = Pick<ProductUser, "id" | "role" | "status" | "email" | "emailVerifiedAt">;
 
 export function canOperateBackoffice(user: AccessUser | null | undefined): boolean {
-  if (!user || user.status !== "active") return false;
-  const configured = process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase();
-  return user.role === "operator" || Boolean(user.emailVerifiedAt && configured && user.email?.toLowerCase() === configured);
+  return Boolean(user && user.status === "active" && user.role === "operator");
 }
 
 export function canAuthorCourses(user: AccessUser | null | undefined): boolean {

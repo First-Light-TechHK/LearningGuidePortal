@@ -48,7 +48,7 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
     allowedTags: ["p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "b", "em", "i", "u", "s", "del", "mark", "sub", "sup", "blockquote", "pre", "code", "ul", "ol", "li", "span", "a", "img", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "label", "input", "div"],
     allowedAttributes: {
       a: ["href", "title", "rel", "data-node-id"],
-      span: ["data-node-id", "style", "data-image-align", "data-image-inline", "data-caption", "class", "data-instance-type", "data-instance-content", "data-instance-answer-type", "data-instance-answer-result"],
+      span: ["data-node-id", "style", "data-image-align", "data-image-inline", "data-caption", "class", "data-instance-type", "data-instance-answer-type", "data-instance-answer-result"],
       img: ["src", "alt", "title", "width", "height", "data-align", "data-inline", "data-image-align", "data-image-inline", "data-caption"],
       ul: ["data-type"], li: ["data-type", "data-checked"], input: ["type", "checked", "disabled"],
       p: ["style"], h1: ["style"], h2: ["style"], h3: ["style"], h4: ["style"], h5: ["style"], h6: ["style"], mark: ["style"],
@@ -77,15 +77,14 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
         if (tagName === "span" && attribs["class"] !== "instance-node") delete attribs["class"];
         if (tagName === "span" && "data-instance-type" in attribs) {
           if (!/^[1-6]$/.test(attribs["data-instance-type"])) delete attribs["data-instance-type"];
-          if (typeof attribs["data-instance-content"] !== "string" || attribs["data-instance-content"].length > 2000 || /[\u0000-\u001f]/.test(attribs["data-instance-content"])) delete attribs["data-instance-content"];
           if (attribs["data-instance-answer-type"] && !["input", "single", "multiple"].includes(attribs["data-instance-answer-type"])) delete attribs["data-instance-answer-type"];
           if (attribs["data-instance-answer-result"] && attribs["data-instance-answer-result"].length > 10000) delete attribs["data-instance-answer-result"];
         } else {
           delete attribs["data-instance-type"];
-          delete attribs["data-instance-content"];
           delete attribs["data-instance-answer-type"];
           delete attribs["data-instance-answer-result"];
         }
+        delete attribs["data-instance-content"];
         const nodeId = attribs["data-node-id"];
         if (!nodes.has(nodeId)) delete attribs["data-node-id"];
         if (tagName === "a") {

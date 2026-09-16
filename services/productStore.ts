@@ -574,35 +574,33 @@ export async function userEmailExists(emailValue: string) {
   return data.users.some((user) => user.email === email && ["pending", "active"].includes(user.status));
 }
 
-export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string }) {
+export async function registerUserAttempt(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
   const email = input.email.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
   if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
   const nickname = validateNickname(input.nickname?.trim() || "Learner");
+  const role = input.role === "operator" || input.role === "teacher" ? input.role : "student";
   return editData(async (data) => {
     const existing = data.users.find((user) => user.email === email);
-    if (existing?.status === "active" || existing?.status === "disabled") throw new Error("An account with this email already exists.");
-    if (existing) {
-      existing.passwordHash = await passwordHash(input.password);
-      existing.nickname = nickname;
-      existing.locale = input.locale === "zh-CN" ? "zh-CN" : "en-GB";
-      existing.emailVerifiedAt = null;
-      return { ...existing, email };
-    }
+    if (existing) return { user: { ...existing, email: existing.email || email }, created: false };
     const user: ProductUser = {
       id: id("user"),
       email,
       passwordHash: await passwordHash(input.password),
       nickname,
       locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB",
-      role: process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student",
+      role,
       status: "pending",
       emailVerifiedAt: null,
       createdAt: now(),
     };
     data.users.push(user);
-    return { ...user, email };
+    return { user: { ...user, email }, created: true };
   });
+}
+
+export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
+  return (await registerUserAttempt(input)).user;
 }
 
 export async function getOrCreateSocialUser(input: SocialUserInput) {
@@ -655,7 +653,7 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
     }
     const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
-    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: input.provider === "google" && process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase() === email ? "operator" : "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
+    const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, wechatAppId: input.wechat?.appId, wechatOpenId: input.wechat?.openId, wechatUnionId: input.wechat?.unionId, createdAt: now() });
     data.notifications.unshift({ id: id("notification"), userId: user.id, title: "Welcome to Learning Guide", body: "Your account is ready. Start with the public lesson or activate the trial.", readAt: null, createdAt: now() });
@@ -716,7 +714,14 @@ export async function requestEmailVerification(emailValue: string) {
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === email && item.status === "pending");
   if (!user?.email) return { accepted: true as const, user: null, token: null };
-  return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true) };
+  try {
+    return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true) };
+  } catch (error) {
+    if (error instanceof Error && error.message === "Please wait before requesting another verification email.") {
+      return { accepted: true as const, user: null, token: null };
+    }
+    throw error;
+  }
 }
 
 export async function verifyEmailToken(rawToken: string) {
@@ -781,6 +786,7 @@ export async function updateUserProfile(input: { userId: string; nickname: strin
       if (input.newPassword.length < 8) throw new Error("New password must contain at least 8 characters.");
       if (!input.currentPassword || !(await passwordMatches(input.currentPassword, user.passwordHash))) throw new Error("Current password is incorrect.");
       user.passwordHash = await passwordHash(input.newPassword);
+      data.sessions = data.sessions.filter((session) => session.userId !== user.id);
     }
     return user;
   });
@@ -830,11 +836,11 @@ export async function authenticateUser(emailValue: string, password: string) {
   return user;
 }
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string, options?: { replaceExisting?: boolean }) {
   const token = randomBytes(32).toString("base64url");
   const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt: addMonths(now(), 1), createdAt: now() };
   await editData((data) => {
-    data.sessions = data.sessions.filter((item) => new Date(item.expiresAt) > new Date());
+    data.sessions = data.sessions.filter((item) => (options?.replaceExisting ? item.userId !== userId : true) && new Date(item.expiresAt) > new Date());
     data.sessions.push(session);
   });
   return { token, expiresAt: session.expiresAt };
@@ -1024,8 +1030,8 @@ function activeEntitlement(data: ProductData, userId: string, courseId: string) 
 export async function checkEntitlement(userId: string, courseId: string) {
   const data = await ensureProductData();
   const entitlement = activeEntitlement(data, userId, courseId);
-  if (!entitlement) return { allowed: false, source: null, validTo: null };
-  return { allowed: true, source: entitlement.source, validTo: entitlement.validTo };
+  if (!entitlement) return { allowed: false, source: null, validTo: null, device: null };
+  return { allowed: true, source: entitlement.source, validTo: entitlement.validTo, device: entitlement.device || null };
 }
 
 function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) {
@@ -1041,6 +1047,7 @@ function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) 
   if (existing && !currentTrial) throw new Error("This plan already has active access.");
   const previousTrial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial");
   if (previousTrial) {
+    if (previousTrial.state === "trial_canceled") throw new Error("This trial payment attempt cannot be completed.");
     if (new Date(previousTrial.validTo) <= new Date()) {
       previousTrial.state = "expired";
       throw new Error("The three-day trial has ended.");
@@ -1080,6 +1087,9 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
+    if (kind === "purchase" && data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) {
+      throw new Error("This plan already has active access.");
+    }
     const quote: ProductQuote = { price, planSnapshot: { ...plan }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
     return { quote, plan };

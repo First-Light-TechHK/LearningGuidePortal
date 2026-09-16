@@ -29,7 +29,7 @@ export function sanitiseLessonHtml(html: string): string {
     if (!(node instanceof Element) || blocked.has(node.localName)) return;
     if (!allowed.has(node.localName)) { node.childNodes.forEach(child => copy(child, parent)); return; }
     const el = target.createElement(node.localName);
-    for (const name of ['title', 'alt', 'data-node-id', 'data-caption', 'data-instance-content', 'data-instance-answer-result']) if (node.hasAttribute(name)) el.setAttribute(name, (node.getAttribute(name) || '').slice(0, name === 'data-instance-answer-result' ? 10000 : 2000));
+    for (const name of ['title', 'alt', 'data-node-id', 'data-caption', 'data-instance-answer-result']) if (node.hasAttribute(name)) el.setAttribute(name, (node.getAttribute(name) || '').slice(0, name === 'data-instance-answer-result' ? 10000 : 2000));
     for (const name of ['class', 'data-instance-type', 'data-instance-answer-type']) if (node.hasAttribute(name)) el.setAttribute(name, (node.getAttribute(name) || '').slice(0, 80));
     for (const name of ['width', 'height', 'colspan', 'rowspan', 'start']) {
       const n = Number(node.getAttribute(name)); if (Number.isInteger(n) && n > 0 && n <= 4000) el.setAttribute(name, String(n));
@@ -40,8 +40,7 @@ export function sanitiseLessonHtml(html: string): string {
     if (el.localName === 'span' && el.getAttribute('class') !== 'instance-node') el.removeAttribute('class');
     if (el.localName === 'span' && el.hasAttribute('data-instance-type')) {
       if (!/^[1-6]$/.test(el.getAttribute('data-instance-type') || '')) el.removeAttribute('data-instance-type');
-      const content = el.getAttribute('data-instance-content') || '';
-      if (!content || /[\u0000-\u001f]/.test(content)) el.removeAttribute('data-instance-content');
+      el.removeAttribute('data-instance-content');
       if (el.hasAttribute('data-instance-answer-type') && !['input', 'single', 'multiple'].includes(el.getAttribute('data-instance-answer-type') || '')) el.removeAttribute('data-instance-answer-type');
     } else {
       for (const name of ['data-instance-content', 'data-instance-answer-type', 'data-instance-answer-result']) el.removeAttribute(name);

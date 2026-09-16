@@ -24,7 +24,7 @@ before(async () => {
   hosts = await import("../../services/adminHost");
   for (const name of ["operator", "teacher", "student", "pending", "disabled"]) {
     const email = `${name}@admin-session.test`;
-    const user = await store.registerUser({ email, password: "password1" });
+    const user = await store.registerUser({ email, password: "password1", role: name === "operator" ? "operator" : "student" });
     if (name !== "pending") await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
     accounts[name] = { id: user.id, email, token: (await store.createSession(user.id)).token };
   }

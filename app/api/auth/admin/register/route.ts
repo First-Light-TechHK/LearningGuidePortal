@@ -2,7 +2,7 @@ import { secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { isAdminHost, requestHostname } from "@/services/adminHost";
-import { createSession, issueEmailVerificationToken, publicUser, registerUser, verifyEmailToken } from "@/services/productStore";
+import { createSession, issueEmailVerificationToken, publicUser, registerUserAttempt, verifyEmailToken } from "@/services/productStore";
 import { ADMIN_SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
 import { emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
 import { appEnvironment, emailVerificationRequired } from "@/services/runtimeConfig";
@@ -17,7 +17,8 @@ export async function POST(request: Request) {
     if (!operatorEmail || email !== operatorEmail) return NextResponse.json({ ok: false, code: "OPERATOR_REQUIRED", message: "Only the configured operator email can register on the backoffice host.", requestId }, { status: 403 });
     const verificationRequired = emailVerificationRequired();
     if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", message: `Email verification is not configured for ${appEnvironment()}.`, requestId }, { status: 503 });
-    const user = await registerUser({ email, password: body.password || "", nickname: body.nickname || "Operator", locale: body.locale });
+    const { user, created } = await registerUserAttempt({ email, password: body.password || "", nickname: body.nickname || "Operator", locale: body.locale, role: "operator" });
+    if (!created) return NextResponse.json({ ok: true, data: { verificationRequired: false }, requestId });
     const verificationToken = await issueEmailVerificationToken(user.id, true);
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
     const proto = request.headers.get("x-forwarded-proto") || new URL(request.url).protocol.replace(":", "");

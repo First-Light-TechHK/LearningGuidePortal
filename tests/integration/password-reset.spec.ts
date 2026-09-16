@@ -22,7 +22,7 @@ test("DEV reset sends mail, preserves destination, throttles and consumes tokens
     const request = (email: string, returnTo = "/zh-CN/pricing?term=12#plans") => POST(new Request("http://localhost:3027/api/auth/password-reset/request", { method: "POST", headers: { origin: "http://localhost:3027" }, body: JSON.stringify({ email, locale: "zh-CN", returnTo }) }));
     const response = await request(user.email!);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, accepted: true, retryAfter: 60, resetUrl: null });
+    expect(await response.json()).toEqual({ ok: true, accepted: true, retryAfter: 60 });
     expect(mails).toHaveLength(1);
     expect(mails[0].subject).toContain("重置");
     const link = new URL(mails[0].text.match(/http[^\s]+/)![0]);
@@ -50,7 +50,9 @@ test("DEV reset sends mail, preserves destination, throttles and consumes tokens
     await request(other.email!, "https://evil.example/path");
     expect(new URL(mails[1].text.match(/http[^\s]+/)![0]).searchParams.get("returnTo")).toBe("/zh-CN/account/my-learning");
     delete process.env.SMTP_HOST; delete process.env.SES_FROM_EMAIL; delete process.env.LOCAL_PASSWORD_RESET_PREVIEW;
-    expect((await request(user.email!)).status).toBe(503);
+    const unconfigured = await request(user.email!);
+    expect(unconfigured.status).toBe(200);
+    expect(await unconfigured.json()).toEqual({ ok: true, accepted: true, retryAfter: 60 });
     process.env.APP_ENV = "PROD"; process.env.LOCAL_PASSWORD_RESET_PREVIEW = "1"; process.env.NEXT_PUBLIC_APP_URL = "https://reset.example.test";
     expect((await request(user.email!)).status).toBe(503);
   } finally {

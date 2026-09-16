@@ -83,8 +83,8 @@ test("late failure cannot remove a successful purchase", async () => {
 test("amount mismatch, bad signatures and live events cannot grant access", async () => {
   const f = await fixture();
   const retryId = `evt_retry_${count}`;
-  assert.equal((await event("checkout.session.completed", { ...f.object, amount_total: 1 }, retryId)).status, 500);
-  assert.equal((await event("checkout.session.completed", f.object, `evt_live_${count}`, true)).status, 500);
+  assert.equal((await event("checkout.session.completed", { ...f.object, amount_total: 1 }, retryId)).status, 400);
+  assert.equal((await event("checkout.session.completed", f.object, `evt_live_${count}`, true)).status, 400);
   assert.equal((await handler.POST(new Request("http://localhost/api/payment/webhook", { method: "POST", body: "{}", headers: { "stripe-signature": "invalid" } }))).status, 400);
   assert.equal((await store.checkEntitlement(f.user.id, "epicureanism")).allowed, false);
   assert.equal((await event("checkout.session.completed", f.object, retryId)).status, 200);

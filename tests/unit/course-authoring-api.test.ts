@@ -21,7 +21,7 @@ after(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 test("draft API authorises, persists and rejects stale, cross-origin and student writes", async () => {
-  const operator = await store.registerUser({ email: "operator@example.test", password: "password1" });
+  const operator = await store.registerUser({ email: "operator@example.test", password: "password1", role: "operator" });
   await store.verifyEmailToken(await store.issueEmailVerificationToken(operator.id));
   const student = await store.registerUser({ email: "student@example.test", password: "password1" });
   await store.verifyEmailToken(await store.issueEmailVerificationToken(student.id));

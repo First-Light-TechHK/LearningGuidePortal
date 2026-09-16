@@ -51,17 +51,14 @@ test("LGTeacher: disabled and pending status override every role and ownership",
   }
 });
 
-test("LGTeacher: configured operator email requires verification and active status", () => {
+test("LGTeacher: matching BACKOFFICE_OPERATOR_EMAIL does not grant operator access", () => {
   const previous = process.env.BACKOFFICE_OPERATOR_EMAIL;
   process.env.BACKOFFICE_OPERATOR_EMAIL = "  CONFIGURED@example.test  ";
   try {
     const configured = user({ email: "configured@example.test", role: "student" });
-    assert.equal(canOperateBackoffice(configured), true);
-    assert.equal(canManageCourse(configured, {}), true);
-    assert.equal(canOperateBackoffice({ ...configured, emailVerifiedAt: null }), false);
-    assert.equal(canOperateBackoffice({ ...configured, status: "disabled" }), false);
-    assert.equal(canOperateBackoffice({ ...configured, status: "pending" }), false);
-    assert.equal(canOperateBackoffice({ ...configured, email: null }), false);
+    assert.equal(canOperateBackoffice(configured), false);
+    assert.equal(canManageCourse(configured, {}), false);
+    assert.equal(canOperateBackoffice({ ...configured, role: "operator" }), true);
   } finally {
     if (previous === undefined) delete process.env.BACKOFFICE_OPERATOR_EMAIL;
     else process.env.BACKOFFICE_OPERATOR_EMAIL = previous;
