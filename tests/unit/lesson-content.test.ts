@@ -47,6 +47,15 @@ test("media references require canonical course-local asset URLs", () => {
   assert.equal(courseMediaAssetId(url, "../course_123"), null);
 });
 
+test("learner rendering allows imported HTTPS media without weakening authoring validation", () => {
+  const external = "https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp/video/horace.mp4";
+  const imported = { ...content(), type: "video", mode: "lecture", url: external, nodes: [] };
+  assert.throws(() => validateLessonContents([imported], courseId), LessonContentError);
+  assert.equal(sanitiseLessonContents([imported], courseId)[0].url, external);
+  assert.deepEqual(sanitiseLessonContents([{ ...imported, url: "http://example.test/horace.mp4" }], courseId), []);
+  assert.deepEqual(sanitiseLessonContents([{ ...imported, url: `https://example.test/api/course-media/other/${assetId}` }], courseId), []);
+});
+
 test("asset extraction only includes sanitised renderable HTML and structured URLs", () => {
   const value = content();
   value.html = `<script>const url = '${url}'</script><!-- <img src="${url}"> --><p>${url}</p>`;

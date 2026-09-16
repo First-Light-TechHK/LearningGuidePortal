@@ -31,6 +31,15 @@ function safeHref(value: string, courseId: string): boolean {
   } catch { return false; }
 }
 
+function safeExternalMediaUrl(value: unknown): value is string {
+  if (typeof value !== "string" || /[\u0000-\u0020\\]/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password &&
+      !/\/api\/course-media(?:\/|$)/i.test(decodeURIComponent(url.pathname));
+  } catch { return false; }
+}
+
 /** Apply again on the server before rendering historical or imported HTML. */
 export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iterable<string> = []): string {
   if (typeof value !== "string" || value.length > LIMITS.htmlCharacters || !isContentId(courseId)) return "";
@@ -39,7 +48,7 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
     allowedTags: ["p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "b", "em", "i", "u", "s", "del", "mark", "sub", "sup", "blockquote", "pre", "code", "ul", "ol", "li", "span", "a", "img", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "label", "input", "div"],
     allowedAttributes: {
       a: ["href", "title", "rel", "data-node-id"],
-      span: ["data-node-id", "style", "data-image-align", "data-image-inline", "data-caption"],
+      span: ["data-node-id", "style", "data-image-align", "data-image-inline", "data-caption", "class", "data-instance-type", "data-instance-content", "data-instance-answer-type", "data-instance-answer-result"],
       img: ["src", "alt", "title", "width", "height", "data-align", "data-inline", "data-image-align", "data-image-inline", "data-caption"],
       ul: ["data-type"], li: ["data-type", "data-checked"], input: ["type", "checked", "disabled"],
       p: ["style"], h1: ["style"], h2: ["style"], h3: ["style"], h4: ["style"], h5: ["style"], h6: ["style"], mark: ["style"],
@@ -65,6 +74,18 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
           if (key in attribs && !["left", "center", "right"].includes(attribs[key])) delete attribs[key];
         }
         if (attribs["data-caption"] && attribs["data-caption"].length > 2000) delete attribs["data-caption"];
+        if (tagName === "span" && attribs["class"] !== "instance-node") delete attribs["class"];
+        if (tagName === "span" && "data-instance-type" in attribs) {
+          if (!/^[1-6]$/.test(attribs["data-instance-type"])) delete attribs["data-instance-type"];
+          if (typeof attribs["data-instance-content"] !== "string" || attribs["data-instance-content"].length > 2000 || /[\u0000-\u001f]/.test(attribs["data-instance-content"])) delete attribs["data-instance-content"];
+          if (attribs["data-instance-answer-type"] && !["input", "single", "multiple"].includes(attribs["data-instance-answer-type"])) delete attribs["data-instance-answer-type"];
+          if (attribs["data-instance-answer-result"] && attribs["data-instance-answer-result"].length > 10000) delete attribs["data-instance-answer-result"];
+        } else {
+          delete attribs["data-instance-type"];
+          delete attribs["data-instance-content"];
+          delete attribs["data-instance-answer-type"];
+          delete attribs["data-instance-answer-result"];
+        }
         const nodeId = attribs["data-node-id"];
         if (!nodes.has(nodeId)) delete attribs["data-node-id"];
         if (tagName === "a") {
@@ -95,7 +116,7 @@ function text(value: unknown, max: number, required = true): string {
   return value.trim();
 }
 
-export function validateLessonContents(value: unknown, courseId: string): LessonContent[] {
+export function validateLessonContents(value: unknown, courseId: string, options: { allowExternalMedia?: boolean } = {}): LessonContent[] {
   if (!isContentId(courseId) || !Array.isArray(value) || value.length > LIMITS.contents) throw new LessonContentError();
   try {
     if (Buffer.byteLength(JSON.stringify(value), "utf8") > LIMITS.lessonBytes) throw new LessonContentError("Lesson content is too large.");
@@ -108,7 +129,7 @@ export function validateLessonContents(value: unknown, courseId: string): Lesson
     return id;
   };
   const url = (value: unknown) => {
-    if (!courseMediaAssetId(value, courseId)) throw new LessonContentError("Media must belong to this course.");
+    if (!courseMediaAssetId(value, courseId) && !(options.allowExternalMedia && safeExternalMediaUrl(value))) throw new LessonContentError("Media must belong to this course.");
     return value as string;
   };
   const html = (value: unknown, nodes: string[]) => sanitiseRichHtml(text(value, LIMITS.htmlCharacters, false), courseId, nodes);
@@ -158,7 +179,7 @@ export function validateLessonContents(value: unknown, courseId: string): Lesson
 /** Read defence: malformed stored content is withheld, never returned unsanitised. */
 export function sanitiseLessonContents(value: unknown, courseId: string): LessonContent[] {
   try {
-    return validateLessonContents(value, courseId).filter(content => content.active !== false).map(content => {
+    return validateLessonContents(value, courseId, { allowExternalMedia: true }).filter(content => content.active !== false).map(content => {
       const nodes = content.nodes.filter(node => node.active !== false);
       const ids = nodes.map(node => node.id);
       return { ...content, ...(content.html !== undefined ? { html: sanitiseRichHtml(content.html, courseId, ids) } : {}), nodes: nodes.map(node => ({ ...node, ...(node.html !== undefined ? { html: sanitiseRichHtml(node.html, courseId, ids) } : {}) })) };
