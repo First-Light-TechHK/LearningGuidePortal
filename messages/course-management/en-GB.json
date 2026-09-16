@@ -72,7 +72,9 @@
   "student": "Student",
   "teacher": "Teacher",
   "operator": "Operator",
-  "publishedRequired": "Unpublish the course before editing.",
+  "publishedRequired": "Unpublish this course so you can edit it?",
+  "tabBasic": "Basic info",
+  "tabContent": "Course content",
   "catalogueEmpty": "No entries",
   "errors": {
     "invalid": "Check the fields and content, then try again.",

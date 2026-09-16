@@ -72,7 +72,9 @@
   "student": "学生",
   "teacher": "教师",
   "operator": "运营管理员",
-  "publishedRequired": "请先下架课程，再编辑内容。",
+  "publishedRequired": "要编辑内容，需要先将课程下架。是否继续？",
+  "tabBasic": "基本信息",
+  "tabContent": "课程内容",
   "catalogueEmpty": "暂无目录项",
   "errors": {
     "invalid": "请检查字段和内容后重试。",

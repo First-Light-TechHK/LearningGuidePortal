@@ -38,12 +38,14 @@
 .published { background: #dcfce7; color: #008236; }
 .archived { background: #fef3c7; color: #b45309; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.actions button { background: none; border: 0; padding: 6px; border-radius: 8px; color: #364153; cursor: pointer; }
-.actions button:hover { background: #f3f4f6; }
+.textBtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; color: #364153; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.textBtn:hover, .actions .textBtn:hover { background: #f3f4f6; }
+.actions .textBtn { border: 1px solid #e5e7eb; padding: 0 10px; background: #fff; }
 .actions .secondaryBtn { padding: 0 12px; }
 .rowActions { display: flex; flex-wrap: wrap; gap: 10px; }
 .pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 16px; }
 .pagination label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.pagination .actions button { width: 36px; height: 36px; border: 1px solid #e5e7eb; background: #fff; border-radius: 10px; }
 .empty { margin: 0; color: #6a7282; }
 .preview { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); display: grid; gap: 12px; }
 .previewHeader { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
