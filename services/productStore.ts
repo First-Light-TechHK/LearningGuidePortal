@@ -7,7 +7,7 @@ import { constants as fsConstants } from "fs";
 import { open as openFile, unlink } from "fs/promises";
 import path from "path";
 import { promisify } from "util";
-import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
+import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, systemRoot, writeBinary } from "./fileStore";
 import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
 import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
@@ -25,9 +25,9 @@ import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backo
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 
 const scrypt = promisify(scryptCallback);
-const PRODUCT_DIR = path.join(SYSTEM_ROOT, "learning_guide");
-const PRODUCT_FILE = path.join(PRODUCT_DIR, "product.json");
-const PRODUCT_LOCK = `${PRODUCT_FILE}.lock`;
+function productDir() { return path.join(systemRoot(), "learning_guide"); }
+function productFile() { return path.join(productDir(), "product.json"); }
+function productLock() { return `${productFile()}.lock`; }
 const QUOTE_MINUTES = 15;
 const TRIAL_DAYS = 3;
 
@@ -404,14 +404,14 @@ function entitlementMatchesSubscription(entitlement: ProductEntitlement, subscri
 }
 
 async function saveData(data: ProductData) {
-  await ensureDir(PRODUCT_DIR);
-  await atomicWriteJson(PRODUCT_FILE, data);
+  await ensureDir(productDir());
+  await atomicWriteJson(productFile(), data);
 }
 
 let editQueue = Promise.resolve();
 
 export async function ensureProductData() {
-  const current = await readJson<ProductData | null>(PRODUCT_FILE, null);
+  const current = await readJson<ProductData | null>(productFile(), null);
   if (current?.version === 1) {
     if (!current.stripeEvents) current.stripeEvents = [];
     if (!current.verificationTokens) current.verificationTokens = [];
@@ -451,16 +451,16 @@ export async function ensureProductData() {
 
 async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {
   // D1 ARCH-01: serialize writers across processes; re-read inside the lock.
-  await ensureDir(PRODUCT_DIR);
+  await ensureDir(productDir());
   const started = Date.now();
   while (true) {
     try {
-      const handle = await openFile(PRODUCT_LOCK, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY);
+      const handle = await openFile(productLock(), fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY);
       try {
         return await fn();
       } finally {
         await handle.close();
-        await unlink(PRODUCT_LOCK).catch(() => undefined);
+        await unlink(productLock()).catch(() => undefined);
       }
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? (error as { code?: string }).code : undefined;
@@ -797,8 +797,8 @@ export async function saveUserAvatar(userId: string, buffer: Buffer, contentType
   const avatarPath = `avatars/${userId}.${extension}`;
   const user = await getUserById(userId);
   if (!user) throw new Error("User not found.");
-  if (user.avatarPath && user.avatarPath !== avatarPath) await removeDir(path.join(PRODUCT_DIR, user.avatarPath));
-  await writeBinary(path.join(PRODUCT_DIR, avatarPath), buffer);
+  if (user.avatarPath && user.avatarPath !== avatarPath) await removeDir(path.join(productDir(), user.avatarPath));
+  await writeBinary(path.join(productDir(), avatarPath), buffer);
   return editData((data) => {
     const current = data.users.find((item) => item.id === userId);
     if (!current) throw new Error("User not found.");
@@ -811,7 +811,7 @@ export async function saveUserAvatar(userId: string, buffer: Buffer, contentType
 export async function removeUserAvatar(userId: string) {
   const user = await getUserById(userId);
   if (!user) throw new Error("User not found.");
-  if (user.avatarPath) await removeDir(path.join(PRODUCT_DIR, user.avatarPath));
+  if (user.avatarPath) await removeDir(path.join(productDir(), user.avatarPath));
   return editData((data) => {
     const current = data.users.find((item) => item.id === userId);
     if (!current) throw new Error("User not found.");
@@ -824,7 +824,7 @@ export async function removeUserAvatar(userId: string) {
 export async function getUserAvatar(userId: string) {
   const user = await getUserById(userId);
   if (!user?.avatarPath || !user.avatarContentType) return null;
-  try { return { buffer: await readBinary(path.join(PRODUCT_DIR, user.avatarPath)), contentType: user.avatarContentType }; } catch { return null; }
+  try { return { buffer: await readBinary(path.join(productDir(), user.avatarPath)), contentType: user.avatarContentType }; } catch { return null; }
 }
 
 export async function authenticateUser(emailValue: string, password: string) {

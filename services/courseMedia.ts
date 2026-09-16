@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { COURSE_MEDIA_MAX_BYTES, type CourseMediaAsset } from "@/contracts/lesson-content";
-import { SYSTEM_ROOT } from "@/services/fileStore";
+import { systemRoot } from "@/services/fileStore";
 import { vfsReadBuffer, vfsWriteBuffer } from "@/services/persistence/vfs";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
@@ -160,7 +160,7 @@ export function validateCourseMediaFile(input: { name: string; type: string; byt
 
 function assetPath(courseId: string, assetId: string): string {
   if (!courseMediaAssetId(`/api/course-media/${courseId}/${assetId}`, courseId)) throw new CourseMediaError("notFound", 404, "Media not found.");
-  return path.join(SYSTEM_ROOT, "course_media", courseId, `${assetId}.bin`);
+  return path.join(systemRoot(), "course_media", courseId, `${assetId}.bin`);
 }
 
 function checkStorage(): void {
@@ -187,7 +187,7 @@ export async function uploadCourseMedia(user: ProductUser | null, courseId: stri
   // One private object keeps metadata and bytes together in local and S3 storage.
   const header = Buffer.from(JSON.stringify({ ...asset, uploadedBy: user!.id }));
   const length = Buffer.alloc(4); length.writeUInt32BE(header.length);
-  await vfsWriteBuffer(SYSTEM_ROOT, assetPath(courseId, id), Buffer.concat([length, header, file.bytes]));
+  await vfsWriteBuffer(systemRoot(), assetPath(courseId, id), Buffer.concat([length, header, file.bytes]));
   return asset;
 }
 
@@ -195,7 +195,7 @@ async function readStoredAsset(courseId: string, assetId: string): Promise<{ ass
   const file = assetPath(courseId, assetId);
   checkStorage();
   let stored: Buffer;
-  try { stored = await vfsReadBuffer(SYSTEM_ROOT, file); }
+  try { stored = await vfsReadBuffer(systemRoot(), file); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as Error).name === "NoSuchKey") throw new CourseMediaError("notFound", 404, "Media not found.");
     throw error;

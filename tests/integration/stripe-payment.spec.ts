@@ -1,9 +1,16 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import type Stripe from "stripe";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { subscriptionPrices } from "../../contracts/payment";
+import * as productStore from "../../services/productStore";
+import * as paymentService from "../../services/paymentService";
+import * as stripePriceService from "../../services/stripePriceService";
+import { getStripe } from "../../services/stripeClient";
+import { presentSubscriptionOrders } from "../../services/subscriptionPresentationService";
+import * as paymentWebhook from "../../app/api/payment/webhook/route";
 
 test.describe.configure({ mode: "serial" });
 let store: typeof import("../../services/productStore");
@@ -30,11 +37,11 @@ test.beforeAll(async () => {
     catalog.set(mapping.id, { id: "price_" + mapping.id, active: true, lookup_key: mapping.id, type: "recurring", currency: "usd", unit_amount: mapping.scope === "everything" ? mapping.termMonths === 6 ? 9900 : 19800 : mapping.termMonths === 6 ? 3900 : 7800,
       billing_scheme: "per_unit", transform_quantity: null, recurring: { interval: mapping.termMonths === 6 ? "month" : "year", interval_count: mapping.termMonths === 6 ? 6 : 1, usage_type: "licensed" } } as Stripe.Price);
   }
-  store = await import("../../services/productStore");
-  payment = await import("../../services/paymentService");
-  prices = await import("../../services/stripePriceService");
-  webhook = await import("../../app/api/payment/webhook/route");
-  stripe = (await import("../../services/stripeClient")).getStripe();
+  store = productStore;
+  payment = paymentService;
+  prices = stripePriceService;
+  webhook = paymentWebhook;
+  stripe = getStripe();
   stripe.prices.list = (async (input: { lookup_keys: string[] }) => ({ data: input.lookup_keys.map(key => catalog.get(key)).filter(Boolean) })) as typeof stripe.prices.list;
   stripe.prices.retrieve = (async (id: string) => [...catalog.values()].find(item => item.id === id)) as typeof stripe.prices.retrieve;
   stripe.checkout.sessions.create = (async (input: Stripe.Checkout.SessionCreateParams, options?: Stripe.RequestOptions) => {
@@ -105,7 +112,6 @@ test("subscription records use purchased product imagery and term, including leg
   price.product = { id: "prod_chinese", name: "Chinese Humanities", images: ["https://images.example.test/chinese.jpg"] } as Stripe.Product;
   const result = await checkout("chinese-humanities-pc-6");
   expect(result.order.price).toMatchObject({ productName: "Chinese Humanities", productImage: "https://images.example.test/chinese.jpg", termMonths: 6 });
-  const { presentSubscriptionOrders } = await import("../../services/subscriptionPresentationService");
   const overview = await store.getLearningOverview(result.buyer.id);
   const orders = await presentSubscriptionOrders(overview.orders);
   expect(orders[0].presentation).toEqual({ name: "Chinese Humanities", image: "https://images.example.test/chinese.jpg", termMonths: 6 });
@@ -165,10 +171,10 @@ test("verified payment fulfils once; wrong amount and price retry without consum
   const result = await checkout();
   const { session } = paidSession(result.order);
   session.amount_total = 1;
-  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(500);
+  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(400);
   session.amount_total = result.order.amountMinor;
   session.line_items!.data[0].price!.id = "price_wrong";
-  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(500);
+  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(400);
   session.line_items!.data[0].price!.id = result.order.price!.stripePriceId;
   expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(200);
   expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(200);

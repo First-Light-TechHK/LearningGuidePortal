@@ -1,8 +1,11 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import { mkdtemp, readFile, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import nodemailer from "nodemailer";
+import { POST as requestEmailBinding } from "../../app/api/auth/email-binding/request/route";
+import { POST as confirmEmailBinding } from "../../app/api/auth/email-binding/confirm/route";
 
 test("WeChat binding requires verified email, keeps identity, blocks conflicts and replays safely", async () => {
   const cwd = process.cwd(), env = { ...process.env }, transport = nodemailer.createTransport;
@@ -14,8 +17,8 @@ test("WeChat binding requires verified email, keeps identity, blocks conflicts a
   try {
     const store = await import("../../services/productStore");
     const auth = await import("../../services/productAuth");
-    const send = (await import("../../app/api/auth/email-binding/request/route")).POST;
-    const confirm = (await import("../../app/api/auth/email-binding/confirm/route")).POST;
+    const send = requestEmailBinding;
+    const confirm = confirmEmailBinding;
     const user = await store.getOrCreateSocialUser({ provider: "wechat", providerSubject: "binding:first" });
     const session = await store.createSession(user.id);
     const cookie = `learning_guide_session=${session.token}`;

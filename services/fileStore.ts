@@ -14,8 +14,13 @@ import {
   vfsWriteText
 } from "./persistence/vfs";
 
-export const SYSTEM_ROOT = path.join(process.cwd(), "data", "knowledge_system");
-export const COURSES_ROOT = path.join(SYSTEM_ROOT, "courses");
+export function systemRoot() {
+  return path.join(process.cwd(), "data", "knowledge_system");
+}
+
+export function coursesRoot() {
+  return path.join(systemRoot(), "courses");
+}
 
 export function slugify(value: string) {
   const slug = value
@@ -42,47 +47,47 @@ export function ensureInside(root: string, target: string) {
 }
 
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
-  return vfsReadJson(SYSTEM_ROOT, file, fallback);
+  return vfsReadJson(systemRoot(), file, fallback);
 }
 
 export async function atomicWriteJson(file: string, data: unknown) {
-  await vfsWriteJson(SYSTEM_ROOT, file, data);
+  await vfsWriteJson(systemRoot(), file, data);
 }
 
 export async function removeDir(target: string) {
-  await vfsRemove(SYSTEM_ROOT, target);
+  await vfsRemove(systemRoot(), target);
 }
 
 export async function readText(file: string) {
-  return vfsReadText(SYSTEM_ROOT, file);
+  return vfsReadText(systemRoot(), file);
 }
 
 export async function writeText(file: string, text: string) {
-  await vfsWriteText(SYSTEM_ROOT, file, text);
+  await vfsWriteText(systemRoot(), file, text);
 }
 
 export async function readBinary(file: string) {
-  return vfsReadBuffer(SYSTEM_ROOT, file);
+  return vfsReadBuffer(systemRoot(), file);
 }
 
 export async function writeBinary(file: string, buffer: Buffer) {
-  await vfsWriteBuffer(SYSTEM_ROOT, file, buffer);
+  await vfsWriteBuffer(systemRoot(), file, buffer);
 }
 
 export async function pathExists(file: string) {
-  return vfsExists(SYSTEM_ROOT, file);
+  return vfsExists(systemRoot(), file);
 }
 
 export async function pathStat(file: string) {
-  return vfsStat(SYSTEM_ROOT, file);
+  return vfsStat(systemRoot(), file);
 }
 
 export async function listDir(dir: string) {
-  return vfsReaddir(SYSTEM_ROOT, dir);
+  return vfsReaddir(systemRoot(), dir);
 }
 
 export async function ensureDir(dir: string) {
-  await vfsMkdir(SYSTEM_ROOT, dir);
+  await vfsMkdir(systemRoot(), dir);
 }
 
 export function now() {

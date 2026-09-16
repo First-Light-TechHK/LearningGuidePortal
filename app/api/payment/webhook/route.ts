@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   catch (error) {
     const invalid = error instanceof Error && "type" in error && error.type === "StripeSignatureVerificationError";
     const message = error instanceof Error ? error.message : "";
-    const rejected = /Live events are not allowed|order or plan not found|Checkout identity mismatch|Checkout amount|Checkout currency|Checkout does not match|Order is not available/i.test(message);
+    const rejected = /Live events are not allowed|order or plan not found|mismatch|Checkout amount|Checkout currency|Checkout does not match|Order is not available/i.test(message);
     return NextResponse.json({ ok: false, code: invalid ? "invalid_signature" : rejected ? "invalid_request" : "payment_sync_failed" }, { status: invalid || rejected ? 400 : 500 });
   }
 }

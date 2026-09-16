@@ -1,8 +1,11 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import { mkdtemp, rm, readFile, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import nodemailer from "nodemailer";
+import { POST as requestPasswordReset } from "../../app/api/auth/password-reset/request/route";
+import { POST as confirmPasswordReset } from "../../app/api/auth/password-reset/confirm/route";
 
 test("DEV reset sends mail, preserves destination, throttles and consumes tokens once", async () => {
   const cwd = process.cwd();
@@ -15,8 +18,8 @@ test("DEV reset sends mail, preserves destination, throttles and consumes tokens
   Object.assign(process.env, { APP_ENV: "DEV", STORAGE_BACKEND: "local", SMTP_HOST: "smtp.example.test", SMTP_USER: "test", SMTP_PASS: "fake", NEXT_PUBLIC_APP_URL: "http://localhost:3027" });
   try {
     const store = await import("../../services/productStore");
-    const { POST } = await import("../../app/api/auth/password-reset/request/route");
-    const confirm = (await import("../../app/api/auth/password-reset/confirm/route")).POST;
+    const POST = requestPasswordReset;
+    const confirm = confirmPasswordReset;
     const user = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "reset-test", email: "reset@example.test", locale: "zh-CN" });
     const session = await store.createSession(user.id);
     const request = (email: string, returnTo = "/zh-CN/pricing?term=12#plans") => POST(new Request("http://localhost:3027/api/auth/password-reset/request", { method: "POST", headers: { origin: "http://localhost:3027" }, body: JSON.stringify({ email, locale: "zh-CN", returnTo }) }));

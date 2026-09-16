@@ -21,7 +21,7 @@ before(async () => {
   process.chdir(directory); process.env.STORAGE_BACKEND = "local";
   media = await import("../../services/portalMedia");
   files = await import("../../services/fileStore");
-  root = path.join(files.SYSTEM_ROOT, "learning_guide", "portal_media");
+  root = path.join(files.systemRoot(), "learning_guide", "portal_media");
   images = {};
   for (const format of ["png", "jpeg", "webp"] as const) images[format] = await sharp({ create: { width: 3, height: 2, channels: 3, background: { r: 23, g: 102, b: 185 } } }).toFormat(format).toBuffer();
 });

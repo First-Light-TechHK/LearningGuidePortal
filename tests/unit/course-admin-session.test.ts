@@ -34,7 +34,7 @@ before(async () => {
   const data = await store.ensureProductData();
   const disabled = data.users.find(user => user.id === accounts.disabled.id)!;
   disabled.role = "teacher"; disabled.status = "disabled";
-  await files.atomicWriteJson(path.join(files.SYSTEM_ROOT, "learning_guide", "product.json"), data);
+  await files.atomicWriteJson(path.join(files.systemRoot(), "learning_guide", "product.json"), data);
 });
 
 after(async () => {

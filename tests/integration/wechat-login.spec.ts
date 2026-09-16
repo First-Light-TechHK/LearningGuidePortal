@@ -1,8 +1,11 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import { mkdtemp, readFile, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { NextRequest } from "next/server";
+import * as wechatCallback from "../../app/api/auth/wechat/callback/route";
+import * as wechatEntry from "../../app/api/auth/wechat/route";
 
 test.describe.configure({ mode: "serial" });
 const originalCwd = process.cwd();
@@ -25,7 +28,7 @@ test.beforeAll(async () => {
   process.env.NEXT_PUBLIC_APP_URL = "https://login.example.test";
   store = await import("../../services/productStore");
   oauth = await import("../../services/oauthService");
-  callback = await import("../../app/api/auth/wechat/callback/route");
+  callback = wechatCallback;
 });
 test.afterEach(() => { globalThis.fetch = originalFetch; });
 test.afterAll(async () => {
@@ -164,7 +167,7 @@ test("disabled account is rejected and hostile returnTo stays on the configured 
 });
 
 test("login entry uses real QR authorization and an HTTPS transaction cookie", async () => {
-  const route = await import("../../app/api/auth/wechat/route");
+  const route = wechatEntry;
   const response = await route.GET(new Request("https://login.example.test/api/auth/wechat?locale=zh-CN"));
   const target = new URL(response.headers.get("location")!);
   expect(target.origin + target.pathname).toBe("https://open.weixin.qq.com/connect/qrconnect");

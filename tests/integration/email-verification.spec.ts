@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";

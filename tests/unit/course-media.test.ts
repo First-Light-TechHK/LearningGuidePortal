@@ -32,7 +32,7 @@ const contents = (asset: CourseMediaAsset): LessonContent[] => [{ id: "content-1
 async function editFixture(edit: (data: Awaited<ReturnType<typeof store.ensureProductData>>) => void) {
   const data = await store.ensureProductData();
   edit(data);
-  await files.atomicWriteJson(path.join(files.SYSTEM_ROOT, "learning_guide", "product.json"), data);
+  await files.atomicWriteJson(path.join(files.systemRoot(), "learning_guide", "product.json"), data);
 }
 
 before(async () => {

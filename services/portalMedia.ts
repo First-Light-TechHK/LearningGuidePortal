@@ -3,15 +3,15 @@ import path from "path";
 import sharp from "sharp";
 import { bundledPortalImages } from "@/lib/portalContent";
 import type { PortalLibraryItem } from "@/lib/portalLibrary";
-import { ensureDir, readBinary, readText, listDir, SYSTEM_ROOT, writeBinary, atomicWriteJson } from "./fileStore";
+import { ensureDir, readBinary, readText, listDir, systemRoot, writeBinary, atomicWriteJson } from "./fileStore";
 
 export type { PortalLibraryItem };
 
 export const PORTAL_MEDIA_MAX_BYTES = 5 * 1024 * 1024;
 export const PORTAL_MEDIA_MAX_PIXELS = 16_000_000;
 const MEDIA_ID = /^media_[a-f0-9]{16}$/;
-const ROOT = path.join(SYSTEM_ROOT, "learning_guide", "portal_media");
-const INDEX = path.join(ROOT, "index.json");
+function mediaRoot() { return path.join(systemRoot(), "learning_guide", "portal_media"); }
+function mediaIndex() { return path.join(mediaRoot(), "index.json"); }
 
 export type PortalMediaType = "image/jpeg" | "image/png" | "image/webp";
 export type PortalMediaAsset = {
@@ -46,7 +46,7 @@ function sanitizeFileName(fileName: string, contentType: PortalMediaType) {
 }
 
 function filePath(id: string) {
-  return path.join(ROOT, `${id}.bin`);
+  return path.join(mediaRoot(), `${id}.bin`);
 }
 
 async function validateImage(buffer: Buffer): Promise<PortalMediaType> {
@@ -80,7 +80,7 @@ async function readMetadata(file: string): Promise<unknown | null> {
 }
 
 async function legacyMedia(): Promise<PortalMediaAsset[]> {
-  const value = await readMetadata(INDEX);
+  const value = await readMetadata(mediaIndex());
   if (value === null) return [];
   if (!Array.isArray(value)) throw new Error("Invalid portal media index.");
   return value.map(mediaAsset);
@@ -97,20 +97,20 @@ export async function savePortalMedia(fileName: string, buffer: Buffer): Promise
     createdAt: new Date().toISOString(),
     url: `/api/portal-media/${id}`
   };
-  await ensureDir(ROOT);
+  await ensureDir(mediaRoot());
   await writeBinary(filePath(id), buffer);
   // Publish one immutable metadata record only after its binary is fully stored.
   // No shared read/modify/write index, including across App Runner instances.
-  await atomicWriteJson(path.join(ROOT, `${id}.json`), asset);
+  await atomicWriteJson(path.join(mediaRoot(), `${id}.json`), asset);
   return asset;
 }
 
 export async function listPortalMedia() {
-  await ensureDir(ROOT);
+  await ensureDir(mediaRoot());
   const items = new Map((await legacyMedia()).map(asset => [asset.id, asset]));
-  for (const file of await listDir(ROOT)) {
+  for (const file of await listDir(mediaRoot())) {
     if (!/^media_[a-f0-9]{16}\.json$/.test(file)) continue;
-    const asset = mediaAsset(await readMetadata(path.join(ROOT, file)));
+    const asset = mediaAsset(await readMetadata(path.join(mediaRoot(), file)));
     if (file !== `${asset.id}.json`) throw new Error("Invalid portal media metadata.");
     items.set(asset.id, asset);
   }
@@ -130,7 +130,7 @@ export async function listPortalLibrary(): Promise<PortalLibraryItem[]> {
 
 export async function getPortalMedia(id: string) {
   if (!isPortalMediaId(id)) return null;
-  const metadata = await readMetadata(path.join(ROOT, `${id}.json`));
+  const metadata = await readMetadata(path.join(mediaRoot(), `${id}.json`));
   const asset = metadata === null ? (await legacyMedia()).find(item => item.id === id) : mediaAsset(metadata);
   if (!asset) return null;
   if (asset.id !== id) throw new Error("Invalid portal media metadata.");
