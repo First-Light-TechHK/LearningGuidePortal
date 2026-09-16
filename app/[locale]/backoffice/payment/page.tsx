@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { currentOperatorUser } from "@/services/productAuth";
+import { requireBackofficeOperator } from "@/services/productAuth";
 import { getPaymentSettings } from "@/services/productStore";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
@@ -7,7 +6,7 @@ import { PaymentSettingsForm } from "@/components/portal/PaymentSettingsForm";
 
 export default async function BackofficePaymentPage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = localeFrom((await params).locale);
-  if (!await currentOperatorUser()) redirect(`/${locale}/backoffice/sign-in`);
+  await requireBackofficeOperator(locale);
   const messages = getMessages(locale);
   return (
     <section className="backoffice-panel">

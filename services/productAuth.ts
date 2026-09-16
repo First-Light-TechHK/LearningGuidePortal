@@ -1,5 +1,7 @@
 import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
+import type { Locale } from "@/lib/i18n/config";
 import { adminHosts, isAdminHost, isKnowledgeAdminPath, requestOriginMatches } from "./adminHost";
 import { getUserBySessionToken, isOperator, type ProductUser } from "./productStore";
 import { canAuthorCourses } from "./backofficeAccess";
@@ -32,6 +34,13 @@ export async function currentBackofficeAuthor(): Promise<ProductUser | null> {
   const cookieStore = await cookies();
   const user = await getUserBySessionToken(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
   return user && canAuthorCourses(user) ? user : null;
+}
+
+export async function requireBackofficeOperator(locale: Locale): Promise<ProductUser> {
+  const operator = await currentOperatorUser();
+  if (operator) return operator;
+  if (await currentBackofficeAuthor()) redirect(`/${locale}/backoffice/courses`);
+  redirect(`/${locale}/backoffice/sign-in`);
 }
 
 function requestCookie(request: Request, name: string) {

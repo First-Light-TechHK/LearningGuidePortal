@@ -24,3 +24,8 @@ export function isBackofficeNavActive(pathname: string, href: string, key: Backo
   if (key === "ai") return pathname.startsWith("/knowledge");
   return pathname === href || pathname.startsWith(`${href}/`);
 }
+
+export function backofficeLocaleHref(pathname: string, other: Locale) {
+  if (/^\/(en-GB|zh-CN)(?:\/|$)/.test(pathname)) return pathname.replace(/^\/(en-GB|zh-CN)/, `/${other}`);
+  return `/${other}/backoffice/courses`;
+}

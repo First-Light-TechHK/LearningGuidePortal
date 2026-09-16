@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, CreditCard, FileText, Globe, Menu, Receipt, Sparkles } from "lucide-react";
-import { backofficeNavItems, isBackofficeNavActive, type BackofficeNavKey } from "@/lib/backofficeNav";
+import { backofficeLocaleHref, backofficeNavItems, isBackofficeNavActive, type BackofficeNavKey } from "@/lib/backofficeNav";
 import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages";
 import { getMessages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/config";
@@ -43,7 +43,7 @@ export function BackofficeShell({
   };
   const items = useMemo(() => backofficeNavItems(locale, operator), [locale, operator]);
   const other = locale === "zh-CN" ? "en-GB" : "zh-CN";
-  const localeHref = pathname.replace(/^\/(en-GB|zh-CN)/, `/${other}`);
+  const localeHref = backofficeLocaleHref(pathname, other);
   const initials = (user.nickname || "LG").slice(0, 2).toUpperCase();
 
   return (
@@ -63,7 +63,7 @@ export function BackofficeShell({
             <Globe size={16} />
             {locale === "zh-CN" ? "中" : "EN"}
           </Link>
-          <div className={styles.user}>
+          <div className={styles.user} title={user.email || undefined}>
             <span className={styles.avatar}>{initials}</span>
             <span className={styles.userDetail}>
               <span className={styles.userName}>{user.nickname}</span>
