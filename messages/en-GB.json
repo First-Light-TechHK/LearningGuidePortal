@@ -425,6 +425,7 @@
   },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",
+    "shortTitle": "Learning Guide",
     "courses": "Course Management",
     "createCourse": "Create course",
     "courseTitle": "Course title",

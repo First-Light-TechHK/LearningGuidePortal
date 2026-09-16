@@ -80,47 +80,67 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
     } catch (e) { setError(e instanceof Error ? e.message : messages.errors.failed); } finally { setBusy(false); }
   }
   const entryName = (id?: string | null) => catalogue.find(entry => entry.id === id)?.name;
-  return <section className={styles.manager + " backoffice-panel"}>
-    <header className="course-manager-heading"><div><p className="portal-eyebrow">{copy.title}</p><h1>{copy.courses}</h1></div>{!editing && !preview && <button className="portal-button portal-button-primary" type="button" disabled={busy} onClick={() => { setCreating(!creating); setShowCatalogue(false); }}><Plus size={18}/>{copy.create}</button>}</header>
+  const formatTime = (value: string) => new Date(value).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
+  return <section className={styles.manager}>
+    <header className={styles.pageHeader}>
+      <div>
+        <h1>{copy.courses}</h1>
+        <p>{messages.pageLead}</p>
+      </div>
+      {!editing && !preview && <button className={styles.primaryBtn} type="button" disabled={busy} onClick={() => { setCreating(!creating); setShowCatalogue(false); }}><Plus size={18}/>{copy.create}</button>}
+    </header>
     {error && <p className="portal-form-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {editing ? <CourseOutlineEditor key={editing.id} course={editing} locale={locale} catalogue={catalogue} copy={getMessages(locale).authoring} onSaved={load} onClose={() => setEditing(null)}/> : preview ? <section className="course-draft-preview">
-      <header className="authoring-heading"><h2>{preview.title}</h2><button type="button" aria-label={messages.close} title={messages.close} onClick={() => setPreview(null)}><X size={18}/></button></header>
-      {preview.cover && <img className="preview-cover" src={preview.cover} alt="" width={480} height={270}/>}<p>{preview.subtitle}</p><p>{preview.description}</p>
+    {editing ? <CourseOutlineEditor key={editing.id} course={editing} locale={locale} catalogue={catalogue} copy={getMessages(locale).authoring} onSaved={load} onClose={() => setEditing(null)}/> : preview ? <section className={styles.preview}>
+      <header className={styles.previewHeader}><h2>{preview.title}</h2><button type="button" aria-label={messages.close} title={messages.close} onClick={() => setPreview(null)}><X size={18}/></button></header>
+      {preview.cover && <img className={styles.previewCover} src={preview.cover} alt="" width={480} height={270}/>}<p>{preview.subtitle}</p><p>{preview.description}</p>
       {preview.sections.map(section => <section key={section.id}><h3>{section.title}</h3>{section.lessons.map(lesson => <article key={lesson.id}><h4>{lesson.title}</h4>{lesson.contents?.length ? <LessonContentPlayer contents={lesson.contents} locale={locale}/> : <p style={{ whiteSpace: "pre-wrap" }}>{lesson.body}</p>}</article>)}</section>)}
     </section> : <>
-      <dl id="course-overview" className="course-counts">{(["total", "draft", "published", "archived", "lessons"] as const).map(key => <div key={key}><dt>{messages[key]}</dt><dd>{result.counts[key]}</dd></div>)}</dl>
-      {operator && <nav className="course-tabs"><button type="button" aria-pressed={!showCatalogue} onClick={() => setShowCatalogue(false)}>{copy.courses}</button><button type="button" aria-pressed={showCatalogue} onClick={() => { setShowCatalogue(true); setCreating(false); }}>{messages.catalogue}</button></nav>}
+      <dl className={styles.stats}>{(["total", "draft", "published", "archived", "lessons"] as const).map(key => <div key={key}><dt>{messages[key]}</dt><dd>{result.counts[key]}</dd></div>)}</dl>
+      {operator && <nav className={styles.tabs}><button type="button" aria-pressed={!showCatalogue} onClick={() => setShowCatalogue(false)}>{copy.courses}</button><button type="button" aria-pressed={showCatalogue} onClick={() => { setShowCatalogue(true); setCreating(false); }}>{messages.catalogue}</button></nav>}
       {showCatalogue && operator ? <CourseCatalogueManager entries={catalogue} locale={locale} onSaved={loadCatalogue}/> : <>
-        {creating && <form className="backoffice-form" onSubmit={create}>
+        {creating && <form className={styles.cardForm} onSubmit={create}>
           <label>{copy.courseTitle}<input value={title} maxLength={255} onChange={e => setTitle(e.target.value)} required disabled={busy}/></label>
           <label>{copy.description}<textarea value={description} maxLength={5000} onChange={e => setDescription(e.target.value)} rows={3} disabled={busy}/></label>
           <label>{copy.category}<select value={category} onChange={e => setCategory(e.target.value as typeof category)} disabled={busy}>{(["Chinese Humanities", "European Humanities", "Science"] as const).map((value, index) => <option key={value} value={value}>{getMessages(locale).portal.courseCategories[index + 1]}</option>)}</select></label>
-          <div className="backoffice-row-actions"><button className="portal-button portal-button-primary" disabled={busy}>{copy.create}</button><button type="button" className="portal-button portal-button-secondary" disabled={busy} onClick={() => setCreating(false)}>{messages.cancel}</button></div>
+          <div className={styles.rowActions}><button className={styles.primaryBtn} disabled={busy}>{copy.create}</button><button type="button" className={styles.secondaryBtn} disabled={busy} onClick={() => setCreating(false)}>{messages.cancel}</button></div>
         </form>}
-        <div className="course-filters backoffice-form">
-          <label>{messages.search}<input type="search" value={search} maxLength={200} onChange={e => setSearch(e.target.value)}/></label>
+        <div className={styles.filters}>
+          <label>{messages.search}<input type="search" value={search} maxLength={200} placeholder={messages.searchPlaceholder} onChange={e => setSearch(e.target.value)}/></label>
           <label>{messages.status}<select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="all">{messages.all}</option>{(["draft", "published", "archived"] as const).map(value => <option key={value} value={value}>{messages[value]}</option>)}</select></label>
           <label>{messages.category}<select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubjectId(""); setPage(1); }}><option value="">{messages.all}</option>{catalogue.filter(e => !e.parentId).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
           <label>{messages.subject}<select value={subjectId} disabled={!categoryId} onChange={e => { setSubjectId(e.target.value); setPage(1); }}><option value="">{messages.all}</option>{catalogue.filter(e => e.parentId === categoryId).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
           <label>{messages.level}<select value={level} onChange={e => { setLevel(e.target.value); setPage(1); }}><option value="">{messages.all}</option>{(["beginner", "intermediate", "advanced"] as const).map(value => <option key={value} value={value}>{messages[value]}</option>)}</select></label>
         </div>
         {loading && <p role="status">{messages.loading}</p>}
-        {!loading && !result.courses.length && <p>{messages.empty}</p>}
-        <div className="backoffice-course-list" aria-busy={loading}>{result.courses.map(course => <article className="backoffice-course-row" key={course.id}>
-          <div className="course-list-identity">{(course.cover || course.thumbnailPath) && <img src={course.cover || course.thumbnailPath!} alt="" width={96} height={60}/>}<div><strong>{course.title}</strong>{course.subtitle && <span>{course.subtitle}</span>}<span>{[entryName(course.categoryId), entryName(course.subjectId), course.level ? messages[course.level] : null, messages[course.status], course.sections.reduce((sum, s) => sum + s.lessons.length, 0) + " " + messages.lessons].filter(Boolean).join(" · ")}</span></div></div>
-          <div className="backoffice-row-actions">
-            <span className="authoring-actions">
-              <button type="button" title={course.status === "draft" ? messages.edit : messages.publishedRequired} aria-label={getMessages(locale).authoring.heading} disabled={busy || course.status !== "draft"} onClick={() => setEditing(course)}><Pencil size={18}/></button>
-              <button type="button" title={messages.preview} aria-label={messages.preview + ": " + course.title} onClick={() => setPreview(course)}><Eye size={18}/></button>
-              {operator && <button type="button" title={messages.ownership} aria-label={messages.ownership + ": " + course.title} disabled={busy} onClick={() => { setAssigning(course); setOwnerEmail(""); }}><UserRoundCog size={18}/></button>}
-              {course.status !== "archived" && <button type="button" title={messages.archive} aria-label={messages.archive + ": " + course.title} disabled={busy} onClick={() => void updateStatus(course, "archived")}><Archive size={18}/></button>}
-            </span>
-            <button className="portal-button portal-button-secondary" type="button" disabled={busy} onClick={() => void updateStatus(course, course.status === "published" || course.status === "archived" ? "draft" : "published")}>{course.status === "archived" && <RotateCcw size={16}/>} {course.status === "published" ? copy.unpublish : course.status === "archived" ? messages.restore : copy.publish}</button>
-          </div>
-        </article>)}</div>
-        <footer className="course-pagination"><label>{messages.pageSize}<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}>{[10, 25, 50].map(size => <option key={size}>{size}</option>)}</select></label><span>{messages.page} {result.page} {messages.of} {result.pages} · {result.total}</span><span className="authoring-actions"><button type="button" title={messages.previous} aria-label={messages.previous} disabled={loading || result.page <= 1} onClick={() => setPage(result.page - 1)}><ChevronLeft size={18}/></button><button type="button" title={messages.next} aria-label={messages.next} disabled={loading || result.page >= result.pages} onClick={() => setPage(result.page + 1)}><ChevronRight size={18}/></button></span></footer>
-        {assigning && <form className="backoffice-form" onSubmit={assign}><h2>{messages.ownership}: {assigning.title}</h2><label>{messages.ownerEmail}<input type="email" maxLength={254} required value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} disabled={busy}/></label><div className="backoffice-row-actions"><button className="portal-button portal-button-primary" disabled={busy}>{messages.assignOwner}</button><button type="button" className="portal-button portal-button-secondary" disabled={busy} onClick={() => setAssigning(null)}>{messages.cancel}</button></div></form>}
+        {!loading && !result.courses.length && <p className={styles.empty}>{messages.empty}</p>}
+        {result.courses.length > 0 && <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead><tr><th>{messages.columnCourse}</th><th>{messages.category}</th><th>{messages.status}</th><th>{messages.lessons}</th><th>{messages.updated}</th><th>{messages.columnActions}</th></tr></thead>
+            <tbody>{result.courses.map(course => {
+              const cover = course.cover || course.thumbnailPath;
+              const categoryLabel = entryName(course.categoryId) || course.category || messages.none;
+              return <tr key={course.id}>
+                <td><div className={styles.courseCell}>{cover ? <img src={cover} alt="" width={64} height={40}/> : <span className={styles.coverPlaceholder} />}<div><strong>{course.title}</strong>{course.subtitle ? <span>{course.subtitle}</span> : null}</div></div></td>
+                <td><span className={styles.badge}>{categoryLabel}</span></td>
+                <td><span className={`${styles.status} ${styles[course.status]}`}>{messages[course.status]}</span></td>
+                <td>{course.sections.reduce((sum, section) => sum + section.lessons.length, 0)}</td>
+                <td>{formatTime(course.updatedAt)}</td>
+                <td>
+                  <div className={styles.actions}>
+                    <button type="button" title={course.status === "draft" ? messages.edit : messages.publishedRequired} aria-label={getMessages(locale).authoring.heading} disabled={busy || course.status !== "draft"} onClick={() => setEditing(course)}><Pencil size={16}/></button>
+                    <button type="button" title={messages.preview} aria-label={messages.preview + ": " + course.title} onClick={() => setPreview(course)}><Eye size={16}/></button>
+                    {operator && <button type="button" title={messages.ownership} aria-label={messages.ownership + ": " + course.title} disabled={busy} onClick={() => { setAssigning(course); setOwnerEmail(""); }}><UserRoundCog size={16}/></button>}
+                    {course.status !== "archived" && <button type="button" title={messages.archive} aria-label={messages.archive + ": " + course.title} disabled={busy} onClick={() => void updateStatus(course, "archived")}><Archive size={16}/></button>}
+                    <button className={styles.secondaryBtn} type="button" disabled={busy} onClick={() => void updateStatus(course, course.status === "published" || course.status === "archived" ? "draft" : "published")}>{course.status === "archived" && <RotateCcw size={14}/>} {course.status === "published" ? copy.unpublish : course.status === "archived" ? messages.restore : copy.publish}</button>
+                  </div>
+                </td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>}
+        <footer className={styles.pagination}><label>{messages.pageSize}<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}>{[10, 25, 50].map(size => <option key={size}>{size}</option>)}</select></label><span>{messages.page} {result.page} {messages.of} {result.pages} · {result.total}</span><span className={styles.actions}><button type="button" title={messages.previous} aria-label={messages.previous} disabled={loading || result.page <= 1} onClick={() => setPage(result.page - 1)}><ChevronLeft size={18}/></button><button type="button" title={messages.next} aria-label={messages.next} disabled={loading || result.page >= result.pages} onClick={() => setPage(result.page + 1)}><ChevronRight size={18}/></button></span></footer>
+        {assigning && <form className={styles.cardForm} onSubmit={assign}><h2>{messages.ownership}: {assigning.title}</h2><label>{messages.ownerEmail}<input type="email" maxLength={254} required value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} disabled={busy}/></label><div className={styles.rowActions}><button className={styles.primaryBtn} disabled={busy}>{messages.assignOwner}</button><button type="button" className={styles.secondaryBtn} disabled={busy} onClick={() => setAssigning(null)}>{messages.cancel}</button></div></form>}
       </>}
     </>}
   </section>;
