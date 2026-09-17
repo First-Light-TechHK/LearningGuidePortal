@@ -7,13 +7,30 @@
 ## 现在是什么
 
 - Overlay 状态只有 `active` | `blocked`。没有 `armed` / `draft` / `reviewed_by`。
+- **`inbox/` 是 Overlay 入口，不是 Forge。** Forge 的 `docs_sync` 只是盯着 `inbox/**` `suites/**` `invariants.yaml` `overlay.yaml` `forge.yaml`：改这些文件必须同步本 brief。那不是在 LG 上新增 Forge Ruleset。
 - `overlay.yaml`：`product.repo` 是本仓；`default_ref` 钉在 `ec9e12990fa700b034829fd2fd4af12d955bd40e`；`branches` 含 `main` / `default`；`never_red_statuses: [blocked]`。
-- 六套件 `active`：login / payment / portal / my-learning / order / visitor-trial。`schema: overlay-suite/v2`。
+- 六套件 `active`：login / payment / portal / my-learning / order / visitor-trial。第七套 `course-management` 是 `blocked`（`schema: overlay-suite/v2`）。overlay-check 丢掉 blocked，不当红。
 - `overlay-check.yml`：checkout `AIOps@overlay-v2.0.0` → `_aiops`，`overlay validate` + `cover` + `run`。不要把 `test:io` 加进 Verify。
 - `forge-check.yml`：checkout `AIOps@forge-v1.1.3` → `_aiops`，`forge check` + `forge status --check-state`。
-- `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。
-- `tests/io/*` 是 Overlay `product_command`。**不在** `test:ci` 里。
+- `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。这次不改 `forge.yaml`，不 `forge apply`。
+- `tests/io/*` 是 Overlay `product_command`。**不在** `test:ci` 里。`course-management` 还没有 `tests/io/course-management.test.ts`，所以保持 blocked。
 - `docs/STATE.md` 由 `forge status --write` 生成，不要手改。
+
+## 课程上传：CI / Overlay 现在有没有健全
+
+Verify 的上传故事只有 `test:unit`（`course-media.test.ts` 等）。overlay-check / forge-check / Playwright auth **不跑**上传。`scripts/test-lgteacher-complete.ts` 是发布手测，不在 Verify。
+
+产品已经 fail-closed 的：空文件与 25 MiB 上限、扩展名/MIME/签名、OBJ/GLB 自包含、admin host + 归属 + same-origin、draft/publish 前 `assertCourseMediaReferences`、未挂载/未发布/过期 404、HTML 子串不算引用。
+
+规格已写、产品或 CI 还没锁住的边角（叶子在 `suites/course-management/cases.md`，在 I/O 落地前不要改叶子迁就现状）：
+
+1. **CM-03** 栅格必须像 Portal CMS 一样整图 decode（sharp `metadata` + `raw().toBuffer()`，16 MP）。课程上传现在只认签名，截断 JPEG / 像素炸弹可以过。
+2. **CM-03 / CM-06** 封面 HTTPS 可以跳过字节与 decode；新写 COS / 站外 URL 必须 400。读路径可以保留历史 HTTPS COS。
+3. **CM-07** 已发布 public-lesson 引用应对游客 200；课程页 / public-lesson 页不得先逼登录。persist 去掉可执行 `data-instance-content`，展品 URL 还在。
+4. 视频/音频没有 ffmpeg，只验容器——这是写明的上限，不是暗洞。
+5. 孤儿 `.bin` 无 GC、并发上传竞态、内置构建里的实际上传，都不在 Verify。
+
+不要把这套件改成 `active`，直到 Overlay I/O 在、产品对上叶子。不要把 Overlay I/O 加进 Verify。
 
 ## 规格红（预期，直到产品改）
 
@@ -89,3 +106,5 @@ npx tsc --noEmit -p tsconfig.io.json
 4. 不改密码重置、订阅展示、微信绑邮箱等产品代码。
 5. 不把规格叶子改成迁就 `exists`、`resetUrl`、503、或第二次 complete。
 6. 第一次不设 `deny_paths`（本单必须改 workflow）。
+7. 不把 `course-management` 改成 `active`，不写 `tests/io/course-management.test.ts` 进 Verify。
+8. 不改 `forge.yaml`，不 live-apply Ruleset，不代签 `reviewed_by` / `armed`。

@@ -32,3 +32,22 @@ items:
       - ML-FR-004
       - PAY-09
     span: interaction
+  - id: INV-media-before-commit
+    text: Course media bytes, type, signature and raster decode are checked before VFS write and again before draft or publish commit. The browser cannot raise the cap or skip decode.
+    function_ids:
+      - CM-01
+      - CM-02
+      - CM-03
+      - CM-05
+    span: interaction
+  - id: INV-media-authz
+    text: A learner session, foreign origin, or unattached inactive expired media cannot read private course assets. Entitlement is computed on the server.
+    function_ids:
+      - CM-04
+      - CM-07
+    span: interaction
+  - id: INV-no-external-write
+    text: New lesson and cover writes cannot persist off-origin or COS URLs. Legacy HTTPS COS may render on read only.
+    function_ids:
+      - CM-06
+    span: local

@@ -1,0 +1,11 @@
+schema: overlay-suite/v2
+id: course-management
+title: Course Management upload and commit
+status: blocked
+kind: functional
+subject: product
+source: inbox/course-management.md
+packages:
+  - modules/course-management
+blocked_reason: No Overlay I/O yet; raster decode-before-commit is specified and still product-red. Parked at docs/phase1/lgteacher-integration.md
+product_command: null
