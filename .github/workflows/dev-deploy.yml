@@ -21,7 +21,7 @@ jobs:
   deploy:
     name: Start DEV App Runner deployment
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 65
     if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
     steps:
       - name: Configure AWS credentials
@@ -39,6 +39,7 @@ jobs:
           echo "DEV target: learning-guide-portal (www + admin)"
           deadline=$((SECONDS + 1500))
           sleep_s=20
+          operation_id=""
 
           describe_status() {
             aws apprunner describe-service \
@@ -73,8 +74,13 @@ jobs:
             fi
             if out="$(aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN" 2>&1)"; then
               printf '%s\n' "$out"
-              echo "start-deployment accepted"
-              exit 0
+              operation_id="$(printf '%s\n' "$out" | jq -r '.OperationId // empty')"
+              if [ -z "$operation_id" ]; then
+                echo "start-deployment returned no OperationId"
+                exit 1
+              fi
+              echo "start-deployment accepted: OperationId=$operation_id"
+              break
             fi
             printf '%s\n' "$out"
             if printf '%s\n' "$out" | grep -Eqi 'InvalidRequestException|isn.?t in RUNNING|not in RUNNING'; then
@@ -85,5 +91,48 @@ jobs:
             echo "start-deployment failed with a non-collision error"
             exit 1
           done
-          echo "timeout: waited 25m to accept start-deployment"
+          if [ -z "$operation_id" ]; then
+            echo "timeout: waited 25m to accept start-deployment"
+            exit 1
+          fi
+
+          deployment_deadline=$((SECONDS + 1800))
+          while [ "$SECONDS" -lt "$deployment_deadline" ]; do
+            operation_status="$(aws apprunner list-operations \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --query "OperationSummaryList[?Id=='$operation_id'] | [0].Status" \
+              --output text 2>/dev/null || true)"
+            echo "App Runner OperationId=$operation_id Status=${operation_status:-unknown}"
+            case "$operation_status" in
+              SUCCEEDED)
+                break
+                ;;
+              FAILED|ROLLBACK_SUCCEEDED|ROLLBACK_FAILED)
+                echo "App Runner deployment did not succeed"
+                exit 1
+                ;;
+            esac
+            sleep "$sleep_s"
+          done
+          if [ "${operation_status:-}" != "SUCCEEDED" ]; then
+            echo "timeout: deployment operation did not succeed within 30m"
+            exit 1
+          fi
+
+          service_url="$(aws apprunner describe-service \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --query 'Service.ServiceUrl' \
+            --output text)"
+          health_url="https://${service_url}/api/health"
+          health_deadline=$((SECONDS + 300))
+          while [ "$SECONDS" -lt "$health_deadline" ]; do
+            if health="$(curl --fail --silent --show-error "$health_url" 2>/dev/null)"; then
+              printf '%s\n' "$health"
+              echo "DEV deployment completed and health check passed"
+              exit 0
+            fi
+            echo "DEV health check not ready; retrying in ${sleep_s}s"
+            sleep "$sleep_s"
+          done
+          echo "DEV health check did not pass within 5m: $health_url"
           exit 1
