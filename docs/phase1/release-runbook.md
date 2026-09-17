@@ -59,7 +59,7 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 GitHub pull request / push to main
   -> Verify (typecheck / lint / unit / integration / build) — tests only
   -> overlay-check / forge-check
-  -> Deploy DEV waits for Verify + overlay-check + forge-check on this SHA, then start-deployment
+  -> Deploy DEV waits for Verify + overlay-check + forge-check on this SHA, then start-deployment, then the Operation and /api/health
   -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
   -> Deploy SIT is workflow_dispatch only (never on push); same gate before AWS
 ```

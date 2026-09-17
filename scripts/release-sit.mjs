@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { findOperation } from './apprunner-operation.mjs';
 
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -38,7 +39,14 @@ console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.Oper
 let complete = false;
 for (let i = 0; i < 120; i++) {
   await new Promise(resolve => setTimeout(resolve, 20000));
-  const operation = aws('apprunner','list-operations', { ServiceArn: summary.ServiceArn }).OperationSummaryList.find(x => x.Id === update.OperationId);
+  const listed = [];
+  let NextToken;
+  do {
+    const page = aws('apprunner','list-operations', { ServiceArn: summary.ServiceArn, MaxResults: 20, ...(NextToken ? { NextToken } : {}) });
+    listed.push(...(page.OperationSummaryList || []));
+    NextToken = page.NextToken;
+  } while (NextToken);
+  const operation = findOperation(listed, update.OperationId);
   if (operation?.Status === 'SUCCEEDED') { complete = true; break; }
   if (operation && /FAILED|ROLLBACK/.test(operation.Status)) throw new Error(`Deployment ${operation.Status}`);
 }

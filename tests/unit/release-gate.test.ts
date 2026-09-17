@@ -67,4 +67,8 @@ test("Deploy DEV and SIT run the release gate before AWS credentials", async () 
     assert.ok(gateAt >= 0, "release-gate.mjs must be invoked");
     assert.ok(awsAt > gateAt, "release gate must run before AWS credentials");
   }
+  const awsAt = dev.indexOf("aws-actions/configure-aws-credentials");
+  const waitAt = dev.indexOf("scripts/release-dev.mjs");
+  assert.ok(waitAt > awsAt, "Deploy DEV must wait for the App Runner Operation after AWS credentials");
+  assert.equal(dev.includes("2>/dev/null"), false, "Deploy DEV must not swallow list-operations errors");
 });
