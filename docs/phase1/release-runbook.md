@@ -58,9 +58,10 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 ```text
 GitHub pull request / push to main
   -> Verify (typecheck / lint / unit / integration / build) — tests only
-  -> Deploy to App Runner on push to main (DEV www + admin)
+  -> overlay-check / forge-check
+  -> Deploy DEV waits for Verify + overlay-check + forge-check on this SHA, then start-deployment
   -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
-  -> Deploy SIT is workflow_dispatch only (never on push)
+  -> Deploy SIT is workflow_dispatch only (never on push); same gate before AWS
 ```
 
 每次发布记录：git SHA、Docker image digest、database migration、环境、批准人、回滚 image。禁止在 App Runner 控制台直接改代码或手工执行生产 SQL。

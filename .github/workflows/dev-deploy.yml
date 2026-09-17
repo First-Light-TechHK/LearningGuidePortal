@@ -2,6 +2,8 @@
 # This file is a new workflow id. The previous apprunner-deploy.yml was
 # disabled_manually in GitHub, so push triggers on that file never ran.
 # SIT is sit-deploy.yml and stays workflow_dispatch.
+# Gate before AWS: Verify / overlay-check / forge-check must be green for this SHA.
+# Do not change Verify. Do not add test:io.
 
 name: Deploy DEV
 
@@ -16,14 +18,24 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   deploy:
     name: Start DEV App Runner deployment
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Require green Verify, overlay-check and forge-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-gate.mjs
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
