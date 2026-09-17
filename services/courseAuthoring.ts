@@ -22,8 +22,7 @@ export function validateCourseMetadata(input: CourseMetadata, courseId?: string)
   for (const key of ["categoryId", "subjectId"] as const) if (input[key] !== undefined) output[key] = input[key] === null ? null : text(input[key], 200);
   if (input.cover !== undefined) {
     const cover = input.cover === null ? null : text(input.cover, 2048, false);
-    if (cover && (/[\\\s]/.test(cover) || !(cover.startsWith("/") && !cover.startsWith("//") || (() => { try { return new URL(cover).protocol === "https:"; } catch { return false; } })()))) throw new AuthoringError("invalid");
-    if (cover && /\/api\/course-media/i.test(cover) && (!courseId || !courseMediaAssetId(cover, courseId))) throw new AuthoringError("invalid");
+    if (cover && (/[\\\s]/.test(cover) || !courseId || !courseMediaAssetId(cover, courseId))) throw new AuthoringError("invalid");
     output.cover = cover;
   }
   for (const key of ["referencePrice", "discount"] as const) {

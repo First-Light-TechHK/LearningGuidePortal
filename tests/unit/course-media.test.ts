@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import type { CourseMediaAsset, LessonContent } from "../../contracts/lesson-content";
 import type { ProductUser } from "../../services/productStore";
 
@@ -324,4 +325,61 @@ test("multipart streaming enforces the server cap even with no Content-Length an
   form.append("file", new Blob([new Uint8Array(png)], { type: "image/png" }), "b.png");
   await assert.rejects(media.readCourseMediaUpload(new Request("http://localhost/upload", { method: "POST", body: form })), { status: 400 });
   await assert.rejects(media.readCourseMediaUpload(new Request("http://localhost/upload", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=test", "content-length": String(length) }, body: "small" })), { status: 413 });
+});
+
+async function raster(format: "png" | "jpeg" | "webp", width = 8, height = 8) {
+  return sharp({ create: { width, height, channels: 3, background: { r: 40, g: 80, b: 120 } } }).toFormat(format).toBuffer();
+}
+
+function undecodable(extension: "png" | "jpg" | "webp") {
+  if (extension === "jpg") return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xdb]), Buffer.alloc(32, 1), Buffer.from([0xff, 0xd9])]);
+  if (extension === "webp") {
+    const body = Buffer.concat([Buffer.from("WEBPVP8 "), Buffer.alloc(24, 1)]);
+    const header = Buffer.alloc(8);
+    header.write("RIFF");
+    header.writeUInt32LE(body.length, 4);
+    return Buffer.concat([header, body]);
+  }
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a0000000d", "hex"),
+    Buffer.from("IHDR"),
+    Buffer.alloc(17, 0),
+    Buffer.from("00000000", "hex"),
+    Buffer.from("IEND"),
+    Buffer.from("ae426082", "hex"),
+  ]);
+}
+
+test("CM-03 signature-valid but undecodable rasters never write .bin", async () => {
+  const before = await readdir(path.join(files.systemRoot(), "course_media", courseId)).catch(() => [] as string[]);
+  for (const [extension, name, type] of [["png", "broken.png", "image/png"], ["jpg", "broken.jpg", "image/jpeg"], ["webp", "broken.webp", "image/webp"]] as const) {
+    await assert.rejects(media.uploadCourseMedia(teacher, courseId, input(undecodable(extension), name, type)), media.CourseMediaError);
+  }
+  const oversized = await sharp({ create: { width: 4001, height: 4000, channels: 3, background: "white" } }).png().toBuffer();
+  assert.ok(oversized.length < media.COURSE_MEDIA_MAX_BYTES);
+  await assert.rejects(media.uploadCourseMedia(teacher, courseId, input(oversized, "bomb.png", "image/png")), { status: 415 });
+  const after = await readdir(path.join(files.systemRoot(), "course_media", courseId)).catch(() => [] as string[]);
+  assert.deepEqual(after, before);
+});
+
+test("CM-03/CM-06 HTTPS cover and corrupted stored rasters fail draft/publish commit", async () => {
+  const asset = await media.uploadCourseMedia(teacher, courseId, input(await raster("png"), "cover.png", "image/png"), "course-cover");
+  await assert.rejects(media.assertCourseMediaReferences({
+    id: courseId,
+    sections: [],
+    cover: "https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp/cover.jpg",
+    thumbnailPath: null,
+  }), { status: 400 });
+  await media.assertCourseMediaReferences({ id: courseId, sections: [], cover: asset.url, thumbnailPath: null });
+  const stored = path.join(files.systemRoot(), "course_media", courseId, `${asset.id}.bin`);
+  const current = await (await import("node:fs/promises")).readFile(stored);
+  const headerLength = current.readUInt32BE(0);
+  const meta = JSON.parse(current.subarray(4, 4 + headerLength).toString("utf8"));
+  const broken = undecodable("png");
+  meta.size = broken.length;
+  const nextHeader = Buffer.from(JSON.stringify(meta));
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(nextHeader.length);
+  await (await import("node:fs/promises")).writeFile(stored, Buffer.concat([length, nextHeader, broken]));
+  await assert.rejects(media.assertCourseMediaReferences({ id: courseId, sections: [], cover: asset.url, thumbnailPath: null }), { status: 400 });
 });

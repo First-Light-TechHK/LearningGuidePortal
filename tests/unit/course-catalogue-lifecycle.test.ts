@@ -10,14 +10,14 @@ const course: ProductCourse = { id: "course-1", slug: "course-one", title: "Cour
 const input = (): CourseDraftInput => ({ expectedUpdatedAt: timestamp, title: course.title, description: course.description, sections: structuredClone(course.sections) });
 
 test("metadata is validated and round-trips without changing billing, ownership or identity", () => {
-  const metadata: CourseMetadata = { subtitle: " Subtitle ", level: "advanced", tags: ["Algebra", "Algebra", " Logic "], categoryId: "category-1", subjectId: "subject-1", referencePrice: 42.5, discount: 12.5, cover: "https://example.test/cover.png" };
+  const metadata: CourseMetadata = { subtitle: " Subtitle ", level: "advanced", tags: ["Algebra", "Algebra", " Logic "], categoryId: "category-1", subjectId: "subject-1", referencePrice: 42.5, discount: 12.5, cover: "/api/course-media/course-1/11111111-1111-4111-8111-111111111111" };
   const next = applyCourseDraft(course, { ...input(), ...metadata });
   assert.equal(next.subtitle, "Subtitle");
   assert.deepEqual(next.tags, ["Algebra", "Logic"]);
   assert.equal(next.referencePrice, 42.5);
   assert.equal(next.discount, 12.5);
   for (const key of ["id", "slug", "category", "authorIds", "createdAt"] as const) assert.deepEqual(next[key], course[key]);
-  for (const invalid of [{ level: "expert" }, { discount: 101 }, { referencePrice: -1 }, { referencePrice: 0.001 }, { discount: NaN }, { cover: "javascript:alert(1)" }, { cover: "//example.test/image" }, { tags: [23] }, { subjectId: {} }] as unknown as CourseMetadata[]) assert.throws(() => validateCourseMetadata(invalid), { code: "invalid" });
+  for (const invalid of [{ level: "expert" }, { discount: 101 }, { referencePrice: -1 }, { referencePrice: 0.001 }, { discount: NaN }, { cover: "javascript:alert(1)" }, { cover: "//example.test/image" }, { cover: "https://example.test/cover.png" }, { tags: [23] }, { subjectId: {} }] as unknown as CourseMetadata[]) assert.throws(() => validateCourseMetadata(invalid, course.id), { code: "invalid" });
   assert.throws(() => validateCourseMetadata({ cover: "/api/course-media/other/11111111-1111-4111-8111-111111111111" }, course.id), { code: "invalid" });
 });
 

@@ -171,6 +171,36 @@ test("LGTeacher: legacy outline saves cannot flatten structured content; stale w
   assert.deepEqual(saved, snapshot);
 });
 
+test("CM-06 new writes reject COS and other HTTPS media; read keeps historical HTTPS", () => {
+  const cos = "https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp/video/horace.mp4";
+  const input = fixture();
+  input[1].url = cos;
+  assert.throws(() => validateLessonContents(input, courseId), LessonContentError);
+  const original = course();
+  const draftInput = draft(original);
+  draftInput.sections[0].lessons[0].contents = input;
+  assert.throws(() => applyCourseDraft(original, draftInput), AuthoringError);
+  const historical = [{ id: "legacy", title: "Legacy", type: "video" as const, mode: "lecture" as const, url: cos, nodes: [] }];
+  assert.equal(sanitiseLessonContents(historical, courseId)[0].url, cos);
+});
+
+test("CM-07 sanitise drops executable instance-content and keeps the exhibit URL (4e4d4c3-1/8)", () => {
+  const html = sanitiseRichHtml(
+    `<span class="instance-node" data-instance-type="4" data-instance-content="${media}"><img onerror="alert(1)">Exhibit</span>`,
+    courseId
+  );
+  assert.doesNotMatch(html, /data-instance-content|onerror|alert\(/);
+  assert.match(html, /data-instance-src="/);
+  assert.match(html, new RegExp(assetId));
+  const write = validateLessonContents([{
+    id: "text-group", title: "Structured lesson", type: "text", mode: "interactive",
+    html: `<span class="instance-node" data-instance-type="4" data-instance-content="${media}">Exhibit</span>`,
+    nodes: [],
+  }], courseId);
+  assert.doesNotMatch(write[0].html!, /data-instance-content/);
+  assert.match(write[0].html!, new RegExp(assetId));
+});
+
 test("LGTeacher: explicit lesson removal archives its original content and identity", () => {
   const original = course(), input = draft(original);
   input.sections[0].lessons = [];

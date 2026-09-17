@@ -40,15 +40,25 @@ function safeExternalMediaUrl(value: unknown): value is string {
   } catch { return false; }
 }
 
+function exhibitSrcFromInstanceContent(raw: string, courseId: string, allowExternalMedia: boolean): string | undefined {
+  const candidates = [raw.trim(), ...(raw.match(/https:\/\/[^\s"'<>]+/g) || []), ...(raw.match(/\/api\/course-media\/[A-Za-z0-9_-]+\/[0-9a-f-]+/g) || [])];
+  for (const candidate of candidates) {
+    if (courseMediaAssetId(candidate, courseId)) return candidate;
+    if (allowExternalMedia && safeExternalMediaUrl(candidate)) return candidate;
+  }
+  return undefined;
+}
+
 /** Apply again on the server before rendering historical or imported HTML. */
-export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iterable<string> = []): string {
+export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iterable<string> = [], options: { allowExternalMedia?: boolean } = {}): string {
   if (typeof value !== "string" || value.length > LIMITS.htmlCharacters || !isContentId(courseId)) return "";
   const nodes = new Set(nodeIds);
+  const allowExternalMedia = options.allowExternalMedia === true;
   return sanitizeHtml(value, {
     allowedTags: ["p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "b", "em", "i", "u", "s", "del", "mark", "sub", "sup", "blockquote", "pre", "code", "ul", "ol", "li", "span", "a", "img", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "label", "input", "div"],
     allowedAttributes: {
       a: ["href", "title", "rel", "data-node-id"],
-      span: ["data-node-id", "style", "data-image-align", "data-image-inline", "data-caption", "class", "data-instance-type", "data-instance-answer-type", "data-instance-answer-result"],
+      span: ["data-node-id", "style", "data-image-align", "data-image-inline", "data-caption", "class", "data-instance-type", "data-instance-answer-type", "data-instance-answer-result", "data-instance-src", "data-trial-stop"],
       img: ["src", "alt", "title", "width", "height", "data-align", "data-inline", "data-image-align", "data-image-inline", "data-caption"],
       ul: ["data-type"], li: ["data-type", "data-checked"], input: ["type", "checked", "disabled"],
       p: ["style"], h1: ["style"], h2: ["style"], h3: ["style"], h4: ["style"], h5: ["style"], h6: ["style"], mark: ["style"],
@@ -79,10 +89,16 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
           if (!/^[1-6]$/.test(attribs["data-instance-type"])) delete attribs["data-instance-type"];
           if (attribs["data-instance-answer-type"] && !["input", "single", "multiple"].includes(attribs["data-instance-answer-type"])) delete attribs["data-instance-answer-type"];
           if (attribs["data-instance-answer-result"] && attribs["data-instance-answer-result"].length > 10000) delete attribs["data-instance-answer-result"];
+          const extracted = exhibitSrcFromInstanceContent(attribs["data-instance-content"] || attribs["data-instance-src"] || "", courseId, allowExternalMedia);
+          if (extracted) attribs["data-instance-src"] = extracted;
+          else delete attribs["data-instance-src"];
+          if (attribs["data-trial-stop"] !== "true") delete attribs["data-trial-stop"];
         } else {
           delete attribs["data-instance-type"];
           delete attribs["data-instance-answer-type"];
           delete attribs["data-instance-answer-result"];
+          delete attribs["data-instance-src"];
+          delete attribs["data-trial-stop"];
         }
         delete attribs["data-instance-content"];
         const nodeId = attribs["data-node-id"];
@@ -131,7 +147,7 @@ export function validateLessonContents(value: unknown, courseId: string, options
     if (!courseMediaAssetId(value, courseId) && !(options.allowExternalMedia && safeExternalMediaUrl(value))) throw new LessonContentError("Media must belong to this course.");
     return value as string;
   };
-  const html = (value: unknown, nodes: string[]) => sanitiseRichHtml(text(value, LIMITS.htmlCharacters, false), courseId, nodes);
+  const html = (value: unknown, nodes: string[]) => sanitiseRichHtml(text(value, LIMITS.htmlCharacters, false), courseId, nodes, options);
   const active = (value: unknown) => {
     if (value !== undefined && typeof value !== "boolean") throw new LessonContentError("Active must be a boolean.");
     return value !== false;
@@ -181,7 +197,7 @@ export function sanitiseLessonContents(value: unknown, courseId: string): Lesson
     return validateLessonContents(value, courseId, { allowExternalMedia: true }).filter(content => content.active !== false).map(content => {
       const nodes = content.nodes.filter(node => node.active !== false);
       const ids = nodes.map(node => node.id);
-      return { ...content, ...(content.html !== undefined ? { html: sanitiseRichHtml(content.html, courseId, ids) } : {}), nodes: nodes.map(node => ({ ...node, ...(node.html !== undefined ? { html: sanitiseRichHtml(node.html, courseId, ids) } : {}) })) };
+      return { ...content, ...(content.html !== undefined ? { html: sanitiseRichHtml(content.html, courseId, ids, { allowExternalMedia: true }) } : {}), nodes: nodes.map(node => ({ ...node, ...(node.html !== undefined ? { html: sanitiseRichHtml(node.html, courseId, ids, { allowExternalMedia: true }) } : {}) })) };
     });
   } catch { return []; }
 }
@@ -206,7 +222,9 @@ export function lessonContentsText(contents: LessonContent[]): string {
 export function lessonContentAssetReferences(value: unknown, courseId: string, includeInactive = false): Array<{ assetId: string; fileType?: CourseMediaAsset["fileType"] }> {
   const references: Array<{ assetId: string; fileType?: CourseMediaAsset["fileType"] }> = [];
   const add = (url: unknown, fileType?: CourseMediaAsset["fileType"]) => { const assetId = courseMediaAssetId(url, courseId); if (assetId) references.push({ assetId, fileType }); };
-  const contents = includeInactive ? validateLessonContents(value, courseId) : sanitiseLessonContents(value, courseId);
+  const contents = includeInactive
+    ? validateLessonContents(value, courseId, { allowExternalMedia: true })
+    : sanitiseLessonContents(value, courseId);
   for (const content of contents) {
     for (const item of [content, ...content.nodes]) {
       if (item.type !== "text" && item.type !== "exercise") add(item.url, item.type);

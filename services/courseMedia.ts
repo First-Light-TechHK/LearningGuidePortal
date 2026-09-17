@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import sharp from "sharp";
 import { COURSE_MEDIA_MAX_BYTES, type CourseMediaAsset } from "@/contracts/lesson-content";
 import { systemRoot } from "@/services/fileStore";
 import { vfsReadBuffer, vfsWriteBuffer } from "@/services/persistence/vfs";
@@ -11,6 +12,7 @@ import { checkEntitlement, getProductCourse, publicFirstLesson, type ProductCour
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
 
 export { COURSE_MEDIA_MAX_BYTES } from "@/contracts/lesson-content";
+export const COURSE_MEDIA_MAX_PIXELS = 16_000_000;
 
 export class CourseMediaError extends Error {
   constructor(public code: "invalid" | "restricted" | "notFound" | "tooLarge" | "unsupported" | "failed", public status: number, message: string) { super(message); }
@@ -158,6 +160,22 @@ export function validateCourseMediaFile(input: { name: string; type: string; byt
   return { originalName: input.name, fileType: format.fileType, mimeType: format.mimeType, extension, size: input.bytes.length };
 }
 
+async function assertDecodableRaster(bytes: Buffer, extension: string): Promise<void> {
+  if (!["jpg", "jpeg", "png", "gif", "webp"].includes(extension)) return;
+  try {
+    const image = sharp(bytes, { failOn: "warning", limitInputPixels: COURSE_MEDIA_MAX_PIXELS, animated: true });
+    const metadata = await image.metadata();
+    const expected = extension === "jpg" || extension === "jpeg" ? "jpeg" : extension;
+    if (metadata.format !== expected || !metadata.width || !metadata.height || metadata.width * metadata.height > COURSE_MEDIA_MAX_PIXELS || (metadata.pages || 1) !== 1) {
+      throw new CourseMediaError("unsupported", 415, "Use a complete, static image of at most 16 megapixels.");
+    }
+    await image.raw().toBuffer();
+  } catch (error) {
+    if (error instanceof CourseMediaError) throw error;
+    throw new CourseMediaError("unsupported", 415, "Use a complete, static image of at most 16 megapixels.");
+  }
+}
+
 function assetPath(courseId: string, assetId: string): string {
   if (!courseMediaAssetId(`/api/course-media/${courseId}/${assetId}`, courseId)) throw new CourseMediaError("notFound", 404, "Media not found.");
   return path.join(systemRoot(), "course_media", courseId, `${assetId}.bin`);
@@ -180,6 +198,7 @@ export async function requireCourseMediaManager(user: ProductUser | null, course
 export async function uploadCourseMedia(user: ProductUser | null, courseId: string, file: { name: string; type: string; bytes: Buffer }, usage?: string): Promise<CourseMediaAsset> {
   await requireCourseMediaManager(user, courseId);
   const metadata = validateCourseMediaFile(file);
+  await assertDecodableRaster(file.bytes, metadata.extension);
   if (usage && (usage === "course-cover" ? metadata.fileType !== "image" : usage !== `content-${metadata.fileType}`)) throw new CourseMediaError("invalid", 400, "File type does not match its intended use.");
   checkStorage();
   const id = randomUUID();
@@ -209,7 +228,15 @@ async function readStoredAsset(courseId: string, assetId: string): Promise<{ ass
   if (!asset || asset.id !== assetId || asset.courseId !== courseId || asset.url !== `/api/course-media/${courseId}/${assetId}` || asset.size !== bytes.length) throw new CourseMediaError("failed", 500, "Invalid stored media.");
   const actual = validateCourseMediaFile({ name: asset.originalName, type: asset.mimeType, bytes });
   if (actual.fileType !== asset.fileType || actual.extension !== asset.extension) throw new CourseMediaError("failed", 500, "Invalid stored media.");
+  try { await assertDecodableRaster(bytes, actual.extension); }
+  catch { throw new CourseMediaError("failed", 500, "Invalid stored media."); }
   return { asset, bytes };
+}
+
+function commitMediaError(error: unknown): never {
+  if (error instanceof CourseMediaError && error.status === 404) throw error;
+  if (error instanceof CourseMediaError) throw new CourseMediaError("invalid", 400, error.message);
+  throw error;
 }
 
 function contentsOf(lesson: { id: string }): unknown {
@@ -232,12 +259,14 @@ export async function canReadCourseMedia(user: ProductUser | null, course: Produ
 
 /** Optional save-time integrity check, after strict validation and course ownership. */
 export async function assertLessonMediaReferences(courseId: string, value: unknown): Promise<void> {
-  const references = lessonContentAssetReferences(value, courseId, true);
-  const assets = new Map<string, CourseMediaAsset>();
-  for (const reference of references) {
-    if (!assets.has(reference.assetId)) assets.set(reference.assetId, (await readStoredAsset(courseId, reference.assetId)).asset);
-    if (reference.fileType && assets.get(reference.assetId)!.fileType !== reference.fileType) throw new CourseMediaError("invalid", 400, "Media type does not match lesson content.");
-  }
+  try {
+    const references = lessonContentAssetReferences(value, courseId, true);
+    const assets = new Map<string, CourseMediaAsset>();
+    for (const reference of references) {
+      if (!assets.has(reference.assetId)) assets.set(reference.assetId, (await readStoredAsset(courseId, reference.assetId)).asset);
+      if (reference.fileType && assets.get(reference.assetId)!.fileType !== reference.fileType) throw new CourseMediaError("invalid", 400, "Media type does not match lesson content.");
+    }
+  } catch (error) { commitMediaError(error); }
 }
 
 /** Call on the updated aggregate after ownership checks and before committing a draft. */
@@ -245,8 +274,10 @@ export async function assertCourseMediaReferences(course: Pick<ProductCourse, "i
   const cover = course.cover || course.thumbnailPath;
   if (cover) {
     const assetId = courseMediaAssetId(cover, course.id);
-    if (!assetId && /\/api\/course-media/i.test(cover)) throw new CourseMediaError("invalid", 400, "A course cover must belong to this course.");
-    if (assetId && (await readStoredAsset(course.id, assetId)).asset.fileType !== "image") throw new CourseMediaError("invalid", 400, "A course cover must be an image.");
+    if (!assetId) throw new CourseMediaError("invalid", 400, "A course cover must belong to this course.");
+    try {
+      if ((await readStoredAsset(course.id, assetId)).asset.fileType !== "image") throw new CourseMediaError("invalid", 400, "A course cover must be an image.");
+    } catch (error) { commitMediaError(error); }
   }
   for (const section of course.sections) {
     for (const lesson of section.lessons) await assertLessonMediaReferences(course.id, contentsOf(lesson));

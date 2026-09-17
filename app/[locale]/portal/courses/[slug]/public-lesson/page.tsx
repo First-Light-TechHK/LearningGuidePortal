@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { checkEntitlement, getLearningOverview, getProductCourse, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
@@ -23,9 +23,8 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const messages = getMessages(locale);
   const copy = messages.portal;
   const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${requestedLesson ? `?lessonId=${requestedLesson}` : ""}`)}`);
-  const access = await checkEntitlement(user.id, course.id);
-  const overview = await getLearningOverview(user.id);
+  const access = user ? await checkEntitlement(user.id, course.id) : { allowed: false };
+  const overview = user ? await getLearningOverview(user.id) : null;
   const record = overview?.courses.find(item => item.courseId === course.id);
   const next = course.sections.flatMap(section => section.lessons).find(item => item.isPublic && item.id !== lesson.id && !record?.completedLessonIds.includes(item.id));
   const publishedCourses = await listPublishedCourses();
@@ -41,7 +40,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
     <article className="public-lesson">
       <p className="portal-eyebrow">{copy.publicFirstLesson}</p><h1>{lesson.title}</h1><p className="lesson-duration">{lesson.durationMinutes} {messages.learning.minutes}</p>
-      {lesson.contents?.length ? <LessonContentPlayer key={`content-${lesson.id}`} contents={sanitiseLessonContents(lesson.contents, course.id)} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={access.allowed ? undefined : { pricingHref: `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`, recommendations, videoLimitSeconds: 60, textStopLabel: "<Exh 3>" }}/> : <div className="lesson-body">{lesson.body.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>}
+      {lesson.contents?.length ? <LessonContentPlayer key={`content-${lesson.id}`} contents={sanitiseLessonContents(lesson.contents, course.id)} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={access.allowed ? undefined : { pricingHref: `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`, recommendations, videoLimitSeconds: 60 }}/> : <div className="lesson-body">{lesson.body.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>}
       <PreviewProgress key={`progress-${lesson.id}`} courseId={course.id} lessonId={lesson.id} seconds={lesson.durationMinutes * 60} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
       <div className="public-lesson-actions">
         {access.allowed ? <Link className="portal-button portal-button-secondary" href={`/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(lesson.id)}`}>{messages.learning.continue}</Link> : next ? <Link className="portal-button portal-button-secondary" href={`/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(next.id)}`}>{messages.overviewDesign.continuePreview}</Link> : <Link className="portal-button portal-button-secondary" href={`/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`}>{messages.learning.viewPlans}</Link>}

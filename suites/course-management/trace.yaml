@@ -2,21 +2,41 @@ schema: overlay-trace/v1
 suite: course-management
 items:
   - function_id: CM-01
+    level: integration
+    case_id: CM-01/io/functional
+    type: functional
+  - function_id: CM-01
     level: unit
     case_id: CM-01/unit/functional
     type: functional
+  - function_id: CM-01
+    level: integration
+    case_id: CM-01/io/negative
+    type: negative
   - function_id: CM-01
     level: unit
     case_id: CM-01/unit/negative
     type: negative
   - function_id: CM-01
+    level: integration
+    case_id: CM-01/io/edge
+    type: edge
+  - function_id: CM-01
     level: unit
     case_id: CM-01/unit/edge
     type: edge
   - function_id: CM-02
+    level: integration
+    case_id: CM-02/io/functional
+    type: functional
+  - function_id: CM-02
     level: unit
     case_id: CM-02/unit/functional
     type: functional
+  - function_id: CM-02
+    level: integration
+    case_id: CM-02/io/negative
+    type: negative
   - function_id: CM-02
     level: unit
     case_id: CM-02/unit/negative
@@ -26,9 +46,17 @@ items:
     case_id: CM-02/unit/edge
     type: edge
   - function_id: CM-03
+    level: integration
+    case_id: CM-03/io/functional
+    type: functional
+  - function_id: CM-03
     level: unit
     case_id: CM-03/unit/functional
     type: functional
+  - function_id: CM-03
+    level: integration
+    case_id: CM-03/io/negative
+    type: negative
   - function_id: CM-03
     level: unit
     case_id: CM-03/unit/negative
@@ -38,6 +66,10 @@ items:
     case_id: CM-03/unit/edge
     type: edge
   - function_id: CM-04
+    level: integration
+    case_id: CM-04/io/negative
+    type: negative
+  - function_id: CM-04
     level: unit
     case_id: CM-04/unit/functional
     type: functional
@@ -46,9 +78,23 @@ items:
     case_id: CM-04/unit/negative
     type: negative
   - function_id: CM-04
+    level: integration
+    case_id: CM-04/io/edge
+    type: edge
+  - function_id: CM-04
     level: unit
     case_id: CM-04/unit/edge
     type: edge
+  - function_id: CM-05
+    level: integration
+    case_id: CM-05/io/functional
+    type: functional
+    span: interaction
+    relates:
+      - CM-01
+      - CM-03
+      - CM-06
+      - CM-07
   - function_id: CM-05
     level: unit
     case_id: CM-05/unit/functional
@@ -60,6 +106,10 @@ items:
       - CM-06
       - CM-07
   - function_id: CM-05
+    level: integration
+    case_id: CM-05/io/negative
+    type: negative
+  - function_id: CM-05
     level: unit
     case_id: CM-05/unit/negative
     type: negative
@@ -67,6 +117,10 @@ items:
     level: unit
     case_id: CM-05/unit/edge
     type: edge
+  - function_id: CM-06
+    level: integration
+    case_id: CM-06/io/negative
+    type: negative
   - function_id: CM-06
     level: unit
     case_id: CM-06/unit/functional
@@ -76,17 +130,33 @@ items:
     case_id: CM-06/unit/negative
     type: negative
   - function_id: CM-06
+    level: integration
+    case_id: CM-06/io/edge
+    type: edge
+  - function_id: CM-06
     level: unit
     case_id: CM-06/unit/edge
     type: edge
+  - function_id: CM-07
+    level: integration
+    case_id: CM-07/io/functional
+    type: functional
   - function_id: CM-07
     level: unit
     case_id: CM-07/unit/functional
     type: functional
   - function_id: CM-07
+    level: integration
+    case_id: CM-07/io/negative
+    type: negative
+  - function_id: CM-07
     level: unit
     case_id: CM-07/unit/negative
     type: negative
+  - function_id: CM-07
+    level: integration
+    case_id: CM-07/io/edge
+    type: edge
   - function_id: CM-07
     level: unit
     case_id: CM-07/unit/edge

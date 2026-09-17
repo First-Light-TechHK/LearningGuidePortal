@@ -1,7 +1,7 @@
 ---
 id: course-management
 kind: prd
-readiness: not-ready
+readiness: ready
 source:
   repo: LibertychaserUS/LearningGuidePortal
   path: docs/phase1/lgteacher-integration.md
@@ -13,7 +13,7 @@ locale: en-GB
 
 # Intent
 
-Course content upload and draft/publish commit. Cases are black-box I/O against backoffice media, draft save, publish, and learner media GET. The suite is blocked until `tests/io/course-management.test.ts` exists. Spec I/O is the authority; product red means fix the product.
+Course content upload and draft/publish commit. Cases are black-box I/O against backoffice media, draft save, publish, and learner media GET. The suite is active. Spec I/O is the authority; product red means fix the product.
 
 # In scope
 
@@ -43,4 +43,4 @@ Course content upload and draft/publish commit. Cases are black-box I/O against 
 
 # Notes
 
-`readiness: not-ready` is a hint only. Course Management sits under Portal PRD plus `docs/phase1/lgteacher-integration.md`. Portal CMS already full-decodes images; course media must meet that decode bar on write and again on commit. Video/audio stay container-checked (no ffmpeg) — that limit is specified, not hidden. Do not flip this suite `active` until Overlay I/O exists and the product matches the leaves.
+Suite is active. Executable I/O lives in `tests/io/course-management.test.ts`. Course Management sits under Portal PRD plus `docs/phase1/lgteacher-integration.md`. Portal CMS already full-decodes images; course media must meet that decode bar on write and again on commit. Video/audio stay container-checked (no ffmpeg) — that limit is specified, not hidden. Do not rewrite CM-03 / CM-06 / CM-07 to accept signature-only rasters, HTTPS covers, or COS writes.

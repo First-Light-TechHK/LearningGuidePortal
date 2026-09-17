@@ -3,31 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LessonContent, LessonNode } from '@/contracts/lesson-content';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
+import { resolveLessonExhibit, TRIAL_STOP_SELECTOR, type LessonExhibit } from '@/lib/lessonExhibit';
 import { CourseMediaPreview, LessonModal, SafeLessonHtml, safeMediaUrl } from './CourseMediaPreview';
 import './lesson-authoring.css';
 
-const LEGACY_MEDIA_BASE = 'https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp';
-
-type Exhibit = { title: string; type: 'article' | 'video' | 'image' | 'audio' | 'model3d' | 'exercise'; url: string; html: string; missing: boolean };
+type Exhibit = LessonExhibit;
 type TrialRecommendation = { title: string; href: string; image?: string | null; category?: string | null };
 type TrialGate = { pricingHref: string; recommendations: TrialRecommendation[]; videoLimitSeconds?: number; textStopLabel?: string };
-
-function exhibitType(value: string | null): Exhibit['type'] | null {
-  if (value === '1') return 'article';
-  if (value === '2') return 'video';
-  if (value === '3') return 'exercise';
-  if (value === '4') return 'image';
-  if (value === '5') return 'model3d';
-  if (value === '6') return 'audio';
-  return null;
-}
-
-function exhibitUrl(value: string, type: Exhibit['type']) {
-  if (type === 'article' || type === 'exercise') return '';
-  if (/^https:\/\//i.test(value)) return safeMediaUrl(value);
-  if (value.startsWith('/') && !value.startsWith('//')) return safeMediaUrl(encodeURI(`${LEGACY_MEDIA_BASE}${value}`));
-  return safeMediaUrl(value);
-}
 
 function TrialLimitModal({ gate, locale, onClose }: { gate: TrialGate; locale: LessonLocale; onClose: () => void }) {
   const copy = {
@@ -74,22 +56,16 @@ function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, trialGate, o
   const nodeTitles = useMemo(() => Object.fromEntries(nodes.map(node => [node.id, node.title || lessonMessages(locale).newNode])), [nodes, locale]);
   function showTrial() { locked.current = true; setTrialOpen(true); }
   function findTrialStop(container: HTMLElement) {
-    const normalise = (value: string) => value.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
-    const label = normalise(trialGate?.textStopLabel || '');
-    if (!label) return null;
-    return Array.from(container.querySelectorAll<HTMLElement>('[data-instance-type]')).find(el => normalise(el.textContent || '') === label) || null;
+    return container.querySelector<HTMLElement>(TRIAL_STOP_SELECTOR);
   }
   function fromElement(el: HTMLElement): Exhibit | null {
-    const type = exhibitType(el.dataset.instanceType || null), raw = el.dataset.instanceContent || '';
-    if (!type) return null;
-    const title = el.textContent?.trim() || 'Exhibit';
-    const exhibitNumber = title.match(/<\s*Exh\s*(\d+)\s*>/i)?.[1];
-    const fallback = safeMediaUrl(exhibitNumber === '2' || exhibitNumber === '3' ? '/portal/exh2.jpg' : fallbackImageUrl || '');
-    if (fallback) return { title, type: 'image', url: fallback, html: '', missing: false };
-    if (!raw) return { title, type: 'image', url: safeMediaUrl(fallbackImageUrl || ''), html: '', missing: !safeMediaUrl(fallbackImageUrl || '') };
-    if (type === 'article' || type === 'exercise') return { title, type, url: '', html: raw, missing: false };
-    const url = exhibitUrl(raw, type);
-    return url ? { title, type, url, html: '', missing: false } : { title, type: 'image', url: safeMediaUrl(fallbackImageUrl || ''), html: '', missing: !safeMediaUrl(fallbackImageUrl || '') };
+    return resolveLessonExhibit({
+      instanceType: el.dataset.instanceType,
+      instanceSrc: el.dataset.instanceSrc,
+      instanceContent: el.dataset.instanceContent,
+      title: el.textContent || '',
+      fallbackImageUrl,
+    });
   }
   function pick() {
     let best: HTMLElement | null = null, top = Infinity;

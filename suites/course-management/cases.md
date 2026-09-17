@@ -1,7 +1,7 @@
 # Course Management — upload and commit
 
 Black-box I/O against `POST /api/backoffice/courses/:courseId/media`, draft save, publish, and `GET/HEAD /api/course-media/:courseId/:assetId`.
-Suite is blocked. Overlay select drops it so overlay-check stays not-red. Do not rewrite leaves to match signature-only rasters, cover HTTPS skips, or COS writes.
+Suite is active. Overlay select runs this product_command. Do not rewrite leaves to match signature-only rasters, cover HTTPS skips, or COS writes.
 
 Unit locks today live in `tests/unit/course-media.test.ts`. They are not Overlay I/O. `scripts/test-lgteacher-complete.ts` is release-manual and is not in Verify.
 

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import type { CoursePageCta } from "@/lib/coursePage";
@@ -17,7 +16,6 @@ export default async function CourseDetailPage({
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${slug}`)}`);
   const page = await getCoursePage(slug, user?.id ?? null);
   const course = await getProductCourse(slug);
   const copy = getMessages(locale).portal;
