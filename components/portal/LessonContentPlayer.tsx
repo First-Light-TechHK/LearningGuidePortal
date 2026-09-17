@@ -10,7 +10,7 @@ const LEGACY_MEDIA_BASE = 'https://learningguide-1380131816.cos.ap-hongkong.myqc
 
 type Exhibit = { title: string; type: 'article' | 'video' | 'image' | 'audio' | 'model3d' | 'exercise'; url: string; html: string; missing: boolean };
 type TrialRecommendation = { title: string; href: string; image?: string | null; category?: string | null };
-type TrialGate = { pricingHref: string; recommendations: TrialRecommendation[]; videoLimitSeconds?: number; textStopLabel?: string };
+export type TrialGate = { pricingHref: string; recommendations: TrialRecommendation[]; videoLimitSeconds?: number; textStopLabel?: string; textStopParagraphs?: number };
 
 function exhibitType(value: string | null): Exhibit['type'] | null {
   if (value === '1') return 'article';
@@ -76,8 +76,11 @@ function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, trialGate, o
   function findTrialStop(container: HTMLElement) {
     const normalise = (value: string) => value.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
     const label = normalise(trialGate?.textStopLabel || '');
-    if (!label) return null;
-    return Array.from(container.querySelectorAll<HTMLElement>('[data-instance-type]')).find(el => normalise(el.textContent || '') === label) || null;
+    const labelledStop = label ? Array.from(container.querySelectorAll<HTMLElement>('[data-instance-type]')).find(el => normalise(el.textContent || '') === label) : null;
+    if (labelledStop) return labelledStop;
+    const paragraphs = Array.from(container.querySelectorAll<HTMLElement>('p'));
+    const paragraphCount = Math.max(1, trialGate?.textStopParagraphs ?? 3);
+    return paragraphs[Math.min(paragraphCount - 1, paragraphs.length - 1)] || null;
   }
   function fromElement(el: HTMLElement): Exhibit | null {
     const type = exhibitType(el.dataset.instanceType || null), raw = el.dataset.instanceContent || '';
@@ -266,4 +269,9 @@ export function LessonContentPlayer({ contents, locale, fallbackImageUrl = null,
   const [selectedId, setSelectedId] = useState(contents[0]?.id || '');
   const selected = contents.find(content => content.id === selectedId) || contents[0];
   return <div className="la la-player">{contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => setSelectedId(content.id)}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
+}
+
+export function LegacyLessonBody({ body, locale, trialGate }: { body: string; locale: LessonLocale; trialGate?: TrialGate }) {
+  const html = body.split(/\n\s*\n/).filter(Boolean).map(paragraph => `<p>${paragraph.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</p>`).join('');
+  return <div className="lesson-body"><TextContentPlayer html={html} nodes={[]} locale={locale} trialGate={trialGate} onNode={() => undefined}/></div>;
 }
