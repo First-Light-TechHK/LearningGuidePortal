@@ -1,7 +1,9 @@
 # DEV only: learning-guide-portal (www + admin.ilovelearningguide.com).
-# This file is a new workflow id. The previous apprunner-deploy.yml was
-# disabled_manually in GitHub, so push triggers on that file never ran.
 # SIT is sit-deploy.yml and stays workflow_dispatch.
+# Wait on describe-service Status, not list-operations. The deploy IAM user can
+# start-deployment and describe-service; list-operations returns empty and the
+# previous wait printed Status=unknown until the 30m timeout while App Runner
+# itself succeeded.
 
 name: Deploy DEV
 
@@ -21,7 +23,7 @@ jobs:
   deploy:
     name: Start DEV App Runner deployment
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 45
     if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
     steps:
       - name: Configure AWS credentials
@@ -38,8 +40,7 @@ jobs:
           set -u
           echo "DEV target: learning-guide-portal (www + admin)"
           deadline=$((SECONDS + 1500))
-          sleep_s=20
-          operation_id=""
+          sleep_s=15
 
           describe_status() {
             aws apprunner describe-service \
@@ -61,13 +62,14 @@ jobs:
                   return 1
                   ;;
               esac
-              echo "not RUNNING (OPERATION in progress or equivalent); queue/wait ${sleep_s}s"
+              echo "not RUNNING; queue/wait ${sleep_s}s"
               sleep "$sleep_s"
             done
             echo "timeout: waited 25m for Status=RUNNING"
             return 1
           }
 
+          operation_id=""
           while [ "$SECONDS" -lt "$deadline" ]; do
             if ! wait_until_running; then
               exit 1
@@ -84,7 +86,7 @@ jobs:
             fi
             printf '%s\n' "$out"
             if printf '%s\n' "$out" | grep -Eqi 'InvalidRequestException|isn.?t in RUNNING|not in RUNNING'; then
-              echo "start-deployment collided (service not RUNNING); wait and retry, do not fail"
+              echo "start-deployment collided (service not RUNNING); wait and retry"
               sleep "$sleep_s"
               continue
             fi
@@ -96,26 +98,23 @@ jobs:
             exit 1
           fi
 
-          deployment_deadline=$((SECONDS + 1800))
-          while [ "$SECONDS" -lt "$deployment_deadline" ]; do
-            operation_status="$(aws apprunner list-operations \
-              --service-arn "$APP_RUNNER_SERVICE_ARN" \
-              --query "OperationSummaryList[?Id=='$operation_id'] | [0].Status" \
-              --output text 2>/dev/null || true)"
-            echo "App Runner OperationId=$operation_id Status=${operation_status:-unknown}"
-            case "$operation_status" in
-              SUCCEEDED)
-                break
-                ;;
-              FAILED|ROLLBACK_SUCCEEDED|ROLLBACK_FAILED)
-                echo "App Runner deployment did not succeed"
-                exit 1
-                ;;
-            esac
-            sleep "$sleep_s"
+          seen_progress=0
+          progress_deadline=$((SECONDS + 120))
+          while [ "$SECONDS" -lt "$progress_deadline" ]; do
+            status="$(describe_status || true)"
+            echo "App Runner Status=${status:-unknown} (waiting to leave RUNNING)"
+            if [ "$status" != "RUNNING" ]; then
+              seen_progress=1
+              break
+            fi
+            sleep 5
           done
-          if [ "${operation_status:-}" != "SUCCEEDED" ]; then
-            echo "timeout: deployment operation did not succeed within 30m"
+          if [ "$seen_progress" != "1" ]; then
+            echo "service stayed RUNNING after start-deployment; treating as already applied"
+          fi
+
+          deadline=$((SECONDS + 1500))
+          if ! wait_until_running; then
             exit 1
           fi
 
@@ -124,9 +123,9 @@ jobs:
             --query 'Service.ServiceUrl' \
             --output text)"
           health_url="https://${service_url}/api/health"
-          health_deadline=$((SECONDS + 300))
+          health_deadline=$((SECONDS + 180))
           while [ "$SECONDS" -lt "$health_deadline" ]; do
-            if health="$(curl --fail --silent --show-error "$health_url" 2>/dev/null)"; then
+            if health="$(curl --fail --silent --show-error "$health_url")"; then
               printf '%s\n' "$health"
               echo "DEV deployment completed and health check passed"
               exit 0
@@ -134,5 +133,5 @@ jobs:
             echo "DEV health check not ready; retrying in ${sleep_s}s"
             sleep "$sleep_s"
           done
-          echo "DEV health check did not pass within 5m: $health_url"
+          echo "DEV health check did not pass within 3m: $health_url"
           exit 1
