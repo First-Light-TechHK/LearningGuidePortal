@@ -1,15 +1,12 @@
 # DEV only: learning-guide-portal (www + admin.ilovelearningguide.com).
+# App Runner auto-deploys the `dev` branch. This workflow is a manual retry
+# (workflow_dispatch). Do not start it on `main`; that would publish `dev` HEAD.
 # SIT is sit-deploy.yml and stays workflow_dispatch.
-# Wait on describe-service Status, not list-operations. The deploy IAM user can
-# start-deployment and describe-service; list-operations returns empty and the
-# previous wait printed Status=unknown until the 30m timeout while App Runner
-# itself succeeded.
+# Wait on describe-service Status, not list-operations.
 
 name: Deploy DEV
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
