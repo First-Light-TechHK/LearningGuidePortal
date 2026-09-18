@@ -1,0 +1,55 @@
+# Catalogue migrations only. Never copies users, sessions or payments.
+# DEV only. SIT stays manual. Does not run on push.
+
+name: Sync catalogue
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Persist to DEV Postgres (unchecked is dry-run)
+        type: boolean
+        default: false
+
+concurrency:
+  group: learning-guide-dev-catalogue
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Run catalogue migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
+    env:
+      APP_ENV: DEV
+      DATA_S3_PREFIX: learning-guide/dev
+      CONFIRM_CATALOGUE_SYNC: learning-guide/dev
+      DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+      DATA_S3_BUCKET: ${{ secrets.DEV_DATA_S3_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Require DEV catalogue secrets
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$DATA_S3_BUCKET" ]; then
+            echo "Add DEV_DATABASE_URL and DEV_DATA_S3_BUCKET to persist or dry-run against DEV."
+            exit 1
+          fi
+      - name: Dry-run or apply
+        run: |
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            npm run catalogue:migrate -- --apply --cloud
+          else
+            npm run catalogue:migrate -- --dry-run --cloud
+          fi

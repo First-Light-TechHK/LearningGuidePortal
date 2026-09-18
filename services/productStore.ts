@@ -23,6 +23,7 @@ import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } 
 import type { LessonContent } from "@/contracts/lesson-content";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
+import { applyCatalogueMigrations } from "./catalogueMigrations";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -225,6 +226,7 @@ export type ProductPaymentSettings = {
 
 export type ProductData = {
   catalogue?: CatalogueEntry[];
+  catalogueMigrations?: string[];
   authoringActivities?: Array<{ id: string; actorId: string; courseId?: string; action: string; createdAt: string; targetUserId?: string }>;
   portalContent?: PortalContent;
   version: 1;
@@ -307,6 +309,7 @@ Keep this claim separate from the later deprivation objection. The course can pr
 function defaultData(): ProductData {
   return {
     version: 1,
+    catalogueMigrations: [],
     users: [],
     sessions: [],
     courses: [defaultCourse()],
@@ -410,7 +413,7 @@ async function saveData(data: ProductData) {
 
 let editQueue = Promise.resolve();
 
-export async function ensureProductData() {
+export async function readProductAggregate() {
   const current = await readJson<ProductData | null>(productFile(), null);
   if (current?.version === 1) {
     if (!current.stripeEvents) current.stripeEvents = [];
@@ -420,6 +423,7 @@ export async function ensureProductData() {
     if (!current.paymentSettings) current.paymentSettings = defaultPaymentSettings();
     if (!current.orderActivities) current.orderActivities = [];
     if (!current.accounts) current.accounts = [];
+    current.catalogueMigrations ||= [];
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
     current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
     current.plans.forEach((plan) => {
@@ -447,6 +451,16 @@ export async function ensureProductData() {
   const seeded = defaultData();
   await saveData(seeded);
   return seeded;
+}
+
+export async function ensureProductData() {
+  const current = await readProductAggregate();
+  applyCatalogueMigrations(current);
+  return current;
+}
+
+export async function persistCatalogueMigrations() {
+  return editData((data) => applyCatalogueMigrations(data));
 }
 
 async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {
