@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { applyDataMigrations, assertCloudDataConfirm } from "../services/dataMigrations";
+import { applyDataMigrations, assertCloudDataConfirm, shouldPersistDataMigrationsOnBoot } from "../services/dataMigrations";
 import { exportCatalogueSlice } from "../services/catalogueMigrations";
 import { persistDataMigrations, readProductAggregate } from "../services/productStore";
 import { persistenceEnabled } from "../services/persistence/config";
@@ -53,6 +53,16 @@ async function main() {
   }
 
   if (cloud) {
+    if (boot && persist && !shouldPersistDataMigrationsOnBoot()) {
+      console.log(
+        JSON.stringify({
+          skipped: true,
+          reason: "boot persist is DEV/SIT only",
+          environment: process.env.APP_ENV || null,
+        }),
+      );
+      return;
+    }
     console.log(JSON.stringify(await applyCloud(persist)));
     return;
   }

@@ -133,6 +133,10 @@ export async function applyDataMigrations(
   return report;
 }
 
+export function shouldPersistDataMigrationsOnBoot(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) {
+  return env.APP_ENV === "DEV" || env.APP_ENV === "SIT";
+}
+
 export function assertCloudDataConfirm() {
   if (process.env.CONFIRM_DATA_SYNC !== "learning-guide/dev" && process.env.CONFIRM_CATALOGUE_SYNC !== "learning-guide/dev") {
     throw new Error("Cloud data update requires CONFIRM_DATA_SYNC=learning-guide/dev (or CONFIRM_CATALOGUE_SYNC=learning-guide/dev).");

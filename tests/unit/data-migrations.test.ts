@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyDataMigrations, assertMigrationRegistry, validateDataMigrations } from "../../services/dataMigrations";
+import { applyDataMigrations, assertMigrationRegistry, shouldPersistDataMigrationsOnBoot, validateDataMigrations } from "../../services/dataMigrations";
 import { dataMigrations } from "../../db/data-migrations";
 import type { DataMigration } from "../../db/data-migrations/types";
 import type { ProductData, ProductUser } from "../../services/productStore";
@@ -97,4 +97,12 @@ test("data migrations require a numbered id and touches", () => {
 
 test("registered numbered files match db/data-migrations/index.ts", () => {
   assertMigrationRegistry(dataMigrations);
+});
+
+test("boot persist is DEV and SIT only, never main/PROD", () => {
+  assert.equal(shouldPersistDataMigrationsOnBoot({ APP_ENV: "DEV" }), true);
+  assert.equal(shouldPersistDataMigrationsOnBoot({ APP_ENV: "SIT" }), true);
+  assert.equal(shouldPersistDataMigrationsOnBoot({ APP_ENV: "PROD" }), false);
+  assert.equal(shouldPersistDataMigrationsOnBoot({ APP_ENV: "UAT" }), false);
+  assert.equal(shouldPersistDataMigrationsOnBoot({}), false);
 });

@@ -9,12 +9,12 @@ Operator overview: [data-migrations.md](data-migrations.md).
 1. You commit a numbered file under `db/data-migrations/` and **push `dev`**.
 2. App Runner auto-deploys that SHA (DEV = `www` + `admin.ilovelearningguide.com`).
 3. `npm start` runs `scripts/start-with-data-migrations.cjs`.
-4. That process applies every **unrecorded** id, writes the aggregate in one transaction, then starts Next.js.
+4. That process applies every **unrecorded** id, writes the aggregate in one transaction (`UPDATE app_files … WHERE path='learning_guide/product.json'`), then starts Next.js.
 5. If apply throws, the revision fails health and does not serve the new code against a half-written store.
 
-SIT does not auto-deploy. After a manual SIT release of the same SHA, SIT start applies ids that environment has not recorded.
+SIT does not auto-deploy. After a manual SIT release of the same SHA, SIT start applies ids that environment has not recorded. It does not copy DEV users or payments.
 
-Optional retry without a new boot: GitHub **Sync catalogue** (`workflow_dispatch`) or
+`main` is not auto-deployed. Optional retry without a new boot: GitHub **Sync catalogue** (`workflow_dispatch` only, never on push) or
 
 ```sh
 npm run data:migrate -- --dry-run
