@@ -14,6 +14,7 @@ import * as bindSocial from "../../db/data-migrations/examples/bind-social-accou
 import * as verifyEmail from "../../db/data-migrations/examples/verify-user-email";
 import * as forceLogout from "../../db/data-migrations/examples/force-logout-user";
 import * as expireTokens from "../../db/data-migrations/examples/expire-stale-reset-tokens";
+import * as addQuintusHoratiusFlaccus from "../../db/data-migrations/003_add_quintus_horatius_flaccus";
 
 function qaTeacher(overrides: Partial<ProductUser> = {}): ProductUser {
   return {
@@ -41,6 +42,18 @@ test("example A adds a published course once", async () => {
   assert.deepEqual(second.applied, []);
   assert.ok(first.sql >= 1);
   assert.equal(process.env.DATABASE_URL || "", "");
+});
+
+test("003 adds Quintus Horatius Flaccus once", async () => {
+  const orm = createMemoryOrm();
+  const first = await applyOrmMigrations(orm, [addQuintusHoratiusFlaccus], { store: "memory" });
+  const second = await applyOrmMigrations(orm, [addQuintusHoratiusFlaccus], { store: "memory" });
+  const course = orm.table<ProductCourse>("courses").findById("quintus-horatius-flaccus");
+  assert.equal(course?.title, "Quintus Horatius Flaccus");
+  assert.equal(course?.sections.length, 2);
+  assert.deepEqual(first.applied, [addQuintusHoratiusFlaccus.id]);
+  assert.deepEqual(second.applied, []);
+  assert.equal(orm.table<ProductUser>("users").all().length, 0);
 });
 
 test("example B adds a lesson on an existing course and then skips", async () => {
