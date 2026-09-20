@@ -137,7 +137,7 @@ Anything else is an extra table. AWS persist writes those rows to `orm_rows` and
 
 `courses` · `plans` · `portalContent` · `paymentSettings` · `catalogue` · `files` · `media` · `users` · `sessions` · `accounts` · `orders` · `quotes` · `subscriptions` · `entitlements` · `studyRecords` · `studyEvents` · `conversations` · `notifications` · `tokens` · `other`
 
-Default catalogue work is `["courses"]`. Portal CMS copy is `["portalContent"]`. Price seed is `["plans"]` (and usually the existing Stripe confirm path, not a silent amount change). Extra tables = `["other"]`. File / wiki / media blobs = `["files"]` or `["media"]`.
+Default catalogue work is `["courses"]`. Portal CMS copy is `["portalContent"]`. Price seed is `["plans"]` (and usually the existing Stripe confirm path, not a silent amount change). Extra tables = `["other"]`. File / wiki / media files = `["files"]` or `["media"]`.
 
 Do **not** add `users` / `orders` / `entitlements` unless the change is an explicit backfill with its own review. Those rows are environment-specific.
 
@@ -191,14 +191,15 @@ node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/u
 On DEV/SIT boot (`npm start` → `--apply --boot`):
 
 1. `CREATE TABLE IF NOT EXISTS data_migrations` and `orm_rows` (also `db/migrations/010_orm_runtime.sql`).
-2. Lock `app_files.learning_guide/product.json`, hydrate extra rows from `orm_rows` and the SQL ledger.
+2. Lock `app_files.learning_guide/product.json`, hydrate product and extra rows from `orm_rows` and the SQL ledger.
 3. Run `apply(orm)` with `ctx.store === "sql"`.
 4. Compile the recorded ops and execute them in the same transaction:
-   - product tables/docs → update the aggregate blob (the live app still reads it)
+   - product tables/docs → `INSERT … orm_rows ON CONFLICT` (standard entities from [domain-model.md](domain-model.md))
    - extra tables/docs → `INSERT … orm_rows ON CONFLICT`
    - ledger → `INSERT … data_migrations ON CONFLICT DO NOTHING`
    - small text files → `app_files` `storage='db'`
    - binary / large files → S3 under `DATA_S3_PREFIX/learning_guide/orm/…` plus an `app_files` pointer
+   - snapshot → `UPDATE app_files … learning_guide/product.json` (not the data model)
 5. Commit. A thrown apply or SQL/S3 error rolls back and fails the revision.
 
 CI never reaches step 4. It stops at the compiled plan.

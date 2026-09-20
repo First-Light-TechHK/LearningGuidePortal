@@ -3,7 +3,8 @@
 DEV App Runner (`learning-guide-portal`, www + admin) tracks the **`dev`** branch. A push to **`dev`** runs GitHub **Deploy DEV**, which starts that service. **`main` is not the auto-sync source.** SIT stays a manual `Deploy SIT` dispatch.
 
 **New to this:** [data-migration-examples.md](data-migration-examples.md) (copy-paste walkthrough).  
-**Rules:** [writing-data-migrations.md](writing-data-migrations.md).
+**Rules:** [writing-data-migrations.md](writing-data-migrations.md).  
+**Standard data model:** [domain-model.md](domain-model.md) (`docs/phase1/domain-model.md`, not a GitHub `/blob/` URL).
 
 Do not commit `data/` or replace cloud `product.json`. Do not put SQL in a data migration — CI has no `DATABASE_URL`. Users, sessions, orders and entitlements stay in the live store unless a migration declares those `touches` and is reviewed as a backfill.
 

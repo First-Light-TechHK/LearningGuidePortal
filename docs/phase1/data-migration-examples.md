@@ -106,7 +106,7 @@ SIT does not get this until someone runs **Deploy SIT**. SIT then applies the sa
 |---|---|---|
 | `orm.table<T>("name")` | many rows with an `id` | `{ id: string, … }` |
 | `orm.doc<T>("name")` | one document (portal, payment settings) | any object |
-| `orm.files` | markdown / json / binary blobs | stable path string |
+| `orm.files` | markdown / json / binary files | stable path string |
 
 Table helpers: `all()`, `findById(id)`, `find(fn)`, `insert(row)`, `update(id, patch)`, `upsert(row)`.
 
@@ -146,7 +146,7 @@ export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[
 - `status: "published"` plus at least one `isPublic: true` lesson, or visitors cannot preview.
 - `thumbnailPath` must be a file already in `public/` (example: `/portal/course-book.jpg`). A local `/api/course-media/…` id from your laptop does not exist on DEV.
 - `category` is one of `"Chinese Humanities" | "European Humanities" | "Science"`.
-- AWS persist: this write updates `app_files.learning_guide/product.json` (the live app still reads courses from that blob). You still do **not** write that SQL yourself.
+- AWS persist: this write upserts the course into `orm_rows` (`table_name = 'courses'`) and refreshes the `product.json` snapshot. You still do **not** write that SQL yourself. Entity shape: [domain-model.md](domain-model.md).
 
 **Do not** also touch `users`, `orders`, or `entitlements`. Learners on DEV already have those rows.
 

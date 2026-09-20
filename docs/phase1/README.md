@@ -2,6 +2,8 @@
 
 这里是 Learning Guide 生产网站 Phase 1 的工程文件入口。KS 不是独立产品；KS Phase 2 只增强 `Study`、`Understanding/Assessment` 和 `AI Tutor`。
 
+Cite these files as repo paths (`docs/phase1/domain-model.md`). Do not use GitHub `/blob/…` URLs.
+
 ## 文件顺序
 
 | 文件 | 用途 |

@@ -1,5 +1,9 @@
 # Phase 1：数据设计
 
+This file is the **standard data model**. Entities are tables with fields and constraints, not a JSON document and not a GitHub `/blob/` page. Cite it as `docs/phase1/domain-model.md`.
+
+Live DEV/SIT persist those entities as PostgreSQL `orm_rows` (one JSONB payload per row) plus `app_files` / S3 for files. `learning_guide/product.json` is a snapshot, not the model. Dedicated column tables remain the `001`–`008` migrations below.
+
 ## 1. 实体关系
 
 ```mermaid
@@ -53,7 +57,7 @@ Stripe lookup-key payment additions: `ProductQuote.price` / `ProductOrder.price`
 
 WeChat Account additions: `wechatAppId`, `wechatOpenId`, optional `wechatUnionId`; `providerSubject` is `${appId}:${openid}`. `User.email` is nullable; absent email means `emailVerifiedAt = null`. An active linked WeChat account is sufficient for application Session validation, while password login continues to require verified email.
 
-The current JSON store migrates a legacy unscoped OpenID/UnionID on the next successful provider authentication, using only IDs returned by WeChat. It retains userId and associated records, clears legacy `wechat-*@local.invalid` email and verification, and rejects multiple matching Accounts. Existing real contact email is preserved. With missing UnionID, a legacy UnionID-only identity cannot be recovered until WeChat returns that ID. Before changing AppID or enabling multi-instance traffic, reconcile legacy Accounts and migrate to relational repositories with unique `(provider, provider_subject)` constraints. No SQL alteration is applied here: this checkout currently stores product records in JSON through `app_files`, not relational users/accounts tables.
+The current JSON store migrates a legacy unscoped OpenID/UnionID on the next successful provider authentication, using only IDs returned by WeChat. It retains userId and associated records, clears legacy `wechat-*@local.invalid` email and verification, and rejects multiple matching Accounts. Existing real contact email is preserved. With missing UnionID, a legacy UnionID-only identity cannot be recovered until WeChat returns that ID. Before changing AppID or enabling multi-instance traffic, reconcile legacy Accounts and migrate to relational repositories with unique `(provider, provider_subject)` constraints. Runtime rows today live in `orm_rows` and a `product.json` snapshot; the `001`–`008` column tables are still outstanding.
 
 ```text
 Trial Active -> Trial Canceled -> Trial Active（原 trial_end_at 之前可恢复）
