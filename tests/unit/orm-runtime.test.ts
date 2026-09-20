@@ -87,7 +87,7 @@ test("hydrate merges SQL product rows onto the JSON aggregate without dropping o
     },
   });
   assert.deepEqual((data.courses as Array<{ id: string }>).map((item) => item.id).sort(), ["epicureanism", "stoicism"]);
-  assert.equal(data.dataMigrations.includes("001_add_stoicism"), true);
+  assert.equal((data.dataMigrations as string[]).includes("001_add_stoicism"), true);
 });
 
 test("product snapshot upserts live rows and deletes ids that left the aggregate", async () => {
@@ -96,7 +96,7 @@ test("product snapshot upserts live rows and deletes ids that left the aggregate
     courses: [{ id: "stoicism", title: "Stoicism" }],
     users: [{ id: "user-keep" }],
     portalContent: { supportUrl: "https://example.test" },
-    dataMigrations: ["001_add_stoicism"],
+    dataMigrations: ["001_add_stoicism"] as string[],
   }, {
     query: async (text, values = []) => {
       sql.push({ text, values });
