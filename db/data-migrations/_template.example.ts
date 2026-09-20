@@ -1,3 +1,4 @@
+// Teaching copies: docs/phase1/data-migration-examples.md and ./examples/
 import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
 

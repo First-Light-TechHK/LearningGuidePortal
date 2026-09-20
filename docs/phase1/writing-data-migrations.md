@@ -1,6 +1,8 @@
 # How to write a data migration
 
-This is the developer contract for changing **live data** in git so AWS can execute it. A migration is **not** a SQL script and **not** a dump of `data/product.json`. You write against an in-memory **ORM**. CI can run that ORM with no `DATABASE_URL`. AWS on DEV is the only place that persists.
+**Never written one?** Start with the worked copies: [data-migration-examples.md](data-migration-examples.md). Scaffold with `npm run data:migration:new -- your_slug`, paste the matching file from `db/data-migrations/examples/`, then come back here for the rules.
+
+This is the contract for changing **live data** in git so AWS can execute it. A migration is **not** a SQL script and **not** a dump of `data/product.json`. You write against an in-memory **ORM**. CI can run that ORM with no `DATABASE_URL`. AWS on DEV is the only place that persists.
 
 Operator overview: [data-migrations.md](data-migrations.md).
 
@@ -117,7 +119,7 @@ export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[
 }
 ```
 
-`ctx.store` is `"memory"` in CI and `"aggregate"` on App Runner persist today. A later SQL adapter will keep the same `apply(orm)` and change only the ORM implementation. `ctx.dryRun` is true for `--dry-run`. `ctx.now` is an ISO timestamp; use it instead of `Date.now()` in ids.
+`ctx.store` is `"memory"` in CI, `"aggregate"` on a laptop persist, and `"sql"` when App Runner compiles and executes. You almost never branch on it. `ctx.dryRun` is true for `--dry-run`. `ctx.now` is an ISO timestamp; use it instead of `Date.now()` in ids.
 
 `apply` may be `async`. Prefer sync unless you are reading a **repo** file to build a payload (still no S3 client).
 
@@ -129,7 +131,7 @@ export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[
 
 Product table names today: `courses`, `plans`, `users`, `sessions`, `accounts`, `orders`, `quotes`, `subscriptions`, `entitlements`, `studyRecords`, `studyEvents`, `conversations`, `notifications`, `verificationTokens`, `passwordResetTokens`, `emailBindingTokens`, `stripeEvents`, `orderActivities`.
 
-Anything else is an extra table. On DEV persist it is stored under `ormExtras` on the aggregate until the SQL adapter exists. CI never needs that bag — use `createMemoryOrm()`.
+Anything else is an extra table. AWS persist writes those rows to `orm_rows` and files to `app_files` / S3. CI never needs a database — use `createMemoryOrm()`.
 
 ### `touches` values
 
