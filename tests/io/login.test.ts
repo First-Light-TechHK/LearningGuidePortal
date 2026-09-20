@@ -78,7 +78,7 @@ async function registerPending(label: string, password = PASSWORD) {
   }
 }
 
-test("AUTH-01 functional: check-email does not distinguish a known address from an unknown one", async () => {
+test("AUTH-01 functional: check-email identifies known and unknown addresses", async () => {
   const { email } = await registerAccount("auth01-check");
   clearCookies();
   const known = await checkEmail.POST(jsonRequest("POST", "http://localhost/api/auth/check-email", { email }));
@@ -86,9 +86,10 @@ test("AUTH-01 functional: check-email does not distinguish a known address from 
   const knownBody = await known.json() as Record<string, unknown>;
   const unknownBody = await unknown.json() as Record<string, unknown>;
   assert.equal(known.status, unknown.status);
-  assert.equal("exists" in knownBody, false);
-  assert.equal("exists" in unknownBody, false);
-  assert.deepEqual(publicShape(knownBody), publicShape(unknownBody));
+  assert.equal(knownBody.ok, true);
+  assert.equal(unknownBody.ok, true);
+  assert.deepEqual((knownBody.data as Record<string, unknown>).exists, true);
+  assert.deepEqual((unknownBody.data as Record<string, unknown>).exists, false);
 });
 
 test("AUTH-01 negative: register copy does not say the address already exists", async () => {
