@@ -151,7 +151,9 @@ Do **not** add `users` / `orders` / `entitlements` unless the change is an expli
 
 **Files / wiki / media.** `orm.files.writeText` / `writeJson` with a stable path. Seed binaries that the Next app must serve belong in `public/` (git, App Runner disk). Course-media in S3 is per environment; a migration must not assume your local asset ids exist on DEV.
 
-**Users and payments.** Out of scope unless `touches` says so and the PR says why. Never copy local sessions or tokens.
+**Users and login.** See [data-migration-examples.md](data-migration-examples.md#user-and-login-read-this-before-you-touch-users). Allowed patterns: promote one named email, seed one DEV operator with `passwordHash: null` + Google/WeChat, bind a social account, verify one email, expire sessions or leftover tokens. Forbidden: plaintext passwords, laptop user dumps, inserting sessions or verify/reset tokens. Declare `users` / `accounts` / `sessions` / `tokens` and say why in the PR.
+
+**Payments.** Do not change Stripe amounts here. Use `scripts/sync-stripe-sandbox.ts --cloud`.
 
 ## Tests you must add
 

@@ -10,6 +10,8 @@ Copy-paste sources: `db/data-migrations/examples/` (teaching files — **not** r
 
 The live seed you can read end-to-end is [`db/data-migrations/001_add_stoicism.ts`](../../db/data-migrations/001_add_stoicism.ts).
 
+Catalogue first (A–E), then [user / login](#user-and-login-read-this-before-you-touch-users) (G–L). Login rows are per environment. Do not start there unless the PR names one email.
+
 ---
 
 ## 15-minute first migration
@@ -301,6 +303,179 @@ Do **not** change `amountMinor`, Stripe price ids, or publishable keys here. Tho
 
 ---
 
+## User and login (read this before you touch `users`)
+
+Login data is **per environment**. DEV learners, SIT testers and your laptop are different people. A course seed is usually safe to repeat everywhere. A user seed is not.
+
+These tables are protected. If `apply` writes them without declaring `touches`, boot **throws**.
+
+| Table | What it is | Typical `touches` |
+|---|---|---|
+| `users` | email, nickname, `role` (`student` / `teacher` / `operator`), `status`, `emailVerifiedAt`, `passwordHash` | `["users"]` |
+| `accounts` | Google / WeChat link (`provider` + `providerSubject`) | `["accounts"]` |
+| `sessions` | signed-in cookies (`tokenHash`, `expiresAt`) | `["sessions"]` |
+| `verificationTokens` | email-verify one-time secrets | `["tokens"]` |
+| `passwordResetTokens` | reset-password one-time secrets | `["tokens"]` |
+| `emailBindingTokens` | bind-email one-time secrets | `["tokens"]` |
+
+**Rules that keep login safe**
+
+- The PR must name the **one** email or user id you are changing, and why.
+- Find the user by `email` or stable `id` (`user-dev-operator`). Never dump every local user onto DEV.
+- `passwordHash` is `scrypt$salt$hex`. **Never** put a plaintext password in a migration. Prefer `passwordHash: null` and Google / WeChat login, or let the person use “forgot password” after you verify the email.
+- Never insert `sessions`, `verificationTokens`, or `passwordResetTokens` so someone can skip login. Those hashes are secrets. The ORM also has no `delete()` — expire a session by setting `expiresAt` to `ctx.now`.
+- `role: "operator"` opens admin. Treat that as a backfill, not a catalogue change.
+
+How a real sign-in works (so you know which row to write):
+
+1. **Email + password** — `users.email` + `users.passwordHash`. Needs `status: "active"` and `emailVerifiedAt` set.
+2. **Google / WeChat** — `accounts` row with `provider` + `providerSubject`, pointing at `users.id`. WeChat often also has `wechatOpenId` / `wechatUnionId`.
+3. **Already signed in** — `sessions` row. The cookie stores the raw token; the table stores only `tokenHash`.
+
+---
+
+## Example G — promote an existing user (teacher / operator)
+
+**When:** a person already signed up on DEV and you only need to change `role`.
+
+**Copy:** [`examples/promote-user-role.ts`](../../db/data-migrations/examples/promote-user-role.ts)
+
+```ts
+export const touches = ["users"] as const;
+
+export function apply(orm: MigrationOrm): DataChange[] {
+  const users = orm.table<ProductUser>("users");
+  const user = users.find((item) => item.email === "qa.teacher@example.test")[0];
+  if (!user) return [{ action: "skip", kind: "user", id: "qa.teacher@example.test", reason: "missing" }];
+  if (user.role === "teacher") return [{ action: "skip", kind: "user", id: user.id, reason: "current" }];
+  users.update(user.id, { role: "teacher" });
+  return [{ action: "update", kind: "user", id: user.id }];
+}
+```
+
+If the email is not on that environment, the migration **skips**. It does not create a user. That is what you want on SIT if only DEV has that inbox.
+
+---
+
+## Example H — seed a DEV operator who signs in with Google
+
+**When:** QA needs a stable operator on DEV and that inbox does not exist yet.
+
+**Copy:** [`examples/seed-dev-operator.ts`](../../db/data-migrations/examples/seed-dev-operator.ts)
+
+```ts
+export const touches = ["users", "accounts"] as const;
+
+users.insert({
+  id: "user-dev-operator",
+  email: "dev.operator@example.test",
+  passwordHash: null,          // no password in git
+  nickname: "Dev Operator",
+  locale: "en-GB",
+  role: "operator",
+  status: "active",
+  emailVerifiedAt: ctx.now,    // required for email-bearing logins
+  createdAt: ctx.now,
+});
+accounts.insert({
+  id: "account-dev-operator-google",
+  userId: "user-dev-operator",
+  provider: "google",
+  providerSubject: "replace-with-google-sub",
+  createdAt: ctx.now,
+});
+```
+
+Replace `providerSubject` with the Google `sub` from the first failed login (or from Google’s token). If you leave the placeholder, Google login will create a **second** user unless the app matches on email. Prefer: seed the user with the real work email, `emailVerifiedAt` set, `passwordHash: null`, and let the first Google login attach the account — then this `accounts.insert` is only for a subject you already know.
+
+Skip when either that `id` or that `email` already exists so you do not duplicate the operator.
+
+---
+
+## Example I — bind WeChat or Google to a user who already exists
+
+**When:** the QA teacher can use email today and also needs WeChat (or Google) on the **same** user.
+
+**Copy:** [`examples/bind-social-account.ts`](../../db/data-migrations/examples/bind-social-account.ts)
+
+```ts
+export const touches = ["accounts"] as const;
+
+const user = users.find((item) => item.email === "qa.teacher@example.test")[0];
+if (!user) return [{ action: "skip", kind: "user", id: EMAIL, reason: "missing" }];
+if (accounts.find((item) => item.userId === user.id && item.provider === "wechat").length) {
+  return [{ action: "skip", kind: "account", id: ACCOUNT_ID, reason: "exists" }];
+}
+accounts.insert({
+  id: "account-qa-teacher-wechat",
+  userId: user.id,
+  provider: "wechat",
+  providerSubject: "replace-with-wechat-openid",
+  wechatOpenId: "replace-with-wechat-openid",
+  createdAt: ctx.now,
+});
+```
+
+Do **not** insert a second `users` row for the same person. That is how entitlements and study history split.
+
+You are only writing `accounts`, so `touches` is `["accounts"]`. Reading `users` does not need a declaration.
+
+---
+
+## Example J — mark one email verified (no token in git)
+
+**When:** a DEV signup is stuck on `pending` / unverified and you cannot use the mailbox.
+
+**Copy:** [`examples/verify-user-email.ts`](../../db/data-migrations/examples/verify-user-email.ts)
+
+```ts
+export const touches = ["users"] as const;
+
+users.update(user.id, {
+  emailVerifiedAt: user.emailVerifiedAt || ctx.now,
+  status: "active",
+});
+```
+
+Do **not** insert into `verificationTokens` to “give them a link”. That token is a secret. The product already has an admin / resend path; this migration is only for a named exception.
+
+---
+
+## Example K — force logout (expire sessions)
+
+**When:** a stolen cookie, a role change that must take effect immediately, or a QA account shared by too many people.
+
+**Copy:** [`examples/force-logout-user.ts`](../../db/data-migrations/examples/force-logout-user.ts)
+
+```ts
+export const touches = ["sessions"] as const;
+
+const live = sessions.find((item) => item.userId === user.id && item.expiresAt > ctx.now);
+if (!live.length) return [{ action: "skip", kind: "session", id: user.id, reason: "none-live" }];
+for (const session of live) sessions.update(session.id, { expiresAt: ctx.now });
+```
+
+The table API has **no `delete()`**. Expiring the row is the supported logout. The next request will drop the cookie.
+
+---
+
+## Example L — expire leftover password-reset tokens
+
+**When:** unused reset tokens should not stay valid after an incident.
+
+**Copy:** [`examples/expire-stale-reset-tokens.ts`](../../db/data-migrations/examples/expire-stale-reset-tokens.ts)
+
+```ts
+export const touches = ["tokens"] as const;
+
+const leftover = orm.table<ProductToken>("passwordResetTokens").find((item) => !item.usedAt);
+for (const token of leftover) tokens.update(token.id, { usedAt: ctx.now, expiresAt: ctx.now });
+```
+
+Same idea for `verificationTokens` or `emailBindingTokens`. Still never **insert** a token.
+
+---
+
 ## Example F — what you must not ship
 
 These fail CI or destroy live data. They are shown so you can recognise them in review.
@@ -323,7 +498,18 @@ orm.files.writeText("wiki/x.md", "# x\n");
 
 // WRONG — copies laptop users onto DEV.
 orm.table("users").insert(localUser);
-// unless the PR is an explicit backfill and touches includes "users"
+
+// WRONG — plaintext password. Git would store the secret forever.
+users.insert({ email: "a@b.c", passwordHash: "Password123!", … });
+
+// WRONG — copies a live session so you stay logged in on DEV.
+sessions.insert({ id: "s1", tokenHash: laptopHash, userId: "user-me", … });
+
+// WRONG — inserts a verify/reset token. That is a login secret.
+verificationTokens.insert({ tokenHash: hash, … });
+
+// WRONG — second user for the same person (splits purchases and study).
+users.insert({ id: "user-qa-2", email: "qa.teacher@example.test", … });
 
 // WRONG — overwrites operator banners.
 orm.doc("portalContent").set(defaultPortalContent);
@@ -346,7 +532,12 @@ Pick every domain you change. The runner snapshots protected tables and extra ta
 | Extra table (`wiki_pages`, …) | `["other"]` |
 | `orm.files.write…` | `["files"]` or `["media"]` |
 | Wiki row **and** markdown | `["other", "files"]` |
-| Users / orders / entitlements | almost never; needs review |
+| Change `role` / verify email / seed one named user | `["users"]` (PR must name the email) |
+| Google / WeChat link | `["accounts"]` |
+| Expire cookies | `["sessions"]` |
+| Expire verify / reset / bind tokens | `["tokens"]` |
+| Seed operator + Google in one script | `["users", "accounts"]` |
+| Orders / entitlements | almost never; needs review |
 
 `catalogue` is a legacy alias for “catalogue-shaped work”. Prefer `courses` / `plans` / `portalContent` so the declaration matches what you touch.
 

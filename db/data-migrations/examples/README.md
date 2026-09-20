@@ -13,3 +13,9 @@ These files are **teaching copies**. They are not registered in `index.ts` and A
 | `patch-portal-banner-if-empty.ts` | Portal document, only if empty |
 | `add-wiki-page.ts` | Extra table + markdown file |
 | `backfill-payment-settings.ts` | Settings document patch |
+| `promote-user-role.ts` | Make one existing email a teacher/operator |
+| `seed-dev-operator.ts` | New DEV operator + Google account (no password) |
+| `bind-social-account.ts` | Link WeChat/Google to an existing user |
+| `verify-user-email.ts` | Mark one email verified |
+| `force-logout-user.ts` | Expire that user's sessions |
+| `expire-stale-reset-tokens.ts` | Invalidate leftover reset tokens |
