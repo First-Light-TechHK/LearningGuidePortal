@@ -40,7 +40,7 @@ export type MigrationOrm = {
   snapshot(name: string): string;
 };
 
-const PRODUCT_TABLES = [
+export const PRODUCT_TABLES = [
   "courses",
   "plans",
   "users",
@@ -61,7 +61,7 @@ const PRODUCT_TABLES = [
   "orderActivities",
 ] as const;
 
-const PRODUCT_DOCS = ["portalContent", "paymentSettings"] as const;
+export const PRODUCT_DOCS = ["portalContent", "paymentSettings"] as const;
 
 export const PROTECTED_TABLES = ["users", "sessions", "accounts", "orders", "quotes", "subscriptions", "entitlements", "studyRecords", "studyEvents", "conversations", "notifications", "verificationTokens", "passwordResetTokens", "emailBindingTokens", "stripeEvents"] as const;
 

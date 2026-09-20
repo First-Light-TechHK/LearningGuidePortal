@@ -3,12 +3,15 @@ import path from "node:path";
 import { dataMigrations, type DataChange } from "../db/data-migrations";
 import { DATA_MIGRATION_ID, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "../db/data-migrations/types";
 import { PROTECTED_TABLES, createMemoryOrm, ormFromProductData, type MigrationOrm } from "./migrationOrm";
+import { compileOrmOps, recordOrm, type OrmPlan } from "./ormRuntime";
 import type { ProductData } from "./productStore";
 
 export type DataMigrationReport = {
   applied: string[];
   skipped: string[];
   changes: Array<DataChange & { migration: string }>;
+  sql: number;
+  objects: number;
 };
 
 const TABLE_DOMAIN: Record<(typeof PROTECTED_TABLES)[number], DataMigrationDomain> = {
@@ -100,28 +103,43 @@ export async function applyOrmMigrations(
   ctx: Partial<DataMigrationContext> = {},
   data?: ProductData,
 ): Promise<DataMigrationReport> {
+  const { report } = await applyOrmMigrationsWithPlan(orm, migrations, ctx, data);
+  return report;
+}
+
+export async function applyOrmMigrationsWithPlan(
+  orm: MigrationOrm,
+  migrations: DataMigration[] = dataMigrations,
+  ctx: Partial<DataMigrationContext> = {},
+  data?: ProductData,
+  compileOptions: { s3Prefix?: string } = {},
+): Promise<{ report: DataMigrationReport; plan: OrmPlan }> {
+  const recorded = recordOrm(orm);
   validateDataMigrations(migrations);
   if (migrations === dataMigrations) assertMigrationRegistry(migrations);
-  const seen = recordedIds(data, orm);
+  const seen = recordedIds(data, recorded.orm);
   const context = defaultContext(ctx);
-  const report: DataMigrationReport = { applied: [], skipped: [], changes: [] };
+  const report: DataMigrationReport = { applied: [], skipped: [], changes: [], sql: 0, objects: 0 };
   for (const migration of migrations) {
     if (seen.has(migration.id)) {
       report.skipped.push(migration.id);
       continue;
     }
     const before = Object.fromEntries(
-      [...PROTECTED_TABLES, ...orm.extraTables()].map((name) => [name, orm.snapshot(name)]),
+      [...PROTECTED_TABLES, ...recorded.orm.extraTables()].map((name) => [name, recorded.orm.snapshot(name)]),
     );
-    const changes = await migration.apply(orm, context);
-    assertTouches(orm, before, migration.touches, migration.id);
+    const changes = await migration.apply(recorded.orm, context);
+    assertTouches(recorded.orm, before, migration.touches, migration.id);
     report.changes.push(...changes.map((change) => ({ ...change, migration: migration.id })));
-    record(data, orm, migration.id);
+    record(data, recorded.orm, migration.id);
     seen.add(migration.id);
     if (changes.some((change) => change.action === "add" || change.action === "update")) report.applied.push(migration.id);
     else report.skipped.push(migration.id);
   }
-  return report;
+  const plan = compileOrmOps(recorded.ops, compileOptions);
+  report.sql = plan.sql.length;
+  report.objects = plan.objects.length;
+  return { report, plan };
 }
 
 export async function applyDataMigrations(

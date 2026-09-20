@@ -32,8 +32,8 @@ export type DataChange = {
 };
 
 export type DataMigrationContext = {
-  /** CI and unit tests use memory. App Runner DEV persist uses aggregate/VFS. */
-  store: "memory" | "aggregate";
+  /** CI uses memory. Laptop persist uses aggregate. App Runner DEV/SIT compile+execute SQL/S3. */
+  store: "memory" | "aggregate" | "sql";
   dryRun: boolean;
   now: string;
 };

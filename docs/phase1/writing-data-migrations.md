@@ -14,17 +14,17 @@ So:
 |---|---|---|
 | **Migration script** | CI, laptop dry-run, App Runner boot | `apply(orm, ctx)` — table / doc / files API |
 | **Memory ORM** | `npm test`, `data:migrate --dry-run` without DB | `createMemoryOrm()` — no Postgres, no S3 |
-| **Aggregate adapter** | App Runner DEV persist today | `ormFromProductData()` — product tables plus `ormExtras` for anything else |
-| **SQL / S3 adapter** | DEV by AWS, later | Same `orm.table` / `orm.files` calls, interpreted as SQL + object writes. **Do not hand-write SQL in the migration.** |
+| **Compiler** | CI and AWS | Same ops → `data_migrations` / `orm_rows` / `app_files` SQL + S3 objects |
+| **SQL / S3 execute** | DEV/SIT App Runner only | `scripts/migrate-data.ts --apply --boot` runs the compiled plan. **Do not hand-write SQL in the migration.** |
 
-The future adapter compiles ORM operations. If you put SQL in the script, CI cannot prove it.
+AWS maps the ORM ops. If you put SQL in the script, CI cannot prove it.
 
 ## What AWS actually runs
 
 1. You commit a numbered file under `db/data-migrations/` and **push `dev`**.
 2. GitHub **Deploy DEV** starts App Runner for that SHA (DEV = `www` + `admin.ilovelearningguide.com`). `main` is not auto-deployed.
 3. `npm start` runs `scripts/start-with-data-migrations.cjs`.
-4. That process opens the live store, builds an ORM over it, applies every **unrecorded** id, persists in one transaction (`UPDATE app_files … WHERE path='learning_guide/product.json'`), then starts Next.js.
+4. That process opens the live store, builds an ORM over it, applies every **unrecorded** id, compiles those ops to SQL/S3, executes the plan in one transaction, then starts Next.js.
 5. If apply throws, the revision fails health and does not serve the new code against a half-written store.
 
 SIT does not auto-deploy. After a manual SIT release of the same SHA, SIT start applies ids that environment has not recorded. It does not copy DEV users or payments.
@@ -42,13 +42,12 @@ CONFIRM_DATA_SYNC=learning-guide/dev APP_ENV=DEV DATA_S3_PREFIX=learning-guide/d
 
 ## Mental model
 
-| Layer | Today | Later (same scripts) |
+| Layer | CI / laptop | AWS DEV/SIT boot |
 |---|---|---|
 | Script | `id`, `description`, `touches`, `apply(orm, ctx)` | Same file, same `id` |
 | Logical change | `orm.table` / `orm.doc` / `orm.files` | Same predicates and payloads |
-| CI / unit test | `createMemoryOrm()` + `applyOrmMigrations` | Same — still no DB vars |
-| Persist | Product columns on `app_files.learning_guide/product.json`; extra tables/files on `ormExtras` | Adapter turns the same ORM ops into SQL + S3 |
-| Ledger | `_data_migrations` table in the ORM, plus `dataMigrations[]` / legacy `catalogueMigrations[]` on the aggregate | `data_migrations(id, applied_at)` |
+| Prove it | `createMemoryOrm()` compiles the SQL/S3 plan | Same compile, then execute |
+| Persist | Dry-run prints `sql` / `objects` counts | Extra tables → `orm_rows`; files → `app_files` + S3; product tables → `learning_guide/product.json`; ledger → `data_migrations` |
 
 **Rules that keep the conversion cheap**
 
@@ -183,13 +182,19 @@ node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/u
 - [ ] Dry-run JSON looks right (`applied` / `changes`)
 - [ ] Push **`dev`**, not only `main`
 
-## After the SQL/S3 cutover
+## What AWS executes
 
-We will keep these files. The boot runner will:
+On DEV/SIT boot (`npm start` → `--apply --boot`):
 
-1. Read the ledger (`data_migrations` or today’s JSON array).
-2. Build a SQL/S3 ORM that implements the same `table` / `doc` / `files` methods.
-3. Call the same `apply(orm, ctx)` with `ctx.store` describing that adapter.
-4. Persist ledger + row writes in one transaction; put file writes under `DATA_S3_PREFIX`.
+1. `CREATE TABLE IF NOT EXISTS data_migrations` and `orm_rows` (also `db/migrations/010_orm_runtime.sql`).
+2. Lock `app_files.learning_guide/product.json`, hydrate extra rows from `orm_rows` and the SQL ledger.
+3. Run `apply(orm)` with `ctx.store === "sql"`.
+4. Compile the recorded ops and execute them in the same transaction:
+   - product tables/docs → update the aggregate blob (the live app still reads it)
+   - extra tables/docs → `INSERT … orm_rows ON CONFLICT`
+   - ledger → `INSERT … data_migrations ON CONFLICT DO NOTHING`
+   - small text files → `app_files` `storage='db'`
+   - binary / large files → S3 under `DATA_S3_PREFIX/learning_guide/orm/…` plus an `app_files` pointer
+5. Commit. A thrown apply or SQL/S3 error rolls back and fails the revision.
 
-That is why a script written today against the ORM does not have to be rewritten as a one-off SQL dump, and why CI can keep testing it with `createMemoryOrm()`.
+CI never reaches step 4. It stops at the compiled plan.

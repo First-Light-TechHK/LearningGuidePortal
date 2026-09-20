@@ -44,6 +44,17 @@ export async function ensureSchema() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS app_files_path_prefix_idx ON app_files (path text_pattern_ops);
+        CREATE TABLE IF NOT EXISTS data_migrations (
+          id TEXT PRIMARY KEY,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS orm_rows (
+          table_name TEXT NOT NULL,
+          id TEXT NOT NULL,
+          payload JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (table_name, id)
+        );
       `);
     })().catch((error) => {
       schemaReady = null;
