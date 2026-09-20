@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next dev",
     "build": "next build",
-    "start": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next start",
+    "start": "node scripts/start-with-data-migrations.cjs",
     "typecheck": "tsc --noEmit",
     "typecheck:io": "tsc --noEmit -p tsconfig.io.json",
     "lint": "eslint .",
@@ -22,7 +22,8 @@
     "preflight:production": "node scripts/preflight-production.mjs",
     "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3011/api/payment/webhook",
     "seed:science": "npx --yes tsx scripts/seed-science.ts",
-    "catalogue:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-catalogue.ts",
+    "catalogue:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-data.ts",
+    "data:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-data.ts",
     "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs",
     "test:payment": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.payment.config.ts"

@@ -23,7 +23,7 @@ import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } 
 import type { LessonContent } from "@/contracts/lesson-content";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
-import { applyCatalogueMigrations } from "./catalogueMigrations";
+import { applyDataMigrations } from "./dataMigrations";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -227,6 +227,7 @@ export type ProductPaymentSettings = {
 export type ProductData = {
   catalogue?: CatalogueEntry[];
   catalogueMigrations?: string[];
+  dataMigrations?: string[];
   authoringActivities?: Array<{ id: string; actorId: string; courseId?: string; action: string; createdAt: string; targetUserId?: string }>;
   portalContent?: PortalContent;
   version: 1;
@@ -310,6 +311,7 @@ function defaultData(): ProductData {
   return {
     version: 1,
     catalogueMigrations: [],
+    dataMigrations: [],
     users: [],
     sessions: [],
     courses: [defaultCourse()],
@@ -424,6 +426,7 @@ export async function readProductAggregate() {
     if (!current.orderActivities) current.orderActivities = [];
     if (!current.accounts) current.accounts = [];
     current.catalogueMigrations ||= [];
+    current.dataMigrations ||= [];
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
     current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
     current.plans.forEach((plan) => {
@@ -455,12 +458,16 @@ export async function readProductAggregate() {
 
 export async function ensureProductData() {
   const current = await readProductAggregate();
-  applyCatalogueMigrations(current);
+  applyDataMigrations(current);
   return current;
 }
 
+export async function persistDataMigrations() {
+  return editData((data) => applyDataMigrations(data));
+}
+
 export async function persistCatalogueMigrations() {
-  return editData((data) => applyCatalogueMigrations(data));
+  return persistDataMigrations();
 }
 
 async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {

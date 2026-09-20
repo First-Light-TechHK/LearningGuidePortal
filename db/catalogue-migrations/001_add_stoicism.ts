@@ -1,6 +1,6 @@
-import type { ProductCourse } from "../../services/productStore";
+import type { ProductCourse, ProductData } from "../../services/productStore";
 import { now } from "../../services/fileStore";
-import type { CatalogueChange } from "./types";
+import type { DataChange } from "../data-migrations/types";
 
 export const id = "001_add_stoicism";
 export const description = "Add the published Stoicism sibling course so DEV catalogue and trial recommendations have a second course.";
@@ -47,7 +47,7 @@ This lesson stays with that pause. It does not replace medical or personal advic
   };
 }
 
-export function apply(data: { courses: Array<{ id: string; slug: string }> }): CatalogueChange[] {
+export function apply(data: ProductData): DataChange[] {
   if (data.courses.some((course) => course.id === "stoicism" || course.slug === "stoicism")) {
     return [{ action: "skip", kind: "course", id: "stoicism", reason: "exists" }];
   }

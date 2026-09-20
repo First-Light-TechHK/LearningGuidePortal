@@ -1,4 +1,4 @@
-# Catalogue migrations only. Never copies users, sessions or payments.
+# Optional operator retry. App Runner already applies data migrations on start.
 # DEV only. SIT stays manual. Does not run on push.
 
 name: Sync catalogue
@@ -27,6 +27,7 @@ jobs:
     env:
       APP_ENV: DEV
       DATA_S3_PREFIX: learning-guide/dev
+      CONFIRM_DATA_SYNC: learning-guide/dev
       CONFIRM_CATALOGUE_SYNC: learning-guide/dev
       DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
       DATA_S3_BUCKET: ${{ secrets.DEV_DATA_S3_BUCKET }}
@@ -49,7 +50,7 @@ jobs:
       - name: Dry-run or apply
         run: |
           if [ "${{ inputs.apply }}" = "true" ]; then
-            npm run catalogue:migrate -- --apply --cloud
+            npm run data:migrate -- --apply --cloud
           else
-            npm run catalogue:migrate -- --dry-run --cloud
+            npm run data:migrate -- --dry-run --cloud
           fi
