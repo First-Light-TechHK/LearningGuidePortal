@@ -6,7 +6,7 @@ import { dataS3Prefix, persistenceEnabled } from "../services/persistence/config
 import { getPool } from "../services/persistence/db";
 import { s3Put } from "../services/persistence/s3";
 import { ormFromProductData } from "../services/migrationOrm";
-import { ensureOrmRuntime, executeOrmPlan, hydrateOrmFromSql } from "../services/ormRuntime";
+import { ensureOrmRuntime, executeOrmPlan, hydrateOrmFromSql, persistProductSnapshot } from "../services/ormRuntime";
 
 function wants(flag: string) {
   return process.argv.includes(flag);
@@ -37,6 +37,7 @@ async function applyCloud(persist: boolean) {
       return { ...report, storage: "postgresql", persisted: false, productTouched: plan.productTouched };
     }
     await executeOrmPlan(plan, db, s3Put);
+    await persistProductSnapshot(data, db);
     const content = JSON.stringify(data);
     await db.query("UPDATE app_files SET content=$1, byte_size=$2, updated_at=NOW() WHERE path=$3", [content, Buffer.byteLength(content), "learning_guide/product.json"]);
     await db.query("COMMIT");

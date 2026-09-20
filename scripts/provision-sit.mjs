@@ -73,6 +73,7 @@ if (process.argv.includes('--bootstrap')) {
     cpSync('deploy/sit-bootstrap.cjs', path.join(temp, 'index.cjs'));
     cpSync('deploy/rds-ap-southeast-1.pem', path.join(temp, 'ca.pem'));
     cpSync('db/migrations/009_product_payment_keys.sql', path.join(temp, '009_product_payment_keys.sql'));
+    cpSync('db/migrations/010_orm_runtime.sql', path.join(temp, '010_orm_runtime.sql'));
     const copied = new Set();
     function copyDependency(name) {
       if (copied.has(name)) return;
@@ -83,7 +84,7 @@ if (process.argv.includes('--bootstrap')) {
       for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) copyDependency(dependency);
     }
     copyDependency('pg');
-    execFileSync('zip', ['-qr', 'function.zip', 'index.cjs', 'ca.pem', '009_product_payment_keys.sql', 'node_modules'], { cwd: temp });
+    execFileSync('zip', ['-qr', 'function.zip', 'index.cjs', 'ca.pem', '009_product_payment_keys.sql', '010_orm_runtime.sql', 'node_modules'], { cwd: temp });
     const FunctionName = 'learning-guide-sit-bootstrap';
     const existing = optional('lambda', 'get-function', { FunctionName });
     if (!existing) {

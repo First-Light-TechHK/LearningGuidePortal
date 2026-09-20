@@ -32,6 +32,7 @@ exports.handler = async (event) => {
         content_type TEXT NOT NULL DEFAULT 'application/octet-stream', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       ); CREATE INDEX IF NOT EXISTS app_files_path_prefix_idx ON app_files(path text_pattern_ops);`);
       await client.query(fs.readFileSync('009_product_payment_keys.sql', 'utf8'));
+      await client.query(fs.readFileSync('010_orm_runtime.sql', 'utf8'));
       if (event.product) {
         const allowed = ['version', 'courses', 'plans', 'portalContent', 'paymentSettings'];
         const product = Object.fromEntries(allowed.filter(key => key in event.product).map(key => [key, event.product[key]]));

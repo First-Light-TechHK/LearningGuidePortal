@@ -25,8 +25,8 @@ This is **not** a hand-written SQL seed. On DEV/SIT App Runner compiles the ORM 
 1. `BEGIN`
 2. `SELECT storage, content FROM app_files WHERE path = 'learning_guide/product.json' FOR UPDATE`
 3. Hydrate `orm_rows` / `data_migrations` into the ORM, then run pending `apply(orm)` scripts. Undeclared writes to users/orders/entitlements **throw** and `ROLLBACK`
-4. Compile those ORM ops: extra tables → `orm_rows`, files → `app_files` (and S3 when binary/large), ledger → `data_migrations`
-5. On `--apply`: execute that SQL/S3 plan, then `UPDATE app_files SET content=… WHERE path='learning_guide/product.json'` and `COMMIT`
+4. Compile those ORM ops: product tables and extra tables → `orm_rows`, files → `app_files` (and S3 when binary/large), ledger → `data_migrations`
+5. On `--apply`: execute that SQL/S3 plan, snapshot every product table/doc into `orm_rows`, then `UPDATE app_files SET content=… WHERE path='learning_guide/product.json'` and `COMMIT`
 
 `--boot` skips the laptop confirm flags so DEV (`APP_ENV=DEV`) and SIT (`APP_ENV=SIT`) App Runner can persist. UAT and PPE/PROD skip persist even on boot. GitHub Actions never write SIT RDS; SIT start applies the same SHA against **SIT** `app_files`. Current seed `001_add_stoicism` inserts a published Stoicism course when that id/slug is missing.
 

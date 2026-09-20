@@ -156,6 +156,10 @@ export function compileOrmOps(ops: OrmOp[], options: { s3Prefix?: string } = {})
       }
       if ((PRODUCT_TABLES as readonly string[]).includes(op.table)) {
         productTouched = true;
+        sql.push({
+          text: "INSERT INTO orm_rows (table_name, id, payload, updated_at) VALUES ($1, $2, $3::jsonb, NOW()) ON CONFLICT (table_name, id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()",
+          values: [op.table, op.id, JSON.stringify(op.row)],
+        });
         continue;
       }
       sql.push({
@@ -167,6 +171,10 @@ export function compileOrmOps(ops: OrmOp[], options: { s3Prefix?: string } = {})
     if (op.kind === "doc") {
       if ((PRODUCT_DOCS as readonly string[]).includes(op.name)) {
         productTouched = true;
+        sql.push({
+          text: "INSERT INTO orm_rows (table_name, id, payload, updated_at) VALUES ($1, $2, $3::jsonb, NOW()) ON CONFLICT (table_name, id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()",
+          values: [`doc:${op.name}`, op.name, JSON.stringify(op.value)],
+        });
         continue;
       }
       sql.push({
@@ -213,12 +221,20 @@ export async function hydrateOrmFromSql(data: Record<string, unknown>, db: SqlCl
   const rows = await db.query("SELECT table_name, id, payload FROM orm_rows");
   for (const row of rows.rows) {
     const tableName = String(row.table_name);
+    const payload = (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) as Identified;
     if (tableName.startsWith("doc:")) {
-      data[tableName.slice(4)] = row.payload;
+      data[tableName.slice(4)] = payload;
+      continue;
+    }
+    if ((PRODUCT_TABLES as readonly string[]).includes(tableName)) {
+      const list = Array.isArray(data[tableName]) ? [...(data[tableName] as Identified[])] : [];
+      const index = list.findIndex((item) => item.id === payload.id);
+      if (index < 0) list.push(payload);
+      else list[index] = payload;
+      data[tableName] = list;
       continue;
     }
     const list: Identified[] = extras.tables[tableName] || [];
-    const payload = (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) as Identified;
     const index = list.findIndex((item: Identified) => item.id === payload.id);
     if (index < 0) list.push(payload);
     else list[index] = payload;
@@ -229,6 +245,31 @@ export async function hydrateOrmFromSql(data: Record<string, unknown>, db: SqlCl
   for (const file of files.rows) {
     const relative = String(file.path).slice(FILE_ROOT.length + 1);
     extras.files[relative] = String(file.content || "");
+  }
+}
+
+export async function persistProductSnapshot(data: Record<string, unknown>, db: SqlClient) {
+  for (const table of PRODUCT_TABLES) {
+    const rows = Array.isArray(data[table]) ? (data[table] as Identified[]) : [];
+    const ids = rows.map((row) => row.id);
+    if (!ids.length) {
+      await db.query("DELETE FROM orm_rows WHERE table_name = $1", [table]);
+    } else {
+      await db.query("DELETE FROM orm_rows WHERE table_name = $1 AND NOT (id = ANY($2::text[]))", [table, ids]);
+      for (const row of rows) {
+        await db.query(
+          "INSERT INTO orm_rows (table_name, id, payload, updated_at) VALUES ($1, $2, $3::jsonb, NOW()) ON CONFLICT (table_name, id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()",
+          [table, row.id, JSON.stringify(row)],
+        );
+      }
+    }
+  }
+  for (const name of PRODUCT_DOCS) {
+    if (!(name in data) || data[name] == null) continue;
+    await db.query(
+      "INSERT INTO orm_rows (table_name, id, payload, updated_at) VALUES ($1, $2, $3::jsonb, NOW()) ON CONFLICT (table_name, id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()",
+      [`doc:${name}`, name, JSON.stringify(data[name])],
+    );
   }
 }
 

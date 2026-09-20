@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyOrmMigrationsWithPlan, createMemoryOrm } from "../../services/dataMigrations";
 import type { DataMigration } from "../../db/data-migrations/types";
-import { compileOrmOps, executeOrmPlan, recordOrm } from "../../services/ormRuntime";
+import { compileOrmOps, executeOrmPlan, hydrateOrmFromSql, persistProductSnapshot, recordOrm } from "../../services/ormRuntime";
 
 const wiki: DataMigration = {
   id: "010_compile_wiki",
@@ -39,10 +39,10 @@ test("AWS compile maps extra tables to orm_rows and markdown to app_files SQL", 
   assert.equal(process.env.DATABASE_URL || "", "");
 });
 
-test("AWS compile maps product rows to the aggregate update, not a courses table", async () => {
+test("AWS compile maps product rows to orm_rows, not only the JSON aggregate", async () => {
   const { plan } = await applyOrmMigrationsWithPlan(createMemoryOrm(), [course], { store: "sql" });
   assert.equal(plan.productTouched, true);
-  assert.equal(plan.sql.some((item) => item.text.includes("orm_rows") && String(item.values[0]) === "courses"), false);
+  assert.equal(plan.sql.some((item) => item.text.includes("orm_rows") && String(item.values[0]) === "courses" && String(item.values[1]) === "roman-history"), true);
   assert.equal(plan.sql.some((item) => item.text.includes("data_migrations") && item.values[0] === "011_compile_course"), true);
 });
 
@@ -72,4 +72,38 @@ test("executeOrmPlan runs compiled SQL and S3 puts without a real database", asy
   assert.equal(sql.length, plan.sql.length);
   assert.equal(objects.length, plan.objects.length);
   assert.equal(process.env.DATABASE_URL || "", "");
+});
+
+test("hydrate merges SQL product rows onto the JSON aggregate without dropping other courses", async () => {
+  const data = { courses: [{ id: "epicureanism", title: "Epicureanism" }], users: [{ id: "user-keep" }], dataMigrations: [] };
+  await hydrateOrmFromSql(data, {
+    query: async (text) => {
+      if (text.includes("FROM data_migrations")) return { rows: [{ id: "001_add_stoicism" }] };
+      if (text.includes("FROM orm_rows")) {
+        return { rows: [{ table_name: "courses", id: "stoicism", payload: { id: "stoicism", title: "Stoicism" } }] };
+      }
+      if (text.includes("FROM app_files")) return { rows: [] };
+      return { rows: [] };
+    },
+  });
+  assert.deepEqual((data.courses as Array<{ id: string }>).map((item) => item.id).sort(), ["epicureanism", "stoicism"]);
+  assert.equal(data.dataMigrations.includes("001_add_stoicism"), true);
+});
+
+test("product snapshot upserts live rows and deletes ids that left the aggregate", async () => {
+  const sql: Array<{ text: string; values: unknown[] }> = [];
+  await persistProductSnapshot({
+    courses: [{ id: "stoicism", title: "Stoicism" }],
+    users: [{ id: "user-keep" }],
+    portalContent: { supportUrl: "https://example.test" },
+  }, {
+    query: async (text, values = []) => {
+      sql.push({ text, values });
+      return { rows: [] };
+    },
+  });
+  assert.equal(sql.some((item) => item.text.includes("DELETE FROM orm_rows") && item.values[0] === "courses"), true);
+  assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "courses" && item.values[1] === "stoicism"), true);
+  assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "doc:portalContent"), true);
+  assert.equal(sql.some((item) => item.values[0] === "users" && item.values[1] === "user-keep"), true);
 });

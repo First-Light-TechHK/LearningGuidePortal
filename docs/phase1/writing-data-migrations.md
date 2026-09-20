@@ -49,7 +49,7 @@ CONFIRM_DATA_SYNC=learning-guide/dev APP_ENV=DEV DATA_S3_PREFIX=learning-guide/d
 | Script | `id`, `description`, `touches`, `apply(orm, ctx)` | Same file, same `id` |
 | Logical change | `orm.table` / `orm.doc` / `orm.files` | Same predicates and payloads |
 | Prove it | `createMemoryOrm()` compiles the SQL/S3 plan | Same compile, then execute |
-| Persist | Dry-run prints `sql` / `objects` counts | Extra tables → `orm_rows`; files → `app_files` + S3; product tables → `learning_guide/product.json`; ledger → `data_migrations` |
+| Persist | Dry-run prints `sql` / `objects` counts | Extra tables and product tables → `orm_rows`; files → `app_files` + S3; JSON snapshot → `learning_guide/product.json`; ledger → `data_migrations` |
 
 **Rules that keep the conversion cheap**
 

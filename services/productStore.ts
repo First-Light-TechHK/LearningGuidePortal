@@ -8,6 +8,9 @@ import { open as openFile, unlink } from "fs/promises";
 import path from "path";
 import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, systemRoot, writeBinary } from "./fileStore";
+import { persistenceEnabled } from "./persistence/config";
+import { query } from "./persistence/db";
+import { hydrateOrmFromSql } from "./ormRuntime";
 import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
 import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
@@ -449,6 +452,11 @@ export async function readProductAggregate() {
     seededPlans.forEach((seededPlan) => {
       if (!current.plans.some((plan) => plan.id === seededPlan.id)) current.plans.push(seededPlan);
     });
+    if (persistenceEnabled()) {
+      await hydrateOrmFromSql(current as unknown as Record<string, unknown>, {
+        query: async (text, values) => query(text, values),
+      });
+    }
     return current;
   }
   const seeded = defaultData();
