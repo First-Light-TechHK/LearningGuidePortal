@@ -1,12 +1,15 @@
 # DEV only: learning-guide-portal (www + admin.ilovelearningguide.com).
-# App Runner auto-deploys the `dev` branch. This workflow is a manual retry
-# (workflow_dispatch). Do not start it on `main`; that would publish `dev` HEAD.
+# Push to `dev` publishes DEV. Native GitHub-source auto-deploy does not fire
+# reliably on this service, so this workflow is the automatic publisher.
+# Do not start it on `main`; that would publish `dev` HEAD.
 # SIT is sit-deploy.yml and stays workflow_dispatch.
 # Wait on describe-service Status, not list-operations.
 
 name: Deploy DEV
 
 on:
+  push:
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:

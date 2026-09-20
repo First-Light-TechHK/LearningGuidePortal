@@ -1,6 +1,6 @@
 # Data update direction (DEV)
 
-DEV App Runner (`learning-guide-portal`, www + admin) tracks the **`dev`** branch and auto-deploys it. **`main` is not the auto-sync source.** SIT stays a manual `Deploy SIT` dispatch.
+DEV App Runner (`learning-guide-portal`, www + admin) tracks the **`dev`** branch. A push to **`dev`** runs GitHub **Deploy DEV**, which starts that service. **`main` is not the auto-sync source.** SIT stays a manual `Deploy SIT` dispatch.
 
 **How to write a script:** [writing-data-migrations.md](writing-data-migrations.md).
 
@@ -10,7 +10,7 @@ Do not commit `data/` or replace cloud `product.json`. Users, sessions, orders a
 
 | Pattern | Use | This repo |
 |---|---|---|
-| **Migrate on boot** | Any product-aggregate change (courses, portal, plans, backfills) | **Default.** Push **`dev`**. `npm start` → `scripts/start-with-data-migrations.cjs` → persist pending `db/data-migrations/*` → `next start`. A failed migration fails the revision. |
+| **Migrate on boot** | Any product-aggregate change (courses, portal, plans, backfills) | **Default.** Push **`dev`** → GitHub **Deploy DEV** → App Runner start. `npm start` → `scripts/start-with-data-migrations.cjs` → persist pending `db/data-migrations/*` → `next start`. A failed migration fails the revision. |
 | **CI retry** | Dry-run or re-apply DEV without a new start | Optional **Sync catalogue** workflow (`workflow_dispatch` only, never on push). Checks out **`dev`**. Needs `DEV_DATABASE_URL` and `DEV_DATA_S3_BUCKET`. |
 | **Laptop `--cloud`** | Operator apply with local AWS/DB env | `CONFIRM_DATA_SYNC=learning-guide/dev` + `APP_ENV=DEV` + `DATA_S3_PREFIX=learning-guide/dev` |
 | **SQL schema** | Postgres tables/constraints | `db/migrations/*.sql` only. Data scripts do not ALTER tables. |

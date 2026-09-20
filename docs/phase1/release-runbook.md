@@ -58,7 +58,7 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 ```text
 GitHub pull request / push
   -> Verify (typecheck / lint / unit / integration / build) — tests only
-  -> Push to `dev` → App Runner auto-deploys DEV (www + admin)
+  -> Push to `dev` → GitHub Deploy DEV starts App Runner (www + admin)
   -> npm start applies pending db/data-migrations, then serves the app
   -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
   -> Deploy SIT is workflow_dispatch only (never on push)

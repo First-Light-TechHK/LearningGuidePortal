@@ -1,16 +1,10 @@
-# DEV App Runner only (learning-guide-portal / www + admin).
-# Push to main deploys DEV. workflow_dispatch retries DEV. SIT is sit-deploy.yml (manual).
-# Verify (ci.yml) stays tests-only and never calls start-deployment, so a busy
-# App Runner cannot redden CI. Native App Runner auto-deploy is off so this
-# workflow is the only DEV publisher (it queues; GitHub-source auto-deploy drops
-# commits that arrive while a previous operation is in progress).
-# Queue-wait until Status=RUNNING, then start-deployment; retry collisions.
+# Legacy DEV publisher. Automatic DEV releases are `.github/workflows/dev-deploy.yml`
+# on push to `dev`. Keep this file as a manual retry only so `main` does not
+# publish the `dev` HEAD that App Runner tracks.
 
 name: Deploy to App Runner
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
