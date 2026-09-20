@@ -172,3 +172,12 @@ test("boot persist is DEV and SIT only, never main/PROD", () => {
   assert.equal(shouldPersistDataMigrationsOnBoot({ APP_ENV: "UAT" }), false);
   assert.equal(shouldPersistDataMigrationsOnBoot({}), false);
 });
+
+test("git-to-dev RDS probe inserts once and skips on replay", async () => {
+  const orm = createMemoryOrm();
+  const first = await applyOrmMigrations(orm, dataMigrations.filter((item) => item.id === "002_git_dev_rds_probe"), { store: "memory" });
+  const second = await applyOrmMigrations(orm, dataMigrations.filter((item) => item.id === "002_git_dev_rds_probe"), { store: "memory" });
+  assert.deepEqual(first.applied, ["002_git_dev_rds_probe"]);
+  assert.equal(orm.table<{ id: string; source: string }>("git_dev_rds_probes").findById("2026-09-20-full-rds")?.source, "git-dev");
+  assert.deepEqual(second.applied, []);
+});

@@ -96,6 +96,7 @@ test("product snapshot upserts live rows and deletes ids that left the aggregate
     courses: [{ id: "stoicism", title: "Stoicism" }],
     users: [{ id: "user-keep" }],
     portalContent: { supportUrl: "https://example.test" },
+    dataMigrations: ["001_add_stoicism"],
   }, {
     query: async (text, values = []) => {
       sql.push({ text, values });
@@ -106,4 +107,5 @@ test("product snapshot upserts live rows and deletes ids that left the aggregate
   assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "courses" && item.values[1] === "stoicism"), true);
   assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "doc:portalContent"), true);
   assert.equal(sql.some((item) => item.values[0] === "users" && item.values[1] === "user-keep"), true);
+  assert.equal(sql.some((item) => item.text.includes("INSERT INTO data_migrations") && item.values[0] === "001_add_stoicism"), true);
 });

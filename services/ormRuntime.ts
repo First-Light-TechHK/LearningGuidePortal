@@ -271,6 +271,10 @@ export async function persistProductSnapshot(data: Record<string, unknown>, db: 
       [`doc:${name}`, name, JSON.stringify(data[name])],
     );
   }
+  const ledger = [...new Set([...(Array.isArray(data.dataMigrations) ? data.dataMigrations as string[] : []), ...(Array.isArray(data.catalogueMigrations) ? data.catalogueMigrations as string[] : [])])];
+  for (const id of ledger) {
+    await db.query("INSERT INTO data_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", [id]);
+  }
 }
 
 export async function executeOrmPlan(plan: OrmPlan, db: SqlClient, putObject?: ObjectPut) {
