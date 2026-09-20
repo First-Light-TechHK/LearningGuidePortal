@@ -53,7 +53,7 @@ CONFIRM_SANDBOX_CATALOGUE=learning-guide/dev node --import tsx --require ./scrip
 
 The command requires `APP_ENV=DEV`, the exact DEV data prefix, `STRIPE_SANDBOX=1` and a test API key. It validates all eight Stripe prices first, then updates only matching plans and affected outstanding quotes within a PostgreSQL transaction. It does not import local users or replace the cloud dataset. Run during a quiet maintenance period: the existing application's whole-document storage is not a substitute for a fully transactional order database across multiple instances.
 
-DEV (`learning-guide-portal`) auto-deploys from the `dev` branch. App Runner `npm start` applies pending `db/data-migrations` before serving. SIT stays a manual `Deploy SIT` dispatch. Direction: [data-migrations.md](data-migrations.md).
+DEV (`learning-guide-portal`) publishes from the `dev` branch via GitHub **Deploy DEV**. App Runner `npm start` applies pending `db/data-migrations` before serving. SIT stays a manual `Deploy SIT` dispatch. Direction: [data-migrations.md](data-migrations.md).
 
 ## Run locally
 
