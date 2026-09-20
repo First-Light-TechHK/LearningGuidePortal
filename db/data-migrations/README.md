@@ -1,5 +1,7 @@
 # Data migrations
 
+Direction for operators: [docs/phase1/data-migrations.md](../../docs/phase1/data-migrations.md).
+
 Numbered scripts in git. AWS App Runner runs them on **process start** (`npm start` → `scripts/start-with-data-migrations.cjs`), then starts Next.js. A failed migration fails the deploy.
 
 This is the App Runner equivalent of “migrate on boot”. Other common AWS options we are **not** using as the default:

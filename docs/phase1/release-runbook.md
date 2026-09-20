@@ -56,12 +56,15 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 - The remote sandbox verification records the Science annual lookup key correction; see `stripe-sandbox.md`. Revalidate the current catalogue before each release.
 
 ```text
-GitHub pull request / push to main
+GitHub pull request / push
   -> Verify (typecheck / lint / unit / integration / build) — tests only
-  -> Deploy to App Runner on push to main (DEV www + admin)
+  -> Push to `dev` → App Runner auto-deploys DEV (www + admin)
+  -> npm start applies pending db/data-migrations, then serves the app
   -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
   -> Deploy SIT is workflow_dispatch only (never on push)
 ```
+
+Product-aggregate data changes use numbered scripts under `db/data-migrations/`. Direction: [data-migrations.md](data-migrations.md). Do not replace the live `product.json` aggregate.
 
 每次发布记录：git SHA、Docker image digest、database migration、环境、批准人、回滚 image。禁止在 App Runner 控制台直接改代码或手工执行生产 SQL。
 
