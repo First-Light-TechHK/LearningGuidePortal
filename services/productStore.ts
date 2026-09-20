@@ -458,7 +458,7 @@ export async function readProductAggregate() {
 
 export async function ensureProductData() {
   const current = await readProductAggregate();
-  applyDataMigrations(current);
+  await applyDataMigrations(current);
   return current;
 }
 

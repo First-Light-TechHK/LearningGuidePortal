@@ -64,7 +64,7 @@ GitHub pull request / push
   -> Deploy SIT is workflow_dispatch only (never on push)
 ```
 
-Product-aggregate data changes use numbered scripts under `db/data-migrations/`. Direction: [data-migrations.md](data-migrations.md). Do not replace the live `product.json` aggregate.
+Product-aggregate data changes use numbered scripts under `db/data-migrations/`. Direction: [data-migrations.md](data-migrations.md). How to write a script: [writing-data-migrations.md](writing-data-migrations.md). Do not replace the live `product.json` aggregate.
 
 每次发布记录：git SHA、Docker image digest、database migration、环境、批准人、回滚 image。禁止在 App Runner 控制台直接改代码或手工执行生产 SQL。
 

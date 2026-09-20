@@ -57,9 +57,9 @@ function data(courses: ProductCourse[]): ProductData {
   };
 }
 
-test("catalogue migrations add a missing published sibling course and leave users alone", () => {
+test("catalogue migrations add a missing published sibling course and leave users alone", async () => {
   const current = data([course("epicureanism", "Epicureanism")]);
-  const report = applyCatalogueMigrations(current);
+  const report = await applyCatalogueMigrations(current);
   assert.equal(report.applied.includes("001_add_stoicism"), true);
   assert.equal(current.courses.some((item) => item.id === "stoicism" && item.status === "published"), true);
   assert.equal(current.courses.some((item) => item.id === "epicureanism"), true);
@@ -68,10 +68,10 @@ test("catalogue migrations add a missing published sibling course and leave user
   assert.equal(current.orders.length, 0);
 });
 
-test("catalogue migrations are idempotent and do not overwrite an existing course", () => {
+test("catalogue migrations are idempotent and do not overwrite an existing course", async () => {
   const current = data([course("epicureanism"), course("stoicism", "Operator Stoicism")]);
-  const first = applyCatalogueMigrations(current);
-  const second = applyCatalogueMigrations(current);
+  const first = await applyCatalogueMigrations(current);
+  const second = await applyCatalogueMigrations(current);
   assert.equal(current.courses.filter((item) => item.id === "stoicism").length, 1);
   assert.equal(current.courses.find((item) => item.id === "stoicism")?.title, "Operator Stoicism");
   assert.equal(first.changes.some((item) => item.id === "stoicism" && item.action === "skip"), true);

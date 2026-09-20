@@ -2,7 +2,9 @@
 
 DEV App Runner (`learning-guide-portal`, www + admin) tracks the **`dev`** branch and auto-deploys it. SIT stays a manual `Deploy SIT` dispatch.
 
-Do not commit `data/` or replace cloud `product.json`. Users, sessions, orders and entitlements stay in the live aggregate.
+**How to write a script:** [writing-data-migrations.md](writing-data-migrations.md).
+
+Do not commit `data/` or replace cloud `product.json`. Users, sessions, orders and entitlements stay in the live aggregate unless a migration declares those `touches` and is reviewed as a backfill.
 
 ## How AWS runs a data change
 
@@ -14,24 +16,9 @@ Do not commit `data/` or replace cloud `product.json`. Users, sessions, orders a
 | **SQL schema** | Postgres tables/constraints | `db/migrations/*.sql` only |
 | **SIT bootstrap** | New SIT store, catalogue slice only | `scripts/provision-sit.mjs` (not everyday sync) |
 
-## Add a migration
-
-1. Create `db/data-migrations/00N_name.ts` with stable `id`, `description`, and `apply(data)`.
-2. `apply` may change any field on the product aggregate. A second run must be a no-op. Skip when the target row already exists or already has the new value.
-3. Append the module to `dataMigrations` in `db/data-migrations/index.ts`.
-4. Commit and **push `dev`**. App Runner deploys that SHA and executes pending ids on start. Applied ids are stored in `dataMigrations` (and `catalogueMigrations` for older rows).
-
 ```sh
+npm run data:migration:new -- add_roman_history
 npm run data:migrate -- --dry-run
-npm run data:migrate -- --apply
-CONFIRM_DATA_SYNC=learning-guide/dev APP_ENV=DEV DATA_S3_PREFIX=learning-guide/dev \
-  npm run data:migrate -- --apply --cloud
 ```
 
-SIT does not auto-deploy. After a manual SIT release of the same SHA, SIT start applies migrations from that SHA.
-
-## Do not
-
-- Push data changes only to `main` and expect DEV to pick them up (DEV source is `dev`).
-- Copy local `data/knowledge_system/learning_guide/product.json` over RDS.
-- Sync users, sessions, orders, subscriptions or entitlements through these scripts.
+Push `dev`. App Runner executes pending ids on start. Applied ids are stored in `dataMigrations` (and `catalogueMigrations` for older rows). The same `apply` / optional `plan()` files are the input for the future SQL/S3 runner.

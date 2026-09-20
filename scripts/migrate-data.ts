@@ -20,7 +20,7 @@ async function applyCloud(persist: boolean) {
     if (!row || row.storage !== "db") throw new Error("Expected an existing database catalogue; no data was changed.");
     const data = JSON.parse(row.content);
     if (!data || !Array.isArray(data.courses) || !Array.isArray(data.users)) throw new Error("Unexpected product aggregate.");
-    const report = applyDataMigrations(data);
+    const report = await applyDataMigrations(data, undefined, { dryRun: !persist });
     if (!persist) {
       await db.query("ROLLBACK");
       return { ...report, storage: "postgresql", persisted: false };
@@ -46,7 +46,7 @@ async function main() {
 
   if (exportPath) {
     const data = await readProductAggregate();
-    applyDataMigrations(data);
+    await applyDataMigrations(data);
     await writeFile(exportPath, `${JSON.stringify(exportCatalogueSlice(data), null, 2)}\n`);
     console.log(JSON.stringify({ exported: exportPath, courses: data.courses.map((course) => course.id) }));
     return;
@@ -63,7 +63,7 @@ async function main() {
   }
 
   const data = structuredClone(await readProductAggregate());
-  const report = applyDataMigrations(data);
+  const report = await applyDataMigrations(data, undefined, { dryRun: true });
   console.log(JSON.stringify({ ...report, persisted: false, storage: "local" }));
 }
 

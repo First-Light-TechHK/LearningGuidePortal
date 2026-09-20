@@ -11,7 +11,7 @@ export type CatalogueSlice = {
   catalogueMigrations: string[];
 };
 
-export function applyCatalogueMigrations(data: ProductData): CatalogueReport {
+export function applyCatalogueMigrations(data: ProductData): Promise<CatalogueReport> {
   return applyDataMigrations(data);
 }
 
