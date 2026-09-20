@@ -1,20 +1,35 @@
 # How to write a data migration
 
-This is the developer contract for changing **live product data** in git so AWS can execute it. Today the executable store is the Postgres `app_files` row `learning_guide/product.json` (plus S3 objects the VFS already owns). The same script shape is what we will compile into **SQL + S3** later. Write for that future now: a migration is a **logical transform with an explicit domain**, not a dump of `data/product.json`, and not a raw `query()` / `s3Put()` call.
+This is the developer contract for changing **live data** in git so AWS can execute it. A migration is **not** a SQL script and **not** a dump of `data/product.json`. You write against an in-memory **ORM**. CI can run that ORM with no `DATABASE_URL`. AWS on DEV is the only place that persists.
 
 Operator overview: [data-migrations.md](data-migrations.md).
+
+## Why ORM, not SQL, in this layer
+
+CI/CD tests **cannot** see the DEV database. Those variables stay on App Runner / operator machines. A `.sql` file would only be executable on DEV by AWS, so it cannot be unit-tested.
+
+So:
+
+| Layer | Who runs it | What you write |
+|---|---|---|
+| **Migration script** | CI, laptop dry-run, App Runner boot | `apply(orm, ctx)` — table / doc / files API |
+| **Memory ORM** | `npm test`, `data:migrate --dry-run` without DB | `createMemoryOrm()` — no Postgres, no S3 |
+| **Aggregate adapter** | App Runner DEV persist today | `ormFromProductData()` — product tables plus `ormExtras` for anything else |
+| **SQL / S3 adapter** | DEV by AWS, later | Same `orm.table` / `orm.files` calls, interpreted as SQL + object writes. **Do not hand-write SQL in the migration.** |
+
+The future adapter compiles ORM operations. If you put SQL in the script, CI cannot prove it.
 
 ## What AWS actually runs
 
 1. You commit a numbered file under `db/data-migrations/` and **push `dev`**.
-2. GitHub **Deploy DEV** starts App Runner for that SHA (DEV = `www` + `admin.ilovelearningguide.com`).
+2. GitHub **Deploy DEV** starts App Runner for that SHA (DEV = `www` + `admin.ilovelearningguide.com`). `main` is not auto-deployed.
 3. `npm start` runs `scripts/start-with-data-migrations.cjs`.
-4. That process applies every **unrecorded** id, writes the aggregate in one transaction (`UPDATE app_files … WHERE path='learning_guide/product.json'`), then starts Next.js.
+4. That process opens the live store, builds an ORM over it, applies every **unrecorded** id, persists in one transaction (`UPDATE app_files … WHERE path='learning_guide/product.json'`), then starts Next.js.
 5. If apply throws, the revision fails health and does not serve the new code against a half-written store.
 
 SIT does not auto-deploy. After a manual SIT release of the same SHA, SIT start applies ids that environment has not recorded. It does not copy DEV users or payments.
 
-`main` is not auto-deployed. Optional retry without a new boot: GitHub **Sync catalogue** (`workflow_dispatch` only, never on push) or
+Optional retry without a new boot: GitHub **Sync catalogue** (`workflow_dispatch` only, never on push) or
 
 ```sh
 npm run data:migrate -- --dry-run
@@ -25,23 +40,23 @@ CONFIRM_DATA_SYNC=learning-guide/dev APP_ENV=DEV DATA_S3_PREFIX=learning-guide/d
 
 `--cloud` is DEV only. It never replaces the whole document with a local file.
 
-## Mental model (today → SQL/S3)
+## Mental model
 
-| Layer | Today | Later (do not invent a second style) |
+| Layer | Today | Later (same scripts) |
 |---|---|---|
-| Script | `id`, `description`, `touches`, `apply(data, ctx)`, optional `plan()` | Same file, same `id` |
-| Logical change | Mutate `ProductData` in `apply` | Same predicates and payloads |
-| Persist | Runner writes `app_files.learning_guide/product.json` | Runner executes `plan().sql` and `plan().objects` |
-| Ledger | `dataMigrations[]` (and legacy `catalogueMigrations[]`) on the aggregate | `data_migrations(id, applied_at)` table |
-| Media | Prefer `public/…` URLs, or existing course-media ids | `plan().objects` copies repo files to the env S3 prefix |
+| Script | `id`, `description`, `touches`, `apply(orm, ctx)` | Same file, same `id` |
+| Logical change | `orm.table` / `orm.doc` / `orm.files` | Same predicates and payloads |
+| CI / unit test | `createMemoryOrm()` + `applyOrmMigrations` | Same — still no DB vars |
+| Persist | Product columns on `app_files.learning_guide/product.json`; extra tables/files on `ormExtras` | Adapter turns the same ORM ops into SQL + S3 |
+| Ledger | `_data_migrations` table in the ORM, plus `dataMigrations[]` / legacy `catalogueMigrations[]` on the aggregate | `data_migrations(id, applied_at)` |
 
 **Rules that keep the conversion cheap**
 
-- `apply` is a pure transform of the aggregate. Do **not** import `services/persistence/db`, `s3.ts`, `getPool`, or `fs` writes.
-- Declare every protected domain you change in `touches`. The runner snapshots `users`, `sessions`, `accounts`, `orders`, `quotes`, `subscriptions`, `entitlements`, study, conversations, notifications, tokens and Stripe events. An undeclared change **throws**.
-- Use stable business ids (`stoicism`, `epicureanism`), never `course_${Date.now()}_…`.
-- Second run must be a no-op (`skip` if the row already exists or already has the new value).
-- Put intended SQL/S3 in `plan()` as soon as you know it. The aggregate runner **records** plan sizes and does **not** execute them yet.
+- Talk only to `orm`. Do **not** import `services/persistence/db`, `s3.ts`, `getPool`, or write SQL / `fs` to the live store.
+- Do **not** mutate `ProductData` by hand. Product rows are `orm.table("courses")` (or `plans`, `users`, …). CMS / settings are `orm.doc("portalContent")` / `orm.doc("paymentSettings")`. Everything else is `orm.table("your_table")` or `orm.files`.
+- Declare every protected domain you change in `touches`. Undeclared user / order / session / entitlement writes **throw**. Extra tables need `other`. File writes need `files` or `media`.
+- Use stable business ids (`stoicism`, `public-policy`), never `course_${Date.now()}`.
+- Second run must be a no-op (`skip` if the row or file already exists).
 
 ## File and id contract
 
@@ -62,54 +77,66 @@ That writes `002_add_roman_history.ts` (next free number) and appends it to `ind
 ## Script shape
 
 ```ts
-import type { ProductData } from "../../services/productStore";
+import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
 
 export const id = "002_add_roman_history";
 export const description = "Add the published Roman History sibling course.";
 export const touches = ["courses"] as const;
 
-export function apply(data: ProductData, ctx: DataMigrationContext): DataChange[] {
-  if (data.courses.some((course) => course.id === "roman-history" || course.slug === "roman-history")) {
+export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[] {
+  const courses = orm.table<{ id: string; slug: string; title: string; status: string; createdAt: string }>("courses");
+  if (courses.find((course) => course.id === "roman-history" || course.slug === "roman-history").length) {
     return [{ action: "skip", kind: "course", id: "roman-history", reason: "exists" }];
   }
-  data.courses.push({
+  courses.insert({
     id: "roman-history",
     slug: "roman-history",
     title: "Roman History",
-    description: "…",
-    category: "European Humanities",
-    thumbnailPath: "/portal/course-book.jpg",
     status: "published",
     createdAt: ctx.now,
-    updatedAt: ctx.now,
-    sections: [/* at least one public lesson if the course is published */],
+    // …full ProductCourse fields
   });
   return [{ action: "add", kind: "course", id: "roman-history" }];
 }
+```
 
-export function plan() {
-  return {
-    sql: [
-      `-- INSERT INTO courses (id, slug, title, status) VALUES ('roman-history', 'roman-history', 'Roman History', 'published')
--- ON CONFLICT (id) DO NOTHING;`,
-    ],
-    objects: [
-      // { key: "learning_guide/media/roman-history/cover.jpg", source: "public/portal/course-book.jpg", contentType: "image/jpeg" }
-    ],
-  };
+Non-product data (wiki pages, knowledge nodes, anything that is not a `ProductData` column):
+
+```ts
+export const touches = ["other", "files"] as const;
+
+export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[] {
+  const pages = orm.table<{ id: string; title: string }>("wiki_pages");
+  if (pages.findById("public-policy")) {
+    return [{ action: "skip", kind: "wiki_pages", id: "public-policy", reason: "exists" }];
+  }
+  pages.insert({ id: "public-policy", title: "Public policy" });
+  orm.files.writeText("courses/economics/knowledge/public-policy/wiki/page.md", "# Public policy\n");
+  void ctx;
+  return [{ action: "add", kind: "wiki_pages", id: "public-policy" }];
 }
 ```
 
-`ctx.store` is `"aggregate"` today and will be `"sql"` for the future adapter. `ctx.dryRun` is true for `--dry-run`. `ctx.now` is an ISO timestamp; use it instead of `Date.now()` in ids.
+`ctx.store` is `"memory"` in CI and `"aggregate"` on App Runner persist today. A later SQL adapter will keep the same `apply(orm)` and change only the ORM implementation. `ctx.dryRun` is true for `--dry-run`. `ctx.now` is an ISO timestamp; use it instead of `Date.now()` in ids.
 
 `apply` may be `async`. Prefer sync unless you are reading a **repo** file to build a payload (still no S3 client).
 
+### ORM surface
+
+- `orm.table<T>(name)` — `all`, `findById`, `find`, `insert`, `update`, `upsert`. Rows need an `id: string`.
+- `orm.doc<T>(name)` — `get`, `set`, `patch` for singleton documents (`portalContent`, `paymentSettings`, or your own).
+- `orm.files` — `readText`, `readJson`, `writeText`, `writeJson`, `exists`.
+
+Product table names today: `courses`, `plans`, `users`, `sessions`, `accounts`, `orders`, `quotes`, `subscriptions`, `entitlements`, `studyRecords`, `studyEvents`, `conversations`, `notifications`, `verificationTokens`, `passwordResetTokens`, `emailBindingTokens`, `stripeEvents`, `orderActivities`.
+
+Anything else is an extra table. On DEV persist it is stored under `ormExtras` on the aggregate until the SQL adapter exists. CI never needs that bag — use `createMemoryOrm()`.
+
 ### `touches` values
 
-`courses` · `plans` · `portalContent` · `paymentSettings` · `catalogue` · `media` · `users` · `sessions` · `accounts` · `orders` · `quotes` · `subscriptions` · `entitlements` · `studyRecords` · `studyEvents` · `conversations` · `notifications` · `tokens` · `other`
+`courses` · `plans` · `portalContent` · `paymentSettings` · `catalogue` · `files` · `media` · `users` · `sessions` · `accounts` · `orders` · `quotes` · `subscriptions` · `entitlements` · `studyRecords` · `studyEvents` · `conversations` · `notifications` · `tokens` · `other`
 
-Default catalogue work is `["courses"]`. Portal CMS copy is `["portalContent"]`. Price seed is `["plans"]` (and usually the existing Stripe confirm path, not a silent amount change).
+Default catalogue work is `["courses"]`. Portal CMS copy is `["portalContent"]`. Price seed is `["plans"]` (and usually the existing Stripe confirm path, not a silent amount change). Extra tables = `["other"]`. File / wiki / media blobs = `["files"]` or `["media"]`.
 
 Do **not** add `users` / `orders` / `entitlements` unless the change is an explicit backfill with its own review. Those rows are environment-specific.
 
@@ -117,22 +144,23 @@ Do **not** add `users` / `orders` / `entitlements` unless the change is an expli
 
 **Courses.** Stable `id`/`slug`, `status`, category, sections, lessons. A published course needs a public lesson if learners should preview it. Cover images: use a file already in `public/portal/…`. Do not point at a local `/api/course-media/…` id that exists only on your laptop.
 
-**Portal content.** Patch `data.portalContent` fields; do not replace the object if you can avoid wiping banners an operator edited. Prefer “set this banner slot if empty”.
+**Portal content.** `orm.doc("portalContent").patch({ … })`. Do not `set` the whole object if that would wipe banners an operator edited. Prefer “set this banner slot if empty”.
 
-**Plans.** Insert by plan `id` if missing. Do not overwrite `amountMinor` / Stripe snapshots here; use `scripts/sync-stripe-sandbox.ts --cloud`.
+**Plans.** `orm.table("plans").insert` by plan `id` if missing. Do not overwrite `amountMinor` / Stripe snapshots here; use `scripts/sync-stripe-sandbox.ts --cloud`.
 
-**Media.** Seed binaries belong in `public/` (git, App Runner disk) or, later, `plan().objects`. Course-media in S3 is per environment; a migration must not assume your local asset ids exist on DEV.
+**Files / wiki / media.** `orm.files.writeText` / `writeJson` with a stable path. Seed binaries that the Next app must serve belong in `public/` (git, App Runner disk). Course-media in S3 is per environment; a migration must not assume your local asset ids exist on DEV.
 
 **Users and payments.** Out of scope unless `touches` says so and the PR says why. Never copy local sessions or tokens.
 
 ## Tests you must add
 
-Add a unit test next to `tests/unit/data-migrations.test.ts` (or a focused `tests/unit/data-migration-00N.test.ts`) that:
+CI has no database. Write the test against the memory ORM (or a fixture aggregate — still no `DATABASE_URL`):
 
-1. Starts from a fixture **without** the new row.
-2. `await applyDataMigrations(fixture, [yourModule])` and asserts the add/update.
-3. Runs a second time and asserts `skip` / no duplicate row.
-4. Asserts `users` / `orders` lengths are unchanged unless you declared those domains.
+1. `const orm = createMemoryOrm()` **or** a `ProductData` fixture without the new row.
+2. `await applyOrmMigrations(orm, [yourModule], { store: "memory" })` and assert the add/update.
+3. Run a second time and assert `skip` / no duplicate row.
+4. Assert `users` / `orders` are unchanged unless you declared those domains.
+5. If you touch extra tables or files, assert `orm.table("…")` / `orm.files.readText`.
 
 The runner already rejects undeclared user/order writes. Registry tests fail CI if you add a `NNN_*.ts` file and forget `index.ts`.
 
@@ -146,12 +174,12 @@ node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/u
 
 - [ ] Filename, `id`, and `index.ts` entry match and are in order
 - [ ] `description` is one factual sentence
-- [ ] `touches` lists every protected domain you change
-- [ ] `apply` skips when the target already exists
+- [ ] `touches` lists every protected domain you change (`other` / `files` when needed)
+- [ ] `apply` uses the ORM and skips when the target already exists
 - [ ] No `Date.now()` in business ids
-- [ ] No import of `persistence/db` or `s3`
-- [ ] Images are `public/…` or documented `plan().objects`
-- [ ] Unit test covers add + idempotent skip
+- [ ] No SQL, no `persistence/db`, no `s3` client
+- [ ] Images are `public/…` or `orm.files` paths
+- [ ] Unit test covers add + idempotent skip **without** `DATABASE_URL`
 - [ ] Dry-run JSON looks right (`applied` / `changes`)
 - [ ] Push **`dev`**, not only `main`
 
@@ -160,7 +188,8 @@ node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/u
 We will keep these files. The boot runner will:
 
 1. Read the ledger (`data_migrations` or today’s JSON array).
-2. For each pending id, prefer `plan()` when `ctx.store === "sql"`: run `sql[]` in the same transaction as the ledger insert; put `objects[]` under `DATA_S3_PREFIX`.
-3. Fall back to `apply()` only while the aggregate still exists.
+2. Build a SQL/S3 ORM that implements the same `table` / `doc` / `files` methods.
+3. Call the same `apply(orm, ctx)` with `ctx.store` describing that adapter.
+4. Persist ledger + row writes in one transaction; put file writes under `DATA_S3_PREFIX`.
 
-That is why a script written today with stable ids, `touches`, and a sketched `plan()` does not have to be rewritten as a one-off SQL dump.
+That is why a script written today against the ORM does not have to be rewritten as a one-off SQL dump, and why CI can keep testing it with `createMemoryOrm()`.

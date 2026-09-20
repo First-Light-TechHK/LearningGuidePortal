@@ -1,12 +1,12 @@
-import type { ProductCourse, ProductData } from "../../services/productStore";
-import { now } from "../../services/fileStore";
+import type { ProductCourse } from "../../services/productStore";
+import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
 
 export const id = "001_add_stoicism";
 export const description = "Add the published Stoicism sibling course so DEV catalogue and trial recommendations have a second course.";
 export const touches = ["courses"] as const;
 
-export function stoicismCourse(createdAt = now()): ProductCourse {
+export function stoicismCourse(createdAt: string): ProductCourse {
   return {
     id: "stoicism",
     slug: "stoicism",
@@ -38,7 +38,7 @@ Keep this separate from later popular slogans about “having no emotions”. Th
             title: "Impressions and Assent",
             durationMinutes: 18,
             isPublic: false,
-            body: `An impression presents something as good or bad. Assent is the move that takes the presentation as true. The Stoic training is to notice the gap and not rush it.
+            body: `An impression can arrive uninvited. Assent is the move that takes the presentation as true. The Stoic training is to notice the gap and not rush it.
 
 This lesson stays with that pause. It does not replace medical or personal advice, and it does not say every later school agrees with Epictetus.`,
           },
@@ -48,10 +48,11 @@ This lesson stays with that pause. It does not replace medical or personal advic
   };
 }
 
-export function apply(data: ProductData, _ctx: DataMigrationContext): DataChange[] {
-  if (data.courses.some((course) => course.id === "stoicism" || course.slug === "stoicism")) {
+export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[] {
+  const courses = orm.table<ProductCourse>("courses");
+  if (courses.find((course) => course.id === "stoicism" || course.slug === "stoicism").length) {
     return [{ action: "skip", kind: "course", id: "stoicism", reason: "exists" }];
   }
-  data.courses.push(stoicismCourse());
+  courses.insert(stoicismCourse(ctx.now));
   return [{ action: "add", kind: "course", id: "stoicism" }];
 }

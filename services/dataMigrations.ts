@@ -2,34 +2,16 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { dataMigrations, type DataChange } from "../db/data-migrations";
 import { DATA_MIGRATION_ID, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "../db/data-migrations/types";
+import { PROTECTED_TABLES, createMemoryOrm, ormFromProductData, type MigrationOrm } from "./migrationOrm";
 import type { ProductData } from "./productStore";
 
 export type DataMigrationReport = {
   applied: string[];
   skipped: string[];
   changes: Array<DataChange & { migration: string }>;
-  plans: Array<{ migration: string; sql: number; objects: number }>;
 };
 
-const PROTECTED_KEYS = [
-  "users",
-  "sessions",
-  "accounts",
-  "orders",
-  "quotes",
-  "subscriptions",
-  "entitlements",
-  "studyRecords",
-  "studyEvents",
-  "conversations",
-  "notifications",
-  "verificationTokens",
-  "passwordResetTokens",
-  "emailBindingTokens",
-  "stripeEvents",
-] as const;
-
-const KEY_TO_DOMAIN: Record<(typeof PROTECTED_KEYS)[number], DataMigrationDomain> = {
+const TABLE_DOMAIN: Record<(typeof PROTECTED_TABLES)[number], DataMigrationDomain> = {
   users: "users",
   sessions: "sessions",
   accounts: "accounts",
@@ -47,22 +29,26 @@ const KEY_TO_DOMAIN: Record<(typeof PROTECTED_KEYS)[number], DataMigrationDomain
   stripeEvents: "orders",
 };
 
-function recordedIds(data: ProductData) {
-  return new Set([...(data.dataMigrations || []), ...(data.catalogueMigrations || [])]);
+function recordedIds(data: ProductData | undefined, orm: MigrationOrm) {
+  const fromProduct = [...((data?.dataMigrations || [])), ...((data?.catalogueMigrations || []))];
+  const fromOrm = orm.table<{ id: string }>("_data_migrations").all().map((row) => row.id);
+  return new Set([...fromProduct, ...fromOrm]);
 }
 
-function snapshot(value: unknown) {
-  return JSON.stringify(value);
-}
-
-function assertTouches(before: ProductData, after: ProductData, touches: readonly string[], migrationId: string) {
+function assertTouches(orm: MigrationOrm, before: Record<string, string>, touches: readonly string[], migrationId: string) {
   const allowed = new Set(touches);
-  for (const key of PROTECTED_KEYS) {
-    const domain = KEY_TO_DOMAIN[key];
-    if (allowed.has(domain) || allowed.has(key)) continue;
-    if (snapshot(before[key]) !== snapshot(after[key])) {
-      throw new Error(`Migration ${migrationId} changed ${key} without declaring touches: ["${domain}"].`);
+  for (const table of PROTECTED_TABLES) {
+    const domain = TABLE_DOMAIN[table];
+    if (allowed.has(domain) || allowed.has(table)) continue;
+    if (before[table] !== orm.snapshot(table)) {
+      throw new Error(`Migration ${migrationId} changed ${table} without declaring touches: ["${domain}"].`);
     }
+  }
+  if (orm.extraTables().some((name) => before[name] !== orm.snapshot(name)) && !allowed.has("other")) {
+    throw new Error(`Migration ${migrationId} changed a non-product table without declaring touches: ["other"].`);
+  }
+  if (orm.files.changed() && !allowed.has("files") && !allowed.has("media")) {
+    throw new Error(`Migration ${migrationId} wrote files without declaring touches: ["files"].`);
   }
 }
 
@@ -96,7 +82,46 @@ export function assertMigrationRegistry(migrations = dataMigrations) {
 }
 
 function defaultContext(overrides: Partial<DataMigrationContext> = {}): DataMigrationContext {
-  return { store: "aggregate", dryRun: false, now: new Date().toISOString(), ...overrides };
+  return { store: "memory", dryRun: false, now: new Date().toISOString(), ...overrides };
+}
+
+function record(data: ProductData | undefined, orm: MigrationOrm, id: string) {
+  orm.table<{ id: string }>("_data_migrations").upsert({ id });
+  if (!data) return;
+  data.dataMigrations ||= [];
+  data.catalogueMigrations ||= [];
+  if (!data.dataMigrations.includes(id)) data.dataMigrations.push(id);
+  if (!data.catalogueMigrations.includes(id)) data.catalogueMigrations.push(id);
+}
+
+export async function applyOrmMigrations(
+  orm: MigrationOrm,
+  migrations: DataMigration[] = dataMigrations,
+  ctx: Partial<DataMigrationContext> = {},
+  data?: ProductData,
+): Promise<DataMigrationReport> {
+  validateDataMigrations(migrations);
+  if (migrations === dataMigrations) assertMigrationRegistry(migrations);
+  const seen = recordedIds(data, orm);
+  const context = defaultContext(ctx);
+  const report: DataMigrationReport = { applied: [], skipped: [], changes: [] };
+  for (const migration of migrations) {
+    if (seen.has(migration.id)) {
+      report.skipped.push(migration.id);
+      continue;
+    }
+    const before = Object.fromEntries(
+      [...PROTECTED_TABLES, ...orm.extraTables()].map((name) => [name, orm.snapshot(name)]),
+    );
+    const changes = await migration.apply(orm, context);
+    assertTouches(orm, before, migration.touches, migration.id);
+    report.changes.push(...changes.map((change) => ({ ...change, migration: migration.id })));
+    record(data, orm, migration.id);
+    seen.add(migration.id);
+    if (changes.some((change) => change.action === "add" || change.action === "update")) report.applied.push(migration.id);
+    else report.skipped.push(migration.id);
+  }
+  return report;
 }
 
 export async function applyDataMigrations(
@@ -104,34 +129,10 @@ export async function applyDataMigrations(
   migrations: DataMigration[] = dataMigrations,
   ctx: Partial<DataMigrationContext> = {},
 ): Promise<DataMigrationReport> {
-  validateDataMigrations(migrations);
-  if (migrations === dataMigrations) assertMigrationRegistry(migrations);
-  data.dataMigrations ||= [];
-  data.catalogueMigrations ||= [];
-  const seen = recordedIds(data);
-  const context = defaultContext(ctx);
-  const report: DataMigrationReport = { applied: [], skipped: [], changes: [], plans: [] };
-  for (const migration of migrations) {
-    if (seen.has(migration.id)) {
-      report.skipped.push(migration.id);
-      continue;
-    }
-    const before = structuredClone(data);
-    const changes = await migration.apply(data, context);
-    assertTouches(before, data, migration.touches, migration.id);
-    report.changes.push(...changes.map((change) => ({ ...change, migration: migration.id })));
-    if (migration.plan) {
-      const planned = await migration.plan(context);
-      report.plans.push({ migration: migration.id, sql: planned.sql?.length || 0, objects: planned.objects?.length || 0 });
-    }
-    data.dataMigrations.push(migration.id);
-    if (!data.catalogueMigrations.includes(migration.id)) data.catalogueMigrations.push(migration.id);
-    seen.add(migration.id);
-    if (changes.some((change) => change.action === "add" || change.action === "update")) report.applied.push(migration.id);
-    else report.skipped.push(migration.id);
-  }
-  return report;
+  return applyOrmMigrations(ormFromProductData(data), migrations, { store: "aggregate", ...ctx }, data);
 }
+
+export { createMemoryOrm, ormFromProductData };
 
 export function shouldPersistDataMigrationsOnBoot(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) {
   return env.APP_ENV === "DEV" || env.APP_ENV === "SIT";

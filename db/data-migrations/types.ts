@@ -1,14 +1,14 @@
-import type { ProductData } from "../../services/productStore";
+import type { MigrationOrm } from "../../services/migrationOrm";
 
 export const DATA_MIGRATION_ID = /^\d{3}_[a-z0-9_]+$/;
 
-/** Domains a script may change. Declare every aggregate key you mutate. */
 export type DataMigrationDomain =
   | "courses"
   | "plans"
   | "portalContent"
   | "paymentSettings"
   | "catalogue"
+  | "files"
   | "media"
   | "users"
   | "sessions"
@@ -31,25 +31,16 @@ export type DataChange = {
   reason?: string;
 };
 
-export type DataMigrationStore = "aggregate" | "sql";
-
 export type DataMigrationContext = {
-  /** Today always `aggregate`. The SQL/S3 adapter will pass `sql`. */
-  store: DataMigrationStore;
+  /** CI and unit tests use memory. App Runner DEV persist uses aggregate/VFS. */
+  store: "memory" | "aggregate";
   dryRun: boolean;
   now: string;
-};
-
-/** Portable side effects for the future SQL/S3 runner. The aggregate runner records but does not execute them. */
-export type DataMigrationPlan = {
-  sql?: string[];
-  objects?: Array<{ key: string; source: string; contentType: string }>;
 };
 
 export type DataMigration = {
   id: string;
   description: string;
   touches: readonly DataMigrationDomain[];
-  apply: (data: ProductData, ctx: DataMigrationContext) => DataChange[] | Promise<DataChange[]>;
-  plan?: (ctx: DataMigrationContext) => DataMigrationPlan | Promise<DataMigrationPlan>;
+  apply: (orm: MigrationOrm, ctx: DataMigrationContext) => DataChange[] | Promise<DataChange[]>;
 };

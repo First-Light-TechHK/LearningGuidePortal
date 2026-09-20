@@ -5,7 +5,7 @@ const root = path.join(import.meta.dirname, "..");
 const directory = path.join(root, "db/data-migrations");
 const slug = (process.argv[2] || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 if (!slug) {
-  console.error("Usage: npm run data:migration:new -- add_example_course");
+  console.error("Usage: npm run data:migration:new -- add_example");
   process.exit(1);
 }
 
@@ -17,21 +17,19 @@ const next = String((used.length ? Math.max(...used) : 0) + 1).padStart(3, "0");
 const id = `${next}_${slug}`;
 const file = path.join(directory, `${id}.ts`);
 const alias = `migration${next}`;
-writeFileSync(file, `import type { ProductData } from "../../services/productStore";
+writeFileSync(file, `import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
 
 export const id = ${JSON.stringify(id)};
 export const description = "Describe the logical change.";
-export const touches = ["courses"] as const;
+export const touches = ["other"] as const;
 
-export function apply(data: ProductData, ctx: DataMigrationContext): DataChange[] {
-  void data;
+export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[] {
   void ctx;
-  return [{ action: "skip", kind: "course", id: "replace-me", reason: "todo" }];
-}
-
-export function plan() {
-  return { sql: [] as string[], objects: [] as Array<{ key: string; source: string; contentType: string }> };
+  const rows = orm.table<{ id: string }>("replace_me");
+  if (rows.findById("replace-me")) return [{ action: "skip", kind: "replace_me", id: "replace-me", reason: "exists" }];
+  rows.insert({ id: "replace-me" });
+  return [{ action: "add", kind: "replace_me", id: "replace-me" }];
 }
 `);
 
