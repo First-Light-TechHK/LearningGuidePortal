@@ -57,12 +57,18 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 
 ```text
 GitHub pull request / push
-  -> Verify (typecheck / lint / unit / integration / build) — tests only
-  -> Push to `dev` → GitHub Deploy DEV starts App Runner (www + admin)
+  -> Verify (typecheck / lint / unit / integration / build) — tests only; no App Runner
+  -> Push to `dev` → Deploy DEV stamps APP_VERSION and starts App Runner (www + admin)
   -> npm start applies pending db/data-migrations, then serves the app
-  -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
-  -> Deploy SIT is workflow_dispatch only (never on push)
+  -> Post-deploy live e2e (portal, catalogue, sign-in, OAuth redirects, 401s, both locales)
+  -> Success: SNS `learning-guide-sit-alerts` + GitHub summary
+  -> Failure: automatic fallback (DEV revert-commit; SIT/UAT/PPE force previous SHA) then notify
+  -> Deploy SIT / UAT / PPE are workflow_dispatch only (never on push)
 ```
+
+UAT and PPE workflows exist but stay blocked until their App Runner ARNs and origins are set as repository variables (`UAT_APP_RUNNER_SERVICE_ARN`, `PPE_APP_RUNNER_SERVICE_ARN`, `PPE_ORIGIN`). Subscribe an ops mailbox to `learning-guide-sit-alerts` so release notifications arrive.
+
+Post-deploy e2e registers `LIVE_TEST_EMAIL` (SIT default `yongthelaoma@gmail.com`), requires SES to accept that send, and fails if the response leaks an SES IAM error. It does not create Stripe Checkout. Implementation: `scripts/after-deploy.mjs`, `scripts/release/liveSmoke.mjs`, `tests/e2e/live-release.spec.ts`. Unit coverage: `tests/unit/live-smoke.test.ts`.
 
 Product-aggregate data changes use numbered scripts under `db/data-migrations/`. Direction: [data-migrations.md](data-migrations.md). How to write a script: [writing-data-migrations.md](writing-data-migrations.md). Do not replace the live `product.json` aggregate.
 

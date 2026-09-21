@@ -153,8 +153,11 @@ Resources:
                 Resource: !GetAtt Bucket.Arn
                 Condition: {StringLike: {'s3:prefix': ['learning-guide/sit/*']}}
               - Effect: Allow
-                Action: ses:SendEmail
-                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/learningguide@163.com'
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: learningguide@163.com
   Connector:
     Type: AWS::AppRunner::VpcConnector
     Properties:

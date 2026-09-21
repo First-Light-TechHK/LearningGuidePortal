@@ -24,7 +24,7 @@ test("client-owned payment mistakes are 400; unknown provider failures stay 502"
   assert.equal((await provider.json()).code, "payment_unavailable");
 });
 
-test("check-email never reports whether an address exists", async () => {
+test("check-email reports whether an address exists", async () => {
   const known = await checkEmail(new Request("http://localhost/api/auth/check-email", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -35,6 +35,12 @@ test("check-email never reports whether an address exists", async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: "unknown@example.test" }),
   }));
-  assert.deepEqual(await known.json(), { ok: true });
-  assert.deepEqual(await unknown.json(), { ok: true });
+  const knownBody = await known.json() as { ok?: boolean; data?: { exists?: boolean } };
+  const unknownBody = await unknown.json() as { ok?: boolean; data?: { exists?: boolean } };
+  assert.equal(known.status, 200);
+  assert.equal(unknown.status, 200);
+  assert.equal(knownBody.ok, true);
+  assert.equal(unknownBody.ok, true);
+  assert.equal(typeof knownBody.data?.exists, "boolean");
+  assert.equal(typeof unknownBody.data?.exists, "boolean");
 });

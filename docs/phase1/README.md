@@ -13,6 +13,9 @@ Cite these files as repo paths (`docs/phase1/domain-model.md`). Do not use GitHu
 | `domain-model.md` | 表、字段、关系和状态变更 |
 | `api-contracts.md` | API 输入、输出、权限和错误 |
 | `release-runbook.md` | DEV、SIT、UAT、PPE/PROD 和回滚 |
+| `sit-go-live-checklist.md` | SIT go-live: AWS, SES, Google, WeChat, Stripe, data, no Nacos |
+| `Learning_Guide_SIT_Migration_Checklist.docx` | DEV→SIT 开发移交单（开发填写；运维发布） |
+| `s3-documents.md` | DEV S3 `learning-guide/dev/documents/` keys and how to GetObject them |
 | `backbone.md` | 第一条可运行产品切片和后续开发顺序 |
 | `ai-coding-prompt.md` | 分配给 AI coding tool 的任务格式和固定约束 |
 | `Learning_Guide_Phase1_Production_GoLive_Developer_Plan_ZH_v6.docx` | 面向开发人员的完整中文实施计划和架构图 |

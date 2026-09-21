@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createSession, issueEmailVerificationToken, publicUser, registerUserAttempt, verifyEmailToken } from "@/services/productStore";
 import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
-import { emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
+import { emailDeliveryConfigured, sendVerificationEmail, EmailDeliveryError } from "@/services/emailService";
 import { appEnvironment, emailVerificationRequired, publicAppOrigin } from "@/services/runtimeConfig";
 
 export async function POST(request: Request) {
@@ -29,6 +29,12 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Registration failed.";
     const tooSoon = message.includes("wait before requesting");
-    return NextResponse.json({ ok: false, code: tooSoon ? "VERIFICATION_RATE_LIMITED" : "REGISTRATION_FAILED", message, requestId }, { status: tooSoon ? 429 : 400 });
+    const delivery = error instanceof EmailDeliveryError || /not authorized|MessageRejected|not verified/i.test(message);
+    return NextResponse.json({
+      ok: false,
+      code: tooSoon ? "VERIFICATION_RATE_LIMITED" : delivery ? "EMAIL_DELIVERY_FAILED" : "REGISTRATION_FAILED",
+      message: delivery ? "Verification email could not be sent. Use a mailbox that this environment is allowed to mail." : message,
+      requestId
+    }, { status: tooSoon ? 429 : 400 });
   }
 }

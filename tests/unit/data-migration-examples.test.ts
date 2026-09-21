@@ -50,10 +50,13 @@ test("003 adds Quintus Horatius Flaccus once", async () => {
   const second = await applyOrmMigrations(orm, [addQuintusHoratiusFlaccus], { store: "memory" });
   const course = orm.table<ProductCourse>("courses").findById("quintus-horatius-flaccus");
   assert.equal(course?.title, "Quintus Horatius Flaccus");
+  assert.equal(course?.status, "published");
   assert.equal(course?.sections.length, 2);
+  assert.equal(course?.sections[0]?.lessons.some((lesson) => lesson.isPublic), true);
   assert.deepEqual(first.applied, [addQuintusHoratiusFlaccus.id]);
   assert.deepEqual(second.applied, []);
   assert.equal(orm.table<ProductUser>("users").all().length, 0);
+  assert.equal(process.env.DATABASE_URL || "", "");
 });
 
 test("example B adds a lesson on an existing course and then skips", async () => {

@@ -75,7 +75,7 @@ test("executeOrmPlan runs compiled SQL and S3 puts without a real database", asy
 });
 
 test("hydrate merges SQL product rows onto the JSON aggregate without dropping other courses", async () => {
-  const data = { courses: [{ id: "epicureanism", title: "Epicureanism" }], users: [{ id: "user-keep" }], dataMigrations: [] };
+  const data = { courses: [{ id: "epicureanism", title: "Epicureanism" }], users: [{ id: "user-keep" }], dataMigrations: [] as string[] };
   await hydrateOrmFromSql(data, {
     query: async (text) => {
       if (text.includes("FROM data_migrations")) return { rows: [{ id: "001_add_stoicism" }] };

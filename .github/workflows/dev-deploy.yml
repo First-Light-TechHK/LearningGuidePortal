@@ -2,8 +2,7 @@
 # Push to `dev` publishes DEV. Native GitHub-source auto-deploy does not fire
 # reliably on this service, so this workflow is the automatic publisher.
 # Do not start it on `main`; that would publish `dev` HEAD.
-# SIT is sit-deploy.yml and stays workflow_dispatch.
-# Wait on describe-service Status, not list-operations.
+# After RUNNING, stamp APP_VERSION, then live e2e / fallback / notify.
 
 name: Deploy DEV
 
@@ -17,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   deploy:
@@ -25,7 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
+    outputs:
+      previous_sha: ${{ steps.prev.outputs.sha }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -33,9 +36,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-1
 
-      - name: Queue-wait until RUNNING, then start-deployment
+      - name: Queue-wait until RUNNING, then stamp APP_VERSION
+        id: prev
         env:
           APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
+          APP_VERSION: ${{ github.sha }}
         run: |
           set -u
           echo "DEV target: learning-guide-portal (www + admin)"
@@ -69,69 +74,27 @@ jobs:
             return 1
           }
 
-          operation_id=""
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            if ! wait_until_running; then
-              exit 1
-            fi
-            if out="$(aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN" 2>&1)"; then
-              printf '%s\n' "$out"
-              operation_id="$(printf '%s\n' "$out" | jq -r '.OperationId // empty')"
-              if [ -z "$operation_id" ]; then
-                echo "start-deployment returned no OperationId"
-                exit 1
-              fi
-              echo "start-deployment accepted: OperationId=$operation_id"
-              break
-            fi
-            printf '%s\n' "$out"
-            if printf '%s\n' "$out" | grep -Eqi 'InvalidRequestException|isn.?t in RUNNING|not in RUNNING'; then
-              echo "start-deployment collided (service not RUNNING); wait and retry"
-              sleep "$sleep_s"
-              continue
-            fi
-            echo "start-deployment failed with a non-collision error"
-            exit 1
-          done
-          if [ -z "$operation_id" ]; then
-            echo "timeout: waited 25m to accept start-deployment"
-            exit 1
-          fi
-
-          seen_progress=0
-          progress_deadline=$((SECONDS + 120))
-          while [ "$SECONDS" -lt "$progress_deadline" ]; do
-            status="$(describe_status || true)"
-            echo "App Runner Status=${status:-unknown} (waiting to leave RUNNING)"
-            if [ "$status" != "RUNNING" ]; then
-              seen_progress=1
-              break
-            fi
-            sleep 5
-          done
-          if [ "$seen_progress" != "1" ]; then
-            echo "service stayed RUNNING after start-deployment; treating as already applied"
-          fi
-
-          deadline=$((SECONDS + 1500))
           if ! wait_until_running; then
             exit 1
           fi
 
-          service_url="$(aws apprunner describe-service \
+          previous="$(aws apprunner describe-service \
             --service-arn "$APP_RUNNER_SERVICE_ARN" \
-            --query 'Service.ServiceUrl' \
+            --query 'Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables.APP_VERSION' \
             --output text)"
-          health_url="https://${service_url}/api/health"
-          health_deadline=$((SECONDS + 180))
-          while [ "$SECONDS" -lt "$health_deadline" ]; do
-            if health="$(curl --fail --silent --show-error "$health_url")"; then
-              printf '%s\n' "$health"
-              echo "DEV deployment completed and health check passed"
-              exit 0
-            fi
-            echo "DEV health check not ready; retrying in ${sleep_s}s"
-            sleep "$sleep_s"
-          done
-          echo "DEV health check did not pass within 3m: $health_url"
-          exit 1
+          echo "previous_sha=${previous}"
+          echo "sha=${previous}" >> "$GITHUB_OUTPUT"
+          node scripts/apprunner-set-version.mjs
+
+  verify:
+    name: Live e2e / fallback / notify
+    needs: deploy
+    uses: ./.github/workflows/release-verify.yml
+    secrets: inherit
+    with:
+      environment: DEV
+      origin: https://www.ilovelearningguide.com
+      admin_origin: https://admin.ilovelearningguide.com
+      service_arn: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
+      previous_sha: ${{ needs.deploy.outputs.previous_sha }}
+      rollback_mode: revert-commit

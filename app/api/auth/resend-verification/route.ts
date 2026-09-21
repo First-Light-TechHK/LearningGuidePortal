@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
+import { emailDeliveryConfigured, sendVerificationEmail, EmailDeliveryError } from "@/services/emailService";
 import { requestEmailVerification } from "@/services/productStore";
 import { appEnvironment, publicAppOrigin } from "@/services/runtimeConfig";
 
@@ -21,6 +21,12 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Verification email could not be sent.";
     const tooSoon = message.includes("wait before requesting");
-    return NextResponse.json({ ok: false, code: tooSoon ? "VERIFICATION_RATE_LIMITED" : "EMAIL_DELIVERY_FAILED", message, requestId }, { status: tooSoon ? 429 : 400 });
+    const delivery = error instanceof EmailDeliveryError || /not authorized|MessageRejected|not verified/i.test(message);
+    return NextResponse.json({
+      ok: false,
+      code: tooSoon ? "VERIFICATION_RATE_LIMITED" : "EMAIL_DELIVERY_FAILED",
+      message: delivery ? "Verification email could not be sent. Use a mailbox that this environment is allowed to mail." : message,
+      requestId
+    }, { status: tooSoon ? 429 : 400 });
   }
 }
