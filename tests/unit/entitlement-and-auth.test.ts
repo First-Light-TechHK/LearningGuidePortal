@@ -77,6 +77,17 @@ test("createSession replaces existing sessions only when asked", async () => {
   assert.ok(await store.getUserBySessionToken(replaced.token));
 });
 
+test("remembered authentication sessions expire after exactly 14 days", async () => {
+  const user = await store.registerUser({ email: "remember-session@example.test", password: "password1" });
+  await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
+  const maxAgeSeconds = 60 * 60 * 24 * 14;
+  const session = await store.createSession(user.id, { maxAgeSeconds });
+  const stored = (await store.ensureProductData()).sessions.at(-1);
+  assert.ok(stored);
+  assert.equal(Date.parse(session.expiresAt) - Date.parse(stored.createdAt), maxAgeSeconds * 1000);
+  assert.ok(await store.getUserBySessionToken(session.token));
+});
+
 test("a cancelled trial cannot be completed again; resume restores the same window", async () => {
   const user = await store.registerUser({ email: "lock-trial@example.test", password: "password1" });
   await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));

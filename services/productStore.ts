@@ -865,9 +865,13 @@ export async function authenticateUser(emailValue: string, password: string) {
   return user;
 }
 
-export async function createSession(userId: string, options?: { replaceExisting?: boolean }) {
+export async function createSession(userId: string, options?: { replaceExisting?: boolean; maxAgeSeconds?: number }) {
   const token = randomBytes(32).toString("base64url");
-  const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt: addMonths(now(), 1), createdAt: now() };
+  const createdAt = now();
+  const expiresAt = options?.maxAgeSeconds !== undefined
+    ? new Date(Date.parse(createdAt) + Math.max(1, options.maxAgeSeconds) * 1000).toISOString()
+    : addMonths(createdAt, 1);
+  const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt, createdAt };
   await editData((data) => {
     data.sessions = data.sessions.filter((item) => (options?.replaceExisting ? item.userId !== userId : true) && new Date(item.expiresAt) > new Date());
     data.sessions.push(session);

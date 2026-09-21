@@ -8,6 +8,7 @@ import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { currentProductUser } from "@/services/productAuth";
+import { signCourseMediaUrl } from "@/services/persistence/s3";
 
 export default async function CourseDetailPage({
   params
@@ -60,6 +61,7 @@ export default async function CourseDetailPage({
   const secondaryHref = ctaHref(page.secondaryCta);
   const secondaryLabel = ctaLabel(page.secondaryCta);
   const identity = page.identity;
+  const signedCover = await signCourseMediaUrl(course?.cover || course?.thumbnailPath || "");
   const catalogHref = `/${locale}/portal/courses`;
 
   return (
@@ -74,7 +76,7 @@ export default async function CourseDetailPage({
       ) : (
         <>
           <section className="course-detail-hero">
-            <div className="course-detail-hero-image"><CourseThumbnail slug={course?.slug || slug} title={identity.title} src={course?.cover || course?.thumbnailPath} /></div>
+            <div className="course-detail-hero-image"><CourseThumbnail slug={course?.slug || slug} title={identity.title} src={signedCover} /></div>
             <div className="course-detail-hero-copy">
               <p className="portal-course-tag" data-course-track={identity.track}>{identity.track}</p>
               <h1 data-course-title={identity.title}>{identity.title}</h1>

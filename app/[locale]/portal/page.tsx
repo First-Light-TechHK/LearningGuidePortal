@@ -7,6 +7,7 @@ import { CatalogueCourseCard } from "@/components/portal/CatalogueCourseCard";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { BannerCarousel } from "@/components/portal/BannerCarousel";
+import { signCourseMediaUrl } from "@/services/persistence/s3";
 
 export default async function PortalHome({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: rawLocale } = await params;
@@ -23,7 +24,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
 
       <section className="portal-section portal-section-courses" aria-labelledby="course-heading">
         <div className="portal-section-heading"><div><p className="portal-eyebrow">{copy.featuredCourses}</p><h2 id="course-heading">{copy.popularCourses}</h2><p className="portal-section-description">{copy.popularCoursesDescription}</p></div></div>
-        {courses.length ? <div className="portal-course-grid">{courses.map(course => <CatalogueCourseCard key={course.id} course={course} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />)}</div> : <p className="portal-empty">{copy.noCourses}</p>}
+        {courses.length ? <div className="portal-course-grid">{await Promise.all(courses.map(async course => <CatalogueCourseCard key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
         <div className="portal-explore-more"><Link prefetch={false} className="portal-button portal-button-primary" href={`/${locale}/portal/courses`}>{copy.viewCourses}</Link></div>
       </section>
 

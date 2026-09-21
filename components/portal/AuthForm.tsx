@@ -16,11 +16,13 @@ function rememberEmail(email: string | null) {
   }
 }
 
-export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError, showTitle = true, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string; showTitle?: boolean; initialEmail?: string }) {
+export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError, showTitle = true, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string; existingEmailNotice: string; existingEmailCountdown: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string; showTitle?: boolean; initialEmail?: string }) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [error, setError] = useState(providerError || "");
+  const [existingNotice, setExistingNotice] = useState("");
+  const [existingSeconds, setExistingSeconds] = useState(3);
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -46,16 +48,28 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     setError("");
     try {
       const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe }) });
-      const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean } };
+      const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
       if (!response.ok || !data.ok) throw new Error(data.message || "Request failed.");
       if (signIn) rememberEmail(rememberMe ? email : null);
-      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email`);
+      if (data.data?.existingActiveEmail) {
+        setExistingNotice(labels.existingEmailNotice);
+        setExistingSeconds(3);
+        return;
+      }
+      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
       window.location.assign(returnTo || `/${locale}/account/my-learning`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Request failed.");
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!existingNotice) return;
+    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?email=${encodeURIComponent(email.trim().toLowerCase())}`); return; }
+    const timer = window.setTimeout(() => setExistingSeconds(value => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [email, existingNotice, existingSeconds, locale]);
 
   const switchPath = `${signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`}?returnTo=${encodeURIComponent(returnTo)}`;
   return (
@@ -68,6 +82,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       </div>
       {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberEmail(null); }} />{labels.rememberMe}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+      {existingNotice ? <div className="portal-success" role="status"><p>{existingNotice}</p><p>{labels.existingEmailCountdown.replace("{seconds}", String(existingSeconds))}</p></div> : null}
       <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{busy ? "..." : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
       <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} />
