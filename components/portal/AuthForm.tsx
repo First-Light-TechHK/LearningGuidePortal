@@ -66,7 +66,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
 
   useEffect(() => {
     if (!existingNotice) return;
-    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?email=${encodeURIComponent(email.trim().toLowerCase())}`); return; }
+    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?step=password&email=${encodeURIComponent(email.trim().toLowerCase())}`); return; }
     const timer = window.setTimeout(() => setExistingSeconds(value => value - 1), 1000);
     return () => window.clearTimeout(timer);
   }, [email, existingNotice, existingSeconds, locale]);
