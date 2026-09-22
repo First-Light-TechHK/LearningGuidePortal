@@ -15,6 +15,7 @@ import * as verifyEmail from "../../db/data-migrations/examples/verify-user-emai
 import * as forceLogout from "../../db/data-migrations/examples/force-logout-user";
 import * as expireTokens from "../../db/data-migrations/examples/expire-stale-reset-tokens";
 import * as addQuintusHoratiusFlaccus from "../../db/data-migrations/003_add_quintus_horatius_flaccus";
+import * as migrateMvpMediaToAws from "../../db/data-migrations/004_migrate_mvp_media_to_aws";
 
 function qaTeacher(overrides: Partial<ProductUser> = {}): ProductUser {
   return {
@@ -57,6 +58,41 @@ test("003 adds Quintus Horatius Flaccus once", async () => {
   assert.deepEqual(second.applied, []);
   assert.equal(orm.table<ProductUser>("users").all().length, 0);
   assert.equal(process.env.DATABASE_URL || "", "");
+});
+
+test("004 migrates legacy MVP media URLs to AWS S3 and is idempotent", async () => {
+  const course: ProductCourse = {
+    ...stoicismCourse("2026-01-01T00:00:00.000Z"),
+    id: "mvp-media-fixture",
+    cover: "https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp/image/Horatius.jpg",
+    sections: [{
+      id: "section",
+      title: "Section",
+      lessons: [{
+        id: "lesson",
+        title: "Lesson",
+        body: "Fixture lesson",
+        durationMinutes: 1,
+        isPublic: true,
+        contents: [{
+          id: "video",
+          title: "Video",
+          type: "video",
+          mode: "lecture",
+          url: "https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp/video/example.mp4",
+          nodes: [],
+        }],
+      }],
+    }],
+  };
+  const orm = createMemoryOrm({ tables: { courses: [course] } });
+  const first = await applyOrmMigrations(orm, [migrateMvpMediaToAws], { store: "memory" });
+  const second = await applyOrmMigrations(orm, [migrateMvpMediaToAws], { store: "memory" });
+  const migrated = orm.table<ProductCourse>("courses").findById(course.id);
+  assert.equal(migrated?.cover, "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/documents/mvp/image/Horatius.jpg");
+  assert.equal(migrated?.sections[0]?.lessons[0]?.contents?.[0]?.url, "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/documents/mvp/video/example.mp4");
+  assert.deepEqual(first.applied, [migrateMvpMediaToAws.id]);
+  assert.deepEqual(second.applied, []);
 });
 
 test("example B adds a lesson on an existing course and then skips", async () => {

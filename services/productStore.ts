@@ -603,6 +603,14 @@ export async function userEmailExists(emailValue: string) {
   return data.users.some((user) => user.email === email && ["pending", "active"].includes(user.status));
 }
 
+export async function getEmailAuthState(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { exists: false, pending: false };
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && ["pending", "active"].includes(item.status));
+  return { exists: Boolean(user), pending: user?.status === "pending" || (Boolean(user) && !user?.emailVerifiedAt) };
+}
+
 export async function registerUserAttempt(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
   const email = input.email.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
@@ -865,9 +873,13 @@ export async function authenticateUser(emailValue: string, password: string) {
   return user;
 }
 
-export async function createSession(userId: string, options?: { replaceExisting?: boolean }) {
+export async function createSession(userId: string, options?: { replaceExisting?: boolean; maxAgeSeconds?: number }) {
   const token = randomBytes(32).toString("base64url");
-  const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt: addMonths(now(), 1), createdAt: now() };
+  const createdAt = now();
+  const expiresAt = options?.maxAgeSeconds !== undefined
+    ? new Date(Date.parse(createdAt) + Math.max(1, options.maxAgeSeconds) * 1000).toISOString()
+    : addMonths(createdAt, 1);
+  const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt, createdAt };
   await editData((data) => {
     data.sessions = data.sessions.filter((item) => (options?.replaceExisting ? item.userId !== userId : true) && new Date(item.expiresAt) > new Date());
     data.sessions.push(session);

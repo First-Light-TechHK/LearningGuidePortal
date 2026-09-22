@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userEmailExists } from "@/services/productStore";
+import { getEmailAuthState } from "@/services/productStore";
 
 export async function POST(request: Request) {
   try {
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     if (!/^\S+@\S+\.\S+$/.test(email)) {
       return NextResponse.json({ ok: false, error: "Enter a valid email address." }, { status: 400 });
     }
-    return NextResponse.json({ ok: true, data: { exists: await userEmailExists(email) } });
+    return NextResponse.json({ ok: true, data: await getEmailAuthState(email) });
   } catch {
     return NextResponse.json({ ok: false, error: "Email check failed." }, { status: 400 });
   }

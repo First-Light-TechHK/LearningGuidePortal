@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const verificationRequired = emailVerificationRequired();
     if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", message: `Email verification is not configured for ${appEnvironment()}.`, requestId }, { status: 503 });
     const { user, created } = await registerUserAttempt({ email: body.email || "", password: body.password || "", nickname: body.nickname, locale: body.locale });
-    if (!created) return NextResponse.json({ ok: true, data: { verificationRequired: false }, requestId });
+    if (!created && user.status === "active" && user.emailVerifiedAt) return NextResponse.json({ ok: true, data: { existingActiveEmail: true, email: user.email }, requestId });
     const verificationToken = await issueEmailVerificationToken(user.id, true);
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
     if (verificationRequired) {
