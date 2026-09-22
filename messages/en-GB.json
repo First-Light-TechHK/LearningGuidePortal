@@ -177,7 +177,7 @@
     "google": "Google",
     "wechat": "WeChat",
     "emailContinue": "Continue with email",
-    "emailEntryDescription": "Enter your email address. We will take you to sign in or create your account.",
+    "emailEntryDescription": "Enter your email address. We will take you to sign in or activate your account.",
     "existingEmailNotice": "This email is already registered and activated.",
     "existingEmailCountdown": "Redirecting to sign in in {seconds} seconds...",
     "oauthAccountConflict": "An account already uses this email. Sign in with your email and password before linking Google.",

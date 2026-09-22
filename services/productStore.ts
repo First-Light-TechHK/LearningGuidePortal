@@ -603,6 +603,14 @@ export async function userEmailExists(emailValue: string) {
   return data.users.some((user) => user.email === email && ["pending", "active"].includes(user.status));
 }
 
+export async function getEmailAuthState(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { exists: false, pending: false };
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && ["pending", "active"].includes(item.status));
+  return { exists: Boolean(user), pending: user?.status === "pending" || (Boolean(user) && !user?.emailVerifiedAt) };
+}
+
 export async function registerUserAttempt(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
   const email = input.email.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");

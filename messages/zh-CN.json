@@ -177,7 +177,7 @@
     "google": "Google",
     "wechat": "微信",
     "emailContinue": "使用邮箱继续",
-    "emailEntryDescription": "输入邮箱地址后，我们会引导你登录或创建账号。",
+    "emailEntryDescription": "输入邮箱地址后，我们会引导你登录或激活账号。",
     "existingEmailNotice": "该邮箱已注册并激活。",
     "existingEmailCountdown": "将在 {seconds} 秒后跳转到登录页面……",
     "oauthAccountConflict": "该邮箱已经关联 Learning Guide 账号。请先使用邮箱和密码登录，再绑定 Google。",
