@@ -35,6 +35,39 @@ function fail(failures, name, detail) {
   failures.push(`${name}: ${detail}`);
 }
 
+function mediaUrls(markup, pageUrl) {
+  const found = [];
+  const pattern = /(?:src|href)="([^"]+)"|url\(([^)]+)\)/gi;
+  for (const match of markup.matchAll(pattern)) {
+    const raw = (match[1] || match[2] || "").trim().replace(/^['"]|['"]$/g, "").replace(/&amp;/g, "&");
+    if (!raw || raw.startsWith("data:")) continue;
+    let absolute;
+    try { absolute = new URL(raw, pageUrl).toString(); } catch { continue; }
+    if (/(\.(jpe?g|png|webp|gif)(\?|$)|amazonaws\.com|myqcloud\.com|_next\/image|course-media|portal-media)/i.test(absolute)) found.push(absolute);
+  }
+  return [...new Set(found)].slice(0, 4);
+}
+
+function imageLoads(response) {
+  if (response.status !== 200) return false;
+  const type = String(response.headers?.get?.("content-type") || "").toLowerCase();
+  if (type.includes("text/html") || type.includes("application/json") || type.includes("xml")) return false;
+  return type.startsWith("image/") || type === "";
+}
+
+async function assertCourseMedia(http, origin, markup, pagePath, failures) {
+  const images = mediaUrls(markup, new URL(pagePath, origin));
+  if (!images.length) {
+    fail(failures, "course.media", "published course page has no image");
+    return;
+  }
+  for (const imageUrl of images) {
+    if (/myqcloud\.com/i.test(imageUrl)) fail(failures, "course.media", "course image still points at Tencent COS");
+    const image = await http(imageUrl);
+    if (!imageLoads(image)) fail(failures, "course.media", `${image.status} ${imageUrl.slice(0, 160)}`);
+  }
+}
+
 function awsErrorLeak(payload) {
   return /ses:SendEmail|assumed-role|not authorized to perform/i.test(JSON.stringify(payload || {}));
 }
@@ -74,7 +107,7 @@ export async function runLiveSmoke(input, request) {
     fail(failures, "config.payment", String(config.body?.payment?.mode));
   }
 
-  for (const path of ["/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/sign-in", "/zh-CN/portal/sign-in", "/en-GB/pricing"]) {
+  for (const path of ["/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/zh-CN/portal/courses", "/en-GB/pricing", "/zh-CN/pricing", "/en-GB/portal/sign-in", "/zh-CN/portal/sign-in", "/en-GB/portal/sign-up", "/en-GB/portal/forgot-password"]) {
     const page = await http(path);
     if (page.status !== 200) fail(failures, path, `HTTP ${page.status}`);
     else if (/Application error|Internal Server Error/i.test(page.text || "")) fail(failures, path, "rendered an application error");
@@ -91,7 +124,15 @@ export async function runLiveSmoke(input, request) {
     if (course.status !== 200 || !course.body?.page) fail(failures, "course.api", `HTTP ${course.status}`);
     const html = await http(`/en-GB/portal/courses/${slug}`);
     if (html.status !== 200) fail(failures, "course.page", `HTTP ${html.status}`);
+    else if (!/<(main|h1)\b/i.test(html.text || "")) fail(failures, "course.page", `${slug} did not render`);
+    else await assertCourseMedia(http, origin, html.text || "", `/en-GB/portal/courses/${slug}`, failures);
+    const lessonPage = await http(`/en-GB/portal/courses/${slug}/public-lesson`);
+    if (lessonPage.status !== 200 || !/<(main|h1)\b/i.test(lessonPage.text || "")) fail(failures, "public-lesson", `${slug} HTTP ${lessonPage.status}`);
   }
+
+  const learningPage = await http("/en-GB/account/my-learning");
+  if (learningPage.status >= 400) fail(failures, "my-learning.page", `HTTP ${learningPage.status}`);
+  if (/id="my-learning-heading"/i.test(learningPage.text || "")) fail(failures, "my-learning.page", "anonymous visitor received the signed-in dashboard");
 
   const plans = await http("/api/portal/plans");
   if (plans.status !== 200 || !(plans.body?.plans || []).length) fail(failures, "plans", `HTTP ${plans.status}`);
@@ -105,6 +146,20 @@ export async function runLiveSmoke(input, request) {
     body: JSON.stringify({ courseId: slug || "epicureanism", lessonId: "public", event: "complete", seconds: 1, clientEventId: `live-${Date.now()}` })
   });
   if (study.status === 200) fail(failures, "study.events", "unauthenticated write returned 200");
+  const checkout = await postJson(http, "/api/purchase/checkout", { planId: "everything-pc-6" });
+  if (checkout.status !== 401 || checkout.body?.ok === true) fail(failures, "purchase.checkout", `anonymous checkout must be rejected, got ${checkout.status}`);
+  const trial = await postJson(http, "/api/trial", { planId: "everything-pc-6" });
+  if (trial.status !== 401 || trial.body?.ok === true) fail(failures, "trial", `anonymous trial must be rejected, got ${trial.status}`);
+  const billing = await postJson(http, "/api/subscription/portal", {});
+  if (billing.status !== 401 || billing.body?.ok === true) fail(failures, "subscription.portal", `anonymous billing must be rejected, got ${billing.status}`);
+  const webhook = await postJson(http, "/api/payment/webhook", { id: "evt_smoke_unsigned" });
+  if (webhook.status !== 400 || webhook.body?.ok === true) fail(failures, "payment.webhook", `unsigned webhook must be rejected, got ${webhook.status}`);
+  const orders = await http("/api/backoffice/orders");
+  if (![403, 404].includes(orders.status) || orders.body?.ok === true) fail(failures, "orders", `anonymous orders must be rejected, got ${orders.status}`);
+  const authoring = await http("/api/backoffice/courses");
+  if (![403, 404].includes(authoring.status) || authoring.body?.ok === true) fail(failures, "course-management", `anonymous course management must be rejected, got ${authoring.status}`);
+  const tutor = await postJson(http, "/api/ai-tutor", { courseId: slug || "epicureanism", message: "smoke" });
+  if (tutor.status !== 401 || tutor.body?.ok === true) fail(failures, "ai-tutor", `anonymous tutor must be rejected, got ${tutor.status}`);
 
   const checkEmail = await http("/api/auth/check-email", {
     method: "POST",
@@ -114,7 +169,7 @@ export async function runLiveSmoke(input, request) {
   if (checkEmail.status !== 200 || checkEmail.body?.ok !== true) fail(failures, "check-email", `HTTP ${checkEmail.status}`);
 
   const testEmail = input.testEmail?.trim().toLowerCase();
-  if (["SIT", "UAT", "PPE", "PPE/PROD", "PROD"].includes(appEnv) && !testEmail) {
+  if (["DEV", "SIT", "UAT", "PPE", "PPE/PROD", "PROD"].includes(appEnv) && !testEmail) {
     fail(failures, "registration", "LIVE_TEST_EMAIL is required so registration is actually mailed");
   } else if (testEmail) {
     const registered = await postJson(http, "/api/auth/register", {
@@ -172,6 +227,10 @@ export async function runLiveSmoke(input, request) {
     const admin = await adminHttp("/en-GB/backoffice", { redirect: "manual" });
     if (admin.status === 404) fail(failures, "admin.backoffice", "admin host returned 404");
     else if (![200, 302, 303, 307, 308].includes(admin.status)) fail(failures, "admin.backoffice", `HTTP ${admin.status}`);
+    const adminOrders = await adminHttp("/api/backoffice/orders");
+    if (adminOrders.status !== 403 || adminOrders.body?.ok === true) fail(failures, "admin.orders", `anonymous admin orders must be rejected, got ${adminOrders.status}`);
+    const adminCourses = await adminHttp("/api/backoffice/courses");
+    if (adminCourses.status !== 403 || adminCourses.body?.ok === true) fail(failures, "admin.courses", `anonymous admin course management must be rejected, got ${adminCourses.status}`);
   }
 
   return { ok: failures.length === 0, failures, catalogue: published.map((course) => course.slug || course.id) };

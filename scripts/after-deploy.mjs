@@ -9,7 +9,7 @@ const sha = (process.env.RELEASE_SHA || "").trim();
 const previousSha = (process.env.RELEASE_PREVIOUS_SHA || "").trim();
 const origin = process.env.RELEASE_ORIGIN || environment.origin;
 const adminOrigin = process.env.RELEASE_ADMIN_ORIGIN || environment.adminOrigin;
-const testEmail = process.env.LIVE_TEST_EMAIL || (environment.name === "SIT" ? "yongthelaoma@gmail.com" : "");
+const testEmail = process.env.LIVE_TEST_EMAIL || (environment.name === "DEV" || environment.name === "SIT" ? "yongthelaoma@gmail.com" : "");
 if (!environment.provisioned && !process.env.APP_RUNNER_SERVICE_ARN && !environment.serviceArn) {
   throw new Error(`${environment.name} App Runner is not provisioned; set the service ARN secret before deploying`);
 }

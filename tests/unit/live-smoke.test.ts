@@ -28,9 +28,19 @@ function stub(overrides = {}) {
     if (path === "/api/health/config") return json(200, { ready: true, missing: [], storage: "postgresql+s3", payment: { mode: "stripe" } });
     if (path === "/api/portal/courses") return json(200, { ok: true, courses: [{ slug: "epicureanism", status: "published" }] });
     if (path === "/api/portal/courses/epicureanism") return json(200, { ok: true, page: { identity: { title: "Epicureanism" } } });
+    if (path === "/en-GB/portal/courses/epicureanism") return html(200, "<html><body><main><h1>Epicureanism</h1><img src=\"https://cdn.example.test/cover.jpg\"></main></body></html>");
+    if (path === "/en-GB/portal/courses/epicureanism/public-lesson") return html(200, "<html><body><main><h1>Preview</h1></main></body></html>");
+    if (path === "https://cdn.example.test/cover.jpg") return html(200, "", { "content-type": "image/jpeg" });
     if (path === "/api/portal/plans") return json(200, { ok: true, plans: [{ id: "everything-pc-6" }] });
     if (path === "/api/my-learning") return json(401, { ok: false });
     if (path === "/api/study/events") return json(401, { ok: false });
+    if (path === "/api/purchase/checkout") return json(401, { ok: false });
+    if (path === "/api/trial") return json(401, { ok: false });
+    if (path === "/api/subscription/portal") return json(401, { ok: false });
+    if (path === "/api/payment/webhook") return json(400, { ok: false, code: "invalid_signature" });
+    if (path === "/api/backoffice/orders") return json(403, { ok: false });
+    if (path === "/api/backoffice/courses") return json(403, { ok: false });
+    if (path === "/api/ai-tutor") return json(401, { ok: false });
     if (path === "/api/auth/check-email") return json(200, { ok: true, data: {} });
     if (path === "/api/auth/register") return json(200, { ok: true, data: { verificationRequired: true } });
     if (path === "/api/auth/login") return json(401, { ok: false });
@@ -59,7 +69,9 @@ test("live smoke accepts a healthy SIT origin, registers, and does not pay", asy
   assert.equal(result.ok, true, result.failures.join("; "));
   assert.deepEqual(result.catalogue, ["epicureanism"]);
   assert.equal(seen.some((item) => item.includes("POST /api/auth/register")), true);
-  assert.equal(seen.some((item) => item.includes("/api/payment")), false);
+  assert.equal(seen.some((item) => item === "POST /api/purchase/checkout"), true);
+  assert.equal(seen.some((item) => item === "POST /api/payment/webhook"), true);
+  assert.equal(seen.some((item) => item === "GET https://cdn.example.test/cover.jpg"), true);
 });
 
 test("live smoke fails SIT when LIVE_TEST_EMAIL is missing", async () => {
@@ -109,6 +121,41 @@ test("live smoke fails when health is not ready", async () => {
   });
   assert.equal(result.ok, false);
   assert.ok(result.failures.some((item) => item.startsWith("health:")));
+});
+
+test("live smoke fails when an unsigned webhook is accepted", async () => {
+  const result = await runLiveSmoke({
+    origin: "https://sit.example.test",
+    appEnv: "SIT",
+    sha,
+    requireDependencyChecks: true,
+    requireVersionMatch: true,
+    testEmail: "tester@example.test"
+  }, async (path, options = {}) => {
+    if (path === "/api/payment/webhook") return json(200, { ok: true });
+    return stub()(path, options);
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some((item) => item.startsWith("payment.webhook:")));
+});
+
+test("live smoke fails when course media is missing or still on Tencent", async () => {
+  const result = await runLiveSmoke({
+    origin: "https://sit.example.test",
+    appEnv: "SIT",
+    sha,
+    requireDependencyChecks: true,
+    requireVersionMatch: true,
+    testEmail: "tester@example.test"
+  }, async (path, options = {}) => {
+    if (path === "/en-GB/portal/courses/epicureanism") {
+      return html(200, "<html><body><main><h1>Epicureanism</h1><img src=\"https://learningguide.myqcloud.com/cover.jpg\"></main></body></html>");
+    }
+    if (path === "https://learningguide.myqcloud.com/cover.jpg") return html(200, "", { "content-type": "image/jpeg" });
+    return stub()(path, options);
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some((item) => item.startsWith("course.media:")));
 });
 
 test("live smoke fails when Google stays on the product origin", async () => {
