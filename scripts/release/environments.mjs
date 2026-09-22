@@ -12,7 +12,7 @@ export const releaseEnvironments = {
     serviceArn: "arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad",
     rollbackMode: "revert-commit",
     requireDependencyChecks: false,
-    requireVersionMatch: true,
+    requireVersionMatch: false,
     provisioned: true
   },
   SIT: {

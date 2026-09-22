@@ -33,8 +33,8 @@ Intended origin: `https://sit.ilovelearningguide.com`. The customer manages DNSP
 
 1. Commit the change and push the release branch. `Verify` runs typecheck, lint, build, unit, authentication and payment tests. The missing-configuration health test expects 503 and is not evidence of deployment readiness.
 2. Initial source deployment uses `node scripts/provision-sit.mjs --deploy` after Verify passes. Subsequent releases use `Deploy SIT` with source mode, or `node scripts/release-sit.mjs`. Image mode is only for a service already configured for ECR; `node scripts/publish-sit-image.mjs` builds linux/amd64 from a clean committed tree and returns the digest.
-3. The release script requires a successful Verify run for the exact SHA, confirms the branch tip, updates only the SIT service and stamps `APP_VERSION`. Do not push more commits to the release branch during a source build. Source mode rechecks the branch tip after deployment; image mode pins an immutable digest.
-4. It waits for the exact App Runner operation to succeed, then requires `/api/health` to return HTTP 200, `environment=SIT`, the expected SHA, and successful database, migration and S3 checks. A failed operation, missing dependency or branch movement fails the release. The Deploy SIT workflow then runs live e2e (`scripts/after-deploy.mjs`). Failure rolls `sit` back to the previous APP_VERSION and notifies SNS.
+3. The release script requires a successful Verify run for the exact SHA, confirms the branch tip, points the SIT service at that branch, then `start-deployment` pulls and builds it. Writing `APP_VERSION` is only a label. Do not push more commits to the release branch during a source build. Source mode rechecks the branch tip after deployment; image mode pins an immutable digest.
+4. It waits for that source build to succeed, then requires `/api/health` to return HTTP 200, `environment=SIT`, the expected SHA, and successful database, migration and S3 checks. A failed operation, missing dependency or branch movement fails the release. The Deploy SIT workflow then runs live e2e (`scripts/after-deploy.mjs`). Failure rebuilds the previous SHA and notifies SNS.
 5. Exercise email verification/reset, Google/WeChat consent, every plan, sandbox Checkout/webhook and resulting entitlement, failed/cancelled payments, renewal/cancellation, cross-user isolation, My Learning and both locales. Provider consent and DNS readiness are separate acceptance conditions, not implied by configured credentials.
 6. Save the SHA, operation ID, test results and known outstanding external actions.
 
@@ -44,8 +44,8 @@ Any SIT failure after a publish — Verify red, App Runner `ROLLBACK`/`FAILED`, 
 
 1. Identify the last SHA that **passed Verify** and **previously ran** on `learning-guide-sit`.
 2. Point git branch `sit` at that SHA (`git push --force origin <sha>:sit`). `sit` is not `main`.
-3. `update-service` on `learning-guide-sit` only: source branch `sit`, `AutoDeploymentsEnabled=false`, `APP_VERSION=<sha>`. Do not change RDS, S3 objects, or payment rows.
-4. Wait for that operation `SUCCEEDED` (not `ROLLBACK_SUCCEEDED`). Confirm `GET /api/health` is 200, `environment=SIT`, `version` equals the rollback SHA, checks true.
+3. `update-service` on `learning-guide-sit` only, then `start-deployment` so App Runner pulls and builds that SHA. Do not change RDS, S3 objects, or payment rows.
+4. Wait for the source build `SUCCEEDED` (not `ROLLBACK_SUCCEEDED`). Confirm `GET /api/health` is 200, `environment=SIT`, `version` equals the rollback SHA, checks true.
 5. Record the failed SHA, rollback SHA, and operation id. Fix forward on `dev`, then publish a new verified SHA.
 
 Do not roll back by pointing SIT at the DEV service, DEV RDS, or DEV S3. Provider/IAM/SES/DNS failures still need ops after the app revision is restored.

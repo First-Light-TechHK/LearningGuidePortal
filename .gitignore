@@ -9,4 +9,5 @@ data
 tsconfig.tsbuildinfo
 *.log
 .env
+.evn
 .env*.local

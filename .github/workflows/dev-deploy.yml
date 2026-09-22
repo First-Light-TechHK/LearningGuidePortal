@@ -2,7 +2,7 @@
 # Push to `dev` publishes DEV. Native GitHub-source auto-deploy does not fire
 # reliably on this service, so this workflow is the automatic publisher.
 # Do not start it on `main`; that would publish `dev` HEAD.
-# After RUNNING, stamp APP_VERSION, then live e2e / fallback / notify.
+# After RUNNING, start-deployment pulls and builds the dev branch, then live e2e runs.
 
 name: Deploy DEV
 
@@ -36,13 +36,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-1
 
-      # The GitHub deploy user needs UpdateService and ListOperations here.
-      # StartDeployment cannot change APP_VERSION.
-      - name: Queue-wait until RUNNING, then stamp APP_VERSION
+      - name: Build and deploy the dev branch
         id: prev
         env:
           APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
-          APP_VERSION: ${{ github.sha }}
         run: |
           set -u
           echo "DEV target: learning-guide-portal (www + admin)"
@@ -86,7 +83,61 @@ jobs:
             --output text)"
           echo "previous_sha=${previous}"
           echo "sha=${previous}" >> "$GITHUB_OUTPUT"
-          node scripts/apprunner-set-version.mjs
+
+          operation_id=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if ! wait_until_running; then
+              exit 1
+            fi
+            if out="$(aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN" --output json 2>&1)"; then
+              printf '%s\n' "$out"
+              operation_id="$(printf '%s\n' "$out" | jq -r '.OperationId // empty')"
+              if [ -z "$operation_id" ]; then
+                echo "start-deployment returned no OperationId"
+                exit 1
+              fi
+              echo "start-deployment accepted: OperationId=$operation_id"
+              break
+            fi
+            printf '%s\n' "$out"
+            if printf '%s\n' "$out" | grep -Eqi 'InvalidRequestException|isn.?t in RUNNING|not in RUNNING'; then
+              echo "start-deployment collided; wait and retry"
+              sleep "$sleep_s"
+              continue
+            fi
+            echo "start-deployment failed"
+            exit 1
+          done
+          if [ -z "$operation_id" ]; then
+            echo "timeout waiting to accept start-deployment"
+            exit 1
+          fi
+
+          deadline=$((SECONDS + 1500))
+          op_status=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            op_status="$(aws apprunner list-operations \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --query "OperationSummaryList[?Id=='${operation_id}'].Status | [0]" \
+              --output text)"
+            echo "source build ${operation_id} status=${op_status:-unknown}"
+            case "$op_status" in
+              SUCCEEDED) break ;;
+              FAILED|ROLLBACK_SUCCEEDED|ROLLBACK_FAILED)
+                echo "source build ${op_status}"
+                exit 1
+                ;;
+            esac
+            sleep "$sleep_s"
+          done
+          if [ "$op_status" != "SUCCEEDED" ]; then
+            echo "timeout waiting for the dev branch build"
+            exit 1
+          fi
+          deadline=$((SECONDS + 300))
+          if ! wait_until_running; then
+            exit 1
+          fi
 
   verify:
     name: Live e2e / fallback / notify

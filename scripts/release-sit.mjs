@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { buildService } from './release/build-branch.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -34,6 +35,7 @@ if (source.ImageRepository) {
 }
 source.AutoDeploymentsEnabled = false;
 const update = aws('apprunner','update-service', { ServiceArn: summary.ServiceArn, SourceConfiguration: source });
+if (!update.OperationId) throw new Error('SIT source configuration update returned no OperationId');
 console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.OperationId, sha, branch }));
 let complete = false;
 for (let i = 0; i < 120; i++) {
@@ -43,6 +45,7 @@ for (let i = 0; i < 120; i++) {
   if (operation && /FAILED|ROLLBACK/.test(operation.Status)) throw new Error(`Deployment ${operation.Status}`);
 }
 if (!complete) throw new Error('Timed out waiting for the deployment');
+await buildService(summary.ServiceArn);
 if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
 const response = await fetch(`https://${summary.ServiceUrl}/api/health`);
 const health = await response.json();
