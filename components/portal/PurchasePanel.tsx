@@ -52,7 +52,7 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
         {plans.map((plan) => <label className={`purchase-plan ${selectedPlan === plan.id ? "selected" : ""}`} key={plan.id}><input type="radio" name={groupId} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} /><span><strong>{plan.name}</strong><small>${(plan.amountMinor / 100).toFixed(2)} USD</small></span></label>)}
       </div></> : null}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-      <div className="purchase-actions">{allowTrial ? <button className="portal-button portal-button-secondary" disabled={busy || plans.find(plan => plan.id === selectedPlan)?.available === false} onClick={startTrial}>{copy.startTrial}</button> : null}<button className="portal-button portal-button-primary" disabled={busy || !selectedPlan || plans.find(plan => plan.id === selectedPlan)?.available === false} onClick={purchase}>{busy ? "..." : copy.buy}</button></div>
+      <div className="purchase-actions">{allowTrial ? <button className="portal-button portal-button-secondary" disabled={busy || plans.find(plan => plan.id === selectedPlan)?.available === false} onClick={startTrial}>{copy.startTrial}</button> : null}<button className="portal-button portal-button-primary" disabled={busy || !selectedPlan || plans.find(plan => plan.id === selectedPlan)?.available === false} onClick={purchase}>{copy.buy}</button></div>
     </div>
   );
 }

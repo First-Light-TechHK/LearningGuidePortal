@@ -3,14 +3,14 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 
-export function EmailBindingForm({ locale, returnTo }: { locale: "en-GB" | "zh-CN"; returnTo: string }) {
+export function EmailBindingForm({ locale, returnTo, pendingBinding }: { locale: "en-GB" | "zh-CN"; returnTo: string; pendingBinding?: { email: string; retryAfter: number } | null }) {
   const copy = getMessages(locale).auth;
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [email, setEmail] = useState(pendingBinding?.email || "");
+  const [sent, setSent] = useState(Boolean(pendingBinding));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [seconds, setSeconds] = useState(0);
+  const [seconds, setSeconds] = useState(pendingBinding?.retryAfter || 0);
   useEffect(() => { if (!seconds) return; const timer = setTimeout(() => setSeconds(value => value - 1), 1000); return () => clearTimeout(timer); }, [seconds]);
   useEffect(() => { if (!sent) return; const timer = setInterval(() => router.refresh(), 5000); return () => clearInterval(timer); }, [sent, router]);
   async function submit(event: FormEvent) {
@@ -31,7 +31,7 @@ export function EmailBindingForm({ locale, returnTo }: { locale: "en-GB" | "zh-C
   return <form className="portal-form" onSubmit={submit}><h1>{sent ? copy.checkEmailTitle : copy.bindingTitle}</h1><p>{sent ? copy.bindingSent : copy.bindingDescription}</p>
     {sent ? <p role="status">{email}</p> : <label>{copy.email}<input type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} /></label>}
     {error ? <p role="alert" className="portal-form-error">{error}</p> : null}
-    <button className="portal-button portal-button-primary" disabled={busy || seconds > 0}>{busy ? "..." : sent ? copy.bindingResend : copy.bindingSend}</button>
+    <button className="portal-button portal-button-primary" disabled={busy || seconds > 0}>{sent ? copy.bindingResend : copy.bindingSend}</button>
     {seconds > 0 ? <p role="status">{copy.resetWait.replace("{seconds}", String(seconds))}</p> : null}
     {sent ? <button type="button" className="portal-text-button" onClick={() => { setSent(false); setError(""); }}>{copy.bindingChange}</button> : null}
     <button type="button" className="portal-text-button" onClick={() => void exit()}>{copy.bindingExit}</button>

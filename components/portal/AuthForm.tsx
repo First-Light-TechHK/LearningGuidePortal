@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
+import { isBusinessEmail } from "@/lib/emailValidation";
 
 const REMEMBERED_EMAIL_KEY = "learning-guide.remembered-email";
 
@@ -44,8 +45,9 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
     setError("");
+    if (!isBusinessEmail(email)) { setError(labels.emailInvalid); return; }
+    setBusy(true);
     try {
       const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe }) });
       const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
@@ -76,14 +78,14 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     <form className={`portal-form auth-credential-form ${signIn ? "auth-sign-in" : "auth-sign-up"}`} onSubmit={submit}>
       {showTitle ? <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1> : null}
       <div className="auth-fields">
-        {!signIn ? <label>{copy.nickname}<span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => setNickname(event.target.value)} maxLength={40} autoComplete="nickname" /></span></label> : null}
-        <label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@example.com" /></span></label>
-        <label>{copy.password}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete={signIn ? "current-password" : "new-password"} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
+        {!signIn ? <label>{copy.nickname}<span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => setNickname(event.target.value)} maxLength={30} autoComplete="nickname" /></span></label> : null}
+        <label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); setEmail(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.emailInvalid)} required maxLength={30} autoComplete="email" placeholder="you@example.com" /></span></label>
+        <label>{copy.password}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={30} autoComplete={signIn ? "current-password" : "new-password"} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       </div>
       {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberEmail(null); }} />{labels.rememberMe}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
       {existingNotice ? <div className="portal-success" role="status"><p>{existingNotice}</p><p>{labels.existingEmailCountdown.replace("{seconds}", String(existingSeconds))}</p></div> : null}
-      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{busy ? "..." : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
+      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
       <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} />
       {showTitle ? <a href={`/${locale}/portal`}>{copy.backToPortal}</a> : null}

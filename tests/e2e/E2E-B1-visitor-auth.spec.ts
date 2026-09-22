@@ -45,6 +45,25 @@ test("Remember me restores only email after logout and clears on opt-out", async
   await expect(page.getByRole("checkbox", { name: "Remember me" })).not.toBeChecked();
 });
 
+test("check-email redirects to the activation success page after the address is verified", async ({ page }) => {
+  const email = "activated@example.test";
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: false } } }));
+  await page.goto(`/en-GB/portal/check-email?email=${encodeURIComponent(email)}`);
+  await page.waitForURL(`**/en-GB/portal/verify-email?email=${encodeURIComponent(email)}`);
+});
+
+test("an unverified sign-in redirects to check-email and requests a cooldown-safe resend", async ({ page }) => {
+  const email = "pending@example.test";
+  let resendRequests = 0;
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: true } } }));
+  await page.route("**/api/auth/resend-verification", route => { resendRequests += 1; return route.fulfill({ json: { ok: true, data: { accepted: true } } }); });
+  await page.goto("/en-GB/portal/sign-in");
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator(".auth-entry-form button.portal-button").click();
+  await page.waitForURL(url => url.pathname === "/en-GB/portal/check-email" && url.searchParams.get("email") === email && url.searchParams.get("resend") === "1");
+  await expect.poll(() => resendRequests).toBeGreaterThan(0);
+});
+
 const publicPaths = [
   "/en-GB/portal",
   "/zh-CN/portal",

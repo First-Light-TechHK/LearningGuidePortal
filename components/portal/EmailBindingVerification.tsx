@@ -23,6 +23,6 @@ export function EmailBindingVerification({ token, locale, returnTo }: { token: s
     finally { setBusy(false); }
   }
   return <section className="portal-form"><h1>{copy.bindingVerify}</h1>
-    {result ? <><p role="status">{result.sameUser ? copy.bindingSuccess : copy.bindingOtherDevice}</p><a className="portal-button portal-button-primary" href={result.continueUrl}>{result.sameUser ? copy.bindingContinue : copy.wechat}</a></> : <><p>{copy.bindingVerifyDescription}</p>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}{token ? <button className="portal-button portal-button-primary" disabled={busy} onClick={() => void verify()}>{busy ? "..." : copy.bindingVerifyAction}</button> : null}<a href={`/${locale}/portal/bind-email?returnTo=${encodeURIComponent(returnTo)}`}>{copy.bindingTitle}</a></>}
+    {result ? <><p role="status">{result.sameUser ? copy.bindingSuccess : copy.bindingOtherDevice}</p><a className="portal-button portal-button-primary" href={result.continueUrl}>{result.sameUser ? copy.bindingContinue : copy.wechat}</a></> : <><p>{copy.bindingVerifyDescription}</p>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}{token ? <button className="portal-button portal-button-primary" disabled={busy} onClick={() => void verify()}>{copy.bindingVerifyAction}</button> : null}<a href={`/${locale}/portal/bind-email?returnTo=${encodeURIComponent(returnTo)}`}>{copy.bindingTitle}</a></>}
   </section>;
 }

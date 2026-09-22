@@ -29,6 +29,7 @@ test("WeChat binding requires verified email, keeps identity, blocks conflicts a
     const result = await send(req("/api/auth/email-binding/request", { email: "first@example.test", locale: "zh-CN", returnTo: "/zh-CN/pricing?term=6#plans" }));
     expect(await result.json()).toEqual({ ok: true, accepted: true, retryAfter: 60 });
     expect(mails).toHaveLength(1);
+    expect(await store.getPendingEmailBinding(user.id)).toMatchObject({ email: "first@example.test" });
     const url = new URL(mails[0].text.match(/https[^\s]+/)![0]);
     expect(url.searchParams.get("returnTo")).toBe("/zh-CN/pricing?term=6#plans");
     expect((await send(req("/api/auth/email-binding/request", { email: "first@example.test" }))).status).toBe(429);
@@ -38,6 +39,7 @@ test("WeChat binding requires verified email, keeps identity, blocks conflicts a
     expect(await external.json()).toMatchObject({ ok: true, sameUser: false });
     const verified = await store.getUserBySessionToken(session.token);
     expect(verified).toMatchObject({ id: user.id, email: "first@example.test" });
+    expect(await store.getPendingEmailBinding(user.id)).toBeNull();
     expect(await auth.rejectIfUnauthenticated(req("/api/purchase/checkout", {}))).toBeNull();
     const replay = await confirm(req("/api/auth/email-binding/confirm", body));
     expect(await replay.json()).toMatchObject({ ok: true, sameUser: true, alreadyBound: true, continueUrl: body.returnTo });

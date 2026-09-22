@@ -169,6 +169,7 @@
     "registrationSuccessCountdown": "将在 {seconds} 秒后跳转到登录页面……",
     "verifyInvalid": "验证链接无效或已过期。",
     "checkEmailTitle": "请检查邮箱",
+    "emailInvalid": "请输入有效的邮箱地址。仅允许字母、数字、英文句点、下划线、连字符和一个 @。",
     "checkEmailDescription": "我们已向您的邮箱发送激活链接。请在 24 小时内打开链接激活账号，然后再登录。",
     "resendEmail": "重新发送激活邮件",
     "resendCountdown": "秒后可重新发送",
