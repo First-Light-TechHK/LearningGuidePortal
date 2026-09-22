@@ -3,8 +3,9 @@
 import { FormEvent, useState } from "react";
 import { AuthProviders } from "@/components/portal/AuthProviders";
 import { Mail } from "lucide-react";
+import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 
-type Copy = { email: string; emailContinue: string; emailEntryDescription: string; or: string; google: string; wechat: string; backToPortal: string };
+type Copy = { email: string; emailInvalid: string; emailContinue: string; emailEntryDescription: string; or: string; google: string; wechat: string; backToPortal: string };
 
 export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEnabled }: { locale: "en-GB" | "zh-CN"; copy: Copy; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean }) {
   const [email, setEmail] = useState("");
@@ -13,13 +14,15 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true); setError("");
+    setError("");
+    const normalizedEmail = normaliseEmail(email);
+    if (!isBusinessEmail(normalizedEmail)) { setError(copy.emailInvalid); return; }
+    setBusy(true);
     try {
-      const normalizedEmail = email.trim().toLowerCase();
       const response = await fetch("/api/auth/check-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: normalizedEmail }) });
       const data = await response.json() as { ok?: boolean; data?: { exists?: boolean; pending?: boolean }; error?: string };
       if (!response.ok || !data.ok) throw new Error(data.error || "Email check failed.");
-      const destination = data.data?.pending ? "sign-up" : data.data?.exists ? "sign-in?step=password" : "sign-up";
+      const destination = data.data?.pending ? "check-email?resend=1" : data.data?.exists ? "sign-in?step=password" : "sign-up";
       const query = new URLSearchParams({ email: normalizedEmail, returnTo }).toString();
       window.location.assign(`/${locale}/portal/${destination}${destination.includes("?") ? "&" : "?"}${query}`);
     } catch (requestError) {
@@ -28,5 +31,5 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
     }
   }
 
-  return <form className="portal-form auth-entry-form" onSubmit={submit}><p className="auth-entry-description">{copy.emailEntryDescription}</p><label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@example.com" /></span></label>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}<button className="portal-button portal-button-primary" disabled={busy}>{busy ? "..." : copy.emailContinue}</button><AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} /><a href={`/${locale}/portal`}>{copy.backToPortal}</a></form>;
+  return <form className="portal-form auth-entry-form" onSubmit={submit}><p className="auth-entry-description">{copy.emailEntryDescription}</p><label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); setEmail(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(copy.emailInvalid)} required maxLength={30} autoComplete="email" placeholder="you@example.com" /></span></label>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}<button className="portal-button portal-button-primary" disabled={busy}>{copy.emailContinue}</button><AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} /><a href={`/${locale}/portal`}>{copy.backToPortal}</a></form>;
 }

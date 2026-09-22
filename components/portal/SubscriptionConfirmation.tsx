@@ -93,6 +93,6 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
       <label><input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} />{copy.consentTerms}</label>
     </fieldset>
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-    <footer className="confirmation-actions"><button className="portal-button portal-button-secondary" type="button" onClick={dismiss} disabled={busy}>{copy.cancel}</button><button className="portal-button portal-button-primary" type="button" disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}<ArrowRight size={16} aria-hidden="true" /></button></footer>
+    <footer className="confirmation-actions"><button className="portal-button portal-button-secondary" type="button" onClick={dismiss} disabled={busy}>{copy.cancel}</button><button className="portal-button portal-button-primary" type="button" disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{copy.continue}<ArrowRight size={16} aria-hidden="true" /></button></footer>
   </dialog>;
 }

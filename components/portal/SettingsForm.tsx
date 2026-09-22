@@ -150,6 +150,6 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       </div>
     </section>
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}{message ? <p className="portal-success" role="status">{message}</p> : null}
-    <div className="settings-save-row"><button className="portal-button portal-button-primary" disabled={busy}>{busy ? "..." : copy.save}</button></div>
+    <div className="settings-save-row"><button className="portal-button portal-button-primary" disabled={busy}>{copy.save}</button></div>
   </form>;
 }

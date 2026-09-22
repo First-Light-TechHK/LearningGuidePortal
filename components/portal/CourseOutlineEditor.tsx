@@ -89,7 +89,7 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
       <div className={styles.actions}>
         <button className={styles.ghost} type="button" onClick={close} disabled={locked}><ChevronLeft size={18}/>{copy.close}</button>
         <button className={styles.secondary} type="button" disabled={locked} onClick={() => setPreview(!preview)}>{preview ? <Pencil size={16}/> : <Eye size={16}/>}{preview ? messages.edit : messages.preview}</button>
-        <button className={styles.primary} type="submit" disabled={locked || !dirty}><Save size={16}/>{busy ? copy.saving : copy.save}</button>
+        <button className={styles.primary} type="submit" disabled={locked || !dirty}><Save size={16}/>{copy.save}</button>
       </div>
     </header>
     {error && <p role="alert" className="portal-form-error">{error}</p>}

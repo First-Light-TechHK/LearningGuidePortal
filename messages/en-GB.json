@@ -169,6 +169,7 @@
     "registrationSuccessCountdown": "Redirecting to sign in in {seconds} seconds...",
     "verifyInvalid": "This verification link is invalid or has expired.",
     "checkEmailTitle": "Check your email",
+    "emailInvalid": "Enter a valid email address. Use letters, numbers, dots, underscores, hyphens and one @ only.",
     "checkEmailDescription": "We sent an activation link to your email address. Open it within 24 hours to activate your account before signing in.",
     "resendEmail": "Resend activation email",
     "resendCountdown": "Resend available in",

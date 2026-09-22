@@ -31,7 +31,7 @@ export function PasswordResetRequestForm({ locale, returnTo, initialEmail = "", 
     {completed ? <><p role="status">{copy.resetCheckDescription}</p><p>{email}</p></> : <label>{copy.email}<input type="email" value={email} onChange={event => setEmail(event.target.value)} required autoComplete="email" /></label>}
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
     {resetUrl ? <a href={resetUrl}>{copy.resetPreview}</a> : null}
-    <button className="portal-button portal-button-primary" disabled={busy || seconds > 0}>{busy ? "..." : completed ? copy.resetResend : copy.resetSend}</button>
+    <button className="portal-button portal-button-primary" disabled={busy || seconds > 0}>{completed ? copy.resetResend : copy.resetSend}</button>
     {seconds > 0 ? <p role="status">{copy.resetWait.replace("{seconds}", String(seconds))}</p> : null}
     {completed ? <a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ returnTo })}`}>{copy.resetChangeEmail}</a> : null}
     <a href={signInPath}>{copy.submitSignIn}</a>

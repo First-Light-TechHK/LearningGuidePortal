@@ -36,6 +36,6 @@ export function PaymentSettingsForm({ initialSettings, copy }: { initialSettings
     <p className={settings.secretConfigured ? "portal-success" : "portal-form-error"}>{copy.secret}: {settings.secretConfigured ? copy.configured : copy.notConfigured}</p>
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
     {message ? <p className="portal-success" role="status">{message}</p> : null}
-    <button className="portal-button portal-button-primary" disabled={busy} type="submit">{busy ? "..." : copy.save}</button>
+    <button className="portal-button portal-button-primary" disabled={busy} type="submit">{copy.save}</button>
   </form>;
 }

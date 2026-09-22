@@ -47,7 +47,7 @@ export function AdminSignInForm({ locale }: { locale: "en-GB" | "zh-CN" }) {
       <label>{copy.auth.password}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete={register ? "new-password" : "current-password"} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? copy.auth.hidePassword : copy.auth.showPassword} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
       {notice ? <p className="portal-lead" role="status">{notice}</p> : null}
-      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{busy ? "..." : register ? copy.backoffice.createOperator : copy.auth.submitSignIn}</button>
+      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{register ? copy.backoffice.createOperator : copy.auth.submitSignIn}</button>
       <button className="portal-button portal-button-secondary" type="button" onClick={() => { setRegister((value) => !value); setError(""); setNotice(""); }}>{register ? copy.backoffice.haveOperator : copy.backoffice.firstOperator}</button>
     </form>
   );

@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from "react";
 
 type Copy = { verifyEmail: string; verifyPending: string; verifySuccess: string; verifyInvalid: string; submitSignIn: string; registrationSuccess: string; registrationSuccessCountdown: string };
 
-export function EmailVerification({ token, locale, copy }: { token: string; locale: "en-GB" | "zh-CN"; copy: Copy }) {
+export function EmailVerification({ token, verifiedEmail = "", locale, copy }: { token: string; verifiedEmail?: string; locale: "en-GB" | "zh-CN"; copy: Copy }) {
   const started = useRef(false);
-  const [state, setState] = useState<"loading" | "success" | "error">(token ? "loading" : "error");
-  const [message, setMessage] = useState(token ? copy.verifyPending : copy.verifyInvalid);
-  const [email, setEmail] = useState("");
-  const [seconds, setSeconds] = useState(3);
+  const [state, setState] = useState<"loading" | "success" | "error">(verifiedEmail ? "success" : token ? "loading" : "error");
+  const [message, setMessage] = useState(verifiedEmail ? copy.registrationSuccess : token ? copy.verifyPending : copy.verifyInvalid);
+  const [email, setEmail] = useState(verifiedEmail);
+  const [seconds, setSeconds] = useState(1);
   useEffect(() => {
-    if (!token || started.current) return;
+    if (verifiedEmail || !token || started.current) return;
     started.current = true;
     window.history.replaceState({}, "", window.location.pathname);
     void (async () => {
@@ -22,7 +22,7 @@ export function EmailVerification({ token, locale, copy }: { token: string; loca
         setEmail(result.data?.user?.email || ""); setState("success"); setMessage(copy.registrationSuccess);
       } catch { setState("error"); setMessage(copy.verifyInvalid); }
     })();
-  }, [copy.verifyInvalid, copy.verifySuccess, token]);
+  }, [copy.registrationSuccess, copy.verifyInvalid, copy.verifySuccess, token, verifiedEmail]);
   useEffect(() => { if (state !== "success") return; if (seconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?step=password&email=${encodeURIComponent(email)}`); return; } const timer = window.setTimeout(() => setSeconds(value => value - 1), 1000); return () => window.clearTimeout(timer); }, [email, locale, seconds, state]);
   return <section className="portal-form"><h1>{copy.verifyEmail}</h1><p className={state === "error" ? "portal-form-error" : state === "success" ? "portal-success" : undefined} role="status">{message}</p>{state === "success" ? <p role="status">{copy.registrationSuccessCountdown.replace("{seconds}", String(seconds))}</p> : null}{state === "error" ? <a className="portal-button portal-button-primary" href={`/${locale}/portal/sign-in`}>{copy.submitSignIn}</a> : null}</section>;
 }

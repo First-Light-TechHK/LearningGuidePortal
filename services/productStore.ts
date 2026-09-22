@@ -1,4 +1,5 @@
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent } from "@/contracts/payment";
+import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice } from "./stripePriceService";
 import { productTransaction } from "@/repositories/productTransactionRepository";
@@ -604,16 +605,16 @@ export async function userEmailExists(emailValue: string) {
 }
 
 export async function getEmailAuthState(emailValue: string) {
-  const email = emailValue.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) return { exists: false, pending: false };
+  const email = normaliseEmail(emailValue);
+  if (!isBusinessEmail(email)) return { exists: false, pending: false };
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === email && ["pending", "active"].includes(item.status));
   return { exists: Boolean(user), pending: user?.status === "pending" || (Boolean(user) && !user?.emailVerifiedAt) };
 }
 
 export async function registerUserAttempt(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
-  const email = input.email.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
+  const email = normaliseEmail(input.email);
+  if (!isBusinessEmail(email)) throw new Error("Enter a valid email address. Use letters, numbers, dots, underscores, hyphens and one @ only.");
   if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
   const nickname = validateNickname(input.nickname?.trim() || "Learner");
   const role = input.role === "operator" || input.role === "teacher" ? input.role : "student";
@@ -865,8 +866,9 @@ export async function getUserAvatar(userId: string) {
 }
 
 export async function authenticateUser(emailValue: string, password: string) {
+  if (!isBusinessEmail(emailValue)) throw new Error("Enter a valid email address.");
   const data = await ensureProductData();
-  const user = data.users.find((item) => item.email === emailValue.trim().toLowerCase());
+  const user = data.users.find((item) => item.email === normaliseEmail(emailValue));
   if (!user || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
   if (user.status === "pending" || !user.emailVerifiedAt) throw new Error("Verify your email address before signing in.");
   if (user.status !== "active") throw new Error("This account is not available.");
@@ -911,6 +913,14 @@ export async function issueEmailBinding(userId: string, emailValue: string) {
     data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
     return { token: rawToken, email };
   });
+}
+
+export async function getPendingEmailBinding(userId: string) {
+  const data = await ensureProductData();
+  const token = data.emailBindingTokens.find(item => item.userId === userId && !item.usedAt);
+  if (!token) return null;
+  const elapsedSeconds = Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 1000);
+  return { email: token.email, retryAfter: Math.max(0, 60 - elapsedSeconds) };
 }
 
 export async function confirmEmailBinding(rawToken: string) {
