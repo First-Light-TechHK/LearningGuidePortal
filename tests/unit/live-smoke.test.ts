@@ -196,4 +196,5 @@ test("UAT and PPE stay unprovisioned until ARNs exist", () => {
   assert.equal(resolveReleaseEnvironment("UAT").provisioned, false);
   assert.equal(resolveReleaseEnvironment("PPE").provisioned, false);
   assert.equal(resolveReleaseEnvironment("DEV").provisioned, true);
+  assert.equal(resolveReleaseEnvironment("DEV").requireVersionMatch, false);
 });

@@ -68,5 +68,8 @@ export async function rollbackRelease({ serviceArn, branch, sha, failedSha, roll
   }
   const update = aws("apprunner", "update-service", { ServiceArn: serviceArn, SourceConfiguration: source });
   await waitForService(serviceArn, update.OperationId);
-  return { operationId: update.OperationId, sha: restored, branch };
+  const started = aws("apprunner", "start-deployment", { ServiceArn: serviceArn });
+  if (!started.OperationId) throw new Error("start-deployment returned no OperationId");
+  await waitForService(serviceArn, started.OperationId);
+  return { operationId: started.OperationId, sha: restored, branch };
 }

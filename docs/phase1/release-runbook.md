@@ -58,7 +58,7 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 ```text
 GitHub pull request / push
   -> Verify (typecheck / lint / unit / integration / build) — tests only; no App Runner
-  -> Push to `dev` → Deploy DEV stamps APP_VERSION and starts App Runner (www + admin)
+  -> Push to `dev` → Deploy DEV runs start-deployment, waits for the build, then live e2e
   -> npm start applies pending db/data-migrations, then serves the app
   -> Post-deploy live e2e (catalogue, course media, public lesson, pricing, registration mail, OAuth start, closed purchase/payment/orders/tutor)
   -> Success: SNS `learning-guide-sit-alerts` + GitHub summary
