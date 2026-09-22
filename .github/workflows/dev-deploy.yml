@@ -36,6 +36,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-1
 
+      # The GitHub deploy user needs UpdateService and ListOperations here.
+      # StartDeployment cannot change APP_VERSION.
       - name: Queue-wait until RUNNING, then stamp APP_VERSION
         id: prev
         env:
