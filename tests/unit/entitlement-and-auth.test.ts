@@ -51,10 +51,10 @@ test("rejectIfUnauthenticated returns 401 JSON when the Request has no cookie", 
 
 test("registerUserAttempt does not overwrite an existing password or invent a role", async () => {
   const email = "lock-register@example.test";
-  const first = await store.registerUserAttempt({ email, password: "password1", role: "admin" as never });
+  const first = await store.registerUserAttempt({ email, password: "password1", nickname: "Lock User", role: "admin" as never });
   assert.equal(first.created, true);
   assert.equal(first.user.role, "student");
-  const second = await store.registerUserAttempt({ email, password: "attacker9", role: "operator" });
+  const second = await store.registerUserAttempt({ email, password: "attacker9", nickname: "Attacker", role: "operator" });
   assert.equal(second.created, false);
   assert.equal(second.user.role, "student");
   await store.verifyEmailToken(await store.issueEmailVerificationToken(first.user.id));
