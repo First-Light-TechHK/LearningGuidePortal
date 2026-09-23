@@ -28,6 +28,7 @@ import type { LessonContent } from "@/contracts/lesson-content";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 import { applyDataMigrations } from "./dataMigrations";
+import { isValidName, normaliseName, validateName } from "@/lib/nameValidation";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -516,8 +517,7 @@ function hashToken(token: string) {
 }
 
 function validateNickname(value: string) {
-  if (!/^[A-Za-z0-9 ]{2,30}$/.test(value)) throw new Error("Name must be 2-30 English letters, numbers or spaces.");
-  return value;
+  return validateName(value);
 }
 
 async function passwordHash(password: string) {
@@ -606,17 +606,18 @@ export async function userEmailExists(emailValue: string) {
 
 export async function getEmailAuthState(emailValue: string) {
   const email = normaliseEmail(emailValue);
-  if (!isBusinessEmail(email)) return { exists: false, pending: false };
+  if (!isBusinessEmail(email)) return { exists: false, pending: false, retryAfter: 0 };
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === email && ["pending", "active"].includes(item.status));
-  return { exists: Boolean(user), pending: user?.status === "pending" || (Boolean(user) && !user?.emailVerifiedAt) };
+  return { exists: Boolean(user), pending: user?.status === "pending" || (Boolean(user) && !user?.emailVerifiedAt), retryAfter: user?.status === "pending" ? verificationRetryAfter(data, user.id) : 0 };
 }
 
 export async function registerUserAttempt(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
   const email = normaliseEmail(input.email);
   if (!isBusinessEmail(email)) throw new Error("Enter a valid email address. Use letters, numbers, dots, underscores, hyphens and one @ only.");
   if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
-  const nickname = validateNickname(input.nickname?.trim() || "Learner");
+  if (input.nickname === undefined) throw new Error("Name is required.");
+  const nickname = validateNickname(input.nickname);
   const role = input.role === "operator" || input.role === "teacher" ? input.role : "student";
   return editData(async (data) => {
     const existing = data.users.find((user) => user.email === email);
@@ -638,7 +639,7 @@ export async function registerUserAttempt(input: { email: string; password: stri
 }
 
 export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
-  return (await registerUserAttempt(input)).user;
+  return (await registerUserAttempt({ ...input, nickname: input.nickname ?? "Learner" })).user;
 }
 
 export async function getOrCreateSocialUser(input: SocialUserInput) {
@@ -690,7 +691,10 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       }
       throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
     }
-    const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
+    // Google is the explicit exception to the normal Name rule: its verified
+    // email prefix identifies the first-created account. Existing Names stay put.
+    const googleEmailPrefix = input.provider === "google" && email ? email.slice(0, email.indexOf("@")) : "";
+    const nickname = googleEmailPrefix || (input.nickname && isValidName(input.nickname) ? normaliseName(input.nickname) : "Learner");
     const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, wechatAppId: input.wechat?.appId, wechatOpenId: input.wechat?.openId, wechatUnionId: input.wechat?.unionId, createdAt: now() });
@@ -743,21 +747,44 @@ async function issueToken(collection: "verificationTokens" | "passwordResetToken
   return rawToken;
 }
 
+function verificationRetryAfter(data: ProductData, userId: string) {
+  const latest = data.verificationTokens.find((item) => item.userId === userId);
+  if (!latest) return 0;
+  return Math.max(0, 60 - Math.ceil((Date.now() - new Date(latest.createdAt).getTime()) / 1000));
+}
+
+function verificationDailyCount(data: ProductData, userId: string) {
+  const since = Date.now() - 24 * 60 * 60 * 1000;
+  return data.verificationTokens.filter((item) => item.userId === userId && new Date(item.createdAt).getTime() >= since).length;
+}
+
 export async function issueEmailVerificationToken(userId: string, enforceCooldown = false) {
-  return issueToken("verificationTokens", userId, enforceCooldown);
+  const rawToken = randomBytes(32).toString("base64url");
+  await editData((data) => {
+    const retryAfter = verificationRetryAfter(data, userId);
+    if (enforceCooldown && retryAfter > 0) throw new Error(`VERIFICATION_COOLDOWN:${retryAfter}`);
+    if (verificationDailyCount(data, userId) >= 10) throw new Error("VERIFICATION_DAILY_LIMIT");
+    const issuedAt = now();
+    for (const item of data.verificationTokens) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data.verificationTokens.unshift({ id: id("verify"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), usedAt: null, createdAt: issuedAt });
+  });
+  return rawToken;
 }
 
 export async function requestEmailVerification(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === email && item.status === "pending");
-  if (!user?.email) return { accepted: true as const, user: null, token: null };
+  if (!user?.email) return { accepted: true as const, user: null, token: null, retryAfter: 0, code: null };
   try {
-    return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true) };
+    return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true), retryAfter: 60, code: null };
   } catch (error) {
-    if (error instanceof Error && error.message === "Please wait before requesting another verification email.") {
-      return { accepted: true as const, user: null, token: null };
+    if (error instanceof Error && error.message.startsWith("VERIFICATION_COOLDOWN:")) {
+      return { accepted: false as const, user: null, token: null, retryAfter: Number(error.message.split(":")[1]) || 1, code: "cooldown" as const };
     }
+    if (error instanceof Error && error.message === "VERIFICATION_DAILY_LIMIT") return { accepted: false as const, user: null, token: null, retryAfter: 0, code: "daily_limit" as const };
     throw error;
   }
 }

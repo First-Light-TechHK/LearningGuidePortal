@@ -112,7 +112,8 @@
   },
   "auth": {
     "welcomeBack": "Welcome back",
-    "rememberMe": "Remember me",
+    "rememberMe": "Remember password",
+    "verificationDailyLimit": "You have reached the daily limit of 10 verification emails. Please try again tomorrow.",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "signInTitle": "Sign in",
@@ -120,6 +121,7 @@
     "email": "Email",
     "password": "Password",
     "nickname": "Name",
+    "nameInvalid": "Enter a name with 1-50 letters. You may use spaces, hyphens (-), apostrophes (') or middle dots (·).",
     "submitSignIn": "Sign in",
     "submitSignUp": "Create account",
     "noAccount": "Need an account? Create one",

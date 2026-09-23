@@ -24,25 +24,26 @@ test("header sign-in returns to the source page including query and hash", async
   await page.waitForURL(url => url.pathname + url.search + url.hash === source);
 });
 
-test("Remember me restores only email after logout and clears on opt-out", async ({ page }) => {
+test("Remember password restores credentials after logout and clears on opt-out", async ({ page }) => {
   const email = "remember-test@example.test";
   await page.route("**/api/auth/login", route => route.fulfill({ json: { ok: true } }));
   await page.goto("/en-GB/portal/sign-in?step=password&returnTo=/en-GB/portal");
   await expect(page.locator(".portal-header-link").first()).toHaveAttribute("href", "/en-GB/portal/sign-in?returnTo=%2Fen-GB%2Fportal");
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  await page.getByRole("checkbox", { name: "Remember me" }).check();
+  await page.getByRole("checkbox", { name: "Remember password" }).check();
   await page.locator('button[type="submit"], button.auth-submit').click();
   await page.waitForURL("**/en-GB/portal");
   await page.request.post("/api/auth/logout");
   await page.goto("/en-GB/portal/sign-in?step=password");
   await expect(page.locator('input[type="email"]')).toHaveValue(email);
-  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
-  await expect(page.getByRole("checkbox", { name: "Remember me" })).toBeChecked();
-  await page.getByRole("checkbox", { name: "Remember me" }).uncheck();
+  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue(PASSWORD);
+  await expect(page.getByRole("checkbox", { name: "Remember password" })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Remember password" }).uncheck();
   await page.reload();
   await expect(page.locator('input[type="email"]')).toHaveValue("");
-  await expect(page.getByRole("checkbox", { name: "Remember me" })).not.toBeChecked();
+  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
+  await expect(page.getByRole("checkbox", { name: "Remember password" })).not.toBeChecked();
 });
 
 test("check-email redirects to the activation success page after the address is verified", async ({ page }) => {
@@ -52,16 +53,18 @@ test("check-email redirects to the activation success page after the address is 
   await page.waitForURL(`**/en-GB/portal/verify-email?email=${encodeURIComponent(email)}`);
 });
 
-test("an unverified sign-in redirects to check-email and requests a cooldown-safe resend", async ({ page }) => {
+test("an unverified sign-in and copied legacy resend URL do not send email automatically", async ({ page }) => {
   const email = "pending@example.test";
   let resendRequests = 0;
   await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: true } } }));
-  await page.route("**/api/auth/resend-verification", route => { resendRequests += 1; return route.fulfill({ json: { ok: true, data: { accepted: true } } }); });
+  await page.route("**/api/auth/resend-verification", route => { resendRequests += 1; return route.fulfill({ json: { ok: true, data: { accepted: true, retryAfter: 60 } } }); });
   await page.goto("/en-GB/portal/sign-in");
   await page.locator('input[type="email"]').fill(email);
   await page.locator(".auth-entry-form button.portal-button").click();
-  await page.waitForURL(url => url.pathname === "/en-GB/portal/check-email" && url.searchParams.get("email") === email && url.searchParams.get("resend") === "1");
-  await expect.poll(() => resendRequests).toBeGreaterThan(0);
+  await page.waitForURL(url => url.pathname === "/en-GB/portal/check-email" && url.searchParams.get("email") === email && !url.searchParams.has("resend"));
+  await page.goto(`/en-GB/portal/check-email?email=${encodeURIComponent(email)}&resend=1`);
+  await page.waitForTimeout(250);
+  expect(resendRequests).toBe(0);
 });
 
 const publicPaths = [
