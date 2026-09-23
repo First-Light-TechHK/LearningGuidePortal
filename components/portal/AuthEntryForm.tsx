@@ -22,7 +22,7 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
       const response = await fetch("/api/auth/check-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: normalizedEmail }) });
       const data = await response.json() as { ok?: boolean; data?: { exists?: boolean; pending?: boolean }; error?: string };
       if (!response.ok || !data.ok) throw new Error(data.error || "Email check failed.");
-      const destination = data.data?.pending ? "check-email?resend=1" : data.data?.exists ? "sign-in?step=password" : "sign-up";
+      const destination = data.data?.pending ? "check-email" : data.data?.exists ? "sign-in?step=password" : "sign-up";
       const query = new URLSearchParams({ email: normalizedEmail, returnTo }).toString();
       window.location.assign(`/${locale}/portal/${destination}${destination.includes("?") ? "&" : "?"}${query}`);
     } catch (requestError) {

@@ -13,11 +13,12 @@ export async function POST(request: Request) {
     const body = await request.json() as { email?: string; locale?: "en-GB" | "zh-CN" };
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
     const result = await requestEmailVerification(body.email || "");
+    if (!result.accepted) return NextResponse.json({ ok: false, code: result.code === "daily_limit" ? "VERIFICATION_DAILY_LIMIT" : "VERIFICATION_RATE_LIMITED", message: result.code === "daily_limit" ? "The daily verification email limit has been reached." : "Please wait before requesting another verification email.", data: { retryAfter: result.retryAfter }, requestId }, { status: 429 });
     if (result.user && result.token) {
       const verificationUrl = `${publicAppOrigin(request)}/${locale}/portal/verify-email?token=${encodeURIComponent(result.token)}`;
       await sendVerificationEmail({ to: result.user.email, url: verificationUrl, locale });
     }
-    return NextResponse.json({ ok: true, data: { accepted: true }, requestId });
+    return NextResponse.json({ ok: true, data: { accepted: true, retryAfter: result.retryAfter }, requestId });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Verification email could not be sent.";
     const tooSoon = message.includes("wait before requesting");

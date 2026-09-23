@@ -33,10 +33,12 @@ test("email registration requires a one-time verification token before sign-in",
     expect(linkedPendingGoogle.emailVerifiedAt).toBeTruthy();
     await expect(store.authenticateUser(pendingGoogleAccount.email, "strong-password")).resolves.toMatchObject({ id: pendingGoogleAccount.id });
     const googleUser = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google@example.test", nickname: "Google User", locale: "en-GB" });
+    expect(googleUser.nickname).toBe("google");
     expect(googleUser.status).toBe("active");
     expect(googleUser.emailVerifiedAt).toBeTruthy();
     expect(googleUser.passwordHash).toBeNull();
     expect((await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google-renamed@example.test", locale: "en-GB" })).id).toBe(googleUser.id);
+    expect((await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google-renamed@example.test", locale: "en-GB" })).nickname).toBe("google");
     await expect(store.authenticateUser("google-renamed@example.test", "not-a-password")).rejects.toThrow("Email or password is incorrect");
     const reset = await store.requestPasswordReset("google-renamed@example.test");
     expect(reset.token).toBeTruthy();

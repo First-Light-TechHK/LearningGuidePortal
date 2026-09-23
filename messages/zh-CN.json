@@ -112,7 +112,8 @@
   },
   "auth": {
     "welcomeBack": "欢迎回来",
-    "rememberMe": "记住我",
+    "rememberMe": "记住密码",
+    "verificationDailyLimit": "今日验证邮件已达到 10 封上限，请明天再试。",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "signInTitle": "登录",
@@ -120,6 +121,7 @@
     "email": "邮箱",
     "password": "密码",
     "nickname": "姓名",
+    "nameInvalid": "请输入 1–50 个文字字符的姓名；可使用空格、连字符 (-)、撇号 (') 或间隔号 (·)。",
     "submitSignIn": "登录",
     "submitSignUp": "创建账号",
     "noAccount": "还没有账号？创建账号",

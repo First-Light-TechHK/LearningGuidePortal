@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import path from "node:path";
+import { atomicWriteJson, systemRoot } from "../../services/fileStore";
 import {
   PASSWORD,
   SESSION_COOKIE,
@@ -90,6 +92,47 @@ test("AUTH-01 functional: check-email identifies known and unknown addresses", a
   assert.equal(unknownBody.ok, true);
   assert.deepEqual((knownBody.data as Record<string, unknown>).exists, true);
   assert.deepEqual((unknownBody.data as Record<string, unknown>).exists, false);
+});
+
+test("AUTH-01 negative: registration requires a valid Unicode name", async () => {
+  for (const nickname of ["", "Ada2", "Ada 😊", "Ada_"]) {
+    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+      email: uniqueEmail("auth01-invalid-name"), password: PASSWORD, nickname, locale: "en-GB"
+    }));
+    const body = await response.json() as { ok?: boolean; message?: string };
+    assert.equal(response.status, 400);
+    assert.equal(body.ok, false);
+  }
+  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+    email: uniqueEmail("auth01-unicode-name"), password: PASSWORD, nickname: "张·伟", locale: "en-GB"
+  }));
+  assert.equal(response.status, 200);
+});
+
+test("AUTH-01 negative: verification resend rejects the persisted daily limit", async () => {
+  const store = await import("../../services/productStore");
+  const user = await store.registerUser({ email: uniqueEmail("auth01-verification-limit"), password: PASSWORD, nickname: "Limit Learner" });
+  const data = await store.ensureProductData();
+  data.verificationTokens = Array.from({ length: 10 }, (_, index) => ({
+    id: `verify-limit-${index}`, userId: user.id, tokenHash: `hash-${index}`,
+    createdAt: new Date(Date.now() - (index + 2) * 61_000).toISOString(),
+    expiresAt: new Date(Date.now() + 86_400_000).toISOString(), usedAt: null,
+  }));
+  await atomicWriteJson(path.join(systemRoot(), "learning_guide", "product.json"), data);
+  const previousSmtp = { host: process.env.SMTP_HOST, user: process.env.SMTP_USER, pass: process.env.SMTP_PASS };
+  Object.assign(process.env, { SMTP_HOST: "smtp.test", SMTP_USER: "verification@test.invalid", SMTP_PASS: "test-only" });
+  try {
+    const response = await resend.POST(jsonRequest("POST", "http://localhost/api/auth/resend-verification", { email: user.email, locale: "en-GB" }));
+    const body = await response.json() as { ok?: boolean; code?: string };
+    assert.equal(response.status, 429);
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "VERIFICATION_DAILY_LIMIT");
+  } finally {
+    for (const [key, value] of Object.entries(previousSmtp)) {
+      const envKey = `SMTP_${key.toUpperCase()}`;
+      if (value === undefined) delete process.env[envKey]; else process.env[envKey] = value;
+    }
+  }
 });
 
 test("AUTH-01 negative: register copy does not say the address already exists", async () => {

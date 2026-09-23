@@ -85,6 +85,19 @@ test("stable app/OpenID identity survives UnionID appearing and disappearing; em
   expect((await store.requestPasswordReset("wechat-openid-one@local.invalid")).token).toBeNull();
 });
 
+test("a valid WeChat nickname becomes the Name only when the account is first created", async () => {
+  const input = { provider: "wechat" as const, providerSubject: "wx-test:nickname-user", nickname: "张·伟", wechat: { appId: "wx-test", openId: "nickname-user" } };
+  const first = await store.getOrCreateSocialUser(input);
+  expect(first.nickname).toBe("张·伟");
+
+  const repeated = await store.getOrCreateSocialUser({ ...input, nickname: "王·芳" });
+  expect(repeated.id).toBe(first.id);
+  expect(repeated.nickname).toBe("张·伟");
+
+  const invalid = await store.getOrCreateSocialUser({ provider: "wechat", providerSubject: "wx-test:invalid-nickname", nickname: "Name 😊", wechat: { appId: "wx-test", openId: "invalid-nickname" } });
+  expect(invalid.nickname).toBe("Learner");
+});
+
 test("legacy subject and placeholder email migrate without changing userId; collisions fail closed", async () => {
   const user = await store.getOrCreateSocialUser({ provider: "wechat", providerSubject: "legacy-openid" });
   const file = path.join(isolatedCwd, "data/knowledge_system/learning_guide/product.json");
