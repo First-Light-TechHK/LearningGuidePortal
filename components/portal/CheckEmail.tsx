@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
-type Copy = { checkEmailTitle: string; checkEmailDescription: string; resendEmail: string; resendSent: string; email: string; resendCountdown: string; verificationDailyLimit: string };
+type Copy = { checkEmailTitle: string; checkEmailDescription: string; resendEmail: string; resendSent: string; email: string; resendCountdown: string; verificationDailyLimit: string; requestFailed: string; emailDeliveryNotConfigured: string };
 
 export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; copy: Copy; initialEmail?: string }) {
   const [email, setEmail] = useState(initialEmail);
@@ -36,12 +36,12 @@ export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     try {
       const response = await fetch("/api/auth/resend-verification", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, locale }) });
-      const result = await response.json() as { ok?: boolean; code?: string; message?: string; data?: { retryAfter?: number } };
+      const result = await response.json() as { ok?: boolean; code?: string; data?: { retryAfter?: number } };
       if (result.code === "VERIFICATION_RATE_LIMITED") { setSeconds(result.data?.retryAfter || 1); return; }
       if (result.code === "VERIFICATION_DAILY_LIMIT") throw new Error(copy.verificationDailyLimit);
-      if (!response.ok || !result.ok) throw new Error(result.message || "Request failed.");
+      if (!response.ok || !result.ok) throw new Error(result.code === "EMAIL_DELIVERY_NOT_CONFIGURED" ? copy.emailDeliveryNotConfigured : copy.requestFailed);
       setMessage(copy.resendSent);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Request failed."); }
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : copy.requestFailed); }
     finally { setBusy(false); setSeconds(60); }
   }
   const disabled = busy || !ready || seconds > 0 || !email.trim();

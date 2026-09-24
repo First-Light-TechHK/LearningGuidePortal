@@ -5,18 +5,18 @@ import { isAdminHost, requestHostname } from "@/services/adminHost";
 import { createSession, issueEmailVerificationToken, publicUser, registerUserAttempt, verifyEmailToken } from "@/services/productStore";
 import { ADMIN_SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
 import { emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
-import { appEnvironment, emailVerificationRequired } from "@/services/runtimeConfig";
+import { emailVerificationRequired } from "@/services/runtimeConfig";
 
 export async function POST(request: Request) {
   const requestId = randomUUID();
-  if (!isAdminHost(request)) return NextResponse.json({ ok: false, code: "NOT_FOUND", message: "Not Found.", requestId }, { status: 404 });
+  if (!isAdminHost(request)) return NextResponse.json({ ok: false, code: "NOT_FOUND", requestId }, { status: 404 });
   try {
     const body = await request.json() as { email?: string; password?: string; nickname?: string; locale?: "en-GB" | "zh-CN" };
     const email = (body.email || "").trim().toLowerCase();
     const operatorEmail = process.env.BACKOFFICE_OPERATOR_EMAIL?.trim().toLowerCase();
-    if (!operatorEmail || email !== operatorEmail) return NextResponse.json({ ok: false, code: "OPERATOR_REQUIRED", message: "Only the configured operator email can register on the backoffice host.", requestId }, { status: 403 });
+    if (!operatorEmail || email !== operatorEmail) return NextResponse.json({ ok: false, code: "OPERATOR_REQUIRED", requestId }, { status: 403 });
     const verificationRequired = emailVerificationRequired();
-    if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", message: `Email verification is not configured for ${appEnvironment()}.`, requestId }, { status: 503 });
+    if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", requestId }, { status: 503 });
     const { user, created } = await registerUserAttempt({ email, password: body.password || "", nickname: body.nickname || "Operator", locale: body.locale, role: "operator" });
     if (!created) return NextResponse.json({ ok: true, data: { verificationRequired: false }, requestId });
     const verificationToken = await issueEmailVerificationToken(user.id, true);
@@ -32,8 +32,7 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ ok: true, data: { user: publicUser(activatedUser), verificationRequired: false }, requestId });
     response.cookies.set(ADMIN_SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
     return response;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Registration failed.";
-    return NextResponse.json({ ok: false, code: "REGISTRATION_FAILED", message, requestId }, { status: 400 });
+  } catch {
+    return NextResponse.json({ ok: false, code: "REGISTRATION_FAILED", requestId }, { status: 400 });
   }
 }

@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/account/my-learning`);
   if (!wechatConfigured()) {
-    if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, error: "WeChat sign-in is not configured." }, { status: 503 });
+    if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, code: "WECHAT_NOT_CONFIGURED" }, { status: 503 });
     try {
       const profile = localSocialProfile("wechat");
       const user = await getOrCreateSocialUser({ provider: "wechat", providerSubject: profile.subject, email: null, nickname: profile.nickname, locale });
@@ -23,8 +23,8 @@ export async function GET(request: Request) {
       const response = NextResponse.redirect(new URL(destination, publicAppOrigin(request)));
       response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
       return response;
-    } catch (error) {
-      return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Local WeChat sign-in failed." }, { status: 400 });
+    } catch {
+      return NextResponse.json({ ok: false, code: "LOCAL_WECHAT_FAILED" }, { status: 400 });
     }
   }
   try {
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     response.cookies.set(OAUTH_STATE_COOKIE, state.cookieValue, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: 600 });
     response.headers.set("Cache-Control", "no-store");
     return response;
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "WeChat sign-in is not ready." }, { status: 503 });
+  } catch {
+    return NextResponse.json({ ok: false, code: "WECHAT_NOT_READY" }, { status: 503 });
   }
 }
