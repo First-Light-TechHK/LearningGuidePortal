@@ -26,8 +26,15 @@ export function AdminSignInForm({ locale }: { locale: "en-GB" | "zh-CN" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, nickname, locale, rememberMe: true })
       });
-      const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean } };
-      if (!response.ok || !data.ok) throw new Error(data.message || copy.backoffice.signInFailed);
+      const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean } };
+      if (!response.ok || !data.ok) {
+        const message = data.code === "OPERATOR_REQUIRED" ? copy.backoffice.operatorRequired
+          : data.code === "AUTHOR_REQUIRED" ? copy.backoffice.authorRequired
+          : data.code === "EMAIL_DELIVERY_NOT_CONFIGURED" ? copy.auth.emailDeliveryNotConfigured
+          : data.code === "EMAIL_NOT_VERIFIED" ? copy.backoffice.verifyEmail
+          : copy.backoffice.signInFailed;
+        throw new Error(message);
+      }
       if (data.data?.verificationRequired) {
         setNotice(copy.backoffice.verifyEmail);
         setBusy(false);

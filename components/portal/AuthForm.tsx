@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
-import { isBusinessEmail } from "@/lib/emailValidation";
-import { isValidName } from "@/lib/nameValidation";
+import { isBusinessEmail, isEmailTooLong } from "@/lib/emailValidation";
+import { isNameTooLong, isValidName } from "@/lib/nameValidation";
 
 const REMEMBERED_CREDENTIALS_KEY = "learning-guide.remembered-credentials";
 
@@ -53,13 +53,21 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    if (isEmailTooLong(email)) { setError(labels.emailTooLong); return; }
     if (!isBusinessEmail(email)) { setError(labels.emailInvalid); return; }
+    if (!signIn && isNameTooLong(nickname)) { setError(labels.nameTooLong); return; }
     if (!signIn && !isValidName(nickname)) { setError(labels.nameInvalid); return; }
     setBusy(true);
     try {
       const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe }) });
-      const data = await response.json() as { ok?: boolean; message?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
-      if (!response.ok || !data.ok) throw new Error(data.message || "Request failed.");
+      const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
+      if (!response.ok || !data.ok) {
+        const message = data.code === "AUTHENTICATION_FAILED" ? labels.authenticationFailed
+          : data.code === "EMAIL_DELIVERY_NOT_CONFIGURED" ? labels.emailDeliveryNotConfigured
+          : data.code === "REGISTRATION_FAILED" ? labels.registrationFailed
+          : labels.requestFailed;
+        throw new Error(message);
+      }
       if (signIn) rememberCredentials(rememberMe ? { email, password } : null);
       if (data.data?.existingActiveEmail) {
         setExistingNotice(labels.existingEmailNotice);
@@ -69,7 +77,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
       window.location.assign(returnTo || `/${locale}/account/my-learning`);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Request failed.");
+      setError(requestError instanceof Error ? requestError.message : labels.requestFailed);
       setBusy(false);
     }
   }
@@ -86,8 +94,8 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     <form className={`portal-form auth-credential-form ${signIn ? "auth-sign-in" : "auth-sign-up"}`} onSubmit={submit}>
       {showTitle ? <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1> : null}
       <div className="auth-fields">
-        {!signIn ? <label>{copy.nickname}<span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => { event.currentTarget.setCustomValidity(""); setNickname(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.nameInvalid)} required minLength={1} maxLength={50} autoComplete="name" /></span></label> : null}
-        <label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); setEmail(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.emailInvalid)} required maxLength={30} autoComplete="email" placeholder="you@example.com" /></span></label>
+        {!signIn ? <label>{copy.nickname}<span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setNickname(value); if (isNameTooLong(value)) setError(labels.nameTooLong); else if (error === labels.nameTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.nameInvalid)} required minLength={1} autoComplete="name" /></span></label> : null}
+        <label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setEmail(value); if (isEmailTooLong(value)) setError(labels.emailTooLong); else if (error === labels.emailTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(isEmailTooLong(event.currentTarget.value) ? labels.emailTooLong : labels.emailInvalid)} required autoComplete="email" placeholder="you@example.com" /></span></label>
         <label>{copy.password}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={30} autoComplete={signIn ? "current-password" : "new-password"} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       </div>
       {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberCredentials(null); }} />{labels.rememberMe}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}

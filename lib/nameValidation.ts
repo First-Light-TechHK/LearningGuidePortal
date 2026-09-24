@@ -8,6 +8,10 @@ export function normaliseName(value: string) {
   return value.trim().normalize("NFC");
 }
 
+export function isNameTooLong(value: string) {
+  return Array.from(normaliseName(value)).length > 50;
+}
+
 export function isValidName(value: string) {
   const name = normaliseName(value);
   return Array.from(name).length >= 1 && Array.from(name).length <= 50 && NAME_PATTERN.test(name);

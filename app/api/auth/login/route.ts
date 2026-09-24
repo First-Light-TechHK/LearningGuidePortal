@@ -14,6 +14,6 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", ...(body.rememberMe === true ? { maxAge: AUTH_SESSION_MAX_AGE } : {}) });
     return response;
   } catch {
-    return NextResponse.json({ ok: false, code: "AUTHENTICATION_FAILED", message: "Email or password is incorrect.", requestId }, { status: 401 });
+    return NextResponse.json({ ok: false, code: "AUTHENTICATION_FAILED", requestId }, { status: 401 });
   }
 }

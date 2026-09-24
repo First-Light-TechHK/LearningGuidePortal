@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/account/my-learning`);
   if (!googleConfigured()) {
-    if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, code: "GOOGLE_NOT_CONFIGURED", message: "Google sign-in is not configured.", requestId }, { status: 503 });
+    if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, code: "GOOGLE_NOT_CONFIGURED", requestId }, { status: 503 });
     try {
       const profile = localSocialProfile("google");
       const user = await getOrCreateSocialUser({ provider: "google", providerSubject: profile.subject, email: profile.email, nickname: profile.nickname, locale });
@@ -24,8 +24,8 @@ export async function GET(request: Request) {
       const response = NextResponse.redirect(new URL(returnTo, publicAppOrigin(request)));
       response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
       return response;
-    } catch (error) {
-      return NextResponse.json({ ok: false, code: "LOCAL_GOOGLE_FAILED", message: error instanceof Error ? error.message : "Local Google sign-in failed.", requestId }, { status: 400 });
+    } catch {
+      return NextResponse.json({ ok: false, code: "LOCAL_GOOGLE_FAILED", requestId }, { status: 400 });
     }
   }
   try {
@@ -39,6 +39,6 @@ export async function GET(request: Request) {
     return response;
   } catch (error) {
     console.warn("Google OAuth start failed", { requestId, error: error instanceof Error ? error.message : "unknown" });
-    return NextResponse.json({ ok: false, code: "GOOGLE_NOT_READY", message: "Google sign-in is not ready.", requestId }, { status: 503 });
+    return NextResponse.json({ ok: false, code: "GOOGLE_NOT_READY", requestId }, { status: 503 });
   }
 }
