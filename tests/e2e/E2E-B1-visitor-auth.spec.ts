@@ -46,6 +46,20 @@ test("Remember password restores credentials after logout and clears on opt-out"
   await expect(page.getByRole("checkbox", { name: "Remember password" })).not.toBeChecked();
 });
 
+test("Remember password expires after 30 minutes", async ({ page }) => {
+  await page.goto("/en-GB/portal/sign-in?step=password");
+  await page.evaluate((password) => window.localStorage.setItem("learning-guide.remembered-credentials", JSON.stringify({
+    email: "expired-remember@example.test",
+    password,
+    expiresAt: Date.now() - 1
+  })), PASSWORD);
+  await page.reload();
+  await expect(page.locator('input[type="email"]')).toHaveValue("");
+  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
+  await expect(page.getByRole("checkbox", { name: "Remember password" })).not.toBeChecked();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("learning-guide.remembered-credentials"))).toBeNull();
+});
+
 test("check-email redirects to the activation success page after the address is verified", async ({ page }) => {
   const email = "activated@example.test";
   await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: false } } }));

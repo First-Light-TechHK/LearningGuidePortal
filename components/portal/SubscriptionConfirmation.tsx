@@ -29,6 +29,14 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
   const isTrial = quote.kind === "trial";
   const isUpgrade = quote.kind === "upgrade" && Boolean(upgradeSource);
   const money = (amount: number) => `${new Intl.NumberFormat(locale, { style: "currency", currency: quote.currency, currencyDisplay: "narrowSymbol" }).format(amount / 100)} ${quote.currency.toUpperCase()}`;
+  const estimatedTerm = () => {
+    const start = new Date();
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + plan.termMonths);
+    end.setDate(end.getDate() - 1);
+    const format = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" });
+    return `${format.format(start)} – ${format.format(end)}`;
+  };
   const dismiss = () => router.replace(isUpgrade ? `/${locale}/pricing?upgradeFrom=${encodeURIComponent(quote.sourceSubscriptionId || "")}` : `/${locale}/pricing?planId=${encodeURIComponent(plan.id)}`);
   useEffect(() => {
     const element = dialog.current;
@@ -72,15 +80,15 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
         <div><dt>{upgrade.payToday}</dt><dd>{money(quote.amountMinor)}</dd></div>
       </dl></section>
       <p className="upgrade-other-categories">{upgrade.otherCategories}</p>
-    </> : <><section className="confirmation-plan" aria-label={copy.selectedPlan}>
-      <p className="confirmation-label">{copy.selectedPlan}</p><h2>{planHeading}{planSubtitle ? <span>{planSubtitle}</span> : null}</h2>
+    </> : <><p className="confirmation-label">{copy.selectedPlan}</p><section className="confirmation-plan" aria-label={copy.selectedPlan}>
+      <h2>{planHeading}{planSubtitle ? <span>{planSubtitle}</span> : null}</h2>
       <div className="confirmation-benefits"><p>{scopeDescription}</p><p>{plan.device === "pc" ? copy.pcDevice : copy.mobileDevice}</p><p>{(plan.aiPoints ?? 0).toLocaleString(locale)} {copy.aiPoints}</p></div>
     </section>
     <section className="confirmation-payment" aria-labelledby="confirmation-payment-heading">
       <h2 id="confirmation-payment-heading">{copy.paymentRenewal}</h2>
       <dl className="confirmation-payment-grid">
         <div><dt>{details.payToday}</dt><dd>{isTrial ? copy.trialAmount : `${new Intl.NumberFormat(locale, {style:"currency", currency:quote.currency, currencyDisplay:"narrowSymbol"}).format(quote.amountMinor / 100)} ${quote.currency.toUpperCase()}`}</dd><p>{isTrial ? details.trialPayment : details.termPayment.replace("{months}", String(plan.termMonths))}</p></div>
-        <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd><p>{isTrial ? details.trialDates : details.datesAfterPayment}</p></div>
+        <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd><p>{isTrial ? details.trialDates : estimatedTerm()}</p></div>
       </dl>
       <dl className="confirmation-renewal-grid">
         <div><dt>{details.nextCharge}</dt><dd>{details.billingSchedule}</dd><p>{details.automaticRenewal}</p></div>

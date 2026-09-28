@@ -1,5 +1,68 @@
 {
   "brand": "Learning Guide",
+  "homeDesign": {
+    "heroTitle": "Learn with curiosity.\nGrow with confidence.",
+    "heroDescription": "Learning Guide turns world-class cultural knowledge\ninto a personal learning journey, in video or text, at your own pace.",
+    "explore": "Explore more",
+    "popular": "Popular courses",
+    "allCourses": "View All Courses",
+    "hourShort": "h",
+    "minuteShort": "m",
+    "carousel": "Featured learning",
+    "selection": "Banner selection",
+    "slide": "Banner",
+    "previous": "Previous banner",
+    "next": "Next banner",
+    "why": "WHY US",
+    "whyTitle": "A Lifelong Home For Thinking.\nNot just knowledge,\nthe habit of thought, and a wider view of the world.",
+    "values": [
+      { "title": "Thinking, Not Just Learning", "text": "We don't measure progress by what you've memorised, but by how you've learned to reason. Every lesson is designed to build a mind that questions, not just absorbs." },
+      { "title": "Guided, Not Alone", "text": "Real understanding rarely happens in isolation. We build spaces — with AI, with peers, with mentors — where thinking is shared, tested, and sharpened together." },
+      { "title": "Depth Over Speed", "text": "We're not chasing completion rates. We're built for the kind of understanding that stays with you — the kind you can still explain, still use, years later." },
+      { "title": "A Wider World, Not A Narrower Path", "text": "Education shouldn't shrink your curiosity down to a credential. We exist to open doors you didn't know were there — to ideas, disciplines, and ways of seeing." }
+    ],
+    "guide": "Quickly Guide",
+    "guideImage": "A student holding books outdoors",
+    "steps": [
+      { "title": "AI Tutor", "text": "Ask anything, anytime. Your AI Tutor breaks down complex topics, answers questions in real time, and adapts to how you learn best." },
+      { "title": "Group Study", "text": "Start or join a study room in one click. Discuss course topics, share notes, and keep each other accountable — together, in real time." },
+      { "title": "Study With Us", "text": "Set a pace that fits your life. Track your progress, pick up where you left off, and build a learning habit that actually sticks." }
+    ]
+  },
+  "courseDetailDesign": {
+    "breadcrumb": "Breadcrumb",
+    "home": "Home",
+    "courseInfo": "Course Info",
+    "overview": "Overview",
+    "outcomesTitle": "What you'll learn",
+    "outcomes": [
+      "Model real biological systems mathematically",
+      "Simulate nonlinear dynamics with Euler's method",
+      "Learn the basics of a programming language",
+      "Understand positive and negative feedback",
+      "Explore dynamics across disciplines",
+      "Build the competencies future physicians and researchers need"
+    ],
+    "curriculum": "Course Curriculum",
+    "lessons": "Lessons",
+    "lesson": "Lesson",
+    "hours": "Hours",
+    "less": "Less",
+    "more": "More",
+    "preview": "Preview",
+    "provides": "This course provides",
+    "features": [
+      "Video & text dual-mode learning",
+      "Multiple reference exhibits",
+      "AI-powered learning assistant",
+      "AI-Guided Deep Comprehension",
+      "Extended readings for context",
+      "Bilingual: 中文 / English"
+    ],
+    "included": "INCLUDED WITH A CATEGORY PLAN",
+    "months": "months",
+    "benefits": "View all benefits"
+  },
   "portal": {
     "eyebrow": "Learning Guide Portal",
     "title": "Learn through guided courses",
@@ -27,14 +90,14 @@
       "scope": "Access scope",
       "device": "Device access",
       "term": "Term",
-      "aiPoints": "AI points",
-      "pcDevice": "PC + mobile",
+      "aiPoints": "AI Tutor points",
+      "pcDevice": "1 PC + 1 mobile",
       "mobileDevice": "Mobile only",
       "amount": "Amount",
       "trialAmount": "USD 0.00 during the trial",
-      "consentRenewal": "I understand that this plan renews automatically unless I cancel it before the next billing date.",
-      "consentTerms": "I accept the Learning Guide terms and the applicable payment terms.",
-      "consentRefund": "I understand the trial, cancellation and refund conditions shown for this plan.",
+      "consentRenewal": "I authorise Stripe to charge my selected payment method for future automatic renewals.",
+      "consentTerms": "I understand renewal prices may change as new courses are added. I will be notified by email at least 3 days in advance.",
+      "consentRefund": "I understand that subscription payments are non-refundable, except where required by law.",
       "continue": "Continue",
       "back": "Back to pricing",
       "expired": "This quote has expired. Return to Pricing and calculate it again.",
@@ -51,7 +114,7 @@
     "catalogDescription": "Access thoughtful courses taught by experienced teachers. Learn at your own pace and build understanding that lasts.",
     "searchCourses": "Search for courses...",
     "search": "Search",
-    "allCategories": "All",
+    "allCategories": "All Courses",
     "courseCategories": [
       "All",
       "Chinese Humanities",
@@ -336,7 +399,14 @@
     "googleConnect": "Connect Google",
     "googleConnectHint": "Link your Google account so you can sign in without a password."
   },
+  "contactPage": { "title": "Get in Touch", "description": "We'd love to hear from you. Send us a message and we'll respond as soon as possible.", "information": "Contact Information", "email": "Email", "emailAddresses": ["support@thedigitallearningguide.com", "info@thedigitallearningguide.com"], "hours": "Business Hours", "hoursWeekday": "Monday - Friday: 9am - 6pm PST", "hoursWeekend": "Saturday: 10am - 4pm PST", "formTitle": "Send us a Message", "firstName": "First Name", "lastName": "Last Name", "emailAddress": "Email Address", "phone": "Phone Number", "subject": "Subject", "message": "Message", "consent": "I agree to receive communications from Learning Guide and accept the Privacy Policy", "submit": "Send Message", "placeholders": { "firstName": "John", "lastName": "Doe", "email": "john.doe@example.com", "phone": "+1 (555) 123-4567", "message": "Tell us how we can help you..." } },
   "helpPage": {
+    "design": {
+      "heroTitle": "How can we help you?", "heroDescription": "Search our knowledge base or browse categories below", "searchPlaceholder": "Search for articles...", "browseTitle": "Browse by Category", "popularTitle": "Popular Articles", "faqTitle": "Frequently Asked Questions", "supportTitle": "Still need help?", "supportDescription": "Our support team is here to assist you. Reach out and we'll get back to you as soon as possible.", "contactSupport": "Contact Support",
+      "categories": [{ "title": "Getting Started", "description": "Learn the basics of using Learning Guide", "icon": "/portal/help/asset-1.svg", "items": [] }, { "title": "Billing & Payments", "description": "Manage your subscription and payments", "icon": "/portal/help/asset-3.svg", "items": [] }, { "title": "Study Groups", "description": "Create and join study groups", "icon": "/portal/help/asset-6.svg", "items": [] }, { "title": "Account Settings", "description": "Manage your profile and preferences", "icon": "/portal/help/asset-5.svg", "items": [] }],
+      "popularArticles": [{ "question": "How do I enroll in a course?", "answer": "Choose a course, select a plan and complete the secure checkout process." }, { "question": "How do I continue a course?", "answer": "Open My Learning and select the lesson you want to continue." }, { "question": "What payment methods do you accept?", "answer": "Available payment methods are shown in secure checkout." }],
+      "faqItems": [{ "question": "How do I enroll in a course?", "answer": "Choose a course, select a plan and complete the secure checkout process." }, { "question": "Can I access courses on mobile devices?", "answer": "You can access Learning Guide on a supported mobile browser." }, { "question": "What payment methods do you accept?", "answer": "Available payment methods are shown in secure checkout." }, { "question": "How do study groups work?", "answer": "Study groups let learners collaborate around their shared course interests." }, { "question": "Can I get a refund if I'm not satisfied?", "answer": "Contact support with your order details so the operator can review your request." }, { "question": "Do courses have certificates?", "answer": "Course completion information is shown in My Learning where available." }, { "question": "How long do I have access to a course?", "answer": "Your active subscription or entitlement determines your course access period." }, { "question": "Can I download course materials?", "answer": "Downloads are available only when a course provides them." }]
+    },
     "title": "Help Center / FAQ",
     "contact": "For account or payment support, contact the Learning Guide operator.",
     "categories": [
@@ -562,7 +632,7 @@
     "term": "Subscription term",
     "subscribe": "Subscribe",
     "allCourses": "Full access to every Learning Guide course",
-    "categoryCourses": "Unlimited access to every course in your chosen category",
+    "categoryCourses": "Access to all courses in this category",
     "bilingual": "Bilingual course materials in English and Chinese",
     "devices": "Study on 1 PC and 1 mobile device",
     "points": "AI Tutor points",

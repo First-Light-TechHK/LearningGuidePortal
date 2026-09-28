@@ -8,10 +8,15 @@ import { isBusinessEmail, isEmailTooLong } from "@/lib/emailValidation";
 import { isNameTooLong, isValidName } from "@/lib/nameValidation";
 
 const REMEMBERED_CREDENTIALS_KEY = "learning-guide.remembered-credentials";
+const REMEMBERED_CREDENTIALS_MAX_AGE_MS = 30 * 60 * 1000;
 
 function rememberCredentials(credentials: { email: string; password: string } | null) {
   try {
-    if (credentials) window.localStorage.setItem(REMEMBERED_CREDENTIALS_KEY, JSON.stringify({ email: credentials.email.trim(), password: credentials.password }));
+    if (credentials) window.localStorage.setItem(REMEMBERED_CREDENTIALS_KEY, JSON.stringify({
+      email: credentials.email.trim(),
+      password: credentials.password,
+      expiresAt: Date.now() + REMEMBERED_CREDENTIALS_MAX_AGE_MS
+    }));
     else window.localStorage.removeItem(REMEMBERED_CREDENTIALS_KEY);
   } catch {
     // Storage may be disabled; signing in must still work.
@@ -36,8 +41,11 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     try {
       const saved = window.localStorage.getItem(REMEMBERED_CREDENTIALS_KEY);
       if (saved) {
-        const credentials = JSON.parse(saved) as { email?: unknown; password?: unknown };
-        if (typeof credentials.email !== "string" || typeof credentials.password !== "string") throw new Error("Invalid saved credentials.");
+        const credentials = JSON.parse(saved) as { email?: unknown; password?: unknown; expiresAt?: unknown };
+        if (typeof credentials.email !== "string" || typeof credentials.password !== "string" || typeof credentials.expiresAt !== "number" || !Number.isFinite(credentials.expiresAt) || credentials.expiresAt <= Date.now()) {
+          rememberCredentials(null);
+          return;
+        }
         const initialEmailMatches = !initialEmail || initialEmail.trim().toLowerCase() === credentials.email.trim().toLowerCase();
         if (!initialEmail) setEmail(credentials.email);
         if (initialEmailMatches) {
@@ -46,7 +54,8 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
         }
       }
     } catch {
-      // Use the normal empty form when browser storage is unavailable.
+      // Invalid saved data is removed; unavailable browser storage must not block sign-in.
+      rememberCredentials(null);
     }
   }, [signIn, initialEmail]);
 

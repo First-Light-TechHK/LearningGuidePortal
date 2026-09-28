@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { getPortalContent, listPublishedCourses } from "@/services/productStore";
@@ -8,27 +9,31 @@ import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { BannerCarousel } from "@/components/portal/BannerCarousel";
 import { signCourseMediaUrl } from "@/services/persistence/s3";
+import styles from "@/components/portal/home.module.css";
 
 export default async function PortalHome({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: rawLocale } = await params;
   const locale = localeFrom(rawLocale);
   const copy = getMessages(locale).portal;
+  const home = getMessages(locale).homeDesign;
   const courses = await listPublishedCourses();
   const content = await getPortalContent();
   const user = await currentProductUser();
 
   return (
-    <main className="portal-page portal-home-page">
+    <main className={`portal-page portal-home-page ${styles.page}`}>
       <PortalHeader locale={locale} signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-      <BannerCarousel locale={locale} />
+      <BannerCarousel locale={locale} home />
 
-      <section className="portal-section portal-section-courses" aria-labelledby="course-heading">
-        <div className="portal-section-heading"><div><p className="portal-eyebrow">{copy.featuredCourses}</p><h2 id="course-heading">{copy.popularCourses}</h2><p className="portal-section-description">{copy.popularCoursesDescription}</p></div></div>
-        {courses.length ? <div className="portal-course-grid">{await Promise.all(courses.map(async course => <CatalogueCourseCard key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
-        <div className="portal-explore-more"><Link prefetch={false} className="portal-button portal-button-primary" href={`/${locale}/portal/courses`}>{copy.viewCourses}</Link></div>
+      <section className={styles.courses} aria-labelledby="course-heading">
+        <h2 id="course-heading">{home.popular}</h2>
+        {courses.length ? <div className={styles.courseGrid}>{await Promise.all(courses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
+        <Link prefetch={false} className={styles.allCourses} href={`/${locale}/portal/courses`}>{home.allCourses}</Link>
       </section>
 
-      <section className="portal-quick-guide"><div><p className="portal-eyebrow">{copy.whyUs}</p><h2>{copy.whyUsTitle}</h2><div className="portal-guide-list">{copy.quicklyGuideSteps.map((step, index) => <div key={step}><span>0{index + 1}</span><strong>{step}</strong></div>)}</div></div><div className="portal-quick-guide-image" role="img" aria-label="A learner studying in a library" /></section>
+      <section className={styles.why} aria-labelledby="why-heading"><p>{home.why}</p><h2 id="why-heading">{home.whyTitle}</h2><Image className={styles.underline} src="/portal/home/underline.svg" alt="" width={161.5} height={14.1308} /></section>
+      <section className={styles.values} aria-label={home.why}>{home.values.map((value, index) => <article key={value.title}><span>{index + 1}.</span><h3>{value.title}</h3><p>{value.text}</p></article>)}</section>
+      <section className={styles.guide}><div className={styles.guideInner}><div><h2>{home.guide}</h2><div className={styles.guideSteps}>{home.steps.map(step => <article key={step.title}><h3>{step.title}</h3><p>{step.text}</p></article>)}</div></div><Image className={styles.guideImage} src="/portal/home/quick-guide.png" width={563} height={522} alt={home.guideImage} /></div></section>
       <PortalFooter locale={locale} />
     </main>
   );

@@ -14,7 +14,7 @@ export function isNameTooLong(value: string) {
 
 export function isValidName(value: string) {
   const name = normaliseName(value);
-  return Array.from(name).length >= 1 && Array.from(name).length <= 50 && NAME_PATTERN.test(name);
+  return Array.from(name).length >= 1 && Array.from(name).length <= 50 && NAME_PATTERN.test(name.replaceAll(".", "'"));
 }
 
 export function validateName(value: string) {

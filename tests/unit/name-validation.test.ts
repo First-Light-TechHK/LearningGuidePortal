@@ -19,3 +19,7 @@ test("name length is measured in Unicode characters", () => {
   assert.equal(isNameTooLong("A".repeat(50)), false);
   assert.equal(isNameTooLong("A".repeat(51)), true);
 });
+
+test("name validation accepts full stops in English names", () => {
+  assert.equal(isValidName("J.R.R. Tolkien"), true);
+});
