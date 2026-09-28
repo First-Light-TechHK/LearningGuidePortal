@@ -1,9 +1,7 @@
 export function accessPath(url: string): string;
-export function shouldLogAccess(path: string): boolean;
-export function accessLogLine(entry: { method: string; path: string; status: number; durationMs: number; outcome: string; error?: string | null }): string;
-export function logFinishedAccess(req: { method?: string; url?: string }, res: { statusCode?: number }, started: number, write?: (line: string) => void): void;
-export function logClosedAccess(req: { method?: string; url?: string }, res: { statusCode?: number }, started: number, error: string | null, write?: (line: string) => void): void;
-export function observeRequest(req: { method?: string; url?: string; on(event: string, listener: (error?: { code?: string }) => void): unknown }, res: { statusCode?: number; on(event: string, listener: (error?: { code?: string }) => void): unknown }, started?: number, write?: (line: string) => void): void;
+export function accessLogLine(entry: { method: string; host: string; path: string; status: number | null; durationMs: number; outcome: string; ua: string }): string;
+export function logAccess(req: { method?: string; url?: string; headers?: Record<string, string | string[] | undefined> }, res: { statusCode?: number }, started: number, outcome: string, write?: (line: string) => void): void;
+export function bindAccess(req: { method?: string; url?: string; headers?: Record<string, string | string[] | undefined> }, res: { statusCode?: number; writableFinished?: boolean; on(event: string, listener: () => void): unknown }, started: number, write?: (line: string) => void): void;
 export function holdConnection(server: { headersTimeout: number; keepAliveTimeout: number; on(event: string, listener: () => void): unknown }): void;
 export const KEEP_ALIVE_MS: number;
 export const HEADERS_TIMEOUT_MS: number;
