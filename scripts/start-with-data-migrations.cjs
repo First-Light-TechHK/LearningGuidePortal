@@ -19,7 +19,7 @@ function runMigrate() {
 runMigrate();
 const child = spawn(
   process.execPath,
-  ["--dns-result-order=ipv4first", path.join(root, "node_modules/next/dist/bin/next"), "start", ...process.argv.slice(2)],
+  ["--dns-result-order=ipv4first", "--require", path.join(__dirname, "install-access-log.cjs"), path.join(root, "node_modules/next/dist/bin/next"), "start", ...process.argv.slice(2)],
   { cwd: root, stdio: "inherit" },
 );
 child.on("exit", (code, signal) => {
