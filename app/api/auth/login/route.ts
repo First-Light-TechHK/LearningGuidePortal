@@ -14,6 +14,7 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", ...(body.rememberMe === true ? { maxAge: AUTH_SESSION_MAX_AGE } : {}) });
     return response;
   } catch {
+    console.warn(JSON.stringify({ type: "auth", route: "login", code: "AUTHENTICATION_FAILED", requestId }));
     return NextResponse.json({ ok: false, code: "AUTHENTICATION_FAILED", requestId }, { status: 401 });
   }
 }
