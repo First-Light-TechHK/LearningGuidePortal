@@ -976,12 +976,19 @@ export async function getUserAvatar(userId: string) {
   try { return { buffer: await readBinary(path.join(productDir(), user.avatarPath)), contentType: user.avatarContentType }; } catch { return null; }
 }
 
+export class UnverifiedAccountError extends Error {
+  constructor() {
+    super("Email or password is incorrect.");
+    this.name = "UnverifiedAccountError";
+  }
+}
+
 export async function authenticateUser(emailValue: string, password: string) {
   if (!isBusinessEmail(emailValue)) throw new Error("Enter a valid email address.");
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === normaliseEmail(emailValue));
   if (!user || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
-  if (user.status === "pending" || !user.emailVerifiedAt) throw new Error("Email or password is incorrect.");
+  if (user.status === "pending" || !user.emailVerifiedAt) throw new UnverifiedAccountError();
   if (user.status !== "active") throw new Error("This account is not available.");
   return user;
 }

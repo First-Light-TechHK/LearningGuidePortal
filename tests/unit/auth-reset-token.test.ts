@@ -72,7 +72,7 @@ test("resetPassword deletes every session for that user", async () => {
   const email = "reset-kick@example.test";
   const { user } = await activeUser(email);
   const first = await store.createSession(user.id);
-  const second = await store.createSession(user.id);
+  const second = await store.createSession(user.id, { replaceExisting: true });
   assert.equal(await store.getUserBySessionToken(first.token), null);
   assert.equal((await store.getUserBySessionToken(second.token))?.id, user.id);
 

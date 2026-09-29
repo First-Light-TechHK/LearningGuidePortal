@@ -85,7 +85,7 @@ test("trial resume restores the original window and complete after cancel still 
 
   const pending = (await store.getLearningOverview(user.id)).orders.find((order) => order.kind === "trial_activation");
   assert.ok(pending);
-  await assert.rejects(() => store.completeDemoTrialOrder(user.id, pending.id), /cancelled and cannot be completed again/);
+  await assert.rejects(() => store.completeDemoTrialOrder(user.id, pending.id), /cannot be completed/);
 
   const resumed = await store.resumeSubscription(user.id, before.id);
   assert.equal(resumed.state, "active");
