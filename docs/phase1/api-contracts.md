@@ -36,6 +36,8 @@ Google 和 WeChat 回调必须在服务端校验 state、code、issuer/provider 
 
 ## Purchase / Payment / Subscription
 
+A purchase command is an offer: `scope` (`course` | `category` | `everything`), `planId`, plan `amountMinor`, and `trial`. A trial quote stores due-now `0` and keeps the plan amount on the plan snapshot. The course sidebar, `GET /[locale]/pricing?courseId=`, and trial confirmation each display the offer that command commits. `POST /api/subscription/quote` and the order writers reject a category plan when that category has no published course. check-email copy claims an activation email only when verification is required and a pending user still holds an unused verification link (`services/checkEmailPage.ts`).
+
 ```ts
 // POST /api/subscription/quote
 type QuoteRequest = {

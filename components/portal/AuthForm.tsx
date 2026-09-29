@@ -6,6 +6,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
 import { isBusinessEmail, isEmailTooLong } from "@/lib/emailValidation";
 import { isNameTooLong, isValidName } from "@/lib/nameValidation";
+import { registrationContinueHref } from "@/lib/pendingCheckEmail";
 
 const REMEMBERED_CREDENTIALS_KEY = "learning-guide.remembered-credentials";
 const REMEMBERED_CREDENTIALS_MAX_AGE_MS = 30 * 60 * 1000;
@@ -83,8 +84,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
         setExistingSeconds(3);
         return;
       }
-      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
-      window.location.assign(returnTo || `/${locale}/account/my-learning`);
+      window.location.assign(registrationContinueHref({ verificationRequired: Boolean(data.data?.verificationRequired), locale, email, returnTo: returnTo || `/${locale}/account/my-learning` }));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : labels.requestFailed);
       setBusy(false);

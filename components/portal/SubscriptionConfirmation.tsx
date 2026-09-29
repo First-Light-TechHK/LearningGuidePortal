@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { X, ArrowRight } from "lucide-react";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
 import { getMessages } from "@/lib/i18n/messages";
+import { offerFromPlan, trialConfirmationOffer, type OfferScope } from "@/lib/offer";
 
 type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number; sourceSubscriptionId?: string | null };
-type Plan = { id: string; name: string; termMonths: number; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
+type Plan = { id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number; scope?: OfferScope; scopeId?: string | null; courseId?: string };
 
 type Copy = {
   eyebrow: string; title: string; description: string; plan: string; scope: string; device: string; term: string; aiPoints: string;
@@ -27,6 +28,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const isTrial = quote.kind === "trial";
+  const offer = isTrial ? trialConfirmationOffer(plan) : offerFromPlan(plan, false);
   const isUpgrade = quote.kind === "upgrade" && Boolean(upgradeSource);
   const money = (amount: number) => `${new Intl.NumberFormat(locale, { style: "currency", currency: quote.currency, currencyDisplay: "narrowSymbol" }).format(amount / 100)} ${quote.currency.toUpperCase()}`;
   const estimatedTerm = () => {
@@ -84,10 +86,11 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
       <h2>{planHeading}{planSubtitle ? <span>{planSubtitle}</span> : null}</h2>
       <div className="confirmation-benefits"><p>{scopeDescription}</p><p>{plan.device === "pc" ? copy.pcDevice : copy.mobileDevice}</p><p>{(plan.aiPoints ?? 0).toLocaleString(locale)} {copy.aiPoints}</p></div>
     </section>
-    <section className="confirmation-payment" aria-labelledby="confirmation-payment-heading">
+    <section className="confirmation-payment" aria-labelledby="confirmation-payment-heading" data-offer-scope={offer.scope} data-offer-plan-id={offer.planId} data-offer-amount={offer.amountMinor} data-offer-due-now={offer.dueNowMinor} data-offer-trial={offer.trial ? "true" : "false"}>
       <h2 id="confirmation-payment-heading">{copy.paymentRenewal}</h2>
       <dl className="confirmation-payment-grid">
-        <div><dt>{details.payToday}</dt><dd>{isTrial ? copy.trialAmount : `${new Intl.NumberFormat(locale, {style:"currency", currency:quote.currency, currencyDisplay:"narrowSymbol"}).format(quote.amountMinor / 100)} ${quote.currency.toUpperCase()}`}</dd><p>{isTrial ? details.trialPayment : details.termPayment.replace("{months}", String(plan.termMonths))}</p></div>
+        <div><dt>{details.planPrice}</dt><dd>{money(offer.amountMinor)}</dd><p>{offer.trial ? details.trialPayment : details.termPayment.replace("{months}", String(plan.termMonths))}</p></div>
+        <div><dt>{details.payToday}</dt><dd>{money(offer.dueNowMinor)}</dd><p>{offer.trial ? details.trialPayment : details.termPayment.replace("{months}", String(plan.termMonths))}</p></div>
         <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd><p>{isTrial ? details.trialDates : estimatedTerm()}</p></div>
       </dl>
       <dl className="confirmation-renewal-grid">
