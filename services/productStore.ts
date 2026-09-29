@@ -1,5 +1,6 @@
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent } from "@/contracts/payment";
 import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
+import { categoryPurchaseAllowed } from "@/lib/offer";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice } from "./stripePriceService";
 import { productTransaction } from "@/repositories/productTransactionRepository";
@@ -369,6 +370,10 @@ function planScope(plan: ProductPlan): NormalisedPlanScope {
   return { scope: "course", scopeId: plan.scopeId || plan.courseId };
 }
 
+function assertCategoryPurchase(data: ProductData, plan: ProductPlan) {
+  if (!categoryPurchaseAllowed(plan, data.courses)) throw new Error("This category has no published course.");
+}
+
 function planCoversCourse(plan: ProductPlan, course: ProductCourse) {
   const scope = planScope(plan);
   if (scope.scope === "everything") return true;
@@ -622,6 +627,15 @@ export async function userEmailExists(emailValue: string) {
   if (!/^\S+@\S+\.\S+$/.test(email)) return false;
   const data = await ensureProductData();
   return data.users.some((user) => user.email === email && ["pending", "active"].includes(user.status));
+}
+
+export async function hasCommittedPendingActivation(emailValue: string) {
+  const email = normaliseEmail(emailValue);
+  if (!isBusinessEmail(email)) return false;
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && item.status === "pending" && !item.emailVerifiedAt);
+  if (!user) return false;
+  return data.verificationTokens.some((token) => token.userId === user.id && !token.usedAt && new Date(token.expiresAt) > new Date());
 }
 
 export async function getEmailAuthState(emailValue: string) {
@@ -1295,10 +1309,7 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
   return editData((data) => {
     const plan = data.plans.find((item) => item.id === planId);
     if (!plan) throw new Error("Plan not found.");
-    if (kind === "purchase") {
-      const active = data.subscriptions.some((item) => item.userId === userId && item.planId === planId && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date());
-      if (active) throw new Error("This plan already has active access.");
-    }
+    assertCategoryPurchase(data, plan);
     if (price) { plan.amountMinor = price.amountMinor; plan.currency = price.currency; }
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
@@ -1393,6 +1404,7 @@ export async function completeDemoCheckout(userId: string, quoteId: string) {
 }
 
 function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrder, plan: ProductPlan) {
+    if (order.status !== "paid") assertCategoryPurchase(data, plan);
     if (order.status === "paid") {
       const subscription = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "purchase" && item.state !== "expired");
       const entitlement = data.entitlements.find((item) => item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan));
@@ -1454,6 +1466,7 @@ export async function createPendingDemoOrder(userId: string, quoteId: string) {
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "purchase" && ["pending", "paid"].includes(item.status));
     if (existing) return { order: existing, plan };
+    assertCategoryPurchase(data, plan);
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "demo", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
@@ -1569,6 +1582,7 @@ export async function createPendingStripeOrder(userId: string, quoteId: string) 
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe");
     if (existing) return { order: existing, plan };
+    assertCategoryPurchase(data, plan);
     if (!quote.price) throw new PaymentError("quote_expired");
     if (data.subscriptions.some(item => item.userId === userId && sameScope(item, { ...plan, scope: plan.scope }) && item.device === plan.device && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) throw new PaymentError("invalid_request");
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "purchase", price: quote.price, planSnapshot: quote.planSnapshot, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
@@ -1748,6 +1762,7 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   if (!order) order = data.orders.find((item) => item.userId === userId && item.quoteId === quoteId);
   if (!order) throw new Error("Order not found.");
   if (order.status === "paid") return order;
+  assertCategoryPurchase(data, plan);
   order.status = "paid";
   order.amountMinor = amountMinor;
   order.paymentMode = "stripe";

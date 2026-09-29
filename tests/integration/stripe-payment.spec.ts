@@ -96,6 +96,14 @@ async function send(type: string, id: string, objectId: string, signature?: stri
 
 test("all eight lookup keys produce the correct subscription period and server price", async () => {
   for (const mapping of subscriptionPrices) {
+    const price = await prices.resolveSubscriptionPrice(mapping.id);
+    expect(price.termMonths).toBe(mapping.termMonths);
+    expect(price.stripePriceId).toBe("price_" + mapping.id);
+    const emptyCategory = mapping.scope === "category" && mapping.scopeId !== "European Humanities";
+    if (emptyCategory) {
+      await expect(checkout(mapping.id)).rejects.toThrow(/no published course/);
+      continue;
+    }
     const result = await checkout(mapping.id);
     expect(result.quote.price?.termMonths).toBe(mapping.termMonths);
     const call = requests.at(-1)!;
@@ -110,17 +118,16 @@ test("all eight lookup keys produce the correct subscription period and server p
 test("subscription records use purchased product imagery and term, including legacy prices", async () => {
   const price = catalog.get("chinese-humanities-pc-6")!;
   price.product = { id: "prod_chinese", name: "Chinese Humanities", images: ["https://images.example.test/chinese.jpg"] } as Stripe.Product;
-  const result = await checkout("chinese-humanities-pc-6");
-  expect(result.order.price).toMatchObject({ productName: "Chinese Humanities", productImage: "https://images.example.test/chinese.jpg", termMonths: 6 });
-  const overview = await store.getLearningOverview(result.buyer.id);
-  const orders = await presentSubscriptionOrders(overview.orders);
+  const snapshot = await prices.resolveSubscriptionPrice("chinese-humanities-pc-6");
+  expect(snapshot).toMatchObject({ productName: "Chinese Humanities", productImage: "https://images.example.test/chinese.jpg", termMonths: 6 });
+  await expect(checkout("chinese-humanities-pc-6")).rejects.toThrow(/no published course/);
+  const orders = await presentSubscriptionOrders([{ price: snapshot, plan: { name: "Chinese Humanities", scope: "category" as const, scopeId: "Chinese Humanities", termMonths: 6 as const } }]);
   expect(orders[0].presentation).toEqual({ name: "Chinese Humanities", image: "https://images.example.test/chinese.jpg", termMonths: 6 });
-  const { productName, productImage, ...legacyPrice } = result.order.price!;
-  const legacy = await presentSubscriptionOrders([{ ...overview.orders[0], price: legacyPrice }]);
+  const { productName, productImage, ...legacyPrice } = snapshot;
+  const legacy = await presentSubscriptionOrders([{ price: legacyPrice, plan: { name: "Chinese Humanities", scope: "category" as const, scopeId: "Chinese Humanities", termMonths: 6 as const } }]);
   expect(legacy[0].presentation).toEqual(orders[0].presentation);
   const localFallback = await presentSubscriptionOrders([{
-    ...overview.orders[0],
-    plan: { name: "Science", scope: "category", scopeId: "Science", termMonths: 6 },
+    plan: { name: "Science", scope: "category" as const, scopeId: "Science", termMonths: 6 as const },
     price: { ...legacyPrice, stripePriceId: "price_science-pc-6", productName: "Science" }
   }]);
   expect(localFallback[0].presentation).toEqual({ name: "Science", image: "/portal/subscriptions/science.png", termMonths: 6 });

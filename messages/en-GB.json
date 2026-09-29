@@ -243,6 +243,7 @@
     "emailInvalid": "Enter a valid email address. After an underscore (_), use a letter or number.",
     "emailTooLong": "Email address must be 254 characters or fewer.",
     "checkEmailDescription": "We sent an activation link to your email address. Open it within 24 hours to activate your account before signing in.",
+    "checkEmailIdle": "There is no pending activation for this address. Open this page only after registration leaves an account pending.",
     "resendEmail": "Resend activation email",
     "resendCountdown": "Resend available in",
     "resendSent": "If this address has a pending account, a new activation email has been sent.",
@@ -340,6 +341,8 @@
     "cancelPayment": "Cancel payment",
     "processing": "Updating...",
     "checkoutError": "Payment update failed.",
+    "planPrice": "Plan price",
+    "dueToday": "Due today",
     "trialNoCharge": "USD 0.00 (trial activation)",
     "completeLesson": "Mark lesson complete",
     "tutor": "AI Tutor",
@@ -671,6 +674,7 @@
     "skip": "Skip"
   },
   "confirmationDetails": {
+    "planPrice": "Plan price",
     "payToday": "Pay today",
     "termPayment": "Payment for this {months}-month term",
     "trialPayment": "Payment method required for automatic renewal",
