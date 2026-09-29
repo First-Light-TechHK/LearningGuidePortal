@@ -22,7 +22,7 @@ import {
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
-import { courseCategoryId } from "@/lib/courseDetailPresentation";
+import { courseCategoryId, courseSurfaceCategoryId } from "@/lib/courseDetailPresentation";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
@@ -1797,7 +1797,7 @@ export async function getLearningOverview(userId: string) {
         currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
-        courseCategory: courseCategoryId(course, (data.portalContent || defaultPortalContent).categories, data.catalogue || []),
+        courseCategory: courseSurfaceCategoryId(course, (data.portalContent || defaultPortalContent).categories, data.catalogue || []),
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
         courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,

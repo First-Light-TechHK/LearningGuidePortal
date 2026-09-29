@@ -221,10 +221,13 @@ test("catalogue and course pages do not file a course under European Humanities 
     assert.equal(source.includes('course.category ||= "European Humanities"'), false, relative);
   }
   const detail = readFileSync(path.join(root, "app/[locale]/portal/courses/[slug]/page.tsx"), "utf8");
-  assert.match(detail, /courseCategoryLabel\(/);
+  assert.match(detail, /courseBreadcrumb\(/);
+  assert.match(detail, /courseTrackChip\(/);
+  assert.match(detail, /courseLearningOutcomes\(/);
+  assert.doesNotMatch(detail, /detail\.outcomes\.map/);
   const catalogue = readFileSync(path.join(root, "app/[locale]/portal/courses/page.tsx"), "utf8");
-  assert.match(catalogue, /courseCategoryId\(/);
-  assert.match(catalogue, /courseCategoryLabel\(/);
+  assert.match(catalogue, /catalogueFilterState\(/);
+  assert.match(catalogue, /courseCardCategoryLine\(/);
   const store = readFileSync(path.join(root, "services/productStore.ts"), "utf8");
   assert.doesNotMatch(store, /input\.category && \[[^\]]+\]\.includes\(input\.category\) \? input\.category : "European Humanities"/);
   assert.doesNotMatch(store, /course\.category \|\|= "European Humanities"/);

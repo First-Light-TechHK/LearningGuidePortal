@@ -89,3 +89,7 @@ npx tsc --noEmit -p tsconfig.io.json
 4. 不改密码重置、订阅展示、微信绑邮箱等产品代码。
 5. 不把规格叶子改成迁就 `exists`、`resetUrl`、503、或第二次 complete。
 6. 第一次不设 `deny_paths`（本单必须改 workflow）。
+
+## UC-PORTAL-CATEGORY（课程分类表面）
+
+Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。没有分类就不显示该屑，学科不代替分类。

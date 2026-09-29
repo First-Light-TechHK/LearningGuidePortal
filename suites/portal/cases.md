@@ -33,3 +33,25 @@ Compiled from existing unit tests. Suite is active. Overlay select runs this pro
 - Title: Locale query does not invent unpublished courses or client prices
 - Steps: GET /api/portal/courses?locale=en-GB and ?locale=zh-CN; GET /api/portal/plans?amountMinor=1
 - Expected: Same published id list; no plan uses amountMinor 1
+
+## UC-PORTAL-CATEGORY Course category surfaces
+
+Sits beside UC-PORTAL-1 course identity. The course page still reads identity from the store. These leaves are the visible category: breadcrumb, title chip, catalogue filter and card, home card, My Learning meta, public-lesson recommendation, and pricing group. INV-course-own-category.
+
+
+### Functional
+- Title: Stored categoryId is the locale label and the portal category id
+- Steps: Open a science course, a European humanities course, and a Chinese humanities course in en-GB and zh-CN
+- Expected: Breadcrumb is Home / Courses / category label / course info. The category href query is `Science`, `European Humanities`, or `Chinese Humanities`. Visible text is `Science`/`科学`, `European Humanities`/`欧洲人文`, `Chinese Humanities`/`中国人文`. The same id and label are the title chip, the active catalogue chip, the catalogue and home card line, the My Learning meta category, the public-lesson recommendation, and the pricing group. INV-course-own-category
+
+
+### Negative
+- Title: A legacy field or a catalogue name for the other category does not move the surface
+- Steps: Store categoryId `science` or `European Humanities` while the legacy category and the catalogue entry name say the other category
+- Expected: Display stays on the categoryId. A science course is not listed or grouped under European Humanities, and its visible text is not `欧洲人文` or `European Humanities`. A humanities course is not shown as `科学` or `Science`.
+
+
+### Edge
+- Title: A missing category is omitted, and a subject does not replace the category crumb
+- Steps: Open a course with no category. Open a poetry subject under humanities and a biology subject under science with no categoryId
+- Expected: The category crumb, chip, card line, meta category, recommendation category and pricing group are absent. The course is not filed under Science, European Humanities, or Chinese Humanities. A humanities course whose subject is biology still shows European Humanities, not Science.

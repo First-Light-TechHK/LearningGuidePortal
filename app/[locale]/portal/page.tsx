@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryLabel } from "@/lib/courseDetailPresentation";
+import { courseCardCategoryLine } from "@/lib/courseDetailPresentation";
 import { getPortalContent, listCatalogueEntries, listPublishedCourses } from "@/services/productStore";
 import { currentProductUser } from "@/services/productAuth";
 import { CatalogueCourseCard } from "@/components/portal/CatalogueCourseCard";
@@ -29,7 +29,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
 
       <section className={styles.courses} aria-labelledby="course-heading">
         <h2 id="course-heading">{home.popular}</h2>
-        {courses.length ? <div className={styles.courseGrid}>{await Promise.all(courses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={courseCategoryLabel(course, content.categories, locale, catalogue)} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
+        {courses.length ? <div className={styles.courseGrid}>{await Promise.all(courses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={courseCardCategoryLine(course, content.categories, locale, catalogue)} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
         <Link prefetch={false} className={styles.allCourses} href={`/${locale}/portal/courses`}>{home.allCourses}</Link>
       </section>
 

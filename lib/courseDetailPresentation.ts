@@ -138,3 +138,168 @@ function normalisedOutcomes(value: unknown) {
   }
   return outcomes;
 }
+
+/**
+ * Portal category id for a learner-facing surface.
+ * A categoryId that already names a portal category wins over a legacy field and over a catalogue name for a different category.
+ * A subject never becomes the category. A course with no category stays empty.
+ */
+export function courseSurfaceCategoryId(
+  course: CourseCategoryRef | null | undefined,
+  categories: readonly PortalCategory[],
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): string {
+  if (!course) return "";
+  const storedId = course.categoryId?.trim() || "";
+  if (storedId) {
+    const direct = matchPortalCategory(storedId, categories);
+    if (direct) return direct.id;
+    const entry = catalogue.find((item) => item.id === storedId && !item.parentId);
+    if (entry) return matchPortalCategory(entry.name, categories)?.id || entry.name;
+    return storedId;
+  }
+  const legacy = course.category?.trim() || "";
+  if (!legacy) return "";
+  return matchPortalCategory(legacy, categories)?.id || legacy;
+}
+
+/** Locale label for {@link courseSurfaceCategoryId}. Empty when that id is empty. */
+export function courseSurfaceCategoryLabel(
+  course: CourseCategoryRef | null | undefined,
+  categories: readonly PortalCategory[],
+  locale: Locale,
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): string {
+  const id = courseSurfaceCategoryId(course, categories, catalogue);
+  if (!id) return "";
+  return categories.find((item) => item.id === id)?.labels[locale] || id;
+}
+
+export type CourseBreadcrumbCrumb = {
+  label: string;
+  href: string | null;
+  current: boolean;
+};
+
+/** Home / Courses / category / course info. The category crumb is omitted when the course has none. */
+export function courseBreadcrumb(input: {
+  locale: Locale;
+  homeLabel: string;
+  coursesLabel: string;
+  courseInfoLabel: string;
+  course: CourseCategoryRef | null | undefined;
+  categories: readonly PortalCategory[];
+  catalogue?: readonly CatalogueCategoryRef[];
+}): CourseBreadcrumbCrumb[] {
+  const catalogue = input.catalogue ?? [];
+  const catalogHref = `/${input.locale}/portal/courses`;
+  const crumbs: CourseBreadcrumbCrumb[] = [
+    { label: input.homeLabel, href: `/${input.locale}/portal`, current: false },
+    { label: input.coursesLabel, href: catalogHref, current: false },
+  ];
+  const categoryId = courseSurfaceCategoryId(input.course, input.categories, catalogue);
+  const label = courseSurfaceCategoryLabel(input.course, input.categories, input.locale, catalogue);
+  if (categoryId && label) {
+    crumbs.push({
+      label,
+      href: `${catalogHref}?category=${encodeURIComponent(categoryId)}`,
+      current: false,
+    });
+  }
+  crumbs.push({ label: input.courseInfoLabel, href: null, current: true });
+  return crumbs;
+}
+
+/** Category chip beside the course title. Absent when the course has no category. */
+export function courseTrackChip(
+  course: CourseCategoryRef | null | undefined,
+  categories: readonly PortalCategory[],
+  locale: Locale,
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): { categoryId: string; label: string } | null {
+  const categoryId = courseSurfaceCategoryId(course, categories, catalogue);
+  const label = courseSurfaceCategoryLabel(course, categories, locale, catalogue);
+  if (!categoryId || !label) return null;
+  return { categoryId, label };
+}
+
+export type CatalogueFilterChip = { id: string; label: string; active: boolean };
+
+/** Catalogue chips and the courses that belong to the requested portal category id. */
+export function catalogueFilterState<T extends CourseCategoryRef>(input: {
+  requestedCategory: string;
+  courses: readonly T[];
+  categories: readonly PortalCategory[];
+  catalogue?: readonly CatalogueCategoryRef[];
+  locale: Locale;
+  allLabel: string;
+}): { chips: CatalogueFilterChip[]; visible: T[] } {
+  const catalogue = input.catalogue ?? [];
+  const requested = (input.requestedCategory || "All").trim() || "All";
+  const chips: CatalogueFilterChip[] = [
+    { id: "All", label: input.allLabel, active: requested === "All" },
+    ...input.categories.map((item) => ({
+      id: item.id,
+      label: item.labels[input.locale],
+      active: requested === item.id,
+    })),
+  ];
+  const visible = requested === "All"
+    ? [...input.courses]
+    : input.courses.filter((course) => courseSurfaceCategoryId(course, input.categories, catalogue) === requested);
+  return { chips, visible };
+}
+
+/** Category line on a catalogue card and on a home card. */
+export function courseCardCategoryLine(
+  course: CourseCategoryRef | null | undefined,
+  categories: readonly PortalCategory[],
+  locale: Locale,
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): string {
+  return courseSurfaceCategoryLabel(course, categories, locale, catalogue);
+}
+
+/** Category segment of a My Learning meta line, then lesson count and state. */
+export function myLearningMetaLine(input: {
+  categoryId: string;
+  categories: readonly PortalCategory[];
+  locale: Locale;
+  lessonCount: number;
+  lessonsWord: string;
+  stateLabel: string;
+}): string {
+  const label = input.categoryId
+    ? input.categories.find((item) => item.id === input.categoryId)?.labels[input.locale] || input.categoryId
+    : "";
+  return [label, `${input.lessonCount} ${input.lessonsWord}`, input.stateLabel].filter(Boolean).join(" · ");
+}
+
+/** Category line on a public-lesson recommendation card. */
+export function publicLessonRecommendationCategory(
+  course: CourseCategoryRef | null | undefined,
+  categories: readonly PortalCategory[],
+  locale: Locale,
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): string {
+  return courseSurfaceCategoryLabel(course, categories, locale, catalogue);
+}
+
+/** Portal category id used to group a course on Pricing. Empty when the course has none. */
+export function pricingCourseGroup(
+  course: CourseCategoryRef | null | undefined,
+  categories: readonly PortalCategory[],
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): string {
+  return courseSurfaceCategoryId(course, categories, catalogue);
+}
+
+/** Titles listed under one pricing category. A null category id lists every title. */
+export function listedPricingCourseTitles(
+  courseTitles: readonly { category?: string | null; title: string }[],
+  categoryId: string | null,
+): string[] {
+  return courseTitles
+    .filter((item) => categoryId == null || item.category === categoryId)
+    .map((item) => item.title);
+}

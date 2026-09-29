@@ -25,3 +25,15 @@ items:
     level: integration
     case_id: UC-PORTAL-1/io/edge
     type: edge
+  - function_id: UC-PORTAL-CATEGORY
+    level: unit
+    case_id: UC-PORTAL-CATEGORY/unit/01
+    type: functional
+  - function_id: UC-PORTAL-CATEGORY
+    level: unit
+    case_id: UC-PORTAL-CATEGORY/unit/02
+    type: negative
+  - function_id: UC-PORTAL-CATEGORY
+    level: unit
+    case_id: UC-PORTAL-CATEGORY/unit/03
+    type: edge
