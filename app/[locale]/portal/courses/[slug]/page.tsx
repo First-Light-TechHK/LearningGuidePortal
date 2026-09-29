@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseBreadcrumb, courseLearningOutcomes, courseLessonDuration, courseTrackChip } from "@/lib/courseDetailPresentation";
+import { courseBreadcrumb, courseLearningOutcomes, courseLessonCardDescription, courseLessonDuration, courseTrackChip } from "@/lib/courseDetailPresentation";
 import { courseSidebarHref, courseSidebarOffer } from "@/lib/offer";
 import { CourseLearningOutcomes } from "@/components/portal/CourseLearningOutcomes";
 import { catalogueEntriesForCourse, getCoursePage, getPortalContent, getProductCourse, listCatalogueEntries, listPlans, listPublishedCourses } from "@/services/productStore";
@@ -55,7 +55,7 @@ export default async function CourseDetailPage({ params }: {
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
     duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
-    description: section.title,
+    description: courseLessonCardDescription(section, lesson),
   }] as const)) || []);
   const outcomes = courseLearningOutcomes(course, ...(await catalogueEntriesForCourse(course)));
 
