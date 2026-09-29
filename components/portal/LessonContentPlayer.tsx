@@ -32,36 +32,21 @@ function exhibitUrl(value: string, type: Exhibit['type']) {
 }
 
 function TrialLimitModal({ gate, locale, onClose }: { gate: TrialGate; locale: LessonLocale; onClose: () => void }) {
-  const copy = {
-    title: 'Preview limit reached',
-    body: 'Subscribe to continue the full course and unlock more courses in this category.',
-    pricing: 'View pricing',
-    other: 'Related courses',
-    close: 'Close',
-    empty: 'No related courses yet',
-    heroTitle: 'Enjoying the course so far?',
-    heroBody: 'Build on what you’ve discovered with more ways to explore, reflect, and connect.',
-    bullets: ['Continue this lesson and unlock the full course', 'Deepen your understanding with AI Tutor', 'Discover more exhibits, ideas, and perspectives'],
-    cta: 'Ready for learning futhur',
-    categoryTitle: 'More in this category',
-    categoryBody: 'Other courses to explore',
-    relatedBody: 'Explore another perspective in this category.',
-    viewCourse: 'View course'
-  };
+  const copy = lessonMessages(locale);
   return <div className="la-trial-backdrop" role="presentation">
     <section className="la-trial-modal" role="dialog" aria-modal="true" aria-labelledby="la-trial-title">
       <button type="button" className="la-trial-close" aria-label={copy.close} onClick={onClose}><X size={24} aria-hidden="true" /></button>
       <div className="la-trial-upgrade">
         <h3 id="la-trial-title">{copy.heroTitle}</h3>
         <p>{copy.heroBody}</p>
-        <ul>{copy.bullets.map(item => <li key={item}><CheckCircle2 size={16} aria-hidden="true" />{item}</li>)}</ul>
+        <ul>{copy.trialBullets.map(item => <li key={item}><CheckCircle2 size={16} aria-hidden="true" />{item}</li>)}</ul>
       </div>
       <div className="la-trial-related">
-        <strong>{copy.other}</strong>
+        <strong>{copy.trialOther}</strong>
         <div className="la-trial-course-list">{gate.recommendations.length ? gate.recommendations.slice(0, 2).map((course, index) => <a className="la-trial-course" href={course.href} key={course.href}>
           {course.image ? <Image src={course.image} alt="" width={84} height={84} unoptimized/> : <span className={`la-trial-course-placeholder la-trial-course-placeholder-${index + 1}`} aria-hidden="true">IMAGE</span>}
-          <span><b>{course.title}</b><small>{copy.relatedBody}</small><em>{copy.viewCourse}<ArrowRight size={15} aria-hidden="true" /></em></span>
-        </a>) : <p className="la-trial-empty">{copy.empty}</p>}</div>
+          <span><b>{course.title}</b><small>{copy.trialRelatedBody}</small><em>{copy.trialViewCourse}<ArrowRight size={15} aria-hidden="true" /></em></span>
+        </a>) : <p className="la-trial-empty">{copy.trialEmpty}</p>}</div>
       </div>
       <a className="la-trial-pricing" href={gate.pricingHref}>{copy.cta}</a>
     </section>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { publicLessonRecommendationCategory } from "@/lib/courseDetailPresentation";
@@ -26,9 +26,8 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const messages = getMessages(locale);
   const copy = messages.portal;
   const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${requestedLesson ? `?lessonId=${requestedLesson}` : ""}`)}`);
-  const access = await checkEntitlement(user.id, course.id);
-  const overview = await getLearningOverview(user.id);
+  const access = user ? await checkEntitlement(user.id, course.id) : { allowed: false, source: null, validTo: null, device: null };
+  const overview = user ? await getLearningOverview(user.id) : null;
   const record = overview?.courses.find(item => item.courseId === course.id);
   const next = course.sections.flatMap(section => section.lessons).find(item => item.isPublic && item.id !== lesson.id && !record?.completedLessonIds.includes(item.id));
   const publishedCourses = await listPublishedCourses();

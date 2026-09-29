@@ -53,7 +53,12 @@ export async function signCourseMediaUrl(value: string, expiresIn = 300) {
   // the actual UTF-8 object key instead of double-encoding "%" as "%25".
   let key: string;
   try { key = decodeURIComponent(parsed.pathname.slice(1)); } catch { return value; }
-  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: COURSE_MEDIA_HOST.split(".")[0], Key: key }), { expiresIn });
+  try {
+    return await getSignedUrl(getClient(), new GetObjectCommand({ Bucket: COURSE_MEDIA_HOST.split(".")[0], Key: key }), { expiresIn });
+  } catch {
+    // Missing AWS credentials must not 500 Portal. The page renders the unsigned URL.
+    return value;
+  }
 }
 
 export async function s3Delete(s3Key: string) {

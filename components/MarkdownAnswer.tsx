@@ -1,5 +1,6 @@
 "use client";
 
+import { Children, Fragment, isValidElement, type ReactNode } from "react";
 import Image from "next/image";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
@@ -16,7 +17,22 @@ function allowedImageSrc(src: string) {
   return "";
 }
 
+function isMarkdownFigure(node: ReactNode) {
+  return isValidElement(node) && node.type === markdownComponents.img;
+}
+
 const markdownComponents: Components = {
+  p({ children }) {
+    const nodes = Children.toArray(children);
+    if (!nodes.some(isMarkdownFigure)) return <p>{children}</p>;
+    return <>
+      {nodes.map((node, index) => {
+        if (isMarkdownFigure(node)) return <Fragment key={index}>{node}</Fragment>;
+        if (typeof node === "string" && !node.trim()) return null;
+        return <p key={index}>{node}</p>;
+      })}
+    </>;
+  },
   img({ src, alt }) {
     const safe = allowedImageSrc(String(src || ""));
     if (!safe) return <span>{alt || "figure"}</span>;

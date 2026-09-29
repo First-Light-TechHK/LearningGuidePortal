@@ -91,7 +91,7 @@
       "device": "设备权限",
       "term": "时长",
       "aiPoints": "AI 点数",
-      "pcDevice": "电脑 + 手机",
+      "pcDevice": "1 台电脑",
       "mobileDevice": "仅手机",
       "amount": "金额",
       "trialAmount": "试用期间 USD 0.00",
@@ -139,6 +139,11 @@
     "popularCoursesDescription": "从现有课程开始学习",
     "whyUs": "为什么选择 Learning Guide",
     "whyUsTitle": "有结构、有引导，也给思考留下空间。",
+    "methodSteps": [
+      "把学到的用起来",
+      "说出你的看法",
+      "看见更大的图景"
+    ],
     "quicklyGuide": "快速开始",
     "quicklyGuideSteps": [
       "选择一门课程",
@@ -303,7 +308,7 @@
     "cancel": "取消",
     "resume": "恢复",
     "cancelTitle": "取消自动续费",
-    "cancelDescription": "当前周期内的访问权限不会立即受到影响。",
+    "cancelDescription": "取消后试用立即结束，课程访问权限会马上收回。",
     "cancelReason": "请告诉我们取消原因",
     "reasonLowUsage": "使用得不够多",
     "reasonTooExpensive": "价格太高",
@@ -750,6 +755,7 @@
     "currentAccess": "当前权限 · {scope}",
     "noAccess": "暂无有效订阅",
     "outsideAccess": "您保存的课程不在当前访问权限范围内。",
+    "historyWithoutAccess": "这门课仍留在学习记录里。选择方案后可以再次学习。",
     "review": "复习课程",
     "continue": "继续学习",
     "allCourses": "已显示您开始学习的所有课程"

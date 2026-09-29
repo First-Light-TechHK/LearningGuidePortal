@@ -36,7 +36,7 @@ export default async function CoursesPage({ params, searchParams }: { params: Pr
         <nav className="portal-category-filter" aria-label={copy.category}>{filter.chips.map(item => <Link key={item.id} prefetch={false} className={item.active ? "active" : ""} aria-current={item.active ? "page" : undefined} href={`/${locale}/portal/courses?category=${encodeURIComponent(item.id)}`}>{item.label}</Link>)}</nav>
         {filter.visible.length ? <div className="portal-course-grid">{await Promise.all(filter.visible.map(async course => <CatalogueCourseCard key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={courseCardCategoryLine(course, content.categories, locale, catalogue)} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
       </section>
-      <section className="courses-design-method"><div><p className="portal-eyebrow">{copy.whyUs}</p><h2>{copy.whyUsTitle}</h2><p>{copy.exploreDescription}</p></div><ol><li>Apply what you learn</li><li>Share your perspective</li><li>See the bigger picture</li></ol></section>
+      <section className="courses-design-method"><div><p className="portal-eyebrow">{copy.whyUs}</p><h2>{copy.whyUsTitle}</h2><p>{copy.exploreDescription}</p></div><ol>{copy.methodSteps.map((step) => <li key={step}>{step}</li>)}</ol></section>
       <PortalFooter locale={locale} />
     </main>
   );

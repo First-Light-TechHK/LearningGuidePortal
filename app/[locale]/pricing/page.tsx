@@ -26,7 +26,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
   const coursePrice = model.course ? new Intl.NumberFormat(locale, { style: "currency", currency: model.course.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: model.course.amountMinor % 100 ? 2 : 0 }).format(model.course.amountMinor / 100) : null;
   return <main className="portal-page pricing-design-page">
     <PortalHeader locale={locale} active="pricing" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <section className="pricing-design-hero"><h1>Subscription</h1><p>{locale === "en-GB" ? "Choose the plan that suits your interests" : copy.heading}</p></section>
+    <section className="pricing-design-hero"><h1>{copy.heading}</h1><p>{messages.portal.pricingDescription}</p></section>
     <section className="pricing-design-main">
       {upgradeFrom && user ? <UpgradePanel locale={locale} subscriptionId={upgradeFrom} /> : null}
       <PricingPlans locale={locale} plans={plans} courses={publishedCourses} categories={content.categories} courseTitles={publishedCourses.map((course) => ({ category: pricingCourseGroup(course, content.categories, catalogue), title: course.title }))} selectedPlanId={planId} copy={copy} />

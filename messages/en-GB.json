@@ -91,7 +91,7 @@
       "device": "Device access",
       "term": "Term",
       "aiPoints": "AI Tutor points",
-      "pcDevice": "1 PC + 1 mobile",
+      "pcDevice": "1 PC",
       "mobileDevice": "Mobile only",
       "amount": "Amount",
       "trialAmount": "USD 0.00 during the trial",
@@ -139,6 +139,11 @@
     "popularCoursesDescription": "Start learning with our available courses",
     "whyUs": "Why Learning Guide",
     "whyUsTitle": "Learn with structure, guidance and room to think.",
+    "methodSteps": [
+      "Apply what you learn",
+      "Share your perspective",
+      "See the bigger picture"
+    ],
     "quicklyGuide": "Quickly Guide",
     "quicklyGuideSteps": [
       "Choose a course",
@@ -303,7 +308,7 @@
     "cancel": "Cancel",
     "resume": "Resume",
     "cancelTitle": "Cancel auto-renewal",
-    "cancelDescription": "Your current access remains available until the end of this period.",
+    "cancelDescription": "Cancelling ends this trial immediately and removes course access.",
     "cancelReason": "Why are you cancelling?",
     "reasonLowUsage": "I am not using it enough",
     "reasonTooExpensive": "It is too expensive",
@@ -755,6 +760,7 @@
     "currentAccess": "Current access · {scope}",
     "noAccess": "No active subscription",
     "outsideAccess": "Your saved course is not in the current access range.",
+    "historyWithoutAccess": "This course stays in your history. Choose a plan to study it again.",
     "review": "Review course",
     "continue": "Continue learning",
     "allCourses": "Showing all courses you have started"

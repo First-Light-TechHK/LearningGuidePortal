@@ -41,7 +41,8 @@ export function sanitiseLessonHtml(html: string): string {
     if (el.localName === 'span' && el.getAttribute('class') !== 'instance-node') el.removeAttribute('class');
     if (el.localName === 'span' && el.hasAttribute('data-instance-type')) {
       if (!/^[1-6]$/.test(el.getAttribute('data-instance-type') || '')) el.removeAttribute('data-instance-type');
-      el.removeAttribute('data-instance-content');
+      const instanceContent = node.getAttribute('data-instance-content') || '';
+      if (instanceContent && instanceContent.length <= 10000 && !/[<>]/.test(instanceContent) && !/javascript\s*:/i.test(instanceContent) && !/\bon[a-z]+\s*=/i.test(instanceContent)) el.setAttribute('data-instance-content', instanceContent);
       if (el.hasAttribute('data-instance-answer-type') && !['input', 'single', 'multiple'].includes(el.getAttribute('data-instance-answer-type') || '')) el.removeAttribute('data-instance-answer-type');
     } else {
       for (const name of ['data-instance-content', 'data-instance-answer-type', 'data-instance-answer-result']) el.removeAttribute(name);

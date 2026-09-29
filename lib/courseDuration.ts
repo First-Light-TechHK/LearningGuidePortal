@@ -2,7 +2,12 @@ type LessonDuration = { videoDurationSeconds?: number | null };
 
 /** Home-card duration label. Callers pass the locale's hour and minute suffixes. */
 export function formatHomeCourseDuration(minutes: number, hourShort: string, minuteShort: string) {
-  return `${Math.floor(minutes / 60)}${hourShort} ${minutes % 60}${minuteShort}`;
+  const whole = Math.max(0, Math.floor(minutes));
+  const hours = Math.floor(whole / 60);
+  const mins = whole % 60;
+  if (hours === 0) return `${mins}${minuteShort}`;
+  if (mins === 0) return `${hours}${hourShort}`;
+  return `${hours}${hourShort} ${mins}${minuteShort}`;
 }
 
 export function totalVideoMinutes(lessons: LessonDuration[]): number | null {

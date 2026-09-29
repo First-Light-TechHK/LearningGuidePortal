@@ -5,7 +5,7 @@ import { changeLearnerSubscription } from "@/services/subscriptionPaymentService
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function GET(request?: Request) {
   const user = await currentProductUser(request);
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   return NextResponse.json({ ok: true, subscriptions: (await getLearningOverview(user.id)).subscriptions });

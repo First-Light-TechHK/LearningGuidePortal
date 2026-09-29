@@ -45,9 +45,10 @@ export function courseLessonDuration(lesson?: Pick<ProductLesson, "durationMinut
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+/** Lesson-card blurb. A section title repeated on every lesson is not a description. */
 export function courseLessonCardDescription(section: { title: string }, lesson: { title: string }) {
-  void lesson;
-  return section.title;
+  const title = lesson.title.trim();
+  return title && title !== section.title ? title : "";
 }
 
 export function courseCategoryPlan(plans: ProductPlan[], category: string) {

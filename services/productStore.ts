@@ -421,6 +421,16 @@ function expireOverlappingActiveEntitlements(data: ProductData, userId: string, 
   });
 }
 
+/** A broader purchase replaces the trial it covers, including a different plan id. */
+function expireCoveredTrials(data: ProductData, userId: string, plan: ProductPlan) {
+  data.subscriptions.forEach((item) => {
+    if (item.userId !== userId || item.source !== "trial" || item.state !== "active") return;
+    const trialPlan = data.plans.find((candidate) => candidate.id === item.planId);
+    const covered = item.planId === plan.id || Boolean(trialPlan && data.courses.some((course) => planCoversCourse(data, plan, course) && planCoversCourse(data, trialPlan, course)));
+    if (covered) item.state = "expired";
+  });
+}
+
 function scopedValue(item: { courseId: string; scope?: ProductEntitlement["scope"] | ProductSubscription["scope"]; scopeId?: string | null }) {
   if (item.scope === "category") return { scope: "category" as const, scopeId: item.scopeId || null };
   if (item.scope === "everything" || item.courseId === "*") return { scope: "everything" as const, scopeId: "*" };
@@ -1443,7 +1453,7 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     order.servicePeriodEnd = subscription.validTo;
     const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
     data.subscriptions.unshift(subscription);
-    data.subscriptions.forEach((item) => { if (item.userId === userId && item.source === "trial" && item.state === "active" && item.planId === plan.id) item.state = "expired"; });
+    expireCoveredTrials(data, userId, plan);
     expireOverlappingActiveEntitlements(data, userId, plan);
     data.entitlements.unshift(entitlement);
     data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
@@ -1799,8 +1809,7 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   order.servicePeriodEnd = subscription.validTo;
   const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
   data.subscriptions.unshift(subscription);
-  const trial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && item.state === "active");
-  if (trial) trial.state = "expired";
+  expireCoveredTrials(data, userId, plan);
   expireOverlappingActiveEntitlements(data, userId, plan);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
@@ -2206,8 +2215,10 @@ function authoringActivity(data: ProductData, actorId: string, action: string, c
 function validateCatalogueSelection(data: ProductData, course: CourseMetadata, previous?: CourseMetadata) {
   const category = data.catalogue?.find(item => item.id === course.categoryId && item.parentId === null);
   const subject = data.catalogue?.find(item => item.id === course.subjectId && item.parentId === course.categoryId);
-  if (course.categoryId && (!category || category.status !== "active" && course.categoryId !== previous?.categoryId)) throw new AuthoringError("invalid");
-  if (course.subjectId && (!subject || subject.status !== "active" && course.subjectId !== previous?.subjectId)) throw new AuthoringError("invalid");
+  const categoryKept = previous != null && course.categoryId === previous.categoryId;
+  const subjectKept = previous != null && course.subjectId === previous.subjectId;
+  if (course.categoryId && !categoryKept && (!category || category.status !== "active" && course.categoryId !== previous?.categoryId)) throw new AuthoringError("invalid");
+  if (course.subjectId && !subjectKept && (!subject || subject.status !== "active" && course.subjectId !== previous?.subjectId)) throw new AuthoringError("invalid");
 }
 
 export async function listCoursesForAuthor(actorId: string, query: CourseListQuery = {}) {
@@ -2323,7 +2334,7 @@ export async function setCourseStatus(courseId: string, status: ProductCourse["s
         if (error instanceof Error && (error as { code?: string }).code === "invalid") throw new AuthoringError("invalid");
         throw error;
       }
-      validateCatalogueSelection(data, course);
+      validateCatalogueSelection(data, course, course);
       const { assertCourseMediaReferences } = await import("./courseMedia");
       try { await assertCourseMediaReferences(course); } catch { throw new AuthoringError("invalid"); }
     }
