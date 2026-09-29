@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
-import { rejectIfUnauthenticated } from "@/services/productAuth";
+import { shellViewerFromUser } from "@/lib/shellViewer";
+import { isAdminHost, isKnowledgeAdminPath } from "@/services/adminHost";
+import { currentAuthorRequest, currentProductUserFromRequest, rejectIfUnauthenticated } from "@/services/productAuth";
 import { listCourses } from "@/services/courseStore";
 import { listKnowledge } from "@/services/knowledgeStore";
 import { getSourceMaterialCounts } from "@/services/sourceMaterialStore";
+
+async function signedInUser(request: Request) {
+  const pathname = new URL(request.url).pathname;
+  if (isAdminHost(request) && isKnowledgeAdminPath(pathname)) return currentAuthorRequest(request);
+  return currentProductUserFromRequest(request);
+}
 
 export async function GET(request: Request) {
   const denied = await rejectIfUnauthenticated(request);
@@ -20,5 +28,5 @@ export async function GET(request: Request) {
   const counts = selectedKnowledgeId
     ? await getSourceMaterialCounts(selectedCourseId, selectedKnowledgeId)
     : { videoCount: 0, documentCount: 0, qaNotesCount: 0 };
-  return NextResponse.json({ courses: tree, counts });
+  return NextResponse.json({ courses: tree, counts, viewer: shellViewerFromUser(await signedInUser(request)) });
 }
