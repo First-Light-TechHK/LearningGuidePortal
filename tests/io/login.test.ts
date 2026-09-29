@@ -390,6 +390,10 @@ test("AUTH-05 edge: concurrent same-email register keeps one working password", 
   ]);
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
+  const firstBody = await first.json() as Record<string, unknown>;
+  const secondBody = await second.json() as Record<string, unknown>;
+  assert.equal(JSON.stringify(firstBody).toLowerCase().includes("already exists"), false);
+  assert.equal(JSON.stringify(secondBody).toLowerCase().includes("already exists"), false);
   clearCookies();
   const firstLogin = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: "password1" }));
   const secondLogin = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: "attacker9" }));
