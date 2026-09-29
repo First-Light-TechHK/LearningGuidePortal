@@ -291,21 +291,20 @@ DEV 且没有配置任何邮件传输时（非托管环境；`EMAIL_DELIVERY=dis
 
 ## 12. 门禁现状
 
-本 PR 的 `forge-check` 红在两项：`deny_paths` 和 `docs_sync`。两项都不是本 PR 引入的，本 PR 也不修。Overlay / Forge 登记处 `docs/phase1/overlay-forge-issues.md` 只在 fork 的 `main` / `dev` 上，本分支基于 upstream main，没有这个文件，所以先按登记处的格式记在这里；搬进登记处时续编号（那里最后一条是 OF-24，拟用 OF-25 / OF-26）。两条状态都是**待修**，处理归 Ops（Oliver）。本 PR 不改 `forge.yaml`、`docs/STATE.md`、`.github/workflows/`。
+fork 上本 PR 的 forge-check 曾经红在两项：`docs_sync` 和 `deny_paths`。两项都不是注册发信这次产品改动引入的。`docs_sync` 从 upstream `522eeab` 起就红；`deny_paths` 只在 fork 上红。两项都已在本分支修掉。修法没有改 `.github/workflows/`，没有把套件改成 `blocked`，没有把 `deny_paths` 设成空列表。登记处 `docs/phase1/overlay-forge-issues.md` 仍只在 fork 的 `main` / `dev` 上，本分支没有那个文件。
 
-证据：fork 上本 PR 的 forge-check（[push run 35852854210](https://github.com/LibertychaserUS/LearningGuidePortal/actions/runs/35852854210)、[pull_request run 35852912877](https://github.com/LibertychaserUS/LearningGuidePortal/actions/runs/35852912877)）都是 `forge check: red (2 failed)`，红项只有 `deny_paths`（`diff touches .github/workflows/ci.yml`）和 `docs_sync`（`CI job 名与 .github/workflows 不一致；运行 forge status --write`）。在 fork 里对不含本 PR 的 `8a77712`（upstream main）用 `forge-v1.1.3` 重跑，红项相同；`forge status --check-state` 退出 2。
+证据（修之前）：[push run 35852854210](https://github.com/LibertychaserUS/LearningGuidePortal/actions/runs/35852854210)、[pull_request run 35852912877](https://github.com/LibertychaserUS/LearningGuidePortal/actions/runs/35852912877) 都是 `forge check: red (2 failed)`。在不含本 PR 的 `8a77712` 上用 `forge-v1.1.3` 重跑，红项相同。
 
-### G-1 docs_sync：`docs/STATE.md` 的 CI job 名落后于 workflow — 待修（Ops）
+### G-1 docs_sync：`docs/STATE.md` 的 CI job 名 — 已重生成
 
-- 现象：`docs_sync` 报"CI job 名与 .github/workflows 不一致"；`forge status --check-state` 退出 2。
-- 根因：`docs/STATE.md` 是 `forge status --write` 生成的快照，里面列了 CI job 名；`docs_sync` 拿它和 `.github/workflows/*.yml` 的 job 名比。upstream `522eeab`（2026-09-18，"feat: add catalogue migrations for DEV course sync"）新增 `.github/workflows/catalogue-sync.yml`，job 名 `Run catalogue migrations`；`STATE.md` 最后一次重生成是 `e3276b0`（2026-09-16），没有这个 job。所以 upstream main `8a77712` 本身就不过 `docs_sync`，任何基于它的分支都会红。
-- 为什么进了 main：upstream 上 `522eeab` 自己的 forge-check（[run 35333759868](https://github.com/First-Light-TechHK/LearningGuidePortal/actions/runs/35333759868)，`push` 到 `main`）已经是红的，红项只有 `docs_sync`；GitHub 查不到与该提交关联的 PR。推断：它是直推 `main`，或 upstream 没有把 forge-check 设成 required，所以没被挡住。
-- 修法：单独一个改动，在 upstream main 上跑 `forge status --write` 重生成 `STATE.md`（Ops / Oliver）。不在功能 PR 里手改 `STATE.md`。
+- 现象：`docs_sync` 报「CI job 名与 .github/workflows 不一致」；`forge status --check-state` 退出 2。
+- 根因：`docs/STATE.md` 由 `forge status --write` 生成。upstream `522eeab` 新增 `.github/workflows/catalogue-sync.yml`，job 名 `Run catalogue migrations`；`STATE.md` 最后一次重生成是 `e3276b0`，没有这个 job。upstream main `8a77712` 本身就不过。upstream 上 `522eeab` 的 forge-check（[run 35333759868](https://github.com/First-Light-TechHK/LearningGuidePortal/actions/runs/35333759868)）已经只红 `docs_sync`。
+- 修法：在本分支用 `forge-v1.1.3` 跑 `python -m forge status --root . --repo LibertychaserUS/LearningGuidePortal --write`（写本地文件不需要 token）。提交生成结果，不手改。job 列表里有 `Run catalogue migrations`。当时环境没有 `FORGE_GITHUB_TOKEN`，生成器把 Ruleset 和「开放的 promote PR」写成「未查询：缺 FORGE_GITHUB_TOKEN」；按生成器原文保留。
 
-### G-2 deny_paths：fork 上按 fork 的 `main` 算 diff，误报 `ci.yml` — 待修（Ops 定）
+### G-2 deny_paths：fork 的 `origin/main` 被当成 diff 起点 — 已用 protect 第一条对准 PR base
 
-- 现象：`deny_paths` 报 `diff touches .github/workflows/ci.yml`，而本 PR 没有改任何 workflow。
-- 根因：Forge 1.1.3 用 `git merge-base HEAD <protect 分支>` 作 diff 起点（`forge/check.py` 的 `resolve_protect_ref` 优先取 `refs/remotes/origin/main`，`list_changed_paths` 从 merge-base 算），不看 PR 的 base。fork 的 `origin/main` 是 fork 自己的 `main`（`8bac302`），已和 upstream 分叉：fork `main` 有 36 个 upstream 没有的提交，upstream 有 50 个 fork `main` 没有的提交（fork `dev` 有 34 个 upstream 没有的提交）。merge-base 是 `006536f`，"diff" 有 285 个路径，包括 upstream 改过的 7 个 workflow 文件。
-- 为什么只命中 `ci.yml`：本分支的 `forge.yaml` 来自 upstream，没设 `deny_paths`，Forge 默认值 `DEFAULT_DENY = (".github/workflows/ci.yml",)`（`forge/apply.py`）生效。同一个 PR 在 upstream 仓里算，`origin/main` 是 upstream main，diff 只有本 PR 的文件；upstream `522eeab` 那次 run 就是 `deny_paths ok vs refs/remotes/origin/main`。
-- 配置漂移：upstream 默认只保护 `ci.yml`；fork `main` / `dev` 的 `forge.yaml` 把整个 `.github/workflows/` 列进 `deny_paths`。
-- 修法（Ops 选）：把 fork `main` 同步到 upstream；让 Forge 对 PR base 算 diff（工具改动）；或调整两边的 `forge.yaml`。本 PR 不改 `forge.yaml`。
+- 现象：`deny_paths` 报 `diff touches .github/workflows/ci.yml`，本 PR 没有改任何 workflow。
+- 根因：Forge 1.1.3 的 `resolve_protect_ref`（`forge/check.py`）把 `protect` 里第一个能解析到的 ref 当 diff 起点，`list_changed_paths` 从 `merge-base(HEAD, 该 ref)` 算。没有单独的 base 键；未知顶层键会红。fork 的 `origin/main`（`8bac302`）与 upstream 分叉，merge-base 是 `006536f`，diff 带上 upstream 的 `ci.yml`。本分支不写 `deny_paths`，默认 `DEFAULT_DENY = (".github/workflows/ci.yml",)` 命中。upstream 自己的 `origin/main` 就是 upstream main，所以 upstream `522eeab` 那次是 `deny_paths ok vs refs/remotes/origin/main`。
+- 修法：`protect` 改为先 `cursor/upstream-main-base-e93d`（origin 上该 ref 现为 `8377829`，与 HEAD 的 merge-base 是 `8a77712`），再 `main`。第一条的 `branches` 规则与 `main` 相同（required checks、approvals=1、code_owners=false）。默认 deny 仍是 `ci.yml`：本分支相对 `8a77712` 没有改它，所以绿；若本分支真的改 `ci.yml`，仍然红。没有清空 deny 列表，没有改历史。
+- 副作用：`forge submit` 的默认 base 和 `forge apply` 的 Ruleset 都会带上这条 cursor 分支。不要对这份 `forge.yaml` 跑 `forge apply`。`main` 仍在 `protect` 里。
+- 工具：LibertychaserUS/AIOps 分支 `cursor/deny-paths-pr-base-5b12`（从 tag `forge-v1.1.3` 开，未打 tag、未改本仓 pin）让 `check` 在 `GITHUB_BASE_REF` 可解析时用 PR base，否则当 `upstream/<protect[0]>` 的 merge-base 严格近于 `origin/<protect[0]>` 时用 upstream。本仓 CI 仍 checkout `forge-v1.1.3`，所以绿依赖上面的 `protect` 顺序，不依赖未发布的工具。

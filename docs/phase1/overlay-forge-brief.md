@@ -11,7 +11,7 @@
 - 六套件 `active`：login / payment / portal / my-learning / order / visitor-trial。`schema: overlay-suite/v2`。
 - `overlay-check.yml`：checkout `AIOps@overlay-v2.0.0` → `_aiops`，`overlay validate` + `cover` + `run`。不要把 `test:io` 加进 Verify。
 - `forge-check.yml`：checkout `AIOps@forge-v1.1.3` → `_aiops`，`forge check` + `forge status --check-state`。
-- `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。
+- `forge.yaml`：不设 `deny_paths`（forge-v1.1.3 默认仍拒绝 `.github/workflows/ci.yml`）。`protect` 第一条是 `cursor/upstream-main-base-e93d`（本 PR 的 base），第二条仍是 `main`，两者 required_checks 相同（Typecheck / Lint / Build and test / overlay-check / forge-check），approvals=1，code_owners=false。forge-v1.1.3 没有单独的 diff base 键，`check` 用第一个能解析到的 protect ref 做 merge-base；fork 的 `origin/main` 已分叉，所以把 PR base 放在前面，本分支没改的 `ci.yml` 不再误报。不要对这份 `forge.yaml` 跑 `forge apply`（会给那条 cursor 分支装 Ruleset）。`main` 的规则没有放宽。
 - `tests/io/*` 是 Overlay `product_command`。**不在** `test:ci` 里。
 - `docs/STATE.md` 由 `forge status --write` 生成，不要手改。
 
