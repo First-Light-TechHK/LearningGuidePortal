@@ -45,6 +45,11 @@ export function courseLessonDuration(lesson?: Pick<ProductLesson, "durationMinut
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+export function courseLessonCardDescription(section: { title: string }, lesson: { title: string }) {
+  void lesson;
+  return section.title;
+}
+
 export function courseCategoryPlan(plans: ProductPlan[], category: string) {
   return plans.find((plan) => plan.scope === "category" && plan.device === "pc" &&
     plan.termMonths === 6 && plan.available !== false && (plan.scopeId || plan.category) === category);
@@ -154,11 +159,7 @@ export function courseCategoryDisplay(
   };
 }
 
-/**
- * Outcomes stored on the course, then on a later object that itself has outcomes.
- * A catalogue list is not a source. Shared course-detail copy is not a source.
- * The course page passes the course only, so a published page shows that course's outcomes.
- */
+/** Outcomes stored on the course, then on a related catalogue entry. Never a shared stand-in list. */
 export function courseLearningOutcomes(...sources: Array<unknown>): string[] {
   for (const source of sources) {
     if (!source || typeof source !== "object" || Array.isArray(source)) continue;

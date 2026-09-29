@@ -4,7 +4,9 @@
 
 编号 `OF-nn`。状态：**待定意图**（要 Oliver 拍板）/ **待修** / **已修** / **不修**（写原因）。
 
-基线（2026-09-14）：Learning Guide `origin/dev` `5ae17e9`（pin `forge-check.yml` → `forge-v1.1.3`）；`origin/main` `8bac302`（随后一条 promote）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`（git tag @ `9071fa1`）。GitHub Release 页已补齐；Latest 徽章仍可能是 `forge-v1.0.0`（`make_latest=false`）。两仓 Ruleset 均为 0。Oliver：leftover **应该一起**——先打 `dev`，合完再一条 promote。#17+#18 并行是反例。
+基线（2026-09-14）：Learning Guide `origin/dev` `5ae17e9`（pin `forge-check.yml` → `forge-v1.1.3`）；当时 `origin/main` `8bac302`（随后一条 promote）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`（git tag @ `9071fa1`）。GitHub Release 页已补齐；Latest 徽章仍可能是 `forge-v1.0.0`（`make_latest=false`）。两仓 Ruleset 均为 0。Oliver：leftover **应该一起**——先打 `dev`，合完再一条 promote。#17+#18 并行是反例。
+
+现状（2026-09-29，本说明写入前）：fork `origin/main` 与 `origin/dev` 都是 `2d0db6d`。AUTH-05 已在 `e4b5231` 修好（并发同邮箱注册：输掉的请求返回 200，不再签发第二枚 token，不改赢家密码），`docs/STATE.md` 已重生成，`forge check` 在该树上为绿。`protect` 仍是 `dev` 然后 `main`。草稿分支已开始并入 `main`（含 PR #36）。PR #23（`e4da21b`）已在 `main` 和 `dev` 里，不必再 promote。
 
 ---
 
@@ -58,9 +60,15 @@
 
 ### OF-07 fork `main` 与源仓 First-Light `main` 分叉 — 待定意图
 
-- 事实：`git rev-list --left-right --count origin/main...First-Light/main` = **14 领先 / 11 落后**，merge-base `006536f`。#4 / #6 / #7 只在 fork。
-- 问题：谁、什么时候、以什么形状回灌源仓；源仓那 11 个提交要不要进 fork。
-- 选项：fork → 源仓 PR（Oliver 开）；或源仓只在发布时同步。
+- 对象是 **LG 源仓** `First-Light-TechHK/LearningGuidePortal`（remote `upstream`），不是 AIOps。
+- 事实（2026-09-15 复查）：`git rev-list --left-right --count origin/main...upstream/main` = **36 领先 / 13 落后**，merge-base 仍是 `006536f`。源仓尖 `ec9e129`。回灌谁开、多久一次仍按 §F 暂缓。
+- **Overlay 层：源仓比 fork 旧，没有可搬叶子。** 他们只有 login / payment / portal / my-learning 四套，仍是 `status: armed` + `reviewed_by` / `armed_reason`，`overlay.yaml` 仍 `never_red_statuses: [draft, blocked]`，CI pin `overlay-v1.0.0`。fork 已有这四套的超集（另加 `order` / `visitor-trial`）、`overlay-suite/v2` + `active`、更厚的 `cases.md` / `tests/io`、`INV-expired-no-learn`。9-14 两个产品提交（`7f42330` / `ec9e129`）**没改** `inbox/` `suites/` `overlay.yaml`。把源仓 Overlay 合进来会删叶子、退回 v1 词汇。**不要 merge / cherry-pick 那 11 个 CI 提交，不要抄他们的 `overlay-check.yml`。**
+- **2026-09-15 Oliver：合进源仓 Overlay 会减弱本仓开发，不收。** 本仓已经是更新后的 Overlay（v2 / 六套 / 厚 I/O）。
+- **产品层不是本 fork 的开发范围。** 密码重置、订阅展示、微信绑邮箱由源仓做。本仓不移植、不代写。
+- **回灌方向（2026-09-15）：** 只把 **Forge + Overlay + 更多测试** 推到 LG 源仓。不 `git merge` 产品树。源仓没有 `dev`，第一次 `forge.yaml` 只保护 `main`。他们的 `overlay-check.yml` 必须升到 `overlay-v2.0.0` 才能吃 v2 套件。agent 不直推 `First-Light-TechHK`；在 fork 上从 `upstream/main` 开回灌枝，PR 由 Oliver 打源仓。
+- **回灌枝：** `cursor/lg-upstream-of-9bdf` @ `1890b8f` 已快进 `First-Light-TechHK/LearningGuidePortal` `main`（`ec9e129..1890b8f`）。**2026-09-15 Oliver：源仓未 apply，不开 PR，授权直合。** agent 不 live-apply、不发新针、不把 PAT 写入仓库。Ruleset 仍要人对本仓 `forge.yaml` `apply`。
+- **黑盒 I/O 是规格，一般来说肯定是对的。** 规格叶子是权威。产品对不上是产品红，不改测试、不改 cases。AUTH-01 / AUTH-02 叶子两边相同。本仓测试绿。源仓 `ec9e129` 上同一条测试红：`check-email` 回 `{ exists: true|false }`；无邮件时 reset 回 **503** `email_unavailable`。这是产品漏枚举 / 把邮件未配置暴露给客户端，不是测试写错。PAY-10 / TRIAL-02 同类：取消后再 complete、已购后再 trial 必须 400。回灌不改这些规格，不改他们的产品代码。他们要绿，自己改产品。
+- **回灌包：** 升针 + 迁 `armed`→`active` + 规格叶子 / 已有 I/O + 能在他们路由签名下编译的额外测试。不整棵替换成 fork 的 `login.test.ts`（他们 `GET()` 无 request 参数；回灌只给 0 参 `GET` 套 `callRoute`，断言不动）。第一次 `forge.yaml` 不设 `deny_paths`。
 
 ### OF-08 AIOps `main` 没有 Ruleset，agent 三次直推 — 待修（Oliver）
 
@@ -201,7 +209,8 @@
 |---|---|
 | [#21](https://github.com/LibertychaserUS/LearningGuidePortal/pull/21) | 已合 `dev`（`e53c382`） |
 | [#22](https://github.com/LibertychaserUS/LearningGuidePortal/pull/22) | 已合 `main`（`1d7867d`）；#21 合完后一条 promote |
-| pin `forge-v1.1.3` | `dev` `5ae17e9` → `main` `8bac302` |
+| pin `forge-v1.1.3` | `dev` `5ae17e9` → `main` `8bac302`（2026-09-14 升针；该 SHA 已不是当前 tip） |
+| 当前 fork tip | 本说明写入前 `origin/main` = `origin/dev` = `2d0db6d`（含 AUTH-05 `e4b5231`；草稿已开始并入 `main`，含 PR #36） |
 | AIOps `dev`/`main` | `9071fa1`；tag `forge-v1.1.3`；Release 页已补齐 |
 
 仍待拍板（不要密钥也能定）：
@@ -209,7 +218,7 @@
 | 编号 | 一句话 | 选项 |
 |---|---|---|
 | OF-04 | lander 退役 | 有 write 后只留 APPLY.md |
-| OF-07 | fork ↔ 源仓 回灌 | 谁开 PR、多久一次（§F 暂缓） |
+| OF-07 | 回灌源仓：只 Forge + Overlay + 测试；产品不代做 | 回灌枝从 `upstream/main` 开；Oliver 打源仓 PR |
 | OF-21 | `pr-body` 路径机检 | 做 / 先靠审查 |
 | OF-23 | 接受内容包补设计 | 接受 / 改设计；接受之后再决定加不加升针 `docs_sync` |
 
@@ -242,3 +251,6 @@
 - 2026-09-14 #21 合入 `dev`（`e53c382`）；#22 promote 合入 `main`（`1d7867d`）。
 - 2026-09-14 本 PR：OF-22 升针 `forge-check.yml` → `forge-v1.1.3`。AIOps `dev`/`main`/`forge-v1.1.3` @ `9071fa1`。Release 页与 `apply` 仍 403。
 - 2026-09-14 随后：Release 页已补齐。本 PR：薄 skill / APPLY / OF-24 / STATE 改口；`apply` 仍未 live（OF-08）。
+- 2026-09-29：AUTH-05 在 `e4b5231` 修好。草稿开始并入 fork `main`（含 PR #36）。本说明写入前 `origin/main` 与 `origin/dev` 为 `2d0db6d`。`protect` 仍是 `dev` 然后 `main`。没有 `forge apply`。
+- 2026-09-14 #23 squash 合入 `dev`（`e4da21b`）；尚未 promote 到 `main`（Oliver：先只更新 Overlay，不 promote）。
+- 2026-09-15 本 PR：OF-07 写明对象是 LG 源仓 First-Light。Oliver：黑盒 I/O 是规格，一般来说肯定是对的；AUTH-01/02 / PAY-10 / TRIAL-02 红是源仓产品。回灌 Forge + Overlay + 规格测试，不改产品、不改叶子。brief §9.7 / §9.11 / §9.12 同步。

@@ -461,10 +461,12 @@ PAY-01 / 03 / 06 / 07 / 08 的服务层锁已经进 `tests/unit/pay-invariants.t
 4. 不把 workshop 的 `pr-title` / `sop-lock` 抄进 Learning Guide CI。
 5. Agent 不 live-apply Forge Rulesets；apply 只由 Oliver 持 `FORGE_GITHUB_TOKEN` 做。
 6. 不 vendor `overlay/` 或 `forge/`。
-7. 不把上游 First-Light 的超前提交混进这支 Overlay PR。fork `main` 仍是 `6d8934e`。
+7. LG 源仓是 `First-Light-TechHK/LearningGuidePortal`，不是 AIOps。**不要**把他们的 v1 / `armed` Overlay 合进本仓。回灌只带 Forge + Overlay + 测试（见 [OF-07](./overlay-forge-issues.md)）。本仓保持 `overlay-v2.0.0` 与 `active`/`blocked`。
 8. 不为半锁叶子再发明第二套 ID。
 9. 不要求每个提交都带文档 + 代码 + workflow。按层配对（§5）。agent 包不改 `.github/workflows/`。
 10. 不在内容包设计被接受之前加新的 `docs_sync` 行或改 workflow。先设计后实现。
+11. 密码重置、订阅展示、微信绑邮箱是源仓产品，不是本 fork 的开发范围。不移植、不代写。
+12. Overlay I/O 是规格黑盒，一般来说肯定是对的。源仓 AUTH-01 / AUTH-02 / PAY-10 / TRIAL-02 红时改产品，不改测试去迁就 `exists` / `resetUrl` / 503 / 第二次 complete。
 
 ---
 
@@ -543,4 +545,4 @@ PYTHONPATH=/tmp/AIOps python3 -m forge status --root . --repo LibertychaserUS/Le
 
 ## UC-PORTAL-CATEGORY（课程分类表面）
 
-Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts` 与 `tests/unit/course-category-display.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。成员关系停在第一个商业 id：`categoryId` 或其目录父 id 已是三个门户 id 或 slug `science` / `european-humanities` / `chinese-humanities` 时，该 id 胜出，冲突的 legacy 字段和目录名不能改标。`categoryId` 存在但不落到这三类（不透明的 `category_…`）时，保留恰好是这三类之一的 legacy `category`。`categoryId` 为空时用学科的目录父 id 或 slug，学科名不占分类位。两个 id 都空时，legacy 仅在恰好是这三类之一时计数。否则成员为空。空成员不能发布，也不写成 European Humanities。目录筛选芯片只在至少一门已发布课程具有该成员时出现。学习结果只显示这门课自己存储的 outcomes，目录行和 Figma 生物例句都不是替身。
+Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts` 与 `tests/unit/course-category-display.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。成员关系停在第一个商业 id：`categoryId` 或其目录父 id 已是三个门户 id 或 slug `science` / `european-humanities` / `chinese-humanities` 时，该 id 胜出，冲突的 legacy 字段和目录名不能改标。`categoryId` 存在但不落到这三类（不透明的 `category_…`）时，保留恰好是这三类之一的 legacy `category`。`categoryId` 为空时用学科的目录父 id 或 slug，学科名不占分类位。两个 id 都空时，legacy 仅在恰好是这三类之一时计数。否则成员为空。空成员不能发布，也不写成 European Humanities。目录筛选芯片只在至少一门已发布课程具有该成员时出现。课程页学习结果只传入这门课自己存储的 outcomes。
