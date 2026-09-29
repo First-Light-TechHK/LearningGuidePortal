@@ -21,11 +21,10 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
     setBusy(true);
     try {
       const response = await fetch("/api/auth/check-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: normalizedEmail }) });
-      const data = await response.json() as { ok?: boolean; code?: string; data?: { exists?: boolean; pending?: boolean } };
+      const data = await response.json() as { ok?: boolean; code?: string };
       if (!response.ok || !data.ok) throw new Error(data.code === "EMAIL_TOO_LONG" ? copy.emailTooLong : data.code === "EMAIL_INVALID" ? copy.emailInvalid : copy.emailCheckFailed);
-      const destination = data.data?.pending ? "check-email" : data.data?.exists ? "sign-in?step=password" : "sign-up";
       const query = new URLSearchParams({ email: normalizedEmail, returnTo }).toString();
-      window.location.assign(`/${locale}/portal/${destination}${destination.includes("?") ? "&" : "?"}${query}`);
+      window.location.assign(`/${locale}/portal/sign-in?step=password&${query}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : copy.emailCheckFailed);
       setBusy(false);

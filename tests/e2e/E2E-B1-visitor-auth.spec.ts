@@ -60,22 +60,23 @@ test("Remember password expires after 30 minutes", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("learning-guide.remembered-credentials"))).toBeNull();
 });
 
-test("check-email redirects to the activation success page after the address is verified", async ({ page }) => {
+test("check-email stays on the page when the public body does not name the account", async ({ page }) => {
   const email = "activated@example.test";
-  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: false } } }));
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true } }));
   await page.goto(`/en-GB/portal/check-email?email=${encodeURIComponent(email)}`);
-  await page.waitForURL(`**/en-GB/portal/verify-email?email=${encodeURIComponent(email)}`);
+  await page.waitForTimeout(250);
+  expect(new URL(page.url()).pathname).toBe("/en-GB/portal/check-email");
 });
 
 test("an unverified sign-in and copied legacy resend URL do not send email automatically", async ({ page }) => {
   const email = "pending@example.test";
   let resendRequests = 0;
-  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: true } } }));
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true } }));
   await page.route("**/api/auth/resend-verification", route => { resendRequests += 1; return route.fulfill({ json: { ok: true, data: { accepted: true, retryAfter: 60 } } }); });
   await page.goto("/en-GB/portal/sign-in");
   await page.locator('input[type="email"]').fill(email);
   await page.locator(".auth-entry-form button.portal-button").click();
-  await page.waitForURL(url => url.pathname === "/en-GB/portal/check-email" && url.searchParams.get("email") === email && !url.searchParams.has("resend"));
+  await page.waitForURL(url => url.pathname === "/en-GB/portal/sign-in" && url.searchParams.get("step") === "password" && url.searchParams.get("email") === email);
   await page.goto(`/en-GB/portal/check-email?email=${encodeURIComponent(email)}&resend=1`);
   await page.waitForTimeout(250);
   expect(resendRequests).toBe(0);

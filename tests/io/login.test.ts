@@ -95,7 +95,7 @@ async function registerPending(label: string, password = PASSWORD) {
   return registered;
 }
 
-test("AUTH-01 functional: check-email identifies known and unknown addresses", async () => {
+test("AUTH-01 functional: check-email does not distinguish a known address", async () => {
   const { email } = await registerAccount("auth01-check");
   clearCookies();
   const known = await checkEmail.POST(jsonRequest("POST", "http://localhost/api/auth/check-email", { email }));
@@ -103,10 +103,9 @@ test("AUTH-01 functional: check-email identifies known and unknown addresses", a
   const knownBody = await known.json() as Record<string, unknown>;
   const unknownBody = await unknown.json() as Record<string, unknown>;
   assert.equal(known.status, unknown.status);
-  assert.equal(knownBody.ok, true);
-  assert.equal(unknownBody.ok, true);
-  assert.deepEqual((knownBody.data as Record<string, unknown>).exists, true);
-  assert.deepEqual((unknownBody.data as Record<string, unknown>).exists, false);
+  assert.equal(known.status, 200);
+  assert.deepEqual(knownBody, { ok: true });
+  assert.deepEqual(unknownBody, knownBody);
 });
 
 test("AUTH-01 negative: registration requires a valid Unicode name", async () => {
