@@ -1,6 +1,8 @@
 .next
 .next-ui-check
 .next-stripe-sandbox
+.next-auth-mail-discard
+.next-auth-mail-fail
 test-results
 node_modules
 data

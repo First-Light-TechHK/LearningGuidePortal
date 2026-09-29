@@ -658,6 +658,35 @@ export async function registerUserAttempt(input: { email: string; password: stri
   });
 }
 
+export async function commitPendingUserWithToken(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"]; rawToken: string }) {
+  const email = input.email.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
+  if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
+  if (!input.rawToken) throw new Error("Verification token is missing.");
+  const nickname = validateNickname(input.nickname?.trim() || "Learner");
+  const role = input.role === "operator" || input.role === "teacher" ? input.role : "student";
+  const tokenHash = hashToken(input.rawToken);
+  return editData(async (data) => {
+    const existing = data.users.find((user) => user.email === email);
+    if (existing) return { user: { ...existing, email: existing.email || email }, created: false as const };
+    const createdAt = now();
+    const user: ProductUser = {
+      id: id("user"),
+      email,
+      passwordHash: await passwordHash(input.password),
+      nickname,
+      locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB",
+      role,
+      status: "pending",
+      emailVerifiedAt: null,
+      createdAt,
+    };
+    data.users.push(user);
+    data.verificationTokens.unshift({ id: id("verify"), userId: user.id, tokenHash, expiresAt: tokenExpiry(24), usedAt: null, createdAt });
+    return { user: { ...user, email }, created: true as const };
+  });
+}
+
 export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
   return (await registerUserAttempt({ ...input, nickname: input.nickname ?? "Learner" })).user;
 }
@@ -809,6 +838,18 @@ export async function requestEmailVerification(emailValue: string) {
   }
 }
 
+export async function replaceLiveVerificationToken(userId: string, rawToken: string) {
+  return editData((data) => {
+    if (!data.users.some((item) => item.id === userId && item.status === "pending")) return false;
+    const issuedAt = now();
+    for (const item of data.verificationTokens) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data.verificationTokens.unshift({ id: id("verify"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), usedAt: null, createdAt: issuedAt });
+    return true;
+  });
+}
+
 export async function verifyEmailToken(rawToken: string) {
   return editData((data) => {
     const token = data.verificationTokens.find((item) => item.tokenHash === hashToken(rawToken) && !item.usedAt && new Date(item.expiresAt) > new Date());
@@ -841,6 +882,29 @@ export async function requestPasswordReset(emailValue: string, enforceCooldown =
     if (enforceCooldown && error instanceof Error && error.message === "Please wait before requesting another verification email.") return { accepted: true, token: null };
     throw error;
   }
+}
+
+export async function planPasswordReset(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
+  if (!user?.email) return null;
+  const latest = data.passwordResetTokens.find((item) => item.userId === user.id);
+  if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) return null;
+  return { userId: user.id, email: user.email };
+}
+
+export async function replaceLivePasswordResetToken(userId: string, rawToken: string) {
+  return editData((data) => {
+    const user = data.users.find((item) => item.id === userId && item.status === "active" && item.emailVerifiedAt);
+    if (!user) return false;
+    const issuedAt = now();
+    for (const item of data.passwordResetTokens) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data.passwordResetTokens.unshift({ id: id("reset"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(1), usedAt: null, createdAt: issuedAt });
+    return true;
+  });
 }
 
 export async function resetPassword(rawToken: string, newPassword: string) {
@@ -944,20 +1008,37 @@ export async function getUserBySessionToken(token: string | undefined, allowEmai
   return data.users.find((user) => user.id === session.userId && user.status === "active" && ((Boolean(user.email) && Boolean(user.emailVerifiedAt)) || (allowEmailBinding && data.accounts.some((account) => account.userId === user.id && account.provider === "wechat")))) || null;
 }
 
-export async function issueEmailBinding(userId: string, emailValue: string) {
+function bindingEmail(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error("invalid_email");
+  return email;
+}
+
+function assertEmailBindingAllowed(data: ProductData, userId: string, email: string) {
+  const user = data.users.find(user => user.id === userId && user.status === "active");
+  if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
+  if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
+  if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
+}
+
+function assertEmailBindingCooldown(data: ProductData, userId: string) {
+  const latest = data.emailBindingTokens.find(token => token.userId === userId);
+  if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
+}
+
+function storeEmailBindingToken(data: ProductData, userId: string, email: string, rawToken: string) {
+  // Remove superseded links so they cannot be mistaken for successful replays.
+  data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
+  data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+}
+
+export async function issueEmailBinding(userId: string, emailValue: string) {
+  const email = bindingEmail(emailValue);
   return editData(data => {
-    const user = data.users.find(user => user.id === userId && user.status === "active");
-    if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
-    if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
-    if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
-    const latest = data.emailBindingTokens.find(token => token.userId === userId);
-    if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
+    assertEmailBindingAllowed(data, userId, email);
+    assertEmailBindingCooldown(data, userId);
     const rawToken = randomBytes(32).toString("base64url");
-    // Remove superseded links so they cannot be mistaken for successful replays.
-    data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
-    data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+    storeEmailBindingToken(data, userId, email, rawToken);
     return { token: rawToken, email };
   });
 }
@@ -968,6 +1049,23 @@ export async function getPendingEmailBinding(userId: string) {
   if (!token) return null;
   const elapsedSeconds = Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 1000);
   return { email: token.email, retryAfter: Math.max(0, 60 - elapsedSeconds) };
+}
+
+export async function planEmailBinding(userId: string, emailValue: string) {
+  const email = bindingEmail(emailValue);
+  const data = await ensureProductData();
+  assertEmailBindingAllowed(data, userId, email);
+  assertEmailBindingCooldown(data, userId);
+  return { email };
+}
+
+export async function commitEmailBinding(userId: string, emailValue: string, rawToken: string) {
+  const email = bindingEmail(emailValue);
+  return editData(data => {
+    assertEmailBindingAllowed(data, userId, email);
+    storeEmailBindingToken(data, userId, email, rawToken);
+    return { email };
+  });
 }
 
 export async function confirmEmailBinding(rawToken: string) {
