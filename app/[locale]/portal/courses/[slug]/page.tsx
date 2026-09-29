@@ -3,8 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryPlan, courseLessonDuration } from "@/lib/courseDetailPresentation";
-import { getCoursePage, getProductCourse, listPlans } from "@/services/productStore";
+import { courseCategoryPlan, courseLearningOutcomes, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { CourseLearningOutcomes } from "@/components/portal/CourseLearningOutcomes";
+import { catalogueEntriesForCourse, getCoursePage, getProductCourse, listPlans } from "@/services/productStore";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -41,6 +42,7 @@ export default async function CourseDetailPage({ params }: {
     // Only public syllabus metadata, never protected lesson body/content.
     description: section.title,
   }] as const)) || []);
+  const outcomes = courseLearningOutcomes(course, ...(await catalogueEntriesForCourse(course)));
 
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
@@ -78,10 +80,7 @@ export default async function CourseDetailPage({ params }: {
               <section className={`${styles.card} ${styles.overview}`}>
                 <h2>{detail.overview}</h2>
                 <p className={styles.description}>{course?.description || ""}</p>
-                <div className={styles.outcomes}>
-                  <h3>{detail.outcomesTitle}</h3>
-                  <ul>{detail.outcomes.map(outcome => <li key={outcome}>{outcome}</li>)}</ul>
-                </div>
+                <CourseLearningOutcomes className={styles.outcomes} title={detail.outcomesTitle} outcomes={outcomes} />
               </section>
               <section className={`${styles.card} ${styles.curriculum}`} data-syllabus="true">
                 <h2>{detail.curriculum}</h2>

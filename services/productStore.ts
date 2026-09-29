@@ -1034,6 +1034,15 @@ export function publicFirstLesson(course: ProductCourse) {
   return course.sections.flatMap((section) => section.lessons).find((lesson) => lesson.isPublic) || null;
 }
 
+/** Subject, then category, when those catalogue entries exist for this course. */
+export async function catalogueEntriesForCourse(course: Pick<ProductCourse, "categoryId" | "subjectId"> | null) {
+  if (!course?.categoryId && !course?.subjectId) return [];
+  const catalogue = (await ensureProductData()).catalogue || [];
+  const subject = catalogue.find((entry) => course.subjectId && entry.id === course.subjectId) || null;
+  const category = catalogue.find((entry) => course.categoryId && entry.id === course.categoryId) || null;
+  return [subject, category].filter((entry): entry is CatalogueEntry => Boolean(entry));
+}
+
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
   const plans = data.plans.filter((plan) => {
