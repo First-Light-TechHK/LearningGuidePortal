@@ -49,7 +49,7 @@ test("BUG: fulfilling an Everything purchase leaves the epicureanism trial subsc
   assert.equal(liveTrialEntitlement, undefined, "the broader purchase already removed the trial entitlement");
 
   const route = await import("../../../app/api/subscription/route");
-  const response = await route.GET();
+  const response = await route.GET(new Request("http://localhost/api/subscription", { headers: { cookie: `learning_guide_session=${sessionToken}` } }));
   assert.equal(response.status, 200);
   const body = await response.json() as {
     ok: boolean;
