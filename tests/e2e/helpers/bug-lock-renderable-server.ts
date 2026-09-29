@@ -19,32 +19,39 @@ function stripPrivateMedia(value: unknown): unknown {
   return value;
 }
 
-const work = await mkdtemp(path.join(tmpdir(), "lg-bug-lock-render-"));
-for (const name of await readdir(root)) {
-  if (name === "data" || name === ".next" || name === "node_modules" || name === ".git") continue;
-  await symlink(path.join(root, name), path.join(work, name));
+async function main() {
+  const work = await mkdtemp(path.join(tmpdir(), "lg-bug-lock-render-"));
+  for (const name of await readdir(root)) {
+    if (name === "data" || name === ".next" || name === "node_modules" || name === ".git") continue;
+    await symlink(path.join(root, name), path.join(work, name));
+  }
+  await symlink(path.join(root, "node_modules"), path.join(work, "node_modules"));
+
+  process.chdir(work);
+  const store = await import("../../../services/productStore");
+  const seeded = await store.ensureProductData();
+  const printable = stripPrivateMedia(seeded);
+  const productFile = path.join(work, "data", "knowledge_system", "learning_guide", "product.json");
+  await mkdir(path.dirname(productFile), { recursive: true });
+  await writeFile(productFile, `${JSON.stringify(printable, null, 2)}\n`);
+
+  const child = spawn(process.execPath, [
+    path.join(root, "node_modules/next/dist/bin/next"),
+    "dev",
+    work,
+    "--hostname",
+    "127.0.0.1",
+    "-p",
+    port,
+  ], { cwd: work, env: process.env, stdio: "inherit" });
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => child.kill(signal));
+  }
+  child.on("exit", (code) => process.exit(code ?? 0));
 }
-await symlink(path.join(root, "node_modules"), path.join(work, "node_modules"));
 
-process.chdir(work);
-const store = await import("../../../services/productStore");
-const seeded = await store.ensureProductData();
-const printable = stripPrivateMedia(seeded);
-const productFile = path.join(work, "data", "knowledge_system", "learning_guide", "product.json");
-await mkdir(path.dirname(productFile), { recursive: true });
-await writeFile(productFile, `${JSON.stringify(printable, null, 2)}\n`);
-
-const child = spawn(process.execPath, [
-  path.join(root, "node_modules/next/dist/bin/next"),
-  "dev",
-  work,
-  "--hostname",
-  "127.0.0.1",
-  "-p",
-  port,
-], { cwd: work, env: process.env, stdio: "inherit" });
-
-for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.on(signal, () => child.kill(signal));
-}
-child.on("exit", (code) => process.exit(code ?? 0));
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
