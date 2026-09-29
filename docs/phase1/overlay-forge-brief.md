@@ -92,4 +92,4 @@ npx tsc --noEmit -p tsconfig.io.json
 
 ## UC-PORTAL-CATEGORY（课程分类表面）
 
-Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。没有分类就不显示该屑，学科不代替分类。
+Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。没有分类就不显示该屑。categoryId 为空时用学科的目录父类（id 或 slug），学科名不占分类位，目录名不投票。

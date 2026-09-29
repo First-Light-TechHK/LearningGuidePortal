@@ -22,7 +22,7 @@ import {
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
-import { courseCategoryId, courseSurfaceCategoryId } from "@/lib/courseDetailPresentation";
+import { courseCategoryMembership } from "@/lib/courseDetailPresentation";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
@@ -371,7 +371,7 @@ function planScope(plan: ProductPlan): NormalisedPlanScope {
 }
 
 function coursePortalCategory(data: ProductData, course: Pick<ProductCourse, "category" | "categoryId" | "subjectId">) {
-  return courseCategoryId(course, (data.portalContent || defaultPortalContent).categories, data.catalogue || []);
+  return courseCategoryMembership(course, data.catalogue || []);
 }
 
 function planCoversCourse(data: ProductData, plan: ProductPlan, course: ProductCourse) {
@@ -1797,7 +1797,7 @@ export async function getLearningOverview(userId: string) {
         currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
-        courseCategory: courseSurfaceCategoryId(course, (data.portalContent || defaultPortalContent).categories, data.catalogue || []),
+        courseCategory: course ? courseCategoryMembership(course, data.catalogue || []) : "",
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
         courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,
@@ -2114,16 +2114,9 @@ export async function createCourseForOperator(input: { title: string; descriptio
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("course");
     if (data.courses.some((course) => course.slug === slug)) throw new AuthoringError("conflict");
     const portalCategoryIds = ["Chinese Humanities", "European Humanities", "Science"] as const;
-    const resolved = courseCategoryId(
-      { category: input.category, categoryId: input.categoryId, subjectId: input.subjectId },
-      (data.portalContent || defaultPortalContent).categories,
-      data.catalogue || [],
-    );
-    const resolvedCategory = (portalCategoryIds as readonly string[]).includes(resolved) ? resolved as ProductCourse["category"] : undefined;
     const picked = input.category && (portalCategoryIds as readonly string[]).includes(input.category) ? input.category : undefined;
-    // A brand-new course keeps an explicit operator pick. A resolved categoryId is the stored category, so science is not rewritten as European Humanities.
-    const category = resolvedCategory ?? (input.categoryId?.trim() ? undefined : picked);
-    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", category, thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
+    const category = input.categoryId?.trim() ? undefined : picked;
+    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", ...(category ? { category } : {}), thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
     validateCatalogueSelection(data, course);
     data.courses.unshift(course);
     if (actorId) authoringActivity(data, actorId, "create", course.id);

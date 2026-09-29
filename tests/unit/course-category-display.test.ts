@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { test } from "node:test";
 import { CourseLearningOutcomes } from "../../components/portal/CourseLearningOutcomes";
-import { courseCategoryId, courseCategoryLabel, courseCategoryPlan, courseLearningOutcomes } from "../../lib/courseDetailPresentation";
+import { courseCategoryDisplay, courseCategoryPlan } from "../../lib/courseDetailPresentation";
 import { courseIdentityFrom } from "../../lib/coursePage";
 import { defaultPortalContent } from "../../lib/portalContent";
 import type { ProductPlan } from "../../services/productStore";
@@ -14,221 +11,238 @@ import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
 
 const categories = defaultPortalContent.categories;
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const locales = ["en-GB", "zh-CN"] as const;
+const labels = {
+  Science: { "en-GB": "Science", "zh-CN": "科学" },
+  "European Humanities": { "en-GB": "European Humanities", "zh-CN": "欧洲人文" },
+  "Chinese Humanities": { "en-GB": "Chinese Humanities", "zh-CN": "中国人文" },
+} as const;
+const sharedBiology = [en.courseDetailDesign.outcomes[0], zh.courseDetailDesign.outcomes[0]];
 
-const humanities = {
-  title: "Quintus Horatius Flaccus",
-  category: "European Humanities" as const,
-  categoryId: "european-humanities",
-  subjectId: "poetry",
+const sciencePlan: ProductPlan = {
+  id: "science-pc-6",
+  name: "Science",
+  courseId: "*",
+  scope: "category",
+  scopeId: "Science",
+  device: "pc",
+  termMonths: 6,
+  amountMinor: 4900,
+  currency: "usd",
+  available: true,
 };
-const science = {
-  title: "Biology",
-  category: "Science" as const,
-  categoryId: "science",
-  subjectId: "biology",
+const humanitiesPlan: ProductPlan = {
+  ...sciencePlan,
+  id: "european-humanities-pc-6",
+  name: "European Humanities",
+  scopeId: "European Humanities",
 };
-// Legacy field stamped to humanities while the stored category id is science.
-const scienceStampedAsHumanities = {
-  title: "Biology",
-  category: "European Humanities" as const,
-  categoryId: "science",
-};
-const uncategorised = { title: "Untitled", category: null, categoryId: null, subjectId: null };
+const plans = [humanitiesPlan, sciencePlan];
 
-test("displayed category label matches the course category in en-GB and zh-CN", () => {
-  assert.equal(courseCategoryLabel(humanities, categories, "en-GB"), "European Humanities");
-  assert.equal(courseCategoryLabel(humanities, categories, "zh-CN"), "欧洲人文");
-  assert.equal(courseCategoryLabel(science, categories, "en-GB"), "Science");
-  assert.equal(courseCategoryLabel(science, categories, "zh-CN"), "科学");
+function shown(
+  course: Parameters<typeof courseCategoryDisplay>[0],
+  locale: (typeof locales)[number],
+  catalogue: Parameters<typeof courseCategoryDisplay>[3] = [],
+) {
+  return courseCategoryDisplay(course, categories, locale, catalogue);
+}
 
-  assert.equal(courseCategoryLabel(science, categories, "en-GB").includes("Humanities"), false);
-  assert.equal(courseCategoryLabel(science, categories, "zh-CN").includes("人文"), false);
-  assert.equal(courseCategoryLabel(humanities, categories, "en-GB").includes("Science"), false);
-  assert.equal(courseCategoryLabel(humanities, categories, "zh-CN").includes("科学"), false);
+test("Functional: categoryId science and european-humanities project onto breadcrumb, filter, card, learning, recommendation and pricing", () => {
+  assert.equal(sharedBiology[0], "Model real biological systems mathematically");
+  assert.equal(sharedBiology[1], "用数学建模真实的生物系统");
+  const science = { title: "Biology", categoryId: "science", subjectId: "biology" };
+  const humanities = { title: "Quintus Horatius Flaccus", categoryId: "european-humanities", subjectId: "poetry" };
 
-  assert.equal(courseCategoryId(science, categories), "Science");
-  assert.equal(courseCategoryId(humanities, categories), "European Humanities");
-  assert.notEqual(courseCategoryId(science, categories), courseCategoryId(humanities, categories));
+  for (const locale of locales) {
+    const scienceDisplay = shown(science, locale);
+    const humanitiesDisplay = shown(humanities, locale);
+
+    assert.equal(scienceDisplay.membership, "Science");
+    assert.equal(humanitiesDisplay.membership, "European Humanities");
+    assert.deepEqual(scienceDisplay.crumb, { id: "Science", label: labels.Science[locale] });
+    assert.deepEqual(humanitiesDisplay.crumb, { id: "European Humanities", label: labels["European Humanities"][locale] });
+    assert.equal(scienceDisplay.crumb?.id, "Science");
+    assert.equal(humanitiesDisplay.crumb?.id, "European Humanities");
+
+    assert.equal(scienceDisplay.matchesFilter("Science"), true);
+    assert.equal(scienceDisplay.matchesFilter("European Humanities"), false);
+    assert.equal(humanitiesDisplay.matchesFilter("European Humanities"), true);
+    assert.equal(humanitiesDisplay.matchesFilter("Science"), false);
+
+    assert.equal(scienceDisplay.cardLabel, labels.Science[locale]);
+    assert.equal(humanitiesDisplay.cardLabel, labels["European Humanities"][locale]);
+    assert.equal(scienceDisplay.learningLabel, labels.Science[locale]);
+    assert.equal(humanitiesDisplay.learningLabel, labels["European Humanities"][locale]);
+    assert.equal(scienceDisplay.recommendationLabel, labels.Science[locale]);
+    assert.equal(humanitiesDisplay.recommendationLabel, labels["European Humanities"][locale]);
+
+    assert.equal(scienceDisplay.pricingCategoryId, "Science");
+    assert.equal(humanitiesDisplay.pricingCategoryId, "European Humanities");
+    assert.equal(courseCategoryPlan(plans, scienceDisplay.pricingCategoryId)?.id, sciencePlan.id);
+    assert.equal(courseCategoryPlan(plans, humanitiesDisplay.pricingCategoryId)?.id, humanitiesPlan.id);
+    assert.notEqual(courseCategoryPlan(plans, scienceDisplay.pricingCategoryId)?.scopeId, "European Humanities");
+
+    assert.equal(courseIdentityFrom({ ...science, status: "published", sections: [] }).track, "Science");
+    assert.equal(courseIdentityFrom({ ...humanities, status: "published", sections: [] }).track, "European Humanities");
+  }
 });
 
-test("a science categoryId is not displayed as European Humanities", () => {
-  assert.equal(courseCategoryId(scienceStampedAsHumanities, categories), "Science");
-  assert.equal(courseCategoryLabel(scienceStampedAsHumanities, categories, "en-GB"), "Science");
-  assert.equal(courseCategoryLabel(scienceStampedAsHumanities, categories, "zh-CN"), "科学");
-  assert.equal(courseCategoryLabel(scienceStampedAsHumanities, categories, "zh-CN").includes("人文"), false);
-
+test("Negative: legacy category and catalogue name do not move membership off categoryId, and a humanities course does not show shared biology outcomes", () => {
   const catalogue = [
-    { id: "cat-science", name: "Science", parentId: null },
-    { id: "biology", name: "Biology", parentId: "cat-science" },
-  ];
-  const byCatalogue = { title: "Biology", category: "European Humanities" as const, categoryId: "cat-science", subjectId: "biology" };
-  assert.equal(courseCategoryId(byCatalogue, categories, catalogue), "Science");
-  assert.equal(courseCategoryLabel(byCatalogue, categories, "zh-CN", catalogue), "科学");
-
-  const bySubject = { title: "Biology", category: null, categoryId: null, subjectId: "biology" };
-  assert.equal(courseCategoryId(bySubject, categories, catalogue), "Science");
-  assert.equal(courseCategoryLabel(bySubject, categories, "en-GB", catalogue), "Science");
-});
-
-test("a course with no category does not borrow a humanities or science label", () => {
-  assert.equal(courseCategoryId(uncategorised, categories), "");
-  assert.equal(courseCategoryLabel(uncategorised, categories, "en-GB"), "");
-  assert.equal(courseCategoryLabel(uncategorised, categories, "zh-CN"), "");
-  assert.equal(courseIdentityFrom({ ...uncategorised, status: "published", sections: [] }).track, "");
-  assert.notEqual(courseIdentityFrom({ ...uncategorised, status: "published", sections: [] }).track, "European Humanities");
-  assert.notEqual(courseIdentityFrom({ ...uncategorised, status: "published", sections: [] }).track, "Science");
-});
-
-test("course identity track follows the stored category, not a hardcoded humanities string", () => {
-  assert.equal(courseIdentityFrom({ ...humanities, status: "published", sections: [] }).track, "European Humanities");
-  assert.equal(courseIdentityFrom({ ...science, status: "published", sections: [] }).track, "Science");
-  assert.equal(courseIdentityFrom({ ...scienceStampedAsHumanities, status: "published", sections: [] }).track, "Science");
-});
-
-const humanitiesStampedAsScience = {
-  title: "Quintus Horatius Flaccus",
-  category: "Science" as const,
-  categoryId: "european-humanities",
-  subjectId: "poetry",
-};
-const SCIENCE_OUTCOME_EN = "Model real biological systems mathematically";
-const SCIENCE_OUTCOME_ZH = "用数学建模真实的生物系统";
-
-test("a humanities categoryId is not displayed as Science", () => {
-  assert.equal(courseCategoryId(humanitiesStampedAsScience, categories), "European Humanities");
-  assert.equal(courseCategoryLabel(humanitiesStampedAsScience, categories, "en-GB"), "European Humanities");
-  assert.equal(courseCategoryLabel(humanitiesStampedAsScience, categories, "zh-CN"), "欧洲人文");
-  assert.equal(courseCategoryLabel(humanitiesStampedAsScience, categories, "en-GB").includes("Science"), false);
-  assert.notEqual(courseCategoryLabel(humanitiesStampedAsScience, categories, "zh-CN"), "european-humanities");
-  assert.notEqual(courseCategoryLabel(humanitiesStampedAsScience, categories, "zh-CN"), "science");
-});
-
-test("a subject displays as its parent portal category, not as the subject name", () => {
-  const scienceParentNamedAsSubject = [
-    { id: "science", name: "Biology", parentId: null },
-    { id: "biology", name: "Biology", parentId: "science" },
-  ];
-  const biology = { title: "Cells", category: null, categoryId: null, subjectId: "biology" };
-  assert.equal(courseCategoryId(biology, categories, scienceParentNamedAsSubject), "Science");
-  assert.equal(courseCategoryLabel(biology, categories, "en-GB", scienceParentNamedAsSubject), "Science");
-  assert.equal(courseCategoryLabel(biology, categories, "zh-CN", scienceParentNamedAsSubject), "科学");
-  assert.equal(courseCategoryLabel(biology, categories, "en-GB", scienceParentNamedAsSubject).includes("Biology"), false);
-  assert.equal(courseIdentityFrom({ ...biology, status: "published", sections: [] }, categories, scienceParentNamedAsSubject).track, "Science");
-
-  const humanitiesParentNamedAsSubject = [
-    { id: "european-humanities", name: "Poetry", parentId: null },
-    { id: "poetry", name: "Poetry", parentId: "european-humanities" },
-  ];
-  const poetry = { title: "Horace", category: "Science" as const, categoryId: null, subjectId: "poetry" };
-  assert.equal(courseCategoryId(poetry, categories, humanitiesParentNamedAsSubject), "European Humanities");
-  assert.equal(courseCategoryLabel(poetry, categories, "en-GB", humanitiesParentNamedAsSubject), "European Humanities");
-  assert.equal(courseCategoryLabel(poetry, categories, "zh-CN", humanitiesParentNamedAsSubject), "欧洲人文");
-  assert.equal(courseCategoryLabel(poetry, categories, "en-GB", humanitiesParentNamedAsSubject).includes("Poetry"), false);
-  assert.equal(courseCategoryLabel(poetry, categories, "en-GB", humanitiesParentNamedAsSubject).includes("Science"), false);
-  assert.notEqual(courseCategoryLabel(poetry, categories, "zh-CN", humanitiesParentNamedAsSubject), "european-humanities");
-  assert.equal(courseIdentityFrom({ ...poetry, status: "published", sections: [] }, categories, humanitiesParentNamedAsSubject).track, "European Humanities");
-});
-
-test("a catalogue name that names another portal category does not switch the displayed category", () => {
-  const scienceNamedHumanities = [
     { id: "science", name: "European Humanities", parentId: null },
     { id: "biology", name: "Biology", parentId: "science" },
-  ];
-  const filedAsScience = { title: "Biology", category: "European Humanities" as const, categoryId: "science", subjectId: "biology" };
-  assert.equal(courseCategoryId(filedAsScience, categories, scienceNamedHumanities), "Science");
-  assert.equal(courseCategoryLabel(filedAsScience, categories, "en-GB", scienceNamedHumanities), "Science");
-  assert.equal(courseCategoryLabel(filedAsScience, categories, "zh-CN", scienceNamedHumanities), "科学");
-  assert.equal(courseCategoryLabel(filedAsScience, categories, "zh-CN", scienceNamedHumanities).includes("人文"), false);
-  assert.notEqual(courseCategoryLabel(filedAsScience, categories, "zh-CN", scienceNamedHumanities), "science");
-
-  const humanitiesNamedScience = [
     { id: "european-humanities", name: "Science", parentId: null },
     { id: "poetry", name: "Poetry", parentId: "european-humanities" },
   ];
-  assert.equal(courseCategoryId(humanitiesStampedAsScience, categories, humanitiesNamedScience), "European Humanities");
-  assert.equal(courseCategoryLabel(humanitiesStampedAsScience, categories, "en-GB", humanitiesNamedScience), "European Humanities");
-  assert.equal(courseCategoryLabel(humanitiesStampedAsScience, categories, "zh-CN", humanitiesNamedScience), "欧洲人文");
-  assert.equal(courseCategoryLabel(humanitiesStampedAsScience, categories, "en-GB", humanitiesNamedScience).includes("Science"), false);
-  assert.notEqual(courseCategoryLabel(humanitiesStampedAsScience, categories, "zh-CN", humanitiesNamedScience), "european-humanities");
-});
-
-test("learning outcomes are the course's own list, never another category's list", () => {
-  const humanitiesCourse = { title: "Horace", categoryId: "european-humanities", subjectId: "poetry" };
-  const otherCategory = { id: "science", outcomes: [SCIENCE_OUTCOME_EN, SCIENCE_OUTCOME_ZH] };
-  assert.deepEqual(courseLearningOutcomes(humanitiesCourse, [otherCategory]), []);
-  const hidden = renderToStaticMarkup(createElement(CourseLearningOutcomes, {
-    title: en.courseDetailDesign.outcomesTitle,
-    outcomes: courseLearningOutcomes(humanitiesCourse, [otherCategory]),
-  }));
-  assert.equal(hidden, "");
-  assert.equal(hidden.includes(SCIENCE_OUTCOME_EN), false);
-  assert.equal(hidden.includes(SCIENCE_OUTCOME_ZH), false);
-  assert.equal(en.courseDetailDesign.outcomes.includes(SCIENCE_OUTCOME_EN), true);
-  assert.equal(zh.courseDetailDesign.outcomes.includes(SCIENCE_OUTCOME_ZH), true);
-
-  const scienceCourse = {
+  const science = {
     title: "Biology",
+    category: "European Humanities" as const,
     categoryId: "science",
-    outcomes: [`  ${SCIENCE_OUTCOME_EN}  `, "", SCIENCE_OUTCOME_ZH, SCIENCE_OUTCOME_EN],
+    subjectId: "biology",
+    outcomes: ["Model real biological systems mathematically"],
   };
-  assert.deepEqual(courseLearningOutcomes(scienceCourse, [otherCategory]), [SCIENCE_OUTCOME_EN, SCIENCE_OUTCOME_ZH]);
-  const shown = renderToStaticMarkup(createElement(CourseLearningOutcomes, {
-    title: zh.courseDetailDesign.outcomesTitle,
-    outcomes: courseLearningOutcomes(scienceCourse),
-  }));
-  assert.match(shown, new RegExp(SCIENCE_OUTCOME_EN));
-  assert.match(shown, new RegExp(SCIENCE_OUTCOME_ZH));
+  const humanities = {
+    title: "Quintus Horatius Flaccus",
+    category: "Science" as const,
+    categoryId: "european-humanities",
+    subjectId: "poetry",
+  };
 
-  const onOwnCatalogue = { title: "Biology", categoryId: "science", subjectId: "biology" };
-  assert.deepEqual(courseLearningOutcomes(onOwnCatalogue, [
-    { id: "biology", outcomes: ["Describe a cell"] },
-    otherCategory,
-  ]), ["Describe a cell"]);
+  for (const locale of locales) {
+    const scienceDisplay = shown(science, locale, catalogue);
+    const humanitiesDisplay = shown(humanities, locale, catalogue);
 
-  assert.deepEqual(courseLearningOutcomes({ categoryId: null, subjectId: null }, [otherCategory]), []);
-  assert.deepEqual(courseLearningOutcomes(null, [otherCategory]), []);
+    assert.equal(scienceDisplay.membership, "Science");
+    assert.equal(humanitiesDisplay.membership, "European Humanities");
+    assert.deepEqual(scienceDisplay.crumb, { id: "Science", label: labels.Science[locale] });
+    assert.deepEqual(humanitiesDisplay.crumb, { id: "European Humanities", label: labels["European Humanities"][locale] });
+    assert.notEqual(scienceDisplay.crumb?.label, "European Humanities");
+    assert.notEqual(scienceDisplay.crumb?.label, "欧洲人文");
+    assert.notEqual(scienceDisplay.crumb?.label, "Biology");
+    assert.notEqual(humanitiesDisplay.crumb?.label, "Science");
+    assert.notEqual(humanitiesDisplay.crumb?.label, "科学");
+    assert.notEqual(humanitiesDisplay.crumb?.label, "Poetry");
 
-  const page = readFileSync(path.join(root, "app/[locale]/portal/courses/[slug]/page.tsx"), "utf8");
-  assert.doesNotMatch(page, /detail\.outcomes\.map/);
-  assert.match(page, /courseLearningOutcomes\(/);
-});
+    assert.equal(scienceDisplay.matchesFilter("Science"), true);
+    assert.equal(scienceDisplay.matchesFilter("European Humanities"), false);
+    assert.equal(humanitiesDisplay.matchesFilter("European Humanities"), true);
+    assert.equal(humanitiesDisplay.matchesFilter("Science"), false);
+    assert.equal(scienceDisplay.cardLabel, labels.Science[locale]);
+    assert.equal(humanitiesDisplay.cardLabel, labels["European Humanities"][locale]);
+    assert.equal(scienceDisplay.learningLabel, labels.Science[locale]);
+    assert.equal(humanitiesDisplay.learningLabel, labels["European Humanities"][locale]);
+    assert.equal(scienceDisplay.recommendationLabel, labels.Science[locale]);
+    assert.equal(humanitiesDisplay.recommendationLabel, labels["European Humanities"][locale]);
+    assert.equal(scienceDisplay.pricingCategoryId, "Science");
+    assert.equal(courseCategoryPlan(plans, scienceDisplay.pricingCategoryId)?.id, sciencePlan.id);
+    assert.equal(courseCategoryPlan(plans, humanitiesDisplay.pricingCategoryId)?.id, humanitiesPlan.id);
 
-test("the category plan follows the portal category id, and an empty course is not offered European Humanities", () => {
-  const sciencePlan = { id: "science-pc-6", courseId: "*", name: "Science", scope: "category" as const, scopeId: "Science", device: "pc" as const, termMonths: 6 as const, amountMinor: 4900, currency: "usd" as const, available: true };
-  const humanitiesPlan: ProductPlan = { ...sciencePlan, id: "european-humanities-pc-6", name: "European Humanities", scopeId: "European Humanities" };
-  const plans = [humanitiesPlan, sciencePlan];
-  assert.equal(courseCategoryPlan(plans, courseCategoryId(scienceStampedAsHumanities, categories))?.scopeId, "Science");
-  assert.notEqual(courseCategoryPlan(plans, courseCategoryId(scienceStampedAsHumanities, categories))?.scopeId, "European Humanities");
-  assert.equal(courseCategoryPlan(plans, courseCategoryId(humanitiesStampedAsScience, categories))?.scopeId, "European Humanities");
-  assert.equal(courseCategoryPlan(plans, courseCategoryId(uncategorised, categories)), undefined);
-  assert.equal(courseCategoryPlan(plans, ""), undefined);
-});
-
-test("catalogue and course pages do not file a course under European Humanities by default", () => {
-  const files = [
-    "lib/coursePage.ts",
-    "app/[locale]/portal/page.tsx",
-    "app/[locale]/portal/courses/page.tsx",
-    "app/[locale]/portal/courses/[slug]/page.tsx",
-    "app/[locale]/pricing/page.tsx",
-    "services/productStore.ts",
-  ];
-  for (const relative of files) {
-    const source = readFileSync(path.join(root, relative), "utf8");
-    assert.equal(source.includes('course.category || "European Humanities"'), false, relative);
-    assert.equal(source.includes('course?.category || "European Humanities"'), false, relative);
-    assert.equal(source.includes('course.category ||= "European Humanities"'), false, relative);
+    assert.equal(humanitiesDisplay.outcomes.includes(sharedBiology[0]), false);
+    assert.equal(humanitiesDisplay.outcomes.includes(sharedBiology[1]), false);
+    assert.deepEqual(humanitiesDisplay.outcomes, []);
   }
-  const detail = readFileSync(path.join(root, "app/[locale]/portal/courses/[slug]/page.tsx"), "utf8");
-  assert.match(detail, /courseBreadcrumb\(/);
-  assert.match(detail, /courseTrackChip\(/);
-  assert.match(detail, /courseLearningOutcomes\(/);
-  assert.doesNotMatch(detail, /detail\.outcomes\.map/);
-  const catalogue = readFileSync(path.join(root, "app/[locale]/portal/courses/page.tsx"), "utf8");
-  assert.match(catalogue, /catalogueFilterState\(/);
-  assert.match(catalogue, /courseCardCategoryLine\(/);
-  const store = readFileSync(path.join(root, "services/productStore.ts"), "utf8");
-  assert.doesNotMatch(store, /input\.category && \[[^\]]+\]\.includes\(input\.category\) \? input\.category : "European Humanities"/);
-  assert.doesNotMatch(store, /course\.category \|\|= "European Humanities"/);
+
+  assert.deepEqual(shown(science, "en-GB", catalogue).outcomes, ["Model real biological systems mathematically"]);
+  const stored = shown({ categoryId: "science", outcomes: [`  ${sharedBiology[0]}  `, "", sharedBiology[1], sharedBiology[0]] }, "zh-CN", catalogue);
+  assert.deepEqual(stored.outcomes, [sharedBiology[0], sharedBiology[1]]);
+  const shownOutcomes = renderToStaticMarkup(createElement(CourseLearningOutcomes, {
+    title: zh.courseDetailDesign.outcomesTitle,
+    outcomes: stored.outcomes,
+  }));
+  assert.match(shownOutcomes, new RegExp(sharedBiology[0]));
+  assert.match(shownOutcomes, new RegExp(sharedBiology[1]));
+  const hiddenOutcomes = renderToStaticMarkup(createElement(CourseLearningOutcomes, {
+    title: en.courseDetailDesign.outcomesTitle,
+    outcomes: shown(humanities, "en-GB", catalogue).outcomes,
+  }));
+  assert.equal(hiddenOutcomes, "");
+  const catalogueOutcomes = [
+    { id: "poetry", name: "Poetry", parentId: "european-humanities", outcomes: [sharedBiology[0]] },
+    { id: "european-humanities", name: "Science", parentId: null, outcomes: [sharedBiology[1]] },
+  ];
+  assert.deepEqual(shown({ categoryId: "european-humanities", subjectId: "poetry" }, "en-GB", catalogueOutcomes).outcomes, []);
+});
+
+test("Edge: no category leaves every surface empty, and a subject does not replace the category crumb", () => {
+  const catalogue = [
+    { id: "science", name: "Science", parentId: null },
+    { id: "biology", name: "Biology", parentId: "science" },
+    { id: "poetry", name: "Poetry", parentId: null },
+  ];
+  const uncategorised = { title: "Untitled", category: null, categoryId: null, subjectId: null };
+  const subjectOnly = { title: "Untitled", category: null, categoryId: null, subjectId: "poetry" };
+  const biologyUnderScience = {
+    title: "Biology",
+    category: null,
+    categoryId: "science",
+    subjectId: "biology",
+  };
+  const namedButUnmatched = {
+    title: "Biology",
+    category: "European Humanities" as const,
+    categoryId: "cat-science",
+    subjectId: "biology",
+  };
+  const legacySlugOnly = { title: "Biology", category: "science", categoryId: null, subjectId: null };
+
+  for (const locale of locales) {
+    for (const course of [uncategorised, subjectOnly, namedButUnmatched, legacySlugOnly]) {
+      const display = shown(course, locale, catalogue);
+      assert.equal(display.membership, "");
+      assert.equal(display.crumb, null);
+      assert.equal(display.cardLabel, "");
+      assert.equal(display.learningLabel, "");
+      assert.equal(display.recommendationLabel, "");
+      assert.equal(display.pricingCategoryId, "");
+      assert.equal(display.matchesFilter("Science"), false);
+      assert.equal(display.matchesFilter("European Humanities"), false);
+      assert.equal(display.matchesFilter("Chinese Humanities"), false);
+      assert.equal(courseCategoryPlan(plans, display.pricingCategoryId), undefined);
+      assert.deepEqual(display.outcomes, []);
+    }
+
+    const underScience = shown(biologyUnderScience, locale, catalogue);
+    assert.equal(underScience.membership, "Science");
+    assert.deepEqual(underScience.crumb, { id: "Science", label: labels.Science[locale] });
+    assert.notEqual(underScience.crumb?.label, "Biology");
+    assert.notEqual(underScience.cardLabel, "Biology");
+    assert.equal(courseIdentityFrom({ ...uncategorised, status: "published", sections: [] }).track, "");
+    assert.equal(courseIdentityFrom({ ...biologyUnderScience, status: "published", sections: [] }).track, "Science");
+  }
+
+  const bySubjectParent = shown(
+    { category: "European Humanities", categoryId: null, subjectId: "biology" },
+    "en-GB",
+    catalogue,
+  );
+  assert.equal(bySubjectParent.membership, "Science");
+  assert.deepEqual(bySubjectParent.crumb, { id: "Science", label: "Science" });
+  assert.notEqual(bySubjectParent.crumb?.label, "Biology");
+  assert.notEqual(bySubjectParent.crumb?.label, "European Humanities");
+
+  const exactLegacy = shown({ category: "European Humanities", categoryId: "", subjectId: "" }, "zh-CN");
+  assert.equal(exactLegacy.membership, "European Humanities");
+  assert.deepEqual(exactLegacy.crumb, { id: "European Humanities", label: "欧洲人文" });
+
+  const biologyNamedParent = [
+    { id: "science", name: "Biology", parentId: null },
+    { id: "biology", name: "Biology", parentId: "science" },
+  ];
+  const cells = shown({ category: null, categoryId: null, subjectId: "biology" }, "zh-CN", biologyNamedParent);
+  assert.equal(cells.membership, "Science");
+  assert.deepEqual(cells.crumb, { id: "Science", label: "科学" });
+  assert.notEqual(cells.crumb?.label, "Biology");
+  assert.equal(cells.cardLabel, "科学");
+
+  const poetryNamedParent = [
+    { id: "european-humanities", name: "Poetry", parentId: null },
+    { id: "poetry", name: "Poetry", parentId: "european-humanities" },
+  ];
+  const horace = shown({ category: "Science", categoryId: null, subjectId: "poetry" }, "en-GB", poetryNamedParent);
+  assert.equal(horace.membership, "European Humanities");
+  assert.deepEqual(horace.crumb, { id: "European Humanities", label: "European Humanities" });
+  assert.notEqual(horace.crumb?.label, "Poetry");
+  assert.notEqual(horace.crumb?.label, "Science");
+  assert.equal(horace.matchesFilter("European Humanities"), true);
+  assert.equal(horace.matchesFilter("Science"), false);
 });

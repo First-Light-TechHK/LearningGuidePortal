@@ -9,7 +9,7 @@ import {
   catalogueFilterState,
   courseBreadcrumb,
   courseCardCategoryLine,
-  courseSurfaceCategoryId,
+  courseCategoryMembership,
   courseTrackChip,
   listedPricingCourseTitles,
   myLearningMetaLine,
@@ -107,7 +107,7 @@ function categoryCrumb(course: SurfaceCourse, locale: Locale, catalogue: readonl
 function metaLine(course: SurfaceCourse, locale: Locale, catalogue: readonly { id: string; name: string; parentId?: string | null }[] = []) {
   const messages = getMessages(locale);
   return myLearningMetaLine({
-    categoryId: courseSurfaceCategoryId(course, categories, catalogue),
+    categoryId: courseCategoryMembership(course, catalogue),
     categories,
     locale,
     lessonCount: 4,
@@ -210,8 +210,8 @@ test("UC-PORTAL-CATEGORY negative: legacy field or catalogue name for the other 
       { id: "cat-science", name: "Science", parentId: null },
       { id: "biology", name: "Biology", parentId: "cat-science" },
     ];
-    assert.equal(categoryCrumb(namedScience, locale, resolvedCatalogue)?.label, expectedCategory.Science[locale]);
-    assert.equal(categoryCrumb(namedScience, locale, resolvedCatalogue)?.href, `/${locale}/portal/courses?category=Science`);
+    assert.equal(categoryCrumb(namedScience, locale, resolvedCatalogue), null);
+    assert.equal(pricingCourseGroup(namedScience, categories, resolvedCatalogue), "");
 
     const humanitiesKept = { ...humanities, category: "Science" as const, subjectId: "biology" };
     const crumbHumanities = categoryCrumb(humanitiesKept, locale, catalogueNameSaysScience);
@@ -258,8 +258,6 @@ test("UC-PORTAL-CATEGORY edge: missing category omits the crumb, and a subject d
     const messages = getMessages(locale);
     for (const [course, catalogue] of [
       [missing, []],
-      [poetryOnly, poetryCatalogue],
-      [biologyOnly, biologyCatalogue],
     ] as const) {
       const list = crumbsFor(course, locale, catalogue);
       assert.deepEqual(list.map((crumb) => crumb.label), [
@@ -287,6 +285,13 @@ test("UC-PORTAL-CATEGORY edge: missing category omits the crumb, and a subject d
         assert.equal(filter.chips.find((chip) => chip.active)?.id, requested);
       }
     }
+
+    assert.equal(categoryCrumb(poetryOnly, locale, poetryCatalogue)?.label, expectedCategory["European Humanities"][locale]);
+    assert.notEqual(categoryCrumb(poetryOnly, locale, poetryCatalogue)?.label, "Poetry");
+    assert.equal(categoryCrumb(biologyOnly, locale, biologyCatalogue)?.label, expectedCategory.Science[locale]);
+    assert.notEqual(categoryCrumb(biologyOnly, locale, biologyCatalogue)?.label, "Biology");
+    assert.equal(courseCardCategoryLine(poetryOnly, categories, locale, poetryCatalogue), expectedCategory["European Humanities"][locale]);
+    assert.equal(pricingCourseGroup(biologyOnly, categories, biologyCatalogue), "Science");
 
     const humanitiesWithBiology = { ...humanities, subjectId: "biology" };
     const crumb = categoryCrumb(humanitiesWithBiology, locale, biologyCatalogue);

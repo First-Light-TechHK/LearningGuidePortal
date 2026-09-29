@@ -1,4 +1,4 @@
-import { courseCategoryId, type CatalogueCategoryRef } from "@/lib/courseDetailPresentation";
+import { courseCategoryMembership, type CatalogueCategoryRef } from "@/lib/courseDetailPresentation";
 import {
   courseProgressFromUniqueLearningPoints,
   type AccessState,
@@ -55,13 +55,13 @@ type CourseLike = {
 /** D1.1 Identity is title / track / lesson count / preview-available from the store. */
 export function courseIdentityFrom(
   course: CourseLike,
-  categories: readonly PortalCategory[] = defaultPortalContent.categories,
+  _categories: readonly PortalCategory[] = defaultPortalContent.categories,
   catalogue: readonly CatalogueCategoryRef[] = [],
 ): CourseIdentity {
   const lessons = course.sections.flatMap((section) => section.lessons);
   return {
     title: course.title,
-    track: courseCategoryId(course, categories, catalogue),
+    track: courseCategoryMembership(course, catalogue),
     lessonCount: lessons.length,
     previewAvailable: lessons.some((lesson) => lesson.isPublic),
     totalMinutes: lessons.reduce((total, lesson) => total + (lesson.durationMinutes || 0), 0),

@@ -5,7 +5,7 @@ import { Archive, ChevronLeft, ChevronRight, Eye, Pencil, Plus, RotateCcw, UserR
 import { CourseOutlineEditor } from "./CourseOutlineEditor";
 import { CourseCatalogueManager } from "./CourseCatalogueManager";
 import { LessonContentPlayer } from "./LessonContentPlayer";
-import { courseCategoryLabel } from "@/lib/courseDetailPresentation";
+import { courseCategoryDisplay } from "@/lib/courseDetailPresentation";
 import { getMessages } from "@/lib/i18n/messages";
 import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages";
 import { defaultPortalContent } from "@/lib/portalContent";
@@ -23,7 +23,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
   const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [status, setStatus] = useState("all"), [categoryId, setCategoryId] = useState(""), [subjectId, setSubjectId] = useState(""), [level, setLevel] = useState("");
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10);
   const [title, setTitle] = useState(""), [description, setDescription] = useState("");
-  const [category, setCategory] = useState<NonNullable<ProductCourse["category"]>>("European Humanities");
+  const [category, setCategory] = useState<"" | NonNullable<ProductCourse["category"]>>("");
   const [creating, setCreating] = useState(false), [showCatalogue, setShowCatalogue] = useState(false);
   const [editing, setEditing] = useState<ProductCourse | null>(null), [preview, setPreview] = useState<ProductCourse | null>(null);
   const [assigning, setAssigning] = useState<ProductCourse | null>(null), [ownerEmail, setOwnerEmail] = useState("");
@@ -61,7 +61,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
   async function create(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
     try {
-      const data = await mutate("/api/backoffice/courses", "POST", { title, description, category });
+      const data = await mutate("/api/backoffice/courses", "POST", { title, description, ...(category ? { category } : {}) });
       setTitle(""); setDescription(""); setCreating(false); setEditing(data.course); await load();
     } catch (e) { setError(e instanceof Error ? e.message : messages.errors.failed); } finally { setBusy(false); }
   }
@@ -121,7 +121,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
         {creating && <form className={styles.cardForm} onSubmit={create}>
           <label>{copy.courseTitle}<input value={title} maxLength={255} onChange={e => setTitle(e.target.value)} required disabled={busy}/></label>
           <label>{copy.description}<textarea value={description} maxLength={5000} onChange={e => setDescription(e.target.value)} rows={3} disabled={busy}/></label>
-          <label>{copy.category}<select value={category} onChange={e => setCategory(e.target.value as typeof category)} disabled={busy}>{(["Chinese Humanities", "European Humanities", "Science"] as const).map((value, index) => <option key={value} value={value}>{getMessages(locale).portal.courseCategories[index + 1]}</option>)}</select></label>
+          <label>{copy.category}<select value={category} onChange={e => setCategory(e.target.value as typeof category)} disabled={busy}><option value="">{messages.none}</option>{(["Chinese Humanities", "European Humanities", "Science"] as const).map((value, index) => <option key={value} value={value}>{getMessages(locale).portal.courseCategories[index + 1]}</option>)}</select></label>
           <div className={styles.rowActions}><button className={styles.primaryBtn} disabled={busy}>{copy.create}</button><button type="button" className={styles.secondaryBtn} disabled={busy} onClick={() => setCreating(false)}>{messages.cancel}</button></div>
         </form>}
         <div className={styles.filters}>
@@ -138,7 +138,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
             <thead><tr><th>{messages.columnCourse}</th><th>{messages.category}</th><th>{messages.status}</th><th>{messages.lessons}</th><th>{messages.updated}</th><th>{messages.columnActions}</th></tr></thead>
             <tbody>{result.courses.map(course => {
               const cover = course.cover || course.thumbnailPath;
-              const categoryLabel = courseCategoryLabel(course, defaultPortalContent.categories, locale, catalogue) || messages.none;
+              const categoryLabel = courseCategoryDisplay(course, defaultPortalContent.categories, locale, catalogue).cardLabel || messages.none;
               return <tr key={course.id}>
                 <td><div className={styles.courseCell}>{cover ? <img src={cover} alt="" width={64} height={40}/> : <span className={styles.coverPlaceholder} />}<div><strong>{course.title}</strong>{course.subtitle ? <span>{course.subtitle}</span> : null}</div></div></td>
                 <td><span className={styles.badge}>{categoryLabel}</span></td>

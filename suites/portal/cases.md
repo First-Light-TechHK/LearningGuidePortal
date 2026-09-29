@@ -54,4 +54,4 @@ Sits beside UC-PORTAL-1 course identity. The course page still reads identity fr
 ### Edge
 - Title: A missing category is omitted, and a subject does not replace the category crumb
 - Steps: Open a course with no category. Open a poetry subject under humanities and a biology subject under science with no categoryId
-- Expected: The category crumb, chip, card line, meta category, recommendation category and pricing group are absent. The course is not filed under Science, European Humanities, or Chinese Humanities. A humanities course whose subject is biology still shows European Humanities, not Science.
+- Expected: With no categoryId, no subject parent, and no exact legacy id, the category crumb, chip, card line, meta category, recommendation category and pricing group are absent. Poetry whose catalogue parent is european-humanities shows European Humanities, not Poetry. Biology whose catalogue parent is science shows Science, not Biology. A humanities course whose subject is biology still shows European Humanities, not Science.
