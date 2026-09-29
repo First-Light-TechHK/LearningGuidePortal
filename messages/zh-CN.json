@@ -1,5 +1,23 @@
 {
   "brand": "Learning Guide",
+  "previewVideoDesign": {
+    "back": "返回课程详情",
+    "outline": "课程目录",
+    "deepLearning": "深度学习",
+    "toolsDescription": "体验更多学习方式。",
+    "tutor": "询问 AI 导师",
+    "tutorDescription": "获取本课知识与思路的帮助。",
+    "understanding": "检查你的理解",
+    "understandingDescription": "回顾并思考你所学的内容。",
+    "explore": "进一步探索",
+    "exploreDescription": "发现相关观点与展品。",
+    "previewBadge": "免费试看 · 前 {minutes} 分钟",
+    "previewBadgeOne": "免费试看 · 前 1 分钟",
+    "play": "播放视频",
+    "valueTitle": "看得更多，思考更深。",
+    "valueDescription": "通过引导观察、视觉线索和自己的解读继续学习。",
+    "unlock": "解锁完整课程"
+  },
   "homeDesign": {
     "heroTitle": "怀着好奇学习，\n带着自信成长。",
     "heroDescription": "Learning Guide 将世界级的文化知识转化为个性化的学习旅程，\n通过视频或文本，按照自己的节奏学习。",
@@ -57,7 +75,7 @@
       "AI 学习助手",
       "AI 引导的深度理解",
       "拓展阅读，了解背景",
-      "双语：中文 / English"
+      "双语：中文 / 英文"
     ],
     "included": "包含在分类订阅计划中",
     "months": "个月",

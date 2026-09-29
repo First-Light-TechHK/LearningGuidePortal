@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { totalVideoMinutes } from "@/lib/courseDuration";
 import { getMessages } from "@/lib/i18n/messages";
@@ -21,11 +20,11 @@ export function CatalogueCourseCard({ course, category, locale, variant = "catal
     </article>;
   }
   return <article className="portal-course-card">
-    <div className="portal-course-image-wrap"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /></div>
+    <div className="portal-course-image-wrap"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /><span className="portal-course-category">{category}</span></div>
     <div className="portal-course-card-body">
-      <h3>{course.title}</h3><div className="portal-course-category">{category}</div><p>{course.description}</p>
-      <div className="portal-course-card-bottom"><div className="portal-course-meta"><span>{lessons.length} {copy.lessonCount}</span>{videoMinutes === null ? null : <span>{videoMinutes} {copy.minutesShort} {copy.videoDuration}</span>}</div>
-        <Link prefetch={false} className="portal-course-link" href={`/${locale}/portal/courses/${course.id}`}>{copy.viewCourse}<ArrowRight size={16} aria-hidden="true" /></Link>
+      <div className="portal-course-heading"><h3>{course.title}</h3><div className="portal-course-meta"><span>{lessons.length} {copy.lessonCount}</span>{videoMinutes === null ? null : <span>· {videoMinutes} {copy.minutesShort} {copy.videoDuration}</span>}</div></div>
+      <div className="portal-course-card-bottom"><p>{course.description}</p>
+        <Link prefetch={false} className="portal-course-link" href={`/${locale}/portal/courses/${course.id}`} aria-label={`${copy.viewCourse}: ${course.title}`}><span aria-hidden="true">→</span></Link>
       </div>
     </div>
   </article>;

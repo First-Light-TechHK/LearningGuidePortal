@@ -67,12 +67,19 @@ dialog.subscription-confirmation.upgrade-confirmation .subscription-consents lab
 .portal-course-card .portal-course-image-wrap { height:auto; aspect-ratio:400 / 190; }
 .portal-course-card .portal-course-card-body { padding:20px 23px; gap:6px; }
 .portal-course-card h3 { font-size:17px; line-height:23px; font-weight:600; }
-.portal-course-card .portal-course-category { font-size:12px; line-height:17px; color:#64748b; }
+.portal-course-card .portal-course-category { position:absolute; top:10px; left:18px; max-width:calc(100% - 36px); padding:5px 9px; border-radius:20px; background:#ecf1ff; color:#155dfc; font-size:11px; line-height:15px; font-weight:600; }
+.portal-course-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; width:100%; }
+.portal-course-heading h3 { min-width:0; overflow-wrap:anywhere; }
 .portal-course-card p { font-size:12px; line-height:18px; }
-.portal-course-card-bottom { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; width:100%; margin-top:auto; padding-top:14px; }
+.portal-course-card-bottom { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; margin-top:auto; padding-top:8px; }
+.portal-course-card-bottom p { min-width:0; overflow-wrap:anywhere; }
 .portal-course-card .portal-course-meta { font-size:12px; line-height:16px; gap:4px 8px; }
 .portal-course-card .portal-course-meta span:first-child { background:none; padding:0; border-radius:0; color:inherit; font-weight:400; }
-.portal-course-link { display:inline-flex; align-items:center; gap:5px; color:#1660d8; text-decoration:none; font-size:13px; line-height:18px; flex-shrink:0; }
+.portal-course-card .portal-course-link { display:inline-flex; align-items:center; justify-content:center; min-width:25px; min-height:25px; margin-top:0; color:#155dfc; text-decoration:none; font-size:18px; font-weight:600; line-height:25px; flex-shrink:0; }
+.portal-catalog-courses .portal-category-filter a { background:#f2f4f8; border-color:#f2f4f8; color:#56627a; }
+.portal-catalog-courses .portal-category-filter a.active { background:#2764ff; border-color:#2764ff; color:#fff; }
+.portal-catalog-courses .portal-category-filter a:not(.active):hover { background:#e4e8ef; border-color:#e4e8ef; color:#56627a; }
+.portal-catalog-courses .portal-category-filter a:focus-visible, .portal-course-card .portal-course-link:focus-visible { outline:2px solid #155dfc; outline-offset:3px; }
 @media(max-width:720px) { .portal-section.portal-section-courses,.portal-section.portal-catalog-courses { width:calc(100% - 40px); } }
 .public-lesson-actions { display:flex; flex-wrap:wrap; gap:20px; align-items:center; margin-top:24px; }
 .portal-account-page.subscription-design-page > .portal-section { padding-top:50px; min-height:1150px; }
@@ -176,7 +183,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 @media(max-width:1320px) { .portal-account-page.overview-design-page > .account-dashboard { padding-right:40px; } .portal-account-page .account-learning-card.overview-course { grid-template-columns:130px minmax(0,1fr); gap:20px; } .overview-course .account-learning-action { grid-column:2; margin-top:0; } .overview-heading { flex-wrap:wrap; padding-bottom:32px; } }
 @media(max-width:720px) { .portal-account-page.overview-design-page > .account-dashboard { padding:28px 20px 48px; min-height:600px; } .overview-heading { min-height:0; margin-bottom:32px; } .overview-course .account-learning-action { width:100%; margin-top:20px; } .overview-progress-labels { flex-wrap:wrap; gap:4px 16px; } }
 .pricing-design-hero { min-height:200px; display:grid; place-content:center; gap:18px; box-sizing:border-box; background:#155dfc; color:#fff; text-align:center; }
-.courses-design-hero { min-height:225px; padding:55px max(20px,calc((100% - 1240px)/2)); background:#155dfc; color:#fff; }
+.courses-design-hero { min-height:225px; padding:55px max(20px,calc((100% - 1240px)/2)); background: url("/portal/course-banner.png") center / cover no-repeat; color:#fff; }
 .courses-design-hero h1 { margin:0; color:#fff; font-size:32px; line-height:42px; }.courses-design-hero p { margin:8px 0 28px; color:#c7d6ff; font-size:14px; }.courses-design-hero .portal-button { min-width:136px; min-height:30px; background:#fff; color:#155dfc; }
 .portal-catalog-courses { width:min(1290px,calc(100% - 40px)); padding:45px 0 24px; }.portal-catalog-courses .portal-section-heading h2 { font-size:27px; }.portal-catalog-courses .portal-category-filter { margin:22px 0 28px; }.portal-catalog-courses .portal-course-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:36px 20px; }
 .courses-design-method { display:grid; grid-template-columns:1.2fr 1fr; gap:60px; padding:48px max(20px,calc((100% - 1240px)/2)); background:#e8f0ff; }.courses-design-method h2 { margin:8px 0 16px; font-size:28px; }.courses-design-method > div > p:last-child { color:#64728b; }.courses-design-method ol { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; align-items:center; padding:0; margin:0; list-style:none; color:#155dfc; font-size:14px; font-weight:600; }.courses-design-method li::before { display:block; margin-bottom:8px; color:#a8c1ff; content:counter(list-item,decimal-leading-zero); }

@@ -1,5 +1,23 @@
 {
   "brand": "Learning Guide",
+  "previewVideoDesign": {
+    "back": "Back to course details",
+    "outline": "COURSE OUTLINE",
+    "deepLearning": "Deep Learning",
+    "toolsDescription": "More learning experience.",
+    "tutor": "Ask AI Tutor",
+    "tutorDescription": "Get help with ideas from this lesson.",
+    "understanding": "Check your understanding",
+    "understandingDescription": "Reflect on what you have learned.",
+    "explore": "Explore further",
+    "exploreDescription": "Discover related ideas and exhibits.",
+    "previewBadge": "Free preview · First {minutes} minutes",
+    "previewBadgeOne": "Free preview · First minute",
+    "play": "Play video",
+    "valueTitle": "See more. Think deeper.",
+    "valueDescription": "Continue with guided observation, visual cues, and your own interpretation.",
+    "unlock": "Unlock the full course"
+  },
   "homeDesign": {
     "heroTitle": "Learn with curiosity.\nGrow with confidence.",
     "heroDescription": "Learning Guide turns world-class cultural knowledge\ninto a personal learning journey, in video or text, at your own pace.",
@@ -57,7 +75,7 @@
       "AI-powered learning assistant",
       "AI-Guided Deep Comprehension",
       "Extended readings for context",
-      "Bilingual: 中文 / English"
+      "Bilingual: Chinese / English"
     ],
     "included": "INCLUDED WITH A CATEGORY PLAN",
     "months": "months",
@@ -125,8 +143,8 @@
     "lessonCount": "lessons",
     "videoDuration": "video",
     "viewCourse": "View course",
-    "exploreAllCourses": "Explore all courses",
-    "exploreDescription": "Explore curated learning journeys across the humanities, arts and sciences.",
+    "exploreAllCourses": "Learn to look more closely.",
+    "exploreDescription": "Every course offers a choice between video and text, designed to keep you actively thinking.",
     "minutesShort": "min",
     "whatYouWillLearn": "What You Will Learn",
     "benefits": [
@@ -137,8 +155,8 @@
     ],
     "popularCourses": "Popular Courses",
     "popularCoursesDescription": "Start learning with our available courses",
-    "whyUs": "Why Learning Guide",
-    "whyUsTitle": "Learn with structure, guidance and room to think.",
+    "whyUs": "THE LEARNING GUIDE METHOD",
+    "whyUsTitle": "Learn through stories, questions and connections.",
     "quicklyGuide": "Quickly Guide",
     "quicklyGuideSteps": [
       "Choose a course",

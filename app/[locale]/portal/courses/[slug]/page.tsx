@@ -56,7 +56,7 @@ export default async function CourseDetailPage({ params }: {
           <Link href={`/${locale}/portal`}>{detail.home}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} />
           <Link href={catalogHref}>{copy.navigation.courses}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} />
           <Link href={`${catalogHref}?category=${encodeURIComponent(identity.track)}`}>{identity.track}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} />
-          <span aria-current="page">{detail.courseInfo}</span>
+          <span aria-current="page">{identity.title}</span>
         </nav>
         <section className={styles.hero}>
           <div className={styles.cover}><CourseThumbnail slug={course?.slug || slug} title={identity.title} src={signedCover} /></div>

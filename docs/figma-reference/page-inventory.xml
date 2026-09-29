@@ -158,7 +158,7 @@
     </frame>
     <frame id="3:885" name="Course Directory" x="0" y="573" width="1440" height="939">
       <text id="3:886" name="Explore all courses" x="100" y="68" width="296" height="43" />
-      <text id="3:887" name="Explore curated learning journeys across the humanities, arts and sciences." x="100" y="116" width="570" height="22" />
+      <text id="3:887" name="Begin with a guided preview of The Art of Seeing, then continue when you are ready." x="100" y="116" width="570" height="22" />
       <frame id="3:888" name="Course Categories" x="100" y="170" width="592" height="39">
         <frame id="3:889" name="Category — All courses" x="0" y="0" width="112" height="39">
           <text id="3:890" name="All courses" x="18" y="10" width="76" height="19" />

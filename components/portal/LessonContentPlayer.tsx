@@ -215,11 +215,20 @@ function Exercise({ node, locale }: { node: LessonNode; locale: LessonLocale }) 
   </div>;
 }
 
-function ContentPlayer({ content, locale, fallbackImageUrl, trialGate }: { content: LessonContent; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate }) {
+type VideoPresentation = { poster?: string; badge?: string; playLabel: string };
+
+function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPresentation, nodeRequest }: { content: LessonContent; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number } }) {
   const t = lessonMessages(locale), video = useRef<HTMLVideoElement>(null), seen = useRef(new Set<string>()), lastTime = useRef(-0.01), resume = useRef(false), seeking = useRef(false);
   const [active, setActive] = useState<LessonNode | null>(null), activeRef = useRef<LessonNode | null>(null), [notice, setNotice] = useState('');
   const [trialOpen, setTrialOpen] = useState(false);
+  const [started, setStarted] = useState(false);
   const nodes = (content.nodes || []).filter(node => node.active !== false), titles = Object.fromEntries(nodes.map(node => [node.id, node.title || t.newNode]));
+  useEffect(() => {
+    if (!nodeRequest || trialGate) return;
+    const node = content.nodes.find(item => item.active !== false && item.id === nodeRequest.id);
+    if (node) open(node);
+    // Each explicit request opens once, including repeated requests for the same node.
+  }, [nodeRequest]);
   function showTrial() { video.current?.pause(); setTrialOpen(true); }
   function enforceVideoTrial() {
     if (!trialGate || content.type !== 'video') return false;
@@ -247,13 +256,13 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate }: { conte
   return <section className="la-content-player"><h3>{content.title}</h3>
     {content.type === 'text' && <TextContentPlayer html={content.html || ''} nodes={nodes} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate} onNode={open}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
-    {content.type === 'video' && (safeMediaUrl(content.url) ? <video ref={video} className="la-lesson-video" src={safeMediaUrl(content.url)} controls playsInline preload="metadata" onTimeUpdate={() => { if (!enforceVideoTrial()) tick(); }} onPlay={() => { if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else tick(); }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
+    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><video ref={video} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} controls playsInline preload="metadata" onTimeUpdate={() => { if (!enforceVideoTrial()) tick(); }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else tick(); }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
       if (enforceVideoTrial()) { seeking.current = false; return; }
       // A forward seek skips earlier instances; seeking backwards rearms later ones.
       seen.current = new Set(nodes.filter(node => node.triggerTime < now - 0.05).map(node => node.id));
       lastTime.current = now - 0.05; seeking.current = false; tick();
-    }} onEnded={() => { resume.current = false; }} onError={() => setNotice(t.mediaFailed)}/> : <p role="alert">{t.invalidUrl}</p>)}
+    }} onEnded={() => { resume.current = false; }} onError={() => setNotice(t.mediaFailed)}/>{videoPresentation?.badge && <span className="la-video-badge">{videoPresentation.badge}</span>}{videoPresentation && !started && <button type="button" className="la-video-play" aria-label={videoPresentation.playLabel} onClick={() => { void video.current?.play().catch(() => setNotice(t.playbackBlocked)); }}><span aria-hidden="true">▶</span></button>}</div> : <p role="alert">{t.invalidUrl}</p>)}
     {nodes.length > 0 && <div className="la-node-links" aria-label={t.nodes}>{nodes.map(node => <button type="button" key={node.id} onClick={() => open(node)}>{content.type === 'video' && <time>{Math.floor(node.triggerTime / 60)}:{String(Math.floor(node.triggerTime % 60)).padStart(2, '0')}</time>}{node.title || t.newNode}</button>)}</div>}
     {notice && <p role="status">{notice}</p>}
     {active && <LessonModal title={active.title || t.newNode} locale={locale} onClose={close}>
@@ -264,11 +273,11 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate }: { conte
   </section>;
 }
 
-export function LessonContentPlayer({ contents, locale, fallbackImageUrl = null, trialGate }: { contents: LessonContent[]; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate }) {
+export function LessonContentPlayer({ contents, locale, fallbackImageUrl = null, trialGate, selectedContentId, onContentChange, hideNavigation = false, videoPresentation, nodeRequest }: { contents: LessonContent[]; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; selectedContentId?: string; onContentChange?: (id: string) => void; hideNavigation?: boolean; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number } }) {
   contents = contents.filter(content => content.active !== false);
   const [selectedId, setSelectedId] = useState(contents[0]?.id || '');
-  const selected = contents.find(content => content.id === selectedId) || contents[0];
-  return <div className="la la-player">{contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => setSelectedId(content.id)}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
+  const selected = contents.find(content => content.id === (selectedContentId ?? selectedId)) || contents[0];
+  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
 }
 
 export function LegacyLessonBody({ body, locale, trialGate }: { body: string; locale: LessonLocale; trialGate?: TrialGate }) {
