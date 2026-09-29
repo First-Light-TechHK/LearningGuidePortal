@@ -2,7 +2,7 @@ import { secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { isAdminHost, requestOriginMatches } from "@/services/adminHost";
-import { authenticateUser, createSession, publicUser } from "@/services/productStore";
+import { authenticateUser, createSession, publicUser, UnverifiedAccountError } from "@/services/productStore";
 import { canAuthorCourses } from "@/services/backofficeAccess";
 import { ADMIN_SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
 
@@ -20,6 +20,7 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    return NextResponse.json({ ok: false, code: message.startsWith("Verify") ? "EMAIL_NOT_VERIFIED" : "AUTHENTICATION_FAILED", requestId }, { status: message.startsWith("Verify") ? 403 : 401 });
+    const unverified = error instanceof UnverifiedAccountError || message.startsWith("Verify");
+    return NextResponse.json({ ok: false, code: unverified ? "EMAIL_NOT_VERIFIED" : "AUTHENTICATION_FAILED", requestId }, { status: unverified ? 403 : 401 });
   }
 }

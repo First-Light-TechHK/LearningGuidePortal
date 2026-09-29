@@ -163,6 +163,39 @@ test("ML-FR-010: opening every Learning Point is Completed at 100%, not a percen
   assert.ok(card?.completedAt);
 });
 
+test("ML-FR-007 depth: unique-LP progress does not become time progress after refund", async () => {
+  const user = await verifiedUser(store, "ml-fr-007-depth-refund@example.test");
+  await purchaseCourse(store, user.id);
+  await openLearningPoint(store, user.id, PREVIEW_LP, "depth-refund-open");
+  const paid = (await store.getLearningOverview(user.id)).orders.find(
+    (order) => order.status === "paid" && order.kind !== "trial_activation",
+  );
+  assert.ok(paid);
+  await store.refundDemoOrder(paid.id);
+
+  const overview = await store.getLearningOverview(user.id);
+  const card = overview.courses.find((item) => item.courseId === COURSE_ID);
+  assert.equal(card?.openedLearningPointCount, 1);
+  assert.equal(card?.progress, 50);
+  assert.notEqual(card?.progress, 56);
+});
+
+test("ML-FR-007 depth: repeating an LP after refund still stays at 50%", async () => {
+  const user = await verifiedUser(store, "ml-fr-007-depth-repeat@example.test");
+  await purchaseCourse(store, user.id);
+  await openLearningPoint(store, user.id, PREVIEW_LP, "depth-repeat-open");
+  const paid = (await store.getLearningOverview(user.id)).orders.find(
+    (order) => order.status === "paid" && order.kind !== "trial_activation",
+  );
+  assert.ok(paid);
+  await store.refundDemoOrder(paid.id);
+  await openLearningPoint(store, user.id, PREVIEW_LP, "depth-repeat-again", "preview");
+  const overview = await store.getLearningOverview(user.id);
+  const card = overview.courses.find((item) => item.courseId === COURSE_ID);
+  assert.equal(card?.openedLearningPointCount, 1);
+  assert.equal(card?.progress, 50);
+});
+
 test("ML-FR-009: preview opens merge into paid unique-LP progress after purchase", async () => {
   const user = await verifiedUser(store, "ml-fr-007-merge@example.test");
   await openLearningPoint(store, user.id, PREVIEW_LP, "preview-before-pay", "preview");

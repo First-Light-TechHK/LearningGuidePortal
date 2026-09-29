@@ -17,7 +17,8 @@ async function headerHostname() {
   return raw.split(":")[0].toLowerCase();
 }
 
-export async function currentProductUser(): Promise<ProductUser | null> {
+export async function currentProductUser(request?: Request): Promise<ProductUser | null> {
+  if (request) return currentProductUserFromRequest(request);
   const cookieStore = await cookies();
   return getUserBySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
 }

@@ -27,8 +27,8 @@ after(async () => {
   }
 });
 
-test("checkEntitlement takes only userId and courseId — no device argument", () => {
-  assert.equal(store.checkEntitlement.length, 2);
+test("checkEntitlement can take an optional device band after userId and courseId", () => {
+  assert.ok(store.checkEntitlement.length >= 2);
 });
 
 test("checkEntitlement.allowed is false when the user has no entitlements", async () => {

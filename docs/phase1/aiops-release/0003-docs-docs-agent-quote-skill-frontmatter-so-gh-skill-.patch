@@ -1,0 +1,57 @@
+From 858cf0d5ad915a96a79394d57b19a8e8022028e6 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 14:13:45 +0000
+Subject: [PATCH 3/6] docs(docs/agent): quote skill frontmatter so gh skill
+ install --all works
+
+Unquoted "Ops only:" in manage-repo description is invalid YAML; gh skill
+install from overlay-v1.0.0 already fails on that file.
+---
+ skills/dev-pr/SKILL.md      | 10 +++++++++-
+ skills/manage-repo/SKILL.md | 11 ++++++++++-
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/skills/dev-pr/SKILL.md b/skills/dev-pr/SKILL.md
+index bb6d3c1..58aee27 100644
+--- a/skills/dev-pr/SKILL.md
++++ b/skills/dev-pr/SKILL.md
+@@ -1,6 +1,14 @@
+ ---
+ name: dev-pr
+-description: Act as 开发端 (human developer) on a Forge-protected GitHub repo. This skill should be used when running python -m forge check (local pre-submit gate), submitting a PR via python -m forge submit (代推; check must be green), writing the PR brief (docs/pr-brief.md Conventional Commits title + six headings), requesting review, or fixing an armed Overlay failure. Do not use to apply Rulesets, merge-gate setup, live forge apply, merge, or write reviewed_by / armed (use manage-repo). Agents use this plus forge/agent-policy.md and must not self-merge. Do not invent branch, workflow, or skill prefixes.
++description: >-
++  Act as 开发端 (human developer) on a Forge-protected GitHub repo.
++  Use when running python -m forge check (local pre-submit gate), submitting a
++  PR via python -m forge submit (代推; check must be green), writing the PR brief
++  (docs/pr-brief.md Conventional Commits title + six headings), requesting
++  review, or fixing an armed Overlay failure. Do not apply Rulesets, set up
++  merge gates, live-apply Forge, merge, or write reviewed_by / armed
++  (use manage-repo). Agents use this plus forge/agent-policy.md and must not
++  self-merge. Do not invent branch, workflow, or skill prefixes.
+ metadata:
+   short-description: Open PRs; do not arm or apply Forge
+ ---
+diff --git a/skills/manage-repo/SKILL.md b/skills/manage-repo/SKILL.md
+index 5ef2b07..85296b5 100644
+--- a/skills/manage-repo/SKILL.md
++++ b/skills/manage-repo/SKILL.md
+@@ -1,6 +1,15 @@
+ ---
+ name: manage-repo
+-description: Act as 管理端 (repo admin / maintainer) on GitHub-native review and merge. Ops only: review required checks (合入锁) and merge when green. Local python -m forge check is the 开发侧 代推锁 — Ops does not run it for developers. This skill should be used when applying a Forge Ruleset, setting required checks, writing CODEOWNERS, merging a green+approved PR, rejecting a PR that fails pr-title or lacks the six headings (docs/pr-brief.md), or arming/blocking an Overlay suite (`reviewed_by`). Do not push or forge submit for developers (use dev-pr). Do not invent branch, workflow, or skill prefixes. Product install SOP stays in use-forge and use-overlay.
++description: >-
++  Act as 管理端 (repo admin / maintainer) on GitHub-native review and merge.
++  Ops only reviews required checks (合入锁) and merges when green.
++  Local python -m forge check is the 开发侧 代推锁 — Ops does not run it for developers.
++  Use when applying a Forge Ruleset, setting required checks, writing CODEOWNERS,
++  merging a green+approved PR, rejecting a PR that fails pr-title or lacks the
++  six headings (docs/pr-brief.md), or arming/blocking an Overlay suite
++  (`reviewed_by`). Do not push or forge submit for developers (use dev-pr).
++  Do not invent branch, workflow, or skill prefixes. Product install SOP stays
++  in use-forge and use-overlay.
+ metadata:
+   short-description: Admin Ruleset, merge, Overlay arm/block
+ ---
+-- 
+2.43.0
+

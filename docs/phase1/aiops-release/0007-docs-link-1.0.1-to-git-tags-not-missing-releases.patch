@@ -1,0 +1,77 @@
+From 1d70a6cd7804e2fb6bbfaea63d56024b1707473f Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 18:21:55 +0000
+Subject: [PATCH] docs(docs/agent): link 1.0.1 pins to git tags, not missing
+ Releases
+
+overlay-v1.0.1 / forge-v1.0.1 exist as tags at b4afc10. GitHub Release
+pages were never created, so /releases/tag/overlay-v1.0.1 404s.
+---
+ README.md        | 6 +++---
+ README.zh-CN.md  | 6 +++---
+ docs/products.md | 2 +-
+ docs/release.md  | 2 +-
+ 4 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/README.md b/README.md
+index b05de4c..5eac2d7 100644
+--- a/README.md
++++ b/README.md
+@@ -8,10 +8,10 @@ Public workshop for two reusable GitHub products: **Forge** (who may push / merg
+ 
+ | Product | Pin this tag | SHA | Job |
+ |---|---|---|---|
+-| **Overlay** | [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.1) | this tag (same commit as `forge-v1.0.1`) | Inbox → reviewable suites. Push runs only `armed`. No `generate`. |
+-| **Forge** | [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.1) | same commit | Local `check` then `submit` opens a draft PR. Humans + Ruleset merge. Never auto-merges. |
++| **Overlay** | [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/overlay-v1.0.1) | `b4afc10ae0be4725e5109030f14a05bb2291fe4a` (same commit as `forge-v1.0.1`) | Inbox → reviewable suites. Push runs only `armed`. No `generate`. |
++| **Forge** | [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/forge-v1.0.1) | same commit | Local `check` then `submit` opens a draft PR. Humans + Ruleset merge. Never auto-merges. |
+ 
+-Older pin [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) stays at `235e514e673fa68b24879c8e139f2a5c6633ebb5`. Do not force-move `1.0.0`. Do not pin floating `main`. GitHub Latest is one badge; pin the two product tags, not Latest.
++`1.0.1` is an annotated git tag, **not** a GitHub Release page. Do not link `/releases/tag/overlay-v1.0.1` (404). `git checkout overlay-v1.0.1` is the pin. Older pin [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) stays at `235e514e673fa68b24879c8e139f2a5c6633ebb5` — those Release objects exist. Do not force-move `1.0.0`. Do not pin floating `main`. GitHub Latest is one badge; pin the two product tags, not Latest.
+ 
+ Need: CPython **3.12+**. Clone this repo (or your fork) **beside** the product repo.
+ 
+diff --git a/README.zh-CN.md b/README.zh-CN.md
+index e4da005..890a7ad 100644
+--- a/README.zh-CN.md
++++ b/README.zh-CN.md
+@@ -8,10 +8,10 @@
+ 
+ | 产品 | 现在能 pin 的 tag | SHA | 管什么 |
+ |---|---|---|---|
+-| **Overlay** | [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.1) | 本 tag（与 `forge-v1.0.1` 同一提交） | 需求叶子 → 可审套件。CI 只跑 `armed`。没有 `generate`。 |
+-| **Forge** | [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.1) | 同一提交 | 本地 `check` 绿之后 `submit` 开 draft PR。人 + Ruleset 才合。Forge 不合入。 |
++| **Overlay** | [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/overlay-v1.0.1) | `b4afc10ae0be4725e5109030f14a05bb2291fe4a`（与 `forge-v1.0.1` 同一提交） | 需求叶子 → 可审套件。CI 只跑 `armed`。没有 `generate`。 |
++| **Forge** | [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/forge-v1.0.1) | 同一提交 | 本地 `check` 绿之后 `submit` 开 draft PR。人 + Ruleset 才合。Forge 不合入。 |
+ 
+-旧针 [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) 仍停在 `235e514e673fa68b24879c8e139f2a5c6633ebb5`。不要 force-move `1.0.0`。禁止 pin `main`。GitHub 的 Latest 徽章只挂一件产品，不要拿 Latest 当针。
++`1.0.1` 是已经 push 的 annotated git tag，**不是** GitHub Release 页面。不要链 `/releases/tag/overlay-v1.0.1`（会 404）。`git checkout overlay-v1.0.1` 即可。旧针 [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) 仍停在 `235e514e673fa68b24879c8e139f2a5c6633ebb5`，那两条 Release 在。不要 force-move `1.0.0`。禁止 pin `main`。GitHub 的 Latest 徽章只挂一件产品，不要拿 Latest 当针。
+ 
+ 需要：CPython **3.12+**。把本仓（或 fork）clone 到**产品仓旁边**。
+ 
+diff --git a/docs/products.md b/docs/products.md
+index a440d64..2d4c98b 100644
+--- a/docs/products.md
++++ b/docs/products.md
+@@ -203,4 +203,4 @@ examples/learning-guide/   # 第一个接入方 fixture，不是核心
+   release.yml           # 人点发布两条产品 tag；不是 CI
+ ```
+ 
+-版本：两个产品两个 tag，不要看成一个 Latest。接入方现在必须 pin 已发布的 [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.1) 与 [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.1)（同一提交）。旧针 `overlay-v1.0.0` / `forge-v1.0.0` 仍在 `235e514…`，不要 force-move。下一版用 `python -m forge release` 或 Actions `release` `workflow_dispatch`（见 [`release.md`](release.md)）。不 pin `main`。起步：仓库根 [`README.md`](../README.md) / [`README.zh-CN.md`](../README.zh-CN.md)。
++版本：两个产品两个 tag，不要看成一个 Latest。接入方现在必须 pin git tag [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/overlay-v1.0.1) 与 [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/forge-v1.0.1)（同一提交 `b4afc10ae0be4725e5109030f14a05bb2291fe4a`）。`1.0.1` 没有 GitHub Release 页面，不要链 `/releases/tag/`。旧针 `overlay-v1.0.0` / `forge-v1.0.0` 仍在 `235e514…`，不要 force-move。下一版用 `python -m forge release` 或 Actions `release` `workflow_dispatch`（见 [`release.md`](release.md)）。不 pin `main`。起步：仓库根 [`README.md`](../README.md) / [`README.zh-CN.md`](../README.zh-CN.md)。
+diff --git a/docs/release.md b/docs/release.md
+index 3c078d0..299f501 100644
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -8,7 +8,7 @@
+ | Overlay | `overlay-vX.Y.Z` | `overlay-v1.0.1` |
+ | Forge | `forge-vX.Y.Z` | `forge-v1.0.1` |
+ 
+-接入方 pin **已经存在的 tag 或 SHA**，不要 pin 浮动 `main`。当前官方针是 [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.1) / [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.1)。旧针 [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) 不要 force-move。不要让 README 指向还不存在的下一版 tag。GitHub 每个仓只有一个 Latest 徽章；两条 tag 都在，Latest 不代表另一条没发。
++接入方 pin **已经存在的 tag 或 SHA**，不要 pin 浮动 `main`。当前官方针是 git tag [`overlay-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/overlay-v1.0.1) / [`forge-v1.0.1`](https://github.com/LibertychaserUS/AIOps/tree/forge-v1.0.1)（`b4afc10ae0be4725e5109030f14a05bb2291fe4a`）。`1.0.1` 的 GitHub Release 对象还没建，不要链 `/releases/tag/overlay-v1.0.1`。旧针 [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) 不要 force-move。不要让 README 指向还不存在的下一版 tag。GitHub 每个仓只有一个 Latest 徽章；两条 `1.0.1` tag 都在，Latest 仍挂 `1.0.0`。
+ 
+ ---
+ 
+-- 
+2.43.0
+

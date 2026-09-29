@@ -18,3 +18,8 @@ export function paymentFailure(error: unknown, locale: "en-GB" | "zh-CN" = "en-G
   const message = getMessages(locale).paymentErrors.payment_unavailable;
   return NextResponse.json({ ok: false, code: "payment_unavailable", error: message, message, requestId }, { status: 502 });
 }
+
+export function quoteFailure(error: unknown, locale: "en-GB" | "zh-CN" = "en-GB") {
+  if (error instanceof PaymentError) return paymentFailure(error, locale);
+  return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Quote failed." }, { status: 400 });
+}

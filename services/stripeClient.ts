@@ -111,3 +111,18 @@ export async function createFullRefund(paymentIntentId: string) {
   const refund = await getStripe().refunds.create({ payment_intent: paymentIntentId });
   return { id: refund.id, status: refund.status || "unknown" };
 }
+
+export async function cancelStripeSubscription(subscriptionId: string) {
+  const subscription = await getStripe().subscriptions.cancel(subscriptionId);
+  return { id: subscription.id, status: subscription.status };
+}
+
+export async function updateSubscriptionCancelAtPeriodEnd(subscriptionId: string, cancelAtPeriodEnd: boolean) {
+  const subscription = await getStripe().subscriptions.update(subscriptionId, { cancel_at_period_end: cancelAtPeriodEnd });
+  return { id: subscription.id, cancelAtPeriodEnd: subscription.cancel_at_period_end, status: subscription.status };
+}
+
+export async function retrieveHostedInvoiceUrl(invoiceId: string) {
+  const invoice = await getStripe().invoices.retrieve(invoiceId);
+  return invoice.hosted_invoice_url || null;
+}

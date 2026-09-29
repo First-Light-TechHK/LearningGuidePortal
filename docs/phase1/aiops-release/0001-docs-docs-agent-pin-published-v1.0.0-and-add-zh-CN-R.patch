@@ -1,0 +1,756 @@
+From 8fa3e7be9602a54fab46b1945b3d3ce89003766b Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 13:59:31 +0000
+Subject: [PATCH 1/6] docs(docs/agent): pin published v1.0.0 and add zh-CN
+ README
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Stop telling agents to checkout overlay-v1.0.1 / forge-v1.0.1 while those tags do not exist. Cold start is clone → published pin → pip → PYTHONPATH → forge check. Live apply stays in manage-repo.
+---
+ AGENTS.md                    |   2 +-
+ README.md                    |  62 +++++++-----
+ README.zh-CN.md              |  94 ++++++++++++++++++
+ docs/design.md               |   7 +-
+ docs/products.md             |   2 +-
+ docs/release.md              |   3 +-
+ forge/forge.example.yaml     |   4 +
+ pyproject.toml               |   2 +-
+ skills/design-cases/SKILL.md |  26 +++--
+ skills/manage-repo/SKILL.md  |   4 +-
+ skills/use-forge/SKILL.md    | 181 ++++++++++++++++++-----------------
+ skills/use-overlay/SKILL.md  |  31 +++++-
+ 12 files changed, 286 insertions(+), 132 deletions(-)
+ create mode 100644 README.zh-CN.md
+
+diff --git a/AGENTS.md b/AGENTS.md
+index 546f22e..50282a0 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -2,7 +2,7 @@
+ 
+ Workshop for two reusable products: **Forge** (ordered GitHub collab) and **Overlay** (testgen + armed CI). Learning Guide is the first fixture, not the product. Not Proctor.
+ 
+-**Start:** public README [`README.md`](README.md) § Native skills. Standard paths — Codex: `.agents/skills/` / `~/.agents/skills/`; Cursor: `.cursor/skills/` / `~/.cursor/skills/`; Claude Code: `.claude/skills/` / `~/.claude/skills/`. Pin `overlay-v1.0.1` / `forge-v1.0.1` after publish. Do not vendor the tool.
++**Start:** public README [`README.md`](README.md) / [`README.zh-CN.md`](README.zh-CN.md). Standard paths — Codex: `.agents/skills/` / `~/.agents/skills/`; Cursor: `.cursor/skills/` / `~/.cursor/skills/`; Claude Code: `.claude/skills/` / `~/.claude/skills/`. Pin published `overlay-v1.0.0` / `forge-v1.0.0` (SHA `235e514…`). Do not pin `main`. Do not checkout `v1.0.1` until those tags exist on GitHub. Do not vendor the tool.
+ 
+ - Do not change LearningGuidePortal Verify.
+ - Do not attach/run/gate the intern workspace Proctor from here.
+diff --git a/README.md b/README.md
+index 94b03eb..81e6cf3 100644
+--- a/README.md
++++ b/README.md
+@@ -1,18 +1,29 @@
+ # AIOps
+ 
+-Public workshop for two reusable GitHub products: **Forge** (ordered PRs) and **Overlay** (reviewable tests; CI runs only `armed` suites). Not the empty First-Light `AIOps` repo. Learning Guide is a fixture, not the product. Neither deploys. Neither replaces an adopter’s existing build gate (Learning Guide Verify is the first example of that rule).
++[中文说明](README.zh-CN.md)
+ 
+-**Other agents: start in this file.** Pin the two product tags. Do not pin floating `main`. Do not copy `forge/`, `overlay/`, `schema/`, or `prompts/` into a product git repo.
++Public workshop for two reusable GitHub products: **Forge** (who may push / merge) and **Overlay** (reviewable tests; CI runs only `armed` suites). Not the empty First-Light `AIOps` repo. Learning Guide is a fixture, not the product. Neither deploys. Neither replaces an adopter’s existing build gate (Learning Guide Verify is the first example of that rule).
+ 
+-| Product | Pin this tag | Release | Job |
++**Other agents: start in this file, or [README.zh-CN.md](README.zh-CN.md).** Pin **published** tags only. Do not pin floating `main`. Do not copy `forge/`, `overlay/`, `schema/`, or `prompts/` into a product git repo.
++
++| Product | Pin this tag | SHA | Job |
+ |---|---|---|---|
+-| **Overlay** | `overlay-v1.0.1` | published after this slice lands on `main` | Inbox → reviewable suites. Push runs only `armed`. No `generate`. |
+-| **Forge** | `forge-v1.0.1` | published after this slice lands on `main` | Local `check` then `submit` opens a draft PR. Humans + Ruleset merge. Never auto-merges. |
++| **Overlay** | [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) | `235e514e673fa68b24879c8e139f2a5c6633ebb5` | Inbox → reviewable suites. Push runs only `armed`. No `generate`. |
++| **Forge** | [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) | same SHA | Local `check` then `submit` opens a draft PR. Humans + Ruleset merge. Never auto-merges. |
+ 
+-Still on GitHub today: [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) and [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) (same old SHA). After this PR merges, a human publishes **1.0.1** on the new `main` SHA — see [Publish](#8-publish-after-merge-not-production-cd). GitHub Latest is one badge; pin the two tags, not `main`.
++`main` may already contain unreleased `1.0.1` code (`pyproject.toml`). **Tags `overlay-v1.0.1` / `forge-v1.0.1` do not exist until a human publishes them** ([`docs/release.md`](docs/release.md)). Agents must pin **v1.0.0**. Do not `git checkout overlay-v1.0.1`. Do not pin `main`. GitHub Latest is one badge; pin the two tags, not Latest.
+ 
+ Need: CPython **3.12+**. Clone this repo (or your fork) **beside** the product repo.
+ 
++---
++
++## 30 seconds
++
++1. **Forge** decides who can push / open a PR, which paths are denied, and which **CI job names** must be green. It does not merge.
++2. **Overlay** decides which requirement leaves become reviewable suites. CI runs only **`armed`**. `draft` / `blocked` are not red.
++3. Clone this repo next to the product, `git checkout overlay-v1.0.0` (or `forge-v1.0.0` — same commit), `python3 -m pip install -r requirements.txt`, set `PYTHONPATH`, then `python -m forge check` and `python -m overlay validate`.
++4. Agents may `check` / `submit`. Agents must **not** live-`apply` Rulesets, fill `reviewed_by`, or flip a suite to `armed`.
++
+ ```text
+ ../AIOps/        # this workshop or your fork — tool source stays here
+ ./my-product/    # adopter git: thin yaml + inbox/suites only
+@@ -48,7 +59,7 @@ ln -s /abs/path/to/AIOps/skills/use-forge ~/.agents/skills/use-forge
+ ln -s /abs/path/to/AIOps/skills/use-overlay ~/.agents/skills/use-overlay
+ 
+ # or GitHub CLI into Codex’s shared project dir
+-gh skill install LibertychaserUS/AIOps --agent copilot --pin overlay-v1.0.1
++gh skill install LibertychaserUS/AIOps --agent copilot --pin overlay-v1.0.0
+ ```
+ 
+ (`gh skill install --agent copilot` writes `.agents/skills`, which Codex and several other hosts share.)
+@@ -74,7 +85,7 @@ mkdir -p ~/.cursor/skills
+ ln -s /abs/path/to/AIOps/skills/use-forge ~/.cursor/skills/use-forge
+ ln -s /abs/path/to/AIOps/skills/use-overlay ~/.cursor/skills/use-overlay
+ 
+-gh skill install LibertychaserUS/AIOps --agent cursor --pin overlay-v1.0.1
++gh skill install LibertychaserUS/AIOps --agent cursor --pin overlay-v1.0.0
+ ```
+ 
+ Cloud Agents only see **project** skills in the repo, or `~/.cursor/skills` if you turn on Sync Skills. UI: Customize → Skills, or add this GitHub repo as a remote skill source.
+@@ -100,7 +111,7 @@ mkdir -p ~/.claude/skills
+ ln -s /abs/path/to/AIOps/skills/use-forge ~/.claude/skills/use-forge
+ ln -s /abs/path/to/AIOps/skills/use-overlay ~/.claude/skills/use-overlay
+ 
+-gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.1
++gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.0
+ ```
+ 
+ Restart the agent after adding paths. Then `/use-forge` or `/use-overlay`, or let it pick from the description.
+@@ -113,7 +124,7 @@ Restart the agent after adding paths. Then `/use-forge` or `/use-overlay`, or le
+ |---|---|
+ | `forge/`, `overlay/`, `schema/`, `prompts/` | `forge.yaml` and/or `overlay.yaml` |
+ | reusable `.github/workflows/overlay.yml` | `inbox/`, `suites/`, optional `invariants.yaml` |
+-| skills and docs | one thin workflow: `uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.1` |
++| skills and docs | reusable: `uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0`. If the product already has an inline `overlay-check.yml`, keep it — do not replace a working inline job with the reusable workflow. |
+ 
+ Local CLI: `PYTHONPATH=../AIOps`. Do not `git add` the tool tree so imports work. When the product repo has no `overlay/__init__.py`, the reusable workflow checkouts `tool_repository` (default `LibertychaserUS/AIOps`) into `_aiops`. That checkout is the correct reuse path.
+ 
+@@ -123,14 +134,15 @@ Local CLI: `PYTHONPATH=../AIOps`. Do not `git add` the tool tree so imports work
+ 
+ Skill (read next): [`skills/use-overlay/SKILL.md`](skills/use-overlay/SKILL.md).
+ 
+-States: `draft` (AI/human draft, not run) · `blocked` (reviewed, not ready — payment/login stay here) · `armed` (reviewed and claimed testable). Agents never write `reviewed_by` and never arm. CI never auto-arms. No generate on push.
++States: `draft` (AI/human draft, not run) · `blocked` (reviewed, not ready) · `armed` (reviewed and claimed testable). Agents never write `reviewed_by` and never arm. CI never auto-arms. No generate on push. This workshop’s Learning Guide **fixture** keeps login/payment `blocked`. A real product may already have those suites `armed` — copy the product’s `suite.yaml`, not the fixture status.
+ 
+ ### In this workshop (smoke)
+ 
+ ```text
+ git clone https://github.com/LibertychaserUS/AIOps.git
+ cd AIOps
+-git checkout overlay-v1.0.1
++git checkout overlay-v1.0.0
++python3 -m pip install -r requirements.txt
+ python3 -m overlay validate --root .
+ python3 -m overlay cover --root .
+ python3 -m overlay select --branch main --root .
+@@ -141,7 +153,7 @@ Use `-t .` so `tests/overlay` does not shadow the `overlay` package.
+ 
+ ### In a product repo (first hour)
+ 
+-1. Checkout this workshop next door. `git checkout overlay-v1.0.1`.
++1. Checkout this workshop next door. `git checkout overlay-v1.0.0`.
+ 2. In the product repo add `overlay.yaml` (copy shape from this workshop’s [`overlay.yaml`](overlay.yaml); set `product.repo` to **that** product).
+ 3. Add one `inbox/<id>.md` (one slice, one id). Contract: [`docs/inbox.md`](docs/inbox.md). `function_id` is whatever stable unique string the adopter docs already use — do not invent `REQ-n`.
+ 4. Hand-write `suites/<id>/` (`suite.yaml` starts `draft`). 1.0.x has **no** `generate`. Cover method: [`skills/design-cases/SKILL.md`](skills/design-cases/SKILL.md).
+@@ -161,14 +173,14 @@ name: overlay-check
+ on: [push, pull_request]
+ jobs:
+   overlay:
+-    uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.1
++    uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0
+     with:
+       enable_run: true
+       tool_repository: LibertychaserUS/AIOps
+-      tool_ref: overlay-v1.0.1
++      tool_ref: overlay-v1.0.0
+ ```
+ 
+-If you forked the workshop, point `uses:`, `tool_repository`, and `tool_ref` at **your fork** and a pin. Never checkout `First-Light-TechHK/LearningGuidePortal`. Never `workflow_call` a product Verify job.
++If the product already has an **inline** `overlay-check.yml` (checkout the pin, then `python -m overlay …`), keep it. Do not replace a working inline job with this reusable caller. If you forked the workshop, point `uses:`, `tool_repository`, and `tool_ref` at **your fork** and a pin. Never checkout `First-Light-TechHK/LearningGuidePortal`. Never `workflow_call` a product Verify job.
+ 
+ Worked fixture (not something to vendor): [`examples/learning-guide/`](examples/learning-guide/).
+ 
+@@ -184,7 +196,7 @@ Skill (read next): [`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md).
+ ### In this workshop (smoke)
+ 
+ ```text
+-git checkout forge-v1.0.1
++git checkout forge-v1.0.0
+ python3 -m forge check --root . --title "docs(docs/agent): example title" --body "$(cat .github/PULL_REQUEST_TEMPLATE.md)"
+ python3 -m forge sop-lock --root .
+ python3 -m unittest discover -s tests/forge -t . -q
+@@ -193,17 +205,17 @@ python3 -m forge apply --repo LibertychaserUS/AIOps --dry-run
+ 
+ ### In a product repo (first hour)
+ 
+-1. Copy [`forge/forge.example.yaml`](forge/forge.example.yaml) → product `forge.yaml`. Set `protect`, `deny_paths` (the adopter’s **existing** build workflow name).
++1. Copy [`forge/forge.example.yaml`](forge/forge.example.yaml) → product `forge.yaml`. Set `protect`, `deny_paths`, and `required_checks` to the adopter’s **actual GitHub check / job names** (the names that appear on a PR). The example lists `Verify` only because this workshop’s example job is called that. Learning Guide uses `Typecheck` / `Lint` / `Build and test` / `overlay-check`. Do not copy `Verify` unless that is the real job name.
+ 2. Paste policy **text** from [`forge/agent-policy.md`](forge/agent-policy.md) into the product `AGENTS.md`. Do not copy the `forge/` directory.
+-3. Dry-run apply from the product cwd:
++3. From the product cwd, after `pip install -r requirements.txt` in the tool checkout:
+ 
+ ```text
+ cd my-product
+-PYTHONPATH=../AIOps python3 -m forge apply --repo OWNER/NAME --path forge.yaml --dry-run
++PYTHONPATH=../AIOps python3 -m forge check --root .
+ ```
+ 
+-4. A human with Administration runs live `apply`. Agents do not.
+-5. Land code: green `forge check` + `FORGE_SUBMIT_TOKEN` + `forge submit`. PR title: `type(product/actor): subject` (see below).
++4. Live `forge apply` is **Ops only** ([`skills/manage-repo/SKILL.md`](skills/manage-repo/SKILL.md)). Agents may `--dry-run` if a human asked; they never live-apply. Learning Guide does not live-apply.
++5. Land code: green `forge check` + `FORGE_SUBMIT_TOKEN` + `forge submit`. Token details: [`docs/submit-credential.md`](docs/submit-credential.md). PR title: `type(product/actor): subject` (see below).
+ 
+ ---
+ 
+@@ -230,7 +242,7 @@ PRs into `main` are a capstone: squash, then start the next branch from the **ne
+ | Read this | When |
+ |---|---|
+ | [`skills/use-overlay/SKILL.md`](skills/use-overlay/SKILL.md) | Adopt Overlay, write inbox/suites, wire overlay CI |
+-| [`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md) | Adopt Forge, check / submit / apply |
++| [`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md) | Adopt Forge — six-step cold start, then `check` / `submit`. Live `apply` is `$manage-repo` only. |
+ | [`skills/design-cases/SKILL.md`](skills/design-cases/SKILL.md) | Case cover (triad + invariants) |
+ | [`skills/dev-pr/SKILL.md`](skills/dev-pr/SKILL.md) | Agent/developer lands a PR |
+ | [`skills/manage-repo/SKILL.md`](skills/manage-repo/SKILL.md) | Humans: Ruleset, merge, arm/block |
+@@ -255,9 +267,9 @@ Codex also loads `.agents/skills/` (symlinks to `skills/`).
+ 
+ ---
+ 
+-## 7. What 1.0.1 does not include
++## 7. What the published 1.0.0 pin does not include
+ 
+-Overlay `generate` is not shipped. There is no “drop a PRD, get reviewed cases today” loop yet — hand-write suites. Forge `apply` is live only when a human runs it with an admin token; this workshop’s CI is dry-run only. Guard workflow is a later slice. Tags `overlay-v1.0.1` / `forge-v1.0.1` are created **after** this slice is on `main` (human `forge release` / Actions `release`).
++Overlay `generate` is not shipped. There is no “drop a PRD, get reviewed cases today” loop yet — hand-write suites. Forge `apply` is live only when a human runs it with an admin token; this workshop’s CI is dry-run only. Guard workflow is a later slice. Unreleased `main` may already say 1.0.1 in `pyproject.toml`. **Do not checkout tags that are not on GitHub.** A human publishes `overlay-v1.0.1` / `forge-v1.0.1` later (`forge release` / Actions `release`). Until those tags exist, pin **v1.0.0**.
+ 
+ ## 8. Publish after merge (not production CD)
+ 
+diff --git a/README.zh-CN.md b/README.zh-CN.md
+new file mode 100644
+index 0000000..6e4323c
+--- /dev/null
++++ b/README.zh-CN.md
+@@ -0,0 +1,94 @@
++# AIOps
++
++[English README](README.md)
++
++这是 Forge 和 Overlay 的**工具仓**，不是 Learning Guide 产品仓，也不是 First-Light 那个空的 `AIOps`。一个仓、两件产品。都不部署。都不替代接入方已有的构建门（Learning Guide 的 Verify 是这条规则的第一个例子）。
++
++**别的 agent：从本文件或 [README.md](README.md) 进。** 只 pin **已经打在 GitHub 上的 tag**。不要 pin 浮动 `main`。不要把 `forge/`、`overlay/`、`schema/`、`prompts/` 拷进产品仓。
++
++| 产品 | 现在能 pin 的 tag | SHA | 管什么 |
++|---|---|---|---|
++| **Overlay** | [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) | `235e514e673fa68b24879c8e139f2a5c6633ebb5` | 需求叶子 → 可审套件。CI 只跑 `armed`。没有 `generate`。 |
++| **Forge** | [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0) | 同一 SHA | 本地 `check` 绿之后 `submit` 开 draft PR。人 + Ruleset 才合。Forge 不合入。 |
++
++`main` 上的 `pyproject.toml` 可能已经写着 `1.0.1`。**`overlay-v1.0.1` / `forge-v1.0.1` 这两个 tag 现在不存在。** 人按 [`docs/release.md`](docs/release.md) 发布之前，agent 必须 pin **v1.0.0**。禁止 `git checkout overlay-v1.0.1`。禁止 pin `main`。GitHub 的 Latest 徽章只挂一件产品，不要拿 Latest 当针。
++
++需要：CPython **3.12+**。把本仓（或 fork）clone 到**产品仓旁边**。
++
++---
++
++## 30 秒
++
++1. **Forge** 管谁能推、谁开 PR、哪些路径不能改、哪些 **CI job 名**必须绿。它不合入。
++2. **Overlay** 管需求叶子变成可审套件。CI 只跑 **`armed`**。`draft` / `blocked` 丢掉、不当红。
++3. clone → checkout **已存在的 tag** → `pip install` → `PYTHONPATH` → `forge check` / `overlay validate`。
++4. Agent 可以 `check` / `submit`。Agent **不可以** live-`apply` Ruleset、填 `reviewed_by`、把套件改成 `armed`。
++
++---
++
++## 冷启动（产品仓旁边）
++
++```text
++git clone https://github.com/LibertychaserUS/AIOps.git /tmp/AIOps
++cd /tmp/AIOps
++git checkout overlay-v1.0.0
++python3 -m pip install -r requirements.txt
++export PYTHONPATH=/tmp/AIOps
++
++cd /path/to/product
++python3 -m overlay validate --root .
++python3 -m overlay cover --root .
++python3 -m forge check --root .
++```
++
++`overlay-v1.0.0` 和 `forge-v1.0.0` 是同一提交。checkout 哪一条都行。
++
++`python -m forge` 现有子命令：`apply` `status` `check` `submit` `pr-title`/`title` `sop-lock` `ci-select` `ops-review` `bounce` `release`。没有 `brief`、`credential`、`ops-chain`、`revoke`。
++
++| 动作 | 谁做 |
++|---|---|
++| `forge check` | Agent 可以 |
++| `forge submit` | Agent 可以，且必须有 `FORGE_SUBMIT_TOKEN`（见 [`docs/submit-credential.md`](docs/submit-credential.md)） |
++| live `forge apply` | **不可以**（Ops；[`skills/manage-repo/SKILL.md`](skills/manage-repo/SKILL.md)）。Learning Guide **现在不做** |
++| 写 `reviewed_by` / 改 `armed` | **不可以**（人审） |
++
++开发冷启动六步：[`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md)。Overlay 契约：[`skills/use-overlay/SKILL.md`](skills/use-overlay/SKILL.md)、[`skills/design-cases/SKILL.md`](skills/design-cases/SKILL.md)。
++
++---
++
++## Overlay 契约（避免 `forge check` 假红）
++
++`cases.md` 叶子必须是：
++
++```markdown
++## AUTH-01
++### Functional
++### Negative
++### Edge
++```
++
++- `###` 技法名只能是 **Functional / Negative / Edge**（大小写不敏感）。不要写 `### Depth`。
++- 不要用 `## Specified / not tested now` 当标题：`##` 的第一个无空白词会被当成 `function_id`。
++- `function_id` 在整个 overlay root **全局唯一**，不要跨套件复用。
++- `invariants.yaml` 的 `function_ids` 必须对上某篇 `cases.md` 的 `##` 标题；invariant id 必须在某篇 `cases.md` 里作为独立 token 出现。
++- 本工作本 fixture 里 login/payment 是 **blocked**。Learning Guide 产品仓可能已经 **armed**。不要把 fixture 状态抄到产品上。
++
++产品仓 CI：可以 `uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0`，也可以自己写 inline `overlay-check.yml`（checkout pin 再跑 CLI）。**产品仓已经有能跑的 inline，就不要再抄 reusable。**
++
++`required_checks` 填 **GitHub 上显示的 check / job 名**，不要抄 workflow 的 `name:`，除非两个字符串本来就一样。例子里的 `Verify` 只是例子。Learning Guide 是 `Typecheck` / `Lint` / `Build and test` / `overlay-check`。
++
++---
++
++## 禁止
++
++- 不要 vendor `forge/` / `overlay/` / `schema/` / `prompts/`
++- 不要 pin `main`，不要 checkout 不存在的 `v1.0.1`
++- 不要改 Learning Guide Verify，不要把 `test:io` 塞进 Verify
++- 不要 live-apply Forge 到 LearningGuidePortal
++- 不要打 `ilovelearningguide.com`
++- 不要代签 `reviewed_by` / `armed`
++- 不要 push 时 `generate`
++- 不要自 merge、自 Approve
++- 不要把 Harness MCP 的 pipeline skill 当成这套 Forge
++
++细设计在 [`docs/design.md`](docs/design.md)，不要把那一篇整篇搬进产品仓。
+diff --git a/docs/design.md b/docs/design.md
+index 382dcfe..09d6a9c 100644
+--- a/docs/design.md
++++ b/docs/design.md
+@@ -168,9 +168,14 @@ python -m forge check  --root . [--title T] [--body B]
+ python -m forge submit --repo OWNER/NAME [--title T] [--dry-run]
+ python -m forge pr-title --title "feat(overlay/dev): subject"
+ python -m forge ci-select --check overlay-check --title "feat(overlay/dev): subject"
+-python -m forge revoke --repo OWNER/NAME --name forge-protected-default
++python -m forge sop-lock --root .
++python -m forge ops-review …
++python -m forge bounce …
++python -m forge release --repo OWNER/NAME --version X.Y.Z [--dry-run]
+ ```
+ 
++`python -m forge` 现有子命令只有这些：`apply` `status` `check` `submit` `pr-title`/`title` `sop-lock` `ci-select` `ops-review` `bounce` `release`。没有 `brief`、`credential`、`ops-chain`、`revoke`。卸 Ruleset 在 GitHub UI，不走 CLI。
++
+ `check`（开发侧提交前本地门，不写 GitHub）：
+ 
+ 1. 有 `overlay.yaml`：`overlay validate` + `overlay cover`。
+diff --git a/docs/products.md b/docs/products.md
+index 539a867..008a607 100644
+--- a/docs/products.md
++++ b/docs/products.md
+@@ -203,4 +203,4 @@ examples/learning-guide/   # 第一个接入方 fixture，不是核心
+   release.yml           # 人点发布两条产品 tag；不是 CI
+ ```
+ 
+-版本：两个产品两个 tag，不要看成一个 Latest。下一刀 pin `overlay-v1.0.1` / `forge-v1.0.1`（人在 `main` 上 `python -m forge release` 或 Actions `release` `workflow_dispatch`；见 [`release.md`](release.md)）。现在仍可 pin [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) 与 [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0)。不 pin `main`。起步：仓库根 [`README.md`](../README.md)。
++版本：两个产品两个 tag，不要看成一个 Latest。接入方现在必须 pin 已发布的 [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) 与 [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0)（同一 SHA `235e514…`）。`main` 上的 `1.0.1` 代码还没有 tag。人发布之后再改针（`python -m forge release` 或 Actions `release` `workflow_dispatch`；见 [`release.md`](release.md)）。不 pin `main`。不要 `git checkout overlay-v1.0.1`。起步：仓库根 [`README.md`](../README.md) / [`README.zh-CN.md`](../README.zh-CN.md)。
+diff --git a/docs/release.md b/docs/release.md
+index 8d008c4..f38496a 100644
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -8,7 +8,7 @@
+ | Overlay | `overlay-vX.Y.Z` | `overlay-v1.0.1` |
+ | Forge | `forge-vX.Y.Z` | `forge-v1.0.1` |
+ 
+-接入方 pin **tag 或 SHA**，不要 pin 浮动 `main`。GitHub 每个仓只有一个 Latest 徽章；两条 tag 都在，Latest 不代表另一条没发。
++接入方 pin **已经存在的 tag 或 SHA**，不要 pin 浮动 `main`。在人真正打出 `overlay-v1.0.1` / `forge-v1.0.1` 之前，文档和 agent 必须继续写 [`overlay-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/overlay-v1.0.0) / [`forge-v1.0.0`](https://github.com/LibertychaserUS/AIOps/releases/tag/forge-v1.0.0)。不要让 README 指向还不存在的 tag。GitHub 每个仓只有一个 Latest 徽章；两条 tag 都在，Latest 不代表另一条没发。
+ 
+ ---
+ 
+@@ -26,6 +26,7 @@
+ 
+ ```text
+ # 本机（Ops token = FORGE_GITHUB_TOKEN 或 GITHUB_TOKEN，contents:write）
++# 人确认 tag 还不存在之后再发。Agent 在 tag 出现之前继续 pin v1.0.0。
+ python3 -m forge release --repo LibertychaserUS/AIOps --version 1.0.1 --dry-run
+ python3 -m forge release --repo LibertychaserUS/AIOps --version 1.0.1
+ ```
+diff --git a/forge/forge.example.yaml b/forge/forge.example.yaml
+index d6ed912..349b366 100644
+--- a/forge/forge.example.yaml
++++ b/forge/forge.example.yaml
+@@ -6,6 +6,10 @@ agent_branch_prefixes:
+   - copilot/
+ deny_paths:
+   - .github/workflows/ci.yml
++# required_checks = GitHub check / job names as they appear on a PR, not the
++# workflow `name:` unless those strings are identical. This example uses
++# `Verify` because the sample job is called that. Learning Guide uses
++# `Typecheck`, `Lint`, `Build and test`, `overlay-check`.
+ required_checks:
+   - Verify
+ review:
+diff --git a/pyproject.toml b/pyproject.toml
+index 4e7d4d0..ae59829 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
+ [project]
+ name = "aiops"
+ version = "1.0.1"
+-description = "Forge + Overlay. Pin overlay-v1.0.1 and forge-v1.0.1."
++description = "Forge + Overlay. Pin published overlay-v1.0.0 and forge-v1.0.0 until a human publishes 1.0.1."
+ readme = "README.md"
+ requires-python = ">=3.12"
+ dependencies = [
+diff --git a/skills/design-cases/SKILL.md b/skills/design-cases/SKILL.md
+index 0756693..92bd4da 100644
+--- a/skills/design-cases/SKILL.md
++++ b/skills/design-cases/SKILL.md
+@@ -52,13 +52,22 @@ Linked notes (same method, old path): [`docs/agents/case-design.md`](../../docs/
+ 
+ ### 2. 叶子三技法（本地标准化）
+ 
+-每个 `function_id` 一节 `##`，下面三类都要有（`armed` 必齐）：
++每个 `function_id` 一节 `## <id>`，下面三类 **`###` 标题必须原样是这三个词**（`armed` 必齐；大小写不敏感）：
+ 
+-| 技法 | 问什么 |
+-|---|---|
+-| Functional | 声称可做的事做成了 |
+-| Negative | 禁止、未授权、未就绪、明确失败 |
+-| Edge | 重复、空、已完成、刚好越界、顺序颠倒 |
++```markdown
++## AUTH-01
++### Functional
++### Negative
++### Edge
++```
++
++| 技法 | `###` 标题 | 问什么 |
++|---|---|---|
++| Functional | `### Functional` | 声称可做的事做成了 |
++| Negative | `### Negative` | 禁止、未授权、未就绪、明确失败 |
++| Edge | `### Edge` | 重复、空、已完成、刚好越界、顺序颠倒 |
++
++**不要**写 `### Depth`（契约不认，armed 会缺 Edge）。**不要**写 `## Specified / not tested now`（第一个词会变成 `function_id`）。`function_id` 在整个 overlay root 全局唯一。`invariants.yaml` 的 `function_ids` 必须对上已有 `##` 标题。
+ 
+ 标题 / 步骤 / 期望。不要贴 PRD 验收原文交差。
+ 
+@@ -133,6 +142,9 @@ Learning Guide fixture 的 `PAY-01` 可以有齐全技法，但 suite 是 `block
+ | 总觉得还有没想到的角 | 先列 invariant，再写叶子。角是性质，不是更多章节。 |
+ | 想对所有 function_id 两两组合 | 停。没有耦合就不是测试项。 |
+ | 想用覆盖率 agent 证明跟了 PRD | 停。那不是 Overlay 的完成定义。 |
+-| armed 缺 Edge | 契约红。补技法，不要改成 draft 躲。 |
++| armed 缺 Edge | 契约红。补 `### Edge`，不要改成 draft 躲，不要用 `### Depth` 顶替。 |
++| 写了 `## Specified` | 契约红。改成段落。 |
++| 跨套件重复 function_id | 契约红。换一个稳定唯一的 id。 |
++| invariant 点了不存在的 `##` | 契约红。先对齐标题。 |
+ | 不知道 invariant 写哪 | 设计非目标、状态机、跨产品禁令。没有就先不建 `invariants.yaml`。 |
+ | 想给全局用例一个新号族 | 停。挂在已有 `function_id` 上，用 `span` + `relates`。 |
+diff --git a/skills/manage-repo/SKILL.md b/skills/manage-repo/SKILL.md
+index bccfb02..5ef2b07 100644
+--- a/skills/manage-repo/SKILL.md
++++ b/skills/manage-repo/SKILL.md
+@@ -26,7 +26,7 @@ Do not vendor `forge/`, `overlay/`, `schema/`, or `prompts/` into the adopter pr
+    PYTHONPATH=../AIOps python3 -m forge status --repo OWNER/NAME
+    ```
+    Token: `FORGE_GITHUB_TOKEN` or `GITHUB_TOKEN`, Administration: write. Humans run live apply. Agents do not. This apply token is **not** the submit path. Submit requires `FORGE_SUBMIT_TOKEN`. Do not live-apply Forge Rulesets from an agent.
+-2. **Set required checks in the GitHub Ruleset UI** (or the payload Forge applied). Use the adopter’s own job names (their build job, plus `overlay-check` only if they installed Overlay, plus `pr-title` if they installed the title workflow, plus `sop-lock` if they installed the SOP workflow). This workshop lists `overlay-check`, `pr-title`, `forge-check`, and `sop-lock` in `forge.yaml`. Forge does not create those jobs. CodeRabbit may be a check; it must **not** be the only merge gate.
++2. **Set required checks in the GitHub Ruleset UI** (or the payload Forge applied). Use the adopter’s **CI job / check names as they appear on a PR**, not the workflow `name:` unless those strings match. This workshop lists `overlay-check`, `pr-title`, `forge-check`, and `sop-lock`. Learning Guide lists `Typecheck`, `Lint`, `Build and test`, `overlay-check`. The example `Verify` is only for repos whose job is actually called Verify. Forge does not create those jobs. CodeRabbit may be a check; it must **not** be the only merge gate. Do not live-apply to Learning Guide.
+ 3. **Paste CODEOWNERS / team names.** Copy wording from [`forge/CODEOWNERS.example`](../../forge/CODEOWNERS.example) into the product `.github/CODEOWNERS`. Put people in **GitHub org teams**. Do not build a local ACL file that GitHub will not enforce.
+ 4. **Paste agent policy text** from [`forge/agent-policy.md`](../../forge/agent-policy.md) into the adopter `AGENTS.md`. Do not vendor `forge/`.
+ 5. **Refuse a PR** whose **title** fails `python -m forge pr-title` or whose body lacks any of the six 解说规格 headings ([`docs/pr-brief.md`](../../docs/pr-brief.md)). The title `actor` is the only 分工 label; do not ask authors to rename branches, workflows, or skills. Body **分工** is who reviews/merges ([`docs/rbac.md`](../../docs/rbac.md)), not the title actor.
+@@ -67,7 +67,7 @@ Do not vendor `forge/`, `overlay/`, `schema/`, or `prompts/` into the adopter pr
+ ```text
+ # Install the cage (admin machine, sibling tool checkout)
+ PYTHONPATH=../AIOps python3 -m forge apply --repo OWNER/PRODUCT --path forge.yaml --dry-run
+-# Then live apply with an admin token. Then in GitHub: required checks = Verify + overlay-check + pr-title + forge-check + sop-lock (if installed).
++# Then live apply with an admin token (not Learning Guide). Then in GitHub: required checks = the real job names (not a copied "Verify").
+ # If you open a PR for the yaml/docs: title feat(forge/admin): apply protected-default ruleset
+ # Local: python3 -m forge pr-title --title "feat(forge/admin): apply protected-default ruleset"
+ 
+diff --git a/skills/use-forge/SKILL.md b/skills/use-forge/SKILL.md
+index 38bec25..0efe1d7 100644
+--- a/skills/use-forge/SKILL.md
++++ b/skills/use-forge/SKILL.md
+@@ -1,131 +1,134 @@
+ ---
+ name: use-forge
+-description: Install and operate Forge (开发侧 python -m forge check then submit 代推 PR; Ops apply/status + required checks + human merge) without vendoring the tool into a product repo. This skill should be used when adopting Forge, writing forge.yaml, running forge check/submit/apply/status, pasting agent policy, or asking how people and agents land code. Do not use for Overlay inbox or suites (use use-overlay). Do not auto-merge. Do not submit when local check is red.
++description: Developer cold start for Forge — pin a published tag, pip install, write thin forge.yaml, run python -m forge check, then submit a draft PR. Live apply and Rulesets belong to manage-repo. Do not use for Overlay inbox or suites (use use-overlay). Do not auto-merge. Do not submit when local check is red.
+ metadata:
+-  short-description: Install Forge without vendoring the tool
++  short-description: Six-step Forge cold start; no live apply
+ ---
+ 
+ # Use Forge
+ 
+-Forge is a standard part: 开发侧 `check`（提交前本地门）+ `submit`（代推 draft PR）+ Ops Ruleset / `apply` + optional guard. It does not generate tests, must not edit Overlay `status`, and **does not merge**. `submit` 不绿不 push。
++Forge is the developer gate: local `check`, then `submit` (draft PR). It does not generate tests, must not edit Overlay `status`, and **does not merge**.
+ 
+-**Who reviews and merges:** GitHub humans + Ruleset, not Overlay, not a portal. RBAC: [`docs/rbac.md`](../../docs/rbac.md). **管理端** (apply, required checks, CODEOWNERS, merge, Overlay arm/block; do not push for developers): [`../manage-repo/SKILL.md`](../manage-repo/SKILL.md). **开发端** (`forge check` then `forge submit`, fix armed-red, no live apply, no self-merge): [`../dev-pr/SKILL.md`](../dev-pr/SKILL.md). Agents: this SOP + [`forge/agent-policy.md`](../../forge/agent-policy.md) — no self-merge, no self-approve.
++**Who reviews and merges:** GitHub humans + Ruleset. RBAC: [`docs/rbac.md`](../../docs/rbac.md). **开发端** after this skill: [`../dev-pr/SKILL.md`](../dev-pr/SKILL.md). **管理端** (live `apply`, required checks, merge, Overlay arm/block): [`../manage-repo/SKILL.md`](../manage-repo/SKILL.md). Agents: [`forge/agent-policy.md`](../../forge/agent-policy.md) — no self-merge, no self-approve.
++
++Pin **published** tags only: `overlay-v1.0.0` / `forge-v1.0.0` (same SHA `235e514…`). Do not pin `main`. Do not checkout `v1.0.1` until those tags exist on GitHub. Start: [`../../README.md`](../../README.md) / [`../../README.zh-CN.md`](../../README.zh-CN.md).
++
++## Real CLI
++
++`python -m forge --help` today:
++
++`apply` `status` `check` `submit` `pr-title`/`title` `sop-lock` `ci-select` `ops-review` `bounce` `release`
++
++There is **no** `brief`, `credential`, `ops-chain`, or `revoke` subcommand. Do not invent them. Token rules: [`docs/submit-credential.md`](../../docs/submit-credential.md).
++
++| Action | Agent | Human / Ops |
++|---|---|---|
++| `forge check` | yes | — |
++| `forge submit` | yes, with `FORGE_SUBMIT_TOKEN` | — |
++| live `forge apply` | **no** | Ops (`$manage-repo`). Learning Guide **does not** live-apply |
++| write `reviewed_by` / `armed` | **no** | human review |
++
++`FORGE_SUBMIT_TOKEN` is the submit key. Ops `FORGE_GITHUB_TOKEN` is the Ruleset key. Do not mix them. `gh auth` / `GITHUB_TOKEN` are not enough.
+ 
+ ## Lock / 不绿不能合
+ 
+-原则：[`docs/sop-lock.md`](../../docs/sop-lock.md)。skill 里能机器判的标准，程序不绿不能合。只锁可机器判定的子集，不 NLP 扫散文。
++原则：[`docs/sop-lock.md`](../../docs/sop-lock.md)。只锁可机器判定的子集。
+ 
+-- **代推锁（提交前）：** `python -m forge check` 必须绿 **并且** 持有非空 `FORGE_SUBMIT_TOKEN`（PAT / fine-grained / GitHub App token）。缺密钥或 check 红：`submit`（含 `--dry-run`）退出 2，不 push、不开 PR。不回落 `GITHUB_TOKEN`、`FORGE_GITHUB_TOKEN`、本机 `gh auth`。Ops merge 用另一套权限，不是这把提交密钥。Overlay「token 只在 generate」说的是**模型密钥**，不是这把 GitHub 凭据。`submit`（含 `--dry-run`）必须有 `FORGE_SUBMIT_TOKEN`；缺则退出 2。Live 用真 PAT；CI dry-run 用假值、不 push。
+-- LearningGuidePortal apply/submit 拒绝、dry-run 不写 API：`python -m forge apply --dry-run` + Forge 单测 → CI **`forge-check`**（合入锁）。overlay / pr-title / sop-lock / forge-check workflow **不得**调用 `forge submit`。
+-- PR 标题：`python -m forge pr-title` → CI **`pr-title`**（合入锁）。进 `main` 默认 squash：封顶再压，压完换底。`submit` base 是 `protect`，不叠即将被压掉的旧头。
+-- 仓级 SOP（若已装）：`python -m forge sop-lock` → **`sop-lock`**（**通用**合入锁，永远跑；不是 forge-check 的一层）
+-- 本工作本 Forge **产品门**：**`forge-check`**（unit + apply --dry-run；`forge.yaml` `ci` 选跑或跳过成功）。`submit` 必须持有 `FORGE_SUBMIT_TOKEN`。`gh auth` / `GH_TOKEN` / extraheader 都不够。
+-- GitHub required checks 锁合入，不锁提交。本地 `forge check` + `FORGE_SUBMIT_TOKEN` 锁代推。**通用检查 ≠ 产品门。** 不绿不能提交。不绿不能合。人审：谁合、要不要 live apply、别的仓有没有 vendor 工具。
++- **代推锁：** `python -m forge check` 必须绿 **并且** 持有非空 `FORGE_SUBMIT_TOKEN`。缺密钥或 check 红：`submit`（含 `--dry-run`）退出 2。细节只看 [`docs/submit-credential.md`](../../docs/submit-credential.md)。
++- GitHub required checks 锁合入，不锁提交。`required_checks` 必须是 **CI job / check 名**（PR 页面上看到的字符串），不是 workflow `name:`，除非两者相同。
++- **通用检查 ≠ 产品门。** `pr-title` / `sop-lock` 是通用检查；`overlay-check` / `forge-check` 是产品门。
++- 进 `main` 默认 squash：**封顶**再压，压完**换底**。`submit` base 是 `protect`。
++- 不绿不能提交。不绿不能合。Agent 不 live-apply。
+ 
+ ## Instructions
+ 
+-Follow these steps. Stay imperative. Do not invent a second constitution.
++Stay imperative. Six cold-start steps. Live apply is **not** in this list.
+ 
+-### Reuse — keep the tool out of the product commit repo
++### 1. Checkout a published pin beside the product
+ 
+-Do not upload or vendor the tool into the adopter's product git repo (the repo they commit and push). 不要把工具上传到接入方要提交、推送的产品仓。
++```text
++git clone https://github.com/LibertychaserUS/AIOps.git /tmp/AIOps
++cd /tmp/AIOps
++git checkout overlay-v1.0.0
++```
++
++`forge-v1.0.0` is the same commit. Need CPython **3.12+**. Do not vendor `forge/` into the product git repo.
++
++### 2. Install Python deps
++
++```text
++python3 -m pip install -r requirements.txt
++export PYTHONPATH=/tmp/AIOps
++```
+ 
+-| Keep here | Never `git add` into the product tree |
++### 3. Write thin `forge.yaml` — job names, not workflow names
++
++Copy [`forge/forge.example.yaml`](../../forge/forge.example.yaml). Set `protect`, `agent_branch_prefixes`, `deny_paths`.
++
++`required_checks` = the adopter’s **actual GitHub check / job names**:
++
++| Repo | `required_checks` |
+ |---|---|
+-| This workshop `LibertychaserUS/AIOps`, **or** the adopter's **fork** of this workshop | `forge/`, `overlay/`, `schema/`, `prompts/`, this workshop's Python packages |
++| This workshop | `overlay-check` / `pr-title` / `forge-check` / `sop-lock` |
++| Learning Guide | `Typecheck` / `Lint` / `Build and test` / `overlay-check` |
++| Example file | `Verify` — only if that is the real job name |
+ 
+-The product repo commits **only** thin files:
++Do not copy `Verify` into Learning Guide. Do not invent a product Verify name.
+ 
+-- `forge.yaml` (copy from `forge/forge.example.yaml`, then edit `protect` / `deny_paths`)
+-- a thin workflow that `uses:` the reusable workflow from the **tool** repo — pin a **tag or commit SHA**, not floating `main`
+-- optional: pasted policy text in `AGENTS.md`, `.github/CODEOWNERS` from the examples
++### 4. Paste policy text; do not copy `forge/`
+ 
+-Local CLI: checkout the tool repo or fork **beside** the product. Set `PYTHONPATH` to that checkout. Do **not** copy `forge/` into the product tree so imports work, and do not submodule-vendor the packages.
++Copy wording from [`forge/agent-policy.md`](../../forge/agent-policy.md) into the product `AGENTS.md`. “Copy these files” means **text**, not `git add forge/`.
+ 
+-```text
+-# sibling checkouts — product git must not contain the tool tree
+-../AIOps/          # LibertychaserUS/AIOps or your fork
+-./my-product/      # adopter product repo (only thin files)
++### 5. `python -m forge check` from the product cwd
+ 
+-cd my-product
+-PYTHONPATH=../AIOps python3 -m forge apply --repo OWNER/NAME --path forge.yaml --dry-run
++```text
++cd /path/to/product
++PYTHONPATH=/tmp/AIOps python3 -m forge check --root .
+ ```
+ 
+-CI reuse path: `uses: LibertychaserUS/AIOps/.github/workflows/forge-guard.yml@<tag-or-sha>` (guard is a later slice). If you forked the workshop, `uses:` **your fork** at a pin. Never pin floating `main`.
+-
+-### Install / apply
+-
+-1. **Read the adopter repo first.** Add only `forge.yaml` (from `forge/forge.example.yaml`). Set `protect`, `agent_branch_prefixes`, `deny_paths` (the existing build workflow; never invent a product Verify name unless the adopter already has one).
+-2. **Paste policy text**, do not invent a second constitution, and do not vendor `forge/`. Copy the wording from [`forge/agent-policy.md`](../../forge/agent-policy.md) into the adopter `AGENTS.md`.
+-3. **Dry-run before write.** Run from the product cwd with `PYTHONPATH` pointing at the tool checkout (see above).
+-   ```text
+-   PYTHONPATH=../AIOps python3 -m forge apply --repo OWNER/NAME --path forge.yaml --dry-run
+-   ```
+-   Must print the payload and `copy these files`. Exit 0. No API write. "Copy these files" means paste policy / CODEOWNERS **text**, not `git add forge/`.
+-4. **Apply only with an admin token** (`FORGE_GITHUB_TOKEN` or `GITHUB_TOKEN`, Administration: write). Never apply to `First-Light-TechHK/LearningGuidePortal` from this workshop. Never apply in Overlay CI. Humans run apply; agents do not live-apply. That human is **管理端** (`$manage-repo`).
+-   ```text
+-   PYTHONPATH=../AIOps python3 -m forge apply --repo OWNER/NAME --path forge.yaml
+-   PYTHONPATH=../AIOps python3 -m forge status --repo OWNER/NAME
+-   ```
+-5. **Humans and agents land the same way:** first `python -m forge check --root . --title T`（必须绿），then hold `FORGE_SUBMIT_TOKEN`, then `python -m forge submit --repo OWNER/NAME [--title T] [--dry-run]`. `submit` 先跑 check；红则拒绝。缺 `FORGE_SUBMIT_TOKEN` 也拒绝，**包括 `--dry-run`（fail closed）**。必须设置 `FORGE_SUBMIT_TOKEN`，不回落 CI `GITHUB_TOKEN`，不用 Ops `FORGE_GITHUB_TOKEN` 冒充代推。Check 绿且密钥在时，dry-run 打印计划 + `would require FORGE_SUBMIT_TOKEN`，不 push。永不打印 token。永不 merge / approve / arm / apply Ruleset。No push to protected branches. Developers follow `$dev-pr`. Merge is a GitHub click after checks are green — `$manage-repo`，另一套写权限，不是这把提交密钥。Aligns with [`gh pr create`](https://cli.github.com/manual/gh_pr_create) **consuming `FORGE_SUBMIT_TOKEN`**, not “just git + gh”. GitHub required checks lock **merge**; local check + `FORGE_SUBMIT_TOKEN` lock **submit**.
+-6. **Do not touch Overlay gates.** Forge must not write `reviewed_by`, receipts, or `status: armed`. Agents must not arm.
+-7. **Required checks** stay the adopter’s names (their build job, plus `overlay-check` only if they installed Overlay, plus `pr-title` if they installed the title workflow, plus `forge-check` if they installed Forge CI, plus `sop-lock` if they installed the SOP workflow). This workshop lists `overlay-check`, `pr-title`, `forge-check`, and `sop-lock`. Workflows stay separate; merge law can require both products. Title lock: `python -m forge pr-title` — [`../../docs/pr-brief.md`](../../docs/pr-brief.md). SOP lock: `python -m forge sop-lock` — [`../../docs/sop-lock.md`](../../docs/sop-lock.md).
+-
+-Guard workflow is later. First slice is Ruleset + policy + CLI.
+-
+-### Never
+-
+-- Do not vendor `forge/` / `overlay/` / `schema/` / `prompts/` into the product commit repo.
+-- Do not apply live to Learning Guide Portal. Do not press production (`ilovelearningguide.com`).
+-- Do not change LearningGuidePortal Verify. Do not attach / run / gate intern-workspace Proctor. Do not edit Deepseek3.
+-- Do not generate on push. Do not arm as an agent. Do not write receipts / `reviewed_by`.
+-- CI only; no production CD. Publish tags with `$manage-repo` `python -m forge release` after merge (see [`docs/release.md`](../../docs/release.md)). Two products stay independent: Forge does not write Overlay `status`.
+-- Do not build an admin Web or a second RBAC database. Review/merge stay on GitHub (`$manage-repo`).
+-- Do not skip `FORGE_SUBMIT_TOKEN`. Ambient `gh auth` is not enough. CI `GITHUB_TOKEN` is 合入锁, not 代推.
++If the product has `overlay.yaml`, check also runs `overlay validate` + `overlay cover`. Red → stop. Do not push. Do not submit.
+ 
+-## Examples
++Overlay contract that turns this red: [`../use-overlay/SKILL.md`](../use-overlay/SKILL.md) (triad headings, unique `function_id`, invariants cite `##` titles).
++
++### 6. Submit a draft PR only when check is green
++
++Hold `FORGE_SUBMIT_TOKEN`. Then [`../dev-pr/SKILL.md`](../dev-pr/SKILL.md):
+ 
+ ```text
+-# This workshop (it IS the tool repo — local forge/ is correct here only)
+-python3 -m forge apply --repo LibertychaserUS/AIOps --path forge.yaml --dry-run
+-python3 -m forge check --root . --title "feat(forge/dev): add submit"
+-# submit requires `FORGE_SUBMIT_TOKEN` even on --dry-run
+-python3 -m forge submit --repo LibertychaserUS/AIOps --title "feat(forge/dev): add submit" --dry-run
+-
+-# Another product (tool stays next door)
+-PYTHONPATH=../AIOps python3 -m forge apply --repo OWNER/PRODUCT --path forge.yaml --dry-run
+-PYTHONPATH=../AIOps python3 -m forge check --root . --title "feat(overlay/dev): fix armed select"
+-PYTHONPATH=../AIOps python3 -m forge submit --repo OWNER/PRODUCT --title "feat(overlay/dev): fix armed select" --dry-run
++PYTHONPATH=/tmp/AIOps python3 -m forge submit --repo OWNER/NAME --title "feat(forge/dev): subject" --dry-run
++PYTHONPATH=/tmp/AIOps python3 -m forge submit --repo OWNER/NAME --title "feat(forge/dev): subject"
+ ```
+ 
+-Product workflow (when guard exists), pin a tag or SHA:
++Never merge. Never approve. Never arm. Never live-apply.
++
++If a human asked you to **diagnose** a Ruleset, `--dry-run` apply is allowed. Live apply is `$manage-repo` only. Never apply to `First-Light-TechHK/LearningGuidePortal`. Learning Guide Ops does not live-apply in Phase 1.
++
++Guard workflow is later. Overlay CI: if the product already has an inline `overlay-check.yml`, keep it — do not replace it with a reusable `uses:` caller.
+ 
+-```yaml
+-# .github/workflows/forge-guard.yml  — thin caller only
+-name: forge-guard
+-on: pull_request
+-jobs:
+-  guard:
+-    uses: LibertychaserUS/AIOps/.github/workflows/forge-guard.yml@<tag-or-sha>
++## Examples
++
++```text
++# Product cwd, tool at /tmp/AIOps @ overlay-v1.0.0
++PYTHONPATH=/tmp/AIOps python3 -m forge check --root . --title "feat(overlay/dev): fix armed select"
++# submit requires FORGE_SUBMIT_TOKEN even on --dry-run
++PYTHONPATH=/tmp/AIOps python3 -m forge submit --repo OWNER/PRODUCT --title "feat(overlay/dev): fix armed select" --dry-run
+ ```
+ 
+-Illegal: `apply --repo First-Light-TechHK/LearningGuidePortal`. Illegal: apply on `on: push` Overlay jobs. Illegal: `git add forge/` inside the product repo. Illegal: overlay-check calling `forge submit` or Forge unittests as the Overlay product gate.
++Illegal: `git checkout overlay-v1.0.1` while that tag is missing. Illegal: `git add forge/` in the product repo. Illegal: live `forge apply` as an agent. Illegal: `python -m forge revoke` / `brief` / `credential` / `ops-chain`. Illegal: `required_checks: [Verify]` on a repo whose jobs are `Typecheck` / `Lint` / `Build and test`.
+ 
+ ## Performance Notes
+ 
+-Dry-run apply is local JSON. Live apply is one GET + one POST or PUT. No model. No production CD. Overlay 模型 token 只在人点的 `generate`，不在 push。Forge 代推是另一把钥匙：`FORGE_SUBMIT_TOKEN`，缺则红（含 dry-run）。合入后发版：`python -m forge release`（人点，不是 push）。
++`check` is local. `submit` is one push + one draft PR. No model. Token details stay in [`docs/submit-credential.md`](../../docs/submit-credential.md). Humans publish tags with `$manage-repo` `python -m forge release` ([`docs/release.md`](../../docs/release.md)) — agents do not invent tags.
+ 
+ ## Troubleshooting
+ 
+ | 现象 | 处理 |
+ |---|---|
+-| 想把 `forge/` 拷进产品仓好 import | 停。工具留在本工作本或 fork；产品仓只留 `forge.yaml` + 薄 workflow。本地用 `PYTHONPATH`。 |
+-| 退出码 2 | 缺 `FORGE_SUBMIT_TOKEN`，或本机 `forge check` 红。不要部分写入。不要用 `GITHUB_TOKEN` / `gh auth` 凑。 |
+-| 退出码 3 | `forge.yaml` 非法。对照 example。 |
+-| 退出码 4 | GitHub API 失败。看权限，不要改 Ruleset JSON 结构凑合。 |
+-| 想直推 main 省事 | 停。先 `python -m forge check`，再 `forge submit`。`$dev-pr`。 |
+-| `forge check` 红了还想 submit | 停。不 push、不开 PR。 |
+-| 缺 `FORGE_SUBMIT_TOKEN` 还想 dry-run submit | 停。fail closed。先持有提交密钥。 |
+-| 想让 Forge 把 suite 标 armed | 停。那是人审 Overlay。`$manage-repo`。 |
+-| 谁来 merge | GitHub 上的人 + Ruleset。见 [`docs/rbac.md`](../../docs/rbac.md)。 |
+-| 想对 LearningGuidePortal live apply | 停。fixture，不是试验场。 |
++| 想把 `forge/` 拷进产品仓好 import | 停。工具留在 `/tmp/AIOps` 或 fork；产品仓只留 `forge.yaml`。本地用 `PYTHONPATH`。 |
++| checkout `overlay-v1.0.1` 失败 | tag 还不存在。改 pin `overlay-v1.0.0`。 |
++| 退出码 2 | 缺 `FORGE_SUBMIT_TOKEN`，或本机 `forge check` 红。不要用 `GITHUB_TOKEN` / `gh auth` 凑。 |
++| `forge check` 因 Overlay 契约红 | 叶子必须 `### Functional` / `### Negative` / `### Edge`。不要 `### Depth`。不要 `## Specified`。`$use-overlay`。 |
++| 抄了 `required_checks: Verify` 但对不上 CI | 改成 PR 上真实的 job 名。 |
++| 想 live apply / 直推 main | 停。`$manage-repo` / `$dev-pr`。Learning Guide 现在不 apply。 |
++| 想让 Forge 把 suite 标 armed | 停。人审 Overlay。`$manage-repo`。 |
++| 把 `FORGE_SUBMIT_TOKEN` 和 Ops 钥匙搅在一起 | 停。代推看 [`docs/submit-credential.md`](../../docs/submit-credential.md)。 |
+diff --git a/skills/use-overlay/SKILL.md b/skills/use-overlay/SKILL.md
+index ab3d843..f6ff5c8 100644
+--- a/skills/use-overlay/SKILL.md
++++ b/skills/use-overlay/SKILL.md
+@@ -23,6 +23,25 @@ Overlay is a standard part. Freeze the contract, not a product’s numbers. Agen
+ - Overlay 测试只走 Overlay armed `product_command`。Forge 单测走 **`forge-check`**。`sop-lock` 不是 Overlay 旁路 unittest。**通用检查 ≠ 产品门。** 产品门按 `forge.yaml` `ci` 选跑或跳过。
+ - 不绿不能合。人审：用例写得好不好、`reviewed_by` 是不是人。
+ 
++## Contract (leaves) — write this down before any `cases.md`
++
++`overlay validate` treats every `##` heading’s first whitespace-free token as a `function_id`. Armed leaves need three `###` technique headings. Wrong names make `forge check` red even when the product is fine.
++
++```markdown
++## AUTH-01
++### Functional
++### Negative
++### Edge
++```
++
++- Technique headings must be **`### Functional` / `### Negative` / `### Edge`** (case-insensitive). **Do not** use `### Depth`.
++- **Do not** use `## Specified / not tested now` (or any prose `##`). It becomes a `function_id`.
++- `function_id` is globally unique across the overlay root. Do not reuse the same id in two suites.
++- `invariants.yaml` `function_ids` must match existing `##` titles. The invariant id must appear as a token in some `cases.md`.
++- This workshop’s Learning Guide **fixture** keeps login/payment `blocked`. A product repo may already have those suites `armed`. Do not copy fixture status onto the product.
++
++Pin **`overlay-v1.0.0`**. Do not checkout `overlay-v1.0.1` until that tag exists.
++
+ ## Instructions
+ 
+ ### Reuse — keep the tool out of the product commit repo
+@@ -39,7 +58,7 @@ The product repo commits **only**:
+ - `inbox/`
+ - `suites/`
+ - `invariants.yaml` (optional)
+-- a thin workflow that `uses:` [`.github/workflows/overlay.yml`](../../.github/workflows/overlay.yml) from the **tool** repo — pin a **tag or commit SHA**, not floating `main`
++- a thin workflow: either `uses:` [`.github/workflows/overlay.yml`](../../.github/workflows/overlay.yml) from the **tool** repo at **`overlay-v1.0.0`** (or a SHA), **or** an inline `overlay-check.yml` that checkouts that pin and runs `python -m overlay`. If the product already has a working inline job, **do not replace it** with the reusable caller. Never pin floating `main`.
+ 
+ That is the whole adoption surface. Do **not** copy `overlay/` into the product tree so that CI sees `local=true`. When `overlay/__init__.py` is absent, the reusable workflow checkouts `tool_repository` (default `LibertychaserUS/AIOps`) into `_aiops` and sets `PYTHONPATH`. **That checkout is the correct reuse path.**
+ 
+@@ -61,7 +80,7 @@ If you forked the workshop, `uses:` **your fork** at a pin and pass `tool_reposi
+ 
+ 1. **One slice = one inbox.** `inbox/<id>.md` (front matter + short Markdown). Same `id` as `suites/<id>/` after compile. Do not vendor a whole PRD. Developers land this through a PR (`$dev-pr`).
+ 2. **Read the adopter docs**, then compile. `function_id` is whatever stable, unique, non-whitespace string the docs already use. Do not invent a second numbering system for unit / e2e / k6. The same id is what CI receipts point at when a command fails. Do not couple the kernel to one product's routes, domains, or numbering.
+-3. **Design cases against the whole overlay root**, not one inbox. Method: [`../design-cases/SKILL.md`](../design-cases/SKILL.md) (linked notes: [`docs/agents/case-design.md`](../../docs/agents/case-design.md)). `armed` needs Functional / Negative / Edge. Global corners go in `invariants.yaml` and must be cited in some `cases.md`. Coupled leaves get `span: interaction` + `relates` — no `CROSS-01` series, no pairwise explosion.
++3. **Design cases against the whole overlay root**, not one inbox. Method: [`../design-cases/SKILL.md`](../design-cases/SKILL.md) (linked notes: [`docs/agents/case-design.md`](../../docs/agents/case-design.md)). `armed` needs `### Functional` / `### Negative` / `### Edge` under each `## <function_id>`. Global corners go in `invariants.yaml` and must be cited in some `cases.md`. Coupled leaves get `span: interaction` + `relates` — no `CROSS-01` series, no pairwise explosion.
+ 4. **Validate and print cover** (no model). Use `PYTHONPATH` to the tool checkout when you are not inside this workshop:
+    ```text
+    PYTHONPATH=../AIOps python3 -m overlay validate --root .
+@@ -72,7 +91,7 @@ If you forked the workshop, `uses:` **your fork** at a pin and pass `tool_reposi
+ 
+ ### CI — same gate as the tests
+ 
+-7. Wire a **thin** caller that `uses:` the reusable overlay workflow from the tool repo (pin tag/SHA). This workshop’s `overlay-check.yml` uses `enable_run: true` and pins `branch: main` so agent branches still run the armed **tool** tests — that file is for this workshop, not something to copy the Python package from. Do not copy this workshop’s `ci.yml` (common checks only).
++7. Wire Overlay CI. Reusable `uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0` is valid. An **inline** product job that checkouts the same pin and runs `overlay validate` / `run` is also valid. Learning Guide already uses inline — do not replace it. This workshop’s `overlay-check.yml` is for this workshop, not a package to vendor. Do not copy this workshop’s `ci.yml` (common checks only).
+ 8. Push runs **validate + select + run**. On **pull_request** (when selected) Overlay Ops is: **spec (`pr-title`) → review-bots (CodeRabbit + Copilot comments, advisory) → full Overlay CI on this checkout → human merge**. Red spec/CI: `python -m forge bounce` 打回 the PR and keeps `overlay-ops-debug` + receipts. `run` executes each selected suite’s `product_command` in the **caller (product) checkout**. It does not clone a foreign product repo (Learning Guide Portal is never checked out from here). It **does** checkout the tool repo when `overlay/` is not local. No generate. No token spend on push. Do not wait for CodeRabbit to be a required check.
+ 9. Local equivalent (tool next door):
+    ```text
+@@ -152,4 +171,8 @@ validate / select are local YAML. `run` is local subprocess in the caller checko
+ | 另开一个 Overlay unittest workflow / 让 Overlay run 跑 Forge 单测 | 停。Overlay 命令写进 Overlay armed suite。Forge 单测走 `forge-check`。 |
+ | 抓不到全局 corner | 先读全部 inbox/suites，把性质写成 invariant，再写叶子。不要两两穷尽。见 `$design-cases`。 |
+ | armed 缺 Edge | 契约红。补技法。 |
+-| `uses: …@main` | 停。pin tag 或 SHA。 |
++| `uses: …@main` 或 checkout `overlay-v1.0.1` | 停。pin 已发布的 `overlay-v1.0.0`（或 SHA）。 |
++| `### Depth` / `## Specified` | 契约红。改成 `### Edge`；Specified 改成普通段落或注释，不要用 `##`。 |
++| 跨套件重复 `function_id` | 契约红。全局唯一。 |
++| invariant 写了不存在的 `## ML-FR-011` | 契约红。先改 `##` 标题或改 invariant。 |
++| 产品已有 inline overlay-check 还去抄 reusable | 停。两边都合法；已有的不要换。 |
+-- 
+2.43.0
+

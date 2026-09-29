@@ -4,7 +4,7 @@ import { recordStudyEvent } from "@/services/productStore";
 
 export async function POST(request: Request) {
   const user = await currentProductUser();
-  if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+  if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   try {
     const body = await request.json() as { courseId?: string; lessonId?: string; event?: string; seconds?: number };
     if (typeof body.courseId !== "string" || typeof body.lessonId !== "string" || !["open", "complete"].includes(body.event || "")) {

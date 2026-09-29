@@ -154,9 +154,18 @@ export function courseCategoryDisplay(
   };
 }
 
-/** Stored outcomes on this course. Catalogue rows are not a source. */
-export function courseLearningOutcomes(course: { outcomes?: readonly string[] | null } | null | undefined, _catalogue: readonly { outcomes?: unknown }[] = []) {
-  return courseOutcomes(course);
+/**
+ * Outcomes stored on the course, then on a later object that itself has outcomes.
+ * A catalogue list is not a source. Shared course-detail copy is not a source.
+ * The course page passes the course only, so a published page shows that course's outcomes.
+ */
+export function courseLearningOutcomes(...sources: Array<unknown>): string[] {
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    const outcomes = courseOutcomes(source as { outcomes?: readonly string[] | null });
+    if (outcomes.length) return outcomes;
+  }
+  return [];
 }
 
 export function courseCategoryLabel(

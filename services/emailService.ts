@@ -17,7 +17,13 @@ function fromAddress() {
   return process.env.SMTP_FROM?.trim() || process.env.SES_FROM_EMAIL?.trim() || process.env.SMTP_USER?.trim() || "";
 }
 
+function emailDeliveryMode() {
+  return (process.env.EMAIL_DELIVERY || "").trim().toLowerCase();
+}
+
 export function emailDeliveryConfigured() {
+  const mode = emailDeliveryMode();
+  if (mode === "discard" || mode === "fail") return true;
   return smtpConfigured() || Boolean(process.env.SES_FROM_EMAIL?.trim());
 }
 
@@ -73,6 +79,9 @@ async function sendViaSes(input: { to: string; subject: string; text: string; ht
 }
 
 async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
+  const mode = emailDeliveryMode();
+  if (mode === "fail") throw new Error("Email delivery failed.");
+  if (mode === "discard") return;
   if (smtpConfigured()) return sendViaSmtp(input);
   return sendViaSes(input);
 }

@@ -82,6 +82,7 @@ For an isolated production-build check, stop only this sandbox server, run `NEXT
 - Does not grant access for `payment_status=unpaid`. Grants access after a valid signed paid event and checks the order amount/currency.
 - Handles `checkout.session.expired` and `checkout.session.async_payment_failed` without granting access or revoking an already successful purchase.
 - A browser return/cancel is not itself proof of payment or session expiry. Closing Checkout can leave it open for retry; LG records cancellation after the session expires. A declined card can likewise be retried while the session remains open.
+- Other pages do not receive a push when the webhook writes `paid`. They re-read the store on the next navigation or refresh. Record of hops, network interruption, and page pull: [`payment-state-propagation.md`](./payment-state-propagation.md).
 - Invoice events are marked processed after successful handling, not before. Invoice-ID checks and repeat-safe grace handling support retries. Current Stripe invoice-parent and subscription-item period fields are supported.
 
 ## Results, 9 September 2026

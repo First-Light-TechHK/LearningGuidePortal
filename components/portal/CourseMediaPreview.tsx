@@ -4,6 +4,7 @@ import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from
 import { createPortal } from 'react-dom';
 import { X, Upload } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
 import { CourseUploadActivity } from './CourseUploadActivity';
 import './lesson-authoring.css';
@@ -116,7 +117,8 @@ export function CourseMediaPreview({ type, url, title = '', locale }: { type: 'v
   useEffect(() => setFailed(false), [url, type]);
   if (!src || failed) return <p role="alert">{src ? t.mediaFailed : t.invalidUrl}</p>;
   return <div className="la-media" key={src}>
-    {type === 'image' && <img src={src} alt={title} onError={() => setFailed(true)}/>}
+    {/* Uploaded images have no known dimensions; .la-media img sizes them to width:100% and height:auto. */}
+    {type === 'image' && <Image src={src} alt={title} width={0} height={0} unoptimized onError={() => setFailed(true)}/>}
     {type === 'video' && <video src={src} controls playsInline preload="metadata" onError={() => setFailed(true)}/>}
     {type === 'audio' && <audio src={src} controls preload="metadata" onError={() => setFailed(true)}/>}
     {type === 'pdf' && <CoursePdfPreview url={src} title={title} locale={locale}/>}

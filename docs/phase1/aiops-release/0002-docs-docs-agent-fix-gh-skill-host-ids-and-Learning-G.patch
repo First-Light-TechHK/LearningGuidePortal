@@ -1,0 +1,144 @@
+From beae73173f86e1fd5c7b2e9b83c3968ad54fbc43 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 14:09:08 +0000
+Subject: [PATCH 2/6] docs(docs/agent): fix gh skill host ids and Learning
+ Guide overlay-check shape
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Use official gh skill --agent values (codex / cursor / claude-code), install
+all five skills, and describe Learning Guide as reusable overlay.yml plus an
+overlay-check wrapper — not an inline job.
+---
+ README.md                   | 43 +++++++++++++++++++++----------------
+ README.zh-CN.md             | 10 +++++++++
+ skills/use-overlay/SKILL.md |  4 ++--
+ 3 files changed, 37 insertions(+), 20 deletions(-)
+
+diff --git a/README.md b/README.md
+index 81e6cf3..369bd8e 100644
+--- a/README.md
++++ b/README.md
+@@ -48,21 +48,24 @@ Spec: [Codex Agent Skills](https://developers.openai.com/codex/skills). Codex sc
+ | Your machine (all repos) | `~/.agents/skills/<name>/SKILL.md` |
+ 
+ ```text
+-# other product repo — Codex project path
++# other product repo — Codex project path (all five skills)
+ mkdir -p .agents/skills
+-ln -s ../../AIOps/skills/use-forge .agents/skills/use-forge
+-ln -s ../../AIOps/skills/use-overlay .agents/skills/use-overlay
++for s in use-forge use-overlay design-cases dev-pr manage-repo; do
++  ln -s ../../AIOps/skills/$s .agents/skills/$s
++done
+ 
+ # or all repos on this machine
+ mkdir -p ~/.agents/skills
+-ln -s /abs/path/to/AIOps/skills/use-forge ~/.agents/skills/use-forge
+-ln -s /abs/path/to/AIOps/skills/use-overlay ~/.agents/skills/use-overlay
++for s in use-forge use-overlay design-cases dev-pr manage-repo; do
++  ln -s /abs/path/to/AIOps/skills/$s ~/.agents/skills/$s
++done
+ 
+-# or GitHub CLI into Codex’s shared project dir
+-gh skill install LibertychaserUS/AIOps --agent copilot --pin overlay-v1.0.0
++# GitHub CLI — Codex host id is `codex` (not `copilot`).
++# `--agent github-copilot` also writes `.agents/skills` at project scope.
++gh skill install LibertychaserUS/AIOps --agent codex --pin overlay-v1.0.0 --all
+ ```
+ 
+-(`gh skill install --agent copilot` writes `.agents/skills`, which Codex and several other hosts share.)
++(`gh skill` host ids: `codex`, `cursor`, `claude-code`, `github-copilot`. There is no `--agent copilot`. Several hosts share `.agents/skills` at project scope.)
+ 
+ ### Cursor
+ 
+@@ -77,15 +80,17 @@ Spec: [Cursor Agent Skills](https://cursor.com/docs/skills). Prefer `.cursor/ski
+ ```text
+ # other product repo — Cursor project path
+ mkdir -p .cursor/skills
+-ln -s ../../AIOps/skills/use-forge .cursor/skills/use-forge
+-ln -s ../../AIOps/skills/use-overlay .cursor/skills/use-overlay
++for s in use-forge use-overlay design-cases dev-pr manage-repo; do
++  ln -s ../../AIOps/skills/$s .cursor/skills/$s
++done
+ 
+ # or all local workspaces
+ mkdir -p ~/.cursor/skills
+-ln -s /abs/path/to/AIOps/skills/use-forge ~/.cursor/skills/use-forge
+-ln -s /abs/path/to/AIOps/skills/use-overlay ~/.cursor/skills/use-overlay
++for s in use-forge use-overlay design-cases dev-pr manage-repo; do
++  ln -s /abs/path/to/AIOps/skills/$s ~/.cursor/skills/$s
++done
+ 
+-gh skill install LibertychaserUS/AIOps --agent cursor --pin overlay-v1.0.0
++gh skill install LibertychaserUS/AIOps --agent cursor --pin overlay-v1.0.0 --all
+ ```
+ 
+ Cloud Agents only see **project** skills in the repo, or `~/.cursor/skills` if you turn on Sync Skills. UI: Customize → Skills, or add this GitHub repo as a remote skill source.
+@@ -103,15 +108,17 @@ Spec: project `.claude/skills/<name>/SKILL.md`, user `~/.claude/skills/<name>/SK
+ ```text
+ # other product repo — Claude Code project path
+ mkdir -p .claude/skills
+-ln -s ../../AIOps/skills/use-forge .claude/skills/use-forge
+-ln -s ../../AIOps/skills/use-overlay .claude/skills/use-overlay
++for s in use-forge use-overlay design-cases dev-pr manage-repo; do
++  ln -s ../../AIOps/skills/$s .claude/skills/$s
++done
+ 
+ # or all repos on this machine
+ mkdir -p ~/.claude/skills
+-ln -s /abs/path/to/AIOps/skills/use-forge ~/.claude/skills/use-forge
+-ln -s /abs/path/to/AIOps/skills/use-overlay ~/.claude/skills/use-overlay
++for s in use-forge use-overlay design-cases dev-pr manage-repo; do
++  ln -s /abs/path/to/AIOps/skills/$s ~/.claude/skills/$s
++done
+ 
+-gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.0
++gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.0 --all
+ ```
+ 
+ Restart the agent after adding paths. Then `/use-forge` or `/use-overlay`, or let it pick from the description.
+diff --git a/README.zh-CN.md b/README.zh-CN.md
+index 6e4323c..d3fe111 100644
+--- a/README.zh-CN.md
++++ b/README.zh-CN.md
+@@ -54,6 +54,16 @@ python3 -m forge check --root .
+ 
+ 开发冷启动六步：[`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md)。Overlay 契约：[`skills/use-overlay/SKILL.md`](skills/use-overlay/SKILL.md)、[`skills/design-cases/SKILL.md`](skills/design-cases/SKILL.md)。
+ 
++别的 agent 装 skill（只 pin **已存在的 tag**；`gh skill` 没有 `--agent copilot`）：
++
++```text
++gh skill install LibertychaserUS/AIOps --agent codex --pin overlay-v1.0.0 --all
++gh skill install LibertychaserUS/AIOps --agent cursor --pin overlay-v1.0.0 --all
++gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.0 --all
++```
++
++或在产品仓把 `skills/*` symlink 到 `.agents/skills` / `.cursor/skills` / `.claude/skills`。`overlay-v1.0.0` 上的 `use-forge` 仍把 `apply` 写进安装步骤；冷启动以本 README / 本仓更新后的 `use-forge` 六步为准，live `apply` 只在 `manage-repo`。
++
+ ---
+ 
+ ## Overlay 契约（避免 `forge check` 假红）
+diff --git a/skills/use-overlay/SKILL.md b/skills/use-overlay/SKILL.md
+index f6ff5c8..52386b9 100644
+--- a/skills/use-overlay/SKILL.md
++++ b/skills/use-overlay/SKILL.md
+@@ -91,7 +91,7 @@ If you forked the workshop, `uses:` **your fork** at a pin and pass `tool_reposi
+ 
+ ### CI — same gate as the tests
+ 
+-7. Wire Overlay CI. Reusable `uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0` is valid. An **inline** product job that checkouts the same pin and runs `overlay validate` / `run` is also valid. Learning Guide already uses inline — do not replace it. This workshop’s `overlay-check.yml` is for this workshop, not a package to vendor. Do not copy this workshop’s `ci.yml` (common checks only).
++7. Wire Overlay CI. Reusable `uses: LibertychaserUS/AIOps/.github/workflows/overlay.yml@overlay-v1.0.0` is valid. An **inline** product job that checkouts the same pin and runs `overlay validate` / `run` is also valid. Learning Guide already uses the reusable caller plus a wrapper job named `overlay-check` — do not replace that working file. If another product already has a working **inline** job, do not replace it with reusable either. This workshop’s `overlay-check.yml` is for this workshop, not a package to vendor. Do not copy this workshop’s `ci.yml` (common checks only).
+ 8. Push runs **validate + select + run**. On **pull_request** (when selected) Overlay Ops is: **spec (`pr-title`) → review-bots (CodeRabbit + Copilot comments, advisory) → full Overlay CI on this checkout → human merge**. Red spec/CI: `python -m forge bounce` 打回 the PR and keeps `overlay-ops-debug` + receipts. `run` executes each selected suite’s `product_command` in the **caller (product) checkout**. It does not clone a foreign product repo (Learning Guide Portal is never checked out from here). It **does** checkout the tool repo when `overlay/` is not local. No generate. No token spend on push. Do not wait for CodeRabbit to be a required check.
+ 9. Local equivalent (tool next door):
+    ```text
+@@ -175,4 +175,4 @@ validate / select are local YAML. `run` is local subprocess in the caller checko
+ | `### Depth` / `## Specified` | 契约红。改成 `### Edge`；Specified 改成普通段落或注释，不要用 `##`。 |
+ | 跨套件重复 `function_id` | 契约红。全局唯一。 |
+ | invariant 写了不存在的 `## ML-FR-011` | 契约红。先改 `##` 标题或改 invariant。 |
+-| 产品已有 inline overlay-check 还去抄 reusable | 停。两边都合法；已有的不要换。 |
++| 产品已有能跑的 overlay-check 还去改成另一种形状 | 停。reusable 和 inline 都合法；已有的不要换。 |
+-- 
+2.43.0
+

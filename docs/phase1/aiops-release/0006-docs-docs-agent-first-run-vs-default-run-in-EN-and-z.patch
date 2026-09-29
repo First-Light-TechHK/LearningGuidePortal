@@ -1,0 +1,41 @@
+From 737ad873c1023f796edf5d9c68c92f09916d78ff Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 14:15:08 +0000
+Subject: [PATCH 6/6] docs(docs/agent): first-run vs default-run in EN and
+ zh-CN READMEs
+
+Same rule as use-forge: remind, wait for yes, then default-run check/submit.
+---
+ README.md       | 2 ++
+ README.zh-CN.md | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/README.md b/README.md
+index 44aa32a..d4a31e2 100644
+--- a/README.md
++++ b/README.md
+@@ -202,6 +202,8 @@ Skill (read next): [`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md).
+ - **Dev:** `python -m forge check` must be green **and** `FORGE_SUBMIT_TOKEN` must be set, then `python -m forge submit` pushes a feature branch and opens/updates a **draft** PR. Host `gh auth` / `GH_TOKEN` is not enough. Missing token fails even `--dry-run`. Forge never merges.
+ - **Ops:** `python -m forge apply` installs a Ruleset from `forge.yaml` (`required_checks` → `required_status_checks`). Humans merge after required checks. No live apply to LearningGuidePortal from this workshop.
+ 
++**First run vs default-run.** Forge is full-stack post-dev GitHub landing (`check` → `submit`), not a test tool. Do not change Overlay or Verify norms. If the adopter already lands with `gh pr create`, husky, push-to-main, Verify-only, or their own branch names: remind them, contrast old vs new (Forge will not merge, live-apply, arm Overlay, or rewrite Verify), and wait for an explicit yes before writing `forge.yaml` or pasting policy. After one yes — or when `forge.yaml` already exists and they said 同意 — ask once, say 「之后默认按 Forge 落地」, then default-run `check` / `submit`. Do not re-ask on every save. Init confirm is not permission to live-apply or arm. Full rule: [`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md).
++
+ ### In this workshop (smoke)
+ 
+ ```text
+diff --git a/README.zh-CN.md b/README.zh-CN.md
+index d3fe111..8865dd5 100644
+--- a/README.zh-CN.md
++++ b/README.zh-CN.md
+@@ -54,6 +54,8 @@ python3 -m forge check --root .
+ 
+ 开发冷启动六步：[`skills/use-forge/SKILL.md`](skills/use-forge/SKILL.md)。Overlay 契约：[`skills/use-overlay/SKILL.md`](skills/use-overlay/SKILL.md)、[`skills/design-cases/SKILL.md`](skills/design-cases/SKILL.md)。
+ 
++**第一次 vs 之后默认跑。** Forge 是开发完成后的全栈 GitHub 落地（`check` → `submit`），不是测试工具。不要为了接 Forge 去改 Overlay / Verify。接入方如果已有 `gh pr create`、husky、直推 main、只走 Verify、或自己的分支名：先提醒对照新旧（不合入、不 live-apply、不 arm、不改 Verify），等人明确同意再写 `forge.yaml` / 贴政策。同意过一次——或仓里已有 `forge.yaml` 且他们说过「同意」——之后只再问一次，说「之后默认按 Forge 落地」，然后默认跑 `check` / `submit`。不要每次存盘都问。初始化同意 ≠ 可以 live-apply 或 arm Overlay。
++
+ 别的 agent 装 skill（只 pin **已存在的 tag**；`gh skill` 没有 `--agent copilot`）：
+ 
+ ```text
+-- 
+2.43.0
+

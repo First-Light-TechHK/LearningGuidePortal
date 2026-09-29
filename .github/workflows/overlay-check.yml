@@ -2,7 +2,7 @@
 # 不 vendor overlay/。针是 tag overlay-v2.0.0（不要 pin main）。
 # select 按分支策略（pull_request 用 base_ref，push 用 ref_name，未知回落 default）。
 # active 套件跑，blocked 丢掉并打印 reason。npm ci 为 typecheck:io 与 product_command 能执行。
-# 不要把 test:io 加进 Verify。
+# 不要把 test:io 加进 Verify。此文件在 forge.yaml deny_paths 里：agent 分支改它 forge-check 会红。
 
 name: overlay-check
 

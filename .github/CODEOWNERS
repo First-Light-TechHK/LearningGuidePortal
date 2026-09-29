@@ -1,0 +1,13 @@
+# 人审边界（决定见 docs/phase1/overlay-forge-issues.md §F）。
+# dev → main 的升级 PR 要求 code owner 审批；agent 不能自批这些路径。
+/.github/workflows/            @LibertychaserUS
+/.github/CODEOWNERS            @LibertychaserUS
+/AGENTS.md                     @LibertychaserUS
+/forge.yaml                    @LibertychaserUS
+/overlay.yaml                  @LibertychaserUS
+/invariants.yaml               @LibertychaserUS
+/inbox/                        @LibertychaserUS
+/suites/                       @LibertychaserUS
+/docs/phase1/overlay-forge-brief.md   @LibertychaserUS
+/docs/phase1/overlay-forge-issues.md  @LibertychaserUS
+/docs/phase1/skills/           @LibertychaserUS

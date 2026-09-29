@@ -1,7 +1,5 @@
-import { getMessages } from "@/lib/i18n/messages";
 import { currentProductUser } from "@/services/productAuth";
-import { getOrderForUser } from "@/services/productStore";
-import { getStripe } from "@/services/stripeClient";
+import { getPaidOrderReceipt } from "@/services/subscriptionPaymentService";
 
 export const runtime = "nodejs";
 
@@ -12,15 +10,11 @@ function escapeHtml(value: string) {
 export async function GET(_request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   const user = await currentProductUser();
   if (!user) return new Response("Sign in is required.", { status: 401 });
-  const order = await getOrderForUser(user.id, (await params).orderId);
-  if (!order || order.status !== "paid" || order.kind === "trial_activation") return new Response("Receipt is not available for this order.", { status: 404 });
+  const receipt = await getPaidOrderReceipt(user.id, (await params).orderId);
+  if (receipt.kind === "unavailable") return new Response("Receipt is not available for this order.", { status: 404 });
+  if (receipt.kind === "redirect") return Response.redirect(receipt.url, 302);
 
-  if (order.paymentMode === "stripe" && order.stripeInvoiceId) {
-    const invoice = await getStripe().invoices.retrieve(order.stripeInvoiceId);
-    if (invoice.hosted_invoice_url) return Response.redirect(invoice.hosted_invoice_url, 302);
-    return new Response("The Stripe receipt is not available yet.", { status: 404 });
-  }
-
+  const order = receipt.order;
   const locale = user.locale === "zh-CN" ? "zh-CN" : "en-GB";
   const title = escapeHtml(order.plan?.name || "Learning Guide course");
   const date = new Date(order.createdAt).toLocaleString(locale);

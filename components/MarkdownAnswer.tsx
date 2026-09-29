@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -21,7 +22,8 @@ const markdownComponents: Components = {
     if (!safe) return <span>{alt || "figure"}</span>;
     return (
       <figure className="course-figure">
-        <img src={safe} alt={alt || "Course figure"} />
+        {/* Markdown figures have no known dimensions; .course-figure img sizes them to width:100% and height:auto. */}
+        <Image src={safe} alt={alt || "Course figure"} width={0} height={0} unoptimized />
         {alt ? <figcaption>{alt}</figcaption> : null}
       </figure>
     );

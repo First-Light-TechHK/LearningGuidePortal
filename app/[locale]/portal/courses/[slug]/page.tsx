@@ -30,7 +30,7 @@ export default async function CourseDetailPage({ params }: {
   const identity = page.identity;
   const content = await getPortalContent();
   const catalogue = await listCatalogueEntries();
-  const outcomes = courseLearningOutcomes(course, catalogue);
+  const outcomes = courseLearningOutcomes(course);
   const crumbs = courseBreadcrumb({
     locale,
     homeLabel: detail.home,

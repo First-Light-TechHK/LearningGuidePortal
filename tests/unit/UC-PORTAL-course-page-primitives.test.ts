@@ -109,6 +109,16 @@ test("ML-FR-005: completing the preview range is View plans, not Continue previe
   assert.equal(locked?.access, "locked");
 });
 
+test("UC-PORTAL depth: paid access still reads identity from the store", async () => {
+  const user = await verifiedUser(store, "uc-portal-depth-identity@example.test");
+  await purchaseCourse(store, user.id);
+  const page = await store.getCoursePage(COURSE_ID, user.id);
+  assert.equal(page.identity?.title, "Epicureanism");
+  assert.equal(page.identity?.track, "European Humanities");
+  assert.notEqual(page.identity?.track, "Course");
+  assert.equal(page.accessState, "active");
+});
+
 test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learning", async () => {
   const user = await verifiedUser(store, "uc-portal-subscribed@example.test");
   await purchaseCourse(store, user.id);
@@ -119,6 +129,20 @@ test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learni
   assert.equal(page.cta, "continue_learning");
   assert.equal(page.secondaryCta, null);
   assert.ok(page.syllabus.every((item) => item.access === "entitled" && item.openable));
+});
+
+test("UC-PORTAL depth: expired access still reads identity from the store", async () => {
+  const user = await verifiedUser(store, "uc-portal-depth-expired@example.test");
+  await purchaseCourse(store, user.id);
+  const paid = (await store.getLearningOverview(user.id)).orders.find(
+    (order) => order.status === "paid" && order.kind !== "trial_activation",
+  );
+  assert.ok(paid);
+  await store.refundDemoOrder(paid.id);
+  const page = await store.getCoursePage(COURSE_ID, user.id);
+  assert.equal(page.identity?.title, "Epicureanism");
+  assert.equal(page.accessState, "expired");
+  assert.notEqual(page.identity?.track, "Course");
 });
 
 test("UC-PORTAL-5: expired access is View plans and private LPs lock again", async () => {

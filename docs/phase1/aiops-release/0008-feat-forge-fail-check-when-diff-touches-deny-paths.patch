@@ -1,0 +1,398 @@
+From a44fc6acfc053f2ea79dc712154bd953f7548ac1 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 19:20:11 +0000
+Subject: [PATCH] feat(forge/agent): fail forge check when the diff touches
+ deny_paths
+
+deny_paths and agent_branch_prefixes were parsed and then ignored.
+check now diffs against protect and exits 2 if a deny_path is in the
+diff. Prefixes are recorded; first-cut still allows human branches.
+---
+ README.md                  |   2 +
+ README.zh-CN.md            |   2 +
+ docs/design.md             |   3 +-
+ docs/release.md            |   6 ++
+ forge/check.py             | 132 +++++++++++++++++++++++++++++++++++++
+ forge/status.py            |   4 ++
+ tests/forge/test_check.py  | 116 +++++++++++++++++++++++++++++++-
+ tests/forge/test_status.py |   6 +-
+ 8 files changed, 267 insertions(+), 4 deletions(-)
+
+diff --git a/README.md b/README.md
+index b05de4c..3b2bca5 100644
+--- a/README.md
++++ b/README.md
+@@ -292,3 +292,5 @@ python3 -m forge release --repo LibertychaserUS/AIOps --version X.Y.Z --dry-run
+ ```
+ 
+ Does not deploy. Does not run on push. Does not merge.
++
++**1.0.1 honesty:** the annotated tags exist at `b4afc10ae0be4725e5109030f14a05bb2291fe4a`. Publishing is Human/Ops (`forge release` or Actions `release`). Release objects may not exist yet — do not treat `/releases/tag/overlay-v1.0.1` as proof. Do not force-move `1.0.0` or `1.0.1`. Ops owns the next Release / semver.
+diff --git a/README.zh-CN.md b/README.zh-CN.md
+index e4da005..55a6999 100644
+--- a/README.zh-CN.md
++++ b/README.zh-CN.md
+@@ -104,3 +104,5 @@ gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.1
+ - 不要把 Harness MCP 的 pipeline skill 当成这套 Forge
+ 
+ 细设计在 [`docs/design.md`](docs/design.md)，不要把那一篇整篇搬进产品仓。
++
++`1.0.1` 的 annotated tag 已在 `b4afc10ae0be4725e5109030f14a05bb2291fe4a`。发版是 Human/Ops（`forge release` 或 Actions `release`）。GitHub Release 对象可能还没有——不要把 `/releases/tag/overlay-v1.0.1` 当成已发布证明。不要 force-move `1.0.0` / `1.0.1`。下一版 Release / semver 归 Ops。
+diff --git a/docs/design.md b/docs/design.md
+index 09d6a9c..fe5bf06 100644
+--- a/docs/design.md
++++ b/docs/design.md
+@@ -183,7 +183,8 @@ python -m forge release --repo OWNER/NAME --version X.Y.Z [--dry-run]
+ 3. 有 `docs/pr-brief.md` 且提供了 `--body` / `PR_BODY`：lint 正文六节。有 brief 无 body：跳过，并写明 CI 会 lint `PR_BODY`。本地省略标题/正文 ≠ CI 已过同一把锁。
+ 4. 根上有 `schema/check.py`（工具仓）：跑它。接入方产品根没有 `schema/` 则跳过。
+ 5. 本工作本有 `tests/forge/test_title.py`：跑快单测子集。
+-6. 打印清单。任一红退出 2。无模型。
++6. 有 `forge.yaml` 且是 git 工作本：对照 `protect` 的 merge-base（加工作区）算 diff。碰到 `deny_paths` 则红。`agent_branch_prefixes` 只记录（第一刀不限制人的前缀，见 3.5.2）。无 `forge.yaml` 或无 git 则跳过。
++7. 打印清单。任一红退出 2。无模型。
+ 
+ `submit`（开发侧代推；对齐 [`gh pr create`](https://cli.github.com/manual/gh_pr_create) 的「推分支 + 开 draft PR」；**必须**持有命名密钥 `FORGE_SUBMIT_TOKEN`）：
+ 
+diff --git a/docs/release.md b/docs/release.md
+index 3c078d0..e92f258 100644
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -43,3 +43,9 @@ python3 -m forge release --repo LibertychaserUS/AIOps --version X.Y.Z
+ - 不重钉已经有人 pin 的旧 tag（要更新就打 `1.0.1`，不要 force-move `1.0.0`）
+ - 不打生产
+ - 不在 overlay-check / forge-check / pr-title / sop-lock 里调用 `forge release`
++
++---
++
++## 1.0.1 honesty (do not retag)
++
++`overlay-v1.0.1` / `forge-v1.0.1` exist as annotated git tags at `b4afc10ae0be4725e5109030f14a05bb2291fe4a`. SOP is **Human / Ops** (`人点发布` / `python -m forge release` / Actions `release` `workflow_dispatch`). The tags were pushed; GitHub Release objects may still be missing (`gh release view overlay-v1.0.1` 404; `gh release create` is 403 for `cursor[bot]`). Do not delete or force-move those tags. Ops should create the Release pages for the existing tags, or own the next semver. Pin the git tag (`git checkout overlay-v1.0.1` / `/tree/overlay-v1.0.1`), not a missing `/releases/tag/` page.
+diff --git a/forge/check.py b/forge/check.py
+index 7f4357f..7b75c00 100644
+--- a/forge/check.py
++++ b/forge/check.py
+@@ -15,6 +15,7 @@ from pathlib import Path
+ from typing import TextIO
+ 
+ from forge import EXIT_OK
++from forge.apply import ForgeError, load_config
+ from forge.brief import brief_spec_exists, lint_pr_body
+ from forge.title import run_pr_title
+ 
+@@ -58,6 +59,135 @@ def _last_line(text: str) -> str:
+     return lines[-1] if lines else ""
+ 
+ 
++def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
++    return subprocess.run(
++        ["git", "-C", str(root), *args],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++
++
++def is_git_work_tree(root: Path) -> bool:
++    proc = _git(root, "rev-parse", "--is-inside-work-tree")
++    return proc.returncode == 0 and proc.stdout.strip() == "true"
++
++
++def current_branch(root: Path) -> str | None:
++    proc = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
++    if proc.returncode != 0:
++        return None
++    name = proc.stdout.strip()
++    if not name or name == "HEAD":
++        return None
++    return name
++
++
++def resolve_protect_ref(root: Path, protect: Sequence[str]) -> str | None:
++    for name in protect:
++        for candidate in (
++            f"refs/heads/{name}",
++            name,
++            f"origin/{name}",
++            f"refs/remotes/origin/{name}",
++        ):
++            proc = _git(root, "rev-parse", "--verify", "--quiet", candidate)
++            if proc.returncode == 0:
++                return candidate
++    return None
++
++
++def normalize_repo_path(path: str) -> str:
++    rel = path.replace("\\", "/")
++    while rel.startswith("./"):
++        rel = rel[2:]
++    return rel
++
++
++def path_is_denied(path: str, deny_paths: Sequence[str]) -> bool:
++    rel = normalize_repo_path(path)
++    for deny in deny_paths:
++        target = normalize_repo_path(str(deny))
++        if not target:
++            continue
++        if rel == target:
++            return True
++        if target.endswith("/") and rel.startswith(target):
++            return True
++        if not target.endswith("/") and rel.startswith(target + "/"):
++            return True
++    return False
++
++
++def list_changed_paths(root: Path, base_ref: str | None) -> list[str] | None:
++    """Changed paths vs protect merge-base (or HEAD). None if not a git work tree."""
++    if not is_git_work_tree(root):
++        return None
++    paths: set[str] = set()
++    if base_ref:
++        merge = _git(root, "merge-base", "HEAD", base_ref)
++        base = merge.stdout.strip() if merge.returncode == 0 and merge.stdout.strip() else base_ref
++        for args in (
++            ("diff", "--name-only", "--no-renames", base),
++            ("diff", "--name-only", "--no-renames", "--cached", base),
++        ):
++            proc = _git(root, *args)
++            if proc.returncode == 0:
++                paths.update(normalize_repo_path(line) for line in proc.stdout.splitlines() if line.strip())
++    else:
++        for args in (
++            ("diff", "--name-only", "--no-renames", "HEAD"),
++            ("diff", "--name-only", "--no-renames", "--cached"),
++        ):
++            proc = _git(root, *args)
++            if proc.returncode == 0:
++                paths.update(normalize_repo_path(line) for line in proc.stdout.splitlines() if line.strip())
++    untracked = _git(root, "ls-files", "--others", "--exclude-standard")
++    if untracked.returncode == 0:
++        paths.update(normalize_repo_path(line) for line in untracked.stdout.splitlines() if line.strip())
++    return sorted(p for p in paths if p)
++
++
++def matching_agent_prefix(branch: str | None, prefixes: Sequence[str]) -> str | None:
++    if not branch:
++        return None
++    for prefix in prefixes:
++        if branch.startswith(prefix):
++            return prefix
++    return None
++
++
++def deny_paths_step(root: Path) -> Step:
++    """Fail when the local diff touches forge.yaml deny_paths. No GitHub write.
++
++    agent_branch_prefixes are recorded (design 3.5.2: human branches stay allowed).
++    They are not a local fail in this cut.
++    """
++    forge_yaml = root / "forge.yaml"
++    if not forge_yaml.is_file():
++        return Step("deny_paths", "skip", "no forge.yaml")
++    try:
++        config = load_config(forge_yaml)
++    except ForgeError as exc:
++        return Step("deny_paths", "fail", exc.message)
++    if not is_git_work_tree(root):
++        return Step("deny_paths", "skip", "no git work tree")
++    base = resolve_protect_ref(root, config.protect)
++    changed = list_changed_paths(root, base)
++    if changed is None:
++        return Step("deny_paths", "skip", "no git work tree")
++    hits = [path for path in changed if path_is_denied(path, config.deny_paths)]
++    branch = current_branch(root)
++    prefix = matching_agent_prefix(branch, config.agent_branch_prefixes)
++    suffix = f"; agent branch {branch}" if prefix and branch else ""
++    if hits:
++        shown = ", ".join(hits)
++        return Step("deny_paths", "fail", f"diff touches {shown}{suffix}")
++    if base:
++        return Step("deny_paths", "ok", f"vs {base}{suffix}")
++    return Step("deny_paths", "ok", f"no protect ref{suffix}")
++
++
+ def _print_captured(text: str, stream: TextIO) -> None:
+     if not text:
+         return
+@@ -238,6 +368,8 @@ def run_check(
+     else:
+         steps.append(Step("sop-lock", "ok", _last_line(buf_out.getvalue())))
+ 
++    steps.append(deny_paths_step(root))
++
+     nested = bool(env.get(CHECK_ENV)) or bool(os.environ.get(CHECK_ENV))
+     modules = workshop_fast_test_modules(root)
+     if not run_unittests:
+diff --git a/forge/status.py b/forge/status.py
+index d227a27..b97a164 100644
+--- a/forge/status.py
++++ b/forge/status.py
+@@ -42,6 +42,10 @@ def run_status(
+         if not existing:
+             print("installed: no", file=out)
+             print(f"name: {RULESET_NAME}", file=out)
++            print(
++                "note: forge.yaml is a local declaration; GitHub Rulesets stay empty until Ops apply",
++                file=out,
++            )
+             return EXIT_OK
+         detail = existing
+         ruleset_id = existing.get("id")
+diff --git a/tests/forge/test_check.py b/tests/forge/test_check.py
+index f4347e4..ef26f27 100644
+--- a/tests/forge/test_check.py
++++ b/tests/forge/test_check.py
+@@ -3,12 +3,14 @@
+ from __future__ import annotations
+ 
+ import io
++import subprocess
++import tempfile
+ import unittest
+ from pathlib import Path
+ 
+ from forge import EXIT_OK
+ from forge.__main__ import main
+-from forge.check import EXIT_CHECK, run_check
++from forge.check import EXIT_CHECK, deny_paths_step, path_is_denied, run_check
+ from forge.title import EXAMPLE
+ 
+ ROOT = Path(__file__).resolve().parents[2]
+@@ -218,5 +220,117 @@ class SkipAndFailTests(unittest.TestCase):
+         self.assertTrue(hook.stat().st_mode & 0o111)
+ 
+ 
++def _git(root: Path, *args: str) -> None:
++    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
++
++
++def _init_product(root: Path) -> None:
++    (root / ".github" / "workflows").mkdir(parents=True)
++    (root / ".github" / "workflows" / "ci.yml").write_text("name: ci\n", encoding="utf-8")
++    (root / "README.md").write_text("hello\n", encoding="utf-8")
++    (root / "forge.yaml").write_text(
++        "schema: forge-config/v1\n"
++        "protect:\n"
++        "  - main\n"
++        "agent_branch_prefixes:\n"
++        "  - cursor/\n"
++        "  - copilot/\n"
++        "deny_paths:\n"
++        "  - .github/workflows/ci.yml\n",
++        encoding="utf-8",
++    )
++    _git(root, "init", "-b", "main")
++    _git(root, "config", "user.email", "t@example.test")
++    _git(root, "config", "user.name", "T")
++    _git(root, "add", "-A")
++    _git(root, "commit", "-m", "init")
++
++
++class DenyPathsCheckTests(unittest.TestCase):
++    def test_readme_only_is_green(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            _init_product(root)
++            _git(root, "checkout", "-b", "cursor/docs")
++            (root / "README.md").write_text("hello world\n", encoding="utf-8")
++            _git(root, "add", "README.md")
++            _git(root, "commit", "-m", "docs")
++            stdout = io.StringIO()
++            stderr = io.StringIO()
++            code = run_check(
++                root,
++                title=EXAMPLE,
++                stdout=stdout,
++                stderr=stderr,
++                environ={},
++                run_unittests=False,
++            )
++            self.assertEqual(code, EXIT_OK, stderr.getvalue())
++            out = stdout.getvalue()
++            self.assertIn("deny_paths", out)
++            self.assertNotIn("FAIL", out)
++            self.assertIn("agent branch cursor/docs", out)
++
++    def test_deny_path_commit_is_red(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            _init_product(root)
++            _git(root, "checkout", "-b", "cursor/ci")
++            (root / ".github" / "workflows" / "ci.yml").write_text("name: ci\non: push\n", encoding="utf-8")
++            _git(root, "add", "-A")
++            _git(root, "commit", "-m", "touch deny")
++            stdout = io.StringIO()
++            stderr = io.StringIO()
++            code = run_check(
++                root,
++                title=EXAMPLE,
++                stdout=stdout,
++                stderr=stderr,
++                environ={},
++                run_unittests=False,
++            )
++            self.assertEqual(code, EXIT_CHECK)
++            out = stdout.getvalue()
++            self.assertIn("deny_paths", out)
++            self.assertIn("FAIL", out)
++            self.assertIn(".github/workflows/ci.yml", out)
++            self.assertIn("agent branch cursor/ci", out)
++
++    def test_human_branch_also_fails_on_deny_path(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            _init_product(root)
++            _git(root, "checkout", "-b", "feature/ci")
++            (root / ".github" / "workflows" / "ci.yml").write_text("name: ci\non: push\n", encoding="utf-8")
++            stdout = io.StringIO()
++            code = run_check(
++                root,
++                title=EXAMPLE,
++                stdout=stdout,
++                stderr=io.StringIO(),
++                environ={},
++                run_unittests=False,
++            )
++            self.assertEqual(code, EXIT_CHECK)
++            self.assertIn(".github/workflows/ci.yml", stdout.getvalue())
++            self.assertNotIn("agent branch", stdout.getvalue())
++
++    def test_no_forge_yaml_skips_deny_paths(self) -> None:
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            step = deny_paths_step(root)
++            self.assertEqual(step.status, "skip")
++            self.assertIn("no forge.yaml", step.detail)
++
++    def test_path_match_is_exact_or_directory(self) -> None:
++        deny = [".github/workflows/ci.yml", "docs/locked"]
++        self.assertTrue(path_is_denied(".github/workflows/ci.yml", deny))
++        self.assertTrue(path_is_denied("./.github/workflows/ci.yml", deny))
++        self.assertFalse(path_is_denied(".github/workflows/ci.yml.bak", deny))
++        self.assertTrue(path_is_denied("docs/locked/readme.md", deny))
++        self.assertFalse(path_is_denied("docs/open.md", deny))
++        self.assertFalse(path_is_denied("github/workflows/ci.yml", deny))
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/forge/test_status.py b/tests/forge/test_status.py
+index 6a1fafd..ee7f94a 100644
+--- a/tests/forge/test_status.py
++++ b/tests/forge/test_status.py
+@@ -28,8 +28,10 @@ class StatusTests(unittest.TestCase):
+             environ={"FORGE_GITHUB_TOKEN": "t"},
+         )
+         self.assertEqual(code, EXIT_OK, stderr.getvalue())
+-        self.assertIn("installed: no", stdout.getvalue())
+-        self.assertIn(RULESET_NAME, stdout.getvalue())
++        text = stdout.getvalue()
++        self.assertIn("installed: no", text)
++        self.assertIn(RULESET_NAME, text)
++        self.assertIn("local declaration", text)
+         self.assertEqual(fake.writes(), [])
+         self.assertTrue(all(method == "GET" for method in fake.methods()))
+ 
+-- 
+2.43.0
+

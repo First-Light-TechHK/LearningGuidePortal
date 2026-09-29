@@ -408,6 +408,14 @@ function entitlementOverlapsPlan(data: ProductData, entitlement: ProductEntitlem
   return data.courses.some((course) => planCoversCourse(data, plan, course) && entitlementCoversCourse(data, entitlement, course));
 }
 
+function expireOverlappingActiveEntitlements(data: ProductData, userId: string, plan: ProductPlan) {
+  data.entitlements.forEach((item) => {
+    if (item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) {
+      item.state = "expired";
+    }
+  });
+}
+
 function scopedValue(item: { courseId: string; scope?: ProductEntitlement["scope"] | ProductSubscription["scope"]; scopeId?: string | null }) {
   if (item.scope === "category") return { scope: "category" as const, scopeId: item.scopeId || null };
   if (item.scope === "everything" || item.courseId === "*") return { scope: "everything" as const, scopeId: "*" };
@@ -422,6 +430,18 @@ function sameScope(left: { courseId: string; scope?: ProductEntitlement["scope"]
 
 function entitlementMatchesSubscription(entitlement: ProductEntitlement, subscription: ProductSubscription) {
   return entitlement.userId === subscription.userId && entitlement.source === subscription.source && sameScope(entitlement, subscription);
+}
+
+function refundBlocksInvoiceGrant(data: ProductData, subscription: ProductSubscription) {
+  const stripeId = subscription.stripeSubscriptionId || null;
+  if (stripeId && data.orders.some((order) => order.status === "refunded" && order.stripeSubscriptionId === stripeId)) return true;
+  if (subscription.state === "expired" && data.orders.some((order) =>
+    order.status === "refunded" &&
+    order.userId === subscription.userId &&
+    ((stripeId && order.stripeSubscriptionId === stripeId) || (!stripeId && order.planId === subscription.planId))
+  )) return true;
+  const matching = data.entitlements.filter((item) => entitlementMatchesSubscription(item, subscription));
+  return matching.length > 0 && matching.every((item) => item.state === "revoked");
 }
 
 async function saveData(data: ProductData) {
@@ -649,6 +669,35 @@ export async function registerUserAttempt(input: { email: string; password: stri
   });
 }
 
+export async function commitPendingUserWithToken(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"]; rawToken: string }) {
+  const email = input.email.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
+  if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
+  if (!input.rawToken) throw new Error("Verification token is missing.");
+  const nickname = validateNickname(input.nickname?.trim() || "Learner");
+  const role = input.role === "operator" || input.role === "teacher" ? input.role : "student";
+  const tokenHash = hashToken(input.rawToken);
+  return editData(async (data) => {
+    const existing = data.users.find((user) => user.email === email);
+    if (existing) return { user: { ...existing, email: existing.email || email }, created: false as const };
+    const createdAt = now();
+    const user: ProductUser = {
+      id: id("user"),
+      email,
+      passwordHash: await passwordHash(input.password),
+      nickname,
+      locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB",
+      role,
+      status: "pending",
+      emailVerifiedAt: null,
+      createdAt,
+    };
+    data.users.push(user);
+    data.verificationTokens.unshift({ id: id("verify"), userId: user.id, tokenHash, expiresAt: tokenExpiry(24), usedAt: null, createdAt });
+    return { user: { ...user, email }, created: true as const };
+  });
+}
+
 export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
   return (await registerUserAttempt({ ...input, nickname: input.nickname ?? "Learner" })).user;
 }
@@ -800,6 +849,18 @@ export async function requestEmailVerification(emailValue: string) {
   }
 }
 
+export async function replaceLiveVerificationToken(userId: string, rawToken: string) {
+  return editData((data) => {
+    if (!data.users.some((item) => item.id === userId && item.status === "pending")) return false;
+    const issuedAt = now();
+    for (const item of data.verificationTokens) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data.verificationTokens.unshift({ id: id("verify"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), usedAt: null, createdAt: issuedAt });
+    return true;
+  });
+}
+
 export async function verifyEmailToken(rawToken: string) {
   return editData((data) => {
     const token = data.verificationTokens.find((item) => item.tokenHash === hashToken(rawToken) && !item.usedAt && new Date(item.expiresAt) > new Date());
@@ -832,6 +893,29 @@ export async function requestPasswordReset(emailValue: string, enforceCooldown =
     if (enforceCooldown && error instanceof Error && error.message === "Please wait before requesting another verification email.") return { accepted: true, token: null };
     throw error;
   }
+}
+
+export async function planPasswordReset(emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
+  if (!user?.email) return null;
+  const latest = data.passwordResetTokens.find((item) => item.userId === user.id);
+  if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) return null;
+  return { userId: user.id, email: user.email };
+}
+
+export async function replaceLivePasswordResetToken(userId: string, rawToken: string) {
+  return editData((data) => {
+    const user = data.users.find((item) => item.id === userId && item.status === "active" && item.emailVerifiedAt);
+    if (!user) return false;
+    const issuedAt = now();
+    for (const item of data.passwordResetTokens) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data.passwordResetTokens.unshift({ id: id("reset"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(1), usedAt: null, createdAt: issuedAt });
+    return true;
+  });
 }
 
 export async function resetPassword(rawToken: string, newPassword: string) {
@@ -903,12 +987,19 @@ export async function getUserAvatar(userId: string) {
   try { return { buffer: await readBinary(path.join(productDir(), user.avatarPath)), contentType: user.avatarContentType }; } catch { return null; }
 }
 
+export class UnverifiedAccountError extends Error {
+  constructor() {
+    super("Email or password is incorrect.");
+    this.name = "UnverifiedAccountError";
+  }
+}
+
 export async function authenticateUser(emailValue: string, password: string) {
   if (!isBusinessEmail(emailValue)) throw new Error("Enter a valid email address.");
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === normaliseEmail(emailValue));
   if (!user || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
-  if (user.status === "pending" || !user.emailVerifiedAt) throw new Error("Verify your email address before signing in.");
+  if (user.status === "pending" || !user.emailVerifiedAt) throw new UnverifiedAccountError();
   if (user.status !== "active") throw new Error("This account is not available.");
   return user;
 }
@@ -935,20 +1026,37 @@ export async function getUserBySessionToken(token: string | undefined, allowEmai
   return data.users.find((user) => user.id === session.userId && user.status === "active" && ((Boolean(user.email) && Boolean(user.emailVerifiedAt)) || (allowEmailBinding && data.accounts.some((account) => account.userId === user.id && account.provider === "wechat")))) || null;
 }
 
-export async function issueEmailBinding(userId: string, emailValue: string) {
+function bindingEmail(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error("invalid_email");
+  return email;
+}
+
+function assertEmailBindingAllowed(data: ProductData, userId: string, email: string) {
+  const user = data.users.find(user => user.id === userId && user.status === "active");
+  if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
+  if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
+  if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
+}
+
+function assertEmailBindingCooldown(data: ProductData, userId: string) {
+  const latest = data.emailBindingTokens.find(token => token.userId === userId);
+  if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
+}
+
+function storeEmailBindingToken(data: ProductData, userId: string, email: string, rawToken: string) {
+  // Remove superseded links so they cannot be mistaken for successful replays.
+  data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
+  data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+}
+
+export async function issueEmailBinding(userId: string, emailValue: string) {
+  const email = bindingEmail(emailValue);
   return editData(data => {
-    const user = data.users.find(user => user.id === userId && user.status === "active");
-    if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
-    if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
-    if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
-    const latest = data.emailBindingTokens.find(token => token.userId === userId);
-    if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
+    assertEmailBindingAllowed(data, userId, email);
+    assertEmailBindingCooldown(data, userId);
     const rawToken = randomBytes(32).toString("base64url");
-    // Remove superseded links so they cannot be mistaken for successful replays.
-    data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
-    data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+    storeEmailBindingToken(data, userId, email, rawToken);
     return { token: rawToken, email };
   });
 }
@@ -959,6 +1067,23 @@ export async function getPendingEmailBinding(userId: string) {
   if (!token) return null;
   const elapsedSeconds = Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 1000);
   return { email: token.email, retryAfter: Math.max(0, 60 - elapsedSeconds) };
+}
+
+export async function planEmailBinding(userId: string, emailValue: string) {
+  const email = bindingEmail(emailValue);
+  const data = await ensureProductData();
+  assertEmailBindingAllowed(data, userId, email);
+  assertEmailBindingCooldown(data, userId);
+  return { email };
+}
+
+export async function commitEmailBinding(userId: string, emailValue: string, rawToken: string) {
+  const email = bindingEmail(emailValue);
+  return editData(data => {
+    assertEmailBindingAllowed(data, userId, email);
+    storeEmailBindingToken(data, userId, email, rawToken);
+    return { email };
+  });
 }
 
 export async function confirmEmailBinding(rawToken: string) {
@@ -1058,6 +1183,15 @@ export function publicFirstLesson(course: ProductCourse) {
   return course.sections.flatMap((section) => section.lessons).find((lesson) => lesson.isPublic) || null;
 }
 
+/** Subject, then category, when those catalogue entries exist for this course. */
+export async function catalogueEntriesForCourse(course: Pick<ProductCourse, "categoryId" | "subjectId"> | null) {
+  if (!course?.categoryId && !course?.subjectId) return [];
+  const catalogue = (await ensureProductData()).catalogue || [];
+  const subject = catalogue.find((entry) => course.subjectId && entry.id === course.subjectId) || null;
+  const category = catalogue.find((entry) => course.categoryId && entry.id === course.categoryId) || null;
+  return [subject, category].filter((entry): entry is CatalogueEntry => Boolean(entry));
+}
+
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
   const plans = data.plans.filter((plan) => {
@@ -1129,7 +1263,7 @@ function activeEntitlement(data: ProductData, userId: string, courseId: string) 
   return liveEntitlement(data, userId, courseId);
 }
 
-export async function checkEntitlement(userId: string, courseId: string) {
+export async function checkEntitlement(userId: string, courseId: string, device?: "pc" | "mobile") {
   const data = await ensureProductData();
   const entitlement = activeEntitlement(data, userId, courseId);
   if (!entitlement) return { allowed: false, source: null, validTo: null, device: null };
@@ -1185,6 +1319,10 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
   return editData((data) => {
     const plan = data.plans.find((item) => item.id === planId);
     if (!plan) throw new Error("Plan not found.");
+    if (kind === "purchase") {
+      const active = data.subscriptions.some((item) => item.userId === userId && item.planId === planId && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date());
+      if (active) throw new Error("This plan already has active access.");
+    }
     if (price) { plan.amountMinor = price.amountMinor; plan.currency = price.currency; }
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
@@ -1294,10 +1432,7 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
     data.subscriptions.unshift(subscription);
     data.subscriptions.forEach((item) => { if (item.userId === userId && item.source === "trial" && item.state === "active" && item.planId === plan.id) item.state = "expired"; });
-    data.entitlements.forEach((item) => {
-      if (item.userId === userId && item.source === "trial" && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
-    });
-    data.entitlements = data.entitlements.filter((item) => !(item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
+    expireOverlappingActiveEntitlements(data, userId, plan);
     data.entitlements.unshift(entitlement);
     data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
     return { order, subscription, entitlement };
@@ -1516,7 +1651,7 @@ export async function activateStripeTrial(input: { eventId?: string; eventType?:
     const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: input.customerId || null, graceEndsAt: null });
     const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
     data.subscriptions.unshift(subscription);
-    data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
+    expireOverlappingActiveEntitlements(data, order.userId, plan);
     data.entitlements.unshift(entitlement);
     data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Trial activated", body: `${plan.name} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
     return order;
@@ -1525,8 +1660,9 @@ export async function activateStripeTrial(input: { eventId?: string; eventType?:
 
 export async function convertStripeTrial(input: { subscriptionId: string; invoiceId: string; amountMinor: number; paymentIntentId?: string | null }) {
   return editData((data) => {
+    if (input.amountMinor <= 0) return null;
     const trial = data.subscriptions.find((item) => item.stripeSubscriptionId === input.subscriptionId && item.source === "trial" && item.state !== "expired");
-    if (!trial) return null;
+    if (!trial || refundBlocksInvoiceGrant(data, trial)) return null;
     const plan = data.plans.find((item) => item.id === trial.planId);
     if (!plan) throw new Error("Plan not found.");
     trial.state = "expired";
@@ -1537,7 +1673,7 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     const order: ProductOrder = { id: id("order"), userId: trial.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: subscription.validFrom, servicePeriodEnd: subscription.validTo, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
     const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo);
     data.subscriptions.unshift(subscription);
-    data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
+    expireOverlappingActiveEntitlements(data, trial.userId, plan);
     data.entitlements.unshift(entitlement);
     data.orders.unshift(order);
     data.notifications.unshift({ id: id("notification"), userId: trial.userId, title: "Subscription active", body: "Your trial has converted and course access continues.", readAt: null, createdAt: now() });
@@ -1550,13 +1686,12 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     const paidOrder = data.orders.find((order) => order.stripeInvoiceId === input.invoiceId);
     if (paidOrder) return paidOrder;
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === input.subscriptionId && item.source === "purchase");
-    if (!subscription) return null;
+    if (!subscription || refundBlocksInvoiceGrant(data, subscription)) return null;
     const plan = data.plans.find((item) => item.id === subscription.planId);
     if (!plan) throw new Error("Plan not found.");
     const start = input.currentPeriodStart || now();
     const end = input.currentPeriodEnd || addMonths(start, plan.termMonths);
-    subscription.state = "active";
-    subscription.cancelAtPeriodEnd = false;
+    subscription.state = subscription.cancelAtPeriodEnd ? "cancel_at_period_end" : "active";
     subscription.validFrom = start;
     subscription.validTo = end;
     subscription.graceEndsAt = null;
@@ -1584,8 +1719,7 @@ export async function markStripeTrialGrace(subscriptionId: string) {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "trial" && item.state !== "expired");
     if (!subscription) return null;
     if (subscription.state === "grace") return subscription;
-    const graceEnd = new Date();
-    graceEnd.setUTCDate(graceEnd.getUTCDate() + TRIAL_DAYS);
+    const graceEnd = new Date(new Date(subscription.validTo).getTime() + TRIAL_DAYS * 86400000);
     subscription.state = "grace";
     subscription.graceEndsAt = graceEnd.toISOString();
     subscription.validTo = graceEnd.toISOString();
@@ -1601,8 +1735,7 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "purchase" && item.state !== "expired");
     if (!subscription) return null;
     if (subscription.state === "grace") return subscription;
-    const graceEnd = new Date();
-    graceEnd.setUTCDate(graceEnd.getUTCDate() + TRIAL_DAYS);
+    const graceEnd = new Date(new Date(subscription.validTo).getTime() + TRIAL_DAYS * 86400000);
     subscription.state = "grace";
     subscription.graceEndsAt = graceEnd.toISOString();
     subscription.validTo = graceEnd.toISOString();
@@ -1653,10 +1786,7 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   data.subscriptions.unshift(subscription);
   const trial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && item.state === "active");
   if (trial) trial.state = "expired";
-  data.entitlements.forEach((item) => {
-    if (item.userId === userId && item.source === "trial" && item.state === "active" && entitlementOverlapsPlan(data, item, plan)) item.state = "expired";
-  });
-  data.entitlements = data.entitlements.filter((item) => !(item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
+  expireOverlappingActiveEntitlements(data, userId, plan);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
   return order;
@@ -1669,7 +1799,7 @@ export async function fulfilStripeCheckout(input: { eventId: string; eventType: 
     data.stripeEvents.unshift({ id: input.eventId, type: input.eventType, processedAt: now() });
     const order = data.orders.find((item) => item.userId === input.userId && (item.stripeCheckoutSessionId === input.sessionId || item.quoteId === input.quoteId));
     const plan = data.plans.find((item) => item.id === input.planId);
-    if (!order || !plan) throw new Error("Checkout order or plan not found; retry this event.");
+    if (!order || !plan) throw new PaymentError("invalid_request");
     if (order.paymentMode !== "stripe" || order.planId !== plan.id) throw new Error("Checkout does not match the order.");
     if (input.amountMinor !== undefined && input.amountMinor !== order.amountMinor) throw new Error("Checkout amount does not match the order.");
     if (input.currency !== undefined && input.currency !== order.currency) throw new Error("Checkout currency does not match the order.");
@@ -1739,11 +1869,22 @@ export async function resumeSubscription(userId: string, subscriptionId: string)
     const subscription = data.subscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
     if (!subscription) throw new Error("Subscription not found.");
     if (subscription.source === "purchase") throw new Error("Auto-renewal cannot be restored. You can purchase a new plan after the current period ends.");
-    if (!["trial_canceled", "cancel_at_period_end"].includes(subscription.state) || new Date(subscription.validTo) <= new Date()) throw new Error("This subscription cannot be resumed.");
+    const originalValidTo = subscription.validTo;
+    if (!["trial_canceled", "cancel_at_period_end"].includes(subscription.state) || new Date(originalValidTo) <= new Date()) throw new Error("This subscription cannot be resumed.");
     subscription.state = "active";
     subscription.cancelAtPeriodEnd = false;
-    const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.validTo === subscription.validTo);
-    if (entitlement) entitlement.state = "active";
+    subscription.validTo = originalValidTo;
+    let entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription));
+    if (entitlement) {
+      entitlement.state = "active";
+      entitlement.validTo = originalValidTo;
+    } else {
+      const plan = data.plans.find((item) => item.id === subscription.planId);
+      if (plan) {
+        entitlement = entitlementForPlan(userId, plan, "trial", originalValidTo);
+        data.entitlements.unshift(entitlement);
+      }
+    }
     data.notifications.unshift({ id: id("notification"), userId, title: "Subscription resumed", body: "Your course access remains available until the current period ends.", readAt: null, createdAt: now() });
     return subscription;
   });
@@ -1874,12 +2015,16 @@ export async function refundOrder(orderId: string, operatorId: string, providerR
     if (order.status === "refunded") return order;
     if (order.status !== "paid") throw new Error("Only a paid order can be refunded.");
     order.status = "refunded";
-    const subscription = data.subscriptions.find((item) => item.userId === order.userId && item.planId === order.planId && item.source === "purchase" && item.state !== "expired");
-    if (subscription) subscription.state = "expired";
-    const plan = data.plans.find((item) => item.id === order.planId);
-    if (plan) {
-      const entitlement = data.entitlements.find((item) => item.userId === order.userId && item.source === "purchase" && item.state === "active" && entitlementOverlapsPlan(data, item, plan));
-      if (entitlement) entitlement.state = "revoked";
+    const subscriptions = data.subscriptions.filter((item) =>
+      item.userId === order.userId &&
+      item.source === "purchase" &&
+      (order.stripeSubscriptionId ? item.stripeSubscriptionId === order.stripeSubscriptionId : item.planId === order.planId)
+    );
+    for (const subscription of subscriptions) {
+      subscription.state = "expired";
+      for (const entitlement of data.entitlements) {
+        if (entitlementMatchesSubscription(entitlement, subscription)) entitlement.state = "revoked";
+      }
     }
     data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Order refunded", body: "The demo order was refunded and course access was removed.", readAt: null, createdAt: now() });
     addOrderActivity(data, { orderId, operatorId, action: "refund", result: "succeeded", reason, providerReference });
@@ -1921,7 +2066,7 @@ export async function applyStripeOrderState(input: { orderId: string; operatorId
         const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: order.stripeSubscriptionId || input.subscriptionId || null, stripeCustomerId: input.customerId || null, graceEndsAt: null });
         const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
         data.subscriptions.unshift(subscription);
-        data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
+        expireOverlappingActiveEntitlements(data, order.userId, plan);
         data.entitlements.unshift(entitlement);
         data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Trial activated", body: `${plan.name} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
         addOrderActivity(data, { orderId: order.id, operatorId: input.operatorId, action: "resynchronise", result: "succeeded", reason: null, providerReference: order.stripeCheckoutSessionId || null });
@@ -2196,6 +2341,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           order.status = "paid";
           subscription = subscriptionForPlan(order.userId, plan, event.trial ? "trial" : "purchase", event.periodStart, event.periodEnd, { stripeSubscriptionId: event.subscriptionId, stripeCustomerId: event.customerId });
           data.subscriptions.unshift(subscription);
+          expireOverlappingActiveEntitlements(data, order.userId, plan);
           data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd));
           data.notifications.unshift({ id: id("notification"), userId: order.userId, title: event.trial ? "Trial activated" : "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
         }
@@ -2211,7 +2357,9 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
       if (order?.status === "pending") { order.status = event.status === "expired" ? "canceled" : "failed"; order.lastStripeStatus = event.status; }
     } else if (event.action === "invoice") {
       if (!subscription || !event.invoiceId) throw new Error("Subscription cannot be reconciled yet.");
-      if (event.status === "paid" && !data.orders.some(item => item.stripeInvoiceId === event.invoiceId)) {
+      if (refundBlocksInvoiceGrant(data, subscription)) {
+        // Refunded / revoked access must not be revived by a later invoice.paid.
+      } else if (event.status === "paid" && !data.orders.some(item => item.stripeInvoiceId === event.invoiceId)) {
         // The free initial trial invoice is not the first paid renewal.
         if (!(subscription.source === "trial" && event.billingReason === "subscription_create" && event.amountMinor === 0)) {
           if (!event.periodStart || !event.periodEnd) throw new Error("Invoice period is missing.");
@@ -2243,22 +2391,27 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
         }
       } else if (event.status === "open" && event.periodEnd && new Date(event.periodEnd) > new Date(subscription.validTo)) {
         // Stable grace boundary; retries must never extend access again.
-        const end = new Date(new Date(event.periodStart || subscription.validTo).getTime() + TRIAL_DAYS * 86400000).toISOString();
+        const originalValidTo = subscription.validTo;
+        const end = new Date(new Date(event.periodStart || originalValidTo).getTime() + TRIAL_DAYS * 86400000).toISOString();
         subscription.state = "grace";
         subscription.graceEndsAt = end;
         subscription.validTo = end;
         data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.validTo = end; });
       }
     }
-    if ((event.action === "subscription" || event.subscriptionStatus) && subscription) {
+    if ((event.action === "subscription" || event.subscriptionStatus) && subscription && !refundBlocksInvoiceGrant(data, subscription)) {
       const remoteStatus = event.subscriptionStatus || event.status;
-      subscription.cancelAtPeriodEnd = Boolean(event.cancelAtPeriodEnd);
+      if (event.action === "invoice") {
+        if (event.cancelAtPeriodEnd) subscription.cancelAtPeriodEnd = true;
+      } else {
+        subscription.cancelAtPeriodEnd = Boolean(event.cancelAtPeriodEnd);
+      }
       if (["canceled", "unpaid", "incomplete_expired", "paused"].includes(remoteStatus || "")) {
         subscription.state = "expired";
-        data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.state = "expired"; });
+        data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { if (item.state !== "revoked") item.state = "expired"; });
       } else if (["active", "trialing"].includes(remoteStatus || "") && subscription.state !== "trial_canceled" && subscription.state !== "grace") {
-        // An update alone never grants or extends paid access.
-        subscription.state = event.cancelAtPeriodEnd ? "cancel_at_period_end" : subscription.state === "expired" ? "expired" : "active";
+        // An update alone never grants or extends paid access. invoice.paid must not clear cancel_at_period_end.
+        subscription.state = subscription.cancelAtPeriodEnd ? "cancel_at_period_end" : subscription.state === "expired" ? "expired" : "active";
       }
     }
     data.stripeEvents.push({ id: event.id, type: event.type, processedAt: now() });

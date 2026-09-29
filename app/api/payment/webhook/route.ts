@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PaymentError } from "@/contracts/payment";
 import { processStripeWebhook } from "@/services/stripeWebhookService";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
@@ -7,6 +8,7 @@ export async function POST(request: Request) {
   if (!signature) return NextResponse.json({ ok: false, code: "invalid_signature" }, { status: 400 });
   try { return NextResponse.json({ ok: true, ...await processStripeWebhook(await request.text(), signature) }); }
   catch (error) {
+    if (error instanceof PaymentError) return NextResponse.json({ ok: false, code: error.code }, { status: error.status });
     const invalid = error instanceof Error && "type" in error && error.type === "StripeSignatureVerificationError";
     const message = error instanceof Error ? error.message : "";
     const rejected = /Live events are not allowed|order or plan not found|mismatch|Checkout amount|Checkout currency|Checkout does not match|Order is not available/i.test(message);

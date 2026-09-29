@@ -1,0 +1,55 @@
+From 00efd3c9ea1894010939190f2b9d916d451a967b Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 14:14:57 +0000
+Subject: [PATCH 5/6] docs(docs/agent): require explicit yes before Forge init
+ on an existing landing path
+
+Remind vs replace: do not silently write forge.yaml or switch off gh pr
+create / Verify-only. After one confirmation, default-run check/submit.
+---
+ skills/use-forge/SKILL.md | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/skills/use-forge/SKILL.md b/skills/use-forge/SKILL.md
+index 0efe1d7..d286ce2 100644
+--- a/skills/use-forge/SKILL.md
++++ b/skills/use-forge/SKILL.md
+@@ -13,6 +13,20 @@ Forge is the developer gate: local `check`, then `submit` (draft PR). It does no
+ 
+ Pin **published** tags only: `overlay-v1.0.0` / `forge-v1.0.0` (same SHA `235e514…`). Do not pin `main`. Do not checkout `v1.0.1` until those tags exist on GitHub. Start: [`../../README.md`](../../README.md) / [`../../README.zh-CN.md`](../../README.zh-CN.md).
+ 
++## First run vs default-run
++
++Forge is **full-stack post-dev GitHub landing** (`check` → `submit`). It is not a test tool. Do not change Overlay or Verify norms to “make Forge work.”
++
++**Init vs later — do not silently replace the adopter’s process.**
++
++1. **If they already have a landing path** (`gh pr create`, husky, push-to-main, Verify-only, their own branch names): **remind and inform** them of the Forge norm, then **wait for confirmation** before initializing (`forge.yaml`, policy paste, making `submit` the landing path). Do not write those files or switch the path on a silent assumption.
++
++2. **Initialization needs more interaction than later runs.** Contrast old vs new. State what Forge **will** do (local `check`, then `submit` as the GitHub landing) and what it **will not** do: no merge, no live `apply`, no Overlay arm, no Verify rewrite. Get an **explicit yes** before steps 3–4 below.
++
++3. **After one confirmation:** later in this session — and in later sessions if a marker exists (product already has `forge.yaml` **and** they said 同意) — **ask once**. If they agree, say 「之后默认按 Forge 落地」 and **default-run** `check` / `submit` without re-explaining the constitution.
++
++4. Never ask on every file save. Never treat init confirm as permission to live-apply Rulesets or arm Overlay.
++
+ ## Real CLI
+ 
+ `python -m forge --help` today:
+@@ -42,7 +56,7 @@ There is **no** `brief`, `credential`, `ops-chain`, or `revoke` subcommand. Do n
+ 
+ ## Instructions
+ 
+-Stay imperative. Six cold-start steps. Live apply is **not** in this list.
++Stay imperative. Six cold-start steps. Live apply is **not** in this list. Steps 3–4 are **initialization** — only after First run vs default-run is satisfied.
+ 
+ ### 1. Checkout a published pin beside the product
+ 
+@@ -132,3 +146,5 @@ Illegal: `git checkout overlay-v1.0.1` while that tag is missing. Illegal: `git
+ | 想 live apply / 直推 main | 停。`$manage-repo` / `$dev-pr`。Learning Guide 现在不 apply。 |
+ | 想让 Forge 把 suite 标 armed | 停。人审 Overlay。`$manage-repo`。 |
+ | 把 `FORGE_SUBMIT_TOKEN` 和 Ops 钥匙搅在一起 | 停。代推看 [`docs/submit-credential.md`](../../docs/submit-credential.md)。 |
++| 接入方已有 `gh pr create` / husky / 直推 main / 只走 Verify | 先提醒对照新旧，等人明确同意再写 `forge.yaml`。不要默默替换。 |
++| 每次存盘都想再讲一遍 Forge 宪法 | 停。同意过一次（或已有 `forge.yaml` 且说过同意）就默认跑 `check` / `submit`。初始化同意 ≠ live-apply / arm。 |
+-- 
+2.43.0
+

@@ -68,7 +68,7 @@ Order: created -> checkout_open -> paid / failed / canceled
 PaymentAttempt: created -> pending -> succeeded / failed / refunded
 ```
 
-状态变更必须在一个数据库事务中完成所需的 `Order`、`PaymentAttempt`、`Subscription`、`Entitlement` 写入。外部 webhook 乱序时，以 Stripe 当前对象状态重新读取并安全重算。
+状态变更必须在一个数据库事务中完成所需的 `Order`、`PaymentAttempt`、`Subscription`、`Entitlement` 写入。外部 webhook 乱序时，以 Stripe 当前对象状态重新读取并安全重算。浏览器回成功页不是付款凭证；页面不订阅支付事件，下一次导航或刷新才读到新状态。详见 [`payment-state-propagation.md`](./payment-state-propagation.md)。
 
 ## 4. PostgreSQL 迁移顺序
 

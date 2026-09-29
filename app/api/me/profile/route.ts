@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
 import { publicUser, updateUserProfile } from "@/services/productStore";
 
-export async function GET() {
-  const user = await currentProductUser();
+export async function GET(request: Request) {
+  const user = await currentProductUser(request);
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   return NextResponse.json({ ok: true, user: publicUser(user) });
 }
 
 export async function PATCH(request: Request) {
-  const user = await currentProductUser();
+  const user = await currentProductUser(request);
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   try {
     const body = await request.json() as { nickname?: string; locale?: "en-GB" | "zh-CN"; country?: string | null; ageRange?: string | null; education?: string | null; areasOfInterest?: string[]; currentPassword?: string; newPassword?: string };

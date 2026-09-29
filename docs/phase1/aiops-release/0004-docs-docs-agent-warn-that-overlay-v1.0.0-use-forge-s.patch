@@ -1,0 +1,28 @@
+From f9557900f563c177e18318128d1764d58c862c8f Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 11 Sep 2026 14:14:37 +0000
+Subject: [PATCH 4/6] docs(docs/agent): warn that overlay-v1.0.0 use-forge
+ still lists apply
+
+Published-tag skills keep the old install steps. Follow the six-step
+use-forge on this branch until a human publishes 1.0.1.
+---
+ README.md | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/README.md b/README.md
+index 369bd8e..44aa32a 100644
+--- a/README.md
++++ b/README.md
+@@ -123,6 +123,8 @@ gh skill install LibertychaserUS/AIOps --agent claude-code --pin overlay-v1.0.0
+ 
+ Restart the agent after adding paths. Then `/use-forge` or `/use-overlay`, or let it pick from the description.
+ 
++`gh skill install --pin overlay-v1.0.0` installs the **published tag** skills. That tag’s `use-forge` still lists `apply` in its older install steps. Follow **this** README / the six-step `$use-forge` on current `main` (after this docs PR) for the split: agents `check` / `submit`; live `apply` is `$manage-repo` only. Do not pin `main` for the Python checkout. After a human publishes `overlay-v1.0.1`, pin that tag instead.
++
+ ---
+ 
+ ## 1. What you are allowed to change
+-- 
+2.43.0
+
