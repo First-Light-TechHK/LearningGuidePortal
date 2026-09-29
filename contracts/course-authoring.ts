@@ -9,6 +9,7 @@ export type CourseMetadata = {
   subjectId?: string | null;
   referencePrice?: number | null;
   discount?: number | null;
+  outcomes?: string[];
 };
 
 export type AuthoringLesson = {
@@ -37,6 +38,7 @@ export type CatalogueEntry = {
   status: "active" | "archived";
   createdAt: string;
   updatedAt: string;
+  outcomes?: string[];
 };
 
 export type CatalogueInput = { name: string; description?: string; parentId?: string | null; expectedUpdatedAt?: string; status?: "active" | "archived" };

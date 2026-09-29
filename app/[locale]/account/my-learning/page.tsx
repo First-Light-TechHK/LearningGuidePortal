@@ -21,7 +21,7 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
 
   const design = messages.overviewDesign;
   const content = await getPortalContent();
-  const categoryLabel = (id: string) => content.categories.find((category) => category.id === id)?.labels[locale] || id;
+  const categoryLabel = (id: string) => content.categories.find((category) => category.id === id)?.labels[locale] || "";
   const accessLabels = overview.entitlements.map((entitlement) => {
     if (entitlement.scope === "everything" || entitlement.courseId === "*") return messages.pricingDesign.everything;
     if (entitlement.scope === "category") return categoryLabel(entitlement.scopeId || entitlement.courseId);

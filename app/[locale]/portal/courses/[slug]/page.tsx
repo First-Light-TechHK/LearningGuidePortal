@@ -3,7 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryLabel, courseCategoryPlan, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { courseCategoryLabel, courseCategoryPlan, courseLearningOutcomes, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { CourseLearningOutcomes } from "@/components/portal/CourseLearningOutcomes";
 import { getCoursePage, getPortalContent, getProductCourse, listCatalogueEntries, listPlans } from "@/services/productStore";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -29,6 +30,7 @@ export default async function CourseDetailPage({ params }: {
   const content = await getPortalContent();
   const catalogue = await listCatalogueEntries();
   const categoryLabel = course ? courseCategoryLabel(course, content.categories, locale, catalogue) : "";
+  const outcomes = courseLearningOutcomes(course, catalogue);
   const catalogHref = `/${locale}/portal/courses`;
   const plans = page.pageState === "available" ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
@@ -81,10 +83,7 @@ export default async function CourseDetailPage({ params }: {
               <section className={`${styles.card} ${styles.overview}`}>
                 <h2>{detail.overview}</h2>
                 <p className={styles.description}>{course?.description || ""}</p>
-                <div className={styles.outcomes}>
-                  <h3>{detail.outcomesTitle}</h3>
-                  <ul>{detail.outcomes.map(outcome => <li key={outcome}>{outcome}</li>)}</ul>
-                </div>
+                <CourseLearningOutcomes className={styles.outcomes} title={detail.outcomesTitle} outcomes={outcomes} />
               </section>
               <section className={`${styles.card} ${styles.curriculum}`} data-syllabus="true">
                 <h2>{detail.curriculum}</h2>
