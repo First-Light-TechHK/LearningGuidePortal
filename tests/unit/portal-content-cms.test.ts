@@ -22,7 +22,8 @@ test("banner copy is authored once and applied to the other locale", () => {
   ], "zh-CN");
   assert.equal(translated[0].image, source[0].image);
   assert.equal(translated[0].href, "/zh-CN/portal/courses");
-  assert.equal(translated[2].href, "/zh-CN/account/my-learning");
+  assert.equal(translated[1].href, "/zh-CN/portal#why-us");
+  assert.equal(translated[2].href, "/zh-CN/portal/study-groups");
   assert.equal(translated[0].title, "标题一");
 });
 
