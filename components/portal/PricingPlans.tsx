@@ -23,14 +23,14 @@ export function PricingPlans({ locale, plans, courses, categories, courseTitles,
   </div><div className="pricing-comparison">{(["everything", "category"] as const).map((scope) => {
     const offer = scope === "everything" ? everythingOffer(plans, term) : categorySubscribeOffer(plans, courses, category || "", term);
     const plan = offer ? plans.find((item) => item.id === offer.planId) : undefined;
-    const price = offer ? new Intl.NumberFormat(locale, { style: "currency", currency: offer.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: offer.amountMinor % 100 ? 2 : 0 }).format(offer.amountMinor / 100) : null;
+    const price = plan ? new Intl.NumberFormat(locale, { style: "currency", currency: plan.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: plan.amountMinor % 100 ? 2 : 0 }).format(plan.amountMinor / 100) : null;
     return <article className="pricing-design-card" key={scope} data-offer-scope={offer?.scope} data-offer-plan-id={offer?.planId} data-offer-amount={offer?.amountMinor}>
       <header className="pricing-card-heading"><h2>{copy[scope]}</h2></header>
       <div className="pricing-card-price"><strong>{price || "—"}</strong>{plan ? <span>{plan.currency.toUpperCase()}{scope === "category" ? ` / ${copy.perCategory}` : ""}</span> : null}</div>
       <div className="pricing-card-categories"><p>{scope === "everything" ? "All categories:" : "Particular category:"}</p><div className={`pricing-category-switch ${scope === "everything" ? "pricing-category-switch--all" : ""}`} role="group" aria-label={copy.category}>{categories.map((item) => <button key={item.id} type="button" aria-pressed={scope === "everything" || category === item.id} onClick={() => { if (scope === "category") setCategory(item.id); }}>{item.labels[locale]}</button>)}</div></div>
       <div className="pricing-card-course-list"><p>{scope === "everything" ? copy.allCourses : "Course list in this category:"}</p><div>{listedPricingCourseTitles(courseTitles, scope === "everything" ? null : category || "").slice(0, 6).map((title) => <span key={title}>{title}</span>)}</div></div>
       <ul className="pricing-card-benefits"><li>{scope === "everything" ? copy.allCourses : copy.categoryCourses}</li><li>{(plan?.aiPoints ?? 0).toLocaleString(locale)} {copy.points}</li><li>{copy.bilingual}</li><li>{copy.devices}</li></ul>
-      {offer && plan ? <PurchasePanel key={offer.planId} locale={locale} courseId="*" plans={[{ ...plan, id: offer.planId, amountMinor: offer.amountMinor }]} allowTrial={false} compact copy={{ buy: copy.subscribe, choosePlan: copy.term, startTrial: "" }} /> : <p role="status">{copy.unavailable}</p>}
+      {offer && plan ? <PurchasePanel key={offer.planId} locale={locale} courseId="*" plans={[{ ...plan, id: offer.planId, amountMinor: plan.amountMinor }]} allowTrial={false} compact copy={{ buy: copy.subscribe, choosePlan: copy.term, startTrial: "" }} /> : <p role="status">{copy.unavailable}</p>}
     </article>;
   })}</div></div>;
 }

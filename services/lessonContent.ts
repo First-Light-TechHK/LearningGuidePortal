@@ -210,10 +210,10 @@ export function lessonContentsText(contents: LessonContent[]): string {
 }
 
 /** Extract only renderable references, not raw string matches inside scripts or comments. */
-export function lessonContentAssetReferences(value: unknown, courseId: string, includeInactive = false): Array<{ assetId: string; fileType?: CourseMediaAsset["fileType"] }> {
+export function lessonContentAssetReferences(value: unknown, courseId: string, includeInactive = false, allowExternalMedia = false): Array<{ assetId: string; fileType?: CourseMediaAsset["fileType"] }> {
   const references: Array<{ assetId: string; fileType?: CourseMediaAsset["fileType"] }> = [];
   const add = (url: unknown, fileType?: CourseMediaAsset["fileType"]) => { const assetId = courseMediaAssetId(url, courseId); if (assetId) references.push({ assetId, fileType }); };
-  const contents = includeInactive ? validateLessonContents(value, courseId) : sanitiseLessonContents(value, courseId);
+  const contents = includeInactive ? validateLessonContents(value, courseId, { allowExternalMedia }) : sanitiseLessonContents(value, courseId);
   for (const content of contents) {
     for (const item of [content, ...content.nodes]) {
       if (item.type !== "text" && item.type !== "exercise") add(item.url, item.type);

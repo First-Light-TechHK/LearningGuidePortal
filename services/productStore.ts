@@ -2336,7 +2336,7 @@ export async function setCourseStatus(courseId: string, status: ProductCourse["s
       }
       validateCatalogueSelection(data, course, course);
       const { assertCourseMediaReferences } = await import("./courseMedia");
-      try { await assertCourseMediaReferences(course); } catch { throw new AuthoringError("invalid"); }
+      try { await assertCourseMediaReferences(course, { allowExternalMedia: true }); } catch { throw new AuthoringError("invalid"); }
     }
     course.status = status;
     course.archivedAt = status === "archived" ? now() : null;

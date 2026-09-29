@@ -231,8 +231,8 @@ export async function canReadCourseMedia(user: ProductUser | null, course: Produ
 }
 
 /** Optional save-time integrity check, after strict validation and course ownership. */
-export async function assertLessonMediaReferences(courseId: string, value: unknown): Promise<void> {
-  const references = lessonContentAssetReferences(value, courseId, true);
+export async function assertLessonMediaReferences(courseId: string, value: unknown, allowExternalMedia = false): Promise<void> {
+  const references = lessonContentAssetReferences(value, courseId, true, allowExternalMedia);
   const assets = new Map<string, CourseMediaAsset>();
   for (const reference of references) {
     if (!assets.has(reference.assetId)) assets.set(reference.assetId, (await readStoredAsset(courseId, reference.assetId)).asset);
@@ -241,7 +241,7 @@ export async function assertLessonMediaReferences(courseId: string, value: unkno
 }
 
 /** Call on the updated aggregate after ownership checks and before committing a draft. */
-export async function assertCourseMediaReferences(course: Pick<ProductCourse, "id" | "sections" | "cover" | "thumbnailPath">): Promise<void> {
+export async function assertCourseMediaReferences(course: Pick<ProductCourse, "id" | "sections" | "cover" | "thumbnailPath">, options: { allowExternalMedia?: boolean } = {}): Promise<void> {
   const cover = course.cover || course.thumbnailPath;
   if (cover) {
     const assetId = courseMediaAssetId(cover, course.id);
@@ -249,7 +249,7 @@ export async function assertCourseMediaReferences(course: Pick<ProductCourse, "i
     if (assetId && (await readStoredAsset(course.id, assetId)).asset.fileType !== "image") throw new CourseMediaError("invalid", 400, "A course cover must be an image.");
   }
   for (const section of course.sections) {
-    for (const lesson of section.lessons) await assertLessonMediaReferences(course.id, contentsOf(lesson));
+    for (const lesson of section.lessons) await assertLessonMediaReferences(course.id, contentsOf(lesson), options.allowExternalMedia === true);
   }
 }
 
