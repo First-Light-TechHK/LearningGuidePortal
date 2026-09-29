@@ -637,7 +637,7 @@
     "allCourses": "完整访问 Learning Guide 的所有课程",
     "categoryCourses": "不限次数访问所选分类的所有课程",
     "bilingual": "中英双语课程材料",
-    "devices": "支持 1 台电脑和 1 台移动设备",
+    "devices": "支持 1 台电脑",
     "points": "AI Tutor 积分",
     "unavailable": "此方案暂不可用。",
     "perCategory": "分类",
@@ -650,7 +650,7 @@
       },
       {
         "title": "设备访问",
-        "text": "订阅包含一台电脑和一台移动设备的访问权限。"
+        "text": "订阅包含一台电脑的访问权限。"
       },
       {
         "title": "续订价格",

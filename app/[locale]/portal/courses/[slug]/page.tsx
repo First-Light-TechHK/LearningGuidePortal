@@ -42,7 +42,7 @@ export default async function CourseDetailPage({ params }: {
   const catalogHref = `/${locale}/portal/courses`;
   const plans = page.pageState === "available" ? await listPlans() : [];
   const publishedCourses = page.pageState === "available" ? await listPublishedCourses() : [];
-  const offer = courseSidebarOffer(plans, publishedCourses, identity?.track || "");
+  const offer = courseSidebarOffer(plans, publishedCourses, identity?.track || "", catalogue);
   const pricingHref = offer ? courseSidebarHref(locale, offer) : `/${locale}/pricing`;
   const price = offer ? new Intl.NumberFormat(locale, {
     style: "currency", currency: offer.currency, currencyDisplay: "narrowSymbol",

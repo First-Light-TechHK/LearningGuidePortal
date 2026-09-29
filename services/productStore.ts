@@ -372,7 +372,14 @@ function planScope(plan: ProductPlan): NormalisedPlanScope {
 }
 
 function assertCategoryPurchase(data: ProductData, plan: ProductPlan) {
-  if (!categoryPurchaseAllowed(plan, data.courses)) throw new Error("This category has no published course.");
+  if (!categoryPurchaseAllowed(plan, data.courses, data.catalogue || [])) throw new Error("This category has no published course.");
+}
+
+/** The commercial membership the catalogue shows, stored on course.category so the two cannot diverge. */
+function commitCourseCategory(course: ProductCourse, catalogue: readonly CatalogueEntry[]) {
+  const membership = courseCategoryMembership(course, catalogue);
+  if (membership) course.category = membership;
+  else delete course.category;
 }
 
 function coursePortalCategory(data: ProductData, course: Pick<ProductCourse, "category" | "categoryId" | "subjectId">) {
@@ -2187,6 +2194,7 @@ export async function saveCourseDraftForOperator(operatorId: string, courseId: s
     const course = managedCourse(data, operatorId, courseId);
     const index = data.courses.indexOf(course);
     const updated = applyCourseDraft(course, input);
+    commitCourseCategory(updated, data.catalogue || []);
     validateCatalogueSelection(data, updated, course);
     const { assertCourseMediaReferences } = await import("./courseMedia");
     try {
@@ -2286,8 +2294,8 @@ export async function createCourseForOperator(input: { title: string; descriptio
     if (data.courses.some((course) => course.slug === slug)) throw new AuthoringError("conflict");
     const portalCategoryIds = ["Chinese Humanities", "European Humanities", "Science"] as const;
     const picked = input.category && (portalCategoryIds as readonly string[]).includes(input.category) ? input.category : undefined;
-    const category = input.categoryId?.trim() ? undefined : picked;
-    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", ...(category ? { category } : {}), thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
+    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", ...(picked ? { category: picked } : {}), thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
+    commitCourseCategory(course, data.catalogue || []);
     validateCatalogueSelection(data, course);
     data.courses.unshift(course);
     if (actorId) authoringActivity(data, actorId, "create", course.id);
@@ -2328,6 +2336,7 @@ export async function setCourseStatus(courseId: string, status: ProductCourse["s
     if (status === "published" && !course.sections.some((section) => section.lessons.length > 0)) throw new AuthoringError("invalid");
     if (status === "published" && course.sections.some(section => section.lessons.some(lesson => !lesson.body.trim() && !lesson.contents?.length))) throw new AuthoringError("invalid");
     if (status === "published") {
+      commitCourseCategory(course, data.catalogue || []);
       try {
         assertCourseCanPublish(course, data.catalogue || []);
       } catch (error) {

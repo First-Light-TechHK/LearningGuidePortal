@@ -35,11 +35,11 @@
 
 文件：`app/[locale]/portal/courses/[slug]/page.tsx` 原先对每一门课执行 `detail.outcomes.map`。种子课在 `services/productStore.ts` 的 `defaultCourse()`（id `epicureanism`），对象上没有 `outcomes`。
 
-修复：`lib/courseDetailPresentation.ts` 的 `courseLearningOutcomes` 先读课程对象上的 `outcomes`，没有再读 `catalogueEntriesForCourse` 返回的学科条目，然后是分类条目。有非空字符串才显示；课程、学科、分类都没有，就整段不渲染，不用那六条科学文案顶上。`contracts/course-authoring.ts` 给课程和目录条目加了可选的 `outcomes`。科学文案仍留在 `messages/en-GB.json` 和 `messages/zh-CN.json` 的 `courseDetailDesign.outcomes`，因为 `tests/unit/course-detail-presentation.test.ts` 仍对照这组固定文案。某门课或它的目录条目如果自己存了同样的句子，显示的是那一份存储，不是消息文件里的替身。
+修复：`lib/courseDetailPresentation.ts` 的 `courseLearningOutcomes` 只读课程对象自己存的 `outcomes`，和 `courseOutcomes` 相同。后面的学科或分类目录行不参与。课程没有非空字符串就整段不渲染，不用那六条科学文案，也不用另一行目录上的生物学成果。`contracts/course-authoring.ts` 给课程和目录条目加了可选的 `outcomes`。科学文案仍留在 `messages/en-GB.json` 和 `messages/zh-CN.json` 的 `courseDetailDesign.outcomes`，因为 `tests/unit/course-detail-presentation.test.ts` 仍对照这组固定文案。某门课如果自己存了同样的句子，显示的是那一份存储，不是消息文件或目录行里的替身。
 
 测试文件：`tests/unit/chrome-copy-fixes.test.ts`  
 测试名：`Epicureanism does not render the shared science outcomes`  
-断言：没有 `outcomes` 的 Epicureanism 夹具渲染结果里没有 “Model real biological systems”，也没有 “用数学建模真实的生物系统”；课程自己的成果优先于目录上的科学句子；页面源码不再出现 `detail.outcomes`（`outcomesTitle` 除外）。
+断言：没有 `outcomes` 的 Epicureanism 夹具渲染结果里没有 “Model real biological systems”，也没有 “用数学建模真实的生物系统”；后面传入的目录成果（包括生物学句子）不显示；页面源码不再出现 `detail.outcomes`（`outcomesTitle` 除外）。
 
 ### 2. zh-CN 顶栏和公开首课仍是英文
 

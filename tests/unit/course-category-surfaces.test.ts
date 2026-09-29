@@ -165,18 +165,23 @@ test("UC-PORTAL-CATEGORY functional: catalogue filter, cards, My Learning, recom
     const messages = getMessages(locale);
     const filter = catalogueFilterState({
       requestedCategory: "Science",
-      courses: [science, humanities, chinese],
+      courses: [
+        { ...science, status: "published" },
+        { ...humanities, status: "draft" },
+        { ...chinese, status: "draft" },
+      ],
       categories,
       locale,
       allLabel: messages.portal.allCategories,
     });
     assert.deepEqual(filter.visible.map((course) => course.id), ["biology-course"]);
     assert.equal(filter.visible.some((course) => course.id === humanities.id), false);
+    assert.deepEqual(filter.chips.map((chip) => chip.id), ["All", "Science"]);
+    assert.equal(filter.chips.some((chip) => chip.id === "European Humanities"), false);
+    assert.equal(filter.chips.some((chip) => chip.id === "Chinese Humanities"), false);
     const active = filter.chips.find((chip) => chip.active);
     assert.equal(active?.id, "Science");
     assert.equal(active?.label, expectedCategory.Science[locale]);
-    assert.equal(filter.chips.find((chip) => chip.id === "European Humanities")?.label, expectedCategory["European Humanities"][locale]);
-    assert.equal(filter.chips.find((chip) => chip.id === "Chinese Humanities")?.label, expectedCategory["Chinese Humanities"][locale]);
 
     assert.equal(courseCardCategoryLine(science, categories, locale), expectedCategory.Science[locale]);
     assert.equal(courseCardCategoryLine(humanities, categories, locale), expectedCategory["European Humanities"][locale]);
@@ -249,7 +254,10 @@ test("UC-PORTAL-CATEGORY negative: legacy field or catalogue name for the other 
 
     const filter = catalogueFilterState({
       requestedCategory: "Science",
-      courses: [stampedScience, humanities],
+      courses: [
+        { ...stampedScience, status: "published" },
+        { ...humanities, status: "published" },
+      ],
       categories,
       catalogue: catalogueNameSaysHumanities,
       locale,
@@ -257,15 +265,19 @@ test("UC-PORTAL-CATEGORY negative: legacy field or catalogue name for the other 
     });
     assert.deepEqual(filter.visible.map((course) => course.id), [stampedScience.id]);
     assert.equal(filter.chips.find((chip) => chip.active)?.id, "Science");
+    assert.equal(filter.chips.some((chip) => chip.id === "Chinese Humanities"), false);
     const otherFilter = catalogueFilterState({
       requestedCategory: "European Humanities",
-      courses: [stampedScience],
+      courses: [{ ...stampedScience, status: "published" }],
       categories,
       catalogue: catalogueNameSaysHumanities,
       locale,
       allLabel: getMessages(locale).portal.allCategories,
     });
     assert.deepEqual(otherFilter.visible, []);
+    assert.deepEqual(otherFilter.chips.map((chip) => chip.id), ["All", "Science"]);
+    assert.equal(otherFilter.chips.some((chip) => chip.id === "European Humanities"), false);
+    assert.equal(otherFilter.chips.some((chip) => chip.id === "Chinese Humanities"), false);
 
     assert.equal(courseCardCategoryLine(stampedScience, categories, locale, catalogueNameSaysHumanities), expectedCategory.Science[locale]);
     assert.equal(publicLessonRecommendationCategory(stampedScience, categories, locale, catalogueNameSaysHumanities), expectedCategory.Science[locale]);

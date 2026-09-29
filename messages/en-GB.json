@@ -642,7 +642,7 @@
     "allCourses": "Full access to every Learning Guide course",
     "categoryCourses": "Access to all courses in this category",
     "bilingual": "Bilingual course materials in English and Chinese",
-    "devices": "Study on 1 PC and 1 mobile device",
+    "devices": "Study on 1 PC",
     "points": "AI Tutor points",
     "unavailable": "This plan is not currently available.",
     "perCategory": "category",
@@ -655,7 +655,7 @@
       },
       {
         "title": "Device access",
-        "text": "Your subscription includes access on one PC and one mobile device."
+        "text": "Your subscription includes access on one PC."
       },
       {
         "title": "Renewal pricing",

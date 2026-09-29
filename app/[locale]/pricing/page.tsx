@@ -21,7 +21,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
   const messages = getMessages(locale);
   const copy = messages.pricingDesign;
   const user = await currentProductUser();
-  const model = pricingPageModel({ plans, courses: publishedCourses, courseId: course?.status === "published" ? course.id : null });
+  const model = pricingPageModel({ plans, courses: publishedCourses, courseId: course?.status === "published" ? course.id : null, catalogue });
   const directPlans = device === "mobile" ? plans.filter((plan) => plan.device === "mobile") : model.course ? plans.filter((plan) => plan.scope === "course" && plan.device === "pc" && (plan.scopeId || plan.courseId) === course?.id) : [];
   const coursePrice = model.course ? new Intl.NumberFormat(locale, { style: "currency", currency: model.course.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: model.course.amountMinor % 100 ? 2 : 0 }).format(model.course.amountMinor / 100) : null;
   return <main className="portal-page pricing-design-page">
@@ -29,7 +29,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
     <section className="pricing-design-hero"><h1>{copy.heading}</h1><p>{messages.portal.pricingDescription}</p></section>
     <section className="pricing-design-main">
       {upgradeFrom && user ? <UpgradePanel locale={locale} subscriptionId={upgradeFrom} /> : null}
-      <PricingPlans locale={locale} plans={plans} courses={publishedCourses} categories={content.categories} courseTitles={publishedCourses.map((course) => ({ category: pricingCourseGroup(course, content.categories, catalogue), title: course.title }))} selectedPlanId={planId} copy={copy} />
+      <PricingPlans locale={locale} plans={plans} courses={publishedCourses} categories={content.categories} catalogue={catalogue} courseTitles={publishedCourses.map((course) => ({ category: pricingCourseGroup(course, content.categories, catalogue), title: course.title }))} selectedPlanId={planId} copy={copy} />
       {directPlans.length ? <section className="pricing-direct" data-offer-scope={device === "mobile" ? undefined : model.course?.scope} data-offer-plan-id={device === "mobile" ? undefined : model.course?.planId} data-offer-amount={device === "mobile" ? undefined : model.course?.amountMinor}>{device !== "mobile" && model.course ? <p className="pricing-card-price"><strong>{coursePrice}</strong></p> : null}<h2>{course?.title || messages.portal.pricingTitle}</h2><PurchasePanel locale={locale} courseId={course?.id || "*"} plans={directPlans} allowTrial={device !== "mobile"} copy={{ startTrial: messages.learning.startTrial, buy: messages.learning.buy, choosePlan: messages.learning.choosePlan }} /></section> : null}
     </section>
     <section className="pricing-design-information"><div><h2>{copy.information}</h2><p>{copy.renewal}</p><div className="pricing-information-grid">{copy.rules.map((rule) => <div key={rule.title}><h3>{rule.title}</h3><p>{rule.text}</p></div>)}</div></div></section>

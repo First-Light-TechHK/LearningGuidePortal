@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { CourseLearningOutcomes } from "../../components/portal/CourseLearningOutcomes";
 import { ShellViewer } from "../../components/ShellViewer";
 import { getMessages } from "../../lib/i18n/messages";
-import { courseLearningOutcomes } from "../../lib/courseDetailPresentation";
+import { courseLearningOutcomes, courseOutcomes } from "../../lib/courseDetailPresentation";
 import { shellViewerFromUser } from "../../lib/shellViewer";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
@@ -52,17 +52,26 @@ test("Epicureanism does not render the shared science outcomes", () => {
   assert.match(storedHtml, /Distinguish kinetic from katastematic pleasure/);
   assert.equal(storedHtml.includes(SCIENCE_EN), false);
 
-  const fromCatalogue = courseLearningOutcomes(epicureanism, { outcomes: ["Friendship is a stable good"] });
+  const fromCatalogue = courseLearningOutcomes(
+    epicureanism,
+    { outcomes: ["Friendship is a stable good"] },
+    { outcomes: [SCIENCE_EN, SCIENCE_ZH] },
+  );
+  assert.deepEqual(fromCatalogue, []);
+  assert.deepEqual(fromCatalogue, courseOutcomes(epicureanism));
   const catalogueHtml = renderToStaticMarkup(createElement(CourseLearningOutcomes, {
     title: zh.courseDetailDesign.outcomesTitle,
     outcomes: fromCatalogue,
   }));
-  assert.match(catalogueHtml, /Friendship is a stable good/);
+  assert.equal(catalogueHtml, "");
+  assert.equal(catalogueHtml.includes("Friendship is a stable good"), false);
+  assert.equal(catalogueHtml.includes(SCIENCE_EN), false);
   assert.equal(catalogueHtml.includes(SCIENCE_ZH), false);
 
   const page = read("app/[locale]/portal/courses/[slug]/page.tsx");
   assert.doesNotMatch(page, /detail\.outcomes(?!Title)/);
-  assert.match(page, /courseLearningOutcomes\(/);
+  assert.match(page, /courseLearningOutcomes\(course\)/);
+  assert.doesNotMatch(page, /catalogueEntriesForCourse/);
   assert.match(page, /<CourseLearningOutcomes/);
 });
 

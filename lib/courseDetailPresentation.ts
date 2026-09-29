@@ -125,11 +125,12 @@ export function assertCourseCanPublish(
 }
 
 /** The course's stored outcomes, or none. Shared course-detail copy and catalogue rows are not a fallback. */
-export function courseOutcomes(course: { outcomes?: readonly string[] | null } | null | undefined) {
-  if (!Array.isArray(course?.outcomes)) return [];
+export function courseOutcomes(course: object | null | undefined) {
+  const stored = course && "outcomes" in course ? course.outcomes : undefined;
+  if (!Array.isArray(stored)) return [];
   const seen = new Set<string>();
   const outcomes: string[] = [];
-  for (const item of course.outcomes) {
+  for (const item of stored) {
     if (typeof item !== "string") continue;
     const text = item.trim();
     if (!text || seen.has(text)) continue;
@@ -160,14 +161,10 @@ export function courseCategoryDisplay(
   };
 }
 
-/** Outcomes stored on the course, then on a related catalogue entry. Never a shared stand-in list. */
-export function courseLearningOutcomes(...sources: Array<unknown>): string[] {
-  for (const source of sources) {
-    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
-    const outcomes = courseOutcomes(source as { outcomes?: readonly string[] | null });
-    if (outcomes.length) return outcomes;
-  }
-  return [];
+/** The course's own stored outcomes. A later subject or category row is not a source. */
+export function courseLearningOutcomes(course: object | null | undefined, ...laterSources: readonly unknown[]): string[] {
+  void laterSources;
+  return courseOutcomes(course);
 }
 
 export function courseCategoryLabel(
@@ -232,9 +229,8 @@ export function courseTrackChip(
 export type CatalogueFilterChip = { id: string; label: string; active: boolean };
 
 function countsTowardCatalogue(course: object) {
-  if (!("status" in course)) return true;
-  const status = (course as { status?: unknown }).status;
-  return status == null || status === "published";
+  if (!("status" in course)) return false;
+  return (course as { status?: unknown }).status === "published";
 }
 
 /** Catalogue chips and the courses that belong to the requested portal category id. */
