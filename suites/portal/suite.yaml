@@ -9,4 +9,4 @@ packages:
   - modules/portal
   - modules/course-management
 blocked_reason: null
-product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/UC-PORTAL-course-page-primitives.test.ts tests/io/portal.test.ts
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/UC-PORTAL-course-page-primitives.test.ts tests/unit/course-category-surfaces.test.ts tests/io/portal.test.ts

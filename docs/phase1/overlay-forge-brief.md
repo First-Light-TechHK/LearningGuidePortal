@@ -540,3 +540,7 @@ PYTHONPATH=/tmp/AIOps python3 -m forge status --root . --repo LibertychaserUS/Le
 叶子必须是 `### Functional` / `### Negative` / `### Edge`。不要 `### Depth`。不要 `## Specified / not tested now`。已有的 `overlay-check.yml` 是单 job `overlay-check`（checkout `AIOps@overlay-v2.0.0` 到 `_aiops`、`npm ci`、`overlay validate` + `cover` + `run`）；另有 `forge-check.yml`（checkout `AIOps@forge-v1.1.3`、`forge check` + `status --check-state`）。两者都在 `deny_paths` 里，agent 不改。Agent 不 live-apply、不把套件改成 `blocked`、不打 `ilovelearningguide.com`、不改 Verify、不把 `test:io` 塞进 `test:ci`。
 
 `--branch` 只选 `overlay.yaml` 里 `branches.<name>` 那条策略；套件 `status` 读的是**当前 checkout**。已知问题与待 Oliver 的操作，集中记在 [`overlay-forge-issues.md`](./overlay-forge-issues.md)。
+
+## UC-PORTAL-CATEGORY（课程分类表面）
+
+Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。没有分类就不显示该屑。categoryId 为空时用学科的目录父类（id 或 slug），学科名不占分类位，目录名不投票。

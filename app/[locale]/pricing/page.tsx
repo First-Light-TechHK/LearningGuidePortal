@@ -1,7 +1,8 @@
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
+import { pricingCourseGroup } from "@/lib/courseDetailPresentation";
 import { pricingPageModel } from "@/lib/offer";
-import { getPortalContent, getProductCourse, listPlans, listPublishedCourses } from "@/services/productStore";
+import { getPortalContent, getProductCourse, listCatalogueEntries, listPlans, listPublishedCourses } from "@/services/productStore";
 import { PurchasePanel } from "@/components/portal/PurchasePanel";
 import { PricingPlans } from "@/components/portal/PricingPlans";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -13,6 +14,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
   const locale = localeFrom((await params).locale);
   const { courseId, upgradeFrom, planId, device } = await searchParams;
   const content = await getPortalContent();
+  const catalogue = await listCatalogueEntries();
   const plans = await listPlans();
   const publishedCourses = await listPublishedCourses();
   const course = courseId ? await getProductCourse(courseId) : null;
@@ -27,7 +29,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
     <section className="pricing-design-hero"><h1>Subscription</h1><p>{locale === "en-GB" ? "Choose the plan that suits your interests" : copy.heading}</p></section>
     <section className="pricing-design-main">
       {upgradeFrom && user ? <UpgradePanel locale={locale} subscriptionId={upgradeFrom} /> : null}
-      <PricingPlans locale={locale} plans={plans} courses={publishedCourses} categories={content.categories} courseTitles={publishedCourses.map(({ category, title }) => ({ category: content.categories.find((item) => item.labels[locale] === category)?.id || category, title }))} selectedPlanId={planId} copy={copy} />
+      <PricingPlans locale={locale} plans={plans} courses={publishedCourses} categories={content.categories} courseTitles={publishedCourses.map((course) => ({ category: pricingCourseGroup(course, content.categories, catalogue), title: course.title }))} selectedPlanId={planId} copy={copy} />
       {directPlans.length ? <section className="pricing-direct" data-offer-scope={device === "mobile" ? undefined : model.course?.scope} data-offer-plan-id={device === "mobile" ? undefined : model.course?.planId} data-offer-amount={device === "mobile" ? undefined : model.course?.amountMinor}>{device !== "mobile" && model.course ? <p className="pricing-card-price"><strong>{coursePrice}</strong></p> : null}<h2>{course?.title || messages.portal.pricingTitle}</h2><PurchasePanel locale={locale} courseId={course?.id || "*"} plans={directPlans} allowTrial={device !== "mobile"} copy={{ startTrial: messages.learning.startTrial, buy: messages.learning.buy, choosePlan: messages.learning.choosePlan }} /></section> : null}
     </section>
     <section className="pricing-design-information"><div><h2>{copy.information}</h2><p>{copy.renewal}</p><div className="pricing-information-grid">{copy.rules.map((rule) => <div key={rule.title}><h3>{rule.title}</h3><p>{rule.text}</p></div>)}</div></div></section>

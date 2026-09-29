@@ -5,6 +5,7 @@ import { PurchasePanel } from "./PurchasePanel";
 import { categorySubscribeOffer, everythingOffer, type CourseInput, type OfferScope } from "@/lib/offer";
 import type { Locale } from "@/lib/i18n/config";
 import type { PortalCategory } from "@/lib/portalContent";
+import { listedPricingCourseTitles } from "@/lib/courseDetailPresentation";
 
 type Plan = { available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number; scope?: OfferScope; scopeId?: string | null; category?: string | null };
 type Copy = { everything: string; category: string; sixMonths: string; year: string; term: string; subscribe: string; allCourses: string; categoryCourses: string; bilingual: string; devices: string; points: string; unavailable: string; perCategory: string };
@@ -27,7 +28,7 @@ export function PricingPlans({ locale, plans, courses, categories, courseTitles,
       <header className="pricing-card-heading"><h2>{copy[scope]}</h2></header>
       <div className="pricing-card-price"><strong>{price || "—"}</strong>{plan ? <span>{plan.currency.toUpperCase()}{scope === "category" ? ` / ${copy.perCategory}` : ""}</span> : null}</div>
       <div className="pricing-card-categories"><p>{scope === "everything" ? "All categories:" : "Particular category:"}</p><div className={`pricing-category-switch ${scope === "everything" ? "pricing-category-switch--all" : ""}`} role="group" aria-label={copy.category}>{categories.map((item) => <button key={item.id} type="button" aria-pressed={scope === "everything" || category === item.id} onClick={() => { if (scope === "category") setCategory(item.id); }}>{item.labels[locale]}</button>)}</div></div>
-      <div className="pricing-card-course-list"><p>{scope === "everything" ? copy.allCourses : "Course list in this category:"}</p><div>{courseTitles.filter((item) => scope === "everything" || item.category === category).slice(0, 6).map((item) => <span key={item.title}>{item.title}</span>)}</div></div>
+      <div className="pricing-card-course-list"><p>{scope === "everything" ? copy.allCourses : "Course list in this category:"}</p><div>{listedPricingCourseTitles(courseTitles, scope === "everything" ? null : category || "").slice(0, 6).map((title) => <span key={title}>{title}</span>)}</div></div>
       <ul className="pricing-card-benefits"><li>{scope === "everything" ? copy.allCourses : copy.categoryCourses}</li><li>{(plan?.aiPoints ?? 0).toLocaleString(locale)} {copy.points}</li><li>{copy.bilingual}</li><li>{copy.devices}</li></ul>
       {offer && plan ? <PurchasePanel key={offer.planId} locale={locale} courseId="*" plans={[{ ...plan, id: offer.planId, amountMinor: offer.amountMinor }]} allowTrial={false} compact copy={{ buy: copy.subscribe, choosePlan: copy.term, startTrial: "" }} /> : <p role="status">{copy.unavailable}</p>}
     </article>;

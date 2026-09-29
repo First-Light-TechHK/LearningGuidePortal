@@ -23,6 +23,7 @@ import {
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
+import { courseCategoryMembership } from "@/lib/courseDetailPresentation";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
@@ -374,17 +375,27 @@ function assertCategoryPurchase(data: ProductData, plan: ProductPlan) {
   if (!categoryPurchaseAllowed(plan, data.courses)) throw new Error("This category has no published course.");
 }
 
-function planCoversCourse(plan: ProductPlan, course: ProductCourse) {
+function coursePortalCategory(data: ProductData, course: Pick<ProductCourse, "category" | "categoryId" | "subjectId">) {
+  return courseCategoryMembership(course, data.catalogue || []);
+}
+
+function planCoversCourse(data: ProductData, plan: ProductPlan, course: ProductCourse) {
   const scope = planScope(plan);
   if (scope.scope === "everything") return true;
-  if (scope.scope === "category") return scope.scopeId === course.category;
+  if (scope.scope === "category") {
+    const category = coursePortalCategory(data, course);
+    return category !== "" && scope.scopeId === category;
+  }
   return scope.scopeId === course.id;
 }
 
-function entitlementCoversCourse(entitlement: ProductEntitlement, course: ProductCourse) {
+function entitlementCoversCourse(data: ProductData, entitlement: ProductEntitlement, course: ProductCourse) {
   const scope = entitlement.scope || (entitlement.courseId === "*" ? "everything" : "course");
   if (scope === "everything") return true;
-  if (scope === "category") return (entitlement.scopeId || null) === course.category;
+  if (scope === "category") {
+    const category = coursePortalCategory(data, course);
+    return category !== "" && (entitlement.scopeId || null) === category;
+  }
   return (entitlement.scopeId || entitlement.courseId) === course.id;
 }
 
@@ -399,7 +410,7 @@ function subscriptionForPlan(userId: string, plan: ProductPlan, source: ProductS
 }
 
 function entitlementOverlapsPlan(data: ProductData, entitlement: ProductEntitlement, plan: ProductPlan) {
-  return data.courses.some((course) => planCoversCourse(plan, course) && entitlementCoversCourse(entitlement, course));
+  return data.courses.some((course) => planCoversCourse(data, plan, course) && entitlementCoversCourse(data, entitlement, course));
 }
 
 function expireOverlappingActiveEntitlements(data: ProductData, userId: string, plan: ProductPlan) {
@@ -458,7 +469,7 @@ export async function readProductAggregate() {
     current.catalogueMigrations ||= [];
     current.dataMigrations ||= [];
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
-    current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
+    current.courses.forEach((course) => { course.thumbnailPath ??= null; });
     current.plans.forEach((plan) => {
       if (plan.id.startsWith("epicureanism-pc-")) {
         plan.scope = "course";
@@ -1116,6 +1127,17 @@ export async function listPublishedCourses() {
   return data.courses.filter((course) => course.status === "published");
 }
 
+export async function listCatalogueEntries() {
+  return (await ensureProductData()).catalogue || [];
+}
+
+function categoryDisplay(data: ProductData) {
+  return {
+    categories: (data.portalContent || defaultPortalContent).categories,
+    catalogue: data.catalogue || [],
+  };
+}
+
 export async function getProductCourse(slug: string) {
   const data = await ensureProductData();
   return data.courses.find((course) => course.slug === slug || course.id === slug) || null;
@@ -1133,6 +1155,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       accessState: "none",
       openedLessonIds: [],
       completedLessonIds: [],
+      ...categoryDisplay(data),
     });
   }
 
@@ -1156,7 +1179,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
     const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === course.id);
     const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
     const completedLessonIds = [...new Set(courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId))];
-    const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && entitlementCoversCourse(item, course));
+    const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && entitlementCoversCourse(data, item, course));
 
     return buildCoursePage({
       course,
@@ -1165,6 +1188,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       accessState,
       openedLessonIds,
       completedLessonIds,
+      ...categoryDisplay(data),
     });
   });
 }
@@ -1237,7 +1261,7 @@ export async function updatePaymentSettings(input: { name: string; publishableKe
 
 function liveEntitlement(data: ProductData, userId: string, courseId: string) {
   const course = data.courses.find((item) => item.id === courseId);
-  const entitlement = course ? data.entitlements.find((item) => item.userId === userId && item.state === "active" && entitlementCoversCourse(item, course)) : null;
+  const entitlement = course ? data.entitlements.find((item) => item.userId === userId && item.state === "active" && entitlementCoversCourse(data, item, course)) : null;
   if (!entitlement) return null;
   if (new Date(entitlement.validTo) <= new Date()) {
     entitlement.state = "expired";
@@ -1262,7 +1286,7 @@ export async function checkEntitlement(userId: string, courseId: string, device?
 
 function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) {
   if (!plan.trialEligible || plan.device !== "pc") throw new Error("This plan does not include a trial.");
-  const course = data.courses.find((item) => item.status === "published" && planCoversCourse(plan, item));
+  const course = data.courses.find((item) => item.status === "published" && planCoversCourse(data, plan, item));
   if (!course) throw new Error("Course is not available.");
   const existing = activeEntitlement(data, userId, course.id);
   const currentTrial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && new Date(item.validTo) > new Date());
@@ -1513,11 +1537,11 @@ export async function completeStripeUpgradeOrder(userId: string, orderId: string
 
 function pendingTrialOrder(data: ProductData, userId: string, plan: ProductPlan, paymentMode: "demo" | "stripe", suppliedQuote?: ProductQuote) {
   if (!plan.trialEligible || plan.device !== "pc") throw new Error("This plan does not include a trial.");
-  const course = data.courses.find((item) => item.status === "published" && planCoversCourse(plan, item));
+  const course = data.courses.find((item) => item.status === "published" && planCoversCourse(data, plan, item));
   if (!course) throw new Error("Course is not available.");
   const existing = data.orders.find((item) => item.userId === userId && item.planId === plan.id && item.paymentMode === paymentMode && item.kind === "trial_activation" && ["pending", "paid"].includes(item.status));
   if (existing) return { order: existing, plan };
-  if (data.courses.some((item) => item.status === "published" && planCoversCourse(plan, item) && activeEntitlement(data, userId, item.id))) throw new Error("This plan already has active access.");
+  if (data.courses.some((item) => item.status === "published" && planCoversCourse(data, plan, item) && activeEntitlement(data, userId, item.id))) throw new Error("This plan already has active access.");
   if (data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && item.source === "trial")) throw new Error("The three-day trial has already been used for this plan.");
   const createdAt = now();
   const quote = suppliedQuote || { id: id("trial_quote"), userId, planId: plan.id, amountMinor: 0, currency: plan.currency, kind: "trial" as const, expiresAt: new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString(), createdAt };
@@ -1908,7 +1932,7 @@ export async function getLearningOverview(userId: string) {
       const previewLessons = lessons.filter((lesson) => lesson.isPublic);
       const previewLessonIds = previewLessons.map((lesson) => lesson.id);
       const completedPreviewIds = previewLessonIds.filter((id) => completedLessonIds.includes(id));
-      const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && (!course || entitlementCoversCourse(item, course)));
+      const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && (!course || entitlementCoversCourse(data, item, course)));
       const { cardState, cta } = resolveOverviewCard({
         courseStatus: course?.status,
         progressFailed: computed.progressFailed,
@@ -1929,7 +1953,7 @@ export async function getLearningOverview(userId: string) {
         currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
-        courseCategory: course?.category || "European Humanities",
+        courseCategory: course ? courseCategoryMembership(course, data.catalogue || []) : "",
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
         courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,
@@ -2218,7 +2242,7 @@ export async function saveCatalogueEntry(actorId: string, entryId: string | null
     if (!["active", "archived"].includes(status)) throw new AuthoringError("invalid");
     if (catalogue.some(entry => entry.id !== entryId && entry.parentId === parentId && entry.status === "active" && entry.name.toLocaleLowerCase() === input.name.trim().toLocaleLowerCase())) throw new AuthoringError("conflict");
     if (existing && status === "archived" && (catalogue.some(entry => entry.parentId === existing.id && entry.status === "active") || data.courses.some(course => course.status !== "archived" && (course.categoryId === existing.id || course.subjectId === existing.id)))) throw new AuthoringError("inUse");
-    const entry: CatalogueEntry = { id: existing?.id || id(parentId ? "subject" : "category"), name: input.name.trim(), description: input.description?.trim() ?? existing?.description ?? "", parentId, status, createdAt: existing?.createdAt || now(), updatedAt: new Date(Math.max(Date.now(), Date.parse(existing?.updatedAt || "1970-01-01") + 1)).toISOString() };
+    const entry: CatalogueEntry = { id: existing?.id || id(parentId ? "subject" : "category"), name: input.name.trim(), description: input.description?.trim() ?? existing?.description ?? "", parentId, status, createdAt: existing?.createdAt || now(), updatedAt: new Date(Math.max(Date.now(), Date.parse(existing?.updatedAt || "1970-01-01") + 1)).toISOString(), ...(existing?.outcomes?.length ? { outcomes: existing.outcomes } : {}) };
     if (existing) catalogue[catalogue.indexOf(existing)] = entry; else catalogue.push(entry);
     authoringActivity(data, actorId, `catalogue-${status}`);
     return entry;
@@ -2249,8 +2273,10 @@ export async function createCourseForOperator(input: { title: string; descriptio
     if (!title) throw new AuthoringError("invalid");
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("course");
     if (data.courses.some((course) => course.slug === slug)) throw new AuthoringError("conflict");
-    const category = input.category && ["Chinese Humanities", "European Humanities", "Science"].includes(input.category) ? input.category : "European Humanities";
-    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", category, thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
+    const portalCategoryIds = ["Chinese Humanities", "European Humanities", "Science"] as const;
+    const picked = input.category && (portalCategoryIds as readonly string[]).includes(input.category) ? input.category : undefined;
+    const category = input.categoryId?.trim() ? undefined : picked;
+    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", ...(category ? { category } : {}), thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
     validateCatalogueSelection(data, course);
     data.courses.unshift(course);
     if (actorId) authoringActivity(data, actorId, "create", course.id);
