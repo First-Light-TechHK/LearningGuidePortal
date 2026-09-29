@@ -204,14 +204,37 @@ describe("registration legal transition", { concurrency: false }, () => {
     assert.equal(hasSessionCookie(response), false);
   });
 
-  test("missing mail configuration does not commit the user", async () => {
+  test("missing mail configuration returns 503 before the existence check and commits nothing", async () => {
+    useDelivery("discard", "1");
+    const existingEmail = uniqueEmail("unconfigured-existing");
+    const created = await registerRoute.POST(jsonRequest("http://localhost/api/auth/register", registerBody(existingEmail, FIRST_PASSWORD)));
+    assert.equal(created.status, 200);
+    const stored = await findUser(existingEmail);
+    assert.ok(stored.user);
+    const passwordHash = stored.user.passwordHash;
+    const liveTokens = tokensFor(stored.data, stored.user.id);
+    assert.equal(liveTokens.length, 1);
+
     useDelivery("", "1");
+    const known = await registerRoute.POST(jsonRequest("http://localhost/api/auth/register", registerBody(existingEmail, ATTACKER_PASSWORD)));
+    const knownBody = await known.json() as ApiBody;
+    assert.equal(known.status, 503);
+    assert.equal(knownBody.ok, false);
+    assert.equal(knownBody.code, "EMAIL_DELIVERY_NOT_CONFIGURED");
+    assert.equal(hasSessionCookie(known), false);
+    const afterKnown = await findUser(existingEmail);
+    assert.ok(afterKnown.user);
+    assert.equal(afterKnown.user.status, "pending");
+    assert.equal(afterKnown.user.passwordHash, passwordHash);
+    assert.deepEqual(tokensFor(afterKnown.data, afterKnown.user.id), liveTokens);
+
     const email = uniqueEmail("unconfigured");
     const response = await registerRoute.POST(jsonRequest("http://localhost/api/auth/register", registerBody(email, FIRST_PASSWORD)));
     const body = await response.json() as ApiBody;
     assert.equal(response.status, 503);
     assert.equal(body.ok, false);
     assert.equal(body.code, "EMAIL_DELIVERY_NOT_CONFIGURED");
+    assert.deepEqual(publicShape(knownBody), publicShape(body));
     assert.equal((await findUser(email)).user, undefined);
     assert.equal(hasSessionCookie(response), false);
   });
