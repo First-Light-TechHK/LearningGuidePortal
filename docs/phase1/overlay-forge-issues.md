@@ -4,7 +4,9 @@
 
 编号 `OF-nn`。状态：**待定意图**（要 Oliver 拍板）/ **待修** / **已修** / **不修**（写原因）。
 
-基线（2026-09-14）：Learning Guide `origin/dev` `5ae17e9`（pin `forge-check.yml` → `forge-v1.1.3`）；`origin/main` `8bac302`（随后一条 promote）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`（git tag @ `9071fa1`）。GitHub Release 页已补齐；Latest 徽章仍可能是 `forge-v1.0.0`（`make_latest=false`）。两仓 Ruleset 均为 0。Oliver：leftover **应该一起**——先打 `dev`，合完再一条 promote。#17+#18 并行是反例。
+基线（2026-09-14）：Learning Guide `origin/dev` `5ae17e9`（pin `forge-check.yml` → `forge-v1.1.3`）；当时 `origin/main` `8bac302`（随后一条 promote）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`（git tag @ `9071fa1`）。GitHub Release 页已补齐；Latest 徽章仍可能是 `forge-v1.0.0`（`make_latest=false`）。两仓 Ruleset 均为 0。Oliver：leftover **应该一起**——先打 `dev`，合完再一条 promote。#17+#18 并行是反例。
+
+现状（2026-09-29，本说明写入前）：fork `origin/main` 与 `origin/dev` 都是 `2d0db6d`。AUTH-05 已在 `e4b5231` 修好（并发同邮箱注册：输掉的请求返回 200，不再签发第二枚 token，不改赢家密码），`docs/STATE.md` 已重生成，`forge check` 在该树上为绿。`protect` 仍是 `dev` 然后 `main`。草稿分支已开始并入 `main`（含 PR #36）。PR #23（`e4da21b`）已在 `main` 和 `dev` 里，不必再 promote。
 
 ---
 
@@ -207,7 +209,8 @@
 |---|---|
 | [#21](https://github.com/LibertychaserUS/LearningGuidePortal/pull/21) | 已合 `dev`（`e53c382`） |
 | [#22](https://github.com/LibertychaserUS/LearningGuidePortal/pull/22) | 已合 `main`（`1d7867d`）；#21 合完后一条 promote |
-| pin `forge-v1.1.3` | `dev` `5ae17e9` → `main` `8bac302` |
+| pin `forge-v1.1.3` | `dev` `5ae17e9` → `main` `8bac302`（2026-09-14 升针；该 SHA 已不是当前 tip） |
+| 当前 fork tip | 本说明写入前 `origin/main` = `origin/dev` = `2d0db6d`（含 AUTH-05 `e4b5231`；草稿已开始并入 `main`，含 PR #36） |
 | AIOps `dev`/`main` | `9071fa1`；tag `forge-v1.1.3`；Release 页已补齐 |
 
 仍待拍板（不要密钥也能定）：
@@ -248,5 +251,6 @@
 - 2026-09-14 #21 合入 `dev`（`e53c382`）；#22 promote 合入 `main`（`1d7867d`）。
 - 2026-09-14 本 PR：OF-22 升针 `forge-check.yml` → `forge-v1.1.3`。AIOps `dev`/`main`/`forge-v1.1.3` @ `9071fa1`。Release 页与 `apply` 仍 403。
 - 2026-09-14 随后：Release 页已补齐。本 PR：薄 skill / APPLY / OF-24 / STATE 改口；`apply` 仍未 live（OF-08）。
+- 2026-09-29：AUTH-05 在 `e4b5231` 修好。草稿开始并入 fork `main`（含 PR #36）。本说明写入前 `origin/main` 与 `origin/dev` 为 `2d0db6d`。`protect` 仍是 `dev` 然后 `main`。没有 `forge apply`。
 - 2026-09-14 #23 squash 合入 `dev`（`e4da21b`）；尚未 promote 到 `main`（Oliver：先只更新 Overlay，不 promote）。
 - 2026-09-15 本 PR：OF-07 写明对象是 LG 源仓 First-Light。Oliver：黑盒 I/O 是规格，一般来说肯定是对的；AUTH-01/02 / PAY-10 / TRIAL-02 红是源仓产品。回灌 Forge + Overlay + 规格测试，不改产品、不改叶子。brief §9.7 / §9.11 / §9.12 同步。

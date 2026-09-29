@@ -23,6 +23,8 @@
 8. **Agent 交互：** Forge 是开发后 GitHub 落地（`check` → PR 到 `dev` → `promote` 到 `main`），不是测试工具。本仓已有 `forge.yaml` 时问一次；同意后默认跑 `check`，持有 `FORGE_SUBMIT_TOKEN` 再 `submit` 到 `dev`，不要每次存盘再讲宪法。初始化同意 ≠ live-apply。`FORGE_SUBMIT_TOKEN` 与 `FORGE_GITHUB_TOKEN` 是 Oliver 提供的环境密钥，agent 永不粘贴 token。接入方若还没有 Forge、且已有自己的落地方式，先对照新旧并等人明确同意，不能默默替换。
 9. **内容包按层配对（补设计，OF-23）。** 封顶是 squash PR。碰哪一层，同单带那一层的配对物。不是每个 PR 都交文档 + 代码 + workflow。agent 包不得改 `.github/workflows/`。升针是单独的 Ops 包。一开始没写这层规格，锁先于设计；人接受前不加新锁。squash 后若还有 leftover：**先打 `dev`，合完再一条 promote**。不要并行往 `main` 开第二份（#17+#18 是反例）。
 
+本说明写入前，fork `origin/main` 与 `origin/dev` 都是 `2d0db6d`。这条包含 AUTH-05 修复 `e4b5231`：并发同邮箱注册时，输掉的请求返回 200，不再签发第二枚 token，也不改赢家的密码。`docs/STATE.md` 已按 `forge-v1.1.3` 重生成。`forge.yaml` 的 `protect` 仍是 `dev` 然后 `main`。草稿分支已开始并入 `main`。PR #36（`cursor/offer-pending-logic-e93d`）存在。不要把 `cursor/upstream-main-base-e93d` 放进 `protect` 第一条，不要跑 `forge apply`。
+
 ---
 
 ## 1. 为什么要接这两件，而不是再写一套 CI
