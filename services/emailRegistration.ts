@@ -50,6 +50,9 @@ async function emailAlreadyRegistered(email: string) {
 }
 
 export async function registerEmailAccount(input: EmailRegistrationInput): Promise<EmailRegistrationResult> {
+  if (emailVerificationRequired() && !emailDeliveryConfigured()) {
+    return { kind: "not_configured", message: `Email verification is not configured for ${appEnvironment()}.` };
+  }
   let fields: ReturnType<typeof registrationFields>;
   try {
     fields = registrationFields(input);
@@ -58,9 +61,6 @@ export async function registerEmailAccount(input: EmailRegistrationInput): Promi
   }
 
   if (emailVerificationRequired()) {
-    if (!emailDeliveryConfigured()) {
-      return { kind: "not_configured", message: `Email verification is not configured for ${appEnvironment()}.` };
-    }
     if (await emailAlreadyRegistered(fields.email)) return { kind: "verification_required" };
     const rawToken = randomBytes(32).toString("base64url");
     try {
