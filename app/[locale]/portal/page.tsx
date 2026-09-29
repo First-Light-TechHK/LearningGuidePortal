@@ -31,7 +31,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
         <Link prefetch={false} className={styles.allCourses} href={`/${locale}/portal/courses`}>{home.allCourses}</Link>
       </section>
 
-      <section className={styles.why} aria-labelledby="why-heading"><p>{home.why}</p><h2 id="why-heading">{home.whyTitle}</h2><Image className={styles.underline} src="/portal/home/underline.svg" alt="" width={161.5} height={14.1308} /></section>
+      <section id="why-us" className={styles.why} aria-labelledby="why-heading"><p>{home.why}</p><h2 id="why-heading">{home.whyTitle}</h2><Image className={styles.underline} src="/portal/home/underline.svg" alt="" width={161.5} height={14.1308} /></section>
       <section className={styles.values} aria-label={home.why}>{home.values.map((value, index) => <article key={value.title}><span>{index + 1}.</span><h3>{value.title}</h3><p>{value.text}</p></article>)}</section>
       <section className={styles.guide}><div className={styles.guideInner}><div><h2>{home.guide}</h2><div className={styles.guideSteps}>{home.steps.map(step => <article key={step.title}><h3>{step.title}</h3><p>{step.text}</p></article>)}</div></div><Image className={styles.guideImage} src="/portal/home/quick-guide.png" width={563} height={522} alt={home.guideImage} /></div></section>
       <PortalFooter locale={locale} />

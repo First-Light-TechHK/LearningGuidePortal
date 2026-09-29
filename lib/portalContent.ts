@@ -14,14 +14,14 @@ export type PortalContent = {
 
 export const defaultBanners: Record<Locale, Banner[]> = {
   "en-GB": [
-    { image: "/portal/auth-library.jpg", eyebrow: "LEARNING GUIDE", title: "Courses that give thinking room", text: "Study humanities and science through clear material, conversation and practice.", cta: "Explore courses", href: "/en-GB/portal/courses" },
-    { image: "/portal/course-book.jpg", eyebrow: "START WITH A LESSON", title: "Begin with the public lesson", text: "See how each course is organised before you decide what to study next.", cta: "View courses", href: "/en-GB/portal/courses" },
-    { image: "/portal/course-study.jpg", eyebrow: "MY LEARNING", title: "Keep your learning together", text: "Return to your lessons and continue with the course-aligned AI Tutor.", cta: "Go to My Learning", href: "/en-GB/account/my-learning" }
+    { image: "/portal/auth-library.jpg", eyebrow: "", title: "Learn with curiosity.\nGrow with confidence.", text: "Learning Guide turns world-class cultural knowledge into a personal learning journey, in video or text, at your own pace.", cta: "Explore more", href: "/en-GB/portal/courses" },
+    { image: "/portal/course-book.jpg", eyebrow: "", title: "Knowledge is the start.\nThinking is the destination.", text: "We're not chasing completion rates — we're building minds that question, connect, and see wider. Join a lifelong home for thinking.", cta: "Our Philosophy", href: "/en-GB/portal#why-us" },
+    { image: "/portal/course-study.jpg", eyebrow: "", title: "Learn with an AI that gets you.\nGrow with people who push you.", text: "Your own AI Tutor for deep understanding — and a study community where real discussion happens. Thinking isn't meant to happen alone.", cta: "Join a Study Group", href: "/en-GB/portal/study-groups" }
   ],
   "zh-CN": [
-    { image: "/portal/auth-library.jpg", eyebrow: "LEARNING GUIDE", title: "给思考留下空间的课程", text: "通过清晰的材料、对话和练习学习人文与科学。", cta: "浏览课程", href: "/zh-CN/portal/courses" },
-    { image: "/portal/course-book.jpg", eyebrow: "从一节课开始", title: "先阅读公开首课", text: "在决定下一步学习什么之前，先了解课程如何组织。", cta: "查看课程", href: "/zh-CN/portal/courses" },
-    { image: "/portal/course-study.jpg", eyebrow: "MY LEARNING", title: "把学习记录放在一起", text: "回到课程内容，继续使用与课程一致的 AI Tutor。", cta: "进入 My Learning", href: "/zh-CN/account/my-learning" }
+    { image: "/portal/auth-library.jpg", eyebrow: "", title: "怀着好奇学习，\n带着自信成长。", text: "Learning Guide 将世界级的文化知识转化为个性化的学习旅程，通过视频或文本，按照自己的节奏学习。", cta: "查看更多", href: "/zh-CN/portal/courses" },
+    { image: "/portal/course-book.jpg", eyebrow: "", title: "知识是起点。\n思考是终点。", text: "我们不追逐完成率——我们要培养会提问、会关联、看得更远的心智。欢迎加入这座终身思考之家。", cta: "我们的理念", href: "/zh-CN/portal#why-us" },
+    { image: "/portal/course-study.jpg", eyebrow: "", title: "与懂你的 AI 一起学。\n与推动你的人一起成长。", text: "专属 AI Tutor 助你深入理解，还有真实讨论发生的学习社区。思考本就不该独自进行。", cta: "加入学习小组", href: "/zh-CN/portal/study-groups" }
   ]
 };
 
