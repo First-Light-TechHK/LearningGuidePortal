@@ -19,7 +19,7 @@ Published course pages for tourists: store identity, syllabus lock or preview, a
 # In scope
 
 - UC-PORTAL-1 Course page primitives come from the product store.
-- UC-PORTAL-CATEGORY Course category surfaces show that course's own category id and locale label.
+- UC-PORTAL-CATEGORY Course category surfaces show that course's commercial category and locale label. An opaque catalogue id keeps an exact commercial category. Empty membership is omitted and cannot be published.
 
 # Out of scope
 
@@ -30,7 +30,7 @@ Published course pages for tourists: store identity, syllabus lock or preview, a
 # User cases
 
 1. A tourist opens a published course and sees previewable versus locked lessons from the store.
-2. A course breadcrumb, tag, catalogue chip, card, My Learning meta line, public-lesson recommendation and pricing group show that course's own category in en-GB and zh-CN. UC-PORTAL-CATEGORY.
+2. A course breadcrumb, tag, catalogue chip, card, My Learning meta line, public-lesson recommendation and pricing group show that course's commercial category in en-GB and zh-CN. An opaque catalogue id keeps an exact commercial category. A chip with no published course is absent. UC-PORTAL-CATEGORY.
 
 # Notes
 

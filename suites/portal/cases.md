@@ -46,12 +46,12 @@ Sits beside UC-PORTAL-1 course identity. The course page still reads identity fr
 
 
 ### Negative
-- Title: A legacy field or a catalogue name for the other category does not move the surface
-- Steps: Store categoryId `science` or `European Humanities` while the legacy category and the catalogue entry name say the other category
-- Expected: Display stays on the categoryId. A science course is not listed or grouped under European Humanities, and its visible text is not `欧洲人文` or `European Humanities`. A humanities course is not shown as `科学` or `Science`.
+- Title: A resolved portal id is not relabelled, and an opaque catalogue id keeps the commercial category
+- Steps: Store categoryId `science` or `european-humanities` while the legacy category and the catalogue entry name say the other category. Store an opaque `category_…` id whose catalogue name is the other category, with legacy category exactly European Humanities. Store `category_biology` whose catalogue parent id is `science` while legacy category is European Humanities
+- Expected: A resolved id stays. Science is not listed or grouped under European Humanities, and its visible text is not `欧洲人文` or `European Humanities`. European humanities is not shown as `科学` or `Science`. The catalogue name does not switch a resolved id. An opaque `category_…` id keeps the exact legacy commercial category. A catalogue parent id of `science` is Science even when the legacy field and the catalogue name say European Humanities
 
 
 ### Edge
-- Title: A missing category is omitted, and a subject does not replace the category crumb
-- Steps: Open a course with no category. Open a poetry subject under humanities and a biology subject under science with no categoryId
-- Expected: With no categoryId, no subject parent, and no exact legacy id, the category crumb, chip, card line, meta category, recommendation category and pricing group are absent. Poetry whose catalogue parent is european-humanities shows European Humanities, not Poetry. Biology whose catalogue parent is science shows Science, not Biology. A humanities course whose subject is biology still shows European Humanities, not Science.
+- Title: A missing category is omitted, a subject name is not the crumb, and an empty category chip is absent
+- Steps: Open a course with no category. Open a poetry subject under humanities and a biology subject under science with no categoryId. Open the catalogue when one commercial category has no published course
+- Expected: With no categoryId, no subject parent, and no exact legacy id, the category crumb, chip, card line, meta category, recommendation category and pricing group are absent. Poetry whose catalogue parent is european-humanities shows European Humanities, not Poetry. Biology whose catalogue parent is science shows Science, not Biology. A subject name is not the crumb. A humanities course whose categoryId is european-humanities still shows European Humanities when its subject is biology. A category chip with zero published courses is absent. Empty membership is not filled with European Humanities

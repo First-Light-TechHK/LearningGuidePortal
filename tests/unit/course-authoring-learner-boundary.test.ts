@@ -24,7 +24,7 @@ after(async () => {
 });
 
 test("public catalogue returns an explicit metadata allowlist, never author or lesson data", async () => {
-  const course = await store.createCourseForOperator({ title: "Public catalogue boundary" });
+  const course = await store.createCourseForOperator({ title: "Public catalogue boundary", category: "Science" });
   await store.addLessonToCourse({ courseId: course.id, title: "Private lesson", body: "PRIVATE MATERIAL", durationMinutes: 5 });
   await store.setCourseStatus(course.id, "published");
   const { GET } = await import("../../app/api/portal/courses/route");

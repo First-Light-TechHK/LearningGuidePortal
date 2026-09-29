@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { test } from "node:test";
 import { CourseLearningOutcomes } from "../../components/portal/CourseLearningOutcomes";
-import { courseCategoryDisplay, courseCategoryPlan } from "../../lib/courseDetailPresentation";
+import { assertCourseCanPublish, courseCategoryDisplay, courseCategoryMembership, courseCategoryPlan } from "../../lib/courseDetailPresentation";
 import { courseIdentityFrom } from "../../lib/coursePage";
 import { defaultPortalContent } from "../../lib/portalContent";
 import type { ProductPlan } from "../../services/productStore";
@@ -177,16 +177,16 @@ test("Edge: no category leaves every surface empty, and a subject does not repla
     categoryId: "science",
     subjectId: "biology",
   };
-  const namedButUnmatched = {
+  const legacySlugOnly = { title: "Biology", category: "science", categoryId: null, subjectId: null };
+  const opaqueCommercial = {
     title: "Biology",
     category: "European Humanities" as const,
-    categoryId: "cat-science",
+    categoryId: "category_academic",
     subjectId: "biology",
   };
-  const legacySlugOnly = { title: "Biology", category: "science", categoryId: null, subjectId: null };
 
   for (const locale of locales) {
-    for (const course of [uncategorised, subjectOnly, namedButUnmatched, legacySlugOnly]) {
+    for (const course of [uncategorised, subjectOnly, legacySlugOnly]) {
       const display = shown(course, locale, catalogue);
       assert.equal(display.membership, "");
       assert.equal(display.crumb, null);
@@ -245,4 +245,63 @@ test("Edge: no category leaves every surface empty, and a subject does not repla
   assert.notEqual(horace.crumb?.label, "Science");
   assert.equal(horace.matchesFilter("European Humanities"), true);
   assert.equal(horace.matchesFilter("Science"), false);
+
+  const subjectWithoutParent = shown(
+    { category: "Science", categoryId: null, subjectId: "poetry" },
+    "en-GB",
+    [{ id: "poetry", name: "Poetry", parentId: null }],
+  );
+  assert.equal(subjectWithoutParent.membership, "");
+  assert.equal(subjectWithoutParent.crumb, null);
+  assert.notEqual(subjectWithoutParent.cardLabel, "Poetry");
+  assert.notEqual(subjectWithoutParent.cardLabel, "Science");
+
+  for (const locale of locales) {
+    const kept = shown(opaqueCommercial, locale, [
+      { id: "category_academic", name: "Science", parentId: null },
+      { id: "biology", name: "Biology", parentId: "science" },
+    ]);
+    assert.equal(kept.membership, "European Humanities");
+    assert.deepEqual(kept.crumb, { id: "European Humanities", label: labels["European Humanities"][locale] });
+    assert.notEqual(kept.crumb?.label, "Science");
+    assert.notEqual(kept.crumb?.label, "科学");
+    assert.notEqual(kept.crumb?.label, "Biology");
+    assert.equal(kept.cardLabel, labels["European Humanities"][locale]);
+    assert.equal(kept.learningLabel, labels["European Humanities"][locale]);
+    assert.equal(kept.recommendationLabel, labels["European Humanities"][locale]);
+    assert.equal(kept.pricingCategoryId, "European Humanities");
+    assert.equal(kept.matchesFilter("European Humanities"), true);
+    assert.equal(kept.matchesFilter("Science"), false);
+    assert.equal(courseCategoryPlan(plans, kept.pricingCategoryId)?.id, humanitiesPlan.id);
+
+    const parentWins = shown(
+      { category: "European Humanities", categoryId: "category_biology", subjectId: "biology" },
+      locale,
+      [
+        { id: "science", name: "European Humanities", parentId: null },
+        { id: "category_biology", name: "Biology", parentId: "science" },
+      ],
+    );
+    assert.equal(parentWins.membership, "Science");
+    assert.deepEqual(parentWins.crumb, { id: "Science", label: labels.Science[locale] });
+    assert.notEqual(parentWins.crumb?.label, "European Humanities");
+    assert.notEqual(parentWins.crumb?.label, "欧洲人文");
+    assert.notEqual(parentWins.crumb?.label, "Biology");
+    assert.equal(parentWins.matchesFilter("Science"), true);
+    assert.equal(parentWins.matchesFilter("European Humanities"), false);
+  }
+});
+
+test("Publish: empty membership is rejected, and an opaque catalogue id keeps the commercial category", () => {
+  const catalogue = [{ id: "category_academic", name: "European Humanities", parentId: null }];
+  const opaque = { title: "Biology", category: "Science" as const, categoryId: "category_academic", subjectId: "biology" };
+  assert.equal(assertCourseCanPublish(opaque, catalogue), "Science");
+  assert.equal(courseCategoryMembership(opaque, catalogue), "Science");
+  const empty = { title: "Untitled", category: null, categoryId: "category_academic", subjectId: null };
+  const before = { ...empty };
+  assert.throws(() => assertCourseCanPublish(empty, catalogue), (error: { code?: string }) => error.code === "invalid");
+  assert.deepEqual(empty, before);
+  assert.equal(courseCategoryMembership(empty, catalogue), "");
+  assert.equal(courseCategoryMembership({ category: null, categoryId: null, subjectId: null }), "");
+  assert.notEqual(courseCategoryMembership({ category: "", categoryId: "", subjectId: "" }), "European Humanities");
 });

@@ -33,7 +33,7 @@ items:
       - PAY-09
     span: interaction
   - id: INV-course-own-category
-    text: A course surface shows that course's own category id and locale label. A legacy field, a catalogue name for another category, or a subject does not replace it. A course with no category omits the category rather than borrowing one.
+    text: A course surface shows that course's commercial category and locale label. A resolved portal id or slug wins over a conflicting legacy field and over a catalogue name. An opaque catalogue id keeps an exact commercial legacy category. A subject name is not the label. Empty membership is omitted, is not filled with European Humanities, and cannot be published. A category chip appears only when a published course has that membership.
     function_ids:
       - UC-PORTAL-CATEGORY
     span: local

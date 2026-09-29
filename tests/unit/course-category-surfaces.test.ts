@@ -205,13 +205,39 @@ test("UC-PORTAL-CATEGORY negative: legacy field or catalogue name for the other 
       label: expectedCategory.Science[locale],
     });
 
-    const namedScience = { ...humanities, category: "European Humanities" as const, categoryId: "cat-science", subjectId: "biology" };
+    const namedScience = { ...humanities, category: "European Humanities" as const, categoryId: "category_academic", subjectId: "biology" };
     const resolvedCatalogue = [
-      { id: "cat-science", name: "Science", parentId: null },
-      { id: "biology", name: "Biology", parentId: "cat-science" },
+      { id: "category_academic", name: "Science", parentId: null },
+      { id: "biology", name: "Biology", parentId: "category_academic" },
     ];
-    assert.equal(categoryCrumb(namedScience, locale, resolvedCatalogue), null);
-    assert.equal(pricingCourseGroup(namedScience, categories, resolvedCatalogue), "");
+    const opaqueCrumb = categoryCrumb(namedScience, locale, resolvedCatalogue);
+    assert.equal(opaqueCrumb?.label, expectedCategory["European Humanities"][locale]);
+    assert.equal(opaqueCrumb?.href, `/${locale}/portal/courses?category=${encodeURIComponent("European Humanities")}`);
+    const opaqueLabel = opaqueCrumb?.label ?? "";
+    assert.equal(opaqueLabel.includes("科学"), false);
+    assert.equal(opaqueLabel.includes("Science"), false);
+    assert.deepEqual(courseTrackChip(namedScience, categories, locale, resolvedCatalogue), {
+      categoryId: "European Humanities",
+      label: expectedCategory["European Humanities"][locale],
+    });
+    assert.equal(courseCardCategoryLine(namedScience, categories, locale, resolvedCatalogue), expectedCategory["European Humanities"][locale]);
+    assert.equal(publicLessonRecommendationCategory(namedScience, categories, locale, resolvedCatalogue), expectedCategory["European Humanities"][locale]);
+    assert.equal(metaLine(namedScience, locale, resolvedCatalogue).startsWith(expectedCategory["European Humanities"][locale]), true);
+    assert.equal(pricingCourseGroup(namedScience, categories, resolvedCatalogue), "European Humanities");
+    const academicChild = {
+      id: "cells",
+      title: "Cells",
+      category: "European Humanities" as const,
+      categoryId: "category_biology",
+      subjectId: "biology",
+    };
+    const childCatalogue = [
+      { id: "science", name: "European Humanities", parentId: null },
+      { id: "category_biology", name: "Biology", parentId: "science" },
+    ];
+    assert.equal(categoryCrumb(academicChild, locale, childCatalogue)?.label, expectedCategory.Science[locale]);
+    assert.equal(categoryCrumb(academicChild, locale, childCatalogue)?.href, `/${locale}/portal/courses?category=Science`);
+    assert.equal(pricingCourseGroup(academicChild, categories, childCatalogue), "Science");
 
     const humanitiesKept = { ...humanities, category: "Science" as const, subjectId: "biology" };
     const crumbHumanities = categoryCrumb(humanitiesKept, locale, catalogueNameSaysScience);
@@ -282,9 +308,33 @@ test("UC-PORTAL-CATEGORY edge: missing category omits the crumb, and a subject d
           allLabel: messages.portal.allCategories,
         });
         assert.deepEqual(filter.visible, []);
-        assert.equal(filter.chips.find((chip) => chip.active)?.id, requested);
+        assert.equal(filter.chips.some((chip) => chip.id === requested), false);
+        assert.equal(filter.chips.find((chip) => chip.id === "All")?.active, false);
       }
     }
+
+    const publishedScience = { ...science, status: "published" as const };
+    const draftHumanities = { ...humanities, status: "draft" as const };
+    const occupied = catalogueFilterState({
+      requestedCategory: "All",
+      courses: [publishedScience, draftHumanities],
+      categories,
+      locale,
+      allLabel: messages.portal.allCategories,
+    });
+    assert.deepEqual(occupied.chips.map((chip) => chip.id), ["All", "Science"]);
+    assert.equal(occupied.chips.some((chip) => chip.id === "European Humanities"), false);
+    assert.equal(occupied.chips.some((chip) => chip.id === "Chinese Humanities"), false);
+    assert.deepEqual(occupied.visible.map((course) => course.id), [publishedScience.id]);
+    const emptyCategory = catalogueFilterState({
+      requestedCategory: "Chinese Humanities",
+      courses: [publishedScience],
+      categories,
+      locale,
+      allLabel: messages.portal.allCategories,
+    });
+    assert.equal(emptyCategory.chips.some((chip) => chip.id === "Chinese Humanities"), false);
+    assert.deepEqual(emptyCategory.visible, []);
 
     assert.equal(categoryCrumb(poetryOnly, locale, poetryCatalogue)?.label, expectedCategory["European Humanities"][locale]);
     assert.notEqual(categoryCrumb(poetryOnly, locale, poetryCatalogue)?.label, "Poetry");

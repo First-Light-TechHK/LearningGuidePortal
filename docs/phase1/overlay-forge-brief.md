@@ -92,4 +92,4 @@ npx tsc --noEmit -p tsconfig.io.json
 
 ## UC-PORTAL-CATEGORY（课程分类表面）
 
-Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。没有分类就不显示该屑。categoryId 为空时用学科的目录父类（id 或 slug），学科名不占分类位，目录名不投票。
+Portal 套件增加叶子 `UC-PORTAL-CATEGORY`，不变式 `INV-course-own-category`。规格在 `suites/portal/cases.md`，执行在 `tests/unit/course-category-surfaces.test.ts` 与 `tests/unit/course-category-display.test.ts`（portal `product_command` 的单元测试，不把 `test:io` 加进 Verify）。表面：课程面包屑、标题分类芯片、目录筛选、目录卡与首页卡分类行、My Learning meta、公开课推荐分类、定价分组。分类链接用门户分类 id，可见文字用 en-GB / zh-CN 标签。成员关系停在第一个商业 id：`categoryId` 或其目录父 id 已是三个门户 id 或 slug `science` / `european-humanities` / `chinese-humanities` 时，该 id 胜出，冲突的 legacy 字段和目录名不能改标。`categoryId` 存在但不落到这三类（不透明的 `category_…`）时，保留恰好是这三类之一的 legacy `category`。`categoryId` 为空时用学科的目录父 id 或 slug，学科名不占分类位。两个 id 都空时，legacy 仅在恰好是这三类之一时计数。否则成员为空。空成员不能发布，也不写成 European Humanities。目录筛选芯片只在至少一门已发布课程具有该成员时出现。

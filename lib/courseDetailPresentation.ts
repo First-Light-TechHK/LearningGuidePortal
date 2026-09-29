@@ -67,20 +67,24 @@ function portalIdentity(value: string | null | undefined): PortalCategoryId | ""
   return PORTAL_CATEGORY_SLUGS[categorySlug(raw)] || "";
 }
 
-function catalogueParent(id: string, catalogue: readonly CatalogueCategoryRef[]) {
+function portalIdFromCatalogueKey(id: string, catalogue: readonly CatalogueCategoryRef[]): PortalCategoryId | "" {
+  const direct = portalIdentity(id);
+  if (direct) return direct;
   const row = catalogue.find((item) => item.id === id);
-  if (!row) return undefined;
-  if (!row.parentId) return row;
-  return catalogue.find((item) => item.id === row.parentId && !item.parentId);
+  if (!row?.parentId) return "";
+  return portalIdentity(row.parentId);
 }
 
 /**
- * Membership is one portal category or empty.
- * Inputs, in order, stop at the first of Chinese Humanities | European Humanities | Science:
- * 1. catalogue parent of categoryId (row id or slug european-humanities / science / chinese-humanities; the catalogue name does not vote)
- * 2. if categoryId is empty, the subject's catalogue parent, same match
- * 3. if both ids are empty, legacy category only when it is exactly one of those three ids
- * Range: those three ids, or empty.
+ * Membership is one portal category or empty. Stop at the first commercial id:
+ * 1. categoryId, or its catalogue parent id, when that id is exactly Chinese Humanities,
+ *    European Humanities or Science, or the slug science / european-humanities / chinese-humanities.
+ *    A conflicting legacy field does not relabel it. The catalogue name does not vote.
+ * 2. categoryId is present but does not resolve: keep legacy category when it is exactly one of the three.
+ *    An opaque catalogue id does not erase that commercial scope, and the subject is not consulted.
+ * 3. categoryId is empty: the subject's catalogue parent id or slug, the same match. A subject name is not the label.
+ * 4. both ids are empty: legacy category only when it is exactly one of the three.
+ * 5. otherwise empty. Empty is not filled with European Humanities.
  */
 export function courseCategoryMembership(
   course: CourseCategoryRef | null | undefined,
@@ -90,20 +94,28 @@ export function courseCategoryMembership(
   const categoryId = course.categoryId?.trim() || "";
   const subjectId = course.subjectId?.trim() || "";
   if (categoryId) {
-    const fromId = portalIdentity(categoryId);
-    if (fromId) return fromId;
-    const fromParent = portalIdentity(catalogueParent(categoryId, catalogue)?.id);
-    if (fromParent) return fromParent;
-    return "";
+    return portalIdFromCatalogueKey(categoryId, catalogue) || exactPortalId(course.category);
   }
   if (subjectId) {
     const subject = catalogue.find((item) => item.id === subjectId);
-    const parent = subject?.parentId
-      ? catalogue.find((item) => item.id === subject.parentId && !item.parentId) || { id: subject.parentId, name: "" }
-      : undefined;
-    return portalIdentity(parent?.id);
+    if (!subject?.parentId) return "";
+    return portalIdentity(subject.parentId);
   }
   return exactPortalId(course.category);
+}
+
+/** Publish requires a commercial membership. Does not assign a category. */
+export function assertCourseCanPublish(
+  course: CourseCategoryRef | null | undefined,
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): PortalCategoryId {
+  const membership = courseCategoryMembership(course, catalogue);
+  if (!membership) {
+    const error = new Error("invalid") as Error & { code: "invalid" };
+    error.code = "invalid";
+    throw error;
+  }
+  return membership;
 }
 
 /** The course's stored outcomes, or none. Shared course-detail copy and catalogue rows are not a fallback. */
@@ -208,6 +220,12 @@ export function courseTrackChip(
 
 export type CatalogueFilterChip = { id: string; label: string; active: boolean };
 
+function countsTowardCatalogue(course: object) {
+  if (!("status" in course)) return true;
+  const status = (course as { status?: unknown }).status;
+  return status == null || status === "published";
+}
+
 /** Catalogue chips and the courses that belong to the requested portal category id. */
 export function catalogueFilterState<T extends CourseCategoryRef>(input: {
   requestedCategory: string;
@@ -219,17 +237,23 @@ export function catalogueFilterState<T extends CourseCategoryRef>(input: {
 }): { chips: CatalogueFilterChip[]; visible: T[] } {
   const catalogue = input.catalogue ?? [];
   const requested = (input.requestedCategory || "All").trim() || "All";
+  const published = input.courses.filter((course) => countsTowardCatalogue(course));
+  const occupied = new Set(
+    published
+      .map((course) => courseCategoryMembership(course, catalogue))
+      .filter((id): id is PortalCategoryId => id !== ""),
+  );
   const chips: CatalogueFilterChip[] = [
     { id: "All", label: input.allLabel, active: requested === "All" },
-    ...input.categories.map((item) => ({
+    ...input.categories.filter((item) => occupied.has(item.id)).map((item) => ({
       id: item.id,
       label: item.labels[input.locale],
       active: requested === item.id,
     })),
   ];
   const visible = requested === "All"
-    ? [...input.courses]
-    : input.courses.filter((course) => courseCategoryMembership(course, catalogue) === requested);
+    ? [...published]
+    : published.filter((course) => courseCategoryMembership(course, catalogue) === requested);
   return { chips, visible };
 }
 

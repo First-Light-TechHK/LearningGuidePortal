@@ -22,7 +22,7 @@ import {
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
-import { courseCategoryMembership } from "@/lib/courseDetailPresentation";
+import { assertCourseCanPublish, courseCategoryMembership } from "@/lib/courseDetailPresentation";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
@@ -2157,6 +2157,12 @@ export async function setCourseStatus(courseId: string, status: ProductCourse["s
     if (status === "published" && !course.sections.some((section) => section.lessons.length > 0)) throw new AuthoringError("invalid");
     if (status === "published" && course.sections.some(section => section.lessons.some(lesson => !lesson.body.trim() && !lesson.contents?.length))) throw new AuthoringError("invalid");
     if (status === "published") {
+      try {
+        assertCourseCanPublish(course, data.catalogue || []);
+      } catch (error) {
+        if (error instanceof Error && (error as { code?: string }).code === "invalid") throw new AuthoringError("invalid");
+        throw error;
+      }
       validateCatalogueSelection(data, course);
       const { assertCourseMediaReferences } = await import("./courseMedia");
       try { await assertCourseMediaReferences(course); } catch { throw new AuthoringError("invalid"); }
