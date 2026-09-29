@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Archive, ChevronLeft, ChevronRight, Eye, Pencil, Plus, RotateCcw, UserRoundCog, X } from "lucide-react";
 import { CourseOutlineEditor } from "./CourseOutlineEditor";
 import { CourseCatalogueManager } from "./CourseCatalogueManager";
@@ -111,7 +112,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
     {notice && <p role="status">{notice}</p>}
     {preview ? <section className={styles.preview}>
       <header className={styles.previewHeader}><h2>{preview.title}</h2><button type="button" aria-label={messages.close} title={messages.close} onClick={() => setPreview(null)}><X size={18}/></button></header>
-      {preview.cover && <img className={styles.previewCover} src={preview.cover} alt="" width={480} height={270}/>}<p>{preview.subtitle}</p><p>{preview.description}</p>
+      {preview.cover && <Image className={styles.previewCover} src={preview.cover} alt="" width={480} height={270} unoptimized/>}<p>{preview.subtitle}</p><p>{preview.description}</p>
       {preview.sections.map(section => <section key={section.id}><h3>{section.title}</h3>{section.lessons.map(lesson => <article key={lesson.id}><h4>{lesson.title}</h4>{lesson.contents?.length ? <LessonContentPlayer contents={lesson.contents} locale={locale}/> : <p style={{ whiteSpace: "pre-wrap" }}>{lesson.body}</p>}</article>)}</section>)}
     </section> : <>
       <dl className={styles.stats}>{(["total", "draft", "published", "archived", "lessons"] as const).map(key => <div key={key}><dt>{messages[key]}</dt><dd>{result.counts[key]}</dd></div>)}</dl>
@@ -139,7 +140,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
               const cover = course.cover || course.thumbnailPath;
               const categoryLabel = entryName(course.categoryId) || course.category || messages.none;
               return <tr key={course.id}>
-                <td><div className={styles.courseCell}>{cover ? <img src={cover} alt="" width={64} height={40}/> : <span className={styles.coverPlaceholder} />}<div><strong>{course.title}</strong>{course.subtitle ? <span>{course.subtitle}</span> : null}</div></div></td>
+                <td><div className={styles.courseCell}>{cover ? <Image src={cover} alt="" width={64} height={40} unoptimized/> : <span className={styles.coverPlaceholder} />}<div><strong>{course.title}</strong>{course.subtitle ? <span>{course.subtitle}</span> : null}</div></div></td>
                 <td><span className={styles.badge}>{categoryLabel}</span></td>
                 <td><span className={`${styles.status} ${styles[course.status]}`}>{messages[course.status]}</span></td>
                 <td>{course.sections.reduce((sum, section) => sum + section.lessons.length, 0)}</td>

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -174,7 +175,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <img className="logo" src="/knowledge-system-logo.png" alt="Knowledge System" />
+          <Image className="logo" src="/knowledge-system-logo.png" alt="Knowledge System" width={26} height={26} loading="eager" unoptimized />
           <div>
             <div className="brand-title">Knowledge System</div>
           </div>
@@ -198,7 +199,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="top-actions">
             <button className="icon-button top-icon" aria-label="Notifications"><Bell size={18} /></button>
             <div className="profile">
-              <img className="avatar" src="/avatar.svg" alt="Prof. Gordon" />
+              <Image className="avatar" src="/avatar.svg" alt="Prof. Gordon" width={34} height={34} loading="eager" unoptimized />
               <div>
                 <div className="profile-name">Prof. Gordon <ChevronDown size={13} /></div>
                 <div className="profile-role">Subject Expert</div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Plus, X } from "lucide-react";
 import type { CourseMetadata, CatalogueEntry } from "@/contracts/course-authoring";
 import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages";
@@ -44,6 +45,6 @@ export function CourseMetadataEditor({ courseId, value, onChange, catalogue, loc
     <label>{copy.uploadCover}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploading} onChange={e => { void upload(e.target.files?.[0]); e.target.value = ""; }}/></label>
     {uploading && <p role="status">{copy.loading}</p>}
     {error && <p role="alert" className="portal-form-error">{error}</p>}
-    {value.cover && <div className="course-cover-preview"><img src={value.cover} alt={copy.cover} width={240} height={135}/><button type="button" title={copy.removeCover} aria-label={copy.removeCover} onClick={() => onChange({ cover: null })}><X size={18}/></button></div>}
+    {value.cover && <div className="course-cover-preview"><Image src={value.cover} alt={copy.cover} width={240} height={135} unoptimized/><button type="button" title={copy.removeCover} aria-label={copy.removeCover} onClick={() => onChange({ cover: null })}><X size={18}/></button></div>}
   </div>;
 }

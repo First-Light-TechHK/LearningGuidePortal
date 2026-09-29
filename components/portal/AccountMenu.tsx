@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bell, ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 type AccountMenuProps = {
@@ -56,14 +57,14 @@ export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountM
         onClick={() => setOpen((current) => !current)}
       >
         <span className="portal-header-avatar">
-          {avatarUrl ? <img src={avatarUrl} alt="" /> : initial}
+          {avatarUrl ? <Image src={avatarUrl} alt="" width={38} height={38} loading="eager" unoptimized /> : initial}
         </span>
         <ChevronDown className={open ? "account-menu-chevron open" : "account-menu-chevron"} size={15} aria-hidden="true" />
       </button>
       {open ? (
         <div className="account-menu-popover" role="menu">
           <div className="account-menu-identity">
-            <span className="account-menu-identity-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : initial}</span>
+            <span className="account-menu-identity-avatar">{avatarUrl ? <Image src={avatarUrl} alt="" width={34} height={34} unoptimized /> : initial}</span>
             <div>
               <strong>{displayName || "Learner"}</strong>
               <span>{labels.myLearning}</span>
