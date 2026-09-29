@@ -301,7 +301,15 @@ fork 上本 PR 的 forge-check 曾经红在两项：`docs_sync` 和 `deny_paths`
 - 根因：`docs/STATE.md` 由 `forge status --write` 生成。upstream `522eeab` 新增 `.github/workflows/catalogue-sync.yml`，job 名 `Run catalogue migrations`；`STATE.md` 最后一次重生成是 `e3276b0`，没有这个 job。upstream main `8a77712` 本身就不过。upstream 上 `522eeab` 的 forge-check（[run 35333759868](https://github.com/First-Light-TechHK/LearningGuidePortal/actions/runs/35333759868)）已经只红 `docs_sync`。
 - 修法：在本分支用 `forge-v1.1.3` 跑 `python -m forge status --root . --repo LibertychaserUS/LearningGuidePortal --write`（写本地文件不需要 token）。提交生成结果，不手改。job 列表里有 `Run catalogue migrations`。当时环境没有 `FORGE_GITHUB_TOKEN`，生成器把 Ruleset 和「开放的 promote PR」写成「未查询：缺 FORGE_GITHUB_TOKEN」；按生成器原文保留。
 
-### G-2 deny_paths：fork 的 `origin/main` 被当成 diff 起点 — 已用 protect 第一条对准 PR base
+### 设计判断：已提交的 STATE.md 快照不该让 docs_sync 失败（未实现）
+
+`STATE.md` 已经是生成文件（`forge status --write`，文件头写明不要手改）。代价高的部分是把这份快照提交进仓库，并在它漂移时让 `docs_sync` 失败。CI job 名清单和 `forge.yaml` 的 required checks 可以在检查当时直接和 `.github/workflows/` 对比，不需要一份已提交的副本。Ruleset、开放的 promote PR、最近的 tag 是 GitHub 上的活状态：没有 `FORGE_GITHUB_TOKEN` 时，文件只能写「未查询」；有 token 时，已提交的文字会在下一次 ruleset 变更之后过时。当前这条红检查（`522eeab` 之后缺少 job `Run catalogue migrations`，STATE 最后一次生成于 `e3276b0`）惩罚的是忘了更新的快照，不是坏掉的流水线。
+
+提议方向，尚未实现：`docs_sync` 应在检查本身里把 workflow 和 `forge.yaml` 对比；活的 GitHub 字段在有 token 时应由 `forge status` 打印，或作为 CI artifact 输出；没有 token 时不得因此让检查失败。现在不实现。不改 Forge 的 pin。
+
+### G-2 deny_paths：fork 的 `origin/main` 被当成 diff 起点 — 功能分支用 protect 第一条对准 PR base
+
+同步分支 `cursor/fork-sync-upstream-e93d` 没有采用那条 protect 顺序，保留 fork 的 `protect: [dev, main]` 和 `deny_paths: [.github/workflows/]`。下面记录的是功能分支自己的修法。
 
 - 现象：`deny_paths` 报 `diff touches .github/workflows/ci.yml`，本 PR 没有改任何 workflow。
 - 根因：Forge 1.1.3 的 `resolve_protect_ref`（`forge/check.py`）把 `protect` 里第一个能解析到的 ref 当 diff 起点，`list_changed_paths` 从 `merge-base(HEAD, 该 ref)` 算。没有单独的 base 键；未知顶层键会红。fork 的 `origin/main`（`8bac302`）与 upstream 分叉，merge-base 是 `006536f`，diff 带上 upstream 的 `ci.yml`。本分支不写 `deny_paths`，默认 `DEFAULT_DENY = (".github/workflows/ci.yml",)` 命中。upstream 自己的 `origin/main` 就是 upstream main，所以 upstream `522eeab` 那次是 `deny_paths ok vs refs/remotes/origin/main`。
