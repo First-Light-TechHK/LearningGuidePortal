@@ -5,8 +5,10 @@ import { Archive, ChevronLeft, ChevronRight, Eye, Pencil, Plus, RotateCcw, UserR
 import { CourseOutlineEditor } from "./CourseOutlineEditor";
 import { CourseCatalogueManager } from "./CourseCatalogueManager";
 import { LessonContentPlayer } from "./LessonContentPlayer";
+import { courseCategoryLabel } from "@/lib/courseDetailPresentation";
 import { getMessages } from "@/lib/i18n/messages";
 import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages";
+import { defaultPortalContent } from "@/lib/portalContent";
 import type { ProductCourse } from "@/services/productStore";
 import type { CatalogueEntry } from "@/contracts/course-authoring";
 import { courseEditorGate } from "@/lib/courseEditor";
@@ -96,7 +98,6 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
       setAssigning(null); setOwnerEmail(""); setNotice(messages.ownerAssigned); await load();
     } catch (e) { setError(e instanceof Error ? e.message : messages.errors.failed); } finally { setBusy(false); }
   }
-  const entryName = (id?: string | null) => catalogue.find(entry => entry.id === id)?.name;
   const formatTime = (value: string) => new Date(value).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
   return <section className={styles.manager}>
     {editing ? <CourseOutlineEditor key={editing.id} course={editing} locale={locale} catalogue={catalogue} copy={getMessages(locale).authoring} onSaved={load} onClose={() => setEditing(null)}/> : <>
@@ -137,7 +138,7 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
             <thead><tr><th>{messages.columnCourse}</th><th>{messages.category}</th><th>{messages.status}</th><th>{messages.lessons}</th><th>{messages.updated}</th><th>{messages.columnActions}</th></tr></thead>
             <tbody>{result.courses.map(course => {
               const cover = course.cover || course.thumbnailPath;
-              const categoryLabel = entryName(course.categoryId) || course.category || messages.none;
+              const categoryLabel = courseCategoryLabel(course, defaultPortalContent.categories, locale, catalogue) || messages.none;
               return <tr key={course.id}>
                 <td><div className={styles.courseCell}>{cover ? <img src={cover} alt="" width={64} height={40}/> : <span className={styles.coverPlaceholder} />}<div><strong>{course.title}</strong>{course.subtitle ? <span>{course.subtitle}</span> : null}</div></div></td>
                 <td><span className={styles.badge}>{categoryLabel}</span></td>

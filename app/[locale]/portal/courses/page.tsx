@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { getPortalContent, listPublishedCourses } from "@/services/productStore";
+import { courseCategoryId, courseCategoryLabel } from "@/lib/courseDetailPresentation";
+import { getPortalContent, listCatalogueEntries, listPublishedCourses } from "@/services/productStore";
 import { CatalogueCourseCard } from "@/components/portal/CatalogueCourseCard";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -15,8 +16,9 @@ export default async function CoursesPage({ params, searchParams }: { params: Pr
   const courses = await listPublishedCourses();
   const user = await currentProductUser();
   const category = ((await searchParams).category || "All").trim();
-  const visibleCourses = category === "All" ? courses : courses.filter((course) => (course.category || "European Humanities") === category);
   const content = await getPortalContent();
+  const catalogue = await listCatalogueEntries();
+  const visibleCourses = category === "All" ? courses : courses.filter((course) => courseCategoryId(course, content.categories, catalogue) === category);
   const categories = [{ id: "All", labels: { "en-GB": copy.allCategories, "zh-CN": copy.allCategories } }, ...content.categories];
 
   return (
@@ -26,7 +28,7 @@ export default async function CoursesPage({ params, searchParams }: { params: Pr
       <section className="portal-section portal-section-first portal-catalog-courses">
         <div className="portal-section-heading"><div><h2>{copy.exploreAllCourses}</h2><p className="portal-section-description">{copy.exploreDescription}</p></div></div>
         <nav className="portal-category-filter" aria-label={copy.category}>{categories.map(item => <Link key={item.id} prefetch={false} className={category === item.id ? "active" : ""} aria-current={category === item.id ? "page" : undefined} href={`/${locale}/portal/courses?category=${encodeURIComponent(item.id)}`}>{item.labels[locale]}</Link>)}</nav>
-        {visibleCourses.length ? <div className="portal-course-grid">{await Promise.all(visibleCourses.map(async course => <CatalogueCourseCard key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
+        {visibleCourses.length ? <div className="portal-course-grid">{await Promise.all(visibleCourses.map(async course => <CatalogueCourseCard key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={courseCategoryLabel(course, content.categories, locale, catalogue)} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
       </section>
       <section className="courses-design-method"><div><p className="portal-eyebrow">{copy.whyUs}</p><h2>{copy.whyUsTitle}</h2><p>{copy.exploreDescription}</p></div><ol><li>Apply what you learn</li><li>Share your perspective</li><li>See the bigger picture</li></ol></section>
       <PortalFooter locale={locale} />

@@ -84,7 +84,7 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
               <div className="account-learning-card-content">
                 <h3>{item.courseTitle}</h3>
                 {item.cardState === "withdrawn" ? <p className="course-withdrawn-label">{copy.courseWithdrawn}</p> : <>
-                  <p className="overview-course-meta">{categoryLabel(item.courseCategory)} · {item.lessonCount} {copy.lessons.toLowerCase()} · {stateLabel(item)}</p>
+                  <p className="overview-course-meta">{[item.courseCategory ? categoryLabel(item.courseCategory) : "", `${item.lessonCount} ${copy.lessons.toLowerCase()}`, stateLabel(item)].filter(Boolean).join(" · ")}</p>
                   <p className="overview-course-description" title={item.cardState === "learning" || item.cardState === "completed" ? item.courseDescription : item.cardState === "previewing" ? design.previewDescription : item.cardState === "progress_failed" ? design.progressUnavailable : design.outsideAccess}>{item.cardState === "learning" || item.cardState === "completed" ? item.courseDescription : item.cardState === "previewing" ? design.previewDescription : item.cardState === "preview_limit" ? design.previewLimit : item.cardState === "progress_failed" ? design.progressUnavailable : design.outsideAccess}</p>
                   {item.progressFailed || item.progress == null ? null : <>
                     <div className="overview-course-progress" role="progressbar" aria-label={`${item.courseTitle}: ${copy.progress}`} aria-valuenow={item.progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${item.progress}%` }} /></div>

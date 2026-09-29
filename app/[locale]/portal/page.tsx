@@ -2,7 +2,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { getPortalContent, listPublishedCourses } from "@/services/productStore";
+import { courseCategoryLabel } from "@/lib/courseDetailPresentation";
+import { getPortalContent, listCatalogueEntries, listPublishedCourses } from "@/services/productStore";
 import { currentProductUser } from "@/services/productAuth";
 import { CatalogueCourseCard } from "@/components/portal/CatalogueCourseCard";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -18,6 +19,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
   const home = getMessages(locale).homeDesign;
   const courses = await listPublishedCourses();
   const content = await getPortalContent();
+  const catalogue = await listCatalogueEntries();
   const user = await currentProductUser();
 
   return (
@@ -27,7 +29,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
 
       <section className={styles.courses} aria-labelledby="course-heading">
         <h2 id="course-heading">{home.popular}</h2>
-        {courses.length ? <div className={styles.courseGrid}>{await Promise.all(courses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
+        {courses.length ? <div className={styles.courseGrid}>{await Promise.all(courses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={courseCategoryLabel(course, content.categories, locale, catalogue)} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
         <Link prefetch={false} className={styles.allCourses} href={`/${locale}/portal/courses`}>{home.allCourses}</Link>
       </section>
 

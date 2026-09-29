@@ -3,8 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryPlan, courseLessonDuration } from "@/lib/courseDetailPresentation";
-import { getCoursePage, getProductCourse, listPlans } from "@/services/productStore";
+import { courseCategoryLabel, courseCategoryPlan, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { getCoursePage, getPortalContent, getProductCourse, listCatalogueEntries, listPlans } from "@/services/productStore";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -26,6 +26,9 @@ export default async function CourseDetailPage({ params }: {
   const copy = messages.portal;
   const detail = messages.courseDetailDesign;
   const identity = page.identity;
+  const content = await getPortalContent();
+  const catalogue = await listCatalogueEntries();
+  const categoryLabel = course ? courseCategoryLabel(course, content.categories, locale, catalogue) : "";
   const catalogHref = `/${locale}/portal/courses`;
   const plans = page.pageState === "available" ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
@@ -55,13 +58,13 @@ export default async function CourseDetailPage({ params }: {
         <nav className={styles.breadcrumb} aria-label={detail.breadcrumb}>
           <Link href={`/${locale}/portal`}>{detail.home}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} />
           <Link href={catalogHref}>{copy.navigation.courses}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} />
-          <Link href={`${catalogHref}?category=${encodeURIComponent(identity.track)}`}>{identity.track}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} />
+          {categoryLabel ? <><Link href={`${catalogHref}?category=${encodeURIComponent(identity.track)}`}>{categoryLabel}</Link><Image src={asset("chevron-right")} alt="" width={12} height={12} /></> : null}
           <span aria-current="page">{detail.courseInfo}</span>
         </nav>
         <section className={styles.hero}>
           <div className={styles.cover}><CourseThumbnail slug={course?.slug || slug} title={identity.title} src={signedCover} /></div>
           <div className={styles.heroCopy}>
-            <p className={styles.tag} data-course-track={identity.track}>{identity.track}</p>
+            <p className={styles.tag} data-course-track={identity.track}>{categoryLabel}</p>
             <h1 data-course-title={identity.title}>{identity.title}</h1>
             <p className={styles.summary}>{course?.subtitle || course?.description || ""}</p>
             <div className={styles.stats} data-preview-available={identity.previewAvailable ? "true" : "false"}>

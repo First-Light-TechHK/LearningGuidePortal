@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { checkEntitlement, getLearningOverview, getProductCourse, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
+import { courseCategoryLabel } from "@/lib/courseDetailPresentation";
+import { checkEntitlement, getLearningOverview, getPortalContent, getProductCourse, listCatalogueEntries, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
 import { currentProductUser } from "@/services/productAuth";
 import { PreviewProgress } from "@/components/portal/PreviewProgress";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -31,13 +32,15 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const record = overview?.courses.find(item => item.courseId === course.id);
   const next = course.sections.flatMap(section => section.lessons).find(item => item.isPublic && item.id !== lesson.id && !record?.completedLessonIds.includes(item.id));
   const publishedCourses = await listPublishedCourses();
+  const content = await getPortalContent();
+  const catalogue = await listCatalogueEntries();
   const recommendationCourses = publishedCourses.slice(0, 2);
   const recommendations = recommendationCourses
     .map(item => ({
       title: item.title,
       href: `/${locale}/portal/courses/${item.id}`,
       image: item.cover || item.thumbnailPath || courseImageFor(item.slug || item.id),
-      category: item.category
+      category: courseCategoryLabel(item, content.categories, locale, catalogue)
     }));
   for (const recommendation of recommendations) recommendation.image = await signCourseMediaUrl(recommendation.image || "");
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {

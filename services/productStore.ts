@@ -22,6 +22,7 @@ import {
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
+import { courseCategoryId } from "@/lib/courseDetailPresentation";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
@@ -433,7 +434,7 @@ export async function readProductAggregate() {
     current.catalogueMigrations ||= [];
     current.dataMigrations ||= [];
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
-    current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
+    current.courses.forEach((course) => { course.thumbnailPath ??= null; });
     current.plans.forEach((plan) => {
       if (plan.id.startsWith("epicureanism-pc-")) {
         plan.scope = "course";
@@ -977,6 +978,17 @@ export async function listPublishedCourses() {
   return data.courses.filter((course) => course.status === "published");
 }
 
+export async function listCatalogueEntries() {
+  return (await ensureProductData()).catalogue || [];
+}
+
+function categoryDisplay(data: ProductData) {
+  return {
+    categories: (data.portalContent || defaultPortalContent).categories,
+    catalogue: data.catalogue || [],
+  };
+}
+
 export async function getProductCourse(slug: string) {
   const data = await ensureProductData();
   return data.courses.find((course) => course.slug === slug || course.id === slug) || null;
@@ -994,6 +1006,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       accessState: "none",
       openedLessonIds: [],
       completedLessonIds: [],
+      ...categoryDisplay(data),
     });
   }
 
@@ -1026,6 +1039,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       accessState,
       openedLessonIds,
       completedLessonIds,
+      ...categoryDisplay(data),
     });
   });
 }
@@ -1773,7 +1787,7 @@ export async function getLearningOverview(userId: string) {
         currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
-        courseCategory: course?.category || "European Humanities",
+        courseCategory: courseCategoryId(course, (data.portalContent || defaultPortalContent).categories, data.catalogue || []),
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
         courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,

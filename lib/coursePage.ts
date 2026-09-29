@@ -1,7 +1,9 @@
+import { courseCategoryId, type CatalogueCategoryRef } from "@/lib/courseDetailPresentation";
 import {
   courseProgressFromUniqueLearningPoints,
   type AccessState,
 } from "@/lib/myLearningOverview";
+import { defaultPortalContent, type PortalCategory } from "@/lib/portalContent";
 
 /** D1 Course page primitives — identity, syllabus access, CTA bands. */
 export type CoursePageState = "available" | "withdrawn" | "failed";
@@ -44,16 +46,22 @@ export type CoursePage = {
 type CourseLike = {
   title: string;
   category?: string | null;
+  categoryId?: string | null;
+  subjectId?: string | null;
   status: string;
   sections: Array<{ lessons: Array<{ id: string; title: string; isPublic: boolean; durationMinutes?: number }> }>;
 };
 
 /** D1.1 Identity is title / track / lesson count / preview-available from the store. */
-export function courseIdentityFrom(course: CourseLike): CourseIdentity {
+export function courseIdentityFrom(
+  course: CourseLike,
+  categories: readonly PortalCategory[] = defaultPortalContent.categories,
+  catalogue: readonly CatalogueCategoryRef[] = [],
+): CourseIdentity {
   const lessons = course.sections.flatMap((section) => section.lessons);
   return {
     title: course.title,
-    track: course.category || "European Humanities",
+    track: courseCategoryId(course, categories, catalogue),
     lessonCount: lessons.length,
     previewAvailable: lessons.some((lesson) => lesson.isPublic),
     totalMinutes: lessons.reduce((total, lesson) => total + (lesson.durationMinutes || 0), 0),
@@ -121,6 +129,8 @@ export function buildCoursePage(input: {
   accessState: AccessState;
   openedLessonIds: string[];
   completedLessonIds: string[];
+  categories?: readonly PortalCategory[];
+  catalogue?: readonly CatalogueCategoryRef[];
 }): CoursePage {
   if (!input.course) return emptyFailedCoursePage();
   const pageState: CoursePageState = input.course.status === "published" ? "available" : "withdrawn";
@@ -139,7 +149,7 @@ export function buildCoursePage(input: {
   });
   return {
     pageState,
-    identity: courseIdentityFrom(input.course),
+    identity: courseIdentityFrom(input.course, input.categories, input.catalogue),
     syllabus: lessons.map((lesson) => {
       const access = syllabusAccessForLesson({
         pageState,
