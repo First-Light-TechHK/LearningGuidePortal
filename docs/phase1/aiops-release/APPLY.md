@@ -13,7 +13,7 @@ export PYTHONPATH=/tmp/AIOps
 # pip 不会装出 forge 命令；必须 PYTHONPATH + python3 -m overlay / python3 -m forge
 ```
 
-本目录的 lander（`000*.patch`、`land-docs-pin.sh`）是 **历史**：当时 agent 推不了 AIOps。新的 AIOps 改动走 `dev` → `forge promote` → `main`。`1.0.x` 与 `2.0.0` / `1.1.2` 的 GitHub Release 页面仍需 Oliver 每个 tag 点一次。
+本目录的 lander（`000*.patch`、`land-docs-pin.sh`）是 **历史**：当时 agent 推不了 AIOps。新的 AIOps 改动走 `dev` → `forge promote` → `main`。已发布 tag 的 GitHub Release 页已补齐；新 semver 仍走 `forge release`。不要拿 Latest 当针（可能仍是 `forge-v1.0.0`）。`overlay-v2.0.0` peel 不含 Forge 1.1.3，必须第二针。
 
 **不要抄下面历史块。** 针脚与「Humans arm」叙述已过期。第一条可复制命令是上面的 `overlay-v2.0.0`，不是 `checkout overlay-v1.0.1`。
 

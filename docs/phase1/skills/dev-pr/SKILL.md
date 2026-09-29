@@ -10,7 +10,7 @@ metadata:
 
 # Dev PR（Learning Guide）
 
-写产品代码和 Overlay 文件。不管合入锁。Pin `/tmp/AIOps` 为 `overlay-v2.0.0`（Forge CLI 用 `forge-v1.1.2`）。SOP：[`use-forge`](../use-forge/SKILL.md)、[`use-overlay`](../use-overlay/SKILL.md)。权威步骤见工具仓 [dev-pr](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/skills/dev-pr/SKILL.md)。路径图：[dev-main-flow.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/docs/dev-main-flow.md)。
+写产品代码和 Overlay 文件。不管合入锁。Pin `/tmp/AIOps` 为 `overlay-v2.0.0`（Forge CLI 必须另 checkout `forge-v1.1.3`；Overlay 针 peel 仍是 Forge 1.1.0）。SOP：[`use-forge`](../use-forge/SKILL.md)、[`use-overlay`](../use-overlay/SKILL.md)。权威步骤见工具仓 [dev-pr](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.3/skills/dev-pr/SKILL.md)。路径图：[dev-main-flow.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.3/docs/dev-main-flow.md)。
 
 ## Instructions
 

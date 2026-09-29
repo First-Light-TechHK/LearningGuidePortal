@@ -78,7 +78,7 @@ Overlay 契约：[`use-overlay`](../use-overlay/SKILL.md)。
 ## Examples
 
 ```text
-PYTHONPATH=/tmp/AIOps python3 -m forge check --root . --title "feat: adopt Overlay 2.0.0 and Forge 1.1.2 with dev/main"
+PYTHONPATH=/tmp/AIOps python3 -m forge check --root . --title "feat: adopt Overlay 2.0.0 and Forge 1.1.3 with dev/main"
 ```
 
 非法：`required_checks: [Verify]`。非法：live `forge apply`。非法：pin `main`。

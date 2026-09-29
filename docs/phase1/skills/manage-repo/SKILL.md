@@ -12,13 +12,13 @@ metadata:
 
 **本 skill 只给 Oliver。Agent 不得执行下面任何一步。**
 
-审和合在 **GitHub**。权威步骤见工具仓 [manage-repo](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/skills/manage-repo/SKILL.md)。路径：[dev-main-flow.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/docs/dev-main-flow.md)。配置：[forge-config.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/docs/forge-config.md)。入口：[`AGENTS.md`](../../../../AGENTS.md)、[`overlay-forge-brief.md`](../../overlay-forge-brief.md)、[`APPLY.md`](../../aiops-release/APPLY.md)。
+审和合在 **GitHub**。权威步骤见工具仓 [manage-repo](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.3/skills/manage-repo/SKILL.md)。路径：[dev-main-flow.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.3/docs/dev-main-flow.md)。配置：[forge-config.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.3/docs/forge-config.md)。入口：[`AGENTS.md`](../../../../AGENTS.md)、[`overlay-forge-brief.md`](../../overlay-forge-brief.md)、[`APPLY.md`](../../aiops-release/APPLY.md)。
 
 `FORGE_GITHUB_TOKEN`（Ruleset / apply）和 `FORGE_SUBMIT_TOKEN`（代推）是两把钥匙，都由 Oliver 配成环境密钥。agent 永不粘贴。
 
 ## Instructions
 
-1. **`forge apply`（Oliver，持 `FORGE_GITHUB_TOKEN`）**，对 fork 的 `dev`+`main`。不要从 Overlay CI 跑 live apply。agent 不做。
+1. **`forge apply`（Oliver，持 `FORGE_GITHUB_TOKEN`）**，对 fork 的 `dev`+`main`。必须 `--path` 指向**本仓** `forge.yaml`（在本仓根执行）。不要在 AIOps 工具仓根对 LG `--repo` apply（会写入工作本的 `pr-title` / `sop-lock` / `unittest`）。不要从 Overlay CI 跑 live apply。agent 不做。
 
 ```text
 PYTHONPATH=/tmp/AIOps python3 -m forge apply --repo LibertychaserUS/LearningGuidePortal --path forge.yaml --dry-run
@@ -26,7 +26,7 @@ PYTHONPATH=/tmp/AIOps python3 -m forge apply --repo LibertychaserUS/LearningGuid
 PYTHONPATH=/tmp/AIOps python3 -m forge status --repo LibertychaserUS/LearningGuidePortal --root . --write docs/STATE.md
 ```
 
-每个保护分支一条 `forge-protected-<branch>`，另加 `forge-protected-tags`。AIOps 工具仓自己也要 apply（见 [`overlay-forge-issues.md`](../../overlay-forge-issues.md) OF-08）。
+每个保护分支一条 `forge-protected-<branch>`，另加 `forge-protected-tags`。AIOps 工具仓自己也要 apply，用 **AIOps** 的 `forge.yaml`（见 [`overlay-forge-issues.md`](../../overlay-forge-issues.md) OF-08）。
 
 2. **Required checks** 是 PR 上的 **CI job 名**：`Typecheck` / `Lint` / `Build and test` / `overlay-check` / `forge-check`。不要抄 workflow 名 `Verify`。`dev` 无人批；`main` 要 1 个 approvals + CODEOWNERS。
 
@@ -38,7 +38,7 @@ PYTHONPATH=/tmp/AIOps python3 -m forge status --repo LibertychaserUS/LearningGui
 
 6. **审 PR 的两项职责（人和审查 agent 都适用）。** 一、正文与 diff 逐条对账：「做了什么」每条能在 `git diff --stat` 里找到；diff 里的工作流 / 套件 `status` / 配置 / 迁移改动正文必须写；对不上 → request changes，列出条目。二、全局上下文：`docs/STATE.md` 是否随配置重生成；[`overlay-forge-issues.md`](../../overlay-forge-issues.md) 是否登记 / 改状态；brief 是否按 `docs_sync` 表同步；契约变更有没有 ADR；工具仓改动有没有 `CHANGELOG.md`。缺就点名到文件再批。规则出处：[`AGENTS.md`](../../../../AGENTS.md) §PR 审查。内容包按层配对是补设计（brief §5 / OF-23，待接受）：agent 包不得带 `.github/workflows/`；升针不要和功能切片混在一单。未接受前不要加新锁。先设计后实现。
 
-7. **AIOps 发布：** Oliver 点工具仓 `release` workflow。每个 tag 的 GitHub Release 页面仍需 Oliver 点一次。不要 force-move 已有针。官方针 `overlay-v2.0.0` / `forge-v1.1.2`。记录见 [`APPLY.md`](../../aiops-release/APPLY.md)。
+7. **AIOps 发布：** 已发布 tag 的 GitHub Release 页已补齐（`overlay-v1.0.1`…`overlay-v2.0.0`，`forge-v1.0.1`…`forge-v1.1.3`）。新 semver 仍走 `forge release` / `release` workflow。不要 force-move。不要拿 Latest 徽章当针（可能仍是 `forge-v1.0.0`）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`。记录见 [`APPLY.md`](../../aiops-release/APPLY.md)。
 
 ## Never
 

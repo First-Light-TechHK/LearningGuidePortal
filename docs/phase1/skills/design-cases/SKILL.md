@@ -10,7 +10,7 @@ metadata:
 
 # Design Cases（Learning Guide）
 
-写任何 `cases.md` 之前先定义 Overlay「满覆盖」。操作 Overlay 用 [`use-overlay`](../use-overlay/SKILL.md)。权威方法见工具仓 [design-cases](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/skills/design-cases/SKILL.md)。产品叶子与锁状态：[`overlay-forge-brief.md`](../../overlay-forge-brief.md) §7–§8。
+写任何 `cases.md` 之前先定义 Overlay「满覆盖」。操作 Overlay 用 [`use-overlay`](../use-overlay/SKILL.md)。权威方法见工具仓 [design-cases](https://github.com/LibertychaserUS/AIOps/blob/overlay-v2.0.0/skills/design-cases/SKILL.md)。产品叶子与锁状态：[`overlay-forge-brief.md`](../../overlay-forge-brief.md) §7–§8。
 
 ## Instructions
 

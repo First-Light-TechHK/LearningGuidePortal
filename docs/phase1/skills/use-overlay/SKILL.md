@@ -11,7 +11,7 @@ metadata:
 
 # Use Overlay（Learning Guide）
 
-本仓薄操作说明。权威契约见工具仓 [use-overlay](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/skills/use-overlay/SKILL.md) 与 [overlay-contract.md](https://github.com/LibertychaserUS/AIOps/blob/forge-v1.1.2/docs/overlay-contract.md)。
+本仓薄操作说明。权威契约见工具仓 [use-overlay](https://github.com/LibertychaserUS/AIOps/blob/overlay-v2.0.0/skills/use-overlay/SKILL.md) 与 [overlay-contract.md](https://github.com/LibertychaserUS/AIOps/blob/overlay-v2.0.0/docs/overlay-contract.md)。
 
 Overlay 把需求叶子变成可审套件。CI 只跑 **`active`**。`blocked` 丢掉，且不得把 `overlay-check` 染红。
 

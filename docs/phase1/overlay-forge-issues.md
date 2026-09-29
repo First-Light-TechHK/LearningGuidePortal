@@ -4,7 +4,7 @@
 
 编号 `OF-nn`。状态：**待定意图**（要 Oliver 拍板）/ **待修** / **已修** / **不修**（写原因）。
 
-基线（2026-09-14）：Learning Guide `origin/dev` `e53c382`（#21）；`origin/main` `1d7867d`（#22）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`（git tag @ `9071fa1`）。GitHub Release 页面仍只有 1.0.0 两条。两仓 Ruleset 均为 0。#22 是 #21 合完后的一条 promote。Oliver：leftover **应该一起**——先打 `dev`，合完再一条 promote。#17+#18 并行是反例。
+基线（2026-09-14）：Learning Guide `origin/dev` `5ae17e9`（pin `forge-check.yml` → `forge-v1.1.3`）；`origin/main` `8bac302`（随后一条 promote）。官方针 `overlay-v2.0.0` / `forge-v1.1.3`（git tag @ `9071fa1`）。GitHub Release 页已补齐；Latest 徽章仍可能是 `forge-v1.0.0`（`make_latest=false`）。两仓 Ruleset 均为 0。Oliver：leftover **应该一起**——先打 `dev`，合完再一条 promote。#17+#18 并行是反例。
 
 ---
 
@@ -172,16 +172,13 @@
 - 和 OF-21 分工：OF-21 = 正文 ↔ diff；本条 = 这一单该装哪一层。
 - 2026-09-14 Oliver：leftover **应该一起**。正确链是先打 `dev`，合完再一条 `dev` → `main` promote。#17 打 `dev`、#18 同时打 `main` 是权宜，不是设计。本 PR 把这条写进 brief §0 / §5 和 `$dev-pr`。未接受前仍不加新锁。
 
-### OF-24 别人冷启动：错针 / 空根假绿 / Release 仍是 1.0.0 — 待修（工具仓 stranger 枝已推；发针与 Release 页是 Ops）
+### OF-24 别人冷启动：错针 / 空根假绿 / Release 仍是 1.0.0 — 部分已修（2026-09-14）
 
-- 现象：把 Forge 当标准工具、按已发布针冷启动，会踩三处假红 / 假绿 / 错针。
-  1. **错针。** 已发布 `use-forge`（`overlay-v2.0.0` / `forge-v1.1.2` / `main`）仍写 `git checkout overlay-v1.0.1`、目标 `forge-v1.1.0`。`overlay-v2.0.0` 自带的 Forge 是 1.1.0，在本仓 `forge check` 会红（`docs_sync` 扫 `node_modules` / 站点根链接）。工作 CLI 是 **`forge-v1.1.2`**。AIOps `origin/dev` 已改双 checkout；未 promote、未发新针，陌生人 `gh skill install --pin overlay-v2.0.0` 仍装到错的 skill。
-  2. **空根假绿。** `python3 -m forge check` 在既无 `forge.yaml` 又无 `overlay.yaml` 的目录逐步 skip 再打印 `forge check: ok`。AIOps 枝 `cursor/forge-stranger-check-9bdf` @ `4f8077d` 已改成退出 2（「不是产品根；先 cd」）。未合 `dev`、未发 `forge-v1.1.3`。
-  3. **Release「Latest」仍是 1.0.0。** `overlay-v2.0.0` / `forge-v1.1.2` 只有 git tag；GitHub Release 页只有 Overlay 1.0.0 / Forge 1.0.0。
-- 另：`pip install -r requirements.txt` **不会** 装出 `forge` 命令，必须 `PYTHONPATH` + `python3 -m`。两针：Overlay 用 `overlay-v2.0.0`，Forge CLI 用 `forge-v1.1.2`（发 1.1.3 后改成 1.1.3）。不要只用 Overlay 针当 Forge。
-- 不是修法：pin `main`；force-move `1.1.2`；agent 改本仓 `.github/workflows/`；接受 OF-23 / ADR 0007；加新 `docs_sync`；把升针和 cases 塞进同一单。
-- **OF-22 本 PR 升针。** git tag `forge-v1.1.3` @ `9071fa1` 已推。GitHub Release 页仍缺（cursor token 403）。`apply` 仍缺 `FORGE_GITHUB_TOKEN`。
-- 本仓本 PR：`suites/*/cases.md` 首段去掉 `armed` / `draft` / 「human arms」，写成 `active`（不改 `suite.yaml` `status`）；brief §6 补 `order` / `visitor-trial` 与 `INV-expired-no-learn`；APPLY.md 文首加粗「不要抄下面历史块」，历史 `checkout overlay-v1.0.1` 不再是第一条可复制命令；`docs/STATE.md` 用 `forge-v1.1.2` `--write`。
+- **已修：** `forge-v1.1.3` @ `9071fa1` 上空根 `check` 退出 2。本仓 CI pin `forge-v1.1.3`。GitHub Release 页已补齐（`overlay-v1.0.1` / `overlay-v2.0.0` / `forge-v1.0.1`…`forge-v1.1.3`）。
+- **仍真：** `overlay-v2.0.0` peel 仍是 Forge **1.1.0**（只 checkout Overlay 针 → 空根假绿）。`forge-v1.1.3` **tag 上的** `use-forge` / README 仍写当前针 `1.1.2`（发针时写「发 1.1.3 后再改」）；要读到改口必须看 AIOps `dev`/`main` 上未发的文档提交，或等下一针。GitHub Latest 徽章仍是 `forge-v1.0.0`（`make_latest=false`，不是「页还缺」）。
+- 另：`pip install -r requirements.txt` **不会** 装出 `forge` 命令，必须 `PYTHONPATH` + `python3 -m`。两针：Overlay `overlay-v2.0.0`，Forge CLI `forge-v1.1.3`。`gh skill install --pin overlay-v2.0.0 --all` 会装到 Overlay 针上的旧 Forge 文案。
+- 不是修法：pin `main`；force-move `1.1.2` / `1.1.3`；agent 改本仓 `.github/workflows/`；接受 OF-23 / ADR 0007；加新 `docs_sync`。
+- 本仓本 PR：薄 skill（`dev-pr` / `manage-repo` / `use-overlay` / `design-cases`）改口到 `forge-v1.1.3` / `overlay-v2.0.0`；APPLY 文首不再说「每个 tag 再点一次 Release」；`docs/STATE.md` 用 `forge-v1.1.3` `--write`。
 
 ---
 
@@ -195,8 +192,8 @@
 |---|---|---|
 | OF-01 | `FORGE_SUBMIT_TOKEN`（fork `contents:write` + `pull_requests:write`） | 配环境密钥；源仓 admin PAT 不算 |
 | OF-03 | deploy key 持久化 / Path B | 密钥轮 |
-| OF-08 | `forge apply`（LG `dev`+`main` 与 AIOps；现在 Ruleset = 0） | 要 `FORGE_GITHUB_TOKEN`；cursor token 403 |
-| OF-14 余 / OF-24 余 | GitHub Release 页面（Latest 仍是 1.0.0；`forge-v1.1.3` 只有 git tag @ `9071fa1`） | 人点 Release；cursor token 403 |
+| OF-08 | `forge apply`（LG `dev`+`main` 与 AIOps；现在 Ruleset = 0） | Ops 持 `FORGE_GITHUB_TOKEN`，`--path` 必须是那一仓自己的 `forge.yaml` |
+| OF-24 余 | Overlay 针 peel 仍是 Forge 1.1.0；`forge-v1.1.3` tag 文案仍写 1.1.2；Latest 徽章仍是 1.0.0 | 工具仓文档改口（本轮）；不 force-move；不把 Latest 当针 |
 
 本轮可做 / 已开：
 
@@ -204,8 +201,8 @@
 |---|---|
 | [#21](https://github.com/LibertychaserUS/LearningGuidePortal/pull/21) | 已合 `dev`（`e53c382`） |
 | [#22](https://github.com/LibertychaserUS/LearningGuidePortal/pull/22) | 已合 `main`（`1d7867d`）；#21 合完后一条 promote |
-| AIOps `dev`/`main` | 已快进到 `9071fa1`（开 PR 403，deploy key FF） |
-| `forge-v1.1.3` | annotated tag @ `9071fa1`。Release 页未建 |
+| pin `forge-v1.1.3` | `dev` `5ae17e9` → `main` `8bac302` |
+| AIOps `dev`/`main` | `9071fa1`；tag `forge-v1.1.3`；Release 页已补齐 |
 
 仍待拍板（不要密钥也能定）：
 
@@ -244,3 +241,4 @@
 - 2026-09-14：#17 squash 合入 `dev`（`535778a`）；#18 merge 合入 `main`（`a25ca70`）。Oliver 指出 leftover 应该一起（先 `dev` 再一条 promote）。#19 合入 `dev`（`bf276d8`）；#20 是随后一条 promote 合入 `main`（`7dd9b3d`）。
 - 2026-09-14 #21 合入 `dev`（`e53c382`）；#22 promote 合入 `main`（`1d7867d`）。
 - 2026-09-14 本 PR：OF-22 升针 `forge-check.yml` → `forge-v1.1.3`。AIOps `dev`/`main`/`forge-v1.1.3` @ `9071fa1`。Release 页与 `apply` 仍 403。
+- 2026-09-14 随后：Release 页已补齐。本 PR：薄 skill / APPLY / OF-24 / STATE 改口；`apply` 仍未 live（OF-08）。
