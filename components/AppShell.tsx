@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
-  Bell,
   ChevronDown,
   FileText,
   MessageCircle,
@@ -17,6 +16,8 @@ import {
   ArrowRight,
   Youtube
 } from "lucide-react";
+import { ShellViewer } from "@/components/ShellViewer";
+import { shellViewerFromUser, type ShellViewerModel } from "@/lib/shellViewer";
 
 const steps = [
   { number: 1, label: "Source Materials", segment: "source-materials" },
@@ -53,6 +54,7 @@ type Course = { id: string; title: string; knowledge: Knowledge[] };
 type NavigationData = {
   courses: Course[];
   counts: { videoCount: number; documentCount: number; qaNotesCount: number };
+  viewer?: { name?: unknown; role?: unknown; nickname?: unknown } | null;
 };
 
 function contextFromPath(pathname: string) {
@@ -83,7 +85,7 @@ function hasKnowledgeTarget(nav: NavigationData, courseId: string, knowledgeId: 
   return nav.courses.some((course) => course.id === courseId && course.knowledge.some((knowledge) => knowledge.id === knowledgeId));
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, viewer: viewerProp }: { children: React.ReactNode; viewer?: ShellViewerModel | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const current = activeStep(pathname);
@@ -105,11 +107,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     economics: true,
     philosophy: true
   });
+  const [viewer, setViewer] = useState<ShellViewerModel | null>(viewerProp ?? null);
 
   async function refreshNavigation() {
     const res = await fetch(`/api/navigation?courseId=${context.courseId}&knowledgeId=${context.knowledgeId}`, { cache: "no-store" });
     const data = await res.json() as NavigationData;
     setNav(data);
+    if (viewerProp === undefined) {
+      const named = data.viewer && typeof data.viewer === "object"
+        ? shellViewerFromUser({
+          nickname: typeof data.viewer.name === "string" ? data.viewer.name : typeof data.viewer.nickname === "string" ? data.viewer.nickname : "",
+          role: typeof data.viewer.role === "string" ? data.viewer.role : ""
+        })
+        : null;
+      setViewer(named);
+    }
 
     if (showWorkflowStepper && !context.isCoursePage && !hasKnowledgeTarget(data, context.courseId, context.knowledgeId)) {
       const target = firstKnowledgeTarget(data);
@@ -197,14 +209,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <input aria-label="Search" placeholder="Search anything" />
           </label>
           <div className="top-actions">
-            <button className="icon-button top-icon" aria-label="Notifications"><Bell size={18} /></button>
-            <div className="profile">
-              <Image className="avatar" src="/avatar.svg" alt="Prof. Gordon" width={34} height={34} loading="eager" unoptimized />
-              <div>
-                <div className="profile-name">Prof. Gordon <ChevronDown size={13} /></div>
-                <div className="profile-role">Subject Expert</div>
-              </div>
-            </div>
+            <ShellViewer viewer={viewerProp === undefined ? viewer : viewerProp} />
           </div>
         </div>
       </header>
