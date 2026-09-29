@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";

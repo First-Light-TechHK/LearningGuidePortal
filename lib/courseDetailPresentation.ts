@@ -7,6 +7,11 @@ export function courseLessonDuration(lesson?: Pick<ProductLesson, "durationMinut
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+export function courseLessonCardDescription(section: { title: string }, lesson: { title: string }) {
+  void lesson;
+  return section.title;
+}
+
 export function courseCategoryPlan(plans: ProductPlan[], category: string) {
   return plans.find((plan) => plan.scope === "category" && plan.device === "pc" &&
     plan.termMonths === 6 && plan.available !== false && (plan.scopeId || plan.category) === category);

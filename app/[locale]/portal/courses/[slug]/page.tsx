@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryPlan, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { courseCategoryPlan, courseLessonCardDescription, courseLessonDuration } from "@/lib/courseDetailPresentation";
 import { getCoursePage, getProductCourse, listPlans } from "@/services/productStore";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -39,7 +39,7 @@ export default async function CourseDetailPage({ params }: {
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
     duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
-    description: section.title,
+    description: courseLessonCardDescription(section, lesson),
   }] as const)) || []);
 
   return (
