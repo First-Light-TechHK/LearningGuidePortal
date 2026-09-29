@@ -13,6 +13,9 @@ export function CookieConsent({ locale }: { locale: Locale }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    const host = window.location.hostname;
+    const path = window.location.pathname;
+    if (host.startsWith("admin.") || path.includes("/backoffice")) return;
     setVisible(window.localStorage.getItem(COOKIE_PREFERENCE) === null);
   }, []);
 

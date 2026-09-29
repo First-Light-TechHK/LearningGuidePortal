@@ -52,11 +52,11 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
   const pending = trial ? await createPendingStripeTrialOrderFromQuote(user.id, quoted.quote.id)
     : upgrade ? await createPendingStripeUpgradeOrderFromQuote(user.id, quoted.quote.id) : await createPendingStripeOrder(user.id, quoted.quote.id);
   const order = await prepareStripeCheckout(user.id, pending.order.id, origin, locale);
-  if (order.status === "paid") return { order, checkoutUrl: `/${locale}/portal/payment/success?orderId=${encodeURIComponent(order.id)}` };
+  if (order.status === "paid") return { order, checkoutUrl: `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(order.id)}` };
   if (order.stripeCheckoutSessionId) {
     const session = await getStripe().checkout.sessions.retrieve(order.stripeCheckoutSessionId);
     if (session.status === "expired") throw new PaymentError("quote_expired");
-    if (session.status === "complete") return { order, checkoutUrl: `/${locale}/portal/payment/success?orderId=${encodeURIComponent(order.id)}` };
+    if (session.status === "complete") return { order, checkoutUrl: `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(order.id)}` };
     if (session.url) return { order, checkoutUrl: session.url };
   }
   const input = { origin: order.checkoutOrigin!, locale: order.checkoutLocale!, userEmail: user.email, orderId: order.id, userId: user.id, quoteId: order.quoteId, planId: pending.plan.id, courseId: pending.plan.courseId, scopeType: pending.plan.scope, scopeId: pending.plan.scopeId || pending.plan.category, planName: pending.plan.name, amountMinor: price.amountMinor, currency: price.currency, termMonths: price.termMonths, price };

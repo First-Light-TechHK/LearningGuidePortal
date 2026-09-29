@@ -1,15 +1,18 @@
 import { runtimeConfiguration } from "@/services/runtimeConfig";
+import { deploymentReadiness } from "@/services/deploymentReadiness";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const configuration = runtimeConfiguration();
+  const readiness = await deploymentReadiness();
   return Response.json({
     ok: true,
     service: "learning-guide",
     environment: configuration.environment,
     version: process.env.APP_VERSION || "local",
-    ready: configuration.ready,
+    ready: readiness.ready,
+    checks: readiness.checks,
     missing: configuration.missing
-  }, { status: configuration.production && !configuration.ready ? 503 : 200 });
+  }, { status: !readiness.ready ? 503 : 200, headers: { "Cache-Control": "no-store" } });
 }

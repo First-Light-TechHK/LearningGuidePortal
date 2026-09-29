@@ -15,7 +15,7 @@ locale: en-GB
 
 # Intent
 
-Visitor / Trial. Cases are black-box I/O against trial quote, `/api/trial`, demo confirm, entitlement check, and study/events. The suite is armed: Overlay CI runs TRIAL-01/02 HTTP I/O.
+Visitor / Trial. Cases are black-box I/O against trial quote, `/api/trial`, demo confirm, entitlement check, and study/events. The suite is active: Overlay CI runs TRIAL-01/02 HTTP I/O. Spec I/O is the authority; product red means fix the product.
 
 # In scope
 
@@ -39,4 +39,4 @@ Visitor / Trial. Cases are black-box I/O against trial quote, `/api/trial`, demo
 
 # Notes
 
-`readiness: not-ready` is a hint only. Do not arm until a human claims the visitor HTTP path. Executable I/O lives in `tests/io/visitor-trial.test.ts`. TRIAL-01 / TRIAL-02 are unique; they cover the visitor face of PAY-01 / PAY-10.
+`readiness: not-ready` is a hint only. Executable I/O lives in `tests/io/visitor-trial.test.ts`. TRIAL-01 / TRIAL-02 are unique; they cover the visitor face of PAY-01 / PAY-10. Do not rewrite PAY-10 / TRIAL-02 to accept a second complete or a trial after a paid purchase.

@@ -95,7 +95,7 @@ test.describe("E2E-B1-009", () => {
 test.describe("E2E-B1-010", () => {
   test("expired entitlement is not allowed", async () => {
     const store = await isolatedStore();
-    const { SYSTEM_ROOT } = await import("../../services/fileStore");
+    const { systemRoot } = await import("../../services/fileStore");
     const user = await store.registerUser({
       email: `e2e-010-${Date.now()}@example.test`,
       password: PASSWORD,
@@ -103,7 +103,7 @@ test.describe("E2E-B1-010", () => {
       locale: "en-GB",
     });
     await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
-    const file = path.join(SYSTEM_ROOT, "learning_guide", "product.json");
+    const file = path.join(systemRoot(), "learning_guide", "product.json");
     const data = JSON.parse(await readFile(file, "utf8"));
     data.entitlements.push({
       id: "expired-e2e-010",

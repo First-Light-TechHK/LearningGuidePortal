@@ -1,5 +1,5 @@
 import path from "path";
-import { atomicWriteJson, COURSES_ROOT, ensureDir, now, readJson, removeDir, safeSegment, slugify } from "./fileStore";
+import { atomicWriteJson, coursesRoot, ensureDir, now, readJson, removeDir, safeSegment, slugify } from "./fileStore";
 import { ensureKnowledgeDirs } from "./knowledgeStore";
 
 export type Course = {
@@ -18,12 +18,12 @@ export const DEFAULT_KNOWLEDGE_ID = "epicureanism";
 let scienceSeedState: "idle" | "running" | "done" = "idle";
 
 export function courseDir(courseId: string) {
-  return path.join(COURSES_ROOT, safeSegment(courseId));
+  return path.join(coursesRoot(), safeSegment(courseId));
 }
 
 export async function ensureDefaultData() {
-  await ensureDir(COURSES_ROOT);
-  const index = await readJson<CourseIndex>(path.join(COURSES_ROOT, "course_index.json"), { courseIds: [] });
+  await ensureDir(coursesRoot());
+  const index = await readJson<CourseIndex>(path.join(coursesRoot(), "course_index.json"), { courseIds: [] });
   if (!index.courseIds.length) {
     const time = now();
     const course: Course = {
@@ -35,7 +35,7 @@ export async function ensureDefaultData() {
     };
     await ensureDir(courseDir(course.id));
     await atomicWriteJson(path.join(courseDir(course.id), "course.json"), course);
-    await atomicWriteJson(path.join(COURSES_ROOT, "course_index.json"), { courseIds: [course.id] });
+    await atomicWriteJson(path.join(coursesRoot(), "course_index.json"), { courseIds: [course.id] });
     await ensureKnowledgeDirs(course.id, DEFAULT_KNOWLEDGE_ID);
     await atomicWriteJson(path.join(courseDir(course.id), "knowledge", DEFAULT_KNOWLEDGE_ID, "knowledge.json"), {
       id: DEFAULT_KNOWLEDGE_ID,
@@ -60,11 +60,11 @@ export async function ensureDefaultData() {
 
 async function readIndex() {
   await ensureDefaultData();
-  return readJson<CourseIndex>(path.join(COURSES_ROOT, "course_index.json"), { courseIds: [DEFAULT_COURSE_ID] });
+  return readJson<CourseIndex>(path.join(coursesRoot(), "course_index.json"), { courseIds: [DEFAULT_COURSE_ID] });
 }
 
 async function writeIndex(index: CourseIndex) {
-  await atomicWriteJson(path.join(COURSES_ROOT, "course_index.json"), index);
+  await atomicWriteJson(path.join(coursesRoot(), "course_index.json"), index);
 }
 
 export async function listCourses() {

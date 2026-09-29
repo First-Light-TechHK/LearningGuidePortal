@@ -1,8 +1,28 @@
 # Phase 1：发布和上线运行手册
 
+## LGTeacher Backoffice Integration Release
+
+The integration extends the existing backoffice and learner routes; do not deploy a second teacher frontend/backend. The source mapping, access rules and media limits are in [lgteacher-integration.md](lgteacher-integration.md).
+
+1. Back up the existing product aggregate and private S3 prefix. No source account/COS data migration or additional table is required. Preserve the added author assignments, catalogue, structured contents and archived sections when restoring a backup.
+2. Keep the current PostgreSQL/S3 VFS configuration and least-privilege application role. Authenticated course-media responses use the existing application origin; do not make the bucket public or configure public CDN caching for `/api/course-media/*`.
+3. Run `npm run test:unit`, `npm run test:auth`, `npm run test:payment`, and `npm run build`. After the build, run `LGTEACHER_BUILD_READY=1 node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/test-lgteacher-complete.ts`. The browser runner uses disposable local data and refuses an occupied test port.
+4. Promote through the existing CI/CD workflow and verify the actual target environment: operator and assigned-teacher access, save/reload, private upload/preview, publish, public lesson, entitled playback, and archive/restore. Operator-only account assignment grants teacher status only to a verified active existing account. Payment/order permissions do not change.
+5. If rollback is necessary, retain the full aggregate and media objects. Older code cannot edit structured content safely; suspend authoring until the compatible version is restored. Do not flatten rich content or discard archived IDs to make an older build work.
+
+The merge's local browser tests do not verify the live AWS IAM/S3 configuration or external login/payment providers. Multipart media is limited to 25 MiB; large-file tickets, transcoding and malware scanning are not included.
+
 邮箱注册在 PPE/PROD 必须配置 `EMAIL_VERIFICATION_REQUIRED=1`、`SES_FROM_EMAIL`、`AWS_REGION` 和使用 HTTPS 的 `NEXT_PUBLIC_APP_URL`。冒烟测试必须确认待激活账号不能登录、验证链接只能成功使用一次，并且重新发送后旧链接失效。
 
 ## 1. 环境
+
+### Password reset mail in DEV/SIT/UAT/production
+
+- Configure `NEXT_PUBLIC_APP_URL` as the externally reachable application origin. Mail links use this origin; localhost links must be opened on the machine running the application.
+- Configure SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, optionally `SMTP_FROM`, `SMTP_PORT`, `SMTP_SECURE`) or SES (`SES_FROM_EMAIL`, `AWS_REGION` and AWS credentials/role with send permission). Configured delivery is used in every environment, including DEV. Presence of configuration does not establish successful provider delivery.
+- Keep `LOCAL_PASSWORD_RESET_PREVIEW` unset for mail verification. Without configured delivery, requests fail visibly; only explicit `APP_ENV=DEV` plus `LOCAL_PASSWORD_RESET_PREVIEW=1` enables direct development links. Never enable a preview in a shared environment.
+- Run the password-reset project in `playwright.auth.config.ts`, the bilingual `tests/e2e/password-reset.spec.ts`, and `npm run build`. Automated mail tests replace the transport and do not send real messages.
+- Smoke test with an authorised test mailbox: submit from password sign-in, confirm the check-email page and cooldown, receive the message, follow the link, reset, sign in and return to the original URL. Verify reissue invalidates the previous link, expired/used tokens fail, and old sessions are revoked. Check both locales and spam folders. No real mailbox delivery or Figma acceptance is implied by automated tests.
 
 | 环境 | 用途 | 数据 | 发布方式 |
 |---|---|---|---|
@@ -36,14 +56,21 @@
 - The remote sandbox verification records the Science annual lookup key correction; see `stripe-sandbox.md`. Revalidate the current catalogue before each release.
 
 ```text
-GitHub pull request
-  -> typecheck / lint / unit / integration / build
-  -> Docker build
-  -> push Amazon ECR
-  -> deploy DEV
-  -> smoke: health, auth, course, quote, Stripe test webhook, entitlement
-  -> promote same image to SIT -> UAT -> PPE/PROD
+GitHub pull request / push
+  -> Verify (typecheck / lint / unit / integration / build) — tests only; no App Runner
+  -> Push to `dev` → Deploy DEV runs start-deployment, waits for the build, then live e2e
+  -> npm start applies pending db/data-migrations, then serves the app
+  -> Post-deploy live e2e (catalogue, course media, public lesson, pricing, registration mail, OAuth start, closed purchase/payment/orders/tutor)
+  -> Success: SNS `learning-guide-sit-alerts` + GitHub summary
+  -> Failure: the workflow stays red. Automatic fallback (DEV revert-commit; SIT/UAT/PPE force previous SHA) then notify. Rollback does not make the release pass.
+  -> Deploy SIT / UAT / PPE are workflow_dispatch only (never on push)
 ```
+
+UAT and PPE workflows exist but stay blocked until their App Runner ARNs and origins are set as repository variables (`UAT_APP_RUNNER_SERVICE_ARN`, `PPE_APP_RUNNER_SERVICE_ARN`, `PPE_ORIGIN`). Subscribe an ops mailbox to `learning-guide-sit-alerts` so release notifications arrive.
+
+Post-deploy e2e runs immediately after DEV and SIT are RUNNING. It registers `LIVE_TEST_EMAIL` (DEV and SIT default `yongthelaoma@gmail.com`), requires that send to be accepted, and fails if the response leaks an AWS IAM error. It also requires a published course page whose images return image bytes and are not Tencent COS, a public lesson, pricing, and rejection of anonymous checkout, trial, subscription portal, unsigned Stripe webhook, orders, course management, AI Tutor, and study writes. It does not complete a card payment or an OAuth consent. A failed check exits 1, so Deploy DEV and Deploy SIT cannot pass. Implementation: `scripts/after-deploy.mjs`, `scripts/release/liveSmoke.mjs`, `tests/e2e/live-release.spec.ts`. Unit coverage: `tests/unit/live-smoke.test.ts`.
+
+Product-aggregate data changes use numbered scripts under `db/data-migrations/`. Direction: [data-migrations.md](data-migrations.md). How to write a script: [writing-data-migrations.md](writing-data-migrations.md). Do not replace the live `product.json` aggregate.
 
 每次发布记录：git SHA、Docker image digest、database migration、环境、批准人、回滚 image。禁止在 App Runner 控制台直接改代码或手工执行生产 SQL。
 
@@ -61,6 +88,11 @@ GitHub pull request
 ## 5. 回滚
 
 ### WeChat login smoke test
+
+- Mandatory email binding supersedes the earlier no-email Session acceptance checks below. Newly created and existing unbound WeChat users must receive a binding prompt before Purchase/My Learning. Check that direct protected API requests fail while unbound.
+- Configure SMTP/SES and the trusted `NEXT_PUBLIC_APP_URL` in DEV/SIT/UAT/production. Use an authorised mailbox to verify delivery, 24-hour validity, 60-second resend, changing email, invalidation of old links, ownership conflicts, and successful duplicate clicks. Confirm userId and prior orders/subscriptions remain unchanged.
+- Verify the email link in the original browser and in a different browser: original session becomes usable; another browser is prompted to sign in with WeChat and receives no session from the binding endpoint. Original waiting page refreshes after binding. Check locale and returnTo continuity, sign-out, interruption and resumption.
+- Run authentication tests, bilingual binding browser tests, and build. Automated transport tests do not prove mailbox delivery. Record real QR/mail smoke and Figma acceptance before rollout.
 
 - In WeChat Open Platform, confirm the website application is approved for website login and its authorised domain is the hostname only, for example `www.ilovelearningguide.com`.
 - Use the configured HTTPS origin for both the login page and `/api/auth/wechat/callback`; set `LOCAL_SOCIAL_LOGIN=0`. The application sends the full callback URL to WeChat at runtime.

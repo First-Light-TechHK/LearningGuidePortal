@@ -1,0 +1,66 @@
+# SIT only. Never runs on push. DEV auto-deploys from dev-deploy.yml.
+name: Deploy SIT
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_source:
+        description: App Runner source type already configured for SIT
+        type: choice
+        default: source
+        options: [source, image]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: learning-guide-sit-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      previous_sha: ${{ steps.prev.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+      - name: Record previous APP_VERSION
+        id: prev
+        env:
+          APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-sit/5b9b982e873e4f08ad2f5a50f67d67d0
+        run: |
+          previous="$(aws apprunner describe-service \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --query 'Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables.APP_VERSION' \
+            --output text)"
+          echo "sha=${previous}" >> "$GITHUB_OUTPUT"
+      - name: Require successful Verify for this revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA" --jq '.workflow_runs | any(.conclusion == "success")' | grep -qx true
+      - name: Build and publish the exact source as an ECR image
+        if: inputs.deployment_source == 'image'
+        run: node scripts/publish-sit-image.mjs
+      - name: Verify revision, deploy and await readiness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-sit.mjs
+
+  verify:
+    name: Live e2e / fallback / notify
+    needs: deploy
+    uses: ./.github/workflows/release-verify.yml
+    secrets: inherit
+    with:
+      environment: SIT
+      origin: https://sit.ilovelearningguide.com
+      admin_origin: https://admin.sit.ilovelearningguide.com
+      service_arn: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-sit/5b9b982e873e4f08ad2f5a50f67d67d0
+      previous_sha: ${{ needs.deploy.outputs.previous_sha }}
+      rollback_mode: force-branch

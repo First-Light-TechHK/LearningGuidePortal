@@ -22,7 +22,7 @@ export function LocalCheckout({ orderId, quoteId, locale, copy }: { orderId: str
       const data = await response.json() as { ok?: boolean; error?: string; status?: string };
       if (!response.ok || !data.ok) throw new Error(data.error || copy.error);
       window.location.assign(action === "complete"
-        ? `/${locale}/portal/payment/success?orderId=${encodeURIComponent(orderId)}`
+        ? `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(orderId)}`
         : `/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteId)}`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : copy.error);
@@ -30,5 +30,5 @@ export function LocalCheckout({ orderId, quoteId, locale, copy }: { orderId: str
     }
   }
 
-  return <div className="local-checkout-actions"><button className="portal-button portal-button-primary" disabled={busy} type="button" onClick={() => void submit("complete")}>{busy ? copy.processing : copy.complete}</button><div className="local-checkout-secondary-actions"><button className="portal-button portal-button-secondary" disabled={busy} type="button" onClick={() => void submit("fail")}>{copy.fail}</button><button className="portal-button portal-button-secondary" disabled={busy} type="button" onClick={() => void submit("cancel")}>{copy.cancel}</button></div>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}</div>;
+  return <div className="local-checkout-actions"><button className="portal-button portal-button-primary" disabled={busy} type="button" onClick={() => void submit("complete")}>{copy.complete}</button><div className="local-checkout-secondary-actions"><button className="portal-button portal-button-secondary" disabled={busy} type="button" onClick={() => void submit("fail")}>{copy.fail}</button><button className="portal-button portal-button-secondary" disabled={busy} type="button" onClick={() => void submit("cancel")}>{copy.cancel}</button></div>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}</div>;
 }

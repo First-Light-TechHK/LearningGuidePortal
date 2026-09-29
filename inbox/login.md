@@ -14,7 +14,7 @@ locale: en-GB
 
 # Intent
 
-Registration and session. Cases are black-box I/O against `/api/auth/*`. The suite is armed. New Business Function suites stay draft until a human arms them.
+Registration and session. Cases are black-box I/O against `/api/auth/*`. The suite is active. Spec I/O is the authority; product red means fix the product.
 
 # In scope
 
@@ -43,4 +43,4 @@ Registration and session. Cases are black-box I/O against `/api/auth/*`. The sui
 
 # Notes
 
-Suite is armed. Executable I/O lives in `tests/io/login.test.ts`. New BF suites stay draft until a human arms them.
+Suite is active. Executable I/O lives in `tests/io/login.test.ts`. Do not rewrite AUTH-01 / AUTH-02 to accept `exists`, `resetUrl`, or 503. `7f42330` / `ec9e129` add reset confirm, email-binding, and subscription portal leaves under the same AUTH ids.

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { currentOperatorUser } from "@/services/productAuth";
 import { isOperator, listOperatorOrders } from "@/services/productStore";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ function csv(value: unknown) {
 }
 
 export async function GET(request: Request) {
-  const user = await currentProductUser();
+  const user = await currentOperatorUser();
   if (!user || !isOperator(user)) return NextResponse.json({ ok: false, error: "Course Manager/Operator access is required." }, { status: 403 });
   const params = new URL(request.url).searchParams;
   const orders = await listOperatorOrders({ search: params.get("search") || undefined, status: params.get("status") || undefined, paymentMode: params.get("paymentMode") || undefined });

@@ -69,7 +69,13 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     const incoming = event.data.object as Stripe.Invoice;
     const incomingSubscription = identifier(incoming.parent?.subscription_details?.subscription) || identifier((incoming as unknown as { subscription?: string }).subscription);
     if (incomingSubscription && await isLegacyStripeSubscription(incomingSubscription)) return processLegacyStripeEvent(event);
-    const invoice = await stripe.invoices.retrieve((event.data.object as Stripe.Invoice).id);
+    let invoice: Stripe.Invoice;
+    try {
+      invoice = await stripe.invoices.retrieve((event.data.object as Stripe.Invoice).id);
+    } catch {
+      if (event.type === "invoice.payment_failed") return { ignored: true };
+      throw new Error("Invoice is not available yet.");
+    }
     const legacy = invoice as unknown as { subscription?: string | { id: string }; payment_intent?: string | { id: string } };
     const subscriptionId = identifier(invoice.parent?.subscription_details?.subscription) || identifier(legacy.subscription);
     if (!subscriptionId) return { ignored: true };

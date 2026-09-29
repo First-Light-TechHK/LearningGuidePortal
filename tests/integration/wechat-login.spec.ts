@@ -1,8 +1,11 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import { mkdtemp, readFile, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { NextRequest } from "next/server";
+import * as wechatCallback from "../../app/api/auth/wechat/callback/route";
+import * as wechatEntry from "../../app/api/auth/wechat/route";
 
 test.describe.configure({ mode: "serial" });
 const originalCwd = process.cwd();
@@ -25,7 +28,7 @@ test.beforeAll(async () => {
   process.env.NEXT_PUBLIC_APP_URL = "https://login.example.test";
   store = await import("../../services/productStore");
   oauth = await import("../../services/oauthService");
-  callback = await import("../../app/api/auth/wechat/callback/route");
+  callback = wechatCallback;
 });
 test.afterEach(() => { globalThis.fetch = originalFetch; });
 test.afterAll(async () => {
@@ -70,7 +73,7 @@ test("stable app/OpenID identity survives UnionID appearing and disappearing; em
     expect(user.role).toBe("student");
     ids.push(user.id);
     const session = await store.createSession(user.id);
-    expect((await store.getUserBySessionToken(session.token))?.id).toBe(user.id);
+    expect((await store.getUserBySessionToken(session.token, true))?.id).toBe(user.id);
   }
   expect(new Set(ids).size).toBe(1);
   const users = await Promise.all(Array.from({ length: 4 }, () => store.getOrCreateSocialUser({
@@ -80,6 +83,19 @@ test("stable app/OpenID identity survives UnionID appearing and disappearing; em
   expect(users[0].id).not.toBe(ids[0]);
   expect(await store.getUserBySessionToken(undefined)).toBeNull();
   expect((await store.requestPasswordReset("wechat-openid-one@local.invalid")).token).toBeNull();
+});
+
+test("a valid WeChat nickname becomes the Name only when the account is first created", async () => {
+  const input = { provider: "wechat" as const, providerSubject: "wx-test:nickname-user", nickname: "张·伟", wechat: { appId: "wx-test", openId: "nickname-user" } };
+  const first = await store.getOrCreateSocialUser(input);
+  expect(first.nickname).toBe("张·伟");
+
+  const repeated = await store.getOrCreateSocialUser({ ...input, nickname: "王·芳" });
+  expect(repeated.id).toBe(first.id);
+  expect(repeated.nickname).toBe("张·伟");
+
+  const invalid = await store.getOrCreateSocialUser({ provider: "wechat", providerSubject: "wx-test:invalid-nickname", nickname: "Name 😊", wechat: { appId: "wx-test", openId: "invalid-nickname" } });
+  expect(invalid.nickname).toBe("Learner");
 });
 
 test("legacy subject and placeholder email migrate without changing userId; collisions fail closed", async () => {
@@ -117,10 +133,10 @@ test("callback establishes usable session and clears cookie; replay without tran
   provider("callback-user");
   const response = await callback.GET(request(transaction()));
   expectCleared(response);
-  expect(response.headers.get("location")).toBe("https://login.example.test/zh-CN/account/my-learning");
+  expect(response.headers.get("location")).toBe("https://login.example.test/zh-CN/portal/bind-email?returnTo=%2Fzh-CN%2Faccount%2Fmy-learning");
   const cookie = response.cookies.get("learning_guide_session");
   expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: "lax" });
-  expect((await store.getUserBySessionToken(cookie?.value))?.email).toBeNull();
+  expect((await store.getUserBySessionToken(cookie?.value, true))?.email).toBeNull();
   const replay = await callback.GET(new NextRequest("https://login.example.test/api/auth/wechat/callback?code=test-code&state=old"));
   expectCleared(replay);
   expect(replay.cookies.has("learning_guide_session")).toBe(false);
@@ -164,7 +180,7 @@ test("disabled account is rejected and hostile returnTo stays on the configured 
 });
 
 test("login entry uses real QR authorization and an HTTPS transaction cookie", async () => {
-  const route = await import("../../app/api/auth/wechat/route");
+  const route = wechatEntry;
   const response = await route.GET(new Request("https://login.example.test/api/auth/wechat?locale=zh-CN"));
   const target = new URL(response.headers.get("location")!);
   expect(target.origin + target.pathname).toBe("https://open.weixin.qq.com/connect/qrconnect");
@@ -176,7 +192,7 @@ test("login entry uses real QR authorization and an HTTPS transaction cookie", a
 test("WeChat authentication does not grant missing or expired course access", async () => {
   provider("entitlement-user");
   const response = await callback.GET(request(transaction()));
-  const user = await store.getUserBySessionToken(response.cookies.get("learning_guide_session")?.value);
+  const user = await store.getUserBySessionToken(response.cookies.get("learning_guide_session")?.value, true);
   expect(user).toBeTruthy();
   expect((await store.checkEntitlement(user!.id, "test-course")).allowed).toBe(false);
   const file = path.join(isolatedCwd, "data/knowledge_system/learning_guide/product.json");

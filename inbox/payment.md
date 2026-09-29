@@ -15,7 +15,7 @@ locale: en-GB
 
 # Intent
 
-Payment and entitlements. Cases are black-box I/O against quote, checkout, demo confirm, trial, subscription, entitlement, and webhook. The suite is armed. New Business Function suites stay draft until a human arms them.
+Payment and entitlements. Cases are black-box I/O against quote, checkout, demo confirm, trial, subscription, entitlement, and webhook. The suite is active. Spec I/O is the authority; product red means fix the product.
 
 # In scope
 
@@ -47,4 +47,4 @@ Payment and entitlements. Cases are black-box I/O against quote, checkout, demo 
 
 # Notes
 
-Suite is armed. PAY-01..07 Stripe internals stay specified; executable I/O covers the HTTP-visible subset in `tests/io/payment.test.ts`. New BF suites stay draft until a human arms them.
+Suite is active. PAY-01..07 Stripe internals stay specified; executable I/O covers the HTTP-visible subset in `tests/io/payment.test.ts`. Do not rewrite PAY-10 to accept a second complete after cancel.

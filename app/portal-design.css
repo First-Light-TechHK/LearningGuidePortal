@@ -97,23 +97,29 @@ dialog.subscription-confirmation.upgrade-confirmation .subscription-consents lab
 .subscription-mobile-label { display:none; }
 .subscription-record-empty { padding:24px 0; }
 .subscription-trial-row { display:flex; flex-wrap:wrap; align-items:center; gap:20px; padding:24px; border:1px solid #dbe3f0; margin-top:20px; background:white; }
-@media(max-width:1320px) { .portal-account-page.subscription-design-page > .portal-section { padding-right:40px; } .subscription-record-head,.subscription-record { grid-template-columns:minmax(0,1fr) 100px 160px 100px; } .subscription-record-plan .course-thumbnail { display:none; } }
+@media(max-width:1320px) { .portal-account-page.subscription-design-page > .portal-section { padding-right:40px; } .subscription-record-head,.subscription-record { grid-template-columns:minmax(0,1fr) 100px 160px 100px; } .subscription-record-plan { gap:16px; } .subscription-record-plan .course-thumbnail { width:96px; height:72px; } }
 @media(max-width:900px) { .subscription-record-head { display:none; } .subscription-record { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; } .subscription-record-plan { grid-column:1 / -1; } .subscription-record-plan .course-thumbnail { display:block; } .subscription-mobile-label { display:block; color:#64748b; margin-bottom:4px; font-size:12px; } }
 @media(max-width:720px) { .portal-account-page.subscription-design-page > .portal-section { padding:28px 20px 48px; } .subscription-record-plan { gap:16px; } .subscription-record-plan .course-thumbnail { width:80px; height:72px; } }
-dialog.cancellation-dialog { box-sizing:border-box; display:block; border:0; width:640px; max-width:calc(100vw - 32px); min-height:min(658px,calc(100dvh - 48px)); max-height:calc(100dvh - 48px); margin:auto; padding:40px; overflow:auto; }
+dialog.cancellation-dialog { box-sizing:border-box; display:block; border:0; width:714px; max-width:calc(100vw - 32px); min-height:520px; max-height:calc(100dvh - 48px); margin:auto; padding:34px 84px 26px; overflow:auto; border-radius:16px; }
 dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
-.cancellation-dialog h2 { font-size:24px; line-height:32px; margin:0 40px 20px 0; }
-.cancellation-dialog .cancel-plan-name { font-size:16px; line-height:22px; margin-bottom:6px; font-weight:600; }
-.cancellation-dialog > p { font-size:14px; line-height:21px; }
-.cancellation-dialog fieldset { margin:34px 0 0; gap:22px; }
-.cancellation-dialog legend { font-size:16px; line-height:22px; font-weight:600; margin-bottom:5px; }
-.cancellation-dialog .cancel-reason-help { font-size:14px; line-height:21px; margin-bottom:0; }
-.cancellation-dialog fieldset label { font-size:14px; gap:14px; min-height:20px; }
-.cancellation-dialog fieldset input { width:20px; height:20px; margin:0; }
-.cancellation-dialog .subscription-modal-close { top:40px; right:40px; display:grid; place-items:center; }
-.cancellation-dialog .subscription-modal-actions { margin-top:34px; flex-wrap:wrap; gap:12px; }
-.cancellation-dialog .cancel-skip { margin-right:auto; }
-.cancellation-dialog .subscription-modal-actions button { min-height:44px; }
+.cancellation-dialog h2 { font-size:24px; line-height:32px; margin:0 40px 8px; text-align:center; }
+.cancellation-dialog .cancel-access-note { margin:0 0 20px; color:#64728b; font-size:13px; line-height:20px; text-align:center; }
+.cancellation-dialog .cancel-plan-name { min-height:108px; display:grid; place-items:center; margin:18px 0 28px; border:1px solid #c7d6ff; border-radius:10px; background:#f8faff; color:#155dfc; font-size:24px; line-height:28px; font-weight:600; text-align:center; }
+.cancellation-dialog .cancel-plan-name strong { display:block; font:inherit; }
+.cancellation-dialog .cancel-plan-name span { display:inline-flex; align-items:center; min-height:28px; margin-top:8px; padding:0 10px; border:1px solid #246bfd; border-radius:8px; background:#c7d6ff; color:#155dfc; font-size:13px; font-weight:600; line-height:18px; }
+.cancellation-dialog > p { color:#64728b; font-size:13px; line-height:20px; text-align:center; }
+.cancellation-dialog fieldset { margin:28px 0 0; gap:12px; }
+.cancellation-dialog legend { font-size:14px; line-height:20px; font-weight:600; margin-bottom:8px; }
+.cancellation-dialog .cancel-reason-help { display:inline; margin-left:8px; color:#64728b; font-size:12px; line-height:20px; font-weight:400; }
+.cancellation-dialog fieldset label { color:#64728b; font-size:13px; gap:8px; min-height:16px; }
+.cancellation-dialog fieldset input { width:14px; height:14px; margin:1px 0 0; accent-color:#155dfc; }
+.cancellation-dialog .subscription-modal-close { top:14px; right:14px; display:grid; place-items:center; color:#8da0b8; }
+.cancellation-dialog .subscription-modal-actions { margin-top:26px; justify-content:center; flex-wrap:wrap; gap:12px; }
+.cancellation-dialog .cancel-skip,.cancellation-dialog .subscription-modal-actions .portal-button-secondary { display:none; }
+.cancellation-dialog .subscription-modal-actions button { min-width:168px; min-height:40px; }
+.cancellation-dialog .cancel-other-input { display:grid; gap:4px; margin:8px 0 0 20px; color:#64728b; font-size:12px; }
+.cancellation-dialog .cancel-other-input textarea { width:100%; height:28px; padding:5px 0; border:0; border-bottom:1px solid #e5e7eb; border-radius:0; resize:none; font:inherit; outline:0; }
+.cancellation-dialog .cancel-other-input .character-count { display:none; }
 @media(max-width:540px) { dialog.cancellation-dialog { padding:24px; min-height:0; } .cancellation-dialog .subscription-modal-close { top:24px; right:24px; } }
 .settings-design-form .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .portal-account-page.settings-design-page > .account-settings-page { padding-top:50px; }
@@ -169,63 +175,90 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .overview-list-caption { margin:26px 0 0; font-size:13px; line-height:20px; color:#64748b; }
 @media(max-width:1320px) { .portal-account-page.overview-design-page > .account-dashboard { padding-right:40px; } .portal-account-page .account-learning-card.overview-course { grid-template-columns:130px minmax(0,1fr); gap:20px; } .overview-course .account-learning-action { grid-column:2; margin-top:0; } .overview-heading { flex-wrap:wrap; padding-bottom:32px; } }
 @media(max-width:720px) { .portal-account-page.overview-design-page > .account-dashboard { padding:28px 20px 48px; min-height:600px; } .overview-heading { min-height:0; margin-bottom:32px; } .overview-course .account-learning-action { width:100%; margin-top:20px; } .overview-progress-labels { flex-wrap:wrap; gap:4px 16px; } }
-.pricing-design-main { max-width:1240px; margin:auto; padding:58px 0 69px; }
-.pricing-design-main > h1 { margin:0 0 30px; font-size:28px; line-height:40px; font-weight:600; color:#15233a; }
-.pricing-comparison { display:grid; grid-template-columns:minmax(0,570px) minmax(0,570px); justify-content:space-between; gap:40px; }
-.pricing-design-card { border:1px solid #93b4f5; border-radius:14px; padding:27px; min-height:552px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
-.pricing-card-heading { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; min-height:51px; }
-.pricing-card-heading h2 { font-size:27px; line-height:38px; margin:0; font-weight:600; }
-.pricing-term-switch { padding:2px; background:#fff; border:1px solid #93b4f5; border-radius:8px; display:flex; flex:none; }
-.pricing-term-switch button { width:96px; height:40px; padding:0 8px; border:0; border-radius:6px; font-size:13px; background:transparent; color:#475569; cursor:pointer; }
+.pricing-design-hero { min-height:200px; display:grid; place-content:center; gap:18px; box-sizing:border-box; background:#155dfc; color:#fff; text-align:center; }
+.courses-design-hero { min-height:225px; padding:55px max(20px,calc((100% - 1240px)/2)); background:#155dfc; color:#fff; }
+.courses-design-hero h1 { margin:0; color:#fff; font-size:32px; line-height:42px; }.courses-design-hero p { margin:8px 0 28px; color:#c7d6ff; font-size:14px; }.courses-design-hero .portal-button { min-width:136px; min-height:30px; background:#fff; color:#155dfc; }
+.portal-catalog-courses { width:min(1290px,calc(100% - 40px)); padding:45px 0 24px; }.portal-catalog-courses .portal-section-heading h2 { font-size:27px; }.portal-catalog-courses .portal-category-filter { margin:22px 0 28px; }.portal-catalog-courses .portal-course-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:36px 20px; }
+.courses-design-method { display:grid; grid-template-columns:1.2fr 1fr; gap:60px; padding:48px max(20px,calc((100% - 1240px)/2)); background:#e8f0ff; }.courses-design-method h2 { margin:8px 0 16px; font-size:28px; }.courses-design-method > div > p:last-child { color:#64728b; }.courses-design-method ol { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; align-items:center; padding:0; margin:0; list-style:none; color:#155dfc; font-size:14px; font-weight:600; }.courses-design-method li::before { display:block; margin-bottom:8px; color:#a8c1ff; content:counter(list-item,decimal-leading-zero); }
+.course-learning-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 20px; padding:0; margin:14px 0 0; list-style:none; font-size:12px; color:#475569; }.course-learning-list li::before { content:"✓"; margin-right:6px; color:#155dfc; }.course-curriculum-meta { margin:-6px 0 14px; color:#64728b; font-size:12px; }.course-lesson-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }.course-lesson-main { display:grid; gap:5px; }.course-lesson-main small { color:#64728b; font-size:11px; }.course-lesson-preview { min-width:74px; padding:6px 12px; border-radius:6px; background:#155dfc; color:#fff; font-size:12px; text-align:center; text-decoration:none; }
+.portal-course-detail-body { width:min(1440px,100%); grid-template-columns:minmax(0,2.1fr) minmax(300px,1fr); gap:12px; margin:0 auto; padding:14px 2px 52px; box-sizing:border-box; }.portal-detail-intro,.course-lesson-index,.course-access-card,.course-provides-card { padding:22px; }.course-provides-card { min-height:232px; }.course-provides-card ul { gap:14px; margin:24px 0 0; font-size:12px; }.course-provides-card li::before { content:"◉"; margin-right:10px; }.course-detail-aside { gap:14px; }.course-access-card { min-height:102px; border-color:#c7d6ff; }.course-access-card strong { display:block; font-size:28px; }
+.course-access-card { min-height:262px; padding:26px 32px; border-radius:16px; background:#eff6ff; }.course-access-card .portal-eyebrow { margin:0; color:#2463c7; font-size:16px; line-height:24px; font-weight:600; }.course-access-card .course-access-price { margin:18px 0 28px; color:#15233a; font-size:54px; line-height:60px; }.course-access-card .course-access-price span { font-size:46px; }.course-access-card .course-access-price small { font-size:18px; font-weight:500; }.course-access-card .portal-button-secondary { width:100%; min-height:60px; border:2px solid #246bfd; border-radius:10px; background:#c7dfff; color:#155dfc; font-size:18px; }
+.portal-course-detail-page { background:#f9fafb; }.course-detail-hero { min-height:517px; position:relative; display:grid; grid-template-columns:1fr; overflow:hidden; background:#17233a; color:#fff; }.course-detail-hero-image { position:absolute; inset:0; opacity:.62; }.course-detail-hero-image img,.course-detail-hero-image > * { width:100%; height:100%; object-fit:cover; }.course-detail-hero-copy { position:relative; z-index:1; width:min(1240px,calc(100% - 40px)); margin:auto; align-self:center; }.course-detail-hero-copy h1 { margin:18px 0; color:#fff; font-size:40px; }.course-detail-hero-copy > p { max-width:620px; color:#e6edf9; }.course-detail-stats { display:flex; gap:28px; color:#e6edf9; font-size:13px; }.portal-course-tag { display:inline-flex; padding:4px 18px; border-radius:4px; background:#155dfc; font-size:12px; }.portal-course-detail-body { width:min(1240px,calc(100% - 40px)); display:grid; grid-template-columns:minmax(0,2.1fr) minmax(280px,1fr); gap:20px; margin:18px auto 52px; }.portal-detail-intro,.course-lesson-index,.course-access-card,.course-provides-card { border:1px solid #e5e7eb; border-radius:10px; background:#fff; padding:20px; }.portal-detail-intro h2,.course-lesson-index h2,.course-provides-card h2 { margin:0 0 14px; font-size:20px; }.portal-detail-intro > p:last-child { color:#64728b; font-size:13px; line-height:18px; }.course-lesson-index { margin-top:12px; }.course-lesson-row { min-height:50px; margin-top:8px; padding:12px; border:1px solid #e5e7eb; border-radius:6px; background:#fff; }.course-detail-aside { display:grid; align-content:start; gap:12px; }.course-provides-card ul { display:grid; gap:12px; margin:0; padding:0; list-style:none; color:#15233a; font-size:13px; }.course-provides-card li::before { content:"○"; margin-right:8px; color:#155dfc; }.course-access-card { background:#e8f1ff; }.course-access-card .portal-button { width:100%; margin-top:12px; }
+.pricing-design-hero h1 { margin:0; color:#fff; font-size:36px; line-height:38px; font-weight:600; }
+.pricing-design-hero p { margin:0; font-size:20px; line-height:28px; }
+.pricing-design-main { max-width:1184px; margin:auto; padding:40px 0 52px; }
+.pricing-comparison-wrap { position:relative; padding-top:82px; }
+.pricing-term-switch-global { position:absolute; top:0; left:50%; transform:translateX(-50%); border-radius:22px; padding:3px; }
+.pricing-term-switch-global button { position:relative; height:36px; border-radius:20px; }
+.pricing-better-value { position:absolute; top:-7px; right:7px; min-width:56px; padding:1px 4px; border-radius:6px; background:#155dfc; color:#fff; font-size:8px; line-height:11px; font-weight:600; white-space:nowrap; }
+.pricing-comparison { position:relative; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:96px; }
+.pricing-comparison::after { content:""; position:absolute; top:204px; left:0; width:100%; height:1px; background:#e5e7eb; }
+.pricing-design-card { padding:0; min-height:620px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
+.pricing-card-heading { display:flex; justify-content:center; gap:12px; align-items:flex-start; min-height:51px; text-align:center; }
+.pricing-card-heading h2 { font-size:27px; line-height:38px; margin:0; font-weight:600; color:#155dfc; }
+.pricing-term-switch { padding:3px; background:#fff; border:1px solid #dbe3f0; border-radius:999px; display:flex; flex:none; }
+.pricing-term-switch button { width:96px; height:36px; padding:0 8px; border:0; border-radius:999px; font-size:13px; background:transparent; color:#155dfc; cursor:pointer; }
 .pricing-term-switch button[aria-pressed=true] { background:#2968ff; color:#fff; font-weight:600; }
-.pricing-card-price { min-height:80px; margin-top:16px; display:flex; gap:12px; align-items:flex-end; }
+.pricing-card-price { min-height:80px; margin-top:16px; display:flex; justify-content:center; gap:12px; align-items:flex-end; text-align:center; }
 .pricing-card-price strong { font-size:54px; line-height:64px; font-weight:600; }
+.pricing-card-price strong::first-letter { font-size:30px; }
 .pricing-card-price span { font-size:16px; line-height:30px; }
-.pricing-card-scope,.pricing-category-switch { min-height:85px; margin:16px 0 0; font-size:18px; line-height:27px; }
+.pricing-card-scope,.pricing-category-switch { min-height:0; margin:10px 0 0; font-size:18px; line-height:27px; }
+.pricing-card-categories { min-height:84px; margin-top:68px; border-bottom:1px solid #e5e7eb; }
+.pricing-card-categories > p { margin:0; font-size:16px; line-height:19px; }
+.pricing-card-course-list { min-height:122px; padding:22px 0; border-bottom:1px solid #e5e7eb; }
+.pricing-card-course-list p { margin:0 0 10px; font-size:16px; line-height:19px; }
+.pricing-card-course-list > div { display:flex; flex-wrap:wrap; gap:8px; }
+.pricing-card-course-list span { padding:4px 8px; border:1px solid #e5e7eb; border-radius:14px; color:#15233a; font-size:14px; line-height:19px; opacity:.8; }
 .pricing-category-switch { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.pricing-category-switch button { padding:10px 12px; min-height:40px; background:#fff; border:1px solid #dbe3f0; border-radius:6px; color:#475569; font-size:13px; cursor:pointer; }
+.pricing-category-switch button { padding:8px 12px; min-height:30px; background:#fff; border:1px solid #dbe3f0; border-radius:8px; color:#475569; font-size:13px; cursor:pointer; }
 .pricing-category-switch button[aria-pressed=true] { color:#fff; background:#2968ff; border-color:#2968ff; }
-.pricing-card-benefits { margin:16px 0; padding-left:18px; min-height:159px; font-size:14px; line-height:19px; }
-.pricing-card-benefits li { margin-bottom:7px; padding-left:2px; }
+.pricing-category-switch--all button[aria-pressed=true] { color:#155dfc; background:#c7d6ff; border-color:#246bfd; }
+.pricing-card-benefits { margin:16px 0; padding:0; min-height:214px; list-style:none; font-size:16px; line-height:19px; }
+.pricing-card-benefits li { min-height:67px; display:flex; align-items:center; margin:0; padding:0; border-bottom:1px solid #e5e7eb; }
 .pricing-design-card .purchase-panel { margin-top:auto; border:0; padding:0; }
-.pricing-design-card .purchase-actions { display:block; margin:0; }
-.pricing-design-card .purchase-actions button { width:100%; min-height:46px; border-radius:8px; }
-.pricing-design-information { background:#f8fafd; padding:40px 0 58px; min-height:348px; box-sizing:border-box; }
+.pricing-design-card .purchase-actions { display:block; margin:0; text-align:right; }
+.pricing-design-card .purchase-actions button { width:360px; max-width:100%; min-height:46px; border-radius:8px; }
+.pricing-design-information { background:#f9fafb; padding:44px 0 58px; min-height:262px; box-sizing:border-box; text-align:center; }
 .pricing-design-information > div { max-width:1240px; margin:auto; }
 .pricing-design-information h2 { font-size:24px; line-height:32px; margin:0 0 12px; }
-.pricing-design-information p { font-size:14px; line-height:22px; margin:0; }
-.pricing-information-grid { margin-top:32px; display:grid; grid-template-columns:repeat(3,minmax(0,360px)); justify-content:space-between; gap:40px; }
-.pricing-information-grid > div { padding:18px; min-height:116px; border:1px solid #dbe3f0; border-radius:10px; background:#fff; box-sizing:border-box; }
-.pricing-information-grid h3 { font-size:16px; margin:0 0 10px; }
+.pricing-design-information > div > p { color:#64728b; font-size:14px; line-height:22px; margin:0; }
+.pricing-information-grid { margin-top:32px; display:grid; grid-template-columns:repeat(3,minmax(0,360px)); justify-content:space-between; gap:80px; text-align:left; }
+.pricing-information-grid > div { padding:0; min-height:0; border:0; background:transparent; box-sizing:border-box; }
+.pricing-information-grid h3 { color:#155dfc; font-size:15px; margin:0 0 12px; padding-bottom:12px; border-bottom:1px solid #dbe3f0; }
+.pricing-information-grid p { color:#64728b; font-size:12px; line-height:16px; }
 .pricing-direct { margin-top:40px; }
 @media(max-width:1320px) { .pricing-design-main,.pricing-design-information > div { margin-left:40px; margin-right:40px; } .pricing-card-heading { flex-wrap:wrap; } }
 @media(max-width:800px) { .pricing-comparison { grid-template-columns:1fr; } .pricing-information-grid { grid-template-columns:1fr; gap:24px; } .pricing-design-main,.pricing-design-information > div { margin-left:20px; margin-right:20px; } .pricing-design-card { min-height:552px; padding:24px; } }
-dialog.subscription-confirmation { box-sizing:border-box; width:720px; max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); max-height:calc(100dvh - 96px); margin:72px auto 24px; padding:28px 32px 47px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
+dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); max-height:calc(100dvh - 96px); margin:72px auto 24px; padding:34px 84px 26px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
 dialog.subscription-confirmation::backdrop { background:rgb(15 23 42 / 45%); }
-.confirmation-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; min-height:58px; margin-bottom:14px; }
-.confirmation-heading h1 { margin:0; font-size:26px; line-height:37px; font-weight:600; }
+.confirmation-heading { display:block; min-height:58px; margin-bottom:14px; text-align:center; }
+.confirmation-heading h1 { margin:0; font-size:24px; line-height:32px; font-weight:600; }
 .confirmation-heading p { margin:5px 0 0; font-size:14px; line-height:20px; }
-.confirmation-close { display:grid; place-items:center; flex:none; width:28px; height:37px; border:0; background:transparent; color:inherit; cursor:pointer; }
-.confirmation-plan { min-height:237px; box-sizing:border-box; padding:18px 20px; border-radius:12px; background:#f0f7ff; margin-bottom:18px; }
-.confirmation-label { margin:0 0 8px; font-size:11px; line-height:16px; text-transform:uppercase; }
-.confirmation-plan h2 { margin:0 0 8px; min-height:68px; font-size:20px; line-height:34px; font-weight:600; }
+.confirmation-close { position:absolute; top:14px; right:14px; display:grid; place-items:center; width:32px; height:32px; border:0; background:transparent; color:#8da0b8; cursor:pointer; }
+.confirmation-label { margin:0 0 10px; color:#155dfc; font-size:14px; line-height:20px; text-align:left; text-transform:none; font-weight:600; }
+.confirmation-plan { min-height:161px; box-sizing:border-box; padding:21px 20px 17px; border:1px solid #c7d6ff; border-radius:10px; background:#f8faff; margin-bottom:30px; text-align:center; }
+.confirmation-plan h2 { margin:0 0 10px; min-height:0; font-size:24px; line-height:28px; font-weight:600; color:#155dfc; }
+.confirmation-plan h2 span { display:table; width:fit-content; align-items:center; min-height:28px; margin:6px auto 0; padding:0 10px; border:1px solid #246bfd; border-radius:8px; background:#c7d6ff; color:#155dfc; font-size:13px; line-height:26px; }
 .confirmation-plan h2 span { display:block; }
-.confirmation-plan .confirmation-benefits p { margin:0; font-size:14px; line-height:26px; }
+.confirmation-plan .confirmation-benefits p { margin:0; color:#64728b; font-size:12px; line-height:15px; }
 .confirmation-payment { margin:0 0 18px; }
-.confirmation-payment h2 { margin:0 0 14px; font-size:16px; line-height:23px; font-weight:600; }
+.confirmation-payment h2 { margin:0 0 14px; color:#155dfc; font-size:14px; line-height:20px; font-weight:600; }
 .confirmation-payment-grid,.confirmation-renewal-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px; margin:0; }
-.confirmation-payment-grid { min-height:87px; padding-bottom:14px; border-bottom:1px solid #dbe3f0; }
+.confirmation-payment-grid { min-height:72px; padding-bottom:14px; border-bottom:1px solid #dbe3f0; }
 .confirmation-payment-grid dt,.confirmation-renewal-grid dt { font-size:11px; line-height:16px; text-transform:uppercase; margin-bottom:4px; }
 .confirmation-payment-grid dd,.confirmation-renewal-grid dd { margin:0; font-size:16px; line-height:23px; font-weight:600; overflow-wrap:anywhere; }
 .confirmation-payment-grid p,.confirmation-renewal-grid p { margin:4px 0 0; font-size:12px; line-height:17px; color:#64748b; }
 .confirmation-renewal-grid { margin-top:14px; min-height:90px; }
-dialog.subscription-confirmation .subscription-consents { border:0; padding:0; margin:0 0 18px; display:grid; gap:10px; min-height:178px; }
-.subscription-confirmation .subscription-consents legend { font-size:15px; line-height:22px; font-weight:600; margin-bottom:10px; padding:0; }
-dialog.subscription-confirmation .subscription-consents label { display:flex; gap:12px; align-items:flex-start; min-height:38px; font-size:13px; line-height:19px; }
-dialog.subscription-confirmation .subscription-consents input { width:20px; height:20px; flex:0 0 20px; margin:0; accent-color:#155dfc; }
-.confirmation-actions { display:flex; justify-content:flex-end; gap:16px; }
+dialog.subscription-confirmation .subscription-consents { border:0; padding:0; margin:22px 0 18px; display:grid; gap:8px; min-height:0; }
+.subscription-confirmation .subscription-consents legend { color:#155dfc; font-size:14px; line-height:20px; font-weight:600; margin-bottom:4px; padding:0; }
+dialog.subscription-confirmation .subscription-consents label { display:flex; gap:8px; align-items:flex-start; min-height:18px; color:#64728b; font-size:12px; line-height:16px; }
+dialog.subscription-confirmation .subscription-consents input { width:14px; height:14px; flex:0 0 14px; margin:1px 0 0; accent-color:#155dfc; }
+.confirmation-actions { display:flex; justify-content:center; gap:16px; }
+.confirmation-actions .portal-button-secondary { display:none; }
 .confirmation-actions .portal-button { min-height:46px; min-width:130px; border-radius:8px; font-size:14px; }
-.confirmation-actions .portal-button-primary { width:132px; padding:10px 14px; }
+.confirmation-actions .portal-button-primary { width:168px; padding:10px 14px; }
+.confirmation-actions .portal-button-primary:disabled { opacity:1; background:#98a2b3; color:#fff; cursor:not-allowed; }
 @media(max-width:540px) { dialog.subscription-confirmation { padding:24px 20px; max-height:calc(100dvh - 24px); } .confirmation-heading h1 { font-size:22px; line-height:30px; } .confirmation-payment-grid { gap:16px; } .confirmation-actions { gap:12px; } .confirmation-actions .portal-button { min-width:0; flex:1; } }
 @media(max-width:420px) { .confirmation-payment-grid,.confirmation-renewal-grid { grid-template-columns:minmax(0,1fr); gap:16px; } .confirmation-actions .portal-button { padding:10px; } }
 @media(max-height:900px) { dialog.subscription-confirmation { margin:24px auto; max-height:calc(100vh - 48px); max-height:calc(100dvh - 48px); } }
@@ -233,6 +266,31 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 .portal-content-editor label { display:grid; gap:8px; min-width:0; }
 .portal-content-editor input,.portal-content-editor textarea,.portal-content-editor select { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }
 .portal-content-editor fieldset { min-width:0; border:1px solid #dbe3f0; padding:20px; display:grid; gap:16px; }
+.portal-content-editor > .portal-cms-fields { padding:0; margin:0; border:0; gap:24px; }
+.portal-i18n-toolbar { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
+.portal-i18n-toolbar .portal-button { min-height:42px; }
+.portal-i18n-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+.portal-i18n-grid h2 { margin:0; font-size:16px; }
+.portal-image-picker-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center; }
+.portal-banner-preview { min-height:140px; border-radius:8px; background:#0a1a32 center/cover no-repeat; color:white; padding:20px; display:grid; align-content:end; gap:6px; }
+.portal-image-library-dialog { width:min(840px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:min(80dvh,720px); padding:0; border:0; border-radius:8px; overflow:auto; color:#15233a; background:white; }
+.portal-image-library-dialog::backdrop { background:rgba(10,26,50,.55); }
+.portal-image-library-panel { min-width:0; width:100%; padding:24px; display:grid; gap:16px; }
+.portal-image-library-panel header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.portal-image-library-panel header h2 { min-width:0; overflow-wrap:anywhere; font-size:20px; margin:0; }
+.portal-image-library-grid { min-width:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(min(140px,100%),1fr)); gap:12px; }
+.portal-image-library-grid button { min-width:0; height:120px; overflow:hidden; border:2px solid #dbe3f0; border-radius:8px; background:#e8eef7 center/cover no-repeat; color:#15233a; padding:8px; display:flex; align-items:end; }
+.portal-image-library-grid button span { min-width:0; max-width:100%; max-height:100%; overflow:auto; overflow-wrap:anywhere; background:rgba(255,255,255,.86); font-size:12px; padding:2px 6px; text-align:left; }
+.portal-image-library-grid button.active { border-color:#1b4d8f; }
+.portal-image-library-grid button:disabled { opacity:.55; cursor:wait; }
+.portal-image-library-dialog .portal-cms-icon { width:40px; height:40px; min-height:40px; flex:0 0 40px; padding:8px; }
+.portal-image-library-dialog .portal-form-error { margin:0; overflow-wrap:anywhere; }
+.portal-image-library-dialog [role=status] { display:flex; gap:8px; align-items:center; margin:0; }
+.portal-cms-spinner { animation:portal-cms-spin 1s linear infinite; }
+@keyframes portal-cms-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .portal-cms-spinner { animation:none; } }
+@media (max-width:720px) { .portal-i18n-grid { grid-template-columns:1fr; } .portal-image-picker-row { grid-template-columns:1fr; } }
+@media (max-width:420px) { .portal-image-library-panel { padding:16px; }.portal-content-editor > .portal-cms-fields > fieldset { padding:14px; } }
 .settings-form label,.settings-form fieldset,.settings-grid > * { min-width:0; }
 .settings-form input,.settings-form select,.settings-form textarea { min-width:0; max-width:100%; }
 .avatar-settings { flex-wrap:wrap; }
@@ -286,6 +344,8 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
 .portal-footer .portal-footer-copyright { border:0; padding:0; margin:0; width:auto; text-align:left; }
 .portal-footer-bottom { width:100%; max-width:1240px; margin:48px auto 0; border-top:1px solid #ffffff33; padding-top:21px; }
 .portal-footer .portal-footer-social { display:flex; flex-wrap:wrap; gap:10px; color:#fff; font-weight:600; margin:0; }
+.help-hero { min-height:278px; background:#155dfc; color:#fff; text-align:center; }.help-hero-content { width:min(768px,calc(100% - 40px)); margin:auto; padding-top:73px; }.help-hero h1,.help-category-section h2,.help-popular-section h2,.help-faq-section h2,.help-support-section h2 { margin:0; font-size:30px; line-height:36px; font-weight:600; }.help-hero h1 { color:#fff; font-size:48px; line-height:48px; }.help-hero p { margin:18px 0 25px; font-size:20px; line-height:28px; }.help-search { height:48px; display:flex; align-items:center; gap:12px; padding:0 16px; border-radius:10px; background:#fff; color:#4a5565; text-align:left; }.help-search input { width:100%; border:0; outline:0; font:inherit; }.help-category-section,.help-faq-section { width:min(1280px,calc(100% - 40px)); margin:auto; text-align:center; }.help-category-section { padding:42px 0 108px; }.help-category-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:24px; margin-top:32px; }.help-category-card { min-height:176px; border:1px solid #e5e7eb; border-radius:14px; padding:23px; background:#fff; color:#0a0a0a; text-align:left; cursor:pointer; }.help-category-icon { width:48px; height:48px; display:grid; place-items:center; border-radius:10px; background:#dbeafe; }.help-category-icon img { max-width:24px; max-height:24px; }.help-category-card strong,.help-category-card > span:last-child { display:block; }.help-category-card strong { margin-top:16px; font-size:20px; line-height:28px; }.help-category-card > span:last-child { margin-top:7px; color:#4a5565; font-size:14px; }.help-popular-section { padding:42px max(20px,calc((100% - 1280px)/2)) 64px; background:#f9fafb; text-align:center; }.help-popular-grid { width:min(960px,100%); display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin:32px auto 0; text-align:left; }.help-popular-card { min-height:148px; padding:22px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }.help-popular-card h3 { margin:0; font-size:17px; }.help-popular-card p,.help-faq-list p { color:#4a5565; font-size:14px; line-height:20px; }.help-faq-section { width:min(720px,calc(100% - 40px)); padding:48px 0 74px; }.help-faq-list { margin-top:32px; text-align:left; }.help-faq-list details { border-bottom:1px solid #e5e7eb; }.help-faq-list summary { min-height:56px; display:flex; align-items:center; justify-content:space-between; gap:20px; cursor:pointer; font-size:16px; font-weight:600; list-style:none; }.help-faq-list summary::-webkit-details-marker { display:none; }.help-faq-list summary span { font-size:23px; }.help-faq-list p { margin:0 0 18px; }.help-support-section { min-height:391px; padding:64px 20px; background:linear-gradient(90deg,#155dfc,#9810fa); color:#fff; text-align:center; }.help-support-section > img { width:72px; height:64px; display:block; margin:0 auto 24px; }.help-support-section h2 { color:#fff; }.help-support-section p { width:min(651px,100%); margin:16px auto 26px; color:#dbeafe; font-size:20px; line-height:28px; }.help-support-section a { min-width:210px; height:48px; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; background:#fff; color:#4a5565; font-weight:600; text-decoration:none; }
+@media(max-width:800px) { .help-hero h1 { font-size:36px; line-height:42px; }.help-category-grid,.help-popular-grid { grid-template-columns:repeat(2,1fr); }.help-category-section { padding-bottom:64px; } } @media(max-width:520px) { .help-hero-content { padding-top:48px; }.help-category-grid,.help-popular-grid { grid-template-columns:1fr; }.help-hero p,.help-support-section p { font-size:16px; line-height:24px; } }
 @media(max-width:1320px) { .portal-footer-grid { grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)); gap:24px; } }
 .portal-explore-more { display:flex; justify-content:center; margin-top:36px; }
 @media(max-width:1100px) {
@@ -311,3 +371,25 @@ dialog.subscription-confirmation .subscription-consents input { width:20px; heig
  .portal-footer-grid > div:first-child { grid-column:1 / -1; }
 }
 @media(prefers-reduced-motion:reduce) { .portal-banner *,.account-menu * { transition:none !important; } }
+.contact-hero { min-height:159px; padding:38px 20px; background:#2161f5; color:#fff; text-align:center; }.contact-hero h1 { margin:0; color:#fff; font-size:30px; line-height:40px; font-weight:600; }.contact-hero p { margin:10px 0 0; font-size:14px; line-height:20px; }.contact-information { padding:27px 20px 34px; background:#fff; text-align:center; }.contact-information h2,.contact-form h2 { margin:0; color:#0a0a0a; font-size:20px; line-height:28px; font-weight:600; }.contact-information-grid { width:min(486px,100%); display:grid; grid-template-columns:1fr 1fr; gap:24px; margin:16px auto 0; text-align:left; }.contact-information-grid article { min-height:72px; display:flex; align-items:flex-start; gap:12px; padding:16px; border:1px solid #e5e7eb; border-radius:8px; }.contact-info-icon { width:24px; height:24px; display:grid; flex:0 0 24px; place-items:center; border-radius:6px; background:#2161f5; color:#fff; }.contact-information-grid h3 { margin:0 0 4px; color:#0a0a0a; font-size:12px; line-height:16px; font-weight:600; }.contact-information-grid a,.contact-information-grid p { display:block; margin:0; color:#4a5565; font-size:10px; line-height:14px; text-decoration:none; }.contact-form-section { padding:28px 20px 14px; background:#f9fafb; }.contact-form { width:min(486px,100%); display:grid; gap:14px; margin:0 auto; padding:20px 18px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; }.contact-form h2 { font-size:16px; line-height:24px; }.contact-form label { display:grid; gap:7px; color:#344054; font-size:10px; line-height:14px; font-weight:500; text-align:left; }.contact-name-fields { display:grid; grid-template-columns:1fr 1fr; gap:14px; }.contact-form input:not([type=checkbox]),.contact-form textarea { width:100%; height:25px; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:6px; padding:5px 9px; outline-color:#2161f5; color:#101828; font:inherit; font-size:11px; font-weight:400; }.contact-form textarea { height:93px; resize:vertical; }.contact-form input::placeholder,.contact-form textarea::placeholder { color:#98a2b3; }.contact-consent { display:flex !important; align-items:center; gap:7px !important; font-size:9px !important; }.contact-consent input { width:10px; height:10px; margin:0; accent-color:#2161f5; }.contact-submit { min-height:29px; display:flex; align-items:center; justify-content:center; gap:6px; border:0; border-radius:6px; background:#2161f5; color:#fff; font-size:10px; font-weight:500; cursor:pointer; }.contact-submit:hover { background:#174bd0; }
+@media(max-width:560px) { .contact-information-grid,.contact-name-fields { grid-template-columns:1fr; }.contact-information-grid { max-width:330px; }.contact-hero { min-height:140px; }.contact-form-section { padding-right:14px; padding-left:14px; } }
+.contact-hero { min-height:226px; padding-top:57px; }.contact-hero h1 { font-size:40px; line-height:52px; }.contact-hero p { margin-top:14px; font-size:16px; line-height:24px; }.contact-information { padding-top:38px; padding-bottom:49px; }.contact-information h2 { font-size:26px; line-height:36px; }.contact-information-grid { width:min(682px,100%); gap:34px; margin-top:22px; }.contact-information-grid article { min-height:102px; align-items:center; gap:16px; padding:20px; border-radius:10px; }.contact-info-icon { width:32px; height:32px; flex-basis:32px; border-radius:8px; }.contact-info-icon svg { width:20px; height:20px; }.contact-information-grid h3 { margin-bottom:6px; font-size:14px; line-height:20px; }.contact-information-grid a,.contact-information-grid p { font-size:12px; line-height:18px; }.contact-form-section { padding-top:38px; padding-bottom:20px; }.contact-form { width:min(682px,100%); gap:18px; padding:28px 26px; border-radius:12px; }.contact-form h2 { font-size:20px; line-height:28px; }.contact-name-fields { gap:18px; }.contact-form label { gap:8px; font-size:11px; line-height:16px; }.contact-form input:not([type=checkbox]),.contact-form textarea { height:32px; border-radius:7px; padding:7px 10px; font-size:12px; }.contact-form textarea { height:116px; }.contact-consent { font-size:10px !important; }.contact-submit { min-height:36px; border-radius:7px; font-size:12px; }
+@media(max-width:560px) { .contact-hero { min-height:160px; padding-top:40px; }.contact-hero h1 { font-size:32px; line-height:40px; }.contact-information { padding-top:30px; padding-bottom:36px; }.contact-information h2 { font-size:23px; line-height:32px; }.contact-information-grid { max-width:400px; gap:16px; }.contact-form { padding:22px 18px; }.contact-form-section { padding-top:26px; } }
+.contact-information-grid { width:836px; max-width:100%; grid-template-columns:repeat(2,400px); gap:36px; }.contact-information-grid article { width:400px; min-height:126px; box-sizing:border-box; }
+@media(max-width:860px) { .contact-information-grid { width:min(400px,100%); grid-template-columns:1fr; }.contact-information-grid article { width:100%; } }
+.contact-form { width:836px; max-width:100%; }
+.portal-footer .portal-footer-social { gap:12px; }.portal-footer-social span { width:40px; height:40px; display:block; }
+.help-popular-grid { width:min(873px,100%); grid-template-columns:1fr; gap:0; border-top:1px solid #e5e7eb; }.help-popular-card { min-height:104px; display:flex; align-items:center; justify-content:space-between; gap:24px; padding:20px 0; border:0; border-bottom:1px solid #e5e7eb; border-radius:0; background:transparent; }.help-popular-card h3 { font-size:18px; line-height:26px; }.help-popular-card p { margin:6px 0 0; }.help-popular-card > img,.help-faq-list summary img { flex:0 0 auto; }
+/* Course authoring shares the existing Backoffice shell. */
+.authoring-editor fieldset { border: 0; padding: 0; min-width: 0; display: grid; gap: 20px; }
+.authoring-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.authoring-heading label { flex: 1; min-width: 0; }
+.authoring-heading h2 { font-size: 22px; margin: 0; }
+.authoring-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
+.authoring-actions button, .authoring-heading > button { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #cbd2dc; border-radius: 6px; background: #fff; color: #263445; }
+.authoring-section { padding: 20px 0; border-top: 1px solid #d8dee8; display: grid; gap: 16px; }
+.authoring-lesson { border-left: 3px solid #44807d; padding: 12px 16px; background: #f6f8fa; }
+.authoring-lesson summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.authoring-lesson label { margin: 12px 0; }
+.authoring-editor button:disabled { opacity: .5; cursor: not-allowed; }
+.authoring-editor input, .authoring-editor textarea, .authoring-editor select { min-width: 0; max-width: 100%; }

@@ -1,9 +1,16 @@
 import { expect, test } from "playwright/test";
+import "./helpers/preload-native-modules";
 import type Stripe from "stripe";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { subscriptionPrices } from "../../contracts/payment";
+import * as productStore from "../../services/productStore";
+import * as paymentService from "../../services/paymentService";
+import * as stripePriceService from "../../services/stripePriceService";
+import { getStripe } from "../../services/stripeClient";
+import { presentSubscriptionOrders } from "../../services/subscriptionPresentationService";
+import * as paymentWebhook from "../../app/api/payment/webhook/route";
 
 test.describe.configure({ mode: "serial" });
 let store: typeof import("../../services/productStore");
@@ -30,14 +37,15 @@ test.beforeAll(async () => {
     catalog.set(mapping.id, { id: "price_" + mapping.id, active: true, lookup_key: mapping.id, type: "recurring", currency: "usd", unit_amount: mapping.scope === "everything" ? mapping.termMonths === 6 ? 9900 : 19800 : mapping.termMonths === 6 ? 3900 : 7800,
       billing_scheme: "per_unit", transform_quantity: null, recurring: { interval: mapping.termMonths === 6 ? "month" : "year", interval_count: mapping.termMonths === 6 ? 6 : 1, usage_type: "licensed" } } as Stripe.Price);
   }
-  store = await import("../../services/productStore");
-  payment = await import("../../services/paymentService");
-  prices = await import("../../services/stripePriceService");
-  webhook = await import("../../app/api/payment/webhook/route");
-  stripe = (await import("../../services/stripeClient")).getStripe();
+  store = productStore;
+  payment = paymentService;
+  prices = stripePriceService;
+  webhook = paymentWebhook;
+  stripe = getStripe();
   stripe.prices.list = (async (input: { lookup_keys: string[] }) => ({ data: input.lookup_keys.map(key => catalog.get(key)).filter(Boolean) })) as typeof stripe.prices.list;
   stripe.prices.retrieve = (async (id: string) => [...catalog.values()].find(item => item.id === id)) as typeof stripe.prices.retrieve;
   stripe.checkout.sessions.create = (async (input: Stripe.Checkout.SessionCreateParams, options?: Stripe.RequestOptions) => {
+    expect(input.success_url).toBe(`https://payment.example.test/en-GB/account/my-learning/subscription?orderId=${encodeURIComponent(String(input.metadata?.orderId))}`);
     requests.push({ input, options });
     const id = "cs_" + options?.idempotencyKey;
     if (!sessions.has(id)) sessions.set(id, { id, url: "https://checkout.stripe.test/" + id, status: "open", payment_status: "unpaid", mode: input.mode, metadata: input.metadata, currency: "usd" } as Stripe.Checkout.Session);
@@ -99,6 +107,26 @@ test("all eight lookup keys produce the correct subscription period and server p
   }
 });
 
+test("subscription records use purchased product imagery and term, including legacy prices", async () => {
+  const price = catalog.get("chinese-humanities-pc-6")!;
+  price.product = { id: "prod_chinese", name: "Chinese Humanities", images: ["https://images.example.test/chinese.jpg"] } as Stripe.Product;
+  const result = await checkout("chinese-humanities-pc-6");
+  expect(result.order.price).toMatchObject({ productName: "Chinese Humanities", productImage: "https://images.example.test/chinese.jpg", termMonths: 6 });
+  const overview = await store.getLearningOverview(result.buyer.id);
+  const orders = await presentSubscriptionOrders(overview.orders);
+  expect(orders[0].presentation).toEqual({ name: "Chinese Humanities", image: "https://images.example.test/chinese.jpg", termMonths: 6 });
+  const { productName, productImage, ...legacyPrice } = result.order.price!;
+  const legacy = await presentSubscriptionOrders([{ ...overview.orders[0], price: legacyPrice }]);
+  expect(legacy[0].presentation).toEqual(orders[0].presentation);
+  const localFallback = await presentSubscriptionOrders([{
+    ...overview.orders[0],
+    plan: { name: "Science", scope: "category", scopeId: "Science", termMonths: 6 },
+    price: { ...legacyPrice, stripePriceId: "price_science-pc-6", productName: "Science" }
+  }]);
+  expect(localFallback[0].presentation).toEqual({ name: "Science", image: "/portal/subscriptions/science.png", termMonths: 6 });
+
+});
+
 test("wrong yearly interval, inactive, metered and missing prices fail closed", async () => {
   const entry = catalog.get("science-pc-12")!;
   for (const override of [{ active: false }, { recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } }, { type: "one_time" }, { currency: "eur" }, { unit_amount: 0 }]) {
@@ -143,10 +171,10 @@ test("verified payment fulfils once; wrong amount and price retry without consum
   const result = await checkout();
   const { session } = paidSession(result.order);
   session.amount_total = 1;
-  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(500);
+  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(400);
   session.amount_total = result.order.amountMinor;
   session.line_items!.data[0].price!.id = "price_wrong";
-  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(500);
+  expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(400);
   session.line_items!.data[0].price!.id = result.order.price!.stripePriceId;
   expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(200);
   expect((await send("checkout.session.completed", "evt_retry", session.id)).status).toBe(200);

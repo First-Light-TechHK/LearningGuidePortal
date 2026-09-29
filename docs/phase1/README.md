@@ -2,6 +2,8 @@
 
 这里是 Learning Guide 生产网站 Phase 1 的工程文件入口。KS 不是独立产品；KS Phase 2 只增强 `Study`、`Understanding/Assessment` 和 `AI Tutor`。
 
+Cite these files as repo paths (`docs/phase1/domain-model.md`). Do not use GitHub `/blob/…` URLs.
+
 ## 文件顺序
 
 | 文件 | 用途 |
@@ -11,6 +13,9 @@
 | `domain-model.md` | 表、字段、关系和状态变更 |
 | `api-contracts.md` | API 输入、输出、权限和错误 |
 | `release-runbook.md` | DEV、SIT、UAT、PPE/PROD 和回滚 |
+| `sit-go-live-checklist.md` | SIT go-live: AWS, SES, Google, WeChat, Stripe, data, no Nacos |
+| `Learning_Guide_SIT_Migration_Checklist.docx` | DEV→SIT 开发移交单（开发填写；运维发布） |
+| `s3-documents.md` | DEV S3 `learning-guide/dev/documents/` keys and how to GetObject them |
 | `backbone.md` | 第一条可运行产品切片和后续开发顺序 |
 | `ai-coding-prompt.md` | 分配给 AI coding tool 的任务格式和固定约束 |
 | `overlay-forge-brief.md` | 开发群总稿：Overlay / Forge 协作、UML DAG、AUTH-01..06 / PAY-01..10 缺陷 |

@@ -1,4 +1,5 @@
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent } from "@/contracts/payment";
+import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice } from "./stripePriceService";
 import { productTransaction } from "@/repositories/productTransactionRepository";
@@ -7,10 +8,13 @@ import { constants as fsConstants } from "fs";
 import { open as openFile, unlink } from "fs/promises";
 import path from "path";
 import { promisify } from "util";
-import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, SYSTEM_ROOT, writeBinary } from "./fileStore";
+import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, systemRoot, writeBinary } from "./fileStore";
+import { persistenceEnabled } from "./persistence/config";
+import { query } from "./persistence/db";
+import { hydrateOrmFromSql } from "./ormRuntime";
 import type { SocialUserInput } from "@/contracts/wechat";
 import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
-import { defaultPortalContent, type PortalContent } from "@/lib/portalContent";
+import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
   courseProgressFromUniqueLearningPoints,
@@ -19,11 +23,17 @@ import {
   uniqueOpenedLearningPointIds,
 } from "@/lib/myLearningOverview";
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
+import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
+import type { LessonContent } from "@/contracts/lesson-content";
+import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
+import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
+import { applyDataMigrations } from "./dataMigrations";
+import { isValidName, normaliseName, validateName } from "@/lib/nameValidation";
 
 const scrypt = promisify(scryptCallback);
-const PRODUCT_DIR = path.join(SYSTEM_ROOT, "learning_guide");
-const PRODUCT_FILE = path.join(PRODUCT_DIR, "product.json");
-const PRODUCT_LOCK = `${PRODUCT_FILE}.lock`;
+function productDir() { return path.join(systemRoot(), "learning_guide"); }
+function productFile() { return path.join(productDir(), "product.json"); }
+function productLock() { return `${productFile()}.lock`; }
 const QUOTE_MINUTES = 15;
 const TRIAL_DAYS = 3;
 
@@ -34,7 +44,7 @@ export type ProductUser = {
   passwordHash: string | null;
   nickname: string;
   locale: Locale;
-  role: "student" | "operator";
+  role: "student" | "teacher" | "operator";
   status: "pending" | "active" | "disabled";
   emailVerifiedAt: string | null;
   avatarPath?: string | null;
@@ -47,6 +57,7 @@ export type ProductUser = {
 };
 
 export type ProductLesson = {
+  contents?: LessonContent[];
   id: string;
   title: string;
   body: string;
@@ -55,15 +66,18 @@ export type ProductLesson = {
   isPublic: boolean;
 };
 
-export type ProductSection = { id: string; title: string; lessons: ProductLesson[] };
-export type ProductCourse = {
+export type ProductSection = { id: string; title: string; lessons: ProductLesson[]; archivedAt?: string };
+export type ProductCourse = CourseMetadata & {
+  authorIds?: string[];
+  archivedSections?: ProductSection[];
+  archivedAt?: string | null;
   id: string;
   slug: string;
   title: string;
   description: string;
   category?: "Chinese Humanities" | "European Humanities" | "Science";
   thumbnailPath?: string | null;
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
   sections: ProductSection[];
   createdAt: string;
   updatedAt: string;
@@ -216,6 +230,10 @@ export type ProductPaymentSettings = {
 };
 
 export type ProductData = {
+  catalogue?: CatalogueEntry[];
+  catalogueMigrations?: string[];
+  dataMigrations?: string[];
+  authoringActivities?: Array<{ id: string; actorId: string; courseId?: string; action: string; createdAt: string; targetUserId?: string }>;
   portalContent?: PortalContent;
   version: 1;
   users: ProductUser[];
@@ -233,6 +251,7 @@ export type ProductData = {
   stripeEvents: Array<{ id: string; type: string; processedAt: string }>;
   verificationTokens: ProductToken[];
   passwordResetTokens: ProductToken[];
+  emailBindingTokens: Array<ProductToken & { email: string }>;
   paymentSettings: ProductPaymentSettings;
   orderActivities: ProductOrderActivity[];
   accounts: ProductAccount[];
@@ -296,6 +315,8 @@ Keep this claim separate from the later deprivation objection. The course can pr
 function defaultData(): ProductData {
   return {
     version: 1,
+    catalogueMigrations: [],
+    dataMigrations: [],
     users: [],
     sessions: [],
     courses: [defaultCourse()],
@@ -320,6 +341,7 @@ function defaultData(): ProductData {
     notifications: [],
     stripeEvents: [],
     verificationTokens: [],
+    emailBindingTokens: [],
     passwordResetTokens: [],
     paymentSettings: defaultPaymentSettings(),
     orderActivities: [],
@@ -412,21 +434,24 @@ function refundBlocksInvoiceGrant(data: ProductData, subscription: ProductSubscr
 }
 
 async function saveData(data: ProductData) {
-  await ensureDir(PRODUCT_DIR);
-  await atomicWriteJson(PRODUCT_FILE, data);
+  await ensureDir(productDir());
+  await atomicWriteJson(productFile(), data);
 }
 
 let editQueue = Promise.resolve();
 
-export async function ensureProductData() {
-  const current = await readJson<ProductData | null>(PRODUCT_FILE, null);
+export async function readProductAggregate() {
+  const current = await readJson<ProductData | null>(productFile(), null);
   if (current?.version === 1) {
     if (!current.stripeEvents) current.stripeEvents = [];
     if (!current.verificationTokens) current.verificationTokens = [];
+    current.emailBindingTokens ||= [];
     if (!current.passwordResetTokens) current.passwordResetTokens = [];
     if (!current.paymentSettings) current.paymentSettings = defaultPaymentSettings();
     if (!current.orderActivities) current.orderActivities = [];
     if (!current.accounts) current.accounts = [];
+    current.catalogueMigrations ||= [];
+    current.dataMigrations ||= [];
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
     current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
     current.plans.forEach((plan) => {
@@ -449,6 +474,11 @@ export async function ensureProductData() {
     seededPlans.forEach((seededPlan) => {
       if (!current.plans.some((plan) => plan.id === seededPlan.id)) current.plans.push(seededPlan);
     });
+    if (persistenceEnabled()) {
+      await hydrateOrmFromSql(current as unknown as Record<string, unknown>, {
+        query: async (text, values) => query(text, values),
+      });
+    }
     return current;
   }
   const seeded = defaultData();
@@ -456,18 +486,32 @@ export async function ensureProductData() {
   return seeded;
 }
 
+export async function ensureProductData() {
+  const current = await readProductAggregate();
+  await applyDataMigrations(current);
+  return current;
+}
+
+export async function persistDataMigrations() {
+  return editData((data) => applyDataMigrations(data));
+}
+
+export async function persistCatalogueMigrations() {
+  return persistDataMigrations();
+}
+
 async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {
   // D1 ARCH-01: serialize writers across processes; re-read inside the lock.
-  await ensureDir(PRODUCT_DIR);
+  await ensureDir(productDir());
   const started = Date.now();
   while (true) {
     try {
-      const handle = await openFile(PRODUCT_LOCK, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY);
+      const handle = await openFile(productLock(), fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY);
       try {
         return await fn();
       } finally {
         await handle.close();
-        await unlink(PRODUCT_LOCK).catch(() => undefined);
+        await unlink(productLock()).catch(() => undefined);
       }
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? (error as { code?: string }).code : undefined;
@@ -493,8 +537,7 @@ function hashToken(token: string) {
 }
 
 function validateNickname(value: string) {
-  if (!/^[A-Za-z0-9 ]{2,30}$/.test(value)) throw new Error("Name must be 2-30 English letters, numbers or spaces.");
-  return value;
+  return validateName(value);
 }
 
 async function passwordHash(password: string) {
@@ -517,7 +560,7 @@ export function publicUser(user: ProductUser) {
 }
 
 export function isOperator(user: ProductUser) {
-  return user.role === "operator";
+  return canOperateBackoffice(user);
 }
 
 export async function getUserById(userId: string) {
@@ -533,7 +576,7 @@ export async function getActiveUserByEmail(emailValue: string) {
 }
 
 export async function getPortalContent(): Promise<PortalContent> {
-  return (await ensureProductData()).portalContent || defaultPortalContent;
+  return withSharedBannerImages((await ensureProductData()).portalContent || defaultPortalContent);
 }
 
 export async function savePortalContent(value: unknown): Promise<PortalContent> {
@@ -560,8 +603,16 @@ export async function savePortalContent(value: unknown): Promise<PortalContent> 
       content.categories.some((item) => !expected.includes(item.id) || ["en-GB", "zh-CN"].some((locale) => typeof item.labels?.[locale as Locale] !== "string" || !item.labels[locale as Locale].trim() || item.labels[locale as Locale].length > 80))) throw new Error("Provide one translated label for each supported category.");
   if (!Array.isArray(content.countries) || !content.countries.length || content.countries.length > 300 || content.countries.some((item) => typeof item !== "string" || !item.trim() || item.length > 80)) throw new Error("Provide a valid country list.");
   if (!validUrl(content.supportUrl, true)) throw new Error("Support URL must be a relative path or HTTPS URL.");
+  const translation: PortalTranslation | undefined = content.translation
+    && (content.translation.source === "en-GB" || content.translation.source === "zh-CN")
+    && typeof content.translation.hash === "string"
+    && content.translation.hash.length > 0
+    && content.translation.hash.length < 20000
+    ? { source: content.translation.source, hash: content.translation.hash }
+    : undefined;
+  const normalised = withSharedBannerImages(content);
   return editData((data) => {
-    data.portalContent = { banners: content.banners, categories: content.categories, countries: [...new Set(content.countries)], supportUrl: content.supportUrl };
+    data.portalContent = { banners: normalised.banners, categories: content.categories, countries: [...new Set(content.countries)], supportUrl: content.supportUrl, ...(translation ? { translation } : {}) };
     return data.portalContent;
   });
 }
@@ -573,28 +624,42 @@ export async function userEmailExists(emailValue: string) {
   return data.users.some((user) => user.email === email && ["pending", "active"].includes(user.status));
 }
 
-export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string }) {
-  const email = input.email.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
+export async function getEmailAuthState(emailValue: string) {
+  const email = normaliseEmail(emailValue);
+  if (!isBusinessEmail(email)) return { exists: false, pending: false, retryAfter: 0 };
+  const data = await ensureProductData();
+  const user = data.users.find((item) => item.email === email && ["pending", "active"].includes(item.status));
+  return { exists: Boolean(user), pending: user?.status === "pending" || (Boolean(user) && !user?.emailVerifiedAt), retryAfter: user?.status === "pending" ? verificationRetryAfter(data, user.id) : 0 };
+}
+
+export async function registerUserAttempt(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
+  const email = normaliseEmail(input.email);
+  if (!isBusinessEmail(email)) throw new Error("Enter a valid email address. Use letters, numbers, dots, underscores, hyphens and one @ only.");
   if (input.password.length < 8) throw new Error("Password must contain at least 8 characters.");
-  const nickname = validateNickname(input.nickname?.trim() || "Learner");
+  if (input.nickname === undefined) throw new Error("Name is required.");
+  const nickname = validateNickname(input.nickname);
+  const role = input.role === "operator" || input.role === "teacher" ? input.role : "student";
   return editData(async (data) => {
     const existing = data.users.find((user) => user.email === email);
-    if (existing) throw new Error("An account with this email already exists.");
+    if (existing) return { user: { ...existing, email: existing.email || email }, created: false };
     const user: ProductUser = {
       id: id("user"),
       email,
       passwordHash: await passwordHash(input.password),
       nickname,
       locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB",
-      role: "student",
+      role,
       status: "pending",
       emailVerifiedAt: null,
       createdAt: now(),
     };
     data.users.push(user);
-    return { ...user, email };
+    return { user: { ...user, email }, created: true };
   });
+}
+
+export async function registerUser(input: { email: string; password: string; locale?: Locale; nickname?: string; role?: ProductUser["role"] }) {
+  return (await registerUserAttempt({ ...input, nickname: input.nickname ?? "Learner" })).user;
 }
 
 export async function getOrCreateSocialUser(input: SocialUserInput) {
@@ -646,7 +711,10 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       }
       throw new ProductAuthError("account_conflict", `An account already uses this email. Sign in with that account before linking ${input.provider === "google" ? "Google" : "WeChat"}.`);
     }
-    const nickname = input.nickname && /^[A-Za-z0-9 ]{2,30}$/.test(input.nickname.trim()) ? input.nickname.trim() : "Learner";
+    // Google is the explicit exception to the normal Name rule: its verified
+    // email prefix identifies the first-created account. Existing Names stay put.
+    const googleEmailPrefix = input.provider === "google" && email ? email.slice(0, email.indexOf("@")) : "";
+    const nickname = googleEmailPrefix || (input.nickname && isValidName(input.nickname) ? normaliseName(input.nickname) : "Learner");
     const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, wechatAppId: input.wechat?.appId, wechatOpenId: input.wechat?.openId, wechatUnionId: input.wechat?.unionId, createdAt: now() });
@@ -699,16 +767,46 @@ async function issueToken(collection: "verificationTokens" | "passwordResetToken
   return rawToken;
 }
 
+function verificationRetryAfter(data: ProductData, userId: string) {
+  const latest = data.verificationTokens.find((item) => item.userId === userId);
+  if (!latest) return 0;
+  return Math.max(0, 60 - Math.ceil((Date.now() - new Date(latest.createdAt).getTime()) / 1000));
+}
+
+function verificationDailyCount(data: ProductData, userId: string) {
+  const since = Date.now() - 24 * 60 * 60 * 1000;
+  return data.verificationTokens.filter((item) => item.userId === userId && new Date(item.createdAt).getTime() >= since).length;
+}
+
 export async function issueEmailVerificationToken(userId: string, enforceCooldown = false) {
-  return issueToken("verificationTokens", userId, enforceCooldown);
+  const rawToken = randomBytes(32).toString("base64url");
+  await editData((data) => {
+    const retryAfter = verificationRetryAfter(data, userId);
+    if (enforceCooldown && retryAfter > 0) throw new Error(`VERIFICATION_COOLDOWN:${retryAfter}`);
+    if (verificationDailyCount(data, userId) >= 10) throw new Error("VERIFICATION_DAILY_LIMIT");
+    const issuedAt = now();
+    for (const item of data.verificationTokens) {
+      if (item.userId === userId && !item.usedAt) item.usedAt = issuedAt;
+    }
+    data.verificationTokens.unshift({ id: id("verify"), userId, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), usedAt: null, createdAt: issuedAt });
+  });
+  return rawToken;
 }
 
 export async function requestEmailVerification(emailValue: string) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === email && item.status === "pending");
-  if (!user?.email) return { accepted: true as const, user: null, token: null };
-  return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true) };
+  if (!user?.email) return { accepted: true as const, user: null, token: null, retryAfter: 0, code: null };
+  try {
+    return { accepted: true as const, user: { ...user, email: user.email }, token: await issueEmailVerificationToken(user.id, true), retryAfter: 60, code: null };
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("VERIFICATION_COOLDOWN:")) {
+      return { accepted: false as const, user: null, token: null, retryAfter: Number(error.message.split(":")[1]) || 1, code: "cooldown" as const };
+    }
+    if (error instanceof Error && error.message === "VERIFICATION_DAILY_LIMIT") return { accepted: false as const, user: null, token: null, retryAfter: 0, code: "daily_limit" as const };
+    throw error;
+  }
 }
 
 export async function verifyEmailToken(rawToken: string) {
@@ -730,14 +828,19 @@ export async function verifyEmailToken(rawToken: string) {
   });
 }
 
-export async function requestPasswordReset(emailValue: string) {
+export async function requestPasswordReset(emailValue: string, enforceCooldown = false) {
   const email = emailValue.trim().toLowerCase();
   const data = await ensureProductData();
   // A Google-created account has no password initially. Its verified provider
   // email is sufficient to request a reset and establish email/password login.
   const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
   if (!user) return { accepted: true, token: null };
-  return { accepted: true, token: await issueToken("passwordResetTokens", user.id) };
+  try {
+    return { accepted: true, token: await issueToken("passwordResetTokens", user.id, enforceCooldown) };
+  } catch (error) {
+    if (enforceCooldown && error instanceof Error && error.message === "Please wait before requesting another verification email.") return { accepted: true, token: null };
+    throw error;
+  }
 }
 
 export async function resetPassword(rawToken: string, newPassword: string) {
@@ -779,8 +882,8 @@ export async function saveUserAvatar(userId: string, buffer: Buffer, contentType
   const avatarPath = `avatars/${userId}.${extension}`;
   const user = await getUserById(userId);
   if (!user) throw new Error("User not found.");
-  if (user.avatarPath && user.avatarPath !== avatarPath) await removeDir(path.join(PRODUCT_DIR, user.avatarPath));
-  await writeBinary(path.join(PRODUCT_DIR, avatarPath), buffer);
+  if (user.avatarPath && user.avatarPath !== avatarPath) await removeDir(path.join(productDir(), user.avatarPath));
+  await writeBinary(path.join(productDir(), avatarPath), buffer);
   return editData((data) => {
     const current = data.users.find((item) => item.id === userId);
     if (!current) throw new Error("User not found.");
@@ -793,7 +896,7 @@ export async function saveUserAvatar(userId: string, buffer: Buffer, contentType
 export async function removeUserAvatar(userId: string) {
   const user = await getUserById(userId);
   if (!user) throw new Error("User not found.");
-  if (user.avatarPath) await removeDir(path.join(PRODUCT_DIR, user.avatarPath));
+  if (user.avatarPath) await removeDir(path.join(productDir(), user.avatarPath));
   return editData((data) => {
     const current = data.users.find((item) => item.id === userId);
     if (!current) throw new Error("User not found.");
@@ -806,34 +909,82 @@ export async function removeUserAvatar(userId: string) {
 export async function getUserAvatar(userId: string) {
   const user = await getUserById(userId);
   if (!user?.avatarPath || !user.avatarContentType) return null;
-  try { return { buffer: await readBinary(path.join(PRODUCT_DIR, user.avatarPath)), contentType: user.avatarContentType }; } catch { return null; }
+  try { return { buffer: await readBinary(path.join(productDir(), user.avatarPath)), contentType: user.avatarContentType }; } catch { return null; }
 }
 
 export async function authenticateUser(emailValue: string, password: string) {
+  if (!isBusinessEmail(emailValue)) throw new Error("Enter a valid email address.");
   const data = await ensureProductData();
-  const user = data.users.find((item) => item.email === emailValue.trim().toLowerCase());
+  const user = data.users.find((item) => item.email === normaliseEmail(emailValue));
   if (!user || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
   if (user.status === "pending" || !user.emailVerifiedAt) throw new Error("Email or password is incorrect.");
   if (user.status !== "active") throw new Error("This account is not available.");
   return user;
 }
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string, options?: { replaceExisting?: boolean; maxAgeSeconds?: number }) {
   const token = randomBytes(32).toString("base64url");
-  const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt: addMonths(now(), 1), createdAt: now() };
+  const createdAt = now();
+  const expiresAt = options?.maxAgeSeconds !== undefined
+    ? new Date(Date.parse(createdAt) + Math.max(1, options.maxAgeSeconds) * 1000).toISOString()
+    : addMonths(createdAt, 1);
+  const session: ProductSession = { id: id("session"), tokenHash: hashToken(token), userId, expiresAt, createdAt };
   await editData((data) => {
-    data.sessions = data.sessions.filter((item) => new Date(item.expiresAt) > new Date() && item.userId !== userId);
+    data.sessions = data.sessions.filter((item) => (options?.replaceExisting ? item.userId !== userId : true) && new Date(item.expiresAt) > new Date());
     data.sessions.push(session);
   });
   return { token, expiresAt: session.expiresAt };
 }
 
-export async function getUserBySessionToken(token: string | undefined) {
+export async function getUserBySessionToken(token: string | undefined, allowEmailBinding = false) {
   if (!token) return null;
   const data = await ensureProductData();
   const session = data.sessions.find((item) => item.tokenHash === hashToken(token) && new Date(item.expiresAt) > new Date());
   if (!session) return null;
-  return data.users.find((user) => user.id === session.userId && user.status === "active" && (Boolean(user.emailVerifiedAt) || data.accounts.some((account) => account.userId === user.id && account.provider === "wechat"))) || null;
+  return data.users.find((user) => user.id === session.userId && user.status === "active" && ((Boolean(user.email) && Boolean(user.emailVerifiedAt)) || (allowEmailBinding && data.accounts.some((account) => account.userId === user.id && account.provider === "wechat")))) || null;
+}
+
+export async function issueEmailBinding(userId: string, emailValue: string) {
+  const email = emailValue.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error("invalid_email");
+  return editData(data => {
+    const user = data.users.find(user => user.id === userId && user.status === "active");
+    if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
+    if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
+    if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
+    const latest = data.emailBindingTokens.find(token => token.userId === userId);
+    if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
+    const rawToken = randomBytes(32).toString("base64url");
+    // Remove superseded links so they cannot be mistaken for successful replays.
+    data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
+    data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+    return { token: rawToken, email };
+  });
+}
+
+export async function getPendingEmailBinding(userId: string) {
+  const data = await ensureProductData();
+  const token = data.emailBindingTokens.find(item => item.userId === userId && !item.usedAt);
+  if (!token) return null;
+  const elapsedSeconds = Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 1000);
+  return { email: token.email, retryAfter: Math.max(0, 60 - elapsedSeconds) };
+}
+
+export async function confirmEmailBinding(rawToken: string) {
+  return editData(data => {
+    const token = data.emailBindingTokens.find(token => token.tokenHash === hashToken(rawToken));
+    if (!token) throw new Error("invalid_link");
+    const user = data.users.find(user => user.id === token.userId && user.status === "active");
+    if (!user) throw new Error("invalid_link");
+    if (token.usedAt && user.email === token.email && user.emailVerifiedAt) return { userId: user.id, alreadyBound: true };
+    if (token.usedAt || new Date(token.expiresAt) <= new Date()) throw new Error("invalid_link");
+    if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
+    if (data.users.some(other => other.id !== user.id && other.email?.toLowerCase() === token.email)) throw new Error("email_in_use");
+    user.email = token.email;
+    user.emailVerifiedAt = now();
+    token.usedAt = now();
+    return { userId: user.id, alreadyBound: false };
+  });
 }
 
 export async function deleteSession(token: string | undefined) {
@@ -977,11 +1128,8 @@ function activeEntitlement(data: ProductData, userId: string, courseId: string) 
 export async function checkEntitlement(userId: string, courseId: string, device?: "pc" | "mobile") {
   const data = await ensureProductData();
   const entitlement = activeEntitlement(data, userId, courseId);
-  if (!entitlement) return { allowed: false, source: null, validTo: null };
-  if (device && entitlement.device && entitlement.device !== device) {
-    return { allowed: false, source: null, validTo: null };
-  }
-  return { allowed: true, source: entitlement.source, validTo: entitlement.validTo };
+  if (!entitlement) return { allowed: false, source: null, validTo: null, device: null };
+  return { allowed: true, source: entitlement.source, validTo: entitlement.validTo, device: entitlement.device || null };
 }
 
 function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) {
@@ -997,9 +1145,7 @@ function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) 
   if (existing && !currentTrial) throw new Error("This plan already has active access.");
   const previousTrial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial");
   if (previousTrial) {
-    if (previousTrial.state === "trial_canceled") {
-      throw new Error("This trial has been cancelled and cannot be completed again.");
-    }
+    if (previousTrial.state === "trial_canceled") throw new Error("This trial payment attempt cannot be completed.");
     if (new Date(previousTrial.validTo) <= new Date()) {
       previousTrial.state = "expired";
       throw new Error("The three-day trial has ended.");
@@ -1043,6 +1189,9 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
+    if (kind === "purchase" && data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) {
+      throw new Error("This plan already has active access.");
+    }
     const quote: ProductQuote = { price, planSnapshot: { ...plan }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
     return { quote, plan };
@@ -1670,7 +1819,7 @@ export async function getLearningOverview(userId: string) {
       };
     });
     const empty = overviewEmptyState(courses.length, accessState);
-    const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: data.plans.find((plan) => plan.id === order.planId) || null }));
+    const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: order.planSnapshot || data.plans.find((plan) => plan.id === order.planId) || null }));
     const entitlements = data.entitlements.filter((item) => item.userId === userId && item.state === "active" && new Date(item.validTo) > currentTime);
     return {
       courses,
@@ -1871,23 +2020,120 @@ export async function markNotificationRead(userId: string, notificationId: strin
   return setNotificationRead(userId, notificationId, true);
 }
 
-export async function createCourseForOperator(input: { title: string; description?: string; category?: ProductCourse["category"] }) {
-  return editData((data) => {
-    const title = input.title.trim();
-    if (!title) throw new Error("Course title is required.");
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("course");
-    if (data.courses.some((course) => course.slug === slug)) throw new Error("A course with this title already exists.");
-    const category = input.category && ["Chinese Humanities", "European Humanities", "Science"].includes(input.category) ? input.category : "European Humanities";
-    const course: ProductCourse = { id: id("course"), slug, title, description: input.description?.trim() || "", category, thumbnailPath: null, status: "draft", sections: [], createdAt: now(), updatedAt: now() };
-    data.courses.unshift(course);
+export async function saveCourseDraftForOperator(operatorId: string, courseId: string, input: import("@/contracts/course-authoring").CourseDraftInput) {
+  return editData(async data => {
+    const course = managedCourse(data, operatorId, courseId);
+    const index = data.courses.indexOf(course);
+    const updated = applyCourseDraft(course, input);
+    validateCatalogueSelection(data, updated, course);
+    const { assertCourseMediaReferences } = await import("./courseMedia");
+    try {
+      await assertCourseMediaReferences(updated);
+    } catch { throw new AuthoringError("invalid"); }
+    data.courses[index] = updated;
+    authoringActivity(data, operatorId, "save-draft", courseId);
+    return updated;
+  });
+}
+
+export const saveCourseDraftForAuthor = saveCourseDraftForOperator;
+
+function managedCourse(data: ProductData, actorId: string, courseId: string) {
+  const actor = data.users.find(user => user.id === actorId);
+  if (!canAuthorCourses(actor)) throw new AuthoringError("restricted");
+  const course = data.courses.find(course => course.id === courseId);
+  if (!course || !canManageCourse(actor, course)) throw new AuthoringError("notFound");
+  return course;
+}
+
+function authoringActivity(data: ProductData, actorId: string, action: string, courseId?: string, targetUserId?: string) {
+  (data.authoringActivities ||= []).push({ id: id("authoring"), actorId, action, courseId, targetUserId, createdAt: now() });
+}
+
+function validateCatalogueSelection(data: ProductData, course: CourseMetadata, previous?: CourseMetadata) {
+  const category = data.catalogue?.find(item => item.id === course.categoryId && item.parentId === null);
+  const subject = data.catalogue?.find(item => item.id === course.subjectId && item.parentId === course.categoryId);
+  if (course.categoryId && (!category || category.status !== "active" && course.categoryId !== previous?.categoryId)) throw new AuthoringError("invalid");
+  if (course.subjectId && (!subject || subject.status !== "active" && course.subjectId !== previous?.subjectId)) throw new AuthoringError("invalid");
+}
+
+export async function listCoursesForAuthor(actorId: string, query: CourseListQuery = {}) {
+  const data = await ensureProductData();
+  const actor = data.users.find(user => user.id === actorId);
+  if (!actor || !canAuthorCourses(actor)) throw new AuthoringError("restricted");
+  return { ...selectAuthorCourses(data.courses, actor, query), operator: canOperateBackoffice(actor) };
+}
+
+export async function getCourseForAuthor(actorId: string, courseId: string) {
+  return managedCourse(await ensureProductData(), actorId, courseId);
+}
+
+export async function getCourseCatalogue(actorId: string) {
+  const data = await ensureProductData();
+  if (!canAuthorCourses(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+  return data.catalogue || [];
+}
+
+export async function saveCatalogueEntry(actorId: string, entryId: string | null, input: CatalogueInput) {
+  return editData(data => {
+    if (!canOperateBackoffice(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+    const catalogue = data.catalogue ||= [];
+    const existing = entryId ? catalogue.find(entry => entry.id === entryId) : undefined;
+    if (entryId && !existing) throw new AuthoringError("notFound");
+    if (existing && input.expectedUpdatedAt !== existing.updatedAt) throw new AuthoringError("conflict");
+    if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 100 || input.description !== undefined && (typeof input.description !== "string" || input.description.length > 1000)) throw new AuthoringError("invalid");
+    const parentId = input.parentId === undefined ? existing?.parentId ?? null : input.parentId;
+    if (existing && parentId !== existing.parentId) throw new AuthoringError("invalid");
+    if (parentId && !catalogue.some(entry => entry.id === parentId && entry.parentId === null && entry.status === "active")) throw new AuthoringError("invalid");
+    const status = input.status ?? existing?.status ?? "active";
+    if (!["active", "archived"].includes(status)) throw new AuthoringError("invalid");
+    if (catalogue.some(entry => entry.id !== entryId && entry.parentId === parentId && entry.status === "active" && entry.name.toLocaleLowerCase() === input.name.trim().toLocaleLowerCase())) throw new AuthoringError("conflict");
+    if (existing && status === "archived" && (catalogue.some(entry => entry.parentId === existing.id && entry.status === "active") || data.courses.some(course => course.status !== "archived" && (course.categoryId === existing.id || course.subjectId === existing.id)))) throw new AuthoringError("inUse");
+    const entry: CatalogueEntry = { id: existing?.id || id(parentId ? "subject" : "category"), name: input.name.trim(), description: input.description?.trim() ?? existing?.description ?? "", parentId, status, createdAt: existing?.createdAt || now(), updatedAt: new Date(Math.max(Date.now(), Date.parse(existing?.updatedAt || "1970-01-01") + 1)).toISOString() };
+    if (existing) catalogue[catalogue.indexOf(existing)] = entry; else catalogue.push(entry);
+    authoringActivity(data, actorId, `catalogue-${status}`);
+    return entry;
+  });
+}
+
+export async function assignCourseOwner(actorId: string, courseId: string, input: { email: string; expectedUpdatedAt: string }) {
+  return editData(data => {
+    if (!canOperateBackoffice(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+    const course = managedCourse(data, actorId, courseId);
+    if (input.expectedUpdatedAt !== course.updatedAt) throw new AuthoringError("conflict");
+    if (typeof input.email !== "string" || input.email.length > 254) throw new AuthoringError("invalid");
+    const owner = data.users.find(user => user.email?.toLowerCase() === input.email.trim().toLowerCase() && user.status === "active" && Boolean(user.emailVerifiedAt));
+    if (!owner) throw new AuthoringError("notFound");
+    if (owner.role === "student") owner.role = "teacher";
+    course.authorIds = [owner.id];
+    course.updatedAt = new Date(Math.max(Date.now(), Date.parse(course.updatedAt) + 1)).toISOString();
+    authoringActivity(data, actorId, "assign-owner", courseId, owner.id);
     return course;
   });
 }
 
-export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }) {
+export async function createCourseForOperator(input: { title: string; description?: string; category?: ProductCourse["category"] } & CourseMetadata, actorId?: string) {
   return editData((data) => {
-    const course = data.courses.find((item) => item.id === input.courseId);
+    if (actorId && !canAuthorCourses(data.users.find(user => user.id === actorId))) throw new AuthoringError("restricted");
+    if (typeof input.title !== "string" || input.title.length > 255 || input.description !== undefined && (typeof input.description !== "string" || input.description.length > 5000)) throw new AuthoringError("invalid");
+    const title = input.title.trim();
+    if (!title) throw new AuthoringError("invalid");
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("course");
+    if (data.courses.some((course) => course.slug === slug)) throw new AuthoringError("conflict");
+    const category = input.category && ["Chinese Humanities", "European Humanities", "Science"].includes(input.category) ? input.category : "European Humanities";
+    const course: ProductCourse = { ...validateCourseMetadata(input), id: id("course"), slug, title, description: input.description?.trim() || "", category, thumbnailPath: null, authorIds: actorId ? [actorId] : [], status: "draft", sections: [], createdAt: now(), updatedAt: now() };
+    validateCatalogueSelection(data, course);
+    data.courses.unshift(course);
+    if (actorId) authoringActivity(data, actorId, "create", course.id);
+    return course;
+  });
+}
+
+export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }, actorId?: string) {
+  return editData((data) => {
+    const course = actorId ? managedCourse(data, actorId, input.courseId) : data.courses.find((item) => item.id === input.courseId);
     if (!course) throw new Error("Course not found.");
+    if (course.status !== "draft") throw new AuthoringError(course.status === "archived" ? "archived" : "published");
     const title = input.title.trim();
     const body = input.body.trim();
     const durationMinutes = Math.round(input.durationMinutes);
@@ -1899,20 +2145,31 @@ export async function addLessonToCourse(input: { courseId: string; title: string
     const section = course.sections[0] || { id: id("section"), title: "Course content", lessons: [] };
     if (!course.sections.length) course.sections.push(section);
     if (input.isPublic) course.sections.forEach((item) => item.lessons.forEach((lesson) => { lesson.isPublic = false; }));
-    const lesson: ProductLesson = { id: `${course.id}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id("lesson")}`, title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
+    const lesson: ProductLesson = { id: id("lesson"), title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
     section.lessons.push(lesson);
     course.updatedAt = now();
     return lesson;
   });
 }
 
-export async function setCourseStatus(courseId: string, status: ProductCourse["status"]) {
-  return editData((data) => {
-    const course = data.courses.find((item) => item.id === courseId);
+export async function setCourseStatus(courseId: string, status: ProductCourse["status"], actorId?: string, expectedUpdatedAt?: string) {
+  return editData(async (data) => {
+    const course = actorId ? managedCourse(data, actorId, courseId) : data.courses.find((item) => item.id === courseId);
     if (!course) throw new Error("Course not found.");
-    if (status === "published" && !course.sections.some((section) => section.lessons.length > 0)) throw new Error("A Course needs at least one Lesson before it can be published.");
+    if (!["draft", "published", "archived"].includes(status)) throw new AuthoringError("invalid");
+    if (actorId && expectedUpdatedAt !== course.updatedAt) throw new AuthoringError("conflict");
+    if (course.status === "archived" && status === "published") throw new AuthoringError("archived");
+    if (status === "published" && !course.sections.some((section) => section.lessons.length > 0)) throw new AuthoringError("invalid");
+    if (status === "published" && course.sections.some(section => section.lessons.some(lesson => !lesson.body.trim() && !lesson.contents?.length))) throw new AuthoringError("invalid");
+    if (status === "published") {
+      validateCatalogueSelection(data, course);
+      const { assertCourseMediaReferences } = await import("./courseMedia");
+      try { await assertCourseMediaReferences(course); } catch { throw new AuthoringError("invalid"); }
+    }
     course.status = status;
-    course.updatedAt = now();
+    course.archivedAt = status === "archived" ? now() : null;
+    course.updatedAt = new Date(Math.max(Date.now(), Date.parse(course.updatedAt) + 1)).toISOString();
+    if (actorId) authoringActivity(data, actorId, status, course.id);
     return course;
   });
 }

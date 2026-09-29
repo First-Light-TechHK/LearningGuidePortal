@@ -2,7 +2,9 @@
 # Job order is strict via needs: Typecheck → Lint → Build and test.
 # Aligns with cloud shape: node:22 + npm ci + npm run build + next start -p 8080.
 # This workflow never runs aws apprunner start-deployment and has no deploy job.
-# Cloud publish is only apprunner-deploy.yml (workflow_dispatch + queue-and-wait).
+# DEV publish is dev-deploy.yml (push to `dev` + live e2e / fallback / notify).
+# SIT publish is sit-deploy.yml (workflow_dispatch only, then the same live e2e).
+# UAT / PPE deploy workflows exist but require provisioned ARNs.
 # Local PAYMENT_MODE=demo / next dev / 3011 is not this workflow's default env.
 # smoke:product, test:e2e, ast-grep, semgrep, and knip stay off Actions.
 
@@ -81,7 +83,10 @@ jobs:
       - name: Typecheck, unit, integration
         run: npm run test:ci
 
-      - name: Production start /api/health probe
+      - name: Payment regression tests
+        run: npm run test:payment
+
+      - name: Production missing-configuration rejection test
         env:
           NODE_ENV: production
           APP_ENV: PROD
@@ -95,8 +100,8 @@ jobs:
           ok=0
           for _ in $(seq 1 45); do
             code=$(curl -sS -o /tmp/lg-health.json -w "%{http_code}" http://127.0.0.1:8080/api/health || true)
-            if [ "$code" = "200" ] || [ "$code" = "503" ]; then
-              echo "GET /api/health -> $code (503/not-ready is OK without App Runner secrets)"
+            if [ "$code" = "503" ]; then
+              echo "GET /api/health -> 503: correctly rejects missing production configuration"
               cat /tmp/lg-health.json
               echo
               ok=1
@@ -109,7 +114,7 @@ jobs:
             exit 1
           fi
 
-      - name: Production preflight
+      - name: Optional production configuration check (not deployment acceptance)
         env:
           APP_ENV: PROD
           PAYMENT_MODE: stripe
@@ -128,7 +133,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           if [ -z "${DATABASE_URL}" ] || [ -z "${STRIPE_SECRET_KEY}" ] || [ -z "${SESSION_SECRET}" ]; then
-            echo "缺 App Runner secrets，不做假绿"
+            echo "::notice::Production credentials unavailable; no live preflight was performed. Deploy SIT requires separate deployed readiness checks."
             exit 0
           fi
           npm run preflight:production

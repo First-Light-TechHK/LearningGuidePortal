@@ -14,7 +14,7 @@ locale: en-GB
 
 # Intent
 
-Backoffice Order Management. Cases are black-box I/O against `/api/backoffice/orders`. The suite is armed: Overlay CI runs ORDER-01 HTTP I/O. ORDER-02 stays specified in cases.
+Backoffice Order Management. Cases are black-box I/O against `/api/backoffice/orders`. The suite is active: Overlay CI runs ORDER-01 HTTP I/O. ORDER-02 stays specified in cases.
 
 # In scope
 
@@ -37,4 +37,4 @@ Backoffice Order Management. Cases are black-box I/O against `/api/backoffice/or
 
 # Notes
 
-`readiness: not-ready` is a hint only. Do not arm until operator refund HTTP is claimed testable. Executable I/O lives in `tests/io/order.test.ts`. Operator refund + `invoice.paid` stays specified.
+`readiness: not-ready` is a hint only. Executable I/O lives in `tests/io/order.test.ts`. Operator refund + `invoice.paid` stays specified.

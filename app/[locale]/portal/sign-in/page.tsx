@@ -7,6 +7,8 @@ import { googleEnabled, wechatEnabled } from "@/services/oauthService";
 import { safeReturnTo as normaliseReturnTo } from "@/services/runtimeConfig";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { currentEmailBindingUser } from "@/services/productAuth";
 
 export default async function SignInPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ returnTo?: string; oauthError?: string; step?: string; email?: string }> }) {
   const { locale: rawLocale } = await params;
@@ -15,6 +17,8 @@ export default async function SignInPage({ params, searchParams }: { params: Pro
   const messages = getMessages(locale);
   const providerError = oauthError === "wechat-conflict" ? messages.auth.oauthIdentityConflict : oauthError === "cancelled" ? messages.auth.oauthCancelled : oauthError === "state" ? messages.auth.oauthStateExpired : oauthError === "account-conflict" ? messages.auth.oauthAccountConflict : oauthError === "disabled" ? messages.auth.oauthAccountDisabled : oauthError === "email" ? messages.auth.oauthEmailUnverified : oauthError ? messages.auth.oauthError : undefined;
   const safeReturnTo = normaliseReturnTo(returnTo, `/${locale}/account/my-learning`);
+  const bindingUser = await currentEmailBindingUser();
+  if (bindingUser && (!bindingUser.email || !bindingUser.emailVerifiedAt)) redirect(`/${locale}/portal/bind-email?returnTo=${encodeURIComponent(safeReturnTo)}`);
   const showPassword = step === "password" || Boolean(providerError);
   return <main className="portal-page portal-auth-page"><PortalHeader locale={locale} /><div className="portal-auth-stage"><div className="portal-auth-card"><div className="portal-auth-heading"><AuthBrand name={messages.brand} /><h1>{messages.auth.signInTitle}</h1><p><Link href={`/${locale}/portal/sign-up?returnTo=${encodeURIComponent(safeReturnTo)}`}>{messages.auth.noAccount}</Link></p></div>{showPassword ? <AuthForm locale={locale} mode="sign-in" showTitle={false} initialEmail={email} copy={messages.auth} providerError={providerError} googleEnabled={googleEnabled()} wechatEnabled={wechatEnabled()} returnTo={safeReturnTo} /> : <AuthEntryForm locale={locale} copy={messages.auth} googleEnabled={googleEnabled()} wechatEnabled={wechatEnabled()} returnTo={safeReturnTo} />}</div></div></main>;
 }

@@ -1,6 +1,6 @@
 import path from "path";
 import { copyFile, readFile } from "fs/promises";
-import { atomicWriteJson, COURSES_ROOT, ensureDir, now, readJson } from "./fileStore";
+import { atomicWriteJson, coursesRoot, ensureDir, now, readJson } from "./fileStore";
 import { Course, courseDir, getCourse, saveCourse } from "./courseStore";
 import { createKnowledge, ensureKnowledgeDirs, getKnowledge, knowledgeDir } from "./knowledgeStore";
 import { createWikiFromImportSourceOutput, getWikiPage } from "./wikiStore";
@@ -20,7 +20,7 @@ import {
 type SeedRecord = { version: number; updatedAt: string };
 
 function seedPath() {
-  return path.join(COURSES_ROOT, "science_seed.json");
+  return path.join(coursesRoot(), "science_seed.json");
 }
 
 async function readBasePrompt() {
@@ -33,7 +33,7 @@ async function readBasePrompt() {
 
 async function writeCourseIndex(courseIds: string[]) {
   const unique = [...new Set(courseIds)];
-  await atomicWriteJson(path.join(COURSES_ROOT, "course_index.json"), { courseIds: unique });
+  await atomicWriteJson(path.join(coursesRoot(), "course_index.json"), { courseIds: unique });
 }
 
 async function ensureFieldCourse(fieldId: ScienceFieldId, title: string) {
@@ -192,7 +192,7 @@ export async function ensureScienceTopics() {
     await saveCourse(course);
   }
 
-  const index = await readJson<{ courseIds: string[] }>(path.join(COURSES_ROOT, "course_index.json"), { courseIds: [] });
+  const index = await readJson<{ courseIds: string[] }>(path.join(coursesRoot(), "course_index.json"), { courseIds: [] });
   const fieldIds = SCIENCE_FIELDS.map((field) => field.id);
   const rest = index.courseIds.filter((id) => !fieldIds.includes(id as ScienceFieldId) && id !== "science");
   await writeCourseIndex([...fieldIds, ...rest]);

@@ -1,3 +1,4 @@
+import { AuthNavigationLink } from "@/components/portal/AuthNavigationLink";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Bell } from "lucide-react";
@@ -12,7 +13,6 @@ type HeaderSection = "courses" | "study-groups" | "my-learning" | "pricing";
 export function PortalHeader({ locale, active, signedIn = false, displayName, avatarUrl }: { locale: Locale; active?: HeaderSection; signedIn?: boolean; displayName?: string; avatarUrl?: string }) {
   const messages = getMessages(locale);
   const copy = messages.portal;
-  const startHref = signedIn ? `/${locale}/account/my-learning` : `/${locale}/portal/sign-up`;
 
   return (
     <header className={`portal-header ${signedIn ? "portal-header--signed-in" : "portal-header--visitor"}`}>
@@ -28,9 +28,9 @@ export function PortalHeader({ locale, active, signedIn = false, displayName, av
         </nav>
         <div className="portal-header-actions">
           <Suspense fallback={<span className="portal-language">{copy.navigation.language}</span>}><PortalLanguageLink locale={locale} label={copy.navigation.language} /></Suspense>
-          {signedIn ? <Link prefetch={false} className="portal-header-link" href={`/${locale}/account/my-learning`}>{copy.myLearning}</Link> : <Link prefetch={false} className="portal-header-link" href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}
+          {signedIn ? <Link prefetch={false} className="portal-header-link" href={`/${locale}/account/my-learning`}>{copy.myLearning}</Link> : <Suspense fallback={<Link prefetch={false} className="portal-header-link" href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}><AuthNavigationLink locale={locale} className="portal-header-link">{copy.signIn}</AuthNavigationLink></Suspense>}
           {signedIn ? <Link prefetch={false} className="portal-header-icon-link" href={`/${locale}/account/my-learning/notifications`} aria-label={copy.notifications}><Bell size={18} strokeWidth={1.8} /></Link> : null}
-          {signedIn ? null : <Link prefetch={false} className="portal-button portal-button-primary portal-header-cta" href={startHref}>{copy.navigation.getStarted}</Link>}
+          {signedIn ? null : <Suspense fallback={<Link prefetch={false} className="portal-button portal-button-primary portal-header-cta" href={`/${locale}/portal/sign-up`}>{copy.navigation.getStarted}</Link>}><AuthNavigationLink locale={locale} mode="sign-up" className="portal-button portal-button-primary portal-header-cta">{copy.navigation.getStarted}</AuthNavigationLink></Suspense>}
           {signedIn ? <AccountMenu locale={locale} displayName={displayName} avatarUrl={avatarUrl} labels={{ myLearning: copy.myLearning, settings: messages.account.settings, notifications: copy.notifications, signOut: messages.learning.signOut }} /> : null}
         </div>
       </div>

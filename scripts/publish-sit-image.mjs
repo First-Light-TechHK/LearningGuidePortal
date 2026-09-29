@@ -1,0 +1,16 @@
+import { execFileSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
+const region = 'ap-southeast-1';
+const registry = '851987565851.dkr.ecr.ap-southeast-1.amazonaws.com';
+const repository = `${registry}/learning-guide-portal`;
+const sha = execFileSync('git', ['rev-parse','HEAD'], { encoding: 'utf8' }).trim();
+if (execFileSync('git', ['status','--porcelain'], { encoding: 'utf8' }).trim()) throw new Error('Commit changes before publishing a release');
+const tag = `sit-${sha}`;
+execFileSync('docker', ['build','--platform','linux/amd64','--provenance=false','--label',`org.opencontainers.image.revision=${sha}`,'-t',`${repository}:${tag}`,'.'], { stdio: 'inherit' });
+const password = execFileSync('aws', ['ecr','get-login-password','--region',region], { encoding: 'utf8', stdio: ['pipe','pipe','pipe'] });
+execFileSync('docker', ['login','--username','AWS','--password-stdin',registry], { input: password, stdio: ['pipe','pipe','pipe'] });
+execFileSync('docker', ['push',`${repository}:${tag}`], { stdio: 'inherit' });
+const image = JSON.parse(execFileSync('aws', ['ecr','describe-images','--region',region,'--repository-name','learning-guide-portal','--image-ids',`imageTag=${tag}`], { encoding: 'utf8' })).imageDetails[0];
+const digest = `${repository}@${image.imageDigest}`;
+if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `SIT_IMAGE=${digest}\n`);
+console.log(JSON.stringify({ sha, image: digest }));

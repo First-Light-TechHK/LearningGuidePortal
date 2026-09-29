@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next dev",
     "build": "next build",
-    "start": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next start",
+    "start": "node scripts/start-with-data-migrations.cjs",
     "typecheck": "tsc --noEmit",
     "typecheck:io": "tsc --noEmit -p tsconfig.io.json",
     "lint": "eslint .",
@@ -22,14 +22,31 @@
     "preflight:production": "node scripts/preflight-production.mjs",
     "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3011/api/payment/webhook",
     "seed:science": "npx --yes tsx scripts/seed-science.ts",
+    "catalogue:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-data.ts",
+    "data:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-data.ts",
+    "data:migration:new": "node scripts/new-data-migration.mjs",
     "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs",
-    "test:payment": "playwright test --config=playwright.payment.config.ts"
+    "test:live": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.live.config.ts",
+    "after-deploy": "node scripts/after-deploy.mjs",
+    "test:payment": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.payment.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
     "@aws-sdk/client-sesv2": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@fontsource/inter": "^5.3.0",
+    "@tiptap/extension-highlight": "^3.31.3",
+    "@tiptap/extension-image": "^3.31.3",
+    "@tiptap/extension-subscript": "^3.31.3",
+    "@tiptap/extension-superscript": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/extension-task-item": "^3.31.3",
+    "@tiptap/extension-task-list": "^3.31.3",
+    "@tiptap/extension-text-align": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "google-auth-library": "^11.0.2",
     "katex": "^0.16.22",
     "lucide-react": "^0.468.0",
@@ -37,6 +54,7 @@
     "next": "^15.0.4",
     "nodemailer": "^7.0.13",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^6.3.289",
     "pg": "^8.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -44,7 +62,12 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "stripe": "^22.6.0"
+    "sanitize-html": "^2.17.7",
+    "sharp": "^0.34.5",
+    "stripe": "^22.6.0",
+    "three": "^0.186.0",
+    "tsconfig-paths": "^3.15.0",
+    "tsx": "^4.23.13"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -53,11 +76,11 @@
     "@types/pg": "^8.20.3",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
+    "@types/sanitize-html": "^2.16.1",
+    "@types/three": "^0.186.0",
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.0.4",
     "playwright": "^1.61.0",
-    "tsconfig-paths": "^3.15.0",
-    "tsx": "^4.23.13",
     "typescript": "^5.7.2"
   }
 }

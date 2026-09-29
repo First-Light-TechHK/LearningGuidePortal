@@ -42,6 +42,36 @@ Set these as App Runner environment variables or Secrets Manager references for 
 | `OPENROUTER_SITE_URL` | variable | Public product URL | OpenRouter attribution header |
 | `OPENROUTER_APP_NAME` | variable | `Learning Guide` | OpenRouter attribution header |
 
+## App Runner instance role
+
+The App Runner service must run with an instance role that can use the configured PostgreSQL/S3 persistence path. `DATA_S3_BUCKET` and `DATA_S3_PREFIX` define the S3 resource boundary; for example, DEV currently writes avatar objects such as:
+
+```text
+s3://aitutor-data-851987565851/learning-guide/dev/learning_guide/avatars/<user_id>.jpg
+```
+
+Attach an identity-based policy to the App Runner instance role, not only the build/access role. Scope it to the environment prefix:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LearningGuideDataObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/*"
+    }
+  ]
+}
+```
+
+Use the matching bucket and prefix in each environment, for example `learning-guide/sit/*`, `learning-guide/uat/*`, or `learning-guide/prod/*`. Avatar upload requires `s3:PutObject`; avatar display requires `s3:GetObject`; avatar replacement/removal and virtual-file cleanup require `s3:DeleteObject`.
+
 ## Provider callback registration
 
 Google and WeChat use different registration rules. Google requires the complete redirect URI. WeChat Open Platform website applications require the authorised **domain name only**; the application then sends the complete callback URI at runtime.

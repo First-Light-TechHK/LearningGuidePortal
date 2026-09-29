@@ -67,6 +67,12 @@ Shallow to deep: public JSON shape → production leak → role → password tak
 - Title: Confirm without a token or with a garbage token leaks nothing
 - Steps: POST /api/auth/password-reset/confirm with no token, then with a random token
 - Expected: Both HTTP 400; `ok: false`; no `resetUrl` or `token=`
+- Title: Signed-in email-binding request JSON has no token
+- Steps: Register; POST /api/auth/email-binding/request
+- Expected: JSON has no `token`, `bindUrl`, or `token=`
+- Title: Email-binding confirm without a token or with a garbage token leaks nothing
+- Steps: POST /api/auth/email-binding/confirm with no token, then with a random token
+- Expected: Both HTTP 400; `ok: false`; no `token=`
 ## AUTH-03 PRODUCTION is production
 
 
@@ -200,5 +206,11 @@ Shallow to deep: public JSON shape → production leak → role → password tak
 - Title: Logout without a session does not leak a user
 - Steps: POST /api/auth/logout with no cookie
 - Expected: HTTP 200; `/me` has no user
+- Title: Email-binding request without a session is 401
+- Steps: POST /api/auth/email-binding/request with no cookie
+- Expected: HTTP 401; no token or bindUrl; INV-unauth-no-grant
+- Title: Subscription portal without a session is 401
+- Steps: POST /api/subscription/portal with no cookie
+- Expected: HTTP 401; `ok: false`; no `url`
 
 Specified / not tested now (prose, not a function_id): AUTH-04 Google signup promotion has no live OAuth path. Local Google uses a fixed fixture email, not the operator address.

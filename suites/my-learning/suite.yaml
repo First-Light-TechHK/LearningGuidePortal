@@ -9,4 +9,4 @@ packages:
   - modules/my-learning
   - app/[locale]/account
 blocked_reason: null
-product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/ML-FR-004-006-course-cards.test.ts tests/unit/ML-FR-007-unique-lp-progress.test.ts tests/unit/LEARN-02-purchased-shows-card.test.ts
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/ML-FR-004-006-course-cards.test.ts tests/unit/ML-FR-007-unique-lp-progress.test.ts tests/unit/LEARN-02-purchased-shows-card.test.ts tests/io/my-learning.test.ts

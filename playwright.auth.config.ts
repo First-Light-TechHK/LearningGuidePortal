@@ -1,13 +1,15 @@
 import "./scripts/register-tsconfig-paths.cjs";
 import { defineConfig } from "playwright/test";
 
-// fileStore captures cwd on import. Separate projects give each suite its own
-// worker/module cache and temporary product store.
+// fileStore follows process.cwd() so suites can import before they isolate.
+// Separate projects still give each suite its own worker/module cache.
 // @/ must resolve from the product root even after tests chdir.
 export default defineConfig({
   testDir: "./tests/integration",
   workers: 1,
   projects: [
+    { name: "email-binding", testMatch: "email-binding.spec.ts" },
+    { name: "password-reset", testMatch: "password-reset.spec.ts" },
     { name: "oauth-origin", testMatch: "oauth-origin.spec.ts" },
     { name: "email-google", testMatch: "email-verification.spec.ts" },
     { name: "wechat", testMatch: "wechat-login.spec.ts" },

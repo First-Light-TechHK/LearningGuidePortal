@@ -1,5 +1,6 @@
 import { ensureSchema, getPool } from "@/services/persistence/db";
 import { persistenceEnabled } from "@/services/persistence/config";
+import { persistProductSnapshot } from "@/services/ormRuntime";
 
 type PaymentData = {
   orders: Array<{ id: string; paymentMode: string; quoteId: string; stripeCheckoutSessionId?: string | null; stripeInvoiceId?: string | null }>;
@@ -32,6 +33,7 @@ export async function productTransaction<T, D extends PaymentData>(operation: ()
     await client.query(`INSERT INTO app_files(path, storage, content, byte_size, content_type) VALUES ($1, 'db', $2, $3, 'application/json')
       ON CONFLICT (path) DO UPDATE SET storage = 'db', content = EXCLUDED.content, s3_key = NULL,
       byte_size = EXCLUDED.byte_size, content_type = 'application/json', updated_at = NOW()`, ["learning_guide/product.json", content, Buffer.byteLength(content)]);
+    await persistProductSnapshot(data, client);
     await client.query("COMMIT");
     return result;
   } catch (error) {

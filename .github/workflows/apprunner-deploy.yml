@@ -1,7 +1,6 @@
-# 唯一 App Runner 发布口：workflow_dispatch only。禁止 push / pull_request。
-# Verify (ci.yml) 只测、永不 start-deployment（避免与本文件双打）。
-# 竞态修复：GitHub concurrency 排队等（不取消前一个）+ 等到 Status=RUNNING 再 start-deployment；
-# 若仍撞 InvalidRequestException / not-RUNNING，继续等并重试，不在第一次碰撞失败。
+# Legacy DEV publisher. Automatic DEV releases are `.github/workflows/dev-deploy.yml`
+# on push to `dev`. Keep this file as a manual retry only so `main` does not
+# publish the `dev` HEAD that App Runner tracks.
 
 name: Deploy to App Runner
 

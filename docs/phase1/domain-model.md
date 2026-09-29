@@ -1,5 +1,9 @@
 # Phase 1：数据设计
 
+This file is the **standard data model**. Entities are tables with fields and constraints, not a JSON document and not a GitHub `/blob/` page. Cite it as `docs/phase1/domain-model.md`.
+
+Live DEV/SIT persist those entities as PostgreSQL `orm_rows` (one JSONB payload per row) plus `app_files` / S3 for files. `learning_guide/product.json` is a snapshot, not the model. Dedicated column tables remain the `001`–`008` migrations below.
+
 ## 1. 实体关系
 
 ```mermaid
@@ -47,11 +51,13 @@ erDiagram
 
 ## 3. 状态规则
 
+Mandatory WeChat email binding supersedes the previous rule allowing no-email sessions for business access. A valid active WeChat session without verified email is accepted only by binding-specific identity readers; normal Session readers require a nonempty verified email. The additive JSON collection `emailBindingTokens` contains ProductToken fields plus pending `email`. Tokens are hashed, expire in 24 hours, and are issued atomically with a 60-second per-user cooldown. Reissue removes superseded tokens. Confirmation atomically rechecks email ownership, updates the same User, and marks the token used; successful replay is idempotent. No password is created and no Account/Order/Subscription identity changes. Existing JSON stores initialise this collection on read. No relational migration is applied; the separate production relational migration remains outstanding.
+
 Stripe lookup-key payment additions: `ProductQuote.price` / `ProductOrder.price` contain `stripePriceId`, `lookupKey`, `amountMinor`, `currency`, and `termMonths`; `planSnapshot` preserves the purchased scope and term. An order also fixes Checkout origin and locale for identical idempotent retries. `009_product_payment_keys.sql` adds unique event, quote, Checkout and invoice identities. The existing product aggregate remains JSON: PostgreSQL deployments serialize writers using a transaction advisory lock and commit the JSON and payment identity constraints together; local DEV uses the process queue and atomic file rename. This is not a migration of all product entities to relational tables, and local storage must remain single-process.
 
 WeChat Account additions: `wechatAppId`, `wechatOpenId`, optional `wechatUnionId`; `providerSubject` is `${appId}:${openid}`. `User.email` is nullable; absent email means `emailVerifiedAt = null`. An active linked WeChat account is sufficient for application Session validation, while password login continues to require verified email.
 
-The current JSON store migrates a legacy unscoped OpenID/UnionID on the next successful provider authentication, using only IDs returned by WeChat. It retains userId and associated records, clears legacy `wechat-*@local.invalid` email and verification, and rejects multiple matching Accounts. Existing real contact email is preserved. With missing UnionID, a legacy UnionID-only identity cannot be recovered until WeChat returns that ID. Before changing AppID or enabling multi-instance traffic, reconcile legacy Accounts and migrate to relational repositories with unique `(provider, provider_subject)` constraints. No SQL alteration is applied here: this checkout currently stores product records in JSON through `app_files`, not relational users/accounts tables.
+The current JSON store migrates a legacy unscoped OpenID/UnionID on the next successful provider authentication, using only IDs returned by WeChat. It retains userId and associated records, clears legacy `wechat-*@local.invalid` email and verification, and rejects multiple matching Accounts. Existing real contact email is preserved. With missing UnionID, a legacy UnionID-only identity cannot be recovered until WeChat returns that ID. Before changing AppID or enabling multi-instance traffic, reconcile legacy Accounts and migrate to relational repositories with unique `(provider, provider_subject)` constraints. Runtime rows today live in `orm_rows` and a `product.json` snapshot; the `001`–`008` column tables are still outstanding.
 
 ```text
 Trial Active -> Trial Canceled -> Trial Active（原 trial_end_at 之前可恢复）
