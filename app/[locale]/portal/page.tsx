@@ -17,6 +17,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
   const copy = getMessages(locale).portal;
   const home = getMessages(locale).homeDesign;
   const courses = await listPublishedCourses();
+  const popularCourses = [...courses].reverse().slice(0, 6);
   const content = await getPortalContent();
   const user = await currentProductUser();
 
@@ -27,7 +28,7 @@ export default async function PortalHome({ params }: { params: Promise<{ locale:
 
       <section className={styles.courses} aria-labelledby="course-heading">
         <h2 id="course-heading">{home.popular}</h2>
-        {courses.length ? <div className={styles.courseGrid}>{await Promise.all(courses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
+        {popularCourses.length ? <div className={styles.courseGrid}>{await Promise.all(popularCourses.map(async course => <CatalogueCourseCard variant="home" key={course.id} course={{ ...course, cover: await signCourseMediaUrl(course.cover || course.thumbnailPath || "") }} locale={locale} category={content.categories.find(item => item.id === (course.category || "European Humanities"))?.labels[locale] || course.category || ""} />))}</div> : <p className="portal-empty">{copy.noCourses}</p>}
         <Link prefetch={false} className={styles.allCourses} href={`/${locale}/portal/courses`}>{home.allCourses}</Link>
       </section>
 

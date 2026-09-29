@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { studyEventHttpStatus } from "@/lib/studyEventHttpStatus";
 import { currentProductUser } from "@/services/productAuth";
-import { recordStudyEvent } from "@/services/productStore";
+import { checkEntitlement, recordStudyEvent } from "@/services/productStore";
 
 export async function POST(request: Request) {
   const user = await currentProductUser();
@@ -11,12 +12,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "A course, lesson and preview event are required." }, { status: 400 });
     }
     const event = body.event as "open" | "complete";
+    const access = await checkEntitlement(user.id, body.courseId);
     const record = await recordStudyEvent({ userId: user.id, courseId: body.courseId, lessonId: body.lessonId, event,
       seconds: event === "complete" && Number.isFinite(body.seconds) ? Math.max(0, body.seconds!) : 0,
       clientEventId: `${event}_${body.courseId}_${body.lessonId}`,
-    }, "preview");
+    }, access.allowed ? "paid" : "preview");
     return NextResponse.json({ record });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Preview progress could not be saved." }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Preview progress could not be saved." }, { status: studyEventHttpStatus(error) });
   }
 }

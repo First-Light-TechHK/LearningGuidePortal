@@ -22,7 +22,7 @@ export default async function CoursesPage({ params, searchParams }: { params: Pr
   return (
     <main className="portal-page portal-catalog-page">
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-      <section className="courses-design-hero"><div><h1>{copy.exploreAllCourses}</h1><p>{copy.exploreDescription}</p>{courses[0] ? <Link className="portal-button" href={`/${locale}/portal/courses/${courses[0].slug}/public-lesson`}>{copy.startPreview}</Link> : null}</div></section>
+      <section className="courses-design-hero"><div><h1>{copy.catalogHeroTitle}</h1><p>{copy.catalogHeroDescription}</p><Link className="portal-button" href={`/${locale}/portal/courses/quintus-horatius-flaccus/public-lesson?lessonId=horatius-lesson-21`}>{copy.startPreview}</Link></div></section>
       <section className="portal-section portal-section-first portal-catalog-courses">
         <div className="portal-section-heading"><div><h2>{copy.exploreAllCourses}</h2><p className="portal-section-description">{copy.exploreDescription}</p></div></div>
         <nav className="portal-category-filter" aria-label={copy.category}>{categories.map(item => <Link key={item.id} prefetch={false} className={category === item.id ? "active" : ""} aria-current={category === item.id ? "page" : undefined} href={`/${locale}/portal/courses?category=${encodeURIComponent(item.id)}`}>{item.labels[locale]}</Link>)}</nav>

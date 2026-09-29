@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { courseCategoryPlan, courseLessonDuration } from "../../lib/courseDetailPresentation";
+import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "../../lib/courseDetailPresentation";
 import type { ProductPlan } from "../../services/productStore";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
@@ -11,6 +11,14 @@ test("course detail shows real video duration or the lesson's configured minutes
   assert.equal(courseLessonDuration({ durationMinutes: 1.5, videoDurationSeconds: null }), "1:30");
   assert.equal(courseLessonDuration({ durationMinutes: 25, videoDurationSeconds: 0 }), "0:00");
   assert.equal(courseLessonDuration(), "—");
+});
+
+test("course detail splits total duration into whole hours and minutes", () => {
+  assert.deepEqual(courseDurationParts(0), { hours: 0, minutes: 0 });
+  assert.deepEqual(courseDurationParts(60), { hours: 1, minutes: 0 });
+  assert.deepEqual(courseDurationParts(125), { hours: 2, minutes: 5 });
+  assert.deepEqual(courseDurationParts(61.4), { hours: 1, minutes: 1 });
+  assert.deepEqual(courseDurationParts(-1), { hours: 0, minutes: 0 });
 });
 
 test("category card selects the trusted available six-month desktop category plan", () => {

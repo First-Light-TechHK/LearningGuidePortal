@@ -18,7 +18,7 @@ export function BannerSlides({ locale, items, home = false }: { locale: Locale; 
   }, [items.length, paused]);
   if (!items.length) return null;
   const current = items[active % items.length];
-  const destination = active < 2 ? `/${locale}/portal/courses` : current.href;
+  const destination = home && active === 0 ? `/${locale}/portal/courses` : current.href;
   const previous = () => setActive((value) => (value - 1 + items.length) % items.length);
   const next = () => setActive((value) => (value + 1) % items.length);
   return <section className="portal-banner" aria-label={copy.carousel} onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>

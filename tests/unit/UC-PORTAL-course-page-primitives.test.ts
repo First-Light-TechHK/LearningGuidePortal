@@ -69,6 +69,23 @@ test("UC-PORTAL-1: visitor syllabus is previewable vs locked", async () => {
   assert.equal(page.accessState, "none");
 });
 
+test("UC-PORTAL-1: a later lesson remains locked even when legacy data marks it public", async () => {
+  const data = await readProductData();
+  const course = data.courses.find((item: { id: string }) => item.id === COURSE_ID);
+  assert.ok(course);
+  course.sections[0].lessons[1].isPublic = true;
+  await writeProductData(data);
+
+  const page = await store.getCoursePage(COURSE_ID, null);
+  assert.equal(page.syllabus.find((item) => item.lessonId === PRIVATE_LP)?.access, "locked");
+
+  const user = await verifiedUser(store, "uc-portal-second-preview@example.test");
+  await assert.rejects(
+    () => openLearningPoint(store, user.id, PRIVATE_LP, "second-lesson-preview", "preview"),
+    /outside the preview range/,
+  );
+});
+
 test("ML-FR-004: opening a preview LP records unique progress and switches CTA to Continue preview", async () => {
   const user = await verifiedUser(store, "uc-portal-preview-open@example.test");
   const before = await store.getCoursePage(COURSE_ID, user.id);
@@ -92,19 +109,19 @@ test("ML-FR-004: opening a preview LP records unique progress and switches CTA t
   assert.equal(card.progress, 50);
 });
 
-test("ML-FR-005: completing the preview range is View plans, not Continue preview", async () => {
+test("ML-FR-005: completing a preview lesson is rejected", async () => {
   const user = await verifiedUser(store, "uc-portal-preview-limit@example.test");
-  await store.recordStudyEvent({
+  await assert.rejects(() => store.recordStudyEvent({
     userId: user.id,
     courseId: COURSE_ID,
     lessonId: PREVIEW_LP,
     event: "complete",
     seconds: 0,
     clientEventId: "course-page-preview-complete",
-  }, "preview");
+  }, "preview"), /Preview lessons cannot be completed/);
 
   const page = await store.getCoursePage(COURSE_ID, user.id);
-  assert.equal(page.cta, "view_plans");
+  assert.equal(page.cta, "start_preview");
   const locked = page.syllabus.find((item) => item.lessonId === PRIVATE_LP);
   assert.equal(locked?.access, "locked");
 });

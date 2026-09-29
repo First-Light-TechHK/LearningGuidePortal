@@ -31,19 +31,19 @@ test("Remember password restores credentials after logout and clears on opt-out"
   await expect(page.locator(".portal-header-link").first()).toHaveAttribute("href", "/en-GB/portal/sign-in?returnTo=%2Fen-GB%2Fportal");
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  await page.getByRole("checkbox", { name: "Remember password" }).check();
+  await page.getByRole("checkbox", { name: "Keep me signed in" }).check();
   await page.locator('button[type="submit"], button.auth-submit').click();
   await page.waitForURL("**/en-GB/portal");
   await page.request.post("/api/auth/logout");
   await page.goto("/en-GB/portal/sign-in?step=password");
   await expect(page.locator('input[type="email"]')).toHaveValue(email);
   await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue(PASSWORD);
-  await expect(page.getByRole("checkbox", { name: "Remember password" })).toBeChecked();
-  await page.getByRole("checkbox", { name: "Remember password" }).uncheck();
+  await expect(page.getByRole("checkbox", { name: "Keep me signed in" })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Keep me signed in" }).uncheck();
   await page.reload();
   await expect(page.locator('input[type="email"]')).toHaveValue("");
   await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
-  await expect(page.getByRole("checkbox", { name: "Remember password" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Keep me signed in" })).not.toBeChecked();
 });
 
 test("Remember password expires after 30 minutes", async ({ page }) => {

@@ -1,7 +1,15 @@
 @font-face { font-family: 'Home Roboto Condensed'; src: url('/portal/home/roboto-condensed-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Home Roboto Condensed'; src: url('/portal/home/roboto-condensed-600.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
 .page { background: #fff; }
-.page :global(.portal-banner) { height: 400px; min-height: 400px; }
+.page :global(.portal-banner) { position: relative; width: 100vw; height: 400px; min-height: 400px; margin-left: calc(50% - 50vw); background: #fff; }
+.page :global(.portal-banner-image) { width: 100%; height: 100%; background-color: #fff; background-repeat: no-repeat; background-position: center; background-size: cover; }
+/* PNG exports have a 256px transparent border on every side. Scale the visible
+   artwork to cover the viewport width and 400px height, preserving its ratio.
+   Slides 1/2: canvas 3392x1312, artwork 2880x800.
+   Slide 3: canvas 4879x1728, artwork 4367x1216. */
+.page :global(.portal-banner-image[data-slide="0"]),
+.page :global(.portal-banner-image[data-slide="1"]) { background-size: max(117.777778%, 1696px) auto; }
+.page :global(.portal-banner-image[data-slide="2"]) { background-size: max(111.724296%, 1604.934211px) auto; }
 .page :global(.portal-banner-image[data-slide="0"]) { transform: scaleX(-1); }
 .page :global(.portal-banner-content) { width: min(1240px, calc(100% - 80px)); padding: 80px 0 44px; justify-content: flex-start; }
 .page :global(.portal-banner-content h1) { max-width: 650px; font-family: 'Home Roboto Condensed', sans-serif; font-size: 48px; font-weight: 700; line-height: 49px; white-space: pre-line; }

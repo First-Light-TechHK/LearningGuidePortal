@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryPlan, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "@/lib/courseDetailPresentation";
 import { getCoursePage, getProductCourse, listPlans } from "@/services/productStore";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -35,7 +35,9 @@ export default async function CourseDetailPage({ params }: {
     maximumFractionDigits: plan.amountMinor % 100 ? 2 : 0,
   }).format(plan.amountMinor / 100) : null;
   const signedCover = await signCourseMediaUrl(course?.cover || course?.thumbnailPath || "");
-  const hours = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format((identity?.totalMinutes || 0) / 60);
+  const durationParts = courseDurationParts(identity?.totalMinutes || 0);
+  const durationNumber = new Intl.NumberFormat(locale);
+  const durationLabel = `${durationNumber.format(durationParts.hours)} ${detail.hours} ${durationNumber.format(durationParts.minutes)} ${detail.minutes}`;
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
     duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
@@ -66,7 +68,7 @@ export default async function CourseDetailPage({ params }: {
             <p className={styles.summary}>{course?.subtitle || course?.description || ""}</p>
             <div className={styles.stats} data-preview-available={identity.previewAvailable ? "true" : "false"}>
               <span data-lesson-count={identity.lessonCount}>{identity.lessonCount} {detail.lessons}</span>
-              <span data-total-minutes={identity.totalMinutes}>{hours} {detail.hours}</span>
+              <span data-total-minutes={identity.totalMinutes}>{durationLabel}</span>
             </div>
           </div>
         </section>
@@ -89,7 +91,7 @@ export default async function CourseDetailPage({ params }: {
                   <summary>
                     <span className={styles.meta}>
                       <span><Image src={asset("lessons")} alt="" width={20} height={20} />{identity.lessonCount} {detail.lessons}</span>
-                      <span><Image src={asset("clock")} alt="" width={20} height={20} />{hours} {detail.hours}</span>
+                      <span><Image src={asset("clock")} alt="" width={20} height={20} />{durationLabel}</span>
                     </span>
                     <span className={styles.toggle}><span className={styles.less}>{detail.less}</span><span className={styles.more}>{detail.more}</span><Image src={asset("chevron-up")} alt="" width={16} height={16} /></span>
                   </summary>

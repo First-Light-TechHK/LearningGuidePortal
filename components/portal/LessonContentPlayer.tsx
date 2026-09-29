@@ -11,7 +11,7 @@ const LEGACY_MEDIA_BASE = 'https://learningguide-1380131816.cos.ap-hongkong.myqc
 
 type Exhibit = { title: string; type: 'article' | 'video' | 'image' | 'audio' | 'model3d' | 'exercise'; url: string; html: string; missing: boolean };
 type TrialRecommendation = { title: string; href: string; image?: string | null; category?: string | null };
-export type TrialGate = { pricingHref: string; recommendations: TrialRecommendation[]; videoLimitSeconds?: number; textStopLabel?: string; textStopParagraphs?: number };
+export type TrialGate = { pricingHref: string; recommendations: TrialRecommendation[]; videoLimitSeconds?: number };
 
 function exhibitType(value: string | null): Exhibit['type'] | null {
   if (value === '1') return 'article';
@@ -67,21 +67,10 @@ function TrialLimitModal({ gate, locale, onClose }: { gate: TrialGate; locale: L
   </div>;
 }
 
-function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, trialGate, onNode }: { html: string; nodes: LessonNode[]; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; onNode: (node: LessonNode) => void }) {
+function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, onNode }: { html: string; nodes: LessonNode[]; locale: LessonLocale; fallbackImageUrl?: string | null; onNode: (node: LessonNode) => void }) {
   const root = useRef<HTMLDivElement>(null), visible = useRef(new Set<HTMLElement>());
   const [active, setActive] = useState<Exhibit | null>(null), [modal, setModal] = useState<Exhibit | null>(null);
-  const [trialOpen, setTrialOpen] = useState(false), locked = useRef(false), scrollLimit = useRef<number | null>(null);
   const nodeTitles = useMemo(() => Object.fromEntries(nodes.map(node => [node.id, node.title || lessonMessages(locale).newNode])), [nodes, locale]);
-  function showTrial() { locked.current = true; setTrialOpen(true); }
-  function findTrialStop(container: HTMLElement) {
-    const normalise = (value: string) => value.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
-    const label = normalise(trialGate?.textStopLabel || '');
-    const labelledStop = label ? Array.from(container.querySelectorAll<HTMLElement>('[data-instance-type]')).find(el => normalise(el.textContent || '') === label) : null;
-    if (labelledStop) return labelledStop;
-    const paragraphs = Array.from(container.querySelectorAll<HTMLElement>('p'));
-    const paragraphCount = Math.max(1, trialGate?.textStopParagraphs ?? 3);
-    return paragraphs[Math.min(paragraphCount - 1, paragraphs.length - 1)] || null;
-  }
   function fromElement(el: HTMLElement): Exhibit | null {
     const type = exhibitType(el.dataset.instanceType || null), raw = el.dataset.instanceContent || '';
     if (!type) return null;
@@ -120,60 +109,6 @@ function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, trialGate, o
     window.addEventListener('resize', pick);
     return () => { window.cancelAnimationFrame(frame); mutation.disconnect(); observer?.disconnect(); window.removeEventListener('scroll', pick); window.removeEventListener('resize', pick); };
   }, [html]);
-  useEffect(() => {
-    const container = root.current;
-    if (!container || !trialGate) return;
-    let stop: HTMLElement | null = null;
-    const resolveStop = () => {
-      stop = stop && container.contains(stop) ? stop : findTrialStop(container);
-      return stop;
-    };
-    const computeLimit = () => {
-      const target = resolveStop();
-      if (!target) return;
-      scrollLimit.current = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 170);
-    };
-    const guard = () => {
-      const target = resolveStop();
-      if (!target) return;
-      computeLimit();
-      const limit = scrollLimit.current;
-      const stopVisible = target.getBoundingClientRect().top <= Math.min(260, window.innerHeight * 0.45);
-      if (!locked.current && stopVisible) showTrial();
-      if (locked.current && limit !== null && window.scrollY > limit) {
-        window.scrollTo({ top: limit, behavior: 'auto' });
-        showTrial();
-      }
-    };
-    const blockForward = (event: WheelEvent | TouchEvent | KeyboardEvent) => {
-      if (!locked.current) return;
-      const limit = scrollLimit.current;
-      const key = event instanceof KeyboardEvent ? event.key : '';
-      const wantsForward = event instanceof WheelEvent ? event.deltaY > 0 : event instanceof KeyboardEvent ? [' ', 'PageDown', 'ArrowDown', 'End'].includes(key) : true;
-      if (limit === null || !wantsForward || window.scrollY < limit - 2) return;
-      event.preventDefault();
-      window.scrollTo({ top: limit, behavior: 'auto' });
-      showTrial();
-    };
-    computeLimit();
-    const mutation = new MutationObserver(guard);
-    mutation.observe(container, { childList: true, subtree: true });
-    const frame = window.requestAnimationFrame(guard);
-    window.addEventListener('scroll', guard, { passive: true });
-    window.addEventListener('resize', computeLimit);
-    window.addEventListener('wheel', blockForward, { passive: false });
-    window.addEventListener('touchmove', blockForward, { passive: false });
-    window.addEventListener('keydown', blockForward, { passive: false });
-    return () => {
-      window.cancelAnimationFrame(frame);
-      mutation.disconnect();
-      window.removeEventListener('scroll', guard);
-      window.removeEventListener('resize', computeLimit);
-      window.removeEventListener('wheel', blockForward);
-      window.removeEventListener('touchmove', blockForward);
-      window.removeEventListener('keydown', blockForward);
-    };
-  }, [html, trialGate]);
   function click(target: EventTarget | null) {
     const element = target instanceof Element ? target.closest<HTMLElement>('[data-instance-type]') : null;
     if (element && root.current?.contains(element)) {
@@ -200,7 +135,6 @@ function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, trialGate, o
     {modal && <LessonModal title={modal.title} locale={locale} onClose={() => setModal(null)}>
       {modal.missing ? <p className="la-exhibit-empty">No exhibit content is linked yet.</p> : modal.type === 'article' || modal.type === 'exercise' ? <SafeLessonHtml html={modal.html}/> : <CourseMediaPreview type={modal.type === 'model3d' ? 'model3d' : modal.type === 'audio' ? 'audio' : modal.type === 'image' ? 'image' : 'video'} url={modal.url} title={modal.title} locale={locale}/>}
     </LessonModal>}
-    {trialGate && trialOpen && <TrialLimitModal gate={trialGate} locale={locale} onClose={() => setTrialOpen(false)} />}
   </div>;
 }
 
@@ -223,16 +157,17 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
   const [trialOpen, setTrialOpen] = useState(false);
   const [started, setStarted] = useState(false);
   const nodes = (content.nodes || []).filter(node => node.active !== false), titles = Object.fromEntries(nodes.map(node => [node.id, node.title || t.newNode]));
+  const contentTrialGate = content.type === 'video' ? trialGate : undefined;
   useEffect(() => {
-    if (!nodeRequest || trialGate) return;
+    if (!nodeRequest || contentTrialGate) return;
     const node = content.nodes.find(item => item.active !== false && item.id === nodeRequest.id);
     if (node) open(node);
     // Each explicit request opens once, including repeated requests for the same node.
-  }, [nodeRequest]);
+  }, [nodeRequest, contentTrialGate]);
   function showTrial() { video.current?.pause(); setTrialOpen(true); }
   function enforceVideoTrial() {
-    if (!trialGate || content.type !== 'video') return false;
-    const media = video.current, limit = trialGate.videoLimitSeconds ?? 60;
+    if (!contentTrialGate) return false;
+    const media = video.current, limit = contentTrialGate.videoLimitSeconds ?? 60;
     if (!media) return false;
     if (media.currentTime >= limit) {
       if (media.currentTime > limit) media.currentTime = limit;
@@ -254,7 +189,7 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
     else lastTime.current = now;
   }
   return <section className="la-content-player"><h3>{content.title}</h3>
-    {content.type === 'text' && <TextContentPlayer html={content.html || ''} nodes={nodes} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate} onNode={open}/>}
+    {content.type === 'text' && <TextContentPlayer html={content.html || ''} nodes={nodes} locale={locale} fallbackImageUrl={fallbackImageUrl} onNode={open}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
     {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><video ref={video} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} controls playsInline preload="metadata" onTimeUpdate={() => { if (!enforceVideoTrial()) tick(); }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else tick(); }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
@@ -269,7 +204,7 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
       {active.type === 'text' ? <SafeLessonHtml html={active.html || ''} nodeTitles={titles} onNode={id => { const node = nodes.find(n => n.id === id); if (node) open(node); }}/ > : active.type === 'exercise' ? <Exercise key={active.id} node={active} locale={locale}/> : <CourseMediaPreview key={active.id} type={active.type} url={active.url} title={active.title} locale={locale}/>}
       <div className="la-actions"><button type="button" onClick={close}>{t.resume}</button></div>
     </LessonModal>}
-    {trialGate && trialOpen && <TrialLimitModal gate={trialGate} locale={locale} onClose={() => setTrialOpen(false)} />}
+    {contentTrialGate && trialOpen && <TrialLimitModal gate={contentTrialGate} locale={locale} onClose={() => setTrialOpen(false)} />}
   </section>;
 }
 
@@ -280,7 +215,7 @@ export function LessonContentPlayer({ contents, locale, fallbackImageUrl = null,
   return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
 }
 
-export function LegacyLessonBody({ body, locale, trialGate }: { body: string; locale: LessonLocale; trialGate?: TrialGate }) {
+export function LegacyLessonBody({ body, locale }: { body: string; locale: LessonLocale }) {
   const html = body.split(/\n\s*\n/).filter(Boolean).map(paragraph => `<p>${paragraph.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</p>`).join('');
-  return <div className="lesson-body"><TextContentPlayer html={html} nodes={[]} locale={locale} trialGate={trialGate} onNode={() => undefined}/></div>;
+  return <div className="lesson-body"><TextContentPlayer html={html} nodes={[]} locale={locale} onNode={() => undefined}/></div>;
 }
