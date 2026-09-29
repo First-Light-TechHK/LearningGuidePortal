@@ -302,6 +302,12 @@ DEV 且没有配置任何邮件传输时（非托管环境；`EMAIL_DELIVERY=dis
 - 为什么进了 main：upstream 上 `522eeab` 自己的 forge-check（[run 35333759868](https://github.com/First-Light-TechHK/LearningGuidePortal/actions/runs/35333759868)，`push` 到 `main`）已经是红的，红项只有 `docs_sync`；GitHub 查不到与该提交关联的 PR。推断：它是直推 `main`，或 upstream 没有把 forge-check 设成 required，所以没被挡住。
 - 修法：单独一个改动，在 upstream main 上跑 `forge status --write` 重生成 `STATE.md`（Ops / Oliver）。不在功能 PR 里手改 `STATE.md`。
 
+### 设计判断：已提交的 STATE.md 快照不该让 docs_sync 失败（未实现）
+
+`STATE.md` 已经是生成文件（`forge status --write`，文件头写明不要手改）。代价高的部分是把这份快照提交进仓库，并在它漂移时让 `docs_sync` 失败。CI job 名清单和 `forge.yaml` 的 required checks 可以在检查当时直接和 `.github/workflows/` 对比，不需要一份已提交的副本。Ruleset、开放的 promote PR、最近的 tag 是 GitHub 上的活状态：没有 `FORGE_GITHUB_TOKEN` 时，文件只能写「未查询」；有 token 时，已提交的文字会在下一次 ruleset 变更之后过时。当前这条红检查（`522eeab` 之后缺少 job `Run catalogue migrations`，STATE 最后一次生成于 `e3276b0`）惩罚的是忘了更新的快照，不是坏掉的流水线。
+
+提议方向，尚未实现：`docs_sync` 应在检查本身里把 workflow 和 `forge.yaml` 对比；活的 GitHub 字段在有 token 时应由 `forge status` 打印，或作为 CI artifact 输出；没有 token 时不得因此让检查失败。现在不实现。不改 Forge 的 pin。
+
 ### G-2 deny_paths：fork 上按 fork 的 `main` 算 diff，误报 `ci.yml` — 待修（Ops 定）
 
 - 现象：`deny_paths` 报 `diff touches .github/workflows/ci.yml`，而本 PR 没有改任何 workflow。
