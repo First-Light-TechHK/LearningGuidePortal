@@ -10,6 +10,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(`${base}/en-GB/portal/courses?category=European%20Humanities`, { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Use essential cookies only" }).click();
+    assert.equal(await page.locator(".courses-design-hero .portal-button").getAttribute("href"), "/en-GB/portal/courses/quintus-horatius-flaccus/public-lesson?lessonId=horatius-lesson-21");
     assert.equal(await page.locator(".portal-category-filter [aria-current]").innerText(), "European Humanities");
     const grid = await page.locator(".portal-course-grid").boundingBox();
     assert.equal(grid.x, 100); assert.equal(grid.width, 1240);

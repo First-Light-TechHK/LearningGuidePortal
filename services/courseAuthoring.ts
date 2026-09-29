@@ -71,7 +71,7 @@ export function applyCourseDraft(course: ProductCourse, input: CourseDraftInput)
     return { id: identity(section.id, sectionIds, "section"), title: text(section.title, 255), lessons: section.lessons.map(lesson => {
       if (!lesson || ++lessonCount > 1000 || !Number.isInteger(lesson.durationMinutes) || lesson.durationMinutes < 1 || lesson.durationMinutes > 600 || typeof lesson.isPublic !== "boolean") throw new AuthoringError("invalid");
       if (lesson.videoDurationSeconds != null && (!Number.isInteger(lesson.videoDurationSeconds) || lesson.videoDurationSeconds < 0 || lesson.videoDurationSeconds > 36000)) throw new AuthoringError("invalid");
-      if (lesson.isPublic && ++publicCount > 1) throw new AuthoringError("invalid");
+      if (lesson.isPublic && (++publicCount > 1 || lessonCount !== 1)) throw new AuthoringError("invalid");
       const existing = existingLessons.get(lesson.id);
       let contents = existing?.contents;
       if (lesson.contents !== undefined) {

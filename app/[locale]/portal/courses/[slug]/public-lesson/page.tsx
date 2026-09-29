@@ -17,16 +17,14 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const locale = localeFrom(rawLocale);
   const course = await getProductCourse(slug);
   const requestedLesson = (await searchParams).lessonId;
-  const lesson = course ? requestedLesson
-    ? course.sections.flatMap(section => section.lessons).find(item => item.id === requestedLesson && item.isPublic)
-    : publicFirstLesson(course) : null;
+  const previewLesson = course ? publicFirstLesson(course) : null;
+  const lesson = requestedLesson ? (requestedLesson === previewLesson?.id ? previewLesson : null) : previewLesson;
   if (!course || course.status !== "published" || !lesson) notFound();
   const user = await currentProductUser();
   if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${requestedLesson ? `?lessonId=${requestedLesson}` : ""}`)}`);
   const access = await checkEntitlement(user.id, course.id);
   const overview = await getLearningOverview(user.id);
   const record = overview?.courses.find(item => item.courseId === course.id);
-  const next = course.sections.flatMap(section => section.lessons).find(item => item.isPublic && item.id !== lesson.id && !record?.completedLessonIds.includes(item.id));
   const publishedCourses = await listPublishedCourses();
   const recommendationCourses = publishedCourses.slice(0, 2);
   const recommendations = recommendationCourses
@@ -40,15 +38,13 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {
     pricingHref: `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`,
     recommendations,
-    videoLimitSeconds: 60,
-    textStopLabel: "<Exh 3>",
-    textStopParagraphs: 3
+    videoLimitSeconds: 60
   };
   const contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={course.subtitle || course.description} lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} nextHref={next ? `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(next.id)}` : null} />
+    <PreviewLessonView key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={course.subtitle || course.description} lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} nextHref={null} />
     <PortalFooter locale={locale} />
   </main>;
 }

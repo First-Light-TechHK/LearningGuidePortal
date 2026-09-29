@@ -42,11 +42,15 @@ try {
   assert.equal(await page.locator('h1').innerText(), 'Learn with curiosity.\nGrow with confidence.');
   assert.equal(Math.round((await page.locator('.portal-banner').boundingBox()).height), 400);
   assert.equal(await page.locator('.portal-banner-content a').evaluate(node => getComputedStyle(node).color), 'rgb(23, 63, 185)', 'Hero CTA text must remain visible on white');
-  assert(await page.locator('.home-course-card').count() > 0, 'Seeded published courses must render');
+  const popularCourses = page.locator('.home-course-card');
+  assert(await popularCourses.count() > 0, 'Seeded published courses must render');
+  assert((await popularCourses.count()) <= 6, 'Popular courses must show at most six cards');
   for (let index = 0; index < 3; index++) {
     await page.getByRole('button', { name: `Banner ${index + 1}`, exact: true }).click();
     assert.match(await page.locator('.portal-banner-image').getAttribute('style'), new RegExp(`banner${index + 1}\\.png`));
-    if (index < 2) assert.equal(await page.locator('.portal-banner-content a').getAttribute('href'), '/en-GB/portal/courses');
+    if (index === 0) assert.equal(await page.locator('.portal-banner-content a').getAttribute('href'), '/en-GB/portal/courses');
+    if (index === 1) assert.equal(await page.locator('.portal-banner-content a').getAttribute('href'), '/en-GB/portal#why-us');
+    if (index === 2) assert.equal(await page.locator('.portal-banner-content a').getAttribute('href'), '/en-GB/portal/study-groups');
   }
   await page.getByRole('button', { name: 'Banner 1', exact: true }).click();
   assert.equal(await page.locator('body').evaluate(node => node.scrollWidth <= innerWidth), true);

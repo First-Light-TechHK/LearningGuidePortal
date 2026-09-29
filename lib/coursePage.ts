@@ -55,7 +55,7 @@ export function courseIdentityFrom(course: CourseLike): CourseIdentity {
     title: course.title,
     track: course.category || "European Humanities",
     lessonCount: lessons.length,
-    previewAvailable: lessons.some((lesson) => lesson.isPublic),
+    previewAvailable: Boolean(lessons[0]?.isPublic),
     totalMinutes: lessons.reduce((total, lesson) => total + (lesson.durationMinutes || 0), 0),
   };
 }
@@ -125,7 +125,7 @@ export function buildCoursePage(input: {
   if (!input.course) return emptyFailedCoursePage();
   const pageState: CoursePageState = input.course.status === "published" ? "available" : "withdrawn";
   const lessons = input.course.sections.flatMap((section) => section.lessons);
-  const previewLessons = lessons.filter((lesson) => lesson.isPublic);
+  const previewLessons = lessons[0]?.isPublic ? [lessons[0]] : [];
   const previewLessonIds = previewLessons.map((lesson) => lesson.id);
   const completedPreviewIds = previewLessonIds.filter((id) => input.completedLessonIds.includes(id));
   const computed = courseProgressFromUniqueLearningPoints(input.openedLessonIds.length, lessons.length);
@@ -144,7 +144,7 @@ export function buildCoursePage(input: {
       const access = syllabusAccessForLesson({
         pageState,
         hasLiveEntitlement: input.hasLiveEntitlement,
-        isPublic: lesson.isPublic,
+        isPublic: lesson.id === previewLessons[0]?.id,
       });
       return { lessonId: lesson.id, title: lesson.title, access, openable: access === "previewable" || access === "entitled" };
     }),

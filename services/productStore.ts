@@ -1031,7 +1031,8 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
 }
 
 export function publicFirstLesson(course: ProductCourse) {
-  return course.sections.flatMap((section) => section.lessons).find((lesson) => lesson.isPublic) || null;
+  const firstLesson = course.sections.flatMap((section) => section.lessons)[0];
+  return firstLesson?.isPublic ? firstLesson : null;
 }
 
 export async function listPlans(courseId?: string) {
@@ -1749,7 +1750,8 @@ export async function getLearningOverview(userId: string) {
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
       const computed = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
       const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
-      const previewLessons = lessons.filter((lesson) => lesson.isPublic);
+      const previewLesson = course ? publicFirstLesson(course) : null;
+      const previewLessons = previewLesson ? [previewLesson] : [];
       const previewLessonIds = previewLessons.map((lesson) => lesson.id);
       const completedPreviewIds = previewLessonIds.filter((id) => completedLessonIds.includes(id));
       const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && (!course || entitlementCoversCourse(item, course)));
@@ -1922,9 +1924,10 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
     const course = data.courses.find((item) => item.id === input.courseId);
     if (!course || course.status !== "published") throw new Error("Course is not available.");
     if (access === "paid" && !activeEntitlement(data, input.userId, input.courseId)) throw new Error("Course access is required.");
+    if (access === "preview" && input.event === "complete") throw new Error("Preview lessons cannot be completed.");
     const lesson = course?.sections.flatMap((section) => section.lessons).find((item) => item.id === input.lessonId);
     if (!lesson) throw new Error("Lesson not found.");
-    if (access === "preview" && !lesson.isPublic) throw new Error("This lesson is outside the preview range.");
+    if (access === "preview" && publicFirstLesson(course)?.id !== lesson.id) throw new Error("This lesson is outside the preview range.");
     const existingClientEvent = data.studyEvents.some((event) => event.userId === input.userId && event.clientEventId === input.clientEventId);
     if (existingClientEvent) {
       return data.studyRecords.find((record) => record.userId === input.userId && record.courseId === input.courseId) || null;
@@ -2113,7 +2116,7 @@ export async function addLessonToCourse(input: { courseId: string; title: string
     if (course.sections.some((section) => section.lessons.some((lesson) => lesson.title.toLowerCase() === title.toLowerCase()))) throw new Error("A lesson with this title already exists.");
     const section = course.sections[0] || { id: id("section"), title: "Course content", lessons: [] };
     if (!course.sections.length) course.sections.push(section);
-    if (input.isPublic) course.sections.forEach((item) => item.lessons.forEach((lesson) => { lesson.isPublic = false; }));
+    if (input.isPublic && course.sections.some((item) => item.lessons.length > 0)) throw new Error("Only the first lesson can be public.");
     const lesson: ProductLesson = { id: id("lesson"), title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
     section.lessons.push(lesson);
     course.updatedAt = now();

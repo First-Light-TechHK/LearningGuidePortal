@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
+import { Check, Eye, EyeOff, Lock, Mail, User, X } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
 import { isBusinessEmail, isEmailTooLong } from "@/lib/emailValidation";
@@ -23,7 +23,7 @@ function rememberCredentials(credentials: { email: string; password: string } | 
   }
 }
 
-export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError, showTitle = true, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string; existingEmailNotice: string; existingEmailCountdown: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string; showTitle?: boolean; initialEmail?: string }) {
+export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEnabled, providerError, showTitle = true, initialEmail = "", signupDesign = false }: { locale: "en-GB" | "zh-CN"; mode: "sign-in" | "sign-up"; copy: { signInTitle: string; signUpTitle: string; email: string; password: string; nickname: string; fullName: string; submitSignIn: string; submitSignUp: string; noAccount: string; haveAccount: string; checkEmailSignIn: string; backToPortal: string; forgotPassword: string; or: string; google: string; wechat: string; existingEmailNotice: string; existingEmailCountdown: string; keepSignedIn: string; joinForFree: string; fullNamePlaceholder: string; createPassword: string; passwordHint: string; signUpTermsPrefix: string; signUpTermsAnd: string; termsOfUse: string; privacyNotice: string; closeSignUp: string; socialSignUpWith: string }; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean; providerError?: string; showTitle?: boolean; initialEmail?: string; signupDesign?: boolean }) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
@@ -33,8 +33,11 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const labels = getMessages(locale).auth;
   const signIn = mode === "sign-in";
+  const verifiedEmail = initialEmail.trim().toLowerCase();
+  const emailIsConfirmed = signIn && Boolean(verifiedEmail) && email.trim().toLowerCase() === verifiedEmail;
 
   useEffect(() => {
     if (!signIn) return;
@@ -100,19 +103,21 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
 
   const switchPath = `${signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`}?returnTo=${encodeURIComponent(returnTo)}`;
   return (
-    <form className={`portal-form auth-credential-form ${signIn ? "auth-sign-in" : "auth-sign-up"}`} onSubmit={submit}>
-      {showTitle ? <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1> : null}
+    <form className={`portal-form auth-credential-form ${signIn ? "auth-sign-in auth-password-step" : `auth-sign-up${signupDesign ? " auth-signup-design" : ""}`}`} onSubmit={submit}>
+      {signupDesign ? <><header className="auth-signup-header"><div><h1>{copy.joinForFree}</h1><a className="auth-signup-close" href={`/${locale}/portal`} aria-label={copy.closeSignUp} title={copy.closeSignUp}><X size={18} /></a></div><p>{copy.checkEmailSignIn} <a href={switchPath}>{copy.submitSignIn}</a></p></header><div className="auth-signup-divider" /></> : showTitle ? <h1>{signIn ? copy.signInTitle : copy.signUpTitle}</h1> : null}
       <div className="auth-fields">
-        {!signIn ? <label>{copy.nickname}<span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setNickname(value); if (isNameTooLong(value)) setError(labels.nameTooLong); else if (error === labels.nameTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.nameInvalid)} required minLength={1} autoComplete="name" /></span></label> : null}
-        <label>{copy.email}<span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setEmail(value); if (isEmailTooLong(value)) setError(labels.emailTooLong); else if (error === labels.emailTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(isEmailTooLong(event.currentTarget.value) ? labels.emailTooLong : labels.emailInvalid)} required autoComplete="email" placeholder="you@example.com" /></span></label>
-        <label>{copy.password}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={30} autoComplete={signIn ? "current-password" : "new-password"} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
+        {!signIn ? <label><span className="auth-field-label">{signupDesign ? copy.fullName : copy.nickname}</span><span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setNickname(value); if (isNameTooLong(value)) setError(labels.nameTooLong); else if (error === labels.nameTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.nameInvalid)} required minLength={1} autoComplete="name" placeholder={signupDesign ? copy.fullNamePlaceholder : undefined} /></span></label> : null}
+        <label><span className="auth-field-label">{copy.email}</span><span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setEmail(value); if (isEmailTooLong(value)) setError(labels.emailTooLong); else if (error === labels.emailTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(isEmailTooLong(event.currentTarget.value) ? labels.emailTooLong : labels.emailInvalid)} required autoComplete="email" placeholder="you@example.com" />{emailIsConfirmed ? <span className="auth-email-confirmed" aria-hidden="true"><Check size={11} strokeWidth={3} /></span> : null}</span></label>
+        <label><span className="auth-field-label">{copy.password}</span>{signupDesign ? <span className="auth-password-hint">{copy.passwordHint}</span> : null}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={signIn ? 30 : 72} autoComplete={signIn ? "current-password" : "new-password"} placeholder={signupDesign ? copy.createPassword : undefined} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       </div>
-      {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberCredentials(null); }} />{labels.rememberMe}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
+      {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberCredentials(null); }} />{copy.keepSignedIn}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
+      {signupDesign ? <label className="auth-signup-terms"><input type="checkbox" checked={termsAccepted} onChange={event => setTermsAccepted(event.target.checked)} /><span>{copy.signUpTermsPrefix} <strong>{copy.termsOfUse}</strong> {copy.signUpTermsAnd} <strong>{copy.privacyNotice}</strong>.</span></label> : null}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
       {existingNotice ? <div className="portal-success" role="status"><p>{existingNotice}</p><p>{labels.existingEmailCountdown.replace("{seconds}", String(existingSeconds))}</p></div> : null}
-      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{signIn ? copy.submitSignIn : copy.submitSignUp}</button>
+      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
-      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} />
+      {signupDesign ? <div className="auth-signup-divider" /> : null}
+      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} wechatFirst={signIn} variant={signupDesign ? "buttons" : "icons"} />
       {showTitle ? <a href={`/${locale}/portal`}>{copy.backToPortal}</a> : null}
     </form>
   );

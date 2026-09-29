@@ -64,22 +64,20 @@ test("ML-FR-004: no-sub user who opened the private-course preview range gets a 
   assert.equal(card.progress, 50);
 });
 
-test("ML-FR-005: completing the configured preview range switches the card to View plans", async () => {
+test("ML-FR-005: preview lessons cannot be marked complete", async () => {
   const user = await verifiedUser(store, "ml-fr-005-preview-limit@example.test");
-  await store.recordStudyEvent({
+  await assert.rejects(() => store.recordStudyEvent({
     userId: user.id,
     courseId: COURSE_ID,
     lessonId: PREVIEW_LP,
     event: "complete",
     seconds: 0,
     clientEventId: "preview-complete-limit",
-  }, "preview");
+  }, "preview"), /Preview lessons cannot be completed/);
 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
-  assert.equal(card?.cardState, "preview_limit");
-  assert.equal(card?.cta, "view_plans");
-  assert.equal(card?.progress, 50);
+  assert.equal(card, undefined);
 });
 
 test("ML-FR-004: browsing a course without opening a Learning Point does not list it", async () => {

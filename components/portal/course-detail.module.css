@@ -1,5 +1,5 @@
 .page { background: #f9fafb; }
-.page .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 57px; padding: 16px 42px; background: #fff; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #7c7c7c; }
+.page .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 57px; padding: 16px max(40px, calc((100% - 1440px) / 2)); background: #fff; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #7c7c7c; }
 .breadcrumb a { color: inherit; text-decoration: none; }
 .page .hero { position: relative; min-height: 517px; overflow: hidden; color: #fff; background: #17233a; }
 .cover { position: absolute; inset: 0; }
@@ -58,13 +58,6 @@ details[open] .toggle img { transform: none; }
 .page :global(.portal-footer) { background: #155dfc; padding-bottom: 29px; }
 .page :global(.portal-footer-social) { gap: 20px; }
 .page :global(.portal-footer-grid > div:first-child p) { max-width: 270px; line-height: 20px; }
-@media (min-width: 1001px) {
-  .page :global(.portal-header) { padding: 0 40px; min-height: 68px; }
-  .page :global(.portal-header-inner) { max-width: none; min-height: 67px; gap: 44px; }
-  .page :global(.portal-nav) { gap: 30px; }
-  .page :global(.portal-nav a) { min-height: 67px; color: #4a5565; font-weight: 500; }
-  .page :global(.portal-nav a.active::after) { display: none; }
-}
 @media (max-width: 1100px) {
   .body { width: calc(100% - 40px); grid-template-columns: minmax(0, 1fr) 320px; }
   .card { padding: 24px; }

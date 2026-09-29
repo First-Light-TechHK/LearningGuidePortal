@@ -111,6 +111,9 @@ try {
     await page.getByRole("button", { name: /1.2 Read visual cues/ }).click();
     assert.equal(await page.locator("video").count(), 0);
     await page.getByText("Observe the composition.", { exact: true }).waitFor();
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(200);
+    assert.equal(await page.getByRole("dialog").count(), 0, "Text content must not trigger the preview-limit modal");
     await page.getByRole("button", { name: /1.1 Observe composition/ }).click();
     const complete = page.getByRole("button", { name: copy.learning.completeLesson, exact: true });
     if (await complete.count()) await complete.click();

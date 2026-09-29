@@ -1,8 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
+import { Check } from "lucide-react";
 
-type Copy = { checkEmailTitle: string; checkEmailDescription: string; resendEmail: string; resendSent: string; email: string; resendCountdown: string; verificationDailyLimit: string; requestFailed: string; emailDeliveryNotConfigured: string };
+type Copy = { checkEmailTitle: string; checkEmailDescription: string; resendEmail: string; resendSent: string; email: string; resendCountdown: string; verificationDailyLimit: string; requestFailed: string; emailDeliveryNotConfigured: string; checkEmailSignIn: string };
 
 export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; copy: Copy; initialEmail?: string }) {
   const [email, setEmail] = useState(initialEmail);
@@ -45,5 +47,16 @@ export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB
     finally { setBusy(false); setSeconds(60); }
   }
   const disabled = busy || !ready || seconds > 0 || !email.trim();
-  return <section className="portal-form"><h1>{copy.checkEmailTitle}</h1><p>{copy.checkEmailDescription}</p><form onSubmit={resend}><label>{copy.email}<input type="email" value={email} readOnly required autoComplete="email" /></label>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}{message ? <p className="portal-success" role="status">{message}</p> : null}<button className="portal-button portal-button-secondary" disabled={disabled}>{seconds > 0 ? `${copy.resendCountdown} (${seconds}s)` : copy.resendEmail}</button></form></section>;
+  return <section className="portal-form check-email-form">
+    <div className="check-email-icon" aria-hidden="true"><Check size={28} strokeWidth={3} /></div>
+    <h1>{copy.checkEmailTitle}</h1>
+    <p className="check-email-description">{copy.checkEmailDescription}</p>
+    <form onSubmit={resend}>
+      <label>{copy.email}<input type="email" value={email} readOnly required autoComplete="email" /></label>
+      {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+      {message ? <p className="portal-success" role="status">{message}</p> : null}
+      <button className="portal-button portal-button-secondary" disabled={disabled}>{seconds > 0 ? `${copy.resendCountdown} (${seconds}s)` : copy.resendEmail}</button>
+    </form>
+    <Link href={`/${locale}/portal/sign-in?email=${encodeURIComponent(email)}`}>{copy.checkEmailSignIn}</Link>
+  </section>;
 }

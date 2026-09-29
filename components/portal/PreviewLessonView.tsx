@@ -55,7 +55,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1><div>{description}</div></header>
         <div className={styles.mediaRow}>
           <div className={styles.player}>
-            {contents.length ? <LessonContentPlayer contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={trialGate} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} videoPresentation={{ poster, badge: trialGate ? previewBadge : undefined, playLabel: copy.play }} /> : <LegacyLessonBody body={lesson.body} locale={locale} trialGate={trialGate} />}
+            {contents.length ? <LessonContentPlayer contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={trialGate} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} videoPresentation={{ poster, badge: trialGate ? previewBadge : undefined, playLabel: copy.play }} /> : <LegacyLessonBody body={lesson.body} locale={locale} />}
           </div>
           <aside className={styles.tools} aria-label={copy.deepLearning}><h2>{copy.deepLearning}</h2><p>{copy.toolsDescription}</p>
             {tools.map(tool => {
@@ -66,7 +66,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </div>
         <section className={styles.banner}><div><p>{courseTitle}</p><h2>{copy.valueTitle}</h2><span>{copy.valueDescription}</span></div><Link className={styles.unlock} href={entitled ? learningHref : pricingHref}>{entitled ? messages.learning.continue : copy.unlock}</Link></section>
         <div className={styles.progress}>
-          <PreviewProgress courseId={courseId} lessonId={lesson.id} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
+          {entitled ? <PreviewProgress courseId={courseId} lessonId={lesson.id} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} /> : null}
           {nextHref && <Link href={nextHref}>{messages.overviewDesign.continuePreview} →</Link>}
         </div>
       </article>
