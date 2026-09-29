@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,10 +21,16 @@ function stripPrivateMedia(value: unknown): unknown {
 
 async function main() {
   const work = await mkdtemp(path.join(tmpdir(), "lg-bug-lock-render-"));
-  for (const name of await readdir(root)) {
-    if (name === "data" || name === ".next" || name === "node_modules" || name === ".git") continue;
-    await symlink(path.join(root, name), path.join(work, name));
-  }
+  // Next does not pick up a symlinked app directory, so copy the source tree.
+  await cp(root, work, {
+    recursive: true,
+    filter: (source) => {
+      const relative = path.relative(root, source);
+      if (!relative || relative === ".") return true;
+      const top = relative.split(path.sep)[0];
+      return !["node_modules", ".next", ".git", "data"].includes(top);
+    },
+  });
   await symlink(path.join(root, "node_modules"), path.join(work, "node_modules"));
 
   process.chdir(work);
