@@ -47,6 +47,17 @@ test("the installed mail transport delivers activation, reset and binding messag
     assert.match(received[0].body, /Subject: Verify your Learning Guide account/);
     assert.match(received[1].body, /Subject: Reset your Learning Guide password/);
     assert.match(received[2].body, /Subject: Verify and bind your email/);
+    const chinese = { ...input, locale: "zh-CN" as const };
+    await sendVerificationEmail(chinese);
+    await sendPasswordResetEmail(chinese);
+    await sendEmailBindingEmail(chinese);
+    assert.equal(received.length, 6);
+    for (const message of received.slice(3)) {
+      assert.equal(message.recipient, "RCPT TO:<learner@example.test>");
+      assert.match(message.body, /^Subject: =\?UTF-8\?[BQ]\?/im);
+      assert.match(message.body, /Content-Type: text\/html; charset=utf-8/i);
+      assert.match(message.body, /uat\.example\.test\/confirm/);
+    }
   } finally {
     for (const [name, value] of Object.entries(original)) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
