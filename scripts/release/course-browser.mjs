@@ -456,6 +456,22 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
         const courseDeadline = Date.now() + LIMIT.course;
         const scope = `${locale}/course-${ci + 1}`;
         const coursePath = `${cataloguePath}/${encodeURIComponent(course.id)}`;
+        await withPage(publicContext, `${scope}/sign-in-return`, courseDeadline, async page => {
+          const lesson = lessonsOf(course).at(-1);
+          const path = `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${encodeURIComponent(lesson.id)}`;
+          await page.goto(new URL(path, origin).href, { waitUntil: 'domcontentloaded', timeout: remaining(courseDeadline, LIMIT.navigation) });
+          const expected = `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(path)}`;
+          requireCheck(routeMatches(page.url(), expected, origin), 'sign_in_lost_requested_lesson');
+          return { preservedRequestedLesson: true };
+        });
+        if (student) await withPage(student, `${scope}/unknown-lesson`, courseDeadline, async page => {
+          let missing = 'acceptance-missing-lesson';
+          while (lessonsOf(course).some(lesson => lesson.id === missing)) missing += '-missing';
+          await page.goto(`${origin}/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${missing}`, { waitUntil: 'domcontentloaded', timeout: remaining(courseDeadline, LIMIT.navigation) });
+          requireCheck(!await page.locator('[data-course-id][data-lesson-id], .learning-room').count(), 'unknown_lesson_rendered_other_content');
+          requireCheck(normaliseText(await page.locator('h1').first().innerText()) === '404', 'unknown_lesson_not_found_missing');
+          return { unknownLessonDenied: true };
+        });
         await withPage(publicContext, `${scope}/detail`, courseDeadline, async page => {
           for (const route of new Set([coursePath, `${cataloguePath}/${encodeURIComponent(course.slug)}`])) {
             await assertPage(page, route, origin, courseDeadline);

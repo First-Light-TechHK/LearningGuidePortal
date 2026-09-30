@@ -11,15 +11,18 @@ import { signCourseMediaReferences } from "@/services/courseMediaSigning";
 export default async function LearningPage({ params, searchParams }: { params: Promise<{ locale: string; courseId: string }>; searchParams: Promise<{ lessonId?: string }> }) {
   const { locale: rawLocale, courseId } = await params;
   const locale = localeFrom(rawLocale);
+  const { lessonId } = await searchParams;
   const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=/${locale}/account/learn/${courseId}`);
+  if (!user) {
+    const destination = `/${locale}/account/learn/${encodeURIComponent(courseId)}${lessonId ? `?lessonId=${encodeURIComponent(lessonId)}` : ''}`;
+    redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`);
+  }
   const course = await getProductCourse(courseId);
   if (!course || course.status !== "published") notFound();
   const access = await checkEntitlement(user.id, course.id);
   if (!access.allowed) redirect(`/${locale}/portal/courses/${course.id}`);
   const lessons = course.sections.flatMap((section) => section.lessons.map((item) => ({ ...item, sectionTitle: section.title })));
-  const { lessonId } = await searchParams;
-  const lesson = lessons.find((item) => item.id === lessonId) || lessons[0];
+  const lesson = lessonId ? lessons.find((item) => item.id === lessonId) : lessons[0];
   if (!lesson) notFound();
   lesson.contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
   const overview = await getLearningOverview(user.id);

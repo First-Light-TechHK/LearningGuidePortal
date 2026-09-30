@@ -129,7 +129,9 @@ async function fixture(t, faults = {}) {
     if (url.pathname === base) return doc(`<main><h1>Courses</h1><nav class="portal-category-filter"><a href="${base}?category=Science">${locale === 'zh-CN' ? '科学' : 'Science'}</a></nav><div style="height:950px"></div><article class="portal-course-card"><a href="${detail}">${image}<h3>${course.title}</h3><span class="portal-course-category">${locale === 'zh-CN' ? '科学' : 'Science'}</span></a></article></main>`);
     if ([detail, `${base}/${course.slug}`].includes(url.pathname)) return doc(`<main data-page-state="available"><h1 data-course-title="${course.title}">${course.title}</h1><p data-course-track="Science">Science</p>${image}<section data-syllabus="true">${lessons.map(lesson => `<article data-lesson-id="${lesson.id}"><h3><span>Lesson 1</span>${kind === 'entitled' ? `<a href="/${locale}/account/learn/${course.id}?lessonId=${faults.syllabus ? lessons[0].id : lesson.id}">${lesson.title}</a>` : lesson.title}</h3></article>`).join('')}</section><a data-course-secondary-cta="view_plans" href="/${locale}/pricing?courseId=${course.id}">View plans</a></main>`);
     const learning = url.pathname.includes('/account/learn/'), preview = url.pathname.endsWith('/public-lesson');
+    if (learning && !kind) { response.writeHead(307, { Location: `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(url.pathname + url.search)}` }); return response.end(); }
     if (learning && kind === 'locked' && !faults.leak) { response.writeHead(307, { Location: detail }); return response.end(); }
+    if (learning && kind === 'entitled' && !lessons.some(lesson => lesson.id === url.searchParams.get('lessonId'))) return doc('<main><h1>404</h1></main>');
     if (learning && faults.redirect) { response.writeHead(307, { Location: `/${locale}/portal/sign-in` }); return response.end(); }
     if (url.pathname.endsWith('/sign-in')) return doc('<main><h1>Sign in</h1></main>');
     if (preview || learning) {
@@ -155,6 +157,8 @@ test('Chromium acceptance covers both locales, every lesson, locked routes, lazy
   assert.equal(result.ok, true);
   assert.equal(result.evidence.coverage.lessons, 4);
   assert.equal(result.evidence.screenshots.length, 4);
+  assert.equal(result.evidence.checks.filter(check => check.metrics?.preservedRequestedLesson).length, 2);
+  assert.equal(result.evidence.checks.filter(check => check.metrics?.unknownLessonDenied).length, 2);
   const mediaChecks = result.evidence.checks.filter(check => check.metrics?.verifiedMedia?.some(media => media.kind === 'audio'));
   assert.equal(mediaChecks.length, 2);
   assert.ok(mediaChecks.every(check => check.metrics.verifiedMedia.some(media => media.playedSeconds > 0 && media.seekSeconds > 0)));
