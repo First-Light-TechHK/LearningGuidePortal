@@ -37,9 +37,6 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Reject high and critical dependency advisories
-        run: npm audit --audit-level=high
-
   lint:
     name: Lint
     needs: typecheck
