@@ -135,10 +135,10 @@ async function fixture(t, faults = {}) {
     if (preview || learning) {
       const lesson = lessons.find(item => item.id === url.searchParams.get('lessonId')) || lessons[0];
       const lessonId = faults.identity && learning ? 'incorrect-id' : lesson.id;
-      const content = faults.blank ? '' : 'Verified visible source lesson content.';
+      const content = faults.blank ? '' : '<h1>Heading inside the source</h1>Verified visible source lesson content.';
       const body = lesson.isPublic || faults.blank ? `<div class="lesson-body">${content}</div>` : `<section class="la-content-player"><h3>Audio exhibit</h3><div class="la-prose">${content}</div><div class="la-node-links"><button onclick="document.querySelector('dialog').showModal()">Hear the source</button></div></section>`;
       const modal = lesson.isPublic ? '' : `<dialog class="la-modal"><header><h3>Source recording</h3><button onclick="this.closest('dialog').close()">Close</button></header><div class="la-modal-body"><audio controls preload="metadata" src="/sample.wav?X-Amz-Signature=SIGNATURE_SECRET"></audio></div></dialog>`;
-      return doc(`<main data-course-id="${course.id}" data-lesson-id="${lessonId}"><aside class="lesson-nav"><p class="portal-eyebrow">${course.title}</p>${lessons.map(item => `<a class="${item.id === lesson.id ? 'active' : ''}" href="/${locale}/account/learn/${course.id}?lessonId=${item.id}">${item.title}</a>`).join('')}</aside><article class="lesson-content"><h1>${lesson.title}</h1>${body}</article></main>${modal}${faults.pageerror ? '<script>throw new Error("PASSWORD_SECRET https://s3.example/?X-Amz-Signature=SIGNATURE_SECRET")</script>' : ''}`);
+      return doc(`<main data-course-id="${course.id}" data-lesson-id="${lessonId}"><aside class="lesson-nav"><p class="portal-eyebrow" style="text-transform:uppercase">${course.title}</p>${lessons.map(item => `<a class="${item.id === lesson.id ? 'active' : ''}" href="/${locale}/account/learn/${course.id}?lessonId=${item.id}">${item.title}</a>`).join('')}</aside><article class="lesson-content"><h1>${lesson.title}</h1>${body}</article></main>${modal}${faults.pageerror ? '<script>throw new Error("PASSWORD_SECRET https://s3.example/?X-Amz-Signature=SIGNATURE_SECRET")</script>' : ''}`);
     }
     return send('not found', 'text/plain', 404);
   });

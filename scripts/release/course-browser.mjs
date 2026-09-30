@@ -174,7 +174,10 @@ function auditPage(page, scope, origin, fail) {
   let closing = false;
   const resource = request => digest(mediaIdentity(request.url(), origin) || 'invalid');
   const failed = (code, request, status) => fail(scope, code, { resource: resource(request), type: request.resourceType(), ...(status ? { status } : {}) });
-  page.on('pageerror', () => { if (!closing) fail(scope, 'uncaught_page_error'); });
+  page.on('pageerror', error => {
+    const reactCode = error.message.match(/Minified React error #(\d+)/)?.[1];
+    if (!closing) fail(scope, 'uncaught_page_error', reactCode ? { reactCode } : {});
+  });
   page.on('request', request => { if (!closing) pending.add(request); });
   page.on('requestfinished', request => pending.delete(request));
   page.on('requestfailed', request => {
@@ -211,7 +214,7 @@ async function visibleText(locator, deadline) {
 async function checkLessonIdentity(page, course, lesson, deadline) {
   const root = page.locator('[data-course-id][data-lesson-id]');
   await root.waitFor({ state: 'visible', timeout: remaining(deadline) });
-  const actual = { courseId: await root.getAttribute('data-course-id'), lessonId: await root.getAttribute('data-lesson-id'), title: await root.locator('h1').innerText() };
+  const actual = { courseId: await root.getAttribute('data-course-id'), lessonId: await root.getAttribute('data-lesson-id'), title: await root.locator('h1').first().innerText() };
   requireCheck(lessonIdentityMatches(actual, course, lesson), 'lesson_identity_mismatch');
   return root;
 }
@@ -422,6 +425,7 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
           await assertPage(page, cataloguePath, origin, deadline);
           const cards = page.locator('.portal-course-card');
           requireCheck(await cards.count() === manifest.courses.length, 'catalogue_course_count_mismatch');
+          if (viewport.name === 'mobile') requireCheck(await cards.evaluateAll(elements => elements.every(element => element.getBoundingClientRect().width >= 280)), 'catalogue_mobile_cards_too_narrow');
           for (const [ci, course] of manifest.courses.entries()) {
             await step(`${locale}/catalogue/${viewport.name}/course-${ci + 1}`, async () => {
               const path = `${cataloguePath}/${encodeURIComponent(course.id)}`;
@@ -511,7 +515,7 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
             const path = `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${encodeURIComponent(lesson.id)}`;
             await assertPage(page, path, origin, deadline);
             const root = await checkLessonIdentity(page, course, lesson, deadline);
-            requireCheck(normaliseText(await root.locator('.lesson-nav > .portal-eyebrow').innerText()) === normaliseText(course.title), 'learning_course_title_mismatch');
+            requireCheck(normaliseText(await root.locator('.lesson-nav > .portal-eyebrow').textContent()) === normaliseText(course.title), 'learning_course_title_mismatch');
             requireCheck(await root.locator(`.lesson-nav a.active[href=${selectorValue(path)}]`).count() === 1, 'active_lesson_navigation_mismatch');
             const metrics = await exerciseLesson(page, root, lesson, origin, deadline, audit, step, lessonScope);
             evidence.coverage.lessons += 1;
