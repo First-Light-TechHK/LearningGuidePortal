@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
 import type { LessonContent, LessonNode } from "../../contracts/lesson-content";
 import { LESSON_CONTENT_LIMITS as LIMITS } from "../../contracts/lesson-content";
 import { courseMediaAssetId, LessonContentError, lessonContentAssetIds, lessonContentsText, sanitiseLessonContents, sanitiseRichHtml, validateLessonContents } from "../../services/lessonContent";
@@ -183,6 +185,27 @@ test("LGTeacher: legacy conversion respects original size and resulting node-cou
   for (const html of [span.repeat(LIMITS.nodesPerContent + 1), span + ' '.repeat(LIMITS.htmlCharacters)]) {
     assert.deepEqual(sanitiseLessonContents([{ ...fixture()[0], nodes: [], html }], courseId), []);
   }
+});
+
+test("LGTeacher: the actual imported Horace lesson retains its audio and reflection exercise", () => {
+  const source = ts.createSourceFile('migration.ts', readFileSync('db/data-migrations/003_add_quintus_horatius_flaccus.ts', 'utf8'), ts.ScriptTarget.Latest, true);
+  let imported: ProductCourse | undefined;
+  function visit(node: ts.Node) {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === 'JSON.parse' && ts.isStringLiteral(node.arguments[0])) imported = JSON.parse(node.arguments[0].text);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.ok(imported);
+  const lesson = imported.sections.flatMap(section => section.lessons).find(lesson => lesson.id === 'horatius-lesson-22');
+  assert.ok(lesson);
+  const rendered = sanitiseLessonContents(lesson.contents, imported.id);
+  assert.equal(rendered.length, lesson.contents!.length);
+  const nodes = rendered.flatMap(content => content.nodes);
+  assert.deepEqual(nodes.map(node => node.type), ['audio', 'exercise']);
+  assert.equal(nodes[0].title, '<Exh 17>');
+  assert.ok(nodes[0].url?.startsWith('https://'));
+  assert.ok(nodes[1].question && nodes[1].answer);
+  assert.doesNotMatch(rendered[0].html!, /data-instance-content/);
 });
 
 const course = (): ProductCourse => ({
