@@ -192,8 +192,9 @@ test("rollback requires a full git SHA", () => {
   assert.equal(isRollbackSha("9b3b85c"), false);
 });
 
-test("UAT and PPE stay unprovisioned until ARNs exist", () => {
-  assert.equal(resolveReleaseEnvironment("UAT").provisioned, false);
+test("UAT is provisioned; PPE stays blocked until its ARN exists", () => {
+  assert.equal(resolveReleaseEnvironment("UAT").provisioned, true);
+  assert.match(resolveReleaseEnvironment("UAT").serviceArn, /learning-guide-uat/);
   assert.equal(resolveReleaseEnvironment("PPE").provisioned, false);
   assert.equal(resolveReleaseEnvironment("DEV").provisioned, true);
   assert.equal(resolveReleaseEnvironment("DEV").requireVersionMatch, false);

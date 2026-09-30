@@ -33,11 +33,11 @@ export const releaseEnvironments = {
     adminOrigin: "https://admin.uat.ilovelearningguide.com",
     branch: "uat",
     serviceName: "learning-guide-uat",
-    serviceArn: process.env.UAT_APP_RUNNER_SERVICE_ARN || "",
+    serviceArn: process.env.UAT_APP_RUNNER_SERVICE_ARN || "arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-uat/ad3b8483fecc45d9a3b0bb3d2aad7783",
     rollbackMode: "force-branch",
     requireDependencyChecks: true,
     requireVersionMatch: true,
-    provisioned: false
+    provisioned: true
   },
   PPE: {
     appEnv: "PPE/PROD",
