@@ -1,6 +1,6 @@
 # UAT deployment
 
-UAT is a separate Learning Guide Phase 1 acceptance environment. It does not share RDS, S3 or session state with DEV or SIT.
+UAT is a separate Learning Guide Phase 1 acceptance environment with its own RDS, upload bucket and session state. Existing curriculum media remains in a shared, versioned archive; UAT reads pinned object versions without write permission.
 
 ## Infrastructure
 
@@ -10,7 +10,7 @@ UAT is a separate Learning Guide Phase 1 acceptance environment. It does not sha
 - RDS: `learning-guide-uat`, PostgreSQL 16.13, db.t4g.micro, 20 GiB gp3, encrypted, seven-day backups. Private address only.
 - Database `learning_guide_uat` and restricted `lg_uat_app` login. Learner data is never copied from SIT or DEV; bootstrap imports curriculum and plans only.
 - S3: `learning-guide-uat-851987565851`, prefix `learning-guide/uat`.
-- Static curriculum media is read from the legacy archive at `aitutor-data-851987565851/learning-guide/dev/documents/mvp/` using a UAT-role, `s3:GetObject`-only policy. This contains course images, video and audio only; it does not grant access to learner records or other DEV objects. New author-uploaded media remains in the isolated UAT bucket.
+- Static curriculum media is read from the legacy archive at `aitutor-data-851987565851/learning-guide/dev/documents/mvp/` using only `s3:GetObject` and `s3:GetObjectVersion`. `deploy/uat-course-media.json` pins every approved archive object version, byte size and ETag. The runtime refuses unlisted archive media in UAT. New author-uploaded media remains in the isolated UAT bucket. The source archive has no lifecycle expiry rule as checked on 30 September; privileged deletion of a pinned version remains an operational risk, not something application code can prevent.
 - Private subnets: `172.31.66.0/24` and `172.31.67.0/24`. Secrets: `learning-guide/uat/*`.
 
 ## Setup
@@ -23,12 +23,25 @@ aws cloudformation deploy --region ap-southeast-1 --stack-name learning-guide-ua
 # Curriculum from SIT only (no learner rows)
 node scripts/provision-uat.mjs --bootstrap
 
-# Point App Runner at the uat branch (must equal a Verify-passed SHA)
-git checkout uat && git reset --hard <sit-sha>
+# Initial service creation only; existing UAT services must use the release command below.
+# Merge the reviewed SIT change through Git; never reset a shared checkout to promote it.
 GITHUB_REF_NAME=uat node scripts/provision-uat.mjs --deploy
 ```
 
-Subsequent releases: `GITHUB_REF_NAME=uat node scripts/release-uat.mjs` from that SHA after Verify passes.
+Subsequent releases: `GITHUB_REF_NAME=uat node scripts/release-uat.mjs` from a clean checkout at the current remote UAT SHA. Initial provisioning is not acceptance and exits with a non-success acceptance status.
+
+## Mandatory acceptance
+
+1. The latest push run of Verify, Forge and Overlay must succeed for the exact UAT SHA, including all required jobs. An earlier successful run cannot override a newer failed, skipped, cancelled or pending run.
+2. Capture published SIT curriculum from the same snapshot-plus-ORM precedence used by the application. Compare every published UAT course, section, lesson, body/content hash and media reference. The current reference has eight courses and 22 lessons. This is the requested interim source, not a claim that placeholder lesson bodies are academically complete.
+3. Resolve every remote asset, compare its S3 version, bytes and ETag to the committed media manifest, and verify the source has not drifted during acceptance. New or changed media requires an explicit reviewed manifest update; never auto-refresh the pins to turn a failed test green.
+4. Create two unique, temporary UAT-only synthetic learners: one with a two-hour test entitlement and one without entitlement. Use normal login and session APIs. No email, payment, real user account or production database is involved. Remove the fixtures and their study/session state in `finally`; a cleanup failure fails acceptance.
+5. Exercise all course and lesson identities in both locales in Chromium. Decode images, play and seek actual audio/video, inspect text and embedded content, verify locked-course redirects and the video-preview gate, and capture desktop/mobile catalogue screenshots. A successful sign-in page is not a successful lesson.
+6. Recheck source and deployed revision. Retain `test-results/uat-acceptance/receipt.json` and browser evidence, including failures. The workflow uploads these for 30 days. Local operators must retain the same directory outside temporary storage.
+
+CLI and GitHub UAT deployment use this same runner. Browser checks cannot be bypassed by `SKIP_PLAYWRIGHT`. A service being RUNNING or `/api/health` being ready does not establish acceptance. Mail inbox delivery, provider OAuth completion and Stripe settlement are separate suites and are explicitly excluded from the course acceptance receipt. Their configuration checks cannot substitute for real provider acceptance.
+
+Private database checks run in temporary VPC Lambdas with access to only the selected environment's database secret. They take the application's advisory transaction lock for synthetic fixture changes and never replace curriculum or copy learner data between environments. Temporary Lambda/IAM resources are removed after use. Operator AWS permissions are required; missing permissions fail the release rather than skipping a check.
 
 ## Domain and providers
 
@@ -43,4 +56,4 @@ Until DNS is active, health and smoke checks use the App Runner service URL. `NE
 
 ## Rollback
 
-Same protocol as SIT: force `uat` to the last good Verify SHA, `update-service` + `start-deployment` on `learning-guide-uat` only. Do not roll back RDS, S3 or payments.
+Do not force-push the UAT branch or restore databases merely because an acceptance test fails. Diagnose whether the failed dependency is code, data, media or permissions. For a code regression, create a reviewed revert commit, run all required CI and release the exact new SHA through the same gate. Restore media access/version permissions separately when that is the failure. Never roll back learner records, orders, payments or another environment as part of a code release.

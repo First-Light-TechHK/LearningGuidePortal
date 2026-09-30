@@ -29,7 +29,7 @@ function stub(overrides = {}) {
     if (path === "/api/portal/courses") return json(200, { ok: true, courses: [{ slug: "epicureanism", status: "published" }] });
     if (path === "/api/portal/courses/epicureanism") return json(200, { ok: true, page: { identity: { title: "Epicureanism" } } });
     if (path === "/en-GB/portal/courses/epicureanism") return html(200, "<html><body><main><h1>Epicureanism</h1><img src=\"https://cdn.example.test/cover.jpg\"></main></body></html>");
-    if (path === "/en-GB/portal/courses/epicureanism/public-lesson") return html(200, "<html><body><main><h1>Preview</h1></main></body></html>");
+    if (path === "/en-GB/portal/courses/epicureanism/public-lesson") return html(307, "", { location: "/en-GB/portal/sign-in?returnTo=lesson" });
     if (path === "https://cdn.example.test/cover.jpg") return html(200, "", { "content-type": "image/jpeg" });
     if (path === "/api/portal/plans") return json(200, { ok: true, plans: [{ id: "everything-pc-6" }] });
     if (path === "/api/my-learning") return json(401, { ok: false });
@@ -84,6 +84,28 @@ test("live smoke fails SIT when LIVE_TEST_EMAIL is missing", async () => {
   }, stub());
   assert.equal(result.ok, false);
   assert.ok(result.failures.some((item) => item.startsWith("registration:")));
+});
+
+test("course smoke is independent of mail and never mistakes a sign-in page for lesson acceptance", async () => {
+  const seen = [];
+  const result = await runLiveSmoke({ origin: "https://sit.example.test", appEnv: "SIT", checkMail: false }, async (path, options) => {
+    seen.push(path);
+    if (path.endsWith('/public-lesson')) return html(200, '<main><h1>Sign in</h1></main>');
+    return stub()(path, options);
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some(item => item.startsWith('public-lesson.access')));
+  assert.equal(seen.includes('/api/auth/register'), false);
+});
+
+test("course smoke checks courses beyond the first and images beyond the fourth", async () => {
+  const result = await runLiveSmoke({ origin: "https://sit.example.test", appEnv: "SIT", checkMail: false }, async (path, options) => {
+    if (path === '/api/portal/courses') return json(200, { courses: [{ slug: 'epicureanism' }, { slug: 'broken' }] });
+    if (path === '/en-GB/portal/courses/broken') return html(200, `<main>${[1,2,3,4,5].map(n => `<img src="https://cdn.example.test/${n}.jpg">`).join('')}</main>`);
+    if (path.startsWith('https://cdn.example.test/') && !path.endsWith('cover.jpg')) return html(path.endsWith('/5.jpg') ? 403 : 200, '', { 'content-type': 'image/jpeg' });
+    return stub()(path, options);
+  });
+  assert.ok(result.failures.some(item => item.includes('/5.jpg')));
 });
 
 test("live smoke fails when registration leaks an SES IAM error", async () => {

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { checkRequiredCI } from './required-ci.mjs';
 
 const terminalStatuses = new Set(["PAUSED", "DELETED", "DELETE_FAILED", "CREATE_FAILED"]);
 const failedDeployments = new Set(["FAILED", "ROLLBACK_SUCCEEDED", "ROLLBACK_FAILED"]);
@@ -58,5 +59,8 @@ export async function buildService(serviceArn) {
 }
 
 if (process.argv[1]?.endsWith("build-branch.mjs")) {
+  const service = aws('apprunner', 'describe-service', { ServiceArn: process.env.APP_RUNNER_SERVICE_ARN }).Service;
+  if (service.ServiceName === 'learning-guide-uat') throw new Error('Use scripts/release-uat.mjs; raw UAT builds bypass acceptance');
+  checkRequiredCI({ sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), branch: process.env.GITHUB_REF_NAME || execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim() });
   await buildService(process.env.APP_RUNNER_SERVICE_ARN);
 }

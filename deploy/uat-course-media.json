@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "environment": "UAT",
+  "reference": "Published SIT curriculum captured 2026-09-30",
+  "objects": [
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/image/\u4e2d\u56fd\u4eba\u6587-\u5386\u53f2.png",
+      "version": "VkAnPwK2LLmecNb1EWzvsKnfgw9FMKSV",
+      "etag": "\"45260834668d03b44259d26ea04c7531\"",
+      "bytes": 6062137
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/image/\u4e2d\u56fd\u4eba\u6587-\u53e4\u8bd7\u8bcd.jpg",
+      "version": ".BB2g8tyKLCnriHvsD413EE3gDPBNv2N",
+      "etag": "\"79bf8f10ecc90877208ff3c420f3600f\"",
+      "bytes": 172859
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/image/\u6b27\u6d32\u4eba\u6587-\u54f2\u5b66.jpg",
+      "version": "FCjTPsI7L7MQplnnU3RVHIZ8pt6LsKcq",
+      "etag": "\"32ef48ec6a357aa74be0ffcb45b0ad8f\"",
+      "bytes": 201260
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/image/\u79d1\u5b661.png",
+      "version": "qUkCwR5X8.8b2GgBMG720M_z9BkiB5YL",
+      "etag": "\"f87178f39cb17208ef13d770f77674e2\"",
+      "bytes": 3403540
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/image/\u79d1\u5b662.jpg",
+      "version": "QkegULzAJswyrDyrtkQsy6O_.ZjgpGWm",
+      "etag": "\"ea825034a809c9d56bdf5d41f18f5ff8\"",
+      "bytes": 126272
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/image/Horatius.jpg",
+      "version": "GBcGbE5W1YLaJsUCoemfDb0.JPGg8963",
+      "etag": "\"ddc7d095b1ce5d608a1df36959bb7cdd\"",
+      "bytes": 38111
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/other/Horace Recording.m4a",
+      "version": "1Pm7jXdZkBhx5l4v_bRWhTgXbBXiTkNX",
+      "etag": "\"2d522c3a5753bf3e905295c42558b5a8\"",
+      "bytes": 843454
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/video/\u4e2d\u56fd\u4eba\u6587-\u5386\u53f2.MP4",
+      "version": "Wv8dYNLvIwMFhkSSsLqmFmIPPReJddlS",
+      "etag": "\"44d26290062412aac7a1fff2e7293516-49\"",
+      "bytes": 409812585
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/video/\u4e2d\u56fd\u4eba\u6587-\u53e4\u8bd7\u8bcd.MP4",
+      "version": "tjfl234DXvDAqIq0zXILlOeeTUI36vuv",
+      "etag": "\"a0ae5ab81eeb2744f31b1110f97ff1c1-16\"",
+      "bytes": 126552070
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/video/\u6b27\u6d32\u4eba\u6587-\u54f2\u5b66.MP4",
+      "version": "T0oIR.OVgxPaLWuWJFspFmfI3ywAibhc",
+      "etag": "\"4474da77da5fa51947ce924b03cd538a-32\"",
+      "bytes": 266642782
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/video/\u79d1\u5b661.MP4",
+      "version": "a4Tu9j8OfD02ueq7.h42Dakmk_Wg.pRN",
+      "etag": "\"d07c0523d0a37f1ecfcdb4f0cac1ebeb-14\"",
+      "bytes": 115919539
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/video/\u79d1\u5b662.MP4",
+      "version": "LdJEKdRe8Z2iPUBFCNq8eXeuD01eRN1K",
+      "etag": "\"5720373d74551858ede94ebff85da53c-16\"",
+      "bytes": 132353883
+    },
+    {
+      "bucket": "aitutor-data-851987565851",
+      "key": "learning-guide/dev/documents/mvp/video/\u8d3a\u62c9\u65af\u8bd7\u6b4c\u4e3a\u4f55\u503c\u5f97\u4e00\u8bfb.mp4",
+      "version": "Q5KzioSQpMnlPZIdg840jCORZgfW_G8T",
+      "etag": "\"5c4772a72a0b7daee3af53d07ebc5faa-34\"",
+      "bytes": 278339063
+    }
+  ]
+}

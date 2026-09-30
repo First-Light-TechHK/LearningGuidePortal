@@ -3,6 +3,7 @@ import { buildService } from './release/build-branch.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { checkRequiredCI } from './release/required-ci.mjs';
 
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -17,8 +18,7 @@ function aws(service, operation, input = {}) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 if (aws('sts','get-caller-identity').Account !== '851987565851') throw new Error('Wrong AWS account');
-const runs = gh(`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=20`).workflow_runs;
-if (!runs.some(run => run.head_sha === sha && run.conclusion === 'success')) throw new Error('This exact revision has not passed Verify');
+checkRequiredCI({ sha, branch });
 if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch moved; verify and release the new revision');
 const summary = aws('apprunner','list-services').ServiceSummaryList.find(x => x.ServiceName === 'learning-guide-sit');
 if (!summary) throw new Error('SIT must be provisioned first');

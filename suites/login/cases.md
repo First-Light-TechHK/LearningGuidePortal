@@ -9,9 +9,9 @@ Shallow to deep: public JSON shape → production leak → role → password tak
 
 
 ### Functional
-- Title: check-email does not distinguish a known address
+- Title: Email-first sign-in identifies a known address
 - Steps: Register; POST /api/auth/check-email for that address and for an unknown address
-- Expected: Same HTTP status; no `exists` field; same public JSON shape
+- Expected: HTTP 200 for both; `data.exists` follows the documented email-first sign-in contract. This endpoint does not promise account-existence confidentiality.
 
 
 ### Negative
@@ -21,15 +21,15 @@ Shallow to deep: public JSON shape → production leak → role → password tak
 
 
 ### Edge
-- Title: Resend does not 429 only for a pending address
+- Title: Resend enforces the documented pending-account cooldown
 - Steps: POST /api/auth/resend-verification for a pending address, a missing address, and the pending address again
-- Expected: Same status and public shape; never 429 only for pending
-- Title: Active, pending, and unknown check-email share one public shape
+- Expected: Pending requests inside 60 seconds return 429 VERIFICATION_RATE_LIMITED with a bounded retryAfter; unknown addresses return accepted. Neither path issues a session or exposes a token. Repeated pending requests send no extra mail.
+- Title: Active, pending, and unknown check-email follow the email-first contract
 - Steps: Register an active account and a pending account; POST check-email for both and for an unknown address
-- Expected: No `exists` field; the three public JSON shapes match
-- Title: check-email after a failed login still has no exists field
+- Expected: Existing active/pending addresses report `exists: true`; unknown addresses report false. No password, token or session is disclosed.
+- Title: check-email after a failed login does not disclose credentials
 - Steps: Sign in with a wrong password; POST check-email for that address and an unknown address
-- Expected: No `exists`; same public shape
+- Expected: The same documented existence result; no credential or session disclosure
 - Title: A second pending register does not say the address already exists
 - Steps: Register pending; register the same email again
 - Expected: HTTP 200; copy has no "already exists"

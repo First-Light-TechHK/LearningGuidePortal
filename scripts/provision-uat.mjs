@@ -6,10 +6,14 @@ import { readFileSync, mkdtempSync, cpSync, writeFileSync, rmSync } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Stripe from 'stripe';
+import { checkRequiredCI } from './release/required-ci.mjs';
 
 const region = 'ap-southeast-1';
 const sitArn = 'arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-sit/5b9b982e873e4f08ad2f5a50f67d67d0';
 const origin = 'https://uat.ilovelearningguide.com';
+if (process.argv.includes('--deploy')) {
+  checkRequiredCI({ sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), branch: 'uat' });
+}
 function aws(service, operation, input = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'lg-aws-'));
   const file = path.join(dir, 'input.json');
@@ -39,7 +43,7 @@ aws('iam', 'put-role-policy', {
     Statement: [{
       Sid: 'ReadStaticCourseMedia',
       Effect: 'Allow',
-      Action: 's3:GetObject',
+      Action: ['s3:GetObject', 's3:GetObjectVersion'],
       Resource: 'arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/documents/mvp/*'
     }]
   })
@@ -229,6 +233,7 @@ if (process.argv.includes('--deploy')) {
   };
   const services = aws('apprunner','list-services').ServiceSummaryList;
   const existing = services.find(x => x.ServiceName === 'learning-guide-uat');
+  if (existing) throw new Error('UAT already exists. Use scripts/release-uat.mjs with mandatory acceptance, not the initial provisioner.');
   const common = {
     SourceConfiguration: sourceConfig,
     InstanceConfiguration: { Cpu: '1024', Memory: '2048', InstanceRoleArn: out.AppRoleArn },
@@ -240,4 +245,6 @@ if (process.argv.includes('--deploy')) {
     ? aws('apprunner','update-service', { ServiceArn: existing.ServiceArn, ...common })
     : aws('apprunner','create-service', { ServiceName: 'learning-guide-uat', ...common, Tags: [{ Key: 'Project', Value: 'LearningGuide' }, { Key: 'Environment', Value: 'UAT' }] });
   console.log(JSON.stringify({ arn: response.Service.ServiceArn, url: response.Service.ServiceUrl, operation: response.OperationId, version: sha, branch }));
+  console.error('Provisioning submitted, not accepted. After DNS/service readiness run scripts/release-uat.mjs before declaring a release.');
+  process.exitCode = 2;
 }

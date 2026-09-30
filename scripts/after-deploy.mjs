@@ -3,6 +3,7 @@ import { resolveReleaseEnvironment } from "./release/environments.mjs";
 import { runLiveSmoke } from "./release/liveSmoke.mjs";
 import { notifyRelease } from "./release/notify.mjs";
 import { isRollbackSha, rollbackRelease } from "./release/rollback.mjs";
+import { verifyUatAcceptance } from "./release/uat-acceptance.mjs";
 
 const environment = resolveReleaseEnvironment(process.env.RELEASE_ENV);
 const sha = (process.env.RELEASE_SHA || "").trim();
@@ -14,6 +15,14 @@ if (!environment.provisioned && !process.env.APP_RUNNER_SERVICE_ARN && !environm
   throw new Error(`${environment.name} App Runner is not provisioned; set the service ARN secret before deploying`);
 }
 if (!origin) throw new Error(`${environment.name} origin is not configured`);
+
+if (environment.name === "UAT") {
+  const result = await verifyUatAcceptance({ sha, outputDir: process.env.RELEASE_EVIDENCE_DIR });
+  await notifyRelease({ environment: environment.name, sha, previousSha, status: result.ok ? 'success' : 'failed', origin, failures: result.failures });
+  console.log(JSON.stringify({ ok: result.ok, receiptFile: result.receiptFile, failures: result.failures }));
+  // A data/permission failure is not repaired by force-pushing a code branch backwards.
+  process.exit(result.ok ? 0 : 1);
+}
 
 async function smokeWithRetry() {
   let result;
@@ -37,7 +46,11 @@ async function smokeWithRetry() {
 
 const smoke = await smokeWithRetry();
 
-if (smoke.ok && process.env.SKIP_PLAYWRIGHT !== "1") {
+if (process.env.SKIP_PLAYWRIGHT === "1") {
+  smoke.ok = false;
+  smoke.failures.push("Acceptance cannot skip browser checks");
+}
+if (process.env.SKIP_PLAYWRIGHT !== "1") {
   const play = spawnSync("npx", ["playwright", "test", "--config=playwright.live.config.ts"], {
     stdio: "inherit",
     env: { ...process.env, LIVE_ORIGIN: origin, LIVE_ADMIN_ORIGIN: adminOrigin, LIVE_ENV: environment.appEnv, LIVE_SHA: sha, LIVE_TEST_EMAIL: testEmail, CI: "1" }

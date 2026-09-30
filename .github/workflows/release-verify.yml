@@ -30,6 +30,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   verify:
@@ -69,4 +70,14 @@ jobs:
           APP_RUNNER_SERVICE_ARN: ${{ inputs.service_arn }}
           RELEASE_ROLLBACK_MODE: ${{ inputs.rollback_mode }}
           LIVE_TEST_EMAIL: ${{ vars.LIVE_TEST_EMAIL }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/after-deploy.mjs
+
+      - name: Retain live acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-acceptance-${{ inputs.environment }}-${{ github.sha }}
+          path: test-results/
+          retention-days: 30
+          if-no-files-found: error

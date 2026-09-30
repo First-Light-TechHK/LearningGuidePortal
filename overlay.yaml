@@ -7,6 +7,14 @@ product:
 branches:
   main:
     run: [functional, regression]
+  dev:
+    run: [functional, regression]
+  sit:
+    run: [functional, regression]
+  uat:
+    run: [functional, regression]
+  ppe:
+    run: [functional, regression]
   default:
     run: [functional, regression]
 kinds:

@@ -20,14 +20,16 @@ test.describe("live release e2e", () => {
     const sources = await page.locator("img[src]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("src")).filter((src): src is string => Boolean(src)));
     expect(sources.length).toBeGreaterThan(0);
     expect(sources.join(" ")).not.toContain("myqcloud.com");
-    for (const src of sources.slice(0, 4)) {
+    for (const src of sources) {
       const image = await request.get(src);
       expect(image.status(), src).toBe(200);
       expect(image.headers()["content-type"] || "", src).toContain("image");
     }
 
     await page.goto(`/en-GB/portal/courses/${slug}/public-lesson`);
-    await expect(page.locator("main, h1").first()).toBeVisible();
+    // Anonymous access is an auth boundary, not proof of successful lesson rendering.
+    await expect(page).toHaveURL(/\/portal\/sign-in\?/);
+    await expect(page.locator('input[type="email"]')).toBeVisible();
     await page.goto("/en-GB/pricing");
     await expect(page.locator("body")).not.toContainText(/Application error|Internal Server Error/i);
     await page.goto("/en-GB/account/my-learning");

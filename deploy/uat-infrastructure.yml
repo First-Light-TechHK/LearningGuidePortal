@@ -164,7 +164,7 @@ Resources:
             Statement:
               - Sid: ReadStaticCourseMedia
                 Effect: Allow
-                Action: s3:GetObject
+                Action: [s3:GetObject, s3:GetObjectVersion]
                 Resource: arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/documents/mvp/*
   Connector:
     Type: AWS::AppRunner::VpcConnector

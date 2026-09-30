@@ -62,11 +62,11 @@ GitHub pull request / push
   -> npm start applies pending db/data-migrations, then serves the app
   -> Post-deploy live e2e (catalogue, course media, public lesson, pricing, registration mail, OAuth start, closed purchase/payment/orders/tutor)
   -> Success: SNS `learning-guide-sit-alerts` + GitHub summary
-  -> Failure: the workflow stays red. Automatic fallback (DEV revert-commit; SIT/UAT/PPE force previous SHA) then notify. Rollback does not make the release pass.
+  -> Failure: the workflow stays red. UAT retains evidence and requires a reviewed forward fix or revert commit, new CI and full acceptance; it never rewrites the branch automatically. Other environments retain their existing fallback procedures. Rollback does not make the release pass.
   -> Deploy SIT / UAT / PPE are workflow_dispatch only (never on push)
 ```
 
-UAT and PPE workflows exist but stay blocked until their App Runner ARNs and origins are set as repository variables (`UAT_APP_RUNNER_SERVICE_ARN`, `PPE_APP_RUNNER_SERVICE_ARN`, `PPE_ORIGIN`). Subscribe an ops mailbox to `learning-guide-sit-alerts` so release notifications arrive.
+UAT uses the provisioned `learning-guide-uat` App Runner service and the mandatory release procedure in [uat-deployment.md](uat-deployment.md). Both CLI and workflow deployment require successful Verify, Forge and Overlay runs for the exact UAT commit, then SIT-backed catalogue, pinned-media and authenticated learner acceptance. PPE still requires its repository deployment variables. Subscribe an ops mailbox to `learning-guide-sit-alerts` so release notifications arrive.
 
 Post-deploy e2e runs immediately after DEV and SIT are RUNNING. It registers `LIVE_TEST_EMAIL` (DEV and SIT default `yongthelaoma@gmail.com`), requires that send to be accepted, and fails if the response leaks an AWS IAM error. It also requires a published course page whose images return image bytes and are not Tencent COS, a public lesson, pricing, and rejection of anonymous checkout, trial, subscription portal, unsigned Stripe webhook, orders, course management, AI Tutor, and study writes. It does not complete a card payment or an OAuth consent. A failed check exits 1, so Deploy DEV and Deploy SIT cannot pass. Implementation: `scripts/after-deploy.mjs`, `scripts/release/liveSmoke.mjs`, `tests/e2e/live-release.spec.ts`. Unit coverage: `tests/unit/live-smoke.test.ts`.
 

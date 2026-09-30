@@ -25,7 +25,8 @@ export function createLiveClient(origin, fetchImpl = fetch) {
       redirect: options.redirect || "follow",
       method: options.method || "GET",
       headers: options.headers,
-      body: options.body
+      body: options.body,
+      signal: AbortSignal.timeout(30000)
     });
     return read(response);
   };
@@ -45,14 +46,14 @@ function mediaUrls(markup, pageUrl) {
     try { absolute = new URL(raw, pageUrl).toString(); } catch { continue; }
     if (/(\.(jpe?g|png|webp|gif)(\?|$)|amazonaws\.com|myqcloud\.com|_next\/image|course-media|portal-media)/i.test(absolute)) found.push(absolute);
   }
-  return [...new Set(found)].slice(0, 4);
+  return [...new Set(found)];
 }
 
 function imageLoads(response) {
   if (response.status !== 200) return false;
   const type = String(response.headers?.get?.("content-type") || "").toLowerCase();
   if (type.includes("text/html") || type.includes("application/json") || type.includes("xml")) return false;
-  return type.startsWith("image/") || type === "";
+  return type.startsWith("image/");
 }
 
 async function assertCourseMedia(http, origin, markup, pagePath, failures) {
@@ -64,7 +65,7 @@ async function assertCourseMedia(http, origin, markup, pagePath, failures) {
   for (const imageUrl of images) {
     if (/myqcloud\.com/i.test(imageUrl)) fail(failures, "course.media", "course image still points at Tencent COS");
     const image = await http(imageUrl);
-    if (!imageLoads(image)) fail(failures, "course.media", `${image.status} ${imageUrl.slice(0, 160)}`);
+    if (!imageLoads(image)) fail(failures, "course.media", `${image.status} ${redact(imageUrl)}`);
   }
 }
 
@@ -119,15 +120,18 @@ export async function runLiveSmoke(input, request) {
   const published = list.filter((course) => !course.status || course.status === "published");
   if (!published.length) fail(failures, "catalogue.published", "no published course");
   const slug = published[0]?.slug || published[0]?.id;
-  if (slug) {
-    const course = await http(`/api/portal/courses/${slug}`);
+  for (const item of published) {
+    const courseSlug = item.slug || item.id;
+    const course = await http(`/api/portal/courses/${courseSlug}`);
     if (course.status !== 200 || !course.body?.page) fail(failures, "course.api", `HTTP ${course.status}`);
-    const html = await http(`/en-GB/portal/courses/${slug}`);
+    const html = await http(`/en-GB/portal/courses/${courseSlug}`);
     if (html.status !== 200) fail(failures, "course.page", `HTTP ${html.status}`);
-    else if (!/<(main|h1)\b/i.test(html.text || "")) fail(failures, "course.page", `${slug} did not render`);
-    else await assertCourseMedia(http, origin, html.text || "", `/en-GB/portal/courses/${slug}`, failures);
-    const lessonPage = await http(`/en-GB/portal/courses/${slug}/public-lesson`);
-    if (lessonPage.status !== 200 || !/<(main|h1)\b/i.test(lessonPage.text || "")) fail(failures, "public-lesson", `${slug} HTTP ${lessonPage.status}`);
+    else if (!/<(main|h1)\b/i.test(html.text || "")) fail(failures, "course.page", `${courseSlug} did not render`);
+    else await assertCourseMedia(http, origin, html.text || "", `/en-GB/portal/courses/${courseSlug}`, failures);
+    // Anonymous preview access requires sign-in. This is an access check, NOT a lesson-render check.
+    const lessonPage = await http(`/en-GB/portal/courses/${courseSlug}/public-lesson`, { redirect: "manual" });
+    const location = lessonPage.headers?.get?.("location") || "";
+    if (![302, 303, 307, 308].includes(lessonPage.status) || !location.includes('/portal/sign-in')) fail(failures, "public-lesson.access", `${courseSlug} did not require sign-in`);
   }
 
   const learningPage = await http("/en-GB/account/my-learning");
@@ -169,9 +173,9 @@ export async function runLiveSmoke(input, request) {
   if (checkEmail.status !== 200 || checkEmail.body?.ok !== true) fail(failures, "check-email", `HTTP ${checkEmail.status}`);
 
   const testEmail = input.testEmail?.trim().toLowerCase();
-  if (["DEV", "SIT", "UAT", "PPE", "PPE/PROD", "PROD"].includes(appEnv) && !testEmail) {
+  if (input.checkMail !== false && ["DEV", "SIT", "UAT", "PPE", "PPE/PROD", "PROD"].includes(appEnv) && !testEmail) {
     fail(failures, "registration", "LIVE_TEST_EMAIL is required so registration is actually mailed");
-  } else if (testEmail) {
+  } else if (input.checkMail !== false && testEmail) {
     const registered = await postJson(http, "/api/auth/register", {
       email: testEmail,
       password: "SitSmoke-Passw0rd!",

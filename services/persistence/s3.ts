@@ -1,6 +1,7 @@
 import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { awsRegion, dataS3Bucket, dataS3Prefix } from "./config";
+import { courseMediaVersion } from './courseMediaRelease';
 
 let client: S3Client | null = null;
 
@@ -53,7 +54,8 @@ export async function signCourseMediaUrl(value: string, expiresIn = 300) {
   // the actual UTF-8 object key instead of double-encoding "%" as "%25".
   let key: string;
   try { key = decodeURIComponent(parsed.pathname.slice(1)); } catch { return value; }
-  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: COURSE_MEDIA_HOST.split(".")[0], Key: key }), { expiresIn });
+  const bucket = COURSE_MEDIA_HOST.split(".")[0];
+  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: courseMediaVersion(bucket, key) }), { expiresIn });
 }
 
 export async function s3Delete(s3Key: string) {

@@ -32,7 +32,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     { icon: "✓", title: copy.understanding, body: copy.understandingDescription, node: exercise },
     { icon: "↗", title: copy.explore, body: copy.exploreDescription, node: exhibit },
   ];
-  return <div className={styles.page}>
+  return <div className={styles.page} data-course-id={courseId} data-lesson-id={lesson.id}>
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}

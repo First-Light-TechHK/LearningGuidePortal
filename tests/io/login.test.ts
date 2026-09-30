@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import path from "node:path";
+import nodemailer from "nodemailer";
 import { atomicWriteJson, systemRoot } from "../../services/fileStore";
 import {
   PASSWORD,
@@ -67,17 +68,52 @@ async function registerAccount(label: string, password = PASSWORD) {
   return { email, response };
 }
 
-async function registerPending(label: string, password = PASSWORD) {
-  const previousVerification = process.env.EMAIL_VERIFICATION_REQUIRED;
-  const previousDelivery = process.env.EMAIL_DELIVERY;
-  process.env.EMAIL_VERIFICATION_REQUIRED = "1";
-  process.env.EMAIL_DELIVERY = "discard";
+type VerificationMail = { to: string; text: string };
+
+async function withMockVerificationMail<T>(run: (mails: VerificationMail[]) => Promise<T>) {
+  const envKeys = ["EMAIL_VERIFICATION_REQUIRED", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"] as const;
+  const previousEnv = envKeys.map((key) => [key, process.env[key]] as const);
+  const originalTransport = nodemailer.createTransport;
+  const mails: VerificationMail[] = [];
+  nodemailer.createTransport = (() => ({
+    sendMail: async (mail: VerificationMail) => { mails.push(mail); }
+  })) as unknown as typeof nodemailer.createTransport;
+  Object.assign(process.env, {
+    EMAIL_VERIFICATION_REQUIRED: "1",
+    SMTP_HOST: "smtp.example.test", SMTP_USER: "test", SMTP_PASS: "test-only"
+  });
   try {
-    return await registerAccount(label, password);
+    return await run(mails);
   } finally {
-    process.env.EMAIL_VERIFICATION_REQUIRED = previousVerification;
-    process.env.EMAIL_DELIVERY = previousDelivery;
+    nodemailer.createTransport = originalTransport;
+    for (const [key, value] of previousEnv) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    clearCookies();
   }
+}
+
+async function registerPending(label: string, mails: VerificationMail[], password = PASSWORD) {
+  const previousMailCount = mails.length;
+  const { email, response } = await registerAccount(label, password);
+  const body = await response.json();
+  assert.equal(response.status, 200, `Pending fixture setup failed: ${body.code}`);
+  assert.equal(body.ok, true);
+  assert.equal(body.data.verificationRequired, true);
+  assert.equal(body.data.user.email, email);
+  assert.equal(body.data.user.status, "pending");
+  assert.equal(body.data.user.emailVerifiedAt, null);
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.equal(getCookie(SESSION_COOKIE), undefined);
+  assert.equal(mails.length, previousMailCount + 1);
+  assert.equal(mails[previousMailCount].to, email);
+  const store = await import("../../services/productStore");
+  const users = (await store.ensureProductData()).users.filter((user) => user.email === email);
+  assert.equal(users.length, 1);
+  assert.equal(users[0].id, body.data.user.id);
+  assert.equal(users[0].status, "pending");
+  assert.equal(users[0].emailVerifiedAt, null);
+  return { email, userId: users[0].id };
 }
 
 test("AUTH-01 functional: check-email identifies known and unknown addresses", async () => {
@@ -156,8 +192,8 @@ test("AUTH-01 negative: register copy does not say the address already exists", 
   assert.equal(JSON.stringify(secondBody).toLowerCase().includes("already exists"), false);
 });
 
-test("AUTH-01 negative: login does not 403 only for a pending address", async () => {
-  const { email } = await registerPending("auth01-pending-login");
+test("AUTH-01 negative: login does not 403 only for a pending address", async () => withMockVerificationMail(async (mails) => {
+  const { email } = await registerPending("auth01-pending-login", mails);
   clearCookies();
   const pending = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: PASSWORD }));
   const missing = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", {
@@ -166,16 +202,22 @@ test("AUTH-01 negative: login does not 403 only for a pending address", async ()
   }));
   const pendingBody = await pending.json() as Record<string, unknown>;
   const missingBody = await missing.json() as Record<string, unknown>;
-  assert.equal(pending.status, missing.status);
+  assert.equal(pending.status, 401);
+  assert.equal(missing.status, 401);
   assert.notEqual(pending.status, 403);
   assert.equal(pendingBody.code, missingBody.code);
   assert.deepEqual(publicShape(pendingBody), publicShape(missingBody));
-});
+  assert.equal(pending.headers.get("set-cookie"), null);
+  assert.equal(missing.headers.get("set-cookie"), null);
+  assert.equal((await (await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"))).json()).user, null);
+  assert.equal((await quote.POST(jsonRequest("POST", "http://localhost/api/purchase/quote", {
+    planId: "everything-pc-6"
+  }))).status, 401);
+  assert.equal(mails.length, 1);
+}));
 
-test("AUTH-01 edge: resend-verification does not 429 only for a pending address", async () => {
-  const { email } = await registerPending("auth01-resend");
-  process.env.EMAIL_DELIVERY = "discard";
-  try {
+test("AUTH-01 edge: resend enforces the documented cooldown without issuing mail, tokens or sessions", async () => withMockVerificationMail(async (mails) => {
+    const { email } = await registerPending("auth01-resend", mails);
     const pending = await resend.POST(jsonRequest("POST", "http://localhost/api/auth/resend-verification", { email, locale: "en-GB" }));
     const missing = await resend.POST(jsonRequest("POST", "http://localhost/api/auth/resend-verification", {
       email: uniqueEmail("auth01-resend-missing"),
@@ -185,15 +227,22 @@ test("AUTH-01 edge: resend-verification does not 429 only for a pending address"
     const pendingBody = await pending.json() as Record<string, unknown>;
     const missingBody = await missing.json() as Record<string, unknown>;
     const againBody = await again.json() as Record<string, unknown>;
-    assert.equal(pending.status, missing.status);
-    assert.equal(again.status, missing.status);
-    assert.notEqual(pending.status, 429);
-    assert.deepEqual(publicShape(pendingBody), publicShape(missingBody));
-    assert.deepEqual(publicShape(againBody), publicShape(missingBody));
-  } finally {
-    process.env.EMAIL_DELIVERY = "";
-  }
-});
+    assert.equal(pending.status, 429);
+    assert.equal(missing.status, 200);
+    assert.equal(again.status, 429);
+    assert.equal(pendingBody.code, "VERIFICATION_RATE_LIMITED");
+    assert.equal(againBody.code, "VERIFICATION_RATE_LIMITED");
+    for (const body of [pendingBody, againBody]) {
+      const retryAfter = (body.data as { retryAfter: number }).retryAfter;
+      assert.ok(retryAfter > 0 && retryAfter <= 60);
+      assert.equal('token' in body, false);
+      assert.equal('user' in (body.data as object), false);
+    }
+    assert.equal(missingBody.ok, true);
+    assert.equal(mails.length, 1, "A request inside the cooldown must not send another email");
+    for (const response of [pending, missing, again]) assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal((await (await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"))).json()).user, null);
+}));
 
 test("AUTH-02 functional: password-reset JSON has no resetUrl or token", async () => {
   const { email } = await registerAccount("auth02-reset");
@@ -337,6 +386,7 @@ test("AUTH-05 functional: a second register does not take over the first passwor
     locale: "en-GB"
   }));
   assert.equal(first.status, 200);
+  clearCookies();
   const second = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
     email,
     password: "attacker9",
@@ -344,6 +394,7 @@ test("AUTH-05 functional: a second register does not take over the first passwor
     locale: "en-GB"
   }));
   assert.equal(second.status, 200);
+  assert.equal(second.headers.get("set-cookie"), null);
   assert.equal(JSON.stringify(await second.json()).toLowerCase().includes("already exists"), false);
   clearCookies();
   const owner = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: PASSWORD }));
@@ -357,30 +408,143 @@ test("AUTH-05 functional: a second register does not take over the first passwor
   assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
 });
 
-test("AUTH-05 edge: concurrent same-email register keeps one working password", async () => {
-  const email = uniqueEmail("auth05-race");
-  const [first, second] = await Promise.all([
-    register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
-      email,
-      password: "password1",
-      nickname: "First Owner",
-      locale: "en-GB"
-    })),
-    register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
-      email,
-      password: "attacker9",
-      nickname: "Attacker",
-      locale: "en-GB"
-    }))
-  ]);
-  assert.equal(first.status, 200);
-  assert.equal(second.status, 200);
-  clearCookies();
-  const firstLogin = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: "password1" }));
-  const secondLogin = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: "attacker9" }));
-  const wins = [firstLogin.status, secondLogin.status].filter((status) => status === 200);
-  assert.equal(wins.length, 1);
+test("AUTH-05 edge: concurrent same-email register keeps one working password", async (t) => {
+  for (const count of [2, 3]) {
+    await t.test(`${count} parallel registrations`, async () => {
+      clearCookies();
+      const email = uniqueEmail("auth05-race");
+      const attempts = [
+        { password: "password1", nickname: "First Owner" },
+        { password: "attacker9", nickname: "Second Owner" },
+        { password: "password3", nickname: "Third Owner" }
+      ].slice(0, count);
+      const responses = await Promise.all(attempts.map((attempt, index) =>
+        register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+          ...attempt,
+          email: index % 2 ? ` ${email.toUpperCase()} ` : email,
+          locale: "en-GB"
+        }))
+      ));
+      for (const response of responses) {
+        const body = await response.json();
+        assert.equal(response.status, 200, `Concurrent registration failed: ${body.code}`);
+        assert.equal(body.ok, true);
+      }
+      const ownerIndex = responses.findIndex((response) => response.headers.has("set-cookie"));
+      assert.equal(responses.filter((response) => response.headers.has("set-cookie")).length, 1,
+        "Only the registration that creates the account may receive a session");
+      for (const [index, attempt] of attempts.entries()) {
+        clearCookies();
+        const response = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", {
+          email, password: attempt.password
+        }));
+        assert.equal(response.status, index === ownerIndex ? 200 : 401);
+        takeSetCookie(response);
+        const mine = await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"));
+        const { user } = await mine.json();
+        if (index === ownerIndex) {
+          assert.equal(user.email, email);
+          assert.equal(user.nickname, attempt.nickname);
+          assert.equal(user.role, "student");
+        } else {
+          assert.equal(response.headers.get("set-cookie"), null);
+          assert.equal(user, null);
+          assert.equal((await quote.POST(jsonRequest("POST", "http://localhost/api/purchase/quote", {
+            planId: "everything-pc-6"
+          }))).status, 401);
+        }
+      }
+    });
+  }
 });
+
+test("AUTH-05 edge: pending duplicates cannot replace verification or create sessions", async () => withMockVerificationMail(async (mails) => {
+    clearCookies();
+    const email = uniqueEmail("auth05-pending-race");
+    const attempts = [
+      { password: "password1", nickname: "First Owner" },
+      { password: "attacker9", nickname: "Second Owner" },
+      { password: "password3", nickname: "Third Owner" }
+    ];
+    const responses = await Promise.all(attempts.map((attempt) =>
+      register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+        ...attempt, email, locale: "en-GB"
+      }))
+    ));
+    for (const response of responses) {
+      const body = await response.json();
+      assert.equal(response.status, 200, `Pending registration failed: ${body.code}`);
+      assert.equal(body.ok, true);
+      assert.equal(body.data.verificationRequired, true);
+      assert.equal(response.headers.get("set-cookie"), null);
+      assert.equal(body.token, undefined);
+    }
+    assert.equal(mails.length, 1, "Only the creator sends the initial verification email (mocked)");
+    assert.equal(mails[0].to, email);
+    for (const attempt of attempts) {
+      const response = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", {
+        email, password: attempt.password
+      }));
+      assert.equal(response.status, 401, "Pending accounts cannot sign in with any competing password");
+      assert.equal(response.headers.get("set-cookie"), null);
+    }
+    assert.equal((await (await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me"))).json()).user, null);
+
+    // Even after the initial cooldown, registering again must not rotate the owner's token.
+    const store = await import("../../services/productStore");
+    const data = await store.ensureProductData();
+    const users = data.users.filter((user) => user.email === email);
+    assert.equal(users.length, 1);
+    const owner = users[0];
+    for (const token of data.verificationTokens.filter((token) => token.userId === owner.id)) {
+      token.createdAt = new Date(Date.now() - 61_000).toISOString();
+    }
+    await atomicWriteJson(path.join(systemRoot(), "learning_guide", "product.json"), data);
+    const repeated = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+      email, password: "takeover9", nickname: "Another Owner", locale: "en-GB"
+    }));
+    assert.equal(repeated.status, 200);
+    assert.equal(repeated.headers.get("set-cookie"), null);
+    assert.equal(mails.length, 1, "Registration is not an implicit resend");
+
+    const link = mails[0].text.match(/https?:\/\/\S+/)?.[0];
+    assert.ok(link);
+    const token = new URL(link).searchParams.get("token");
+    assert.ok(token);
+    const verify = await import("../../app/api/auth/verify-email/route");
+    assert.equal((await verify.POST(jsonRequest("POST", "http://localhost/api/auth/verify-email", { token }))).status, 200);
+    assert.equal((await verify.POST(jsonRequest("POST", "http://localhost/api/auth/verify-email", { token }))).status, 400,
+      "The original verification token remains single-use");
+    for (const attempt of [...attempts, { password: "takeover9", nickname: "Another Owner" }]) {
+      clearCookies();
+      const response = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", {
+        email, password: attempt.password
+      }));
+      assert.equal(response.status, attempt.nickname === owner.nickname ? 200 : 401);
+    }
+}));
+
+test("AUTH-05 negative: duplicate pending registration preserves its token when SMTP fails", async () => withMockVerificationMail(async (mails) => {
+  const { email, userId } = await registerPending("auth05-pending-mail-failure", mails);
+  const store = await import("../../services/productStore");
+  const data = await store.ensureProductData();
+  const originalTokens = data.verificationTokens.filter((token) => token.userId === userId);
+  assert.equal(originalTokens.length, 1);
+  originalTokens[0].createdAt = new Date(Date.now() - 61_000).toISOString();
+  await atomicWriteJson(path.join(systemRoot(), "learning_guide", "product.json"), data);
+  nodemailer.createTransport = () => { throw new Error("Simulated SMTP outage"); };
+
+  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+    email, password: "attacker9", nickname: "Other Owner", locale: "en-GB"
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(publicShape(await response.json()), { ok: true, data: { verificationRequired: true } });
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.equal(mails.length, 1);
+  const after = await store.ensureProductData();
+  assert.deepEqual(after.verificationTokens.filter((token) => token.userId === userId), originalTokens);
+  assert.deepEqual(after.users.filter((user) => user.email === email), data.users.filter((user) => user.email === email));
+}));
 
 test("AUTH-05 negative: verification required without mail delivery is 503", async () => {
   process.env.EMAIL_VERIFICATION_REQUIRED = "1";

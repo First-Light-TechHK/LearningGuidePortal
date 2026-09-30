@@ -3,6 +3,8 @@ import { buildService } from './release/build-branch.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { checkRequiredCI } from './release/required-ci.mjs';
+import { captureCurriculum, assetInventory, verifyUatAcceptance } from './release/uat-acceptance.mjs';
 
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -17,9 +19,13 @@ function aws(service, operation, input = {}) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 if (aws('sts','get-caller-identity').Account !== '851987565851') throw new Error('Wrong AWS account');
-const runs = gh(`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=20`).workflow_runs;
-if (!runs.some(run => run.head_sha === sha && run.conclusion === 'success')) throw new Error('This exact revision has not passed Verify');
+if (branch !== 'uat') throw new Error('UAT releases must use the uat branch');
+if (execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim()) throw new Error('Commit and verify tracked changes before releasing');
+checkRequiredCI({ sha, branch });
 if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch moved; verify and release the new revision');
+const reference = await captureCurriculum('sit');
+if (!reference.courses.length) throw new Error('SIT reference is empty');
+assetInventory(reference);
 const summary = aws('apprunner','list-services').ServiceSummaryList.find(x => x.ServiceName === 'learning-guide-uat');
 if (!summary) throw new Error('UAT must be provisioned first');
 const current = aws('apprunner','describe-service', { ServiceArn: summary.ServiceArn }).Service;
@@ -50,4 +56,6 @@ if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw
 const response = await fetch(`https://${summary.ServiceUrl}/api/health`);
 const health = await response.json();
 if (!response.ok || !health.ready || health.environment !== 'UAT' || health.version !== sha) throw new Error('Deployed readiness or release identity mismatch');
-console.log(JSON.stringify({ ok: true, health, url: `https://${summary.ServiceUrl}` }));
+const acceptance = await verifyUatAcceptance({ sha, reference, outputDir: process.env.RELEASE_EVIDENCE_DIR });
+console.log(JSON.stringify({ ok: acceptance.ok, health, receiptFile: acceptance.receiptFile, failures: acceptance.failures }));
+if (!acceptance.ok) throw new Error('UAT is deployed but NOT accepted. Inspect the retained acceptance receipt. No automatic branch rewrite is performed.');
