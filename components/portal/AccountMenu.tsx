@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Bell, ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 
@@ -19,7 +19,8 @@ type AccountMenuProps = {
 export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const initial = (displayName?.trim()[0] || "L").toUpperCase();
+  const name = displayName?.trim() || "Name";
+  const initial = name[0].toUpperCase();
 
   useEffect(() => {
     function closeOnOutside(event: MouseEvent) {
@@ -52,7 +53,7 @@ export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountM
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label={displayName ? `${displayName} account menu` : "Account menu"}
+        aria-label={`${name} account menu`}
         onClick={() => setOpen((current) => !current)}
       >
         <span className="portal-header-avatar">
@@ -65,7 +66,7 @@ export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountM
           <div className="account-menu-identity">
             <span className="account-menu-identity-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : initial}</span>
             <div>
-              <strong>{displayName || "Learner"}</strong>
+              <strong>{name}</strong>
               <span>{labels.myLearning}</span>
             </div>
           </div>

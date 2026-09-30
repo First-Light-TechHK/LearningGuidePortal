@@ -47,6 +47,14 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
     return () => { element.close(); document.body.style.overflow = overflow; };
   }, []);
 
+  useEffect(() => {
+    // Browser back can restore this page from the back-forward cache with the
+    // checkout request's busy state still set.
+    const restore = () => setBusy(false);
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
+
   async function submit() {
     if (!renewal || !terms || !refund) return;
     setBusy(true); setError("");
