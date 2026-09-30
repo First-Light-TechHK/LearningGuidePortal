@@ -2012,9 +2012,9 @@ body { background: #fff; color: var(--lg-ink); }
 .account-menu-identity { display: flex; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid var(--lg-line); }
 .account-menu-identity-avatar { width: 34px; height: 34px; display: grid; flex: 0 0 34px; place-items: center; overflow: hidden; border-radius: 50%; background: var(--lg-blue); color: #fff; font-weight: 750; }
 .account-menu-identity div { display: grid; gap: 2px; min-width: 0; }
-.account-menu-identity strong, .account-menu-identity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-identity strong, .account-menu-identity div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-menu-identity strong { color: var(--lg-ink); font-size: 14px; }
-.account-menu-identity span { color: var(--lg-muted); font-size: 12px; }
+.account-menu-identity div span { color: var(--lg-muted); font-size: 12px; }
 .account-menu-links { display: grid; padding: 6px; }
 .account-menu-links a, .account-menu-links button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 6px; padding: 10px 9px; background: transparent; color: #344054; font-size: 13px; font-weight: 600; text-align: left; text-decoration: none; }
 .account-menu-links a:hover, .account-menu-links button:hover { background: #f2f5f9; color: var(--lg-blue); }
@@ -2195,8 +2195,7 @@ body { background: #fff; color: var(--lg-ink); }
 .portal-auth-back { display: block; margin-top: 16px; color: #fff !important; font-size: 13px; text-align: center; text-decoration: none; }
 
 /* Latest portal rules: compact Figma-aligned public and account surfaces. */
-.portal-header-icon-link { width: 28px; height: 28px; display: grid; place-items: center; color: #475467 !important; }
-.portal-header-icon-link:hover { color: var(--lg-blue) !important; }
+.portal-header-icon { width: 28px; height: 28px; display: grid; place-items: center; color: #475467; }
 .portal-banner { position: relative; height: clamp(430px, 42vw, 560px); min-height: 430px; overflow: hidden; background: #102a4d; color: #fff; }
 .portal-banner-image { position: absolute; inset: 0; background-position: center; background-size: cover; transition: opacity .3s ease; }
 .portal-banner-content { position: relative; z-index: 1; display: flex; height: 100%; width: min(1344px, calc(100% - 64px)); flex-direction: column; justify-content: center; margin: 0 auto; padding: 78px 0 104px; }
