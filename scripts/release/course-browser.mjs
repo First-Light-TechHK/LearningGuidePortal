@@ -28,7 +28,8 @@ export function mediaIdentity(value, origin) {
     if (url.pathname === '/_next/image') url = new URL(url.searchParams.get('url'), origin);
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
     for (const key of [...url.searchParams.keys()]) {
-      if (/^(x-amz-|x-goog-|signature$|expires$|awsaccesskeyid$|key-pair-id$|policy$|versionid$)/i.test(key)) url.searchParams.delete(key);
+      if (/^(x-amz-|x-goog-|signature$|expires$|awsaccesskeyid$|key-pair-id$|policy$|versionid$)/i.test(key) ||
+        (key === 'x-id' && url.searchParams.get(key) === 'GetObject' && /^[a-z0-9.-]+\.s3\.ap-southeast-1\.amazonaws\.com$/.test(url.hostname))) url.searchParams.delete(key);
     }
     url.searchParams.sort(); url.hash = '';
     // Application-relative media can legitimately move from SIT to UAT.

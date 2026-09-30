@@ -19,7 +19,7 @@ exports.handler = async event => {
     const ids = ['entitled', 'locked'].map(kind => `acceptance_${event.run}_${kind}`);
     const credentials = {};
     for (const [index, id] of ids.entries()) {
-      const email = `acceptance+${event.run}-${index}@ilovelearningguide.com`;
+      const email = `acceptance-${event.run}-${index}@ilovelearningguide.com`;
       const existing = (data.users || []).find(user => user.id === id || user.email === email);
       if (existing && (existing.id !== id || existing.email !== email)) throw new Error('Fixture identity collision');
       if (event.action === 'create') {

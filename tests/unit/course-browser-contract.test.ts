@@ -63,6 +63,9 @@ test('logical media identity discards signatures while physical version checks r
   const origin = 'https://uat.example.test';
   const signed = 'https://bucket.s3.amazonaws.com/course/a.png?X-Amz-Signature=SECRET&X-Amz-Credential=TOKEN&versionId=one';
   assert.equal(mediaIdentity(signed, origin), 'https://bucket.s3.amazonaws.com/course/a.png');
+  const regional = 'https://bucket.s3.ap-southeast-1.amazonaws.com/course/a.png';
+  assert.equal(mediaIdentity(`${regional}?versionId=one&x-id=GetObject&X-Amz-Signature=SECRET`, origin), regional);
+  assert.equal(mediaIdentity(`${origin}/media?x-id=GetObject`, origin), '/media?x-id=GetObject');
   assert.equal(mediaIdentity('/_next/image?url=%2Fcover.svg&w=800&q=75', origin), '/cover.svg');
   assert.equal(mediaIdentity(signed, origin), mediaIdentity(signed.replace('versionId=one', 'versionId=two'), origin));
   const expected = [{ kind: 'image', url: signed, version: 'one' }];

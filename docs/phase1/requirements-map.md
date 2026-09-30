@@ -2,6 +2,8 @@
 
 Course discovery card presentation (Figma LG-m2 node `2:341`): `components/portal/CatalogueCourseCard.tsx` and `app/portal-design.css` provide grey inactive category filters and a blue selected filter, a category badge at the cover's top left, lesson count/video duration after the title, and an arrow-only blue course link with a localised accessible name. Existing server-derived data and localised labels are retained. No API or database change. Figma screenshot acceptance and target-environment smoke remain pending.
 
+UAT catalogue overflow correction: the existing learning-method band stacks its heading and three learning steps below 720px without changing desktop presentation. `tests/unit/catalogue-responsive.test.ts` checks 320px, 390px and 720px widths; the deployed catalogue acceptance also rejects horizontal overflow. This functional responsive fix does not claim new pixel-level Figma acceptance.
+
 User-requested LGTeacher integration (15 September 2026): the Course Management extension and its explicit remaining scope are tracked in `lgteacher-integration.md`. `CourseOutlineEditor`, `courseAuthoring` and `/api/backoffice/courses/:courseId/draft` add transactional draft section/lesson editing. This is not yet the full LGTeacher feature set.
 
 本文件把七份 PRD 变成开发任务。它不新增产品范围。
