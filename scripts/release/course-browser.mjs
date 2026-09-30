@@ -168,7 +168,7 @@ async function assertPage(page, path, origin, deadline) {
   requireCheck(!/^(404|500|Application error|Internal Server Error|This page could not be found)/i.test(title), 'rendered_error_page');
 }
 
-function auditPage(page, scope, origin, fail) {
+function auditPage(page, scope, origin, fail, expectedNotFoundPath) {
   const seen = new Set();
   const pending = new Set();
   let closing = false;
@@ -188,7 +188,9 @@ function auditPage(page, scope, origin, fail) {
   });
   page.on('response', response => {
     if (closing) return;
-    if (response.status() >= 400) failed('resource_http_error', response.request(), response.status());
+    const expectedNotFound = response.status() === 404 && response.request().resourceType() === 'document' &&
+      expectedNotFoundPath && routeMatches(response.url(), expectedNotFoundPath, origin);
+    if (response.status() >= 400 && !expectedNotFound) failed('resource_http_error', response.request(), response.status());
     else if (response.status() >= 200 && response.status() < 300) seen.add(resource(response.request()));
   });
   return {
@@ -400,10 +402,10 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
     });
     return authenticated;
   }
-  async function withPage(ctx, scope, deadline, action) {
+  async function withPage(ctx, scope, deadline, action, expectedNotFoundPath) {
     await step(scope, async () => {
       requireCheck(Date.now() < deadline, 'budget_exhausted');
-      const page = await ctx.newPage(), audit = auditPage(page, scope, origin, fail);
+      const page = await ctx.newPage(), audit = auditPage(page, scope, origin, fail, expectedNotFoundPath);
       try { return await action(page, audit); }
       finally { await audit.settle(deadline); audit.close(); await page.close(); }
     });
@@ -464,14 +466,19 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
           requireCheck(routeMatches(page.url(), expected, origin), 'sign_in_lost_requested_lesson');
           return { preservedRequestedLesson: true };
         });
-        if (student) await withPage(student, `${scope}/unknown-lesson`, courseDeadline, async page => {
+        if (student) {
           let missing = 'acceptance-missing-lesson';
           while (lessonsOf(course).some(lesson => lesson.id === missing)) missing += '-missing';
-          await page.goto(`${origin}/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${missing}`, { waitUntil: 'domcontentloaded', timeout: remaining(courseDeadline, LIMIT.navigation) });
-          requireCheck(!await page.locator('[data-course-id][data-lesson-id], .learning-room').count(), 'unknown_lesson_rendered_other_content');
-          requireCheck(normaliseText(await page.locator('h1').first().innerText()) === '404', 'unknown_lesson_not_found_missing');
-          return { unknownLessonDenied: true };
-        });
+          const missingPath = `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${missing}`;
+          await withPage(student, `${scope}/unknown-lesson`, courseDeadline, async page => {
+            const response = await page.goto(`${origin}${missingPath}`, { waitUntil: 'domcontentloaded', timeout: remaining(courseDeadline, LIMIT.navigation) });
+            // Next may stream the not-found boundary after sending HTTP 200.
+            requireCheck([200, 404].includes(response?.status()) && routeMatches(page.url(), missingPath, origin), 'unknown_lesson_wrong_response');
+            requireCheck(!await page.locator('[data-course-id][data-lesson-id], .learning-room').count(), 'unknown_lesson_rendered_other_content');
+            requireCheck(normaliseText(await page.locator('h1').first().innerText()) === '404', 'unknown_lesson_not_found_missing');
+            return { unknownLessonDenied: true };
+          }, missingPath);
+        }
         await withPage(publicContext, `${scope}/detail`, courseDeadline, async page => {
           for (const route of new Set([coursePath, `${cataloguePath}/${encodeURIComponent(course.slug)}`])) {
             await assertPage(page, route, origin, courseDeadline);
