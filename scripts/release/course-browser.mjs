@@ -107,9 +107,8 @@ export function validateBrowserInput({ origin, manifest, credentials, outputDir 
   return failures;
 }
 
-async function checkImage(image, deadline) {
+export async function checkImage(image, deadline) {
   await image.scrollIntoViewIfNeeded({ timeout: remaining(deadline) });
-  requireCheck(await image.isVisible(), 'image_not_visible');
   const result = await image.evaluate(async (element, timeout) => {
     let timer;
     try {
@@ -118,6 +117,9 @@ async function checkImage(image, deadline) {
     } catch { return { ok: false }; } finally { clearTimeout(timer); }
   }, remaining(deadline, LIMIT.resource));
   requireCheck(result.ok, 'image_decode_failed');
+  // Images without dimensions can have zero height until decoding completes.
+  // Still reject decoded images hidden by the layout or a closed dialog.
+  requireCheck(await image.isVisible(), 'image_not_visible');
   return result.src;
 }
 

@@ -1,12 +1,29 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runLiveSmoke } from "../../scripts/release/liveSmoke.mjs";
+import { createLiveClient, runLiveSmoke } from "../../scripts/release/liveSmoke.mjs";
 import { formatReleaseMessage } from "../../scripts/release/notify.mjs";
 import { isRollbackSha } from "../../scripts/release/rollback.mjs";
 import { resolveReleaseEnvironment } from "../../scripts/release/environments.mjs";
 
 const sha = "9b3b85cc74f207c62233d7f255961332d3176bad";
+
+test("smoke transport failures identify the request without leaking URL credentials or payloads", async () => {
+  const error = new DOMException("SECRET transport detail", "TimeoutError");
+  for (const fetchImpl of [
+    async () => { throw error; },
+    async () => ({ text: async () => { throw error; } })
+  ]) {
+    const request = createLiveClient("https://uat.example.test", fetchImpl);
+    await assert.rejects(request("https://user:SECRET@uat.example.test/asset?signature=SECRET#SECRET"), {
+      message: "GET https://uat.example.test/asset: request timed out"
+    });
+  }
+  const request = createLiveClient("https://uat.example.test", async () => { throw new Error("SECRET"); });
+  await assert.rejects(request("/api/auth/login", { method: "POST", body: "SECRET" }), {
+    message: "POST https://uat.example.test/api/auth/login: request failed"
+  });
+});
 
 function json(status, body, headers = {}) {
   return {

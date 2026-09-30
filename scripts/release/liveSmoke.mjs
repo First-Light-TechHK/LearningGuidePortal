@@ -5,6 +5,8 @@ function hostOf(url) {
 function redact(url) {
   try {
     const parsed = new URL(url);
+    parsed.username = "";
+    parsed.password = "";
     parsed.search = "";
     parsed.hash = "";
     return parsed.toString();
@@ -21,14 +23,20 @@ async function read(response) {
 
 export function createLiveClient(origin, fetchImpl = fetch) {
   return async function request(path, options = {}) {
-    const response = await fetchImpl(new URL(path, origin), {
-      redirect: options.redirect || "follow",
-      method: options.method || "GET",
-      headers: options.headers,
-      body: options.body,
-      signal: AbortSignal.timeout(30000)
-    });
-    return read(response);
+    const url = new URL(path, origin), method = options.method || "GET";
+    try {
+      const response = await fetchImpl(url, {
+        redirect: options.redirect || "follow",
+        method,
+        headers: options.headers,
+        body: options.body,
+        signal: AbortSignal.timeout(30000)
+      });
+      return await read(response);
+    } catch (error) {
+      const reason = error?.name === "TimeoutError" ? "request timed out" : "request failed";
+      throw new Error(`${method} ${redact(url)}: ${reason}`);
+    }
   };
 }
 
