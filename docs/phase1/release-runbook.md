@@ -45,6 +45,8 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 
 ## 3. CI/CD
 
+Verify also rejects high/critical npm dependency advisories. The UAT repair retains Next 15 and pins 15.5.27, Sharp 0.35.5 and Nodemailer 10.0.13; PostCSS is overridden to 8.5.28 because Next 15 otherwise pins an affected version. These replace dependencies affected by published image-processing, mail and parser advisories without changing the deployment architecture. Re-run the image decode/upload, local SMTP, hydration and authentication regressions when updating them. A clean audit is a point-in-time dependency check, not a claim that the application is vulnerability-free. See the [Next.js image-processing advisory](https://github.com/vercel/next.js/security/advisories/GHSA-2xp9-vwfh-vxw4).
+
 ### Stripe lookup-key rollout
 
 - Set `PAYMENT_MODE=stripe`; keep each `STRIPE_PRICE_*` value as its Stripe lookup key. All eight mapped Prices must be active, licensed recurring USD Prices; six months means `month/6`, one year means `year/1` or `month/12`. A monthly Price is rejected for a yearly selection.
