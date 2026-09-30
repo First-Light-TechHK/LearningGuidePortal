@@ -5,6 +5,7 @@ import { getPortalContent, listPublishedCourses } from "@/services/productStore"
 import { CatalogueCourseCard } from "@/components/portal/CatalogueCourseCard";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
+import { StreamedContent } from "@/components/portal/StreamedContent";
 import { currentProductUser } from "@/services/productAuth";
 import { signCourseMediaUrl } from "@/services/persistence/s3";
 
@@ -21,6 +22,7 @@ export default async function CoursesPage({ params, searchParams }: { params: Pr
 
   return (
     <main className="portal-page portal-catalog-page">
+      <StreamedContent>
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
       <section className="courses-design-hero"><div><h1>{copy.coursesHeroTitle}</h1><p>{copy.coursesHeroDescription}</p><Link className="portal-button" href={`/${locale}/portal/courses/quintus-horatius-flaccus/public-lesson?lessonId=horatius-lesson-21`}>{copy.startPreview}</Link></div></section>
       <section className="portal-section portal-section-first portal-catalog-courses">
@@ -30,6 +32,7 @@ export default async function CoursesPage({ params, searchParams }: { params: Pr
       </section>
       <section className="courses-design-method"><div><p className="portal-eyebrow">{copy.whyUs}</p><h2>{copy.whyUsTitle}</h2><p>{copy.exploreDescription}</p></div><ol><li>Apply what you learn</li><li>Share your perspective</li><li>See the bigger picture</li></ol></section>
       <PortalFooter locale={locale} />
+      </StreamedContent>
     </main>
   );
 }

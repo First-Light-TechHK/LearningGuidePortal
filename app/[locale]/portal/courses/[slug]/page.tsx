@@ -7,6 +7,7 @@ import { getCoursePage, getProductCourse, listPlans } from "@/services/productSt
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
+import { StreamedContent } from "@/components/portal/StreamedContent";
 import { currentProductUser } from "@/services/productAuth";
 import { signCourseMediaUrl } from "@/services/persistence/s3";
 import styles from "@/components/portal/course-detail.module.css";
@@ -44,6 +45,7 @@ export default async function CourseDetailPage({ params }: {
 
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
+      <StreamedContent>
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
@@ -126,6 +128,7 @@ export default async function CourseDetailPage({ params }: {
         )}
       </>}
       <PortalFooter locale={locale} />
+      </StreamedContent>
     </main>
   );
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { StreamedContent } from "@/components/portal/StreamedContent";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB">
-      <body>{children}</body>
+      <body><StreamedContent>{children}</StreamedContent></body>
     </html>
   );
 }
