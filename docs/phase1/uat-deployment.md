@@ -10,6 +10,7 @@ UAT is a separate Learning Guide Phase 1 acceptance environment. It does not sha
 - RDS: `learning-guide-uat`, PostgreSQL 16.13, db.t4g.micro, 20 GiB gp3, encrypted, seven-day backups. Private address only.
 - Database `learning_guide_uat` and restricted `lg_uat_app` login. Learner data is never copied from SIT or DEV; bootstrap imports curriculum and plans only.
 - S3: `learning-guide-uat-851987565851`, prefix `learning-guide/uat`.
+- Static curriculum media is read from the legacy archive at `aitutor-data-851987565851/learning-guide/dev/documents/mvp/` using a UAT-role, `s3:GetObject`-only policy. This contains course images, video and audio only; it does not grant access to learner records or other DEV objects. New author-uploaded media remains in the isolated UAT bucket.
 - Private subnets: `172.31.66.0/24` and `172.31.67.0/24`. Secrets: `learning-guide/uat/*`.
 
 ## Setup

@@ -158,6 +158,14 @@ Resources:
                 Condition:
                   StringEquals:
                     ses:FromAddress: learningguide@163.com
+        - PolicyName: course-media-archive-read-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadStaticCourseMedia
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/documents/mvp/*
   Connector:
     Type: AWS::AppRunner::VpcConnector
     Properties:

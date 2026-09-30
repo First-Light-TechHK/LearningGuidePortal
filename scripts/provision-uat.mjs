@@ -31,6 +31,19 @@ if (identity.Account !== '851987565851') throw new Error('Wrong AWS account');
 const stack = aws('cloudformation', 'describe-stacks', { StackName: 'learning-guide-uat' }).Stacks[0];
 if (!['CREATE_COMPLETE', 'UPDATE_COMPLETE'].includes(stack.StackStatus)) throw new Error(`Infrastructure not ready: ${stack.StackStatus}`);
 const out = Object.fromEntries(stack.Outputs.map(x => [x.OutputKey, x.OutputValue]));
+aws('iam', 'put-role-policy', {
+  RoleName: 'learning-guide-uat-runtime',
+  PolicyName: 'course-media-archive-read-only',
+  PolicyDocument: JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [{
+      Sid: 'ReadStaticCourseMedia',
+      Effect: 'Allow',
+      Action: 's3:GetObject',
+      Resource: 'arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/documents/mvp/*'
+    }]
+  })
+});
 const source = aws('apprunner', 'describe-service', { ServiceArn: sitArn }).Service;
 const config = source.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues;
 const original = { ...config.RuntimeEnvironmentVariables };
