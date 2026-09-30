@@ -152,6 +152,39 @@ test("LGTeacher: inactive content is retained by authoring but withheld from lea
   assert.doesNotMatch(playable[0].html!, /data-node-id="quiz-node"/);
 });
 
+test("LGTeacher: legacy audio and free-answer exhibits become stable validated nodes without raw payload attributes", () => {
+  const input = [{ ...fixture()[0], nodes: [], html: `<p><span class="instance-node" data-instance-type="6" data-instance-content="${media}">Exh <strong>17</strong></span></p><span data-instance-type="3" data-instance-answer-type="input" data-instance-content="What does this ode suggest?" data-instance-answer-result="Consider the evidence.">Reflect</span>` }];
+  const snapshot = structuredClone(input);
+  const result = sanitiseLessonContents(input, courseId);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0].nodes.map(node => [node.title, node.type, node.url, node.question, node.answer]), [
+    ['Exh 17', 'audio', media, undefined, undefined],
+    ['Reflect', 'exercise', undefined, 'What does this ode suggest?', 'Consider the evidence.'],
+  ]);
+  for (const node of result[0].nodes) assert.ok(result[0].html!.includes(`data-node-id="${node.id}"`));
+  assert.doesNotMatch(result[0].html!, /data-instance-(content|type|answer)/);
+  assert.deepEqual(input, snapshot);
+  assert.deepEqual(sanitiseLessonContents(input, courseId), result);
+  assert.deepEqual(sanitiseLessonContents(result, courseId), result);
+});
+
+test("LGTeacher: legacy conversion does not restore unsafe media or executable HTML", () => {
+  for (const url of ['javascript:alert(1)', 'https://user:secret@example.test/audio.mp3', media.replace(courseId, 'foreign-course')]) {
+    const result = sanitiseLessonContents([{ ...fixture()[0], nodes: [], html: `<script>alert(1)</script><span onclick="alert(1)" data-instance-type="6" data-instance-content="${url}">Unsafe</span>` }], courseId);
+    assert.equal(result[0].nodes.length, 0);
+    assert.doesNotMatch(result[0].html!, /script|onclick|data-instance-content|secret/);
+  }
+  const result = sanitiseLessonContents([{ ...fixture()[0], nodes: [], html: '<span data-instance-type="6" data-instance-content="https://example.test/audio.mp3">Recording</span>' }], courseId);
+  assert.equal(result[0].nodes[0].url, 'https://example.test/audio.mp3');
+});
+
+test("LGTeacher: legacy conversion respects original size and resulting node-count limits", () => {
+  const span = `<span data-instance-type="6" data-instance-content="${media}">Audio</span>`;
+  for (const html of [span.repeat(LIMITS.nodesPerContent + 1), span + ' '.repeat(LIMITS.htmlCharacters)]) {
+    assert.deepEqual(sanitiseLessonContents([{ ...fixture()[0], nodes: [], html }], courseId), []);
+  }
+});
+
 const course = (): ProductCourse => ({
   id: courseId, slug: "lgteacher-course", title: "Course", description: "", status: "draft",
   createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",

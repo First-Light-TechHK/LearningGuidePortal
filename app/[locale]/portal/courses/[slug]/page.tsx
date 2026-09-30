@@ -96,7 +96,7 @@ export default async function CourseDetailPage({ params }: {
                   <div className={styles.lessonList}>
                     {page.syllabus.map((lesson, index) => {
                       const lessonHref = !course || !lesson.openable ? null : lesson.access === "entitled"
-                        ? `/${locale}/account/learn/${course.id}`
+                        ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(lesson.lessonId)}`
                         : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(lesson.lessonId)}`;
                       const metadata = lessonMetadata.get(lesson.lessonId);
                       return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>

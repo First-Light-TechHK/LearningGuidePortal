@@ -127,7 +127,7 @@ async function fixture(t, faults = {}) {
     const image = '<img class="course-thumbnail" alt="Acceptance course" loading="lazy" width="80" height="50" src="/cover.svg?X-Amz-Signature=SIGNATURE_SECRET">';
     const doc = body => send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:sans-serif} main{max-width:800px} audio{max-width:100%} dialog{background:white} .la-modal-body{padding:10px}</style></head><body>${body}</body></html>`);
     if (url.pathname === base) return doc(`<main><h1>Courses</h1><nav class="portal-category-filter"><a href="${base}?category=Science">${locale === 'zh-CN' ? '科学' : 'Science'}</a></nav><div style="height:950px"></div><article class="portal-course-card"><a href="${detail}">${image}<h3>${course.title}</h3><span class="portal-course-category">${locale === 'zh-CN' ? '科学' : 'Science'}</span></a></article></main>`);
-    if ([detail, `${base}/${course.slug}`].includes(url.pathname)) return doc(`<main data-page-state="available"><h1 data-course-title="${course.title}">${course.title}</h1><p data-course-track="Science">Science</p>${image}<section data-syllabus="true">${lessons.map(lesson => `<article data-lesson-id="${lesson.id}"><h3><span>Lesson 1</span>${lesson.title}</h3></article>`).join('')}</section><a data-course-secondary-cta="view_plans" href="/${locale}/pricing?courseId=${course.id}">View plans</a></main>`);
+    if ([detail, `${base}/${course.slug}`].includes(url.pathname)) return doc(`<main data-page-state="available"><h1 data-course-title="${course.title}">${course.title}</h1><p data-course-track="Science">Science</p>${image}<section data-syllabus="true">${lessons.map(lesson => `<article data-lesson-id="${lesson.id}"><h3><span>Lesson 1</span>${kind === 'entitled' ? `<a href="/${locale}/account/learn/${course.id}?lessonId=${faults.syllabus ? lessons[0].id : lesson.id}">${lesson.title}</a>` : lesson.title}</h3></article>`).join('')}</section><a data-course-secondary-cta="view_plans" href="/${locale}/pricing?courseId=${course.id}">View plans</a></main>`);
     const learning = url.pathname.includes('/account/learn/'), preview = url.pathname.endsWith('/public-lesson');
     if (learning && kind === 'locked' && !faults.leak) { response.writeHead(307, { Location: detail }); return response.end(); }
     if (learning && faults.redirect) { response.writeHead(307, { Location: `/${locale}/portal/sign-in` }); return response.end(); }
@@ -202,4 +202,11 @@ test('HTTP-200 media bytes that Chromium cannot decode do not count as playback'
   assert.equal(result.ok, false);
   assert.ok(result.failures.some(failure => failure.code === 'media_decode_failed'));
   assert.ok(result.failures.some(failure => failure.code === 'media_1_not_rendered_and_verified'));
+});
+
+test('a syllabus that sends every link to the first lesson fails acceptance', { timeout: 60_000 }, async t => {
+  const f = await fixture(t, { syllabus: true });
+  const result = await verifyCourseBrowser({ ...f, credentials });
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some(failure => failure.code === 'entitled_syllabus_wrong_lesson'));
 });

@@ -1,4 +1,5 @@
 import sanitizeHtml from "sanitize-html";
+import { createHash } from "node:crypto";
 import { LESSON_CONTENT_LIMITS as LIMITS, type CourseMediaAsset, type LessonContent, type LessonNode } from "@/contracts/lesson-content";
 
 export type { LessonContent, LessonNode } from "@/contracts/lesson-content";
@@ -178,12 +179,54 @@ export function validateLessonContents(value: unknown, courseId: string, options
 /** Read defence: malformed stored content is withheld, never returned unsanitised. */
 export function sanitiseLessonContents(value: unknown, courseId: string): LessonContent[] {
   try {
-    return validateLessonContents(value, courseId, { allowExternalMedia: true }).filter(content => content.active !== false).map(content => {
+    return validateLessonContents(restoreLegacyLessonNodes(value, courseId), courseId, { allowExternalMedia: true }).filter(content => content.active !== false).map(content => {
       const nodes = content.nodes.filter(node => node.active !== false);
       const ids = nodes.map(node => node.id);
       return { ...content, ...(content.html !== undefined ? { html: sanitiseRichHtml(content.html, courseId, ids) } : {}), nodes: nodes.map(node => ({ ...node, ...(node.html !== undefined ? { html: sanitiseRichHtml(node.html, courseId, ids) } : {}) })) };
     });
   } catch { return []; }
+}
+
+// Convert supported legacy payloads before sanitisation removes raw HTML attributes.
+// The normal node validator and media signer still govern everything sent to a learner.
+function restoreLegacyLessonNodes(value: unknown, courseId: string): unknown {
+  if (!Array.isArray(value) || value.length > LIMITS.contents) return value;
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > LIMITS.lessonBytes) throw new LessonContentError();
+  return value.map(content => {
+    if (!content || typeof content !== 'object' || typeof content.html !== 'string' || !Array.isArray(content.nodes)) return content;
+    if (content.html.length > LIMITS.htmlCharacters || content.nodes.length > LIMITS.nodesPerContent) throw new LessonContentError();
+    if (!content.html.includes('data-instance-content')) return content;
+    const nodes = [...content.nodes];
+    const restored = new Map<string, LessonNode>();
+    let index = 0;
+    const html = sanitizeHtml(content.html, {
+      allowedTags: false, allowedAttributes: false, allowVulnerableTags: true,
+      transformTags: {
+        span: (tagName, attributes) => {
+          const attribs = { ...attributes }, raw = attribs['data-instance-content'];
+          if (!raw || attribs['data-node-id']) return { tagName, attribs };
+          const audio = attribs['data-instance-type'] === '6' && (courseMediaAssetId(raw, courseId) || safeExternalMediaUrl(raw));
+          const question = attribs['data-instance-type'] === '3' && attribs['data-instance-answer-type'] === 'input' && attribs['data-instance-answer-result'];
+          if (!audio && !question) return { tagName, attribs };
+          if (nodes.length >= LIMITS.nodesPerContent) throw new LessonContentError();
+          const id = `legacy-${createHash('sha256').update(`${content.id}:${index++}:${raw}`).digest('hex').slice(0, 24)}`;
+          const node: LessonNode = { id, title: audio ? 'Audio exhibit' : 'Question', type: audio ? 'audio' : 'exercise', triggerTime: 0, active: true };
+          if (audio) node.url = raw;
+          else { node.question = raw; node.answer = attribs['data-instance-answer-result']; }
+          restored.set(id, node); nodes.push(node);
+          attribs['data-node-id'] = id;
+          for (const key of ['data-instance-type', 'data-instance-content', 'data-instance-answer-type', 'data-instance-answer-result']) delete attribs[key];
+          return { tagName, attribs };
+        }
+      },
+      exclusiveFilter: frame => {
+        const node = restored.get(frame.attribs['data-node-id']);
+        if (node && frame.text.trim()) node.title = frame.text.trim().slice(0, LIMITS.titleCharacters);
+        return false;
+      }
+    });
+    return { ...content, html, nodes };
+  });
 }
 
 export const sanitizeLessonContents = sanitiseLessonContents;

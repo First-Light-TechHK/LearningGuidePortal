@@ -226,7 +226,8 @@ async function checkRenderedContent(page, root, lesson, origin, deadline, observ
   for (let i = 0; i < await prose.count(); i++) {
     if (await prose.nth(i).isVisible() && normaliseText(await prose.nth(i).innerText())) readable = true;
   }
-  const images = root.locator('img');
+  // Scroll-reactive exhibit previews are checked in their persistent open modal.
+  const images = root.locator('img:not(.la-exhibit-float img)');
   for (let i = 0; i < await images.count(); i++) {
     const src = await checkImage(images.nth(i), deadline);
     observed.push({ kind: 'image', identity: mediaIdentity(src, origin), version: new URL(src, origin).searchParams.get('versionId'), ok: true });
@@ -284,7 +285,7 @@ async function exerciseLesson(page, root, lesson, origin, deadline, audit, step,
       // Await text hydration when no media is expected in this content.
       if (!await content.locator('video,audio,img,.la-pdf,.la-model').count() && await content.locator('.la-prose').count()) await visibleText(content.locator('.la-prose'), deadline);
       requireCheck(await checkRenderedContent(page, content, lesson, origin, deadline, observed, audit), 'empty_lesson_content');
-      const nodes = content.locator('.la-node-links > button');
+      const nodes = content.locator('.la-node-links > button, .la-prose [data-instance-type]');
       for (let ni = 0; ni < await nodes.count(); ni++) {
         await step(`${scope}/content-${index + 1}/exhibit-${ni + 1}`, async () => {
           try {
@@ -472,6 +473,17 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
             const src = await checkImage(page.locator('img.course-thumbnail'), courseDeadline);
             if (course.cover) requireCheck(mediaIdentity(src, origin) === mediaIdentity(course.cover, origin), 'course_cover_identity_mismatch');
             if (course.coverVersion) requireCheck(new URL(src, origin).searchParams.get('versionId') === course.coverVersion, 'course_cover_version_mismatch');
+          }
+        });
+        if (student) await withPage(student, `${scope}/entitled-syllabus`, courseDeadline, async page => {
+          await assertPage(page, coursePath, origin, courseDeadline);
+          for (const lesson of lessonsOf(course)) {
+            const links = page.locator(`[data-syllabus] [data-lesson-id=${selectorValue(lesson.id)}] a`);
+            requireCheck(await links.count() > 0, 'entitled_syllabus_link_missing');
+            for (const link of await links.all()) {
+              const expected = `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(lesson.id)}`;
+              requireCheck(routeMatches(await link.getAttribute('href'), expected, origin), 'entitled_syllabus_wrong_lesson');
+            }
           }
         });
         const first = lessonsOf(course)[0];
