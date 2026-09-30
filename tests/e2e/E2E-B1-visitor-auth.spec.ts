@@ -106,6 +106,25 @@ test.describe("E2E-B1-001", () => {
     });
     expect(write.status(), "unauthenticated study/events must not open access").not.toBe(200);
   });
+
+  test("a visitor can open course details from a course card", async ({ page }) => {
+    await page.goto("/en-GB/portal/courses");
+    await page.locator('.portal-course-card:has(a.portal-course-link[href="/en-GB/portal/courses/epicureanism"])').click({ position: { x: 40, y: 40 } });
+    await expect(page).toHaveURL(/\/en-GB\/portal\/courses\/epicureanism$/);
+    await expect(page.locator('[data-course-title="Epicureanism"]')).toBeVisible();
+    await page.goto("/en-GB/portal");
+    const homeCard = page.locator('.home-course-card').first();
+    const homeCourseHref = await homeCard.locator('a.home-course-link').getAttribute('href');
+    expect(homeCourseHref).toBeTruthy();
+    const expectedHomeCourseUrl = new URL(homeCourseHref!, page.url()).toString();
+    await homeCard.click({ position: { x: 40, y: 40 } });
+    await expect(page).toHaveURL(expectedHomeCourseUrl);
+  });
+
+  test("pricing selects the category of the source course", async ({ page }) => {
+    await page.goto("/en-GB/pricing?courseId=quintus-horatius-flaccus");
+    await expect(page.locator('.pricing-design-card').last().locator('.pricing-category-switch button', { hasText: 'European Humanities' })).toHaveAttribute('aria-pressed', 'true');
+  });
 });
 
 test.describe("E2E-B1-002", () => {

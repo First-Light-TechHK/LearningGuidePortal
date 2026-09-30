@@ -27,7 +27,6 @@
 .player :global(.la-content-player) > h3 { display:none; }
 .player :global(.la-video-stage) { position:relative; overflow:hidden; border-radius:12px; background:#0f172a; }
 .player :global(.la-lesson-video) { width:100%; max-height:none; aspect-ratio:696 / 410; background:#0f172a; object-fit:contain; }
-.player :global(.la-video-badge) { position:absolute; top:12px; left:12px; max-width:calc(100% - 24px); padding:5px 12px; border-radius:14px; background:rgba(15,23,42,.45); color:#fff; font-size:12px; line-height:17px; pointer-events:none; }
 .player :global(.la-video-play) { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:70px; height:70px; padding:0 0 0 4px; border:0; border-radius:50%; background:rgba(255,255,255,.94); color:#246bfd; font-size:27px; cursor:pointer; }
 .tools { min-height:410px; padding:18px 16px; border-radius:12px; background:#f8fafc; }
 .tools h2 { margin:0; font-size:16px; line-height:22px; font-weight:600; }

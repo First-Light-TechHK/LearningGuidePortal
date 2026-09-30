@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "@/lib/courseDetailPresentation";
@@ -20,8 +19,7 @@ export default async function CourseDetailPage({ params }: {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${slug}`)}`);
-  const [page, course] = await Promise.all([getCoursePage(slug, user.id), getProductCourse(slug)]);
+  const [page, course] = await Promise.all([getCoursePage(slug, user?.id), getProductCourse(slug)]);
   const messages = getMessages(locale);
   const copy = messages.portal;
   const detail = messages.courseDetailDesign;
@@ -37,7 +35,7 @@ export default async function CourseDetailPage({ params }: {
   const signedCover = await signCourseMediaUrl(course?.cover || course?.thumbnailPath || "");
   const durationParts = courseDurationParts(identity?.totalMinutes || 0);
   const durationNumber = new Intl.NumberFormat(locale);
-  const durationLabel = `${durationNumber.format(durationParts.hours)} ${detail.hours} ${durationNumber.format(durationParts.minutes)} ${detail.minutes}`;
+  const durationLabel = `${durationNumber.format(durationParts.hours)}${messages.homeDesign.hourShort}${durationNumber.format(durationParts.minutes)}${messages.homeDesign.minuteShort}`;
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
     duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
@@ -46,7 +44,7 @@ export default async function CourseDetailPage({ params }: {
 
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
-      <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
+      <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
           <h1>{copy.courseUnavailable}</h1>

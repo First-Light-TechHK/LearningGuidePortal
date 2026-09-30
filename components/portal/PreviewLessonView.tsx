@@ -22,8 +22,6 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const [nodeRequest, setNodeRequest] = useState<{ id: string; request: number }>();
   const selected = contents.find(content => content.id === contentId);
   const current = outline.find(item => item.id === lesson.id);
-  const previewMinutes = Math.ceil((trialGate?.videoLimitSeconds ?? 60) / 60);
-  const previewBadge = previewMinutes === 1 ? copy.previewBadgeOne : copy.previewBadge.replace("{minutes}", String(previewMinutes));
   const courseHref = `/${locale}/portal/courses/${courseId}`;
   const pricingHref = trialGate?.pricingHref || `/${locale}/pricing?courseId=${encodeURIComponent(courseId)}`;
   const learningHref = `/${locale}/account/learn/${courseId}?lessonId=${encodeURIComponent(lesson.id)}`;
@@ -55,7 +53,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1><div>{description}</div></header>
         <div className={styles.mediaRow}>
           <div className={styles.player}>
-            {contents.length ? <LessonContentPlayer contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={trialGate} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} videoPresentation={{ poster, badge: trialGate ? previewBadge : undefined, playLabel: copy.play }} /> : <LegacyLessonBody body={lesson.body} locale={locale} />}
+            {contents.length ? <LessonContentPlayer contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={trialGate} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} videoPresentation={{ poster, playLabel: copy.play }} /> : <LegacyLessonBody body={lesson.body} locale={locale} />}
           </div>
           <aside className={styles.tools} aria-label={copy.deepLearning}><h2>{copy.deepLearning}</h2><p>{copy.toolsDescription}</p>
             {tools.map(tool => {

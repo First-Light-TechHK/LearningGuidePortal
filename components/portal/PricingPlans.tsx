@@ -8,11 +8,12 @@ import type { PortalCategory } from "@/lib/portalContent";
 type Plan = { available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number; scope?: string; scopeId?: string | null; category?: string | null };
 type Copy = { everything: string; category: string; sixMonths: string; year: string; term: string; subscribe: string; allCourses: string; categoryCourses: string; bilingual: string; devices: string; points: string; unavailable: string; perCategory: string };
 
-export function PricingPlans({ locale, plans, categories, courseTitles, selectedPlanId, copy }: { locale: Locale; plans: Plan[]; categories: PortalCategory[]; courseTitles: Array<{ category?: string; title: string }>; selectedPlanId?: string; copy: Copy }) {
+export function PricingPlans({ locale, plans, categories, courseTitles, selectedPlanId, selectedCategoryId, copy }: { locale: Locale; plans: Plan[]; categories: PortalCategory[]; courseTitles: Array<{ category?: string; title: string }>; selectedPlanId?: string; selectedCategoryId?: string; copy: Copy }) {
   const selected = plans.find((plan) => plan.id === selectedPlanId);
   const [term, setTerm] = useState(selected?.termMonths || 6);
   const firstAvailableCategory = categories.find((category) => plans.some((plan) => plan.scope === "category" && plan.device === "pc" && (plan.scopeId || plan.category) === category.id));
-  const [category, setCategory] = useState(selected?.scope === "category" ? selected.scopeId || selected.category || firstAvailableCategory?.id : firstAvailableCategory?.id);
+  const courseCategory = categories.find((item) => item.id === selectedCategoryId)?.id;
+  const [category, setCategory] = useState(selected?.scope === "category" ? selected.scopeId || selected.category || firstAvailableCategory?.id : courseCategory || firstAvailableCategory?.id);
   return <div className="pricing-comparison-wrap"><div className="pricing-term-switch pricing-term-switch-global" role="group" aria-label={copy.term}>
     {([6, 12] as const).map((value) => <button type="button" key={value} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 12 ? <><span className="pricing-better-value">Better Value</span>{copy.year}</> : copy.sixMonths}</button>)}
   </div><div className="pricing-comparison">{(["everything", "category"] as const).map((scope) => {
