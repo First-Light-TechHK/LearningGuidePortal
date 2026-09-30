@@ -117,7 +117,7 @@ export function CourseMediaPreview({ type, url, title = '', locale }: { type: 'v
   if (!src || failed) return <p role="alert">{src ? t.mediaFailed : t.invalidUrl}</p>;
   return <div className="la-media" key={src}>
     {type === 'image' && <img src={src} alt={title} onError={() => setFailed(true)}/>}
-    {type === 'video' && <video src={src} controls playsInline preload="metadata" onError={() => setFailed(true)}/>}
+    {type === 'video' && <video src={src} controls controlsList="nodownload" playsInline preload="metadata" onError={() => setFailed(true)}/>}
     {type === 'audio' && <audio src={src} controls preload="metadata" onError={() => setFailed(true)}/>}
     {type === 'pdf' && <CoursePdfPreview url={src} title={title} locale={locale}/>}
     {type === 'model3d' && <CourseModelPreview url={src} locale={locale} title={title}/>}

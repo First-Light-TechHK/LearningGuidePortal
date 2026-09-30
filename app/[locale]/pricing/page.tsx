@@ -24,7 +24,7 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
     <section className="pricing-design-hero"><h1>Subscription</h1><p>{locale === "en-GB" ? "Choose the plan that suits your interests" : copy.heading}</p></section>
     <section className="pricing-design-main">
       {upgradeFrom && user ? <UpgradePanel locale={locale} subscriptionId={upgradeFrom} /> : null}
-      <PricingPlans locale={locale} plans={plans} categories={content.categories} courseTitles={publishedCourses.map(({ category, title }) => ({ category: content.categories.find((item) => item.labels[locale] === category)?.id || category, title }))} selectedPlanId={planId} copy={copy} />
+      <PricingPlans key={`${course?.id || ""}:${planId || ""}`} locale={locale} plans={plans} categories={content.categories} courseTitles={publishedCourses.map(({ category, title }) => ({ category: content.categories.find((item) => item.labels[locale] === category)?.id || category, title }))} selectedPlanId={planId} selectedCategoryId={course?.status === "published" ? course.category : undefined} copy={copy} />
       {directPlans.length ? <section className="pricing-direct"><h2>{course?.title || messages.portal.pricingTitle}</h2><PurchasePanel locale={locale} courseId={course?.id || "*"} plans={directPlans} allowTrial={device !== "mobile"} copy={{ startTrial: messages.learning.startTrial, buy: messages.learning.buy, choosePlan: messages.learning.choosePlan }} /></section> : null}
     </section>
     <section className="pricing-design-information"><div><h2>{copy.information}</h2><p>{copy.renewal}</p><div className="pricing-information-grid">{copy.rules.map((rule) => <div key={rule.title}><h3>{rule.title}</h3><p>{rule.text}</p></div>)}</div></div></section>

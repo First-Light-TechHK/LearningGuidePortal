@@ -2,7 +2,6 @@ import { notFound, redirect } from "next/navigation";
 import { localeFrom } from "@/lib/i18n/config";
 import { checkEntitlement, getLearningOverview, getProductCourse, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
 import { currentProductUser } from "@/services/productAuth";
-import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { type TrialGate } from "@/components/portal/LessonContentPlayer";
 import { PreviewLessonView } from "@/components/portal/PreviewLessonView";
@@ -45,6 +44,5 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
     <PreviewLessonView key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={course.subtitle || course.description} lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} nextHref={null} />
-    <PortalFooter locale={locale} />
   </main>;
 }
