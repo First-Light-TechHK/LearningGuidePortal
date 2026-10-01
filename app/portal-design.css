@@ -87,7 +87,8 @@
 .auth-signup-design .auth-provider-options { width:100%; margin:0; padding:0; border:0; }
 .auth-provider-buttons .auth-provider-divider { justify-content:center; color:#6b7280; font-size:13px; line-height:18px; }
 .auth-provider-buttons .auth-provider-divider::before,.auth-provider-buttons .auth-provider-divider::after { display:none; }
-.auth-provider-buttons .auth-provider-links { display:grid; gap:12px; margin:12px 0 0; }
+.auth-provider-buttons .auth-provider-links { display:grid; grid-template-columns:minmax(0,1fr); width:100%; gap:12px; margin:12px 0 0; }
+.auth-signup-design .auth-provider-buttons { align-self:stretch; }
 .auth-provider-buttons .auth-provider-button { width:100%; height:44px; display:flex; align-items:center; justify-content:center; gap:10px; box-sizing:border-box; border:1px solid #d1d5db; border-radius:8px; color:#111827; font-size:14px; font-weight:500; text-decoration:none; }
 .auth-provider-buttons .auth-provider-button img { width:22px; height:22px; object-fit:contain; }
 .auth-provider-buttons .auth-provider-button:hover { background:#f9fafb; border-color:#9ca3af; }
@@ -141,6 +142,18 @@
 .auth-entry-terms { margin:0; color:#9ca3af; font-size:11px; line-height:1.4; text-align:center; }
 .auth-entry-terms a { color:#4b5563; text-decoration:underline; }
 @media(max-width:640px) { .portal-auth-entry-page .portal-header { padding:0 20px; } .portal-auth-entry-page .portal-header-inner { min-height:62px; gap:8px 16px; } .portal-auth-entry-page .portal-nav a { min-height:28px; } .portal-auth-entry-page .portal-auth-stage { min-height:calc(100vh - 62px); padding:32px 16px; } .portal-auth-entry-page .portal-auth-card { padding:28px 24px; gap:20px; } .auth-entry-title h1 { font-size:24px; line-height:29px; } }
+.portal-auth-password-page { display:block; background:#fff; }
+.portal-auth-password-page .portal-auth-stage { display:flex; align-items:center; justify-content:center; min-height:calc(100vh - 64px); padding:64px 20px; background:linear-gradient(rgb(0 0 0 / 40%),rgb(0 0 0 / 40%)),url('/portal/figma-signin-hero.png') center / cover no-repeat; }
+.portal-auth-password-page .portal-auth-card { display:flex; width:min(440px,100%); flex-direction:column; gap:24px; padding:40px; border-radius:16px; background:#fff; box-shadow:0 8px 16px rgb(0 0 0 / 18%); }
+.portal-auth-password-page .auth-entry-title p a { color:#1d6bff; font-weight:600; text-decoration:underline; }
+.portal-auth-password-page .portal-auth-stage .portal-form.auth-password-step { padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.portal-auth-password-page .auth-password-step .auth-fields { width:100%; }
+.portal-auth-password-page .auth-password-step .auth-submit { width:100%; }
+.portal-auth-password-page .auth-provider-signin { display:grid; gap:16px; width:100%; padding:0; border:0; }
+.portal-auth-password-page .auth-provider-signin .auth-provider-links { display:grid; grid-template-columns:minmax(0,1fr); width:100%; gap:12px; margin:0; }
+.portal-auth-password-page .auth-provider-signin .auth-provider-button { width:100%; height:44px; border:1px solid #d1d5db; border-radius:8px; color:#111827; }
+.portal-auth-password-page .auth-provider-signin .auth-provider-divider { gap:12px; color:#9ca3af; font-size:12px; line-height:17px; }
+@media(max-width:640px) { .portal-auth-password-page .portal-auth-stage { padding:32px 16px; } .portal-auth-password-page .portal-auth-card { padding:28px 24px; gap:20px; } }
 dialog.subscription-confirmation.upgrade-confirmation { width:700px; min-height:914px; margin-top:54px; padding:32px 40px 60px; }
 .upgrade-confirmation .confirmation-heading { min-height:62px; margin-bottom:24px; }
 .upgrade-confirmation .confirmation-heading h1 { font-size:24px; line-height:32px; }

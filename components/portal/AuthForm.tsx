@@ -117,7 +117,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
       {signupDesign ? <div className="auth-signup-divider" /> : null}
-      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} wechatFirst={signIn} variant={signupDesign ? "buttons" : "icons"} />
+      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} wechatFirst={signIn} variant={signIn ? "signin" : signupDesign ? "buttons" : "icons"} />
       {showTitle ? <a href={`/${locale}/portal`}>{copy.backToPortal}</a> : null}
     </form>
   );
