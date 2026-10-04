@@ -4,8 +4,11 @@ import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
 import { publicAppOrigin, safeReturnTo, secureAuthCookie } from "@/services/runtimeConfig";
 import { OAUTH_STATE_COOKIE, readOAuthState } from "@/services/oauthService";
 import { signInWithWeChat, WeChatOAuthError } from "@/services/wechatOAuthService";
+import { fetchWeChatProfile } from "@/services/wechatOAuthService";
+import { isWechatAuthHost, issueWechatTicket, wechatHandoffEnabled, wechatOriginForEnvironment } from "@/services/wechatHandoff";
 
 export async function GET(request: NextRequest) {
+  if (wechatHandoffEnabled() && !isWechatAuthHost(request)) return new NextResponse("Not Found", { status: 404 });
   const url = new URL(request.url);
   const state = readOAuthState(request.cookies.get(OAUTH_STATE_COOKIE)?.value, url.searchParams.get("state"), "wechat");
   const origin = publicAppOrigin(request);
@@ -20,14 +23,24 @@ export async function GET(request: NextRequest) {
     return response;
   }
   function failure(code: string) {
-    const target = new URL(`/${locale}/portal/sign-in`, origin);
-    target.search = new URLSearchParams({ oauthError: code, returnTo }).toString();
+    const target = state?.wechatTarget && wechatHandoffEnabled()
+      ? new URL("/api/auth/wechat/complete", wechatOriginForEnvironment(state.wechatTarget.env))
+      : new URL(`/${locale}/portal/sign-in`, origin);
+    target.search = new URLSearchParams(state?.wechatTarget && wechatHandoffEnabled()
+      ? { oauthError: code } : { oauthError: code, returnTo }).toString();
     return redirect(target);
   }
   if (!state) return failure("state");
   try {
     const code = url.searchParams.get("code");
     if (!code || url.searchParams.has("error")) throw new WeChatOAuthError("cancelled");
+    if (wechatHandoffEnabled() && state.wechatTarget) {
+      const profile = await fetchWeChatProfile(code);
+      const ticket = await issueWechatTicket({ ...state.wechatTarget, profile });
+      const target = new URL("/api/auth/wechat/complete", wechatOriginForEnvironment(state.wechatTarget.env));
+      target.searchParams.set("ticket", ticket);
+      return redirect(target);
+    }
     const session = await signInWithWeChat(code, locale);
     const destination = session.needsEmailBinding ? `/${locale}/portal/bind-email?returnTo=${encodeURIComponent(returnTo)}` : returnTo;
     const response = redirect(new URL(destination, origin));

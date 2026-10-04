@@ -193,12 +193,12 @@ dialog.subscription-confirmation.upgrade-confirmation .subscription-consents lab
 .portal-course-card .portal-course-card-body { position:relative; padding:20px 23px 48px; gap:8px; }
 .portal-course-card h3 { font-size:17px; line-height:23px; font-weight:600; }
 .portal-course-card .portal-course-category { position:absolute; top:10px; left:18px; max-width:calc(100% - 36px); padding:5px 9px; border-radius:20px; background:#ecf1ff; color:#155dfc; font-size:11px; line-height:15px; font-weight:600; }
-.portal-course-heading { display:grid; align-content:start; gap:4px; width:100%; }
-.portal-course-heading h3 { min-width:0; min-height:46px; overflow-wrap:anywhere; }
-.portal-course-card p { font-size:12px; line-height:18px; }
+.portal-course-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; width:100%; }
+.portal-course-heading h3 { min-width:0; overflow-wrap:anywhere; }
+.portal-course-card p { font-size:12px; line-height:16px; font-weight:400; color:#64748b; }
 .portal-course-card-bottom { width:100%; margin-top:0; }
-.portal-course-card-bottom p { min-width:0; overflow-wrap:anywhere; }
-.portal-course-card .portal-course-meta { font-size:12px; line-height:16px; gap:4px 8px; }
+.portal-course-card-bottom p { min-width:0; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+.portal-course-card .portal-course-meta { flex-shrink:0; white-space:nowrap; font-size:12px; line-height:17px; font-weight:400; color:#687386; }
 .portal-course-card .portal-course-meta span:first-child { background:none; padding:0; border-radius:0; color:inherit; font-weight:400; }
 .portal-course-card .portal-course-link { display:flex; width:100%; height:100%; flex-direction:column; margin-top:0; color:inherit; text-decoration:none; cursor:pointer; }
 .portal-course-card .portal-course-arrow { position:absolute; right:23px; bottom:20px; color:#155dfc; font-size:18px; font-weight:600; line-height:25px; }
@@ -311,7 +311,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-design-hero { min-height:200px; display:grid; place-content:center; gap:18px; box-sizing:border-box; background:#155dfc; color:#fff; text-align:center; }
 /* The 4352x1112 PNG contains 3840x600 artwork inside a 256px transparent border.
    Stretch the visible artwork to the full banner width and 300px height. */
-.courses-design-hero { width:100%; max-width:none; height:300px; min-height:300px; box-sizing:border-box; padding:55px max(20px,calc((100% - 1240px)/2)) 30px; background: url("/portal/course-banner.png") center / 113.333333% 185.333333% no-repeat; color:#fff; }
+.courses-design-hero { width:100%; max-width:none; height:300px; min-height:300px; box-sizing:border-box; padding:55px max(20px,calc((100% - 1240px)/2)) 60px; background: url("/portal/course-banner.png") center / 113.333333% 185.333333% no-repeat; color:#fff; }
 .courses-design-hero > div { display:flex; height:100%; flex-direction:column; align-items:flex-start; }
 .courses-design-hero h1 { margin:0; color:#fff; font-size:32px; line-height:42px; }.courses-design-hero p { margin:8px 0 0; color:#c7d6ff; font-size:14px; }.courses-design-hero .portal-button { min-width:136px; min-height:30px; margin-top:auto; background:#fff; color:#155dfc; }
 .portal-catalog-courses { width:min(1290px,calc(100% - 40px)); padding:45px 0 24px; }.portal-catalog-courses .portal-section-heading h2 { font-size:27px; }.portal-catalog-courses .portal-category-filter { margin:22px 0 28px; }.portal-catalog-courses .portal-course-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:36px 20px; }
@@ -326,7 +326,8 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-comparison-wrap { position:relative; padding-top:82px; }
 .pricing-term-switch-global { position:absolute; top:0; left:50%; transform:translateX(-50%); border-radius:22px; padding:3px; }
 .pricing-term-switch-global button { position:relative; height:36px; border-radius:20px; }
-.pricing-better-value { position:absolute; top:-7px; right:7px; min-width:56px; padding:1px 4px; border-radius:6px; background:#155dfc; color:#fff; font-size:8px; line-height:11px; font-weight:600; white-space:nowrap; }
+.pricing-term-year-label { position:relative; display:inline-block; transform:translateY(6px); }
+.pricing-better-value { position:absolute; top:-13px; left:60%; min-width:56px; padding:1px 4px; border-radius:6px; background:#155dfc; color:#fff; font-size:8px; line-height:11px; font-weight:600; white-space:nowrap; }
 .pricing-comparison { position:relative; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:96px; }
 .pricing-comparison::after { content:""; position:absolute; top:204px; left:0; width:100%; height:1px; background:#e5e7eb; }
 .pricing-design-card { padding:0; min-height:620px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
@@ -334,8 +335,9 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-card-heading h2 { font-size:27px; line-height:38px; margin:0; font-weight:600; color:#155dfc; }
 .pricing-term-switch { padding:3px; background:#fff; border:1px solid #dbe3f0; border-radius:999px; display:flex; flex:none; }
 .pricing-term-switch button { width:96px; height:36px; padding:0 8px; border:0; border-radius:999px; font-size:13px; background:transparent; color:#155dfc; cursor:pointer; }
+.pricing-term-switch button.pricing-term-year { width:auto; min-width:96px; padding-left:24px; padding-right:48px; }
 .pricing-term-switch button[aria-pressed=true] { background:#2968ff; color:#fff; font-weight:600; }
-.pricing-card-price { min-height:80px; margin-top:16px; display:flex; justify-content:center; gap:12px; align-items:flex-end; text-align:center; }
+.pricing-card-price { min-height:80px; margin-top:16px; display:flex; justify-content:center; gap:12px; align-items:baseline; align-items:last baseline; text-align:center; }
 .pricing-card-price strong { font-size:54px; line-height:64px; font-weight:600; }
 .pricing-card-price strong::first-letter { font-size:30px; }
 .pricing-card-price span { font-size:16px; line-height:30px; }
@@ -347,7 +349,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-card-course-list > div { display:flex; flex-wrap:wrap; gap:8px; }
 .pricing-card-course-list span { padding:4px 8px; border:1px solid #e5e7eb; border-radius:14px; color:#15233a; font-size:14px; line-height:19px; opacity:.8; }
 .pricing-category-switch { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.pricing-category-switch button { padding:8px 12px; min-height:30px; background:#fff; border:1px solid #dbe3f0; border-radius:8px; color:#475569; font-size:13px; cursor:pointer; }
+.pricing-category-switch button { padding:4px 12px; min-height:30px; background:#fff; border:1px solid #dbe3f0; border-radius:8px; color:#475569; font-size:13px; cursor:pointer; }
 .pricing-category-switch button[aria-pressed=true] { color:#fff; background:#2968ff; border-color:#2968ff; }
 .pricing-category-switch--all button[aria-pressed=true] { color:#155dfc; background:#c7d6ff; border-color:#246bfd; }
 .pricing-card-benefits { margin:16px 0; padding:0; min-height:214px; list-style:none; font-size:16px; line-height:19px; }

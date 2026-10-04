@@ -9,15 +9,16 @@ import { getMessages } from "../lib/i18n/messages";
 
 // Disposable local accounts/data only. Requires a completed .next-ui-check build.
 async function main() {
+const dist = process.env.NEXT_DIST_DIR || ".next-ui-check";
 const repo = process.cwd(), port = 3037, origin = `http://127.0.0.1:${port}`;
 const probe = createServer();
 await new Promise<void>((resolve, reject) => { probe.once("error", reject); probe.listen(port, "127.0.0.1", resolve); });
 await new Promise<void>(resolve => probe.close(() => resolve()));
-await readFile(path.join(repo, ".next-ui-check/BUILD_ID"), "utf8");
+await readFile(path.join(repo, dist, "BUILD_ID"), "utf8");
 const temporary = await mkdtemp(path.join(tmpdir(), "lg-video-preview-"));
 const output = path.join(repo, "test-results/preview-video");
 await mkdir(output, { recursive: true });
-Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "test", PAYMENT_MODE: "demo", LOCAL_EMAIL_PREVIEW: "1", LOCAL_SOCIAL_LOGIN: "0", NEXT_DIST_DIR: ".next-ui-check", NEXT_PUBLIC_APP_URL: origin, SESSION_SECRET: "preview-test-only-local-secret" });
+Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "test", PAYMENT_MODE: "demo", LOCAL_EMAIL_PREVIEW: "1", LOCAL_SOCIAL_LOGIN: "0", NEXT_DIST_DIR: dist, NEXT_PUBLIC_APP_URL: origin, SESSION_SECRET: "preview-test-only-local-secret" });
 process.chdir(temporary);
 const store = await import("../services/productStore");
 const files = await import("../services/fileStore");
@@ -91,6 +92,23 @@ try {
     const copy = getMessages(locale);
     await page.goto(`${origin}/${locale}/portal/courses/${course.id}/public-lesson`, { waitUntil: "networkidle" });
     const reject = page.getByRole("button", { name: copy.legal.rejectOptional, exact: true }); if (await reject.isVisible()) await reject.click();
+    if (process.env.VIDEO_CONTROLS_ONLY === "1") {
+      assert.equal(await page.locator("video").evaluate((video: HTMLVideoElement) => video.controls), false);
+      await page.locator(".la-video-controls button").last().click();
+      await page.waitForFunction(() => document.fullscreenElement?.classList.contains("la-controlled-video") || !!document.querySelector(".la-video-expanded"));
+      assert.equal(await page.locator("video").evaluate((video: HTMLVideoElement) => video.controls), false);
+      await page.locator(".la-video-controls button").last().click();
+      await page.locator(".la-video-controls button").first().click();
+      await page.waitForFunction(() => document.querySelector("video")!.currentTime > 0);
+      await page.locator(".la-video-controls button").first().click();
+      assert(await page.locator("video").evaluate((video: HTMLVideoElement) => video.paused));
+      await page.locator(".la-video-controls input").focus();
+      await page.locator(".la-video-controls input").press("End");
+      await page.waitForFunction(() => document.querySelector("video")!.currentTime >= 1);
+      await page.locator(".la-video-controls button").nth(1).click();
+      assert(await page.locator("video").evaluate((video: HTMLVideoElement) => video.muted));
+      continue;
+    }
     assert.equal(await page.locator("h1").innerText(), "Looking closely");
     assert.equal(await page.locator(".portal-header").count(), 1);
     assert.equal(await page.locator(".portal-footer").count(), 1);
@@ -98,6 +116,12 @@ try {
     assert(!await page.getByRole("link", { name: /Objects and memory/ }).count());
     assert(!(await page.content()).includes("PRIVATE_BODY_SENTINEL"));
     assert(await page.locator(".la-video-badge").isVisible());
+    assert.equal(await page.locator("video").evaluate((video: HTMLVideoElement) => video.controls), false);
+    assert.equal(await page.locator(".la-video-controls button").count(), 3);
+    await page.locator(".la-video-controls button").last().click();
+    await page.waitForFunction(() => document.fullscreenElement?.classList.contains("la-controlled-video") || !!document.querySelector(".la-video-expanded"));
+    assert.equal(await page.locator("video").evaluate((video: HTMLVideoElement) => video.controls), false);
+    await page.locator(".la-video-controls button").last().click();
     await page.screenshot({ path: path.join(output, `${locale}-desktop.png`), fullPage: true });
     await page.getByRole("button", { name: copy.previewVideoDesign.play, exact: true }).click();
     try { await page.waitForFunction(() => document.querySelector("video")!.currentTime > 0, undefined, { timeout: 10000 }); }
@@ -130,6 +154,7 @@ try {
     const current = await store.ensureProductData(); current.studyRecords = []; current.studyEvents = [];
     await files.atomicWriteJson(productFile, current);
   }
+  if (process.env.VIDEO_CONTROLS_ONLY === "1") { assert.deepEqual(errors, []); console.log("PASS: bilingual custom controls, real playback, pause, seek, mute and fullscreen without native controls"); return; }
   const entitledData = await store.ensureProductData();
   entitledData.entitlements.push({ id: "preview-test-entitlement", userId: user.id, courseId: course.id, state: "active", source: "purchase", scope: "course", scopeId: course.id, validTo: new Date(Date.now() + 86400000).toISOString() });
   await files.atomicWriteJson(productFile, entitledData);

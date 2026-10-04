@@ -68,7 +68,9 @@ export function runtimeConfiguration() {
   const production = isManagedEnvironment();
   const socialLocal = appEnvironment() === "DEV" && process.env.LOCAL_SOCIAL_LOGIN !== "0";
   const google = hasEnv("GOOGLE_CLIENT_ID") && hasEnv("GOOGLE_CLIENT_SECRET");
-  const wechat = hasEnv("WECHAT_APP_ID") && hasEnv("WECHAT_APP_SECRET");
+  const wechatCredentials = hasEnv("WECHAT_APP_ID") && hasEnv("WECHAT_APP_SECRET");
+  const wechat = wechatCredentials || (appEnvironment() !== "UAT" && hasEnv("WECHAT_AUTH_ORIGIN") && hasEnv("WECHAT_SHARED_STATE_SECRET")
+    && hasEnv(`WECHAT_${appEnvironment()}_HANDOFF_SECRET`));
   const stripeSecret = hasEnv("STRIPE_SECRET_KEY");
   const stripeWebhook = hasEnv("STRIPE_WEBHOOK_SECRET");
   const publicUrl = hasEnv("NEXT_PUBLIC_APP_URL");

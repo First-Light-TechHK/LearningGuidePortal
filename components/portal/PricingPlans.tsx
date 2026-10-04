@@ -15,7 +15,7 @@ export function PricingPlans({ locale, plans, categories, courseTitles, selected
   const courseCategory = categories.find((item) => item.id === selectedCategoryId)?.id;
   const [category, setCategory] = useState(selected?.scope === "category" ? selected.scopeId || selected.category || firstAvailableCategory?.id : courseCategory || firstAvailableCategory?.id);
   return <div className="pricing-comparison-wrap"><div className="pricing-term-switch pricing-term-switch-global" role="group" aria-label={copy.term}>
-    {([6, 12] as const).map((value) => <button type="button" key={value} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 12 ? <><span className="pricing-better-value">Better Value</span>{copy.year}</> : copy.sixMonths}</button>)}
+    {([6, 12] as const).map((value) => <button type="button" key={value} className={value === 12 ? "pricing-term-year" : undefined} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 12 ? <span className="pricing-term-year-label">{copy.year}<span className="pricing-better-value">Better Value</span></span> : copy.sixMonths}</button>)}
   </div><div className="pricing-comparison">{(["everything", "category"] as const).map((scope) => {
     const plan = plans.find((item) => item.scope === scope && item.device === "pc" && item.termMonths === term && (scope === "everything" || (item.scopeId || item.category) === category));
     const price = plan && plan.available !== false ? new Intl.NumberFormat(locale, { style: "currency", currency: plan.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: plan.amountMinor % 100 ? 2 : 0 }).format(plan.amountMinor / 100) : null;

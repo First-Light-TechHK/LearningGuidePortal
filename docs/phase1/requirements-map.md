@@ -1,5 +1,23 @@
 # Phase 1：七份 PRD 实施地图
 
+Pricing annual button width refinement: `app/portal-design.css` reduces the annual button's right padding from 80px to 48px so its right edge closely wraps Better Value. No API or database change. Browser visual acceptance and target-environment smoke remain pending.
+
+Pricing annual badge placement refinement: `PricingPlans.tsx` anchors Better Value above the annual label, beginning at 60% of the label width (approximately the middle of Year). `app/portal-design.css` offsets the label downward to keep the badge inside the button and retains the enlarged right padding. No API or database change. Browser visual acceptance and target-environment smoke remain pending.
+
+Pricing category button refinement: `app/portal-design.css` reduces vertical padding from 8px to 4px for the category buttons beneath All categories and Particular category, retaining the 30px minimum height. No API or database change. Target-browser visual acceptance and target-environment smoke remain pending.
+
+Pricing term toggle refinement: `components/portal/PricingPlans.tsx` and `app/portal-design.css` place Better Value inside the annual button and enlarge its right padding to reserve space beside the 1 Year label. Target-browser visual acceptance and target-environment smoke remain pending. No API or database change.
+
+Pricing currency alignment: `app/portal-design.css` aligns the price number and currency/per-category text by their last text baseline, so USD sits level with the bottom of the price digits despite different font sizes and line heights. No API or database change. Target-browser visual acceptance and target-environment smoke remain pending.
+
+Course video download-control presentation: components/portal/lesson-authoring.css explicitly hides the native WebKit download control for lesson and media-preview videos, supplementing their existing controlsList="nodownload" attribute in fullscreen. Real-browser fullscreen visual acceptance remains pending. No API or database change.
+
+Video preview responsive refinement: components/portal/preview-lesson.module.css centres the full layout up to 1680px, preserves a 16:9 video, and matches the tools panel height to the video. Horizontal layouts reserve at least 696px for the player and compress tools from 296px to 200px before stacking below the player. Browser visual acceptance and target-environment smoke remain pending.
+
+Popular courses card refinement: components/portal/CatalogueCourseCard.tsx and components/portal/home.module.css place the arrow below the description at the right edge. Homepage descriptions retain their two-line ellipsis and expose full text through the same native hover title as course discovery. No API or database change. Browser visual acceptance and target-environment smoke remain pending.
+
+Course discovery card refinement: components/portal/CatalogueCourseCard.tsx and app/portal-design.css place lesson count and hours/minutes to the right of the title using the homepage duration fallback. Descriptions use normal weight, a four-line ellipsis and a native full-text hover title. No API or database change. Target-environment smoke and visual acceptance remain pending.
+
 Course discovery card presentation (Figma LG-m2 node `2:341`): `components/portal/CatalogueCourseCard.tsx` and `app/portal-design.css` provide grey inactive category filters and a blue selected filter, a category badge at the cover's top left, lesson count/video duration after the title, and an arrow-only blue course link with a localised accessible name. Existing server-derived data and localised labels are retained. No API or database change. Figma screenshot acceptance and target-environment smoke remain pending.
 
 User-requested LGTeacher integration (15 September 2026): the Course Management extension and its explicit remaining scope are tracked in `lgteacher-integration.md`. `CourseOutlineEditor`, `courseAuthoring` and `/api/backoffice/courses/:courseId/draft` add transactional draft section/lesson editing. This is not yet the full LGTeacher feature set.
@@ -80,3 +98,12 @@ Stripe Pricing implementation: `contracts/payment.ts`, `services/stripePriceServ
 Stripe Checkout success returns to `/{locale}/account/my-learning/subscription?orderId=...` for purchase, trial and upgrade (`services/stripeClient.ts`, `services/paymentService.ts`). The subscription page refreshes a pending owned order while awaiting webhook confirmation; refreshed subscriptions update the displayed list. Local Checkout uses the same destination. Coverage: `tests/integration/stripe-payment.spec.ts`. Target-environment smoke and visual acceptance remain pending.
 
 Login source navigation: `lib/authNavigation.ts` and `components/portal/AuthNavigationLink.tsx` add an encoded `returnTo` to Portal header login/registration and FAQ login links, retaining pathname, query and hash. Auth-page switches retain the original source. Existing sign-in validation and email/OAuth flows consume that parameter. Tests: `tests/unit/auth-navigation.test.ts`, `tests/e2e/E2E-B1-visitor-auth.spec.ts`. Target-environment smoke and Figma acceptance remain pending.
+
+WeChat website login across DEV/SIT/UAT: `app/api/auth/wechat/route.ts` starts OAuth on the UAT callback origin; `callback/route.ts` issues a short-lived ticket; `redeem/route.ts` exchanges it over authenticated server-to-server HTTPS; `complete/route.ts` creates the local account and Session. `services/wechatHandoff.ts` validates the environment and nonce. `db/migrations/011_wechat_login_tickets.sql` stores ticket hashes, and `middleware.ts` redirects the DEV apex host to `www`. Configuration and smoke checks: `release-runbook.md`.
+
+Video download-button fix: `components/portal/ControlledVideo.tsx` replaces native video controls in LessonContentPlayer and CourseMediaPreview with localised play/pause, seek, mute and container fullscreen controls. Existing interactive nodes and trial enforcement keep the original video ref and events. Native video controls are disabled; this removes their download entry, rather than preventing media retrieval. Build and target-browser/target-environment acceptance must be recorded separately. No API or database change.
+
+Validation: TypeScript and production build passed for the custom video controls. The full preview browser script is currently blocked by its pre-existing missing `.portal-footer` assertion; `VIDEO_CONTROLS_ONLY=1` selects focused bilingual video checks. Cross-browser visual acceptance and target-environment smoke remain pending.
+Focused Chrome check observed disabled native controls in normal/container fullscreen and successful play/pause. Complete focused regression remains unverified: one generated WebM had unknown duration; the retry failed the existing recorder-fixture frame-size assertion before reaching the player. Duration handling now watches durationchange and seekable ranges.
+
+Course discovery banner CTA spacing: `app/portal-design.css` increases the bottom space below Start preview from 30px to 60px through banner bottom padding, preserving the 300px banner height. No API or database change. Target-browser visual acceptance and target-environment smoke remain pending.

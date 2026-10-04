@@ -13,6 +13,7 @@ export default defineConfig({
     { name: "oauth-origin", testMatch: "oauth-origin.spec.ts" },
     { name: "email-google", testMatch: "email-verification.spec.ts" },
     { name: "wechat", testMatch: "wechat-login.spec.ts" },
+    { name: "wechat-shared-callback", testMatch: "wechat-shared-callback.spec.ts" },
     { name: "ks-01-unauth", testMatch: "KS-01-unauth-api.spec.ts" },
   ],
 });
