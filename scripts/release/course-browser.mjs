@@ -170,6 +170,42 @@ async function assertPage(page, path, origin, deadline) {
   requireCheck(!/^(404|500|Application error|Internal Server Error|This page could not be found)/i.test(title), 'rendered_error_page');
 }
 
+// Exercise the real toolbar as well as native decoding: media API success alone
+// cannot establish that the learner can operate the new custom controls.
+async function checkVideoControls(media, deadline) {
+  const player = media.locator('..');
+  requireCheck(await player.evaluate(el => el.classList.contains('la-controlled-video')), 'custom_video_toolbar_missing');
+  requireCheck(await media.evaluate(el => el.controls === false), 'unexpected_native_video_toolbar');
+  const buttons = player.locator('.la-video-controls button');
+  requireCheck(await buttons.count() === 3, 'custom_video_buttons_missing');
+  const labels = await buttons.evaluateAll(elements => elements.map(el => el.getAttribute('aria-label')));
+  requireCheck(labels.every(label => label?.trim() && !/^\?+$/.test(label)) && new Set(labels).size === 3, 'custom_video_labels_invalid');
+  const seek = player.locator('.la-video-controls input[type="range"]');
+  await seek.focus({ timeout: remaining(deadline) });
+  await seek.press('Home', { timeout: remaining(deadline) });
+  for (let index = 0; index < 10; index++) await seek.press('ArrowRight', { timeout: remaining(deadline) });
+  const target = Number(await seek.inputValue());
+  requireCheck(target > 0, 'custom_video_seek_did_not_move');
+  await media.page().waitForFunction(({ element, target }) => !element.seeking && Math.abs(element.currentTime - target) < 0.15,
+    { element: await media.elementHandle(), target }, { timeout: remaining(deadline, LIMIT.resource) });
+  await buttons.nth(0).click({ timeout: remaining(deadline) });
+  await media.page().waitForFunction(({ element, target }) => !element.paused && element.currentTime > target + 0.1,
+    { element: await media.elementHandle(), target }, { timeout: remaining(deadline, LIMIT.resource) });
+  await buttons.nth(0).click({ timeout: remaining(deadline) });
+  requireCheck(await media.evaluate(el => el.paused), 'custom_video_pause_failed');
+  const muted = await media.evaluate(el => el.muted);
+  await buttons.nth(1).click({ timeout: remaining(deadline) });
+  requireCheck(await media.evaluate(el => el.muted) !== muted, 'custom_video_mute_failed');
+  await buttons.nth(1).click({ timeout: remaining(deadline) });
+  await buttons.nth(2).click({ timeout: remaining(deadline) });
+  await media.page().waitForFunction(el => document.fullscreenElement === el || el.classList.contains('la-video-expanded'),
+    await player.elementHandle(), { timeout: remaining(deadline) });
+  await buttons.nth(2).click({ timeout: remaining(deadline) });
+  await media.page().waitForFunction(el => !document.fullscreenElement && !el.classList.contains('la-video-expanded'),
+    await player.elementHandle(), { timeout: remaining(deadline) });
+  return { play: true, pause: true, keyboardSeek: true, mute: true, fullscreen: true };
+}
+
 function auditPage(page, scope, origin, fail, expectedNotFoundPath) {
   const seen = new Set();
   const pending = new Set();
@@ -244,7 +280,8 @@ async function checkRenderedContent(page, root, lesson, origin, deadline, observ
     const result = await probePlayback(element, remaining(deadline, LIMIT.resource));
     requireCheck(result.ok, result.code || 'media_playback_failed');
     const kind = await element.evaluate(el => el.tagName.toLowerCase());
-    observed.push({ kind, identity: mediaIdentity(result.src, origin), version: new URL(result.src, origin).searchParams.get('versionId'), ok: true, duration: result.duration, playedSeconds: result.playedSeconds, seekSeconds: result.seekSeconds });
+    const controls = kind === 'video' ? await checkVideoControls(element, deadline) : undefined;
+    observed.push({ kind, identity: mediaIdentity(result.src, origin), version: new URL(result.src, origin).searchParams.get('versionId'), ok: true, duration: result.duration, playedSeconds: result.playedSeconds, seekSeconds: result.seekSeconds, ...(controls ? { controls } : {}) });
   }
   const pdfs = root.locator('.la-pdf');
   for (let i = 0; i < await pdfs.count(); i++) {

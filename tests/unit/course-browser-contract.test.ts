@@ -21,6 +21,16 @@ const makeManifest = () => ({ courses: [{
   ] }],
 }] });
 
+test('custom video controls have distinct, readable labels in both supported locales', async () => {
+  const keys = ['videoPlay', 'videoPause', 'videoSeek', 'videoMute', 'videoUnmute', 'videoFullscreen'];
+  for (const locale of ['en-GB', 'zh-CN']) {
+    const messages = JSON.parse(await readFile(new URL(`../../messages/lesson-authoring-${locale}.json`, import.meta.url), 'utf8'));
+    const labels = keys.map(key => messages[key]);
+    assert.ok(labels.every(label => typeof label === 'string' && label.trim() && !/^\?+$/.test(label)));
+    assert.equal(new Set(labels).size, keys.length);
+  }
+});
+
 test('no HTTP-200 login, pricing, cross-host, wrong locale or wrong lesson route can pass', () => {
   const origin = 'https://uat.example.test', path = '/en-GB/account/learn/course?lessonId=two';
   assert.equal(routeMatches(origin + path, path, origin), true);

@@ -46,7 +46,7 @@ export function googleEnabled() {
 }
 
 export function wechatEnabled() {
-  return wechatConfigured() || localSocialLoginEnabled();
+  return wechatConfigured() || Boolean(process.env.WECHAT_AUTH_ORIGIN?.trim()) || localSocialLoginEnabled();
 }
 
 export function localSocialProfile(provider: "google" | "wechat") {
@@ -65,14 +65,14 @@ function signPayload(payload: string) {
   return createHmac("sha256", oauthSigningSecret()).update(payload).digest("base64url");
 }
 
-export function makeOAuthState(localeValue: string, returnTo: string, provider: "google" | "wechat" = "google") {
+export function makeOAuthState(localeValue: string, returnTo: string, provider: "google" | "wechat" = "google", wechatTarget?: { env: "DEV" | "SIT" | "UAT"; nonce: string }) {
   const state = randomBytes(32).toString("base64url");
   const nonce = randomBytes(32).toString("base64url");
   const codeVerifier = randomBytes(48).toString("base64url");
   const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
   const locale: Locale = localeFrom(localeValue);
   const expiresAt = Date.now() + OAUTH_TRANSACTION_SECONDS * 1000;
-  const payload = Buffer.from(JSON.stringify({ provider, state, nonce, codeVerifier, locale, returnTo, expiresAt }), "utf8").toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ provider, state, nonce, codeVerifier, locale, returnTo, expiresAt, wechatTarget }), "utf8").toString("base64url");
   return { state, nonce, codeChallenge, cookieValue: `${payload}.${signPayload(payload)}` };
 }
 
@@ -84,10 +84,10 @@ export function readOAuthState(value: string | undefined, state: string | null, 
     const expected = Buffer.from(signPayload(encoded), "utf8");
     const actual = Buffer.from(signature, "utf8");
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
-    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { provider?: string; state?: string; nonce?: string; codeVerifier?: string; locale?: string; returnTo?: string; expiresAt?: number };
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { provider?: string; state?: string; nonce?: string; codeVerifier?: string; locale?: string; returnTo?: string; expiresAt?: number; wechatTarget?: { env: "DEV" | "SIT" | "UAT"; nonce: string } };
     if (payload.provider !== provider || !payload.state || payload.state !== state || !payload.nonce || !payload.codeVerifier || !payload.expiresAt || payload.expiresAt <= Date.now()) return null;
     const locale = localeFrom(payload.locale);
-    return { locale, returnTo: payload.returnTo || `/${locale}/account/my-learning`, nonce: payload.nonce, codeVerifier: payload.codeVerifier };
+    return { locale, returnTo: payload.returnTo || `/${locale}/account/my-learning`, nonce: payload.nonce, codeVerifier: payload.codeVerifier, wechatTarget: payload.wechatTarget };
   } catch {
     return null;
   }

@@ -102,6 +102,14 @@ Product-aggregate data changes use numbered scripts under `db/data-migrations/`.
 
 ### WeChat login smoke test
 
+#### Single callback domain for DEV/SIT/UAT
+
+- Configure only `uat.ilovelearningguide.com` as the website application's callback domain (hostname only). All three environments use `https://uat.ilovelearningguide.com/api/auth/wechat/callback` as `redirect_uri`.
+- Set `WECHAT_AUTH_ORIGIN=https://uat.ilovelearningguide.com`, `WECHAT_DEV_ORIGIN=https://www.ilovelearningguide.com`, `WECHAT_SIT_ORIGIN=https://sit.ilovelearningguide.com`, `WECHAT_UAT_ORIGIN=https://uat.ilovelearningguide.com`, and the same random 32+ character `WECHAT_SHARED_STATE_SECRET` on all three App Runner services. Keep each service's own `NEXT_PUBLIC_APP_URL`, database, S3 and `SESSION_SECRET`.
+- Set `WECHAT_APP_ID` and `WECHAT_APP_SECRET` on UAT. Generate three different 32+ character handoff secrets. UAT holds `WECHAT_DEV_HANDOFF_SECRET`, `WECHAT_SIT_HANDOFF_SECRET`, and `WECHAT_UAT_HANDOFF_SECRET`; DEV and SIT each hold only their own. Store them in Secrets Manager.
+- Apply `db/migrations/011_wechat_login_tickets.sql` to UAT RDS before enabling the flow. Ticket rows live only in UAT and expire after two minutes; periodically delete expired rows. UAT availability is a dependency for WeChat login in DEV and SIT.
+- Deploy code to UAT, DEV and SIT before enabling `WECHAT_AUTH_ORIGIN`. Smoke test a real QR login from `www`, the apex host, SIT and UAT. Confirm each lands on its own host with a host-only session and email binding. Test invalid state, absent handoff cookie, expired ticket, duplicate redemption, wrong environment credential, both locales, and `returnTo`.
+
 - Mandatory email binding supersedes the earlier no-email Session acceptance checks below. Newly created and existing unbound WeChat users must receive a binding prompt before Purchase/My Learning. Check that direct protected API requests fail while unbound.
 - Configure SMTP/SES and the trusted `NEXT_PUBLIC_APP_URL` in DEV/SIT/UAT/production. Use an authorised mailbox to verify delivery, 24-hour validity, 60-second resend, changing email, invalidation of old links, ownership conflicts, and successful duplicate clicks. Confirm userId and prior orders/subscriptions remain unchanged.
 - Verify the email link in the original browser and in a different browser: original session becomes usable; another browser is prompted to sign in with WeChat and receives no session from the binding endpoint. Original waiting page refreshes after binding. Check locale and returnTo continuity, sign-out, interruption and resumption.

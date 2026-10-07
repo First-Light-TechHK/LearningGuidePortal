@@ -1,7 +1,7 @@
 .page { color:#15233a; background:#fff; }
-.breadcrumb { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:58px; padding:18px 40px; color:#64748b; font-size:13px; line-height:18px; }
+.breadcrumb { width:min(100%,1680px); margin-inline:auto; display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:58px; padding:18px 40px; color:#64748b; font-size:13px; line-height:18px; }
 .breadcrumb a { color:inherit; text-decoration:none; overflow-wrap:anywhere; }
-.layout { display:grid; grid-template-columns:324px minmax(0,1fr); min-height:898px; }
+.layout { width:min(100%,1680px); margin-inline:auto; display:grid; grid-template-columns:324px minmax(0,1fr); min-height:898px; }
 .sidebar { padding:23px 29px; background:#f8fafc; border:1px solid #e2e8f0; }
 .back { color:#1660d8; font-size:14px; line-height:19px; text-decoration:none; }
 .sidebar h2 { margin:10px 0 6px; font-size:19px; line-height:26px; font-weight:600; overflow-wrap:anywhere; }
@@ -16,17 +16,18 @@
 .contentLinks { display:flex; flex-direction:column; gap:5px; padding:9px 0 0 21px; }
 .contentLinks button { border:0; padding:0; background:transparent; color:#475569; font:inherit; font-size:12px; line-height:16px; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
 .contentLinks button[aria-current] { color:#246bfd; }
-.main { min-width:0; padding:8px 74px 40px 30px; }
+.main { min-width:0; padding:8px 30px 40px; container-type:inline-size; }
 .heading { margin-bottom:20px; }
 .heading p { margin:0 0 4px; color:#1660d8; font-size:14px; line-height:19px; font-weight:600; }
 .heading h1 { margin:0; font-size:28px; line-height:38px; font-weight:600; overflow-wrap:anywhere; }
 .heading > div { margin-top:4px; font-size:15px; line-height:20px; color:#64748b; }
-.mediaRow { display:grid; grid-template-columns:minmax(0,1fr) 296px; align-items:start; gap:20px; }
+.mediaRow { --tools-width:clamp(200px,calc(100cqw - 716px),296px); display:grid; grid-template-columns:minmax(696px,1fr) var(--tools-width); align-items:start; gap:20px; }
+.mediaRow:has(video) .tools { height:calc((100cqw - var(--tools-width) - 20px) * .5625); min-height:0; overflow:auto; }
 .player { min-width:0; }
 .player :global(.la-content-player) { padding:0; border:0; }
 .player :global(.la-content-player) > h3 { display:none; }
 .player :global(.la-video-stage) { position:relative; overflow:hidden; border-radius:12px; background:#0f172a; }
-.player :global(.la-lesson-video) { width:100%; max-height:none; aspect-ratio:696 / 410; background:#0f172a; object-fit:contain; }
+.player :global(.la-lesson-video) { width:100%; max-height:none; height:auto; aspect-ratio:16 / 9; background:#0f172a; object-fit:contain; }
 .player :global(.la-video-play) { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:70px; height:70px; padding:0 0 0 4px; border:0; border-radius:50%; background:rgba(255,255,255,.94); color:#246bfd; font-size:27px; cursor:pointer; }
 .tools { min-height:410px; padding:18px 16px; border-radius:12px; background:#f8fafc; }
 .tools h2 { margin:0; font-size:16px; line-height:22px; font-weight:600; }
@@ -46,6 +47,6 @@
 .progress { display:flex; flex-wrap:wrap; align-items:center; gap:20px; margin-top:24px; }
 .progress > a { color:#1660d8; font-size:14px; }
 .page a:focus-visible,.page button:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
-@media(min-width:1600px) { .main { max-width:1250px; } }
+@container(max-width:915px) { .mediaRow { grid-template-columns:minmax(0,1fr); }.mediaRow:has(video) .tools { height:auto; }.tools { min-height:0; } }
 @media(max-width:1200px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.mediaRow { grid-template-columns:minmax(0,1fr); }.tools { min-height:0; }.banner { padding-right:20px; flex-wrap:wrap; } }
 @media(max-width:700px) { .breadcrumb { padding:16px 20px; }.layout { display:flex; flex-direction:column; min-height:0; }.sidebar { padding:20px; }.outline { max-height:260px; overflow:auto; }.main { padding:24px 20px 40px; }.heading h1 { font-size:24px; line-height:32px; }.banner h2 { font-size:22px; }.unlock { width:100%; }.player :global(.la-video-play) { width:54px; height:54px; font-size:22px; } }

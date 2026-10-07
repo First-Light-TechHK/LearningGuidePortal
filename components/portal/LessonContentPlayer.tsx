@@ -6,6 +6,7 @@ import type { LessonContent, LessonNode } from '@/contracts/lesson-content';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
 import { CourseMediaPreview, LessonModal, SafeLessonHtml, safeMediaUrl } from './CourseMediaPreview';
 import './lesson-authoring.css';
+import { ControlledVideo } from './ControlledVideo';
 
 const LEGACY_MEDIA_BASE = 'https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp';
 
@@ -164,7 +165,7 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
     if (node) open(node);
     // Each explicit request opens once, including repeated requests for the same node.
   }, [nodeRequest, contentTrialGate]);
-  function showTrial() { video.current?.pause(); setTrialOpen(true); }
+  function showTrial() { if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); video.current?.pause(); setTrialOpen(true); }
   function enforceVideoTrial() {
     if (!contentTrialGate) return false;
     const media = video.current, limit = contentTrialGate.videoLimitSeconds ?? 60;
@@ -177,6 +178,7 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
     return false;
   }
   function open(node: LessonNode) {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     if (!activeRef.current) resume.current = !!video.current && !video.current.paused && !video.current.ended;
     video.current?.pause(); activeRef.current = node; setActive(node); setNotice('');
   }
@@ -191,7 +193,7 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
   return <section className="la-content-player"><h3>{content.title}</h3>
     {content.type === 'text' && <TextContentPlayer html={content.html || ''} nodes={nodes} locale={locale} fallbackImageUrl={fallbackImageUrl} onNode={open}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
-    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><video ref={video} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} controls controlsList="nodownload" playsInline preload="metadata" onTimeUpdate={() => { if (!enforceVideoTrial()) tick(); }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else tick(); }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
+    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload="metadata" onTimeUpdate={() => { if (!enforceVideoTrial()) tick(); }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else tick(); }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
       if (enforceVideoTrial()) { seeking.current = false; return; }
       // A forward seek skips earlier instances; seeking backwards rearms later ones.

@@ -57,3 +57,11 @@ Until DNS is active, health and smoke checks use the App Runner service URL. `NE
 ## Rollback
 
 Do not force-push the UAT branch or restore databases merely because an acceptance test fails. Diagnose whether the failed dependency is code, data, media or permissions. For a code regression, create a reviewed revert commit, run all required CI and release the exact new SHA through the same gate. Restore media access/version permissions separately when that is the failure. Never roll back learner records, orders, payments or another environment as part of a code release.
+
+## SIT promotion, 7 October 2026
+
+The promotion merges SIT branch revision `6b69d0f37afc5744a70afc62d8d1925b36c1876e`, including its sign-in, pricing, course-card and custom-video-control changes. This is newer than the running SIT revision `73bfc6f79d75d9591c1b794d5b3cf1b396eeeed2`; the release includes those branch changes without changing the SIT service. Existing UAT lesson identity, streamed-rendering, responsive layout, media pinning and acceptance safeguards are retained.
+
+Configuration is not copied wholesale. Preserve UAT's origin, admin hosts, private database, upload bucket/prefix, session secret, payment webhook secret and IAM bindings. Google, WeChat, SMTP, Stripe test-account and OpenRouter credentials currently use equal values through separate environment secret references. Stripe stays in sandbox mode; its UAT endpoint remains `https://uat.ilovelearningguide.com/api/payment/webhook`. The public Google and direct WeChat callbacks remain UAT-specific. The new shared-WeChat hand-off code is present, but `WECHAT_AUTH_ORIGIN` remains unset, matching the actual SIT configuration; shared-provider routing is not silently enabled by promotion.
+
+Compare courses, plans and portal content read-only before deployment; preserve UAT learner accounts, sessions, progress, orders and payments. Runtime schema initialisation adds the new `wechat_login_tickets` table without replacing existing data. The complete post-deployment course checks also click the custom video toolbar (play, pause, keyboard seek, mute and fullscreen) against actual course assets in both locales, rather than relying only on media API calls. Save local evidence outside `test-results`, because local Playwright runs may clear that directory. A failed receipt is not an accepted migration.
