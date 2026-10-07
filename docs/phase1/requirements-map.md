@@ -114,4 +114,6 @@ Focused Chrome check observed disabled native controls in normal/container fulls
 
 SIT-to-UAT promotion: `docs/phase1/uat-deployment.md` records preserved UAT configuration and content boundaries. `scripts/release/course-browser.mjs` additionally exercises custom play/pause, keyboard seeking, mute and fullscreen against real course assets in both locales. Chinese toolbar labels are restored from question-mark placeholders; `tests/unit/course-browser-contract.test.ts` rejects blank, duplicate or placeholder labels. Deployment acceptance is recorded in the release receipt, not inferred from unit tests.
 
+Pricing mobile acceptance: the one-column comparison and nested purchase grid use zero-minimum tracks so the 360px desktop button cannot widen a 390px viewport. Term buttons keep their intrinsic size and the annual label does not wrap. `tests/unit/pricing-layout.test.ts` exercises the real CSS cascade at 320, 390, 768 and 1440px; populated bilingual pages are checked on UAT. No payment or pricing calculation changes.
+
 Course discovery banner CTA spacing: `app/portal-design.css` increases the bottom space below Start preview from 30px to 60px through banner bottom padding, preserving the 300px banner height. No API or database change. Target-browser visual acceptance and target-environment smoke remain pending.

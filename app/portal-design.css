@@ -329,15 +329,15 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-comparison-wrap { position:relative; padding-top:82px; }
 .pricing-term-switch-global { position:absolute; top:0; left:50%; transform:translateX(-50%); border-radius:22px; padding:3px; }
 .pricing-term-switch-global button { position:relative; height:36px; border-radius:20px; }
-.pricing-term-year-label { position:relative; display:inline-block; transform:translateY(6px); }
+.pricing-term-year-label { position:relative; display:inline-block; white-space:nowrap; transform:translateY(6px); }
 .pricing-better-value { position:absolute; top:-13px; left:60%; min-width:56px; padding:1px 4px; border-radius:6px; background:#155dfc; color:#fff; font-size:8px; line-height:11px; font-weight:600; white-space:nowrap; }
 .pricing-comparison { position:relative; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:96px; }
 .pricing-comparison::after { content:""; position:absolute; top:204px; left:0; width:100%; height:1px; background:#e5e7eb; }
-.pricing-design-card { padding:0; min-height:620px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
+.pricing-design-card { padding:0; min-width:0; min-height:620px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
 .pricing-card-heading { display:flex; justify-content:center; gap:12px; align-items:flex-start; min-height:51px; text-align:center; }
 .pricing-card-heading h2 { font-size:27px; line-height:38px; margin:0; font-weight:600; color:#155dfc; }
 .pricing-term-switch { padding:3px; background:#fff; border:1px solid #dbe3f0; border-radius:999px; display:flex; flex:none; }
-.pricing-term-switch button { width:96px; height:36px; padding:0 8px; border:0; border-radius:999px; font-size:13px; background:transparent; color:#155dfc; cursor:pointer; }
+.pricing-term-switch button { flex:0 0 auto; width:96px; height:36px; padding:0 8px; border:0; border-radius:999px; font-size:13px; background:transparent; color:#155dfc; cursor:pointer; }
 .pricing-term-switch button.pricing-term-year { width:auto; min-width:96px; padding-left:24px; padding-right:48px; }
 .pricing-term-switch button[aria-pressed=true] { background:#2968ff; color:#fff; font-weight:600; }
 .pricing-card-price { min-height:80px; margin-top:16px; display:flex; justify-content:center; gap:12px; align-items:baseline; align-items:last baseline; text-align:center; }
@@ -357,7 +357,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-category-switch--all button[aria-pressed=true] { color:#155dfc; background:#c7d6ff; border-color:#246bfd; }
 .pricing-card-benefits { margin:16px 0; padding:0; min-height:214px; list-style:none; font-size:16px; line-height:19px; }
 .pricing-card-benefits li { min-height:67px; display:flex; align-items:center; margin:0; padding:0; border-bottom:1px solid #e5e7eb; }
-.pricing-design-card .purchase-panel { margin-top:auto; border:0; padding:0; }
+.pricing-design-card .purchase-panel { min-width:0; grid-template-columns:minmax(0,1fr); margin-top:auto; border:0; padding:0; }
 .pricing-design-card .purchase-actions { display:block; margin:0; text-align:right; }
 .pricing-design-card .purchase-actions button { width:360px; max-width:100%; min-height:46px; border-radius:8px; }
 .pricing-design-information { background:#f9fafb; padding:44px 0 58px; min-height:262px; box-sizing:border-box; text-align:center; }
@@ -370,7 +370,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-information-grid p { color:#64728b; font-size:12px; line-height:16px; }
 .pricing-direct { margin-top:40px; }
 @media(max-width:1320px) { .pricing-design-main,.pricing-design-information > div { margin-left:40px; margin-right:40px; } .pricing-card-heading { flex-wrap:wrap; } }
-@media(max-width:800px) { .pricing-comparison { grid-template-columns:1fr; } .pricing-information-grid { grid-template-columns:1fr; gap:24px; } .pricing-design-main,.pricing-design-information > div { margin-left:20px; margin-right:20px; } .pricing-design-card { min-height:552px; padding:24px; } }
+@media(max-width:800px) { .pricing-comparison { grid-template-columns:minmax(0,1fr); } .pricing-information-grid { grid-template-columns:1fr; gap:24px; } .pricing-design-main,.pricing-design-information > div { margin-left:20px; margin-right:20px; } .pricing-design-card { min-height:552px; padding:24px; } }
 dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); max-height:calc(100dvh - 96px); margin:72px auto 24px; padding:34px 84px 26px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
 dialog.subscription-confirmation::backdrop { background:rgb(15 23 42 / 45%); }
 .confirmation-heading { display:block; min-height:58px; margin-bottom:14px; text-align:center; }

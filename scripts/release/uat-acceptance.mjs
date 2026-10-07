@@ -9,12 +9,13 @@ import { checkRequiredCI } from './required-ci.mjs';
 import { verifyCourseBrowser } from './course-browser.mjs';
 import { runLiveSmoke } from './liveSmoke.mjs';
 import { releaseEnvironments } from './environments.mjs';
+import { readReleaseHealth } from './health-read.mjs';
 
 export async function captureCurriculum(environment) {
   const origin = releaseEnvironments[environment.toUpperCase()].origin;
-  const health = await (await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(30000) })).json();
+  const { health, attempts } = await readReleaseHealth(origin);
   const manifest = await privateTask(environment, 'deploy/export-curriculum.cjs', async invoke => curriculumManifest((await invoke()).product));
-  return { ...manifest, provenance: { environment: environment.toUpperCase(), origin, deployment: health.version, capturedAt: new Date().toISOString(), basis: 'Published SIT curriculum, as requested by the user; not final business sign-off' } };
+  return { ...manifest, provenance: { environment: environment.toUpperCase(), origin, deployment: health.version, healthReadAttempts: attempts, capturedAt: new Date().toISOString(), basis: 'Published SIT curriculum, as requested by the user; not final business sign-off' } };
 }
 
 export function assetInventory(manifest) {
@@ -91,11 +92,10 @@ export async function verifyUatAcceptance({ sha, outputDir = 'test-results/uat-a
       });
     }
     await stage('releaseIdentityAfter', async () => {
-      const response = await fetch(`${releaseEnvironments.UAT.origin}/api/health`, { signal: AbortSignal.timeout(30000) });
-      const health = await response.json();
-      if (!response.ok || !health.ready || health.version !== sha || health.environment !== 'UAT') throw new Error('Deployed release changed or became unhealthy during acceptance');
+      const { health, attempts } = await readReleaseHealth(releaseEnvironments.UAT.origin);
+      if (health.version !== sha || health.environment !== 'UAT') throw new Error('Deployed release changed or became unhealthy during acceptance');
       checkRequiredCI({ sha, branch: 'uat' });
-      return { version: health.version, environment: health.environment, ready: health.ready };
+      return { version: health.version, environment: health.environment, ready: health.ready, healthReadAttempts: attempts };
     });
   } finally {
     receipt.ok = receipt.failures.length === 0;

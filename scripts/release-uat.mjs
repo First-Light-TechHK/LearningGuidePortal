@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkRequiredCI } from './release/required-ci.mjs';
 import { captureCurriculum, assetInventory, verifyUatAcceptance } from './release/uat-acceptance.mjs';
+import { readReleaseHealth } from './release/health-read.mjs';
 
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -53,9 +54,8 @@ for (let i = 0; i < 120; i++) {
 if (!complete) throw new Error('Timed out waiting for the deployment');
 await buildService(summary.ServiceArn);
 if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
-const response = await fetch(`https://${summary.ServiceUrl}/api/health`);
-const health = await response.json();
-if (!response.ok || !health.ready || health.environment !== 'UAT' || health.version !== sha) throw new Error('Deployed readiness or release identity mismatch');
+const { health } = await readReleaseHealth(`https://${summary.ServiceUrl}`);
+if (health.environment !== 'UAT' || health.version !== sha) throw new Error('Deployed readiness or release identity mismatch');
 const acceptance = await verifyUatAcceptance({ sha, reference, outputDir: process.env.RELEASE_EVIDENCE_DIR });
 console.log(JSON.stringify({ ok: acceptance.ok, health, receiptFile: acceptance.receiptFile, failures: acceptance.failures }));
 if (!acceptance.ok) throw new Error('UAT is deployed but NOT accepted. Inspect the retained acceptance receipt. No automatic branch rewrite is performed.');
