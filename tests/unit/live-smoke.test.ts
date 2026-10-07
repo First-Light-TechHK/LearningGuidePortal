@@ -14,7 +14,7 @@ test("smoke transport failures identify the request without leaking URL credenti
     async () => { throw error; },
     async () => ({ text: async () => { throw error; } })
   ]) {
-    const request = createLiveClient("https://uat.example.test", fetchImpl);
+    const request = createLiveClient("https://uat.example.test", fetchImpl, { wait: async () => {} });
     await assert.rejects(request("https://user:SECRET@uat.example.test/asset?signature=SECRET#SECRET"), {
       message: "GET https://uat.example.test/asset: request timed out"
     });
@@ -23,6 +23,28 @@ test("smoke transport failures identify the request without leaking URL credenti
   await assert.rejects(request("/api/auth/login", { method: "POST", body: "SECRET" }), {
     message: "POST https://uat.example.test/api/auth/login: request failed"
   });
+});
+
+test('smoke retries transient GET transport failures but never replays writes or HTTP errors', async () => {
+  let reads = 0;
+  const get = createLiveClient('https://uat.example.test', async () => {
+    if (++reads < 3) throw new TypeError('fetch failed');
+    return new Response('{"ready":true}', { status: 200 });
+  }, { wait: async () => {} });
+  assert.equal((await get('/api/health')).body.ready, true);
+  assert.equal(reads, 3);
+  let writes = 0;
+  const post = createLiveClient('https://uat.example.test', async () => {
+    writes++; throw new TypeError('fetch failed');
+  }, { wait: async () => assert.fail('Writes must not be retried') });
+  await assert.rejects(post('/api/auth/register', { method: 'POST' }), /request failed/);
+  assert.equal(writes, 1);
+  let errors = 0;
+  const unavailable = createLiveClient('https://uat.example.test', async () => {
+    errors++; return new Response('Unavailable', { status: 503 });
+  }, { wait: async () => assert.fail('HTTP errors must remain visible') });
+  assert.equal((await unavailable('/api/health')).status, 503);
+  assert.equal(errors, 1);
 });
 
 function json(status, body, headers = {}) {

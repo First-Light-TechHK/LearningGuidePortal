@@ -1,4 +1,5 @@
 import { checkOAuthPreflight } from './oauth-preflight.mjs';
+import { isTransientReadFailure } from './health-read.mjs';
 
 function redact(url) {
   try {
@@ -19,21 +20,28 @@ async function read(response) {
   catch { return { status: response.status, url: response.url, headers: response.headers, body: null, text }; }
 }
 
-export function createLiveClient(origin, fetchImpl = fetch) {
+export function createLiveClient(origin, fetchImpl = fetch, { wait = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   return async function request(path, options = {}) {
     const url = new URL(path, origin), method = options.method || "GET";
-    try {
-      const response = await fetchImpl(url, {
-        redirect: options.redirect || "follow",
-        method,
-        headers: options.headers,
-        body: options.body,
-        signal: AbortSignal.timeout(30000)
-      });
-      return await read(response);
-    } catch (error) {
-      const reason = error?.name === "TimeoutError" ? "request timed out" : "request failed";
-      throw new Error(`${method} ${redact(url)}: ${reason}`);
+    const attempts = method.toUpperCase() === 'GET' ? 3 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        const response = await fetchImpl(url, {
+          redirect: options.redirect || "follow",
+          method,
+          headers: options.headers,
+          body: options.body,
+          signal: AbortSignal.timeout(30000)
+        });
+        return await read(response);
+      } catch (error) {
+        if (attempt < attempts && isTransientReadFailure(error)) {
+          await wait(attempt * 1000);
+          continue;
+        }
+        const reason = error?.name === "TimeoutError" ? "request timed out" : "request failed";
+        throw new Error(`${method} ${redact(url)}: ${reason}`);
+      }
     }
   };
 }
