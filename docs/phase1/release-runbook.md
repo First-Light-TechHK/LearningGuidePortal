@@ -16,6 +16,17 @@ The merge's local browser tests do not verify the live AWS IAM/S3 configuration 
 
 ## 1. 环境
 
+### OAuth domain acceptance
+
+Copying credentials from SIT does not authorise another hostname with Google or WeChat. UAT must continue to send its own callback; never route a UAT login through SIT or share sessions/databases to work around an OAuth error.
+
+- Google: the owner of the configured OAuth web client must add `https://uat.ilovelearningguide.com/api/auth/google/callback` under **Authorised redirect URIs**, retaining the SIT callback `https://sit.ilovelearningguide.com/api/auth/google/callback`. JavaScript origins and DNS records do not authorise a redirect URI. Changes can take time to propagate. Repeat the provider preflight after saving, then complete a real Google sign-in on UAT.
+- WeChat: separately verify website-application approval and the UAT authorised domain with the application owner; complete the QR flow and required email binding. A valid redirect from our application does not prove WeChat accepts the domain.
+- `scripts/release/oauth-preflight.mjs`, called by the existing live smoke/release checks, validates each exact callback and follows Google's authorisation request without submitting credentials. Google's HTTP 200 error page, including `redirect_uri_mismatch`, fails the release. An unfamiliar page, challenge or transport error is unverified and also fails; it is not silently counted as success. Output excludes state, tokens and raw provider pages.
+- The result explicitly distinguishes Google's sign-in page being reached from completed OAuth sign-in, and labels WeChat as redirect-only/not verified. A course acceptance receipt is not full authentication acceptance. Registration inbox delivery, verification and password reset still require the separate real-mailbox checks below.
+
+Regression coverage: `tests/unit/oauth-preflight.test.ts` and `tests/unit/live-smoke.test.ts`, including cross-environment callbacks and a Google HTTP 200 error page after a successful application redirect.
+
 ### Password reset mail in DEV/SIT/UAT/production
 
 - Configure `NEXT_PUBLIC_APP_URL` as the externally reachable application origin. Mail links use this origin; localhost links must be opened on the machine running the application.

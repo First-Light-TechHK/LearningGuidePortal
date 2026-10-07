@@ -1,6 +1,4 @@
-function hostOf(url) {
-  try { return new URL(url).hostname; } catch { return ""; }
-}
+import { checkOAuthPreflight } from './oauth-preflight.mjs';
 
 function redact(url) {
   try {
@@ -222,15 +220,8 @@ export async function runLiveSmoke(input, request) {
     if (awsErrorLeak(probeRegister.body)) fail(failures, "registration.iam", "SES IAM still denies the recipient identity");
   }
 
-  const google = await http("/api/auth/google?locale=en-GB", { redirect: "manual" });
-  const googleLocation = google.headers?.get?.("location") || "";
-  if (!googleLocation) fail(failures, "google.redirect", `HTTP ${google.status} no Location`);
-  else if (hostOf(googleLocation) !== "accounts.google.com") fail(failures, "google.redirect", redact(googleLocation));
-
-  const wechat = await http("/api/auth/wechat?locale=en-GB", { redirect: "manual" });
-  const wechatLocation = wechat.headers?.get?.("location") || "";
-  if (!wechatLocation) fail(failures, "wechat.redirect", `HTTP ${wechat.status} no Location`);
-  else if (hostOf(wechatLocation) !== "open.weixin.qq.com") fail(failures, "wechat.redirect", redact(wechatLocation));
+  const oauth = await checkOAuthPreflight(origin, http);
+  failures.push(...oauth.failures);
 
   const learnerBackoffice = await http("/en-GB/backoffice");
   if (learnerBackoffice.status !== 404) fail(failures, "learner.backoffice", `HTTP ${learnerBackoffice.status}`);
@@ -245,5 +236,5 @@ export async function runLiveSmoke(input, request) {
     if (adminCourses.status !== 403 || adminCourses.body?.ok === true) fail(failures, "admin.courses", `anonymous admin course management must be rejected, got ${adminCourses.status}`);
   }
 
-  return { ok: failures.length === 0, failures, catalogue: published.map((course) => course.slug || course.id) };
+  return { ok: failures.length === 0, failures, catalogue: published.map((course) => course.slug || course.id), oauth };
 }

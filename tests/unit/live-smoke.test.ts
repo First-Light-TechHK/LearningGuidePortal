@@ -63,8 +63,9 @@ function stub(overrides = {}) {
     if (path === "/api/auth/login") return json(401, { ok: false });
     if (path === "/api/auth/resend-verification") return json(200, { ok: true, data: { accepted: true } });
     if (path === "/api/auth/password-reset/request") return json(200, { ok: true, accepted: true, retryAfter: 60 });
-    if (path.startsWith("/api/auth/google")) return html(307, "", { location: "https://accounts.google.com/o/oauth2/v2/auth" });
-    if (path.startsWith("/api/auth/wechat")) return html(307, "", { location: "https://open.weixin.qq.com/connect/qrconnect" });
+    if (path.startsWith("/api/auth/google")) return html(307, "", { location: "https://accounts.google.com/o/oauth2/v2/auth?client_id=test&state=test&redirect_uri=https%3A%2F%2Fsit.example.test%2Fapi%2Fauth%2Fgoogle%2Fcallback" });
+    if (path.startsWith("https://accounts.google.com/o/oauth2/v2/auth")) return { ...html(200, "Sign in"), url: "https://accounts.google.com/v3/signin/identifier" };
+    if (path.startsWith("/api/auth/wechat")) return html(307, "", { location: "https://open.weixin.qq.com/connect/qrconnect?appid=test&state=test&redirect_uri=https%3A%2F%2Fsit.example.test%2Fapi%2Fauth%2Fwechat%2Fcallback" });
     if (path === "/en-GB/backoffice") return html(404, "not found");
     return html(200);
   };
@@ -210,6 +211,19 @@ test("live smoke fails when Google stays on the product origin", async () => {
   });
   assert.equal(result.ok, false);
   assert.ok(result.failures.some((item) => item.startsWith("google.redirect:")));
+});
+
+test("live release fails if Google rejects the callback after our successful redirect", async () => {
+  const result = await runLiveSmoke({ origin: "https://sit.example.test", appEnv: "SIT", checkMail: false }, async (path, options) => {
+    if (path.startsWith("https://accounts.google.com/")) return {
+      ...html(200, "Sign in. Access blocked: redirect_uri_mismatch"),
+      url: "https://accounts.google.com/signin/oauth/error"
+    };
+    return stub()(path, options);
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.failures.join(), /google.authorisation: redirect_uri_mismatch/);
+  assert.equal(result.oauth.checks.google.status, "rejected");
 });
 
 test("notify message never includes secret values", () => {
