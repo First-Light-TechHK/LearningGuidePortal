@@ -1,0 +1,11 @@
+schema: overlay-suite/v2
+id: study-group
+title: Study Group
+status: active
+kind: functional
+subject: product
+source: inbox/study-group.md
+packages:
+  - modules/group-study
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/study-group-service.test.ts tests/unit/study-group-api.test.ts tests/unit/study-group-ui.test.ts

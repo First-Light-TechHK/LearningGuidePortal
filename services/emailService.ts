@@ -95,6 +95,11 @@ export function sendEmailBindingEmail(input: { to: string; url: string; locale: 
   return sendEmail({ to: input.to, subject: title, text: `${description}\n\n${input.url}`, html: `<p>${description}</p><p><a href="${url}">${title}</a></p>` });
 }
 
+export function sendStudyGroupReminderEmail(input: { to: string; subject: string; text: string }) {
+  const safe = input.text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return sendEmail({ to: input.to, subject: input.subject, text: input.text, html: `<p>${safe}</p>` });
+}
+
 export function sendPasswordResetEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
   const chinese = input.locale === "zh-CN";
   const htmlUrl = input.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
