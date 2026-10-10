@@ -75,7 +75,7 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
   function addLesson(index: number) {
     const sectionId = draft.sections[index].id;
     const id = `new-${crypto.randomUUID()}`;
-    edit((next) => { next.sections[index].lessons.push({ id, title: "", body: "", contents: [], durationMinutes: 20, isPublic: false }); });
+    edit((next) => { next.sections[index].lessons.push({ id, title: "", body: "", summary: "", contents: [], durationMinutes: 20, isPublic: false }); });
     setSelection({ sectionId, lessonId: id });
     setTab("content");
   }
@@ -128,6 +128,7 @@ export function CourseOutlineEditor({ course, copy, onSaved, onClose, catalogue 
               <button className={styles.icon} type="button" title={copy.down} aria-label={copy.down} disabled={locked || lessonIndex === section.lessons.length - 1} onClick={() => edit((next) => move(next.sections[sectionIndex].lessons, lessonIndex, 1))}><ArrowDown size={16}/></button>
               <button className={styles.secondary} type="button" disabled={locked} onClick={() => { if (window.confirm(messages.removeConfirm)) edit((next) => { const removed = next.sections[sectionIndex].lessons.splice(lessonIndex, 1)[0]; if (!removed.id.startsWith("new-")) next.removedLessonIds!.push(removed.id); }); }}><Trash2 size={16}/>{messages.removeLesson}</button>
             </div>
+            <label>{copy.summary}<textarea maxLength={500} rows={3} value={lesson.summary || ""} onChange={(event) => edit((next) => { next.sections[sectionIndex].lessons[lessonIndex].summary = event.target.value; })}/></label>
             {lesson.contents === undefined ? <>
               <label>{copy.body}<textarea maxLength={200000} rows={10} value={lesson.body} onChange={(event) => edit((next) => { next.sections[sectionIndex].lessons[lessonIndex].body = event.target.value; })}/></label>
               <button type="button" className={styles.secondary} onClick={() => edit((next) => { const element = document.createElement("p"); element.textContent = lesson.body; next.sections[sectionIndex].lessons[lessonIndex].contents = [{ id: `content-${crypto.randomUUID()}`, title: lesson.title || copy.newLesson, type: "text", mode: "lecture", html: element.outerHTML, nodes: [] }]; })}>{messages.convert}</button>

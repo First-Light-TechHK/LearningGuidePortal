@@ -79,7 +79,7 @@ export function applyCourseDraft(course: ProductCourse, input: CourseDraftInput)
       }
       // Rich contents are authoritative. Legacy clients cannot silently flatten them.
       const body = contents?.length ? lessonContentsText(contents).slice(0, 200000) : text(lesson.body, 200000, false);
-      return { ...existing, id: identity(lesson.id, existingLessons, "lesson"), title: text(lesson.title, 255), body, ...(contents !== undefined ? { contents } : {}), durationMinutes: lesson.durationMinutes, videoDurationSeconds: lesson.videoDurationSeconds ?? null, isPublic: lesson.isPublic };
+      return { ...existing, id: identity(lesson.id, existingLessons, "lesson"), title: text(lesson.title, 255), summary: lesson.summary === undefined ? existing?.summary || "" : text(lesson.summary, 500, false), body, ...(contents !== undefined ? { contents } : {}), durationMinutes: lesson.durationMinutes, videoDurationSeconds: lesson.videoDurationSeconds ?? null, isPublic: lesson.isPublic };
     }) };
   });
   const removedSections = input.removedSectionIds ?? [], removedLessons = input.removedLessonIds ?? [];

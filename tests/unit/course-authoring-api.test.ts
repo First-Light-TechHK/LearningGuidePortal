@@ -28,7 +28,7 @@ test("draft API authorises, persists and rejects stale, cross-origin and student
   const operatorToken = (await store.createSession(operator.id)).token;
   const studentToken = (await store.createSession(student.id)).token;
   const course = await store.createCourseForOperator({ title: "Authoring test" });
-  const body = { expectedUpdatedAt: course.updatedAt, title: "Updated title", description: "Text", sections: [{ id: "new-section", title: "Section", lessons: [{ id: "new-lesson", title: "Lesson", body: "Lesson body", durationMinutes: 10, isPublic: true }] }] };
+  const body = { expectedUpdatedAt: course.updatedAt, title: "Updated title", description: "Text", sections: [{ id: "new-section", title: "Section", lessons: [{ id: "new-lesson", title: "Lesson", body: "Lesson body", summary: " Public introduction ", durationMinutes: 10, isPublic: true }] }] };
   const invoke = (token: string, origin = "http://localhost:3014") => put(new Request(`http://localhost:3014/api/backoffice/courses/${course.id}/draft`, { method: "PUT", headers: { origin, host: "localhost:3014", cookie: `learning_guide_admin_session=${token}` }, body: JSON.stringify(body) }), { params: Promise.resolve({ courseId: course.id }) });
   assert.equal((await invoke("")).status, 403);
   assert.equal((await invoke(studentToken)).status, 403);
@@ -38,6 +38,7 @@ test("draft API authorises, persists and rejects stale, cross-origin and student
   const saved = (await store.ensureProductData()).courses.find(c => c.id === course.id)!;
   assert.equal(saved.title, body.title);
   assert.equal(saved.sections[0].lessons[0].body, "Lesson body");
+  assert.equal(saved.sections[0].lessons[0].summary, "Public introduction");
   assert.equal(saved.slug, course.slug);
   assert.match(saved.sections[0].lessons[0].id, /^lesson_/);
 });

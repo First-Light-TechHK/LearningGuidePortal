@@ -40,7 +40,7 @@ export default async function CourseDetailPage({ params }: {
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
     duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
-    description: section.title,
+    description: lesson.summary?.trim() || "",
   }] as const)) || []);
 
   return (
@@ -104,7 +104,7 @@ export default async function CourseDetailPage({ params }: {
                       return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
                           <h3><span>{detail.lesson} {index + 1}</span>{lessonHref ? <Link href={lessonHref}>{lesson.title}</Link> : lesson.title}</h3>
-                          <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time><p>{metadata?.description}</p></div>
+                          <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
                         {lessonHref ? <Link className={styles.preview} href={lessonHref} data-course-cta-link={lesson.access === "entitled" ? "continue_learning" : page.cta === "continue_preview" ? "continue_preview" : "start_preview"}>{lesson.access === "entitled" ? messages.learning.continue : detail.preview}</Link> : null}
                       </article>;

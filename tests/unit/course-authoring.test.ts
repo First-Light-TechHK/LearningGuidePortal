@@ -4,6 +4,21 @@ import { applyCourseDraft, AuthoringError } from "../../services/courseAuthoring
 import type { ProductCourse } from "../../services/productStore";
 const course: ProductCourse = { id: "c1", slug: "same-slug", title: "Original", description: "", status: "draft", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", sections: [{ id: "s1", title: "One", lessons: [{ id: "l1", title: "Lesson", body: "Text", durationMinutes: 20, isPublic: false }] }] };
 const input = () => ({ title: "Updated", description: "Updated description", expectedUpdatedAt: course.updatedAt, sections: structuredClone(course.sections) });
+test("summary trims, clears, preserves legacy omissions and rejects invalid values", () => {
+  const existing = structuredClone(course);
+  existing.sections[0].lessons[0].summary = "Existing introduction";
+  assert.equal(applyCourseDraft(existing, input()).sections[0].lessons[0].summary, "Existing introduction");
+  for (const [value, expected] of [[" New introduction ", "New introduction"], ["", ""]]) {
+    const draft = input();
+    draft.sections[0].lessons[0].summary = value;
+    assert.equal(applyCourseDraft(existing, draft).sections[0].lessons[0].summary, expected);
+  }
+  for (const value of ["x".repeat(501), null, 123]) {
+    const draft = input();
+    Object.assign(draft.sections[0].lessons[0], { summary: value });
+    assert.throws(() => applyCourseDraft(existing, draft), AuthoringError);
+  }
+});
 test("authoring edits and reorders without changing existing course/lesson IDs", () => {
   const draft = input();
   draft.sections.unshift({ id: "new-section", title: "Two", lessons: draft.sections[0].lessons.splice(0) });

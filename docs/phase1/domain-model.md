@@ -84,3 +84,5 @@ PaymentAttempt: created -> pending -> succeeded / failed / refunded
 ```
 
 本地可用 Docker PostgreSQL；DEV/SIT/UAT/PPE/PROD 使用各自 RDS database 或 schema，不共享生产数据。
+
+Lesson public metadata includes optional `summary` (plain text, maximum 500 characters). Existing aggregates without it remain valid. It is independent of body/contents and section title; no relational DDL is needed for current course aggregate persistence.

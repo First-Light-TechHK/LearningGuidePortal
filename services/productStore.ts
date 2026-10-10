@@ -61,6 +61,8 @@ export type ProductLesson = {
   id: string;
   title: string;
   body: string;
+  /** Public plain-text syllabus introduction; never derived from protected content. */
+  summary?: string;
   durationMinutes: number;
   videoDurationSeconds?: number | null;
   isPublic: boolean;
@@ -2101,13 +2103,15 @@ export async function createCourseForOperator(input: { title: string; descriptio
   });
 }
 
-export async function addLessonToCourse(input: { courseId: string; title: string; body: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }, actorId?: string) {
+export async function addLessonToCourse(input: { courseId: string; title: string; body: string; summary?: string; durationMinutes: number; videoDurationSeconds?: number | null; isPublic?: boolean }, actorId?: string) {
   return editData((data) => {
     const course = actorId ? managedCourse(data, actorId, input.courseId) : data.courses.find((item) => item.id === input.courseId);
     if (!course) throw new Error("Course not found.");
     if (course.status !== "draft") throw new AuthoringError(course.status === "archived" ? "archived" : "published");
     const title = input.title.trim();
     const body = input.body.trim();
+    if (input.summary !== undefined && (typeof input.summary !== "string" || input.summary.length > 500)) throw new AuthoringError("invalid");
+    const summary = input.summary?.trim() || "";
     const durationMinutes = Math.round(input.durationMinutes);
     if (!title) throw new Error("Lesson title is required.");
     if (!body) throw new Error("Lesson content is required.");
@@ -2117,7 +2121,7 @@ export async function addLessonToCourse(input: { courseId: string; title: string
     const section = course.sections[0] || { id: id("section"), title: "Course content", lessons: [] };
     if (!course.sections.length) course.sections.push(section);
     if (input.isPublic && course.sections.some((item) => item.lessons.length > 0)) throw new Error("Only the first lesson can be public.");
-    const lesson: ProductLesson = { id: id("lesson"), title, body, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
+    const lesson: ProductLesson = { id: id("lesson"), title, body, summary, durationMinutes, videoDurationSeconds: input.videoDurationSeconds ?? null, isPublic: Boolean(input.isPublic) };
     section.lessons.push(lesson);
     course.updatedAt = now();
     return lesson;

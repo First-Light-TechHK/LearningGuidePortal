@@ -15,6 +15,8 @@ export type AuthoringLesson = {
   id: string;
   title: string;
   body: string;
+  /** Public plain-text syllabus introduction; never derived from protected content. */
+  summary?: string;
   durationMinutes: number;
   videoDurationSeconds?: number | null;
   isPublic: boolean;
