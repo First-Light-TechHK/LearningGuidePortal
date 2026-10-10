@@ -1981,6 +1981,14 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
+export async function recordUserNotification(userId: string, title: string, body: string) {
+  return editData((data) => {
+    const notification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now() };
+    data.notifications.unshift(notification);
+    return notification;
+  });
+}
+
 export async function setNotificationRead(userId: string, notificationId: string, read: boolean) {
   return editData((data) => {
     const item = data.notifications.find((notification) => notification.id === notificationId && notification.userId === userId);

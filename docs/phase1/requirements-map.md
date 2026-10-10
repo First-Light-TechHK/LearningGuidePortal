@@ -78,7 +78,9 @@ Entitlement -> Study + My Learning + AI Tutor
 Study -> My Learning progress / current Lesson
 ```
 
-`Group Study`、`Exploration`、`Reporting`、Partner 的 `Accounting`、`HR`、`BI/Dashboard` 在 Phase 1 只保留页面或接口位置，不把未给出业务规则的功能写成完成。
+Study Group (PRD v0.10): `modules/group-study`, `app/api/study-groups`, `app/[locale]/portal/study-groups`, `components/portal/StudyGroupsApp.tsx`. A signed-in learner with Course access creates a public Group and becomes Host. Join is immediate. Each Live Session holds at most 6 people including the Host; a full session refuses another entry, including the Host. Chat stays in LiveKit and is not stored. Each token issuance appends one encrypted log line and no token row. One meeting row is written when the Host starts the Session. AI Tutor queues the participant's own text, retrieves existing Course Knowledge, and publishes one shared LiveKit answer. Enqueue itself does not call a model. See `docs/phase1/study-group/decisions.md`. Tests: `tests/unit/study-group-service.test.ts`, `tests/unit/study-group-api.test.ts`, `tests/unit/study-group-ui.test.ts`, `tests/unit/study-group-corners.test.ts`, `tests/unit/study-group-tutor-keys.test.ts`.
+
+`Exploration`、`Reporting`、Partner 的 `Accounting`、`HR`、`BI/Dashboard` 在 Phase 1 只保留页面或接口位置，不把未给出业务规则的功能写成完成。
 
 ## 3. 不可变规则
 

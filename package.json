@@ -49,6 +49,7 @@
     "@tiptap/starter-kit": "^3.31.3",
     "google-auth-library": "^11.0.2",
     "katex": "^0.16.22",
+    "livekit-client": "^2.15.8",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.8.0",
     "next": "15.5.27",

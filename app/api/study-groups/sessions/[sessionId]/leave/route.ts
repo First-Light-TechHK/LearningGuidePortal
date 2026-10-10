@@ -1,0 +1,14 @@
+import { signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
+import { studyGroupService } from "@/modules/group-study/runtime";
+
+export async function POST(request: Request, context: { params: Promise<{ sessionId: string }> }) {
+  const user = await signedInUser(request);
+  if (!user) return unauthenticated();
+  const { sessionId } = await context.params;
+  try {
+    await studyGroupService().leaveSession({ actorUserId: user.id, sessionId });
+    return studyGroupData({ left: true });
+  } catch (error) {
+    return studyGroupFailure(error);
+  }
+}

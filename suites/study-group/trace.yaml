@@ -1,0 +1,39 @@
+schema: overlay-trace/v1
+suite: study-group
+items:
+  - function_id: SG-01
+    level: integration
+    case_id: SG-01/service/functional
+    type: functional
+  - function_id: SG-01
+    level: integration
+    case_id: SG-01/service/negative
+    type: negative
+  - function_id: SG-01
+    level: integration
+    case_id: SG-01/service/edge
+    type: edge
+  - function_id: SG-02
+    level: integration
+    case_id: SG-02/service/functional
+    type: functional
+  - function_id: SG-02
+    level: integration
+    case_id: SG-02/service/negative
+    type: negative
+  - function_id: SG-02
+    level: integration
+    case_id: SG-02/service/edge
+    type: edge
+  - function_id: SG-03
+    level: integration
+    case_id: SG-03/service/functional
+    type: functional
+  - function_id: SG-03
+    level: integration
+    case_id: SG-03/service/negative
+    type: negative
+  - function_id: SG-03
+    level: integration
+    case_id: SG-03/service/edge
+    type: edge

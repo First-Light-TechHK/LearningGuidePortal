@@ -1,5 +1,7 @@
 # Phase 1：API contract
 
+Study Group uses `{ ok, code, message, data }`. `GET /api/study-groups?view=discover|mine|courses` lists public groups, the caller's groups, or courses the caller can access. `POST /api/study-groups` creates a Group for a caller with valid Course access. Group and Session mutations live under `/api/study-groups/:groupId` and `/api/study-groups/sessions/:sessionId` (`join`, `leave`, `cancel`, `plan`, `cancel-attendance`, `enter`, `start`, `token`, `ai-tutor`, `tutor`). Session duration is `durationSeconds` and must be 1800, 2700, 3600, or 5400. `POST /api/study-groups/sessions/:sessionId/ai-tutor` accepts `{ message }` from the room. `POST /api/study-groups/sessions/:sessionId/tutor` accepts `{ text, clientEventId }`. Both call `enqueueTutor`. The response is the queue item and has no tutor answer. The answer, when one is published, goes to the shared LiveKit chat. The system prompt stays on the server. The token response is a short-lived LiveKit participant token for that user and Session, with no Host grant and no stored raw token. Title is at most 50 characters, the session title is at most 20, and About is at most 200. Maximum participants is 2–6, including the Host. A full session refuses another entry, including the Host.
+
 Course-authoring extension: `PUT /api/backoffice/courses/:courseId/draft`, contract `contracts/course-authoring.ts`; active operator and same-origin request required. A stale `expectedUpdatedAt` returns 409. See `lgteacher-integration.md` for response codes and preservation rules.
 
 所有 JSON API 使用：

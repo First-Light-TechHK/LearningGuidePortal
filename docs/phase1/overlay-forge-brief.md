@@ -24,7 +24,7 @@ The sections below record the original tool integration and historical expected 
 
 - Overlay 状态只有 `active` | `blocked`。没有 `armed` / `draft` / `reviewed_by`。
 - `overlay.yaml`：`product.repo` 是本仓；`default_ref` 钉在 `ec9e12990fa700b034829fd2fd4af12d955bd40e`；`branches` 含 `main` / `dev` / `sit` / `uat` / `ppe` / `default`；`never_red_statuses: [blocked]`。
-- 六套件 `active`：login / payment / portal / my-learning / order / visitor-trial。`schema: overlay-suite/v2`。
+- 七套件 `active`：login / payment / portal / my-learning / order / visitor-trial / study-group。`schema: overlay-suite/v2`。study-group 叶子在 `tests/unit/study-group-*.test.ts`。
 - `overlay-check.yml`：checkout `AIOps@overlay-v2.0.0` → `_aiops`，`overlay validate` + `cover` + `run`。不要把 `test:io` 加进 Verify。
 - `forge-check.yml`：checkout `AIOps@forge-v1.1.3` → `_aiops`，`forge check` + `forge status --check-state`。
 - `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。
@@ -64,7 +64,7 @@ feat: land Overlay 2.0.0 and Forge 1.1.3 with spec I/O
 - 新增 `.github/workflows/forge-check.yml`：pin `forge-v1.1.3`，跑 `forge check` + `forge status --check-state`。
 - 改 `.github/workflows/overlay-check.yml`：pin `overlay-v2.0.0`，`validate` + `cover` + `typecheck:io` + `run`。不改 Verify，不把 `test:io` 加进 `test:ci`。
 - 改 `overlay.yaml`：`product.repo` = First-Light；`default_ref` = `ec9e129`；`never_red_statuses: [blocked]`。
-- 六套 `active`（`overlay-suite/v2`）：login / payment / portal / my-learning / order / visitor-trial。inbox / cases / invariants 同步。
+- 七套 `active`（`overlay-suite/v2`）：login / payment / portal / my-learning / order / visitor-trial / study-group。inbox / cases / invariants 同步。study-group → `tests/unit/study-group-*.test.ts`。
 - `package.json` 只加 `typecheck:io` 与 `test:io`。新增 `tsconfig.io.json`、`docs/STATE.md`、本 brief。
 - 已有 `tests/io/login.test.ts` / `payment.test.ts` 断言不动；0 参 `GET` 只套 `callRoute`。补 portal / order / my-learning / visitor-trial I/O。
 - 按 `7f42330` / `ec9e129` 补 reset confirm、email-binding、subscription portal 的公开 JSON 锁。不改 `app/` `services/`。
