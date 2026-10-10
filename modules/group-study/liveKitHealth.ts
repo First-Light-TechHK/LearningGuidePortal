@@ -1,4 +1,4 @@
-import type { LiveKitProjectHealthStatus, LiveKitRoomGateway } from "./liveKitGateway";
+import type { LiveKitProjectHealthEvidence, LiveKitProjectHealthStatus, LiveKitRoomGateway } from "./liveKitGateway";
 import type { LiveKitProjectRegistry, LiveKitProjectState } from "./liveKitProjectRegistry";
 
 export type LiveKitHealthProject = Readonly<{
@@ -7,6 +7,7 @@ export type LiveKitHealthProject = Readonly<{
   region?: string;
   state: Exclude<LiveKitProjectState, "disabled">;
   status: LiveKitProjectHealthStatus;
+  evidence: LiveKitProjectHealthEvidence;
   checkedAt: string;
   latencyMs: number;
   activeRooms?: number;
@@ -46,6 +47,7 @@ export function createLiveKitHealthService(deps: LiveKitHealthDeps): LiveKitHeal
         ...(diagnostic.region ? { region: diagnostic.region } : {}),
         state: diagnostic.state,
         status: result.status,
+        evidence: result.evidence,
         checkedAt: result.checkedAt,
         latencyMs: result.latencyMs,
         ...(result.activeRooms === undefined ? {} : { activeRooms: result.activeRooms })

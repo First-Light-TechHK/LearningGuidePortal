@@ -179,7 +179,7 @@ export function studyGroupService() {
       const state = snapshot.projects.map((project) => `${project.id}:${project.status}`).join(",");
       if (healthTimers.__lgStudyGroupLiveKitHealthStates?.get(directory) === state) return;
       healthTimers.__lgStudyGroupLiveKitHealthStates?.set(directory, state);
-      console.info(JSON.stringify({ type: "study_group.livekit_health", ready: snapshot.ready, attentionRequired: snapshot.attentionRequired, projects: snapshot.projects.map(({ id, state, status, latencyMs, activeRooms }) => ({ id, state, status, latencyMs, ...(activeRooms === undefined ? {} : { activeRooms }) })) }));
+      console.info(JSON.stringify({ type: "study_group.livekit_health", ready: snapshot.ready, attentionRequired: snapshot.attentionRequired, projects: snapshot.projects.map(({ id, state, status, evidence, latencyMs, activeRooms }) => ({ id, state, status, evidence, latencyMs, ...(activeRooms === undefined ? {} : { activeRooms }) })) }));
     }).catch(() => undefined);
   };
   if (!healthTimers.__lgStudyGroupLiveKitHealthTimers.has(directory)) {

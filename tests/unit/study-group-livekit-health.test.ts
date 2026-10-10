@@ -26,7 +26,7 @@ test("LiveKit health checks active and draining projects, skips disabled project
     registry,
     gateway: gateway(async ({ project }) => {
       checked.push(project.id);
-      return { projectId: project.id, status: project.id === "draining" ? "unreachable" : "healthy", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 4, activeRooms: 3 };
+      return { projectId: project.id, status: project.id === "draining" ? "unreachable" : "healthy", evidence: project.id === "draining" ? "provider_error" : "provider_api", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 4, activeRooms: 3 };
     }),
     now: () => new Date("2026-10-10T12:00:00.000Z"),
     cacheTtlMs: 60_000
@@ -46,7 +46,7 @@ test("LiveKit health checks active and draining projects, skips disabled project
 test("LiveKit health reports new-session readiness false when an active project cannot be reached", async () => {
   const health = createLiveKitHealthService({
     registry,
-    gateway: gateway(async ({ project }) => ({ projectId: project.id, status: project.id === "active" ? "unauthorized" : "healthy", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 2 })),
+    gateway: gateway(async ({ project }) => ({ projectId: project.id, status: project.id === "active" ? "unauthorized" : "healthy", evidence: project.id === "active" ? "provider_error" : "provider_api", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 2 })),
     now: () => new Date("2026-10-10T12:00:00.000Z")
   });
 

@@ -7,10 +7,12 @@ export type LiveKitParticipantToken = Readonly<{ token: string; expiresAt: strin
 export type LiveKitTutorMessage = Readonly<{ project: LiveKitProjectRef; room: string; messageId: string; text: string }>;
 
 export type LiveKitProjectHealthStatus = "healthy" | "credential_unavailable" | "unauthorized" | "rate_limited" | "unreachable";
+export type LiveKitProjectHealthEvidence = "provider_api" | "credential_resolution" | "provider_error";
 
 export type LiveKitProjectHealth = Readonly<{
   projectId: string;
   status: LiveKitProjectHealthStatus;
+  evidence: LiveKitProjectHealthEvidence;
   checkedAt: string;
   latencyMs: number;
   activeRooms?: number;

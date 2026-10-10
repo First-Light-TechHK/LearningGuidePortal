@@ -58,8 +58,12 @@ test("Cloud gateway publishes a shared reliable tutor packet with a stable messa
 });
 
 test("Cloud gateway uses a non-mutating room listing as a redacted permission health check", async () => {
+  let credentialReads = 0;
   const gateway = createLiveKitCloudGateway({
-    resolveCredentials: async () => ({ apiKey: "api-key", apiSecret: "never-return-this" }),
+    resolveCredentials: async () => {
+      credentialReads += 1;
+      return { apiKey: "api-key", apiSecret: "never-return-this" };
+    },
     createRoomService: async (): Promise<LiveKitRoomService> => ({
       createRoom: async () => undefined,
       sendData: async () => undefined,
@@ -71,7 +75,8 @@ test("Cloud gateway uses a non-mutating room listing as a redacted permission he
 
   const health = await gateway.healthCheck({ project });
 
-  assert.deepEqual(health, { projectId: "eu-primary", status: "healthy", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 0, activeRooms: 2 });
+  assert.deepEqual(health, { projectId: "eu-primary", status: "healthy", evidence: "provider_api", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 0, activeRooms: 2 });
+  assert.equal(credentialReads, 1);
   assert.equal(JSON.stringify(health).includes("never-return-this"), false);
 });
 
@@ -95,6 +100,8 @@ test("Cloud gateway classifies credential retrieval and provider authorization f
   const unauthorized = await unauthorizedGateway.healthCheck({ project });
 
   assert.equal(missing.status, "credential_unavailable");
+  assert.equal(missing.evidence, "credential_resolution");
   assert.equal(unauthorized.status, "unauthorized");
+  assert.equal(unauthorized.evidence, "provider_error");
   assert.equal(JSON.stringify({ missing, unauthorized }).includes("private"), false);
 });

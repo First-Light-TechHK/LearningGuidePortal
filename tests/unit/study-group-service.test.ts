@@ -481,7 +481,7 @@ test("a live session keeps its selected LiveKit project for room creation and to
       },
       publishTutorMessage: async () => undefined,
       removeParticipant: async () => undefined,
-      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
     }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Assigned provider", courseId: "course-1", about: "About provider assignment." });

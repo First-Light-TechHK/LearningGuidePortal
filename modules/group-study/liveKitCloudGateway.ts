@@ -89,13 +89,13 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
       try {
         service = await roomService(project);
       } catch {
-        return { projectId: project.id, status: "credential_unavailable", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
+        return { projectId: project.id, status: "credential_unavailable", evidence: "credential_resolution", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
       }
       try {
         const rooms = await service.listRooms();
-        return { projectId: project.id, status: "healthy", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt), activeRooms: rooms.length };
+        return { projectId: project.id, status: "healthy", evidence: "provider_api", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt), activeRooms: rooms.length };
       } catch (error) {
-        return { projectId: project.id, status: healthFailure(error), checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
+        return { projectId: project.id, status: healthFailure(error), evidence: "provider_error", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
       }
     }
   };
