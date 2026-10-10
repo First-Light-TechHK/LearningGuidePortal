@@ -829,6 +829,16 @@
     "checkoutError": "Checkout could not be prepared."
   },
   "settingsDesign": {
+    "cropTitle": "Crop profile image",
+    "cropHint": "Drag the image or use the sliders to adjust your avatar.",
+    "cropPreview": "Avatar crop preview",
+    "cropZoom": "Zoom",
+    "cropHorizontal": "Horizontal position",
+    "cropVertical": "Vertical position",
+    "cropCancel": "Cancel",
+    "cropSave": "Save avatar",
+    "cropSaving": "Saving…",
+    "cropReadError": "This image could not be opened. Please choose another image.",
     "imageTypeError": "Use a JPG or PNG image.",
     "imageSizeError": "The image must be 5 MB or smaller.",
     "imageUploadError": "Image upload failed.",

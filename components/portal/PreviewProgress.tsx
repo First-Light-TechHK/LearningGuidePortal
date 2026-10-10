@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function PreviewProgress({ courseId, lessonId, seconds, initialCompleted, copy }: {
+export function PreviewProgress({ courseId, lessonId, seconds, initialCompleted, copy, canComplete = true }: {
   courseId: string; lessonId: string; seconds: number; initialCompleted: boolean;
   copy: { completeLesson: string; completed: string; saveError: string };
+  canComplete?: boolean;
 }) {
   const router = useRouter();
   const [completed, setCompleted] = useState(initialCompleted);
@@ -14,7 +15,7 @@ export function PreviewProgress({ courseId, lessonId, seconds, initialCompleted,
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/study/preview", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, event: "open" }) })
-      .then(response => { if (!response.ok) setError(copy.saveError); })
+      .then(response => { if (!response.ok) setError(copy.saveError); else router.refresh(); })
       .catch(error => { if (error.name !== "AbortError") setError(copy.saveError); });
     return () => controller.abort();
   }, [courseId, lessonId, copy.saveError]);
@@ -28,5 +29,5 @@ export function PreviewProgress({ courseId, lessonId, seconds, initialCompleted,
     } catch { setError(copy.saveError); }
     finally { setBusy(false); }
   }
-  return <div className="preview-progress"><button type="button" className="portal-button portal-button-primary" disabled={completed || busy} onClick={complete}>{completed ? copy.completed : copy.completeLesson}</button>{error ? <p role="alert" className="portal-form-error">{error}</p> : null}</div>;
+  return <div className="preview-progress">{canComplete && <button type="button" className="portal-button portal-button-primary" disabled={completed || busy} onClick={complete}>{completed ? copy.completed : copy.completeLesson}</button>}{error ? <p role="alert" className="portal-form-error">{error}</p> : null}</div>;
 }

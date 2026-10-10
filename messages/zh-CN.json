@@ -824,6 +824,16 @@
     "checkoutError": "无法准备结账，请稍后重试。"
   },
   "settingsDesign": {
+    "cropTitle": "裁剪头像",
+    "cropHint": "拖动图片或使用滑块调整头像。",
+    "cropPreview": "头像裁剪预览",
+    "cropZoom": "缩放",
+    "cropHorizontal": "水平位置",
+    "cropVertical": "垂直位置",
+    "cropCancel": "取消",
+    "cropSave": "保存头像",
+    "cropSaving": "保存中…",
+    "cropReadError": "无法打开此图片，请选择其他图片。",
     "imageTypeError": "请上传 JPG 或 PNG 图片。",
     "imageSizeError": "图片大小不能超过 5 MB。",
     "imageUploadError": "图片上传失败。",

@@ -64,7 +64,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </div>
         <section className={styles.banner}><div><p>{courseTitle}</p><h2>{copy.valueTitle}</h2><span>{copy.valueDescription}</span></div><Link className={styles.unlock} href={entitled ? learningHref : pricingHref}>{entitled ? messages.learning.continue : copy.unlock}</Link></section>
         <div className={styles.progress}>
-          {entitled ? <PreviewProgress courseId={courseId} lessonId={lesson.id} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} /> : null}
+          <PreviewProgress courseId={courseId} lessonId={lesson.id} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} canComplete={entitled} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
           {nextHref && <Link href={nextHref}>{messages.overviewDesign.continuePreview} →</Link>}
         </div>
       </article>

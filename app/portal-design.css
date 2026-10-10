@@ -435,6 +435,16 @@ dialog.subscription-confirmation .subscription-consents input { width:14px; heig
 .settings-form label,.settings-form fieldset,.settings-grid > * { min-width:0; }
 .settings-form input,.settings-form select,.settings-form textarea { min-width:0; max-width:100%; }
 .avatar-settings { flex-wrap:wrap; }
+.avatar-crop-dialog { width:min(400px,calc(100vw - 40px)); max-height:90dvh; overflow:auto; padding:24px; box-sizing:border-box; border:1px solid #dbe3f0; border-radius:10px; color:#15233a; background:white; }
+.avatar-crop-dialog::backdrop { background:rgba(15,23,42,.6); }
+.avatar-crop-dialog h2 { margin:0; }
+.avatar-crop-dialog > p { font-size:14px; }
+.avatar-crop-stage { position:relative; width:100%; aspect-ratio:1; overflow:hidden; background:#e8f1ff; touch-action:none; cursor:grab; }
+.avatar-crop-stage img { position:absolute; max-width:none; object-fit:fill; user-select:none; }
+.avatar-crop-mask { position:absolute; inset:0; border-radius:50%; box-shadow:0 0 0 100px rgba(15,23,42,.45); pointer-events:none; }
+.avatar-crop-dialog label { display:grid; gap:6px; margin:12px 0; }
+.avatar-crop-dialog input[type=range] { width:100%; padding:0!important; accent-color:#1660d8; }
+.avatar-crop-dialog .backoffice-row-actions { margin-top:18px; justify-content:flex-end; }
 .avatar-settings > div { min-width:0; }
 .settings-disabled-options label { overflow-wrap:break-word; }
 .portal-header { min-height:68px; padding:0 40px; box-sizing:border-box; }

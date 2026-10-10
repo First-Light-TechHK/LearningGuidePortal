@@ -7,5 +7,12 @@
   "videoSeek": "Seek",
   "videoMute": "Mute",
   "videoUnmute": "Unmute",
-  "videoFullscreen": "Toggle fullscreen"
+  "videoFullscreen": "Toggle fullscreen",
+  "videoSpeed": "Playback speed",
+  "videoNormalSpeed": "Normal (1×)",
+  "videoPipActive": "This video is playing in picture-in-picture mode.",
+  "videoPipEnter": "Enter picture-in-picture",
+  "videoPipExit": "Exit picture-in-picture",
+  "videoPipUnsupported": "Picture-in-picture is unavailable in this browser",
+  "videoPipFailed": "Could not switch picture-in-picture. Please try again."
 }

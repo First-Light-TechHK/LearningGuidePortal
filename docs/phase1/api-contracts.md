@@ -75,6 +75,8 @@ Webhook 处理：验签 → 写入唯一 `stripe_events` → 按 event type 重�
 
 ## Protected learning / My Learning
 
+`POST /api/study/preview` accepts `{ courseId, lessonId, event: "open" | "complete", seconds? }` for a verified signed-in user. Without Entitlement, only an `open` event for the published course's public first lesson is permitted; completion and private lessons are denied. A deterministic per-user event key makes repeated opens idempotent. Opening the preview creates a Study Record visible in Overview; it grants no course access. This explicitly supersedes the earlier preview-does-not-create-record rule for signed-in preview history. Anonymous requests remain rejected.
+
 | Method | Path | Request | Server action |
 |---|---|---|---|
 | GET | `/api/entitlements/check` | courseId、device | 读取 session，调用 `checkEntitlement` |

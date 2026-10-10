@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
+import { AvatarCropper } from './AvatarCropper';
 
 type Copy = {
   avatar: string; uploadAvatar: string; removeAvatar: string; nickname: string; email: string; language: string; english: string; chinese: string;
@@ -14,21 +15,6 @@ type Copy = {
 const ageRanges = ["Under 18", "18–24", "25–34", "35–44", "45–54", "55–64", "65+"];
 const educationLevels = ["Secondary education", "Undergraduate", "Postgraduate", "Doctorate", "Other"];
 const interestOptions = ["Humanities", "Science", "History", "Philosophy", "Mathematics", "Literature", "Arts"];
-
-async function squareAvatar(file: File) {
-  const source = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => { const value = new Image(); value.onload = () => resolve(value); value.onerror = reject; value.src = source; });
-    const size = Math.min(image.naturalWidth, image.naturalHeight);
-    const canvas = document.createElement("canvas");
-    canvas.width = 600; canvas.height = 600;
-    const context = canvas.getContext("2d");
-    if (!context) return file;
-    context.drawImage(image, (image.naturalWidth - size) / 2, (image.naturalHeight - size) / 2, size, size, 0, 0, 600, 600);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", .9));
-    return blob ? new File([blob], "avatar.jpg", { type: "image/jpeg" }) : file;
-  } finally { URL.revokeObjectURL(source); }
-}
 
 export function SettingsForm({ countries, uiLocale, initialNickname, initialEmail, initialLocale, initialCountry, initialAgeRange, initialEducation, initialAreasOfInterest, hasAvatar, copy }: { countries: string[]; uiLocale: "en-GB" | "zh-CN"; initialNickname: string; initialEmail: string; initialLocale: "en-GB" | "zh-CN"; initialCountry?: string | null; initialAgeRange?: string | null; initialEducation?: string | null; initialAreasOfInterest?: string[]; hasAvatar: boolean; copy: Copy }) {
   const design = getMessages(uiLocale).settingsDesign;
@@ -47,6 +33,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
   const [avatar, setAvatar] = useState(hasAvatar);
   const [avatarError, setAvatarError] = useState("");
   const [avatarVersion, setAvatarVersion] = useState(0);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   useEffect(() => {
     if (initialCountry) return;
     const regions: Record<string, string> = { AU: "Australia", CA: "Canada", CN: "China", FR: "France", DE: "Germany", HK: "Hong Kong SAR", IE: "Ireland", SG: "Singapore", GB: "United Kingdom", US: "United States" };
@@ -54,19 +41,21 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
     if (regions[region] && countries.includes(regions[region])) setCountry(regions[region]);
   }, [initialCountry, countries]);
 
-  async function uploadAvatar(file: File | undefined) {
+  function selectAvatar(file: File | undefined) {
     if (!file) return;
     setAvatarError("");
     if (!["image/jpeg", "image/png"].includes(file.type)) { setAvatarError(design.imageTypeError); return; }
     if (file.size > 5 * 1024 * 1024) { setAvatarError(design.imageSizeError); return; }
-    try {
-      const prepared = await squareAvatar(file);
-      const form = new FormData(); form.set("file", prepared);
+    setCropFile(file);
+  }
+
+  async function uploadAvatar(file: File) {
+      const form = new FormData(); form.set("file", file);
       const response = await fetch("/api/my-learning/avatar", { method: "POST", body: form });
       const data = await response.json() as { ok?: boolean; error?: string };
-      if (!response.ok || !data.ok) throw new Error(data.error || design.imageUploadError);
+      if (!response.ok || !data.ok) throw new Error(design.imageUploadError);
       setAvatar(true); setAvatarVersion(Date.now());
-    } catch (requestError) { setAvatarError(requestError instanceof Error ? requestError.message : design.imageUploadError); }
+      setCropFile(null);
   }
 
   async function removeAvatar() {
@@ -99,13 +88,14 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
 
   const initial = (nickname.trim()[0] || "L").toUpperCase();
   return <form className="portal-form settings-form settings-design-form" onSubmit={submit}>
+    {cropFile && <AvatarCropper file={cropFile} locale={uiLocale} onSave={uploadAvatar} onCancel={() => setCropFile(null)} />}
     <section className="settings-design-section settings-profile-section" aria-labelledby="settings-profile-heading">
       <h2 id="settings-profile-heading">{design.profile}</h2>
       <p className="settings-section-intro">{design.profileIntro}</p>
       <div className="settings-profile-grid">
         <div className="avatar-settings">
           <div className="avatar-preview">{avatar ? <img src={`/api/my-learning/avatar?v=${avatarVersion}`} alt={copy.avatar} /> : <span aria-hidden="true">{initial}</span>}</div>
-          <div><div className="backoffice-row-actions"><label className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => void uploadAvatar(event.target.files?.[0])} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p className="settings-hint">{design.avatarRules}</p></div>
+          <div><div className="backoffice-row-actions"><label className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p className="settings-hint">{design.avatarRules}</p></div>
         </div>
         <div className="settings-profile-fields">
           <label>{copy.nickname}<input value={nickname} onChange={(event) => setNickname(event.target.value)} minLength={2} maxLength={30} pattern="[A-Za-z0-9 ]{2,30}" required /></label>

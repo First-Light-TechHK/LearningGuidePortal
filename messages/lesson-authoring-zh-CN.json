@@ -7,5 +7,12 @@
   "videoSeek": "播放进度",
   "videoMute": "静音",
   "videoUnmute": "取消静音",
-  "videoFullscreen": "切换全屏"
+  "videoFullscreen": "切换全屏",
+  "videoSpeed": "播放速度",
+  "videoNormalSpeed": "正常（1×）",
+  "videoPipActive": "正在以画中画模式播放此视频。",
+  "videoPipEnter": "进入画中画",
+  "videoPipExit": "退出画中画",
+  "videoPipUnsupported": "当前浏览器不支持画中画",
+  "videoPipFailed": "无法切换画中画，请重试。"
 }
