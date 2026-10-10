@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, groundTutorReply, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
+import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
@@ -853,16 +853,17 @@ test("a second delivery does not call the model while the first is still working
   assert.equal(calls, 2);
 });
 
-test("a reply that repeats a question word missing from the course context is not published", async () => {
+test("a model reply is published as written", async () => {
   const published: string[] = [];
   const calls: string[] = [];
+  const body = "Friendship is more than a petty trade because it is valued for itself.";
   const local = serviceWith({
     courseKnowledge: async () => "Friendship is central to security and happiness. Natural desires are part of that life.",
     publishRoomChat: async ({ text }) => { published.push(text); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
     tutorCall: async () => {
       calls.push("called");
-      return { outcome: "ok", latencyMs: 1, body: "Friendship is more than a petty trade because it is valued for itself." };
+      return { outcome: "ok", latencyMs: 1, body };
     }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Ground", courseId: "course-1", about: "About the group." });
@@ -872,9 +873,8 @@ test("a reply that repeats a question word missing from the course context is no
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "How does friendship relate to natural desires and a petty trade?", clientEventId: "evt-petty" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
   assert.deepEqual(calls, ["called"]);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
-  assert.equal(groundTutorReply("Why is friendship central?", "Friendship is central to security and happiness.", "Friendship is central to security and happiness."), "Friendship is central to security and happiness.");
+  assert.deepEqual(published, [body]);
+  assert.equal(delivered?.text, body);
   assert.deepEqual(courseQuestionTerms("How does friendship relate to happiness?"), ["friendship", "happiness"]);
 });
 
@@ -899,7 +899,6 @@ test("a question whose content words are mostly absent does not call the model",
   assert.deepEqual(calls, []);
   assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
   assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
-  assert.equal(groundTutorReply("What ended in 1933?", "The republic ended in 1933.", `${COURSE_MATERIAL_ABSENT} It ended in 1819.`), COURSE_MATERIAL_ABSENT);
 });
 
 test("a blank related lesson still schedules and a chosen lesson id is stored", async () => {

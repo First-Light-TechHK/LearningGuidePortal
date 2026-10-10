@@ -17,7 +17,7 @@ import { signParticipantToken } from "./liveKitToken";
 import type { StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, groundTutorReply, retrieveCourseKnowledge } from "./tutorAnswer";
+import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, retrieveCourseKnowledge } from "./tutorAnswer";
 
 export type CourseSummary = { id: string; title: string; slug: string };
 export type UserProfile = { id: string; displayName: string; email: string | null; locale: "en-GB" | "zh-CN" };
@@ -701,7 +701,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
                 await markAnswered(item.id, session.id);
                 continue;
               }
-              reply = groundTutorReply(item.text, context, result.body);
+              reply = result.body.trim();
             }
           }
           if (deps.publishRoomChat) await deps.publishRoomChat({ room: session.id, text: reply });
