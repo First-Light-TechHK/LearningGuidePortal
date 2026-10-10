@@ -38,6 +38,11 @@ test("lost media quality prompts reconnect status without minting another token"
   });
 });
 
+test("healthy or degraded media quality is not reported as a provider incident", () => {
+  assert.equal(classifyLiveKitIncident({ source: "connection_quality", quality: "Good" }), null);
+  assert.equal(classifyLiveKitIncident({ source: "connection_quality", quality: "Poor" }), null);
+});
+
 test("provider rate limits fail over only while creating a new room", () => {
   assert.deepEqual(classifyLiveKitIncident({ source: "gateway", code: "rate_limited", phase: "new_room" }), {
     code: "provider_rate_limited",

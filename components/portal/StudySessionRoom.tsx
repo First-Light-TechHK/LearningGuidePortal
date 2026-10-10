@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { classifyLiveKitIncident } from "@/modules/group-study/liveKitIncident";
+import { transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
+import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -155,7 +156,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       incidentReportsRef.current.set(code, timestamp);
       void fetch(`/api/study-groups/sessions/${sessionId}/livekit-incident`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }), keepalive: true }).catch(() => undefined);
     };
-    const showIncident = (incident: ReturnType<typeof classifyLiveKitIncident>) => {
+    const showIncident = (incident: LiveKitIncident) => {
       reportIncident(incident.code);
       if (incident.action === "sdk_reconnect") {
         setErrorCode("network_lost");
@@ -232,19 +233,21 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     room.on(RoomEvent.LocalTrackUnpublished, () => { paint(); showShare(); });
     room.on(RoomEvent.Reconnecting, () => {
       setConnected(false);
-      showIncident(classifyLiveKitIncident({ source: "connection_quality", quality: "Lost" }));
+      const transition = transitionLiveKitClient({ type: "connection_quality", quality: "Lost" });
+      if (transition.incident) showIncident(transition.incident);
     });
     room.on(RoomEvent.Reconnected, () => {
-      setConnected(true);
-      setErrorCode("");
-      paint();
-      showShare();
+      if (transitionLiveKitClient({ type: "reconnected" }).type === "connected") {
+        setConnected(true);
+        setErrorCode("");
+        paint();
+        showShare();
+      }
     });
     room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
       if (participant?.identity !== room.localParticipant.identity) return;
-      const qualityName = String(quality).toUpperCase().includes("LOST") ? "Lost" : String(quality);
-      const incident = classifyLiveKitIncident({ source: "connection_quality", quality: qualityName });
-      if (incident.action === "sdk_reconnect") showIncident(incident);
+      const transition = transitionLiveKitClient({ type: "connection_quality", quality: String(quality) });
+      if (transition.type === "sdk_reconnecting" && transition.incident) showIncident(transition.incident);
     });
     room.on(RoomEvent.Disconnected, (reason) => {
       if (roomRef.current !== room || leftRef.current || releasedRef.current) return;
@@ -255,13 +258,13 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setCameraOn(false);
       setSharing(false);
       setShareTrack(null);
-      const incident = classifyLiveKitIncident({ source: "disconnect", reason: String(reason) });
-      reportIncident(incident.code);
-      if (incident.action === "reissue_verified_token" && !recoveryUsedRef.current) {
+      const transition = transitionLiveKitClient({ type: "disconnect", reason: String(reason), recoveryUsed: recoveryUsedRef.current });
+      if (transition.type === "recover_token") {
         recoveryUsedRef.current = true;
+        if (transition.incident) reportIncident(transition.incident.code);
         setRecoveryRequired(true);
         setConnectAttempt((attempt) => attempt + 1);
-      } else showIncident(incident);
+      } else if (transition.incident) showIncident(transition.incident);
     });
     try {
       await room.connect(issued.data.liveKitUrl, issued.data.token);

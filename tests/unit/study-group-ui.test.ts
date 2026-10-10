@@ -61,13 +61,11 @@ test("host start opens the room only after entry succeeds", () => {
 
 test("the room distinguishes SDK reconnection, terminal disconnects, and verified token recovery", () => {
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /classifyLiveKitIncident/);
+  assert.match(room, /transitionLiveKitClient/);
   assert.match(room, /RoomEvent\.Reconnecting/);
   assert.match(room, /RoomEvent\.Reconnected/);
   assert.match(room, /ConnectionQualityChanged/);
-  assert.match(room, /reissue_verified_token/);
-  assert.match(room, /end_session/);
-  assert.match(room, /show_duplicate_identity/);
+  assert.match(room, /recoveryRequired/);
 });
 
 test("session title counter matches the 20 character Figma limit", () => {

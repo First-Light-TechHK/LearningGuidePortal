@@ -403,6 +403,18 @@ test("session schedule, attendance, capacity, start and token follow the P0 rule
   assert.equal((await repository.read()).meetings.find((item) => item.sessionId === soon.id)?.endedAt, NOW);
 });
 
+test("a waiting learner cannot obtain a LiveKit token before the Host starts the room", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Host starts first", courseId: "course-1", about: "The room is not live yet." });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Waiting room", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+
+  await assert.rejects(
+    () => service.issueToken({ actorUserId: "host", sessionId: session.id }),
+    (error: unknown) => (error as { code?: string }).code === "session_not_open"
+  );
+  assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), false);
+});
+
 test("a failed token issuance keeps the admitted seat available for a retry", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Token seat", courseId: "course-1", about: "About the group." });
   const session = await service.scheduleSession({
@@ -414,6 +426,7 @@ test("a failed token issuance keeps the admitted seat available for a retry", as
     maxParticipants: 2
   });
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
   const seated = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt).map((item) => item.userId);
   assert.deepEqual(seated, ["host"]);
   const blocked = createStudyGroupService({
@@ -434,7 +447,7 @@ test("a failed token issuance keeps the admitted seat available for a retry", as
   );
   const stillSeated = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt);
   assert.deepEqual(stillSeated.map((item) => item.userId), ["host"]);
-  assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), false);
+  assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), true);
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   const restored = await service.issueToken({ actorUserId: "host", sessionId: session.id });
   assert.equal(restored.liveKitUrl, "wss://livekit.example.test");
@@ -452,6 +465,7 @@ test("an incomplete LiveKit endpoint rejects token issuance without writing an a
     maxParticipants: 2
   });
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
   liveKit.url = "";
 
   await assert.rejects(

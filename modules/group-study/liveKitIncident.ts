@@ -60,11 +60,13 @@ function providerIncident(code: LiveKitIncidentInput & { source: "gateway" }): L
 
 // This is the single classification seam for browser, server, and telemetry.
 // Callers receive an action, never provider detail, credentials, or raw errors.
-export function classifyLiveKitIncident(input: LiveKitIncidentInput): LiveKitIncident {
+export function classifyLiveKitIncident(input: Extract<LiveKitIncidentInput, { source: "disconnect" } | { source: "gateway" }>): LiveKitIncident;
+export function classifyLiveKitIncident(input: Extract<LiveKitIncidentInput, { source: "connection_quality" }>): LiveKitIncident | null;
+export function classifyLiveKitIncident(input: LiveKitIncidentInput): LiveKitIncident | null {
   if (input.source === "gateway") return providerIncident(input);
   if (input.source === "connection_quality") {
     if (input.quality.toUpperCase() === "LOST") return { code: "network_lost", severity: "warning", action: "sdk_reconnect", terminal: false };
-    return { code: "provider_unreachable", severity: "warning", action: "show_unavailable", terminal: false };
+    return null;
   }
   switch (input.reason?.toUpperCase()) {
     case "JOIN_FAILURE": return { code: "join_failed", severity: "error", action: "reissue_verified_token", terminal: false };

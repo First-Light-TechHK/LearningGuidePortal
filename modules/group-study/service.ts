@@ -683,6 +683,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const { session, membership } = requireOpenSession(store, input.sessionId, input.actorUserId);
       const state = effectiveSessionState(session, deps.now());
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
+      if (state !== "live") throw new StudyGroupError("session_not_open", "LiveKit tokens are available only after the Host starts the Live Session.");
       const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
       if (!presence) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting a token.");
       let assignedProjectId = session.liveKitProjectId;
