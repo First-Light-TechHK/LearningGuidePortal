@@ -12,6 +12,7 @@ export type LiveKitRoomService = {
 type CloudGatewayDeps = {
   resolveCredentials: (project: LiveKitProjectRef) => Promise<LiveKitCredentials>;
   createRoomService?: (project: LiveKitProjectRef, credentials: LiveKitCredentials) => Promise<LiveKitRoomService>;
+  providerVerified?: boolean;
   now?: () => Date;
 };
 
@@ -57,6 +58,7 @@ function healthFailure(error: unknown): LiveKitProjectHealthStatus {
 
 export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGateway {
   const now = deps.now ?? (() => new Date());
+  const providerVerified = deps.providerVerified !== false;
   const roomService = async (project: LiveKitProjectRef) => {
     const credentials = await deps.resolveCredentials(project);
     return deps.createRoomService ? deps.createRoomService(project, credentials) : defaultRoomService(project, credentials);
@@ -89,13 +91,14 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
       try {
         service = await roomService(project);
       } catch {
-        return { projectId: project.id, status: "credential_unavailable", evidence: "credential_resolution", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
+        return { projectId: project.id, status: "credential_unavailable", evidence: "credential_resolution", providerVerified: false, checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
       }
       try {
         const rooms = await service.listRooms();
-        return { projectId: project.id, status: "healthy", evidence: "provider_api", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt), activeRooms: rooms.length };
+        if (!providerVerified) return { projectId: project.id, status: "unverified", evidence: "simulated", providerVerified: false, checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
+        return { projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt), activeRooms: rooms.length };
       } catch (error) {
-        return { projectId: project.id, status: healthFailure(error), evidence: "provider_error", checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
+        return { projectId: project.id, status: healthFailure(error), evidence: "provider_error", providerVerified: false, checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
       }
     }
   };

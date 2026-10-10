@@ -65,6 +65,7 @@ function liveKitRuntime() {
   const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
   const gateway = createLiveKitCloudGateway({
     resolveCredentials: (project) => resolver.resolve(project),
+    providerVerified: !fakeGateway,
     createRoomService: fakeGateway ? async () => ({
       createRoom: async () => undefined,
       sendData: async () => undefined,
@@ -179,7 +180,7 @@ export function studyGroupService() {
       const state = snapshot.projects.map((project) => `${project.id}:${project.status}`).join(",");
       if (healthTimers.__lgStudyGroupLiveKitHealthStates?.get(directory) === state) return;
       healthTimers.__lgStudyGroupLiveKitHealthStates?.set(directory, state);
-      console.info(JSON.stringify({ type: "study_group.livekit_health", ready: snapshot.ready, attentionRequired: snapshot.attentionRequired, projects: snapshot.projects.map(({ id, state, status, evidence, latencyMs, activeRooms }) => ({ id, state, status, evidence, latencyMs, ...(activeRooms === undefined ? {} : { activeRooms }) })) }));
+      console.info(JSON.stringify({ type: "study_group.livekit_health", ready: snapshot.ready, attentionRequired: snapshot.attentionRequired, projects: snapshot.projects.map(({ id, state, status, evidence, providerVerified, latencyMs, activeRooms }) => ({ id, state, status, evidence, providerVerified, latencyMs, ...(activeRooms === undefined ? {} : { activeRooms }) })) }));
     }).catch(() => undefined);
   };
   if (!healthTimers.__lgStudyGroupLiveKitHealthTimers.has(directory)) {

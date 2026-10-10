@@ -75,7 +75,7 @@ test("Cloud gateway uses a non-mutating room listing as a redacted permission he
 
   const health = await gateway.healthCheck({ project });
 
-  assert.deepEqual(health, { projectId: "eu-primary", status: "healthy", evidence: "provider_api", checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 0, activeRooms: 2 });
+  assert.deepEqual(health, { projectId: "eu-primary", status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 0, activeRooms: 2 });
   assert.equal(credentialReads, 1);
   assert.equal(JSON.stringify(health).includes("never-return-this"), false);
 });
@@ -101,7 +101,28 @@ test("Cloud gateway classifies credential retrieval and provider authorization f
 
   assert.equal(missing.status, "credential_unavailable");
   assert.equal(missing.evidence, "credential_resolution");
+  assert.equal(missing.providerVerified, false);
   assert.equal(unauthorized.status, "unauthorized");
   assert.equal(unauthorized.evidence, "provider_error");
+  assert.equal(unauthorized.providerVerified, false);
   assert.equal(JSON.stringify({ missing, unauthorized }).includes("private"), false);
+});
+
+test("A fake room transport cannot claim a real LiveKit account check", async () => {
+  const gateway = createLiveKitCloudGateway({
+    providerVerified: false,
+    resolveCredentials: async () => ({ apiKey: "fake-key", apiSecret: "fake-secret" }),
+    createRoomService: async (): Promise<LiveKitRoomService> => ({
+      createRoom: async () => undefined,
+      sendData: async () => undefined,
+      removeParticipant: async () => undefined,
+      listRooms: async () => [{ name: "pretend-room" }]
+    }),
+    now: () => new Date("2026-10-10T12:00:00.000Z")
+  });
+
+  const health = await gateway.healthCheck({ project });
+
+  assert.deepEqual(health, { projectId: "eu-primary", status: "unverified", evidence: "simulated", providerVerified: false, checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 0 });
+  assert.equal("activeRooms" in health, false);
 });

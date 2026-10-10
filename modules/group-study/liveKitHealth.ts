@@ -8,6 +8,7 @@ export type LiveKitHealthProject = Readonly<{
   state: Exclude<LiveKitProjectState, "disabled">;
   status: LiveKitProjectHealthStatus;
   evidence: LiveKitProjectHealthEvidence;
+  providerVerified: boolean;
   checkedAt: string;
   latencyMs: number;
   activeRooms?: number;
@@ -48,6 +49,7 @@ export function createLiveKitHealthService(deps: LiveKitHealthDeps): LiveKitHeal
         state: diagnostic.state,
         status: result.status,
         evidence: result.evidence,
+        providerVerified: result.providerVerified,
         checkedAt: result.checkedAt,
         latencyMs: result.latencyMs,
         ...(result.activeRooms === undefined ? {} : { activeRooms: result.activeRooms })
