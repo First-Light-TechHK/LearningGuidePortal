@@ -30,11 +30,11 @@
 - `Start DEV App Runner deployment`
 - `Live e2e / fallback / notify`
 - `forge-check`
+- `Provision, verify, and remove temporary staging room`
 - `overlay-check`
 - `deploy`
 - `verify`
 - `UAT deployment and learner acceptance`
-- `Provision, verify, and remove temporary staging room`
 
 ## 最近 tag
 
