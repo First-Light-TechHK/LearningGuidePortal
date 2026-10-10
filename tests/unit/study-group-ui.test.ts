@@ -18,6 +18,10 @@ test("schedule duration is a required dropdown of 30, 45, 60, and 90 minutes", (
   assert.match(source, /min=\{earliestTime\(sessionDate\) \|\| undefined\}/);
   assert.match(source, /DURATION_MINUTE_CHOICES\.map/);
   assert.match(source, /\(selected\?\.lessons \|\| \[\]\)\.map/);
+  assert.equal(en.studyGroupsPage.relatedLesson, "Related Lesson");
+  assert.equal(zh.studyGroupsPage.relatedLesson, "相关课时");
+  assert.match(source, /copy\.relatedLesson/);
+  assert.match(source, /<option value="">\{copy\.selectLesson\}<\/option>/);
   assert.equal(scheduleSessionFields({ title: "Road", startsAt: "2026-09-19T02:05:00.000Z", durationMinutes: 45, maxParticipants: 4, focus: null, aiTutorEnabled: true, relatedLessonId: "lesson-1" }).relatedLessonId, "lesson-1");
   assert.equal(scheduleSessionFields({ title: "Road", startsAt: "2026-09-19T02:05:00.000Z", durationMinutes: 45, maxParticipants: 4, focus: null, aiTutorEnabled: true, relatedLessonId: "" }).relatedLessonId, null);
   assert.equal(source.includes("durationSeconds"), false);
