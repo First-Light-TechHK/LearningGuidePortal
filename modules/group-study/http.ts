@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { currentProductUserFromRequest } from "@/services/productAuth";
 import { StudyGroupError } from "./domain";
 
 const statusFor: Record<string, number> = {
@@ -33,5 +33,5 @@ export function unauthenticated() {
 }
 
 export async function signedInUser(request: Request) {
-  return currentProductUser(request);
+  return currentProductUserFromRequest(request);
 }
