@@ -212,6 +212,7 @@ test("a failed token issuance keeps the admitted seat available for retry", asyn
     maxParticipants: 2
   });
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
   assert.deepEqual(await activeUsers(session.id), ["host"]);
   const logBefore = (await logLines()).length;
   const blocked = serviceWith({ apiKey: "", apiSecret: "", url: "" });
@@ -220,7 +221,7 @@ test("a failed token issuance keeps the admitted seat available for retry", asyn
     (error: unknown) => codeOf(error) === "unavailable"
   );
   assert.deepEqual(await activeUsers(session.id), ["host"], "failed token issuance evicted the seat");
-  assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), false);
+  assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), true);
   assert.equal((await logLines()).length, logBefore);
 });
 

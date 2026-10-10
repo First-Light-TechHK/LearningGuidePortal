@@ -145,6 +145,11 @@ test("study group API requires a session, hides sessions until join, and does no
   const sessionId = (await scheduled.json()).data.id as string;
   const entered = await call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, {}, token, { sessionId });
   assert.equal(entered.status, 200);
+  const preStart = await call(postToken, `http://localhost/api/study-groups/sessions/${sessionId}/token`, {}, token, { sessionId });
+  assert.equal(preStart.status, 409);
+  assert.equal((await preStart.json()).code, "session_not_open");
+  const started = await call(postStart, `http://localhost/api/study-groups/sessions/${sessionId}/start`, {}, token, { sessionId });
+  assert.equal(started.status, 200);
   const issued = await call(postToken, `http://localhost/api/study-groups/sessions/${sessionId}/token`, {}, token, { sessionId });
   assert.equal(issued.status, 200);
   const issuedBody = await issued.json();
