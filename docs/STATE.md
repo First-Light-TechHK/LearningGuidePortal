@@ -34,6 +34,7 @@
 - `deploy`
 - `verify`
 - `UAT deployment and learner acceptance`
+- `Provision, verify, and remove temporary staging room`
 
 ## 最近 tag
 
@@ -42,4 +43,3 @@
 ## 开放的 promote PR
 
 未查询：缺 FORGE_GITHUB_TOKEN
-
