@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
-import { COURSE_MATERIAL_ABSENT, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
+import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, groundTutorReply, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
@@ -85,6 +85,57 @@ test("join is immediate for course access, duplicate join does not add a member,
   await assert.rejects(() => service.leaveGroup({ actorUserId: "host", groupId: group.id }), (error: unknown) => (error as { code: string }).code === "forbidden");
 });
 
+test("leaving a Study Group releases a waiting seat and ends a live session with nobody left", async () => {
+  access.add("waiter:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Waiting seat", courseId: "course-1", about: "About the waiting seat." });
+  await service.joinGroup({ actorUserId: "waiter", groupId: group.id });
+  const waiting = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon seat", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "waiter", sessionId: waiting.id, requestedAt: NOW });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: waiting.id })).occupancy, 1);
+  await service.leaveGroup({ actorUserId: "waiter", groupId: group.id });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: waiting.id })).occupancy, 0);
+  await service.joinGroup({ actorUserId: "waiter", groupId: group.id });
+  const live = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Only waiter", startsAt: "2026-09-19T02:06:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.startSession({ actorUserId: "host", sessionId: live.id });
+  await service.enterSession({ actorUserId: "waiter", sessionId: live.id, requestedAt: NOW });
+  await service.leaveGroup({ actorUserId: "waiter", groupId: group.id });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "completed");
+  assert.equal((await service.listDiscover({ actorUserId: "waiter" })).some((item) => item.id === group.id), true);
+});
+
+test("cancelling an unstarted Live Session releases people who were waiting", async () => {
+  access.add("waiter:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Cancel wait", courseId: "course-1", about: "The host can cancel before start." });
+  await service.joinGroup({ actorUserId: "waiter", groupId: group.id });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Waiting cancel", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "waiter", sessionId: session.id, requestedAt: NOW });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 1);
+  await service.cancelSession({ actorUserId: "host", sessionId: session.id });
+  await assert.rejects(() => service.getSession({ actorUserId: "waiter", sessionId: session.id }), (error: unknown) => (error as { code: string }).code === "not_found");
+  const stored = await repository.read();
+  assert.equal(stored.presences.find((item) => item.sessionId === session.id && item.userId === "waiter")?.leftAt, NOW);
+  assert.equal((await service.getGroup({ actorUserId: "host", groupId: group.id })).sessions?.some((item) => item.id === session.id), false);
+});
+
+test("a Live Session that ended without anyone waiting cannot be entered or started", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Missed", courseId: "course-1", about: "The slot passed." });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Missed slot", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await repository.update((store) => {
+    const row = store.sessions.find((item) => item.id === session.id);
+    if (row) row.startsAt = "2026-09-19T00:00:00.000Z";
+  });
+  await assert.rejects(() => service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW }), (error: unknown) => (error as { code: string }).code === "session_not_open");
+  await assert.rejects(() => service.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code: string }).code === "session_not_open");
+  const held = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Held open", startsAt: "2026-09-19T02:06:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: held.id, requestedAt: NOW });
+  await repository.update((store) => {
+    const row = store.sessions.find((item) => item.id === held.id);
+    if (row) row.startsAt = "2026-09-19T00:00:00.000Z";
+  });
+  const started = await service.startSession({ actorUserId: "host", sessionId: held.id });
+  assert.equal(started.state, "live");
+});
+
 test("create rejects missing fields and a learner without course access", async () => {
   await assert.rejects(() => service.createGroup({ actorUserId: "host", title: "  ", courseId: "course-1", about: "About" }), (error: unknown) => (error as { code: string }).code === "validation");
   await assert.rejects(() => service.createGroup({ actorUserId: "host", title: "Title", courseId: "course-1", about: "" }), (error: unknown) => (error as { code: string }).code === "validation");
@@ -105,20 +156,76 @@ test("host edits title and about, cannot change the course, and cancel keeps com
     actorUserId: "host",
     groupId: group.id,
     title: "Already finished",
-    startsAt: "2026-09-19T01:00:00.000Z",
+    startsAt: "2026-09-19T02:05:00.000Z",
     durationSeconds: 2700,
     maxParticipants: 2
   });
-  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: "2026-09-19T01:50:00.000Z" });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await assert.rejects(() => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Too late", startsAt: "2026-09-19T01:00:00.000Z", durationSeconds: 1800, maxParticipants: 2 }), (error: unknown) => (error as { code: string }).code === "start_in_past");
   await service.startSession({ actorUserId: "host", sessionId: session.id });
   await service.leaveSession({ actorUserId: "host", sessionId: session.id });
   notes.length = 0;
   await service.cancelGroup({ actorUserId: "host", groupId: group.id });
   assert.equal((await service.listMine("host")).some((item) => item.id === group.id), false);
   assert.equal((await service.listDiscover({ actorUserId: "member" })).some((item) => item.id === group.id), false);
-  assert.equal(notes.some((item) => item.userId === "member"), true);
+  assert.equal(notes.find((item) => item.userId === "member")?.body, "This Study Group is no longer available.");
   const stored = await repository.read();
   assert.equal(stored.sessions.some((item) => item.id === session.id && item.status === "completed"), true);
+});
+
+test("cancelling a group ends a live session and closes its one meeting", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Live cancel", courseId: "course-1", about: "About the live cancel." });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Open now", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  await service.cancelGroup({ actorUserId: "host", groupId: group.id });
+  const stored = await repository.read();
+  const ended = stored.sessions.find((item) => item.id === session.id);
+  const meetings = stored.meetings.filter((item) => item.sessionId === session.id);
+  assert.equal(ended?.status, "completed");
+  assert.equal(meetings.length, 1);
+  assert.equal(Boolean(meetings[0].endedAt), true);
+  assert.equal(stored.presences.some((item) => item.sessionId === session.id && !item.leftAt), false);
+  const view = await service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(view.state, "completed");
+});
+
+test("a waiting entrant is listed without a plan, and a scheduled list stays with planners", async () => {
+  access.add("walker:course-1");
+  access.add("planner-only:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Who is waiting", courseId: "course-1", about: "Attendees follow the seat." });
+  await service.joinGroup({ actorUserId: "walker", groupId: group.id });
+  await service.joinGroup({ actorUserId: "planner-only", groupId: group.id });
+  const soon = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon list", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "walker", sessionId: soon.id, requestedAt: NOW });
+  await service.planToAttend({ actorUserId: "planner-only", sessionId: soon.id });
+  const waiting = await service.getSession({ actorUserId: "host", sessionId: soon.id });
+  assert.equal(waiting.state, "starting_soon");
+  assert.deepEqual(waiting.attendees.map((item) => item.userId), ["walker"]);
+  const later = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Later list", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "planner-only", sessionId: later.id });
+  const upcoming = await service.getSession({ actorUserId: "host", sessionId: later.id });
+  assert.equal(upcoming.state, "scheduled");
+  assert.deepEqual(upcoming.attendees.map((item) => item.userId), ["planner-only"]);
+});
+
+test("a live attendee list hides people who left and the completed list keeps them", async () => {
+  access.add("attendee:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Attendees", courseId: "course-1", about: "About the attendees." });
+  await service.joinGroup({ actorUserId: "attendee", groupId: group.id });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Present", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.enterSession({ actorUserId: "attendee", sessionId: session.id, requestedAt: "2026-09-19T02:00:01.000Z" });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  await service.leaveSession({ actorUserId: "attendee", sessionId: session.id });
+  const live = await service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(live.state, "live");
+  assert.equal(live.occupancy, 1);
+  assert.deepEqual(live.attendees.map((item) => item.userId), ["host"]);
+  await service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  const done = await service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(done.state, "completed");
+  assert.deepEqual(done.attendees.map((item) => item.userId).sort(), ["attendee", "host"]);
 });
 
 test("session title stops at 20 characters and duration is one of four minute lengths stored as seconds", async () => {
@@ -221,7 +328,9 @@ test("host edits schedule fields before start and cannot shrink below the people
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, title: "Too late" }),
     (error: unknown) => (error as { code: string }).code === "forbidden"
   );
-  assert.equal((await service.getSession({ actorUserId: "host", sessionId: session.id })).title, "After edit");
+  const started = await service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(started.title, "After edit");
+  assert.equal(started.startedAt, NOW);
 });
 
 test("session schedule, attendance, capacity, start and token follow the P0 rules", async () => {
@@ -322,6 +431,10 @@ test("a failed token issuance does not keep the seat", async () => {
   const stillSeated = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt);
   assert.deepEqual(stillSeated.map((item) => item.userId), []);
   assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), false);
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  const restored = await service.issueToken({ actorUserId: "host", sessionId: session.id });
+  assert.equal(restored.liveKitUrl, "wss://livekit.example.test");
+  assert.equal((await repository.read()).presences.some((item) => item.sessionId === session.id && item.userId === "host" && item.enteredAt && !item.leftAt), true);
 });
 
 test("an AI Tutor request is queued for the live session without a model, a seat change, or a token", async () => {
@@ -482,6 +595,51 @@ test("reminders go to the host and plan-to-attend members only, once", async () 
   await service.dispatchDueReminders();
   assert.equal(notes.filter((item) => item.body.includes("Reminder session")).length, 0);
   assert.equal(mails.filter((item) => item.text.includes("Reminder session")).length, 0);
+  const early = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Too early", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const past = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Already due", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await repository.update((store) => {
+    const row = store.sessions.find((item) => item.id === past.id);
+    if (row) row.startsAt = NOW;
+  });
+  const opened = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Already live", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: opened.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: opened.id });
+  notes.length = 0;
+  mails.length = 0;
+  await service.dispatchDueReminders();
+  assert.equal(notes.some((item) => item.body.includes("Too early") || item.body.includes("Already due") || item.body.includes("Already live")), false);
+  assert.equal(early.title, "Too early");
+  assert.equal(past.title, "Already due");
+});
+
+test("a zh-CN reminder uses the Chinese sentence", async () => {
+  const localNotes: Array<{ body: string }> = [];
+  const localMails: Array<{ subject: string; text: string }> = [];
+  access.add("host-zh:course-1");
+  const zh = serviceWith({
+    notify: async (input) => { localNotes.push(input); },
+    sendMail: async (input) => { localMails.push(input); },
+    userProfile: async (userId) => ({ id: userId, displayName: userId, email: `${userId}@example.test`, locale: "zh-CN" })
+  });
+  const group = await zh.createGroup({ actorUserId: "host-zh", title: "中文提醒组", courseId: "course-1", about: "Chinese reminder." });
+  await zh.scheduleSession({ actorUserId: "host-zh", groupId: group.id, title: "中文课", startsAt: "2026-09-19T02:08:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await zh.dispatchDueReminders();
+  assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.body, "中文课 将在 10 分钟后开始。");
+  assert.equal(localMails.find((item) => item.text.includes("中文课"))?.subject, "直播课提醒");
+});
+
+test("a zh-CN member is told in Chinese that the Study Group was cancelled", async () => {
+  const localNotes: Array<{ userId: string; body: string }> = [];
+  access.add("host-zh-cancel:course-1");
+  access.add("member-zh-cancel:course-1");
+  const zh = serviceWith({
+    notify: async (input) => { localNotes.push(input); },
+    userProfile: async (userId) => ({ id: userId, displayName: userId, email: `${userId}@example.test`, locale: "zh-CN" })
+  });
+  const group = await zh.createGroup({ actorUserId: "host-zh-cancel", title: "取消组", courseId: "course-1", about: "Cancel in Chinese." });
+  await zh.joinGroup({ actorUserId: "member-zh-cancel", groupId: group.id });
+  await zh.cancelGroup({ actorUserId: "host-zh-cancel", groupId: group.id });
+  assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.body, "这个学习小组已经不再可用。");
 });
 
 test("a live participant queues their own text and the response has no tutor answer", async () => {
@@ -557,6 +715,27 @@ test("empty course knowledge refuses without a model call", async () => {
   assert.equal(stored.includes("fake-key-healthy"), false);
 });
 
+test("a question with no usable tutor key does not block the material-absent reply", async () => {
+  const calls: string[] = [];
+  const published: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text }) => { published.push(text); },
+    tutorKeys: () => [],
+    tutorCall: async () => { calls.push("called"); return { outcome: "ok", latencyMs: 1, body: "invented" }; }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "No key", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "No key", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-matched" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-absent" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.deepEqual(calls, []);
+});
+
 test("a rate-limited tutor key fails over to the next healthy key", async () => {
   const secrets: string[] = [];
   const published: string[] = [];
@@ -583,6 +762,157 @@ test("a rate-limited tutor key fails over to the next healthy key", async () => 
   const stored = JSON.stringify(await repository.read());
   assert.equal(stored.includes("fake-key-rate-limited"), false);
   assert.equal(stored.includes("fake-key-healthy"), false);
+});
+
+test("one delivery answers every waiting question in receipt order", async () => {
+  const published: string[] = [];
+  const calls: string[] = [];
+  let tick = 0;
+  const local = serviceWith({
+    now: () => new Date(Date.parse(NOW) + tick++),
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text }) => { published.push(text); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ text }) => {
+      calls.push(text);
+      return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` };
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Drain", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Drain", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-drain-1" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 again?", clientEventId: "evt-drain-2" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-drain-3" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(calls, ["What ended in 1933?", "What ended in 1933 again?"]);
+  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: What ended in 1933 again?", COURSE_MATERIAL_ABSENT]);
+  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
+});
+
+test("a failed tutor call does not leave the next question waiting", async () => {
+  const published: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text }) => { published.push(text); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ text }) => text.includes("fail")
+      ? { outcome: "failed", latencyMs: 1 }
+      : { outcome: "ok", latencyMs: 1, body: "The republic ended in 1933." }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Fail over queue", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Fail queue", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 fail", clientEventId: "evt-fail" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-after-fail" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(published, ["The republic ended in 1933."]);
+  assert.equal(delivered?.text, "The republic ended in 1933.");
+  const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
+  assert.equal(JSON.stringify(items).includes("The course material does not contain the answer."), false);
+});
+
+test("a second delivery does not call the model while the first is still working", async () => {
+  let releaseFirst: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let calls = 0;
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async () => undefined,
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => {
+      calls += 1;
+      if (calls === 1) await gate;
+      return { outcome: "ok", latencyMs: 1, body: "The republic ended in 1933." };
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "One drain", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "One drain", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-lock-1" });
+  const first = local.deliverTutorAnswer({ sessionId: session.id });
+  while (calls < 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 again?", clientEventId: "evt-lock-2" });
+  let secondFinished = false;
+  const second = local.deliverTutorAnswer({ sessionId: session.id }).then((result) => {
+    secondFinished = true;
+    return result;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(secondFinished, false);
+  assert.equal(calls, 1);
+  releaseFirst();
+  assert.equal((await first)?.text, "The republic ended in 1933.");
+  assert.equal(await second, null);
+  assert.equal(calls, 2);
+});
+
+test("a reply that repeats a question word missing from the course context is not published", async () => {
+  const published: string[] = [];
+  const calls: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "Friendship is central to security and happiness. Natural desires are part of that life.",
+    publishRoomChat: async ({ text }) => { published.push(text); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => {
+      calls.push("called");
+      return { outcome: "ok", latencyMs: 1, body: "Friendship is more than a petty trade because it is valued for itself." };
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Ground", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Ground", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "How does friendship relate to natural desires and a petty trade?", clientEventId: "evt-petty" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(calls, ["called"]);
+  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  assert.equal(groundTutorReply("Why is friendship central?", "Friendship is central to security and happiness.", "Friendship is central to security and happiness."), "Friendship is central to security and happiness.");
+  assert.deepEqual(courseQuestionTerms("How does friendship relate to happiness?"), ["friendship", "happiness"]);
+});
+
+test("a question whose content words are mostly absent does not call the model", async () => {
+  const published: string[] = [];
+  const calls: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "Epicurus writes about pleasure, desire, and friendship.",
+    publishRoomChat: async ({ text }) => { published.push(text); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => {
+      calls.push("called");
+      return { outcome: "ok", latencyMs: 1, body: "The formula is C8H10N4O2, isolated in 1819." };
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Formula", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Formula", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What is the chemical formula of caffeine, and in which year did Epicurus publish that formula?", clientEventId: "evt-formula" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  assert.equal(groundTutorReply("What ended in 1933?", "The republic ended in 1933.", `${COURSE_MATERIAL_ABSENT} It ended in 1819.`), COURSE_MATERIAL_ABSENT);
+});
+
+test("a blank related lesson still schedules and a chosen lesson id is stored", async () => {
+  const local = serviceWith({
+    courseLessons: async () => [{ id: "lesson-1", title: "Pleasure and the Good Life" }]
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Lesson group", courseId: "course-1", about: "About the lesson group." });
+  const blank = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "No lesson", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const chosen = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "With lesson", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 2700, maxParticipants: 4, relatedLessonId: "lesson-1" });
+  assert.equal(blank.relatedLessonId, null);
+  assert.equal(chosen.relatedLessonId, "lesson-1");
+  const detail = await local.getGroup({ actorUserId: "host", groupId: group.id });
+  assert.deepEqual(detail.lessons, [{ id: "lesson-1", title: "Pleasure and the Good Life" }]);
 });
 
 test("shared LiveKit publish has no private destination and no secret", async () => {

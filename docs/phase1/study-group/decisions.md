@@ -8,13 +8,13 @@ Where `study-group-architecture.md`, `study-group-tech-selection.md`, or `study-
 
 The tutor is the Related Course tutor, shared in the Live Session chat. It is not a private tutor per user and not a second tutor product.
 
-Answers are grounded by lexical retrieval over Course Knowledge text that already exists for that course: published lesson text, and the Course Knowledge files the course tutor already reads (`knowledge-pack.json`, `canon-excerpts.md`, `sources.md`). No new knowledge base, table, or import is added. A piece of knowledge is that stored text. If retrieval returns nothing, the shared chat says: "The course material does not contain the answer." The model is not called in that case.
+Answers are grounded by lexical retrieval over Course Knowledge text that already exists for that course: published lesson text, and the Course Knowledge files the course tutor already reads (`knowledge-pack.json`, `canon-excerpts.md`, `sources.md`). No new knowledge base, table, or import is added. A piece of knowledge is that stored text. If retrieval returns nothing, the shared chat says: "The course material does not contain the answer." The model is not called in that case. If most of the question's content words are absent from the retrieved text, the model is not called and the chat says that same sentence. Words that only link the question, such as relate, related, and between, are not content words. If the model reply repeats a question word that is not in the retrieved text, or it adds anything after that sentence, the chat publishes only that sentence.
 
-The model call is a direct OpenRouter chat completion through `fetchOpenRouter`, the same client the course tutor uses. The model id is `OPENROUTER_MODEL`. No agent framework is added.
+The model call is a direct chat completion. The default is OpenRouter through `fetchOpenRouter`, the same client the course tutor uses. An empty `STUDY_GROUP_TUTOR_URL` keeps that path. When that variable is an OpenAI-compatible chat completions URL, the Study Group tutor posts the same messages there and does not send OpenRouter-only fields. The model id is `STUDY_GROUP_TUTOR_MODEL`, then `OPENROUTER_MODEL`. No agent framework is added.
 
 The answer is published into the shared LiveKit room as one data message every current participant can read. The packet has no destination list. Screen, video, and exhibit pixels are not sent.
 
-One question is in flight per Live Session. Later questions wait. Order is the server receipt time. The asker and the original text stay on the queue item. Enqueue writes that item and does not call the model.
+One question is in flight per Live Session. Later questions wait. Order is the server receipt time. The asker and the original text stay on the queue item. Enqueue writes that item and does not call the model. The delivery that starts for that session keeps going until every waiting question has been handled. A second delivery for the same session does not start a second model call. If every key fails, or the reply is empty or contains a key secret, that item is marked answered and nothing is published, so the next question is not left waiting. That failure does not publish the material-absent sentence.
 
 ## API keys
 
@@ -23,6 +23,10 @@ One question is in flight per Live Session. Later questions wait. Order is the s
 ## Labels and seats
 
 The Join control for a Study Group reads "Join Study Group". The Hosting chip is shown only when the current user is the Host. A Live Session does not reserve a Host seat. The maximum of 6 includes the Host. A full session refuses another entry, including the Host.
+
+## Related Lesson
+
+The schedule control lists the titles of that course's lessons. The choice is optional. A blank choice stores no lesson id. Discover cards do not show it. The group sheet can show the stored lesson title.
 
 ## Duration
 

@@ -5,6 +5,7 @@ import {
   StudyGroupError,
   TOKEN_TTL_SECONDS,
   effectiveSessionState,
+  missedUnstarted,
   type AttendanceIntentRow,
   type EffectiveSessionState,
   type GroupRole,
@@ -16,7 +17,7 @@ import { signParticipantToken } from "./liveKitToken";
 import type { StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
-import { COURSE_MATERIAL_ABSENT, retrieveCourseKnowledge } from "./tutorAnswer";
+import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, groundTutorReply, retrieveCourseKnowledge } from "./tutorAnswer";
 
 export type CourseSummary = { id: string; title: string; slug: string };
 export type UserProfile = { id: string; displayName: string; email: string | null; locale: "en-GB" | "zh-CN" };
@@ -26,6 +27,7 @@ export type StudyGroupDeps = {
   now: () => Date;
   hasCourseAccess: (userId: string, courseId: string) => Promise<boolean>;
   courseSummary: (courseId: string) => Promise<CourseSummary | null>;
+  courseLessons?: (courseId: string) => Promise<Array<{ id: string; title: string }>>;
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
   notify: (input: { userId: string; title: string; body: string }) => Promise<void>;
@@ -87,6 +89,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   const entryJobs: EntryJob[] = [];
   let entrySeq = 0;
   let draining = false;
+  const tutorDraining = new Set<string>();
 
   function enqueueEntry<T>(requestedAt: string, run: () => Promise<T>) {
     return new Promise<T>((resolve, reject) => {
@@ -135,9 +138,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   async function sessionView(store: StudyGroupStore, session: LiveSessionRow, actorUserId: string) {
     const state = effectiveSessionState(session, deps.now());
     if (state === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
-    const showActual = state === "live" || state === "completed";
+    const showActual = state === "starting_soon" || state === "live" || state === "completed";
     const people = showActual
-      ? store.presences.filter((item) => item.sessionId === session.id && item.enteredAt)
+      ? store.presences.filter((item) => item.sessionId === session.id && item.enteredAt && (state === "completed" || !item.leftAt))
       : store.intents.filter((item) => item.sessionId === session.id && !item.cancelledAt);
     const attendees = [];
     for (const person of people) {
@@ -154,6 +157,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       maxParticipants: session.maxParticipants,
       focus: session.focus,
       aiTutorEnabled: session.aiTutorEnabled,
+      startedAt: session.startedAt,
       state: state as EffectiveSessionState,
       occupancy: occupancy(store, session.id),
       plannedCount: plannedCount(store, session.id),
@@ -190,6 +194,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (state !== "starting_soon" && state !== "live") throw new StudyGroupError("session_not_open", "The Live Session is not open yet.");
       const existing = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
       if (existing && !existing.leftAt) return { occupancy: occupancy(store, session.id) };
+      if (missedUnstarted(session, deps.now(), occupancy(store, session.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
       if (occupancy(store, session.id) >= session.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
       const enteredAt = deps.now().toISOString();
       if (existing) {
@@ -275,7 +280,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const view = await toView(group, store, active.length, mine?.role || null);
       const sessions = mine ? await Promise.all(store.sessions.filter((item) => item.groupId === group.id && item.status !== "removed").map((item) => sessionView(store, item, input.actorUserId || ""))) : null;
       const canJoin = !mine && Boolean(input.actorUserId) && await deps.hasCourseAccess(input.actorUserId || "", group.courseId);
-      return { ...view, members, sessions, canJoin };
+      const lessons = deps.courseLessons ? await deps.courseLessons(group.courseId) : [];
+      return { ...view, members, sessions, canJoin, lessons };
     },
 
     async joinGroup(input: { actorUserId: string; groupId: string }) {
@@ -315,6 +321,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const sessionIds = new Set(current.sessions.filter((item) => item.groupId === input.groupId && item.status === "scheduled").map((item) => item.id));
         for (const intent of current.intents) {
           if (intent.userId === input.actorUserId && sessionIds.has(intent.sessionId) && !intent.cancelledAt) intent.cancelledAt = now;
+        }
+        for (const presence of current.presences) {
+          if (presence.userId !== input.actorUserId || presence.leftAt || !presence.enteredAt) continue;
+          const session = current.sessions.find((item) => item.id === presence.sessionId && item.groupId === input.groupId);
+          if (!session || session.status === "completed" || session.status === "removed") continue;
+          presence.leftAt = now;
+          if (session.status === "live" && occupancy(current, session.id) === 0) {
+            session.status = "completed";
+            session.completedAt = now;
+            session.updatedAt = now;
+            const meeting = current.meetings.find((item) => item.sessionId === session.id);
+            if (meeting && !meeting.endedAt) meeting.endedAt = now;
+          }
         }
       });
     },
@@ -365,20 +384,36 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         row.status = "cancelled";
         row.updatedAt = now;
         for (const session of store.sessions) {
-          if (session.groupId === row.id && session.status === "scheduled") {
+          if (session.groupId !== row.id) continue;
+          if (session.status === "scheduled") {
             session.status = "removed";
             session.updatedAt = now;
+          }
+          if (session.status === "live") {
+            session.status = "completed";
+            session.completedAt = now;
+            session.updatedAt = now;
+            const meeting = store.meetings.find((item) => item.sessionId === session.id);
+            if (meeting && !meeting.endedAt) meeting.endedAt = now;
+            for (const presence of store.presences) {
+              if (presence.sessionId === session.id && presence.enteredAt && !presence.leftAt) presence.leftAt = now;
+            }
           }
         }
         return store.memberships.filter((item) => item.groupId === row.id && !item.leftAt).map((item) => item.userId);
       });
-      await Promise.all(notified.map((userId) => deps.notify({ userId, title: "Study Group cancelled", body: "This Study Group is no longer available." })));
+      await Promise.all(notified.map(async (userId) => {
+        const profile = await deps.userProfile(userId);
+        const body = profile?.locale === "zh-CN" ? "这个学习小组已经不再可用。" : "This Study Group is no longer available.";
+        await deps.notify({ userId, title: "Study Group cancelled", body });
+      }));
     },
 
     async scheduleSession(input: { actorUserId: string; groupId: string; title: string; startsAt: string; durationSeconds: number; maxParticipants: number; relatedLessonId?: string | null; focus?: string | null; aiTutorEnabled?: boolean }) {
       const title = requireText(input.title, "Session Title", 20);
       const startsAt = new Date(input.startsAt);
       if (Number.isNaN(startsAt.getTime())) throw new StudyGroupError("validation", "Start Time is required.");
+      if (startsAt.getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
       if (!SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
       const now = deps.now().toISOString();
@@ -411,6 +446,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     async editSession(input: { actorUserId: string; groupId: string; sessionId: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }) {
       if (input.title !== undefined) requireText(input.title, "Session Title", 20);
       if (input.startsAt !== undefined && Number.isNaN(new Date(input.startsAt).getTime())) throw new StudyGroupError("validation", "Start Time is required.");
+      if (input.startsAt !== undefined && new Date(input.startsAt).getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
       if (input.durationSeconds !== undefined && !SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (input.maxParticipants !== undefined && (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6)) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
       let focus: string | null | undefined;
@@ -448,12 +484,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Cancel Session is available only before the Session starts.");
         current.status = "removed";
         current.updatedAt = now;
+        for (const presence of store.presences) {
+          if (presence.sessionId === current.id && presence.enteredAt && !presence.leftAt) presence.leftAt = now;
+        }
       });
     },
 
     async getSession(input: { actorUserId: string; sessionId: string }) {
       const store = await deps.repository.read();
-      const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
+      const session = store.sessions.find((item) => item.id === input.sessionId);
+      if (!session || session.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
+      const group = store.groups.find((item) => item.id === session.groupId);
+      if (!group || !activeMembership(store, group.id, input.actorUserId)) throw new StudyGroupError(group ? "forbidden" : "not_found", group ? "Join the Study Group first." : "Study Group was not found.");
+      if (group.status !== "active" && session.status !== "completed") throw new StudyGroupError("not_found", "Study Group was not found.");
       return sessionView(store, session, input.actorUserId);
     },
 
@@ -503,6 +546,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const state = effectiveSessionState(current, deps.now());
         if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
+        if (missedUnstarted(current, deps.now(), occupancy(store, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
         if (current.status !== "live") {
           current.status = "live";
           current.startedAt = now;
@@ -604,50 +648,79 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async deliverTutorAnswer(input: { sessionId: string }) {
-      const snapshot = await deps.repository.read();
-      const session = snapshot.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
-      if (!session) return null;
-      const item = snapshot.tutorRequests
-        .filter((entry) => entry.sessionId === session.id && entry.inFlight && !entry.answeredAt)
-        .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id))[0];
-      if (!item) return null;
-      const group = snapshot.groups.find((entry) => entry.id === session.groupId);
-      const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
-      const context = retrieveCourseKnowledge(corpus, item.text);
-      let reply = COURSE_MATERIAL_ABSENT;
-      if (context) {
-        const keys = deps.tutorKeys?.() ?? [];
-        if (!deps.tutorCall || keys.length === 0) return null;
-        const pool = createTutorKeyPool({
-          keys,
-          call: (secret) => deps.tutorCall!({ secret, text: item.text, context })
-        });
-        const result = await pool.execute(item.text);
-        if (!result.keyId || !result.body) return null;
-        if (keys.some((key) => result.body.includes(key.secret))) return null;
-        reply = result.body;
+      for (;;) {
+        if (!tutorDraining.has(input.sessionId)) {
+          tutorDraining.add(input.sessionId);
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      if (deps.publishRoomChat) await deps.publishRoomChat({ room: session.id, text: reply });
-      await deps.repository.update((store) => {
-        const row = store.tutorRequests.find((entry) => entry.id === item.id);
-        if (!row || row.answeredAt) return;
-        row.answeredAt = deps.now().toISOString();
-        row.inFlight = false;
-        const next = store.tutorRequests
-          .filter((entry) => entry.sessionId === session.id && !entry.answeredAt)
-          .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id))[0];
-        if (next) next.inFlight = true;
-      });
-      return { text: reply };
+      const markAnswered = async (itemId: string, sessionId: string) => {
+        await deps.repository.update((store) => {
+          const row = store.tutorRequests.find((entry) => entry.id === itemId);
+          if (!row || row.answeredAt) return;
+          row.answeredAt = deps.now().toISOString();
+          row.inFlight = false;
+          const next = store.tutorRequests
+            .filter((entry) => entry.sessionId === sessionId && !entry.answeredAt)
+            .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id))[0];
+          if (next) next.inFlight = true;
+        });
+      };
+      try {
+        let last: { text: string } | null = null;
+        for (;;) {
+          const snapshot = await deps.repository.read();
+          const session = snapshot.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
+          if (!session) return last;
+          const item = snapshot.tutorRequests
+            .filter((entry) => entry.sessionId === session.id && entry.inFlight && !entry.answeredAt)
+            .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id))[0];
+          if (!item) return last;
+          const group = snapshot.groups.find((entry) => entry.id === session.groupId);
+          const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
+          const context = retrieveCourseKnowledge(corpus, item.text);
+          let reply = COURSE_MATERIAL_ABSENT;
+          if (context) {
+            const terms = courseQuestionTerms(item.text);
+            const missing = terms.filter((term) => !context.toLowerCase().includes(term.toLowerCase()));
+            if (terms.length > 0 && missing.length * 2 > terms.length) {
+              reply = COURSE_MATERIAL_ABSENT;
+            } else {
+              const keys = deps.tutorKeys?.() ?? [];
+              if (!deps.tutorCall || keys.length === 0) {
+                await markAnswered(item.id, session.id);
+                continue;
+              }
+              const pool = createTutorKeyPool({
+                keys,
+                call: (secret) => deps.tutorCall!({ secret, text: item.text, context })
+              });
+              const result = await pool.execute(item.text);
+              if (!result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret))) {
+                await markAnswered(item.id, session.id);
+                continue;
+              }
+              reply = groundTutorReply(item.text, context, result.body);
+            }
+          }
+          if (deps.publishRoomChat) await deps.publishRoomChat({ room: session.id, text: reply });
+          await markAnswered(item.id, session.id);
+          last = { text: reply };
+        }
+      } finally {
+        tutorDraining.delete(input.sessionId);
+      }
     },
 
     async dispatchDueReminders() {
       const now = deps.now();
-      const due = await deps.repository.update((store) => {
+      const dueJobs = (store: StudyGroupStore, record: boolean) => {
         const jobs: Array<{ userId: string; sessionTitle: string }> = [];
         for (const session of store.sessions) {
-          if (session.status === "removed" || session.status === "completed") continue;
-          if (now.getTime() < new Date(session.startsAt).getTime() - STARTING_SOON_MS) continue;
+          if (session.status !== "scheduled") continue;
+          const startsAt = new Date(session.startsAt).getTime();
+          if (now.getTime() < startsAt - STARTING_SOON_MS || now.getTime() >= startsAt) continue;
           const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
           if (!group) continue;
           const audience = new Set<string>([group.hostUserId]);
@@ -657,16 +730,21 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           for (const userId of audience) {
             if (!activeMembership(store, group.id, userId)) continue;
             if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
-            store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
+            if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
             jobs.push({ userId, sessionTitle: session.title });
           }
         }
         return jobs;
-      });
+      };
+      if (dueJobs(await deps.repository.read(), false).length === 0) return;
+      const due = await deps.repository.update((store) => dueJobs(store, true));
       for (const job of due) {
         const profile = await deps.userProfile(job.userId);
-        await deps.notify({ userId: job.userId, title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: "Live Session reminder", text: `${job.sessionTitle} starts in 10 minutes.`, locale: profile.locale });
+        const copy = profile?.locale === "zh-CN"
+          ? { subject: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
+          : { subject: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
+        await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.subject, text: copy.body, locale: profile.locale });
       }
     },
 

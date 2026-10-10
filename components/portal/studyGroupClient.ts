@@ -8,6 +8,8 @@ export type StudySession = {
   maxParticipants: number;
   focus: string | null;
   aiTutorEnabled: boolean;
+  startedAt: string | null;
+  relatedLessonId: string | null;
   state: "scheduled" | "starting_soon" | "live" | "completed";
   occupancy: number;
   plannedCount: number;
@@ -27,6 +29,7 @@ export type StudyGroupDetail = {
   canJoin?: boolean;
   members?: StudyGroupMember[];
   sessions?: StudySession[] | null;
+  lessons?: Array<{ id: string; title: string }>;
 };
 
 export type StudyGroupResponse<T> = { ok: boolean; code: string; message: string; data: T };
@@ -48,18 +51,41 @@ export function tutorQueueBody(message: string) {
   return { message };
 }
 
+export function sessionNotStarted(session: { state: string; occupancy: number; startsAt: string; durationSeconds: number }, now = Date.now()) {
+  if (session.state !== "starting_soon" || session.occupancy > 0) return false;
+  const end = Date.parse(session.startsAt) + session.durationSeconds * 1000;
+  return Number.isFinite(end) && now >= end;
+}
+
 export function plannedMinutes(session: { durationSeconds: number }) {
   return Math.round(session.durationSeconds / 60);
 }
 
-export function scheduleSessionFields(input: { title: FormDataEntryValue | null; startsAt: string; durationMinutes: number; maxParticipants: number; focus: FormDataEntryValue | null; aiTutorEnabled: boolean }) {
+export function sessionDateLabel(locale: string, startsAt: string) {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(startsAt));
+}
+
+export function sessionTimeLabel(locale: string, session: { startsAt: string; durationSeconds: number }) {
+  const start = new Date(session.startsAt);
+  const end = new Date(start.getTime() + session.durationSeconds * 1000);
+  const clock = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+  return `${clock.format(start)} – ${clock.format(end)}`;
+}
+
+export function sessionScheduleLabel(locale: string, session: { startsAt: string; durationSeconds: number }) {
+  return `${sessionDateLabel(locale, session.startsAt)} · ${sessionTimeLabel(locale, session)}`;
+}
+
+export function scheduleSessionFields(input: { title: FormDataEntryValue | null; startsAt: string; durationMinutes: number; maxParticipants: number; focus: FormDataEntryValue | null; aiTutorEnabled: boolean; relatedLessonId?: FormDataEntryValue | null }) {
+  const lesson = typeof input.relatedLessonId === "string" ? input.relatedLessonId.trim() : "";
   return {
     title: input.title,
     startsAt: input.startsAt,
     durationSeconds: input.durationMinutes * 60,
     maxParticipants: input.maxParticipants,
     focus: input.focus,
-    aiTutorEnabled: input.aiTutorEnabled
+    aiTutorEnabled: input.aiTutorEnabled,
+    relatedLessonId: lesson || null
   };
 }
 

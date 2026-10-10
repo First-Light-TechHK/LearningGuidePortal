@@ -1,5 +1,6 @@
 import { signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
 import { studyGroupService } from "@/modules/group-study/runtime";
+import { listStudyGroupReminders } from "@/services/productStore";
 
 export async function GET(request: Request) {
   const user = await signedInUser(request);
@@ -14,6 +15,10 @@ export async function GET(request: Request) {
     if (view === "courses") {
       if (!user) return unauthenticated();
       return studyGroupData(await service.listCreatableCourses(user.id));
+    }
+    if (view === "reminders") {
+      if (!user) return unauthenticated();
+      return studyGroupData(await listStudyGroupReminders(user.id));
     }
     return studyGroupData(await service.listDiscover({
       actorUserId: user?.id || null,

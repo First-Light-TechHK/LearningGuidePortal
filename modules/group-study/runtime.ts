@@ -44,6 +44,13 @@ export function studyGroupService() {
       const course = await getProductCourse(courseId);
       return course && course.status === "published" ? { id: course.id, title: course.title, slug: course.slug } : null;
     },
+    courseLessons: async (courseId) => {
+      const course = await getProductCourse(courseId);
+      return (course?.sections ?? []).flatMap((section) => section.lessons).flatMap((lesson) => {
+        const title = lesson.title.trim();
+        return title ? [{ id: lesson.id, title }] : [];
+      });
+    },
     accessibleCourses: async (userId) => {
       const courses = await listPublishedCourses();
       const allowed = [];
@@ -77,10 +84,11 @@ export function studyGroupService() {
     tutorKeys: () => readTutorKeys(process.env.STUDY_GROUP_TUTOR_KEYS),
     tutorCall: (input) => openRouterTutorCall({
       secret: input.secret,
-      model: process.env.OPENROUTER_MODEL?.trim() || "openrouter/auto",
+      model: process.env.STUDY_GROUP_TUTOR_MODEL?.trim() || process.env.OPENROUTER_MODEL?.trim() || "openrouter/auto",
       system: STUDY_GROUP_TUTOR_SYSTEM_PROMPT,
       context: input.context,
-      text: input.text
+      text: input.text,
+      url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined
     }),
     publishRoomChat: async ({ room, text }) => {
       const apiKey = process.env.LIVEKIT_API_KEY?.trim() || "";
@@ -91,5 +99,14 @@ export function studyGroupService() {
     }
   });
   services.set(directory, service);
+  const timers = globalThis as typeof globalThis & { __lgStudyGroupReminderTimers?: Set<string> };
+  timers.__lgStudyGroupReminderTimers ??= new Set();
+  if (!timers.__lgStudyGroupReminderTimers.has(directory)) {
+    timers.__lgStudyGroupReminderTimers.add(directory);
+    const timer = setInterval(() => {
+      void service.dispatchDueReminders().catch(() => undefined);
+    }, 30_000);
+    timer.unref();
+  }
   return service;
 }

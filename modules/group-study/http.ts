@@ -5,6 +5,7 @@ import { StudyGroupError } from "./domain";
 const statusFor: Record<string, number> = {
   unauthenticated: 401,
   validation: 400,
+  start_in_past: 400,
   course_access_required: 403,
   forbidden: 403,
   not_found: 404,

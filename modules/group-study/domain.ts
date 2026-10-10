@@ -102,6 +102,14 @@ export function emptyStore(): StudyGroupStore {
   return { groups: [], memberships: [], sessions: [], intents: [], presences: [], meetings: [], reminders: [], tutorRequests: [] };
 }
 
+export function plannedEndMs(session: { startsAt: string; durationSeconds: number }) {
+  return new Date(session.startsAt).getTime() + session.durationSeconds * 1000;
+}
+
+export function missedUnstarted(session: { status: string; startsAt: string; durationSeconds: number }, now: Date, occupancyCount: number) {
+  return session.status === "scheduled" && occupancyCount === 0 && now.getTime() >= plannedEndMs(session);
+}
+
 export function effectiveSessionState(session: LiveSessionRow, now: Date): EffectiveSessionState | "removed" {
   if (session.status === "removed") return "removed";
   if (session.status === "completed") return "completed";
