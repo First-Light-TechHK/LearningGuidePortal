@@ -1,0 +1,44 @@
+name: LiveKit staging smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type RUN_STAGING_LIVEKIT_SMOKE to create and delete one temporary staging room.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: learning-guide-livekit-staging-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Provision, verify, and remove temporary staging room
+    if: inputs.confirm == 'RUN_STAGING_LIVEKIT_SMOKE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: livekit-staging
+    env:
+      LIVEKIT_STAGING_URL: ${{ secrets.LIVEKIT_STAGING_URL }}
+      LIVEKIT_STAGING_API_KEY: ${{ secrets.LIVEKIT_STAGING_API_KEY }}
+      LIVEKIT_STAGING_API_SECRET: ${{ secrets.LIVEKIT_STAGING_API_SECRET }}
+      LIVEKIT_SMOKE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Require the protected staging credentials
+        run: |
+          test -n "$LIVEKIT_STAGING_URL"
+          test -n "$LIVEKIT_STAGING_API_KEY"
+          test -n "$LIVEKIT_STAGING_API_SECRET"
+      - name: Provision, verify, and clean up a temporary room
+        run: npm run test:livekit:staging

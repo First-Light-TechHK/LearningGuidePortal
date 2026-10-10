@@ -28,6 +28,7 @@
     "verify:science-display": "node scripts/verify-science-display.mjs",
     "update:openrouter-model-limits": "node scripts/update-openrouter-model-limits.mjs",
     "test:live": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.live.config.ts",
+    "test:livekit:staging": "node --import tsx scripts/livekit-staging-smoke.ts",
     "after-deploy": "node scripts/after-deploy.mjs",
     "test:payment": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.payment.config.ts"
   },

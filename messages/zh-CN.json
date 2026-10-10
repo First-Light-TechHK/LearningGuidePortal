@@ -641,6 +641,10 @@
       "unauthenticated": "需要登录。",
       "unavailable": "直播课连接尚未配置。",
       "connect_failed": "直播课无法连接。请检查连接后重试。",
+      "network_lost": "网络连接不稳定，正在尝试恢复…",
+      "room_ended": "这节直播课已结束。",
+      "duplicate_identity": "该账号已在其他位置加入本节直播课。请关闭另一处会话后重新连接。",
+      "participant_removed": "你已被移出这节直播课。",
       "error": "出了点问题。请重试。"
     }
   },

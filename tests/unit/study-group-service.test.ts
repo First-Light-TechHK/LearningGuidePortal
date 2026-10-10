@@ -538,6 +538,31 @@ test("a new room falls back once to another active project, while an assigned ro
   assert.deepEqual(calls, [calls[0], calls[1]]);
 });
 
+test("provider failures emit one normalized incident without exposing the gateway error", async () => {
+  const projects = parseLiveKitProjects(JSON.stringify([
+    { id: "eu-primary", url: "wss://eu-primary.livekit.cloud", state: "active", credentialSecretId: "learning-guide/livekit/eu-primary" }
+  ]));
+  const incidents: Array<{ sessionId: string; projectId: string | null; code: string; source: string }> = [];
+  const local = serviceWith({
+    liveKitProjects: projects,
+    liveKitGateway: {
+      ensureRoom: async () => { throw new LiveKitGatewayError("rate_limited"); },
+      issueParticipantToken: async () => ({ token: "unreachable", expiresAt: NOW, url: "wss://eu-primary.livekit.cloud" }),
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+    },
+    liveKitIncidentReporter: (incident) => { incidents.push(incident); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Observe provider failure", courseId: "course-1", about: "About telemetry." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Rate limited", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+
+  assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "eu-primary", code: "provider_rate_limited", source: "gateway" }]);
+  assert.equal(JSON.stringify(incidents).includes("LiveKitGatewayError"), false);
+});
+
 test("concurrent host starts share one room-creation operation", async () => {
   let creates = 0;
   let releaseCreate: (() => void) | undefined;

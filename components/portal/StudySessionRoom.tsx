@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
+import { classifyLiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -106,6 +107,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [connectAttempt, setConnectAttempt] = useState(0);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
   const recoveryUsedRef = useRef(false);
+  const incidentReportsRef = useRef(new Map<string, number>());
   const [sideTab, setSideTab] = useState<"participants" | "chat">("participants");
   groupRef.current = group;
 
@@ -145,6 +147,34 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setSharing([...room.localParticipant.trackPublications.values()].some((item) => item.source === "screen_share" && item.track));
       setMicOn(room.localParticipant.isMicrophoneEnabled);
       setCameraOn(room.localParticipant.isCameraEnabled);
+    };
+    const reportIncident = (code: string) => {
+      const timestamp = Date.now();
+      const last = incidentReportsRef.current.get(code) || 0;
+      if (timestamp - last < 30_000) return;
+      incidentReportsRef.current.set(code, timestamp);
+      void fetch(`/api/study-groups/sessions/${sessionId}/livekit-incident`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }), keepalive: true }).catch(() => undefined);
+    };
+    const showIncident = (incident: ReturnType<typeof classifyLiveKitIncident>) => {
+      reportIncident(incident.code);
+      if (incident.action === "sdk_reconnect") {
+        setErrorCode("network_lost");
+        return;
+      }
+      if (incident.action === "end_session") {
+        setErrorCode("room_ended");
+        void load();
+        return;
+      }
+      if (incident.action === "show_duplicate_identity") {
+        setErrorCode("duplicate_identity");
+        return;
+      }
+      if (incident.action === "show_removed") {
+        setErrorCode("participant_removed");
+        return;
+      }
+      setErrorCode("connect_failed");
     };
     room.on(RoomEvent.DataReceived, (payload, participant) => {
       const message = JSON.parse(new TextDecoder().decode(payload)) as { type: string; text?: string; raised?: boolean };
@@ -200,7 +230,23 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     });
     room.on(RoomEvent.LocalTrackPublished, () => { paint(); showShare(); });
     room.on(RoomEvent.LocalTrackUnpublished, () => { paint(); showShare(); });
-    room.on(RoomEvent.Disconnected, () => {
+    room.on(RoomEvent.Reconnecting, () => {
+      setConnected(false);
+      showIncident(classifyLiveKitIncident({ source: "connection_quality", quality: "Lost" }));
+    });
+    room.on(RoomEvent.Reconnected, () => {
+      setConnected(true);
+      setErrorCode("");
+      paint();
+      showShare();
+    });
+    room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      if (participant?.identity !== room.localParticipant.identity) return;
+      const qualityName = String(quality).toUpperCase().includes("LOST") ? "Lost" : String(quality);
+      const incident = classifyLiveKitIncident({ source: "connection_quality", quality: qualityName });
+      if (incident.action === "sdk_reconnect") showIncident(incident);
+    });
+    room.on(RoomEvent.Disconnected, (reason) => {
       if (roomRef.current !== room || leftRef.current || releasedRef.current) return;
       roomRef.current = null;
       setRoomApi(null);
@@ -209,11 +255,13 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setCameraOn(false);
       setSharing(false);
       setShareTrack(null);
-      if (!recoveryUsedRef.current) {
+      const incident = classifyLiveKitIncident({ source: "disconnect", reason: String(reason) });
+      reportIncident(incident.code);
+      if (incident.action === "reissue_verified_token" && !recoveryUsedRef.current) {
         recoveryUsedRef.current = true;
         setRecoveryRequired(true);
         setConnectAttempt((attempt) => attempt + 1);
-      } else setErrorCode("connect_failed");
+      } else showIncident(incident);
     });
     try {
       await room.connect(issued.data.liveKitUrl, issued.data.token);

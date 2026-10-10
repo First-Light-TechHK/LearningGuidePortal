@@ -646,6 +646,10 @@
       "unauthenticated": "Sign in is required.",
       "unavailable": "Live Session connection is not configured.",
       "connect_failed": "The Live Session could not connect. Check the connection and try again.",
+      "network_lost": "Your network connection is weak. Trying to reconnect…",
+      "room_ended": "This Live Session has ended.",
+      "duplicate_identity": "This account joined the Live Session elsewhere. Close the other session and reconnect.",
+      "participant_removed": "You were removed from this Live Session.",
       "error": "Something went wrong. Try again."
     }
   },

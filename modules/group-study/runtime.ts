@@ -146,6 +146,11 @@ export function studyGroupService() {
     liveKit: { apiKey: "", apiSecret: "", url: "" },
     liveKitProjects: liveKit.projects,
     liveKitGateway: liveKit.gateway,
+    liveKitIncidentReporter: ({ sessionId: _sessionId, ...incident }) => {
+      // Session id is the LiveKit room name; correlation stays in the request
+      // path and never enters the general-purpose operational log stream.
+      console.info(JSON.stringify({ type: "study_group.livekit_incident", ...incident }));
+    },
     tokenLogKey: tokenLogKey(),
     courseKnowledge: readStoredCourseKnowledge,
     tutorKeys: () => readTutorKeys(process.env.STUDY_GROUP_TUTOR_KEYS),
