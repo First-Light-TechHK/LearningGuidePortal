@@ -1,6 +1,6 @@
 # Study Group decisions
 
-PRD v0.10 section 8.1 lists the records and fields. It does not name PostgreSQL, RDS, or SQL. This branch keeps the Study Group store it already uses: the file repository in `modules/group-study/repository.ts`. No database, migration, or new store technology is added for Study Group. Writes that already repeat safely stay that way: a second join does not add a member, the same client event id returns the original tutor item, and a session has one meeting row.
+PRD v0.10 section 8.1 lists the records and fields. Production Study Group uses the product's selected RDS PostgreSQL store, as required by `AGENTS.md` and the release runbook. The file repository in `modules/group-study/repository.ts` is temporary local/test compatibility only; it is not a production deployment option. The RDS repository enforces the same idempotency facts with database constraints and transactions: a second join does not add a member, the same client event id returns the original tutor item, and a session has one meeting row.
 
 Where `study-group-architecture.md`, `study-group-tech-selection.md`, or `study-group-ai-tutor-plan.md` left a point open, this file is the choice.
 

@@ -37,3 +37,15 @@ items:
     level: integration
     case_id: SG-03/service/edge
     type: edge
+  - function_id: SG-04
+    level: integration
+    case_id: SG-04/livekit-operations/functional
+    type: functional
+  - function_id: SG-04
+    level: integration
+    case_id: SG-04/livekit-operations/negative
+    type: negative
+  - function_id: SG-04
+    level: integration
+    case_id: SG-04/livekit-operations/edge
+    type: edge

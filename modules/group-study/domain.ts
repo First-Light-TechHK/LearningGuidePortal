@@ -33,6 +33,7 @@ export type LiveSessionRow = {
   maxParticipants: number;
   focus: string | null;
   aiTutorEnabled: boolean;
+  liveKitProjectId: string | null;
   status: SessionStatus;
   startedAt: string | null;
   completedAt: string | null;

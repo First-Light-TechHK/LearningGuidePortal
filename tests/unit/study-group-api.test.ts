@@ -39,9 +39,19 @@ before(async () => {
   process.env.APP_ENV = "DEV";
   process.env.STORAGE_BACKEND = "local";
   process.env.SESSION_SECRET = "test-session-secret-with-at-least-32-characters";
-  process.env.LIVEKIT_API_KEY = "lk-key";
-  process.env.LIVEKIT_API_SECRET = "lk-secret-at-least-32-characters";
-  process.env.LIVEKIT_URL = "wss://livekit.example.test";
+  delete process.env.LIVEKIT_API_KEY;
+  delete process.env.LIVEKIT_API_SECRET;
+  delete process.env.LIVEKIT_URL;
+  process.env.LIVEKIT_PROJECTS_JSON = JSON.stringify([{
+    id: "local-test",
+    url: "wss://livekit.example.test",
+    state: "active",
+    credentialSecretId: "local-test"
+  }]);
+  process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON = JSON.stringify({
+    "local-test": { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters" }
+  });
+  process.env.LIVEKIT_FAKE_GATEWAY = "1";
   process.env.STUDY_GROUP_TOKEN_LOG_KEY = Buffer.alloc(32, 9).toString("base64");
   const store = await import("../../services/productStore");
   const files = await import("../../services/fileStore");

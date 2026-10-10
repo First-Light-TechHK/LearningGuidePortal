@@ -98,6 +98,14 @@ Product-aggregate data changes use numbered scripts under `db/data-migrations/`.
 
 正式发布前还必须运行 `npm run preflight:production`。如果 `/api/health/config` 返回 `ready: false`，不得把该 App Runner 服务当作生产站点开放购买或登录。生产环境必须使用真实 Google、WeChat、Stripe、SES 和 PostgreSQL/S3 配置；`LOCAL_SOCIAL_LOGIN=1`、`PAYMENT_MODE=demo` 或 `STORAGE_BACKEND=local` 均为阻断项。
 
+### Study Group / LiveKit release gate
+
+- Production Study Group requires the RDS migration for sessions, presence, tutor queue leases and webhook receipts; container-local JSON and in-memory delivery ownership are release blockers.
+- Configure `LIVEKIT_PROJECTS_JSON` with non-secret project ids/endpoints and AWS Secrets Manager references only. Production configuration must include at least one active project, valid token-log key, webhook secret and a resolvable credential reference. The browser never receives a provider secret or secret reference.
+- Before enabling Study Group, run the non-production LiveKit smoke: provision a room, connect two authorised test identities, publish a shared data message, process a signed participant-left webhook and verify the released seat. Record the project id, commit SHA and redacted evidence.
+- Complete and record a key-rotation drill with an overlap of at least the maximum token TTL plus the rollback window. For project retirement, set the project to `draining`, stop new assignments, wait for assigned rooms to end, then revoke the old credential. Never move an active room to another project.
+- CloudWatch alarms for provider error rate, webhook verification/retry failure, stale-presence reconciliation, tutor queue age and dead-letter count must be enabled. A failed alarm or smoke result blocks promotion.
+
 ## 5. 回滚
 
 ### WeChat login smoke test

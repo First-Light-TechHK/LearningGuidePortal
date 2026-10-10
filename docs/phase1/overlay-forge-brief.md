@@ -24,7 +24,7 @@ The sections below record the original tool integration and historical expected 
 
 - Overlay 状态只有 `active` | `blocked`。没有 `armed` / `draft` / `reviewed_by`。
 - `overlay.yaml`：`product.repo` 是本仓；`default_ref` 钉在 `ec9e12990fa700b034829fd2fd4af12d955bd40e`；`branches` 含 `main` / `dev` / `sit` / `uat` / `ppe` / `default`；`never_red_statuses: [blocked]`。
-- 七套件 `active`：login / payment / portal / my-learning / order / visitor-trial / study-group。`schema: overlay-suite/v2`。study-group 叶子在 `tests/unit/study-group-*.test.ts`。
+- 七套件 `active`：login / payment / portal / my-learning / order / visitor-trial / study-group。`schema: overlay-suite/v2`。study-group 的产品命令匹配 `tests/unit/study-group-*.test.ts`；除了 Group 与 Live Session 行为，也覆盖 LiveKit 项目配置、Secrets Manager 凭据解析、红脱敏权限健康探测和缓存契约。真实 Cloud smoke 仍只在获授权的非生产环境执行。
 - `overlay-check.yml`：checkout `AIOps@overlay-v2.0.0` → `_aiops`，`overlay validate` + `cover` + `run`。不要把 `test:io` 加进 Verify。
 - `forge-check.yml`：checkout `AIOps@forge-v1.1.3` → `_aiops`，`forge check` + `forge status --check-state`。
 - `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。

@@ -5,10 +5,11 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
+import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
+import { parseLiveKitProjects } from "../../modules/group-study/liveKitProjectRegistry";
 
 const NOW = "2026-09-19T02:00:00.000Z";
 let directory: string;
@@ -18,6 +19,7 @@ const access = new Set<string>();
 const mails: Array<{ to: string; subject: string; text: string }> = [];
 const notes: Array<{ userId: string; title: string; body: string }> = [];
 const tokenLogKey = Buffer.alloc(32, 7);
+let liveKit: { apiKey: string; apiSecret: string; url: string };
 
 beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lg-study-group-"));
@@ -25,6 +27,7 @@ beforeEach(async () => {
   access.add("host:course-1");
   notes.length = 0;
   mails.length = 0;
+  liveKit = { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" };
   repository = createStudyGroupRepository(directory);
   service = createStudyGroupService({
     repository,
@@ -35,7 +38,7 @@ beforeEach(async () => {
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: userId === "nomail" ? null : `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input); },
     sendMail: async (input) => { mails.push(input); },
-    liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
+    liveKit,
     tokenLogKey
   });
 });
@@ -435,6 +438,81 @@ test("a failed token issuance does not keep the seat", async () => {
   const restored = await service.issueToken({ actorUserId: "host", sessionId: session.id });
   assert.equal(restored.liveKitUrl, "wss://livekit.example.test");
   assert.equal((await repository.read()).presences.some((item) => item.sessionId === session.id && item.userId === "host" && item.enteredAt && !item.leftAt), true);
+});
+
+test("an incomplete LiveKit endpoint rejects token issuance before retaining a seat or audit log", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Endpoint check", courseId: "course-1", about: "About the endpoint check." });
+  const session = await service.scheduleSession({
+    actorUserId: "host",
+    groupId: group.id,
+    title: "Open",
+    startsAt: "2026-09-19T02:05:00.000Z",
+    durationSeconds: 1800,
+    maxParticipants: 2
+  });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  liveKit.url = "";
+
+  await assert.rejects(
+    () => service.issueToken({ actorUserId: "host", sessionId: session.id }),
+    (error: unknown) => (error as { code: string }).code === "unavailable"
+  );
+
+  const stored = await repository.read();
+  assert.equal(stored.presences.some((item) => item.sessionId === session.id && item.userId === "host" && !item.leftAt), false);
+  await assert.rejects(() => readFile(path.join(directory, "token-issuance.log"), "utf8"), { code: "ENOENT" });
+});
+
+test("a live session keeps its selected LiveKit project for room creation and token issuance", async () => {
+  const ensured: Array<{ projectId: string; room: string; maxParticipants: number }> = [];
+  const issued: string[] = [];
+  const local = serviceWith({
+    liveKitProjects: parseLiveKitProjects(JSON.stringify([{
+      id: "eu-primary",
+      url: "wss://eu-primary.livekit.cloud",
+      state: "active",
+      credentialSecretId: "learning-guide/livekit/eu-primary"
+    }])),
+    liveKitGateway: {
+      ensureRoom: async ({ project, room, maxParticipants }) => { ensured.push({ projectId: project.id, room, maxParticipants }); },
+      issueParticipantToken: async ({ project, room }) => {
+        issued.push(project.id);
+        return { token: "gateway-token", expiresAt: "2026-09-19T02:10:00.000Z", url: `wss://${room}.example.test` };
+      },
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Assigned provider", courseId: "course-1", about: "About provider assignment." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Assigned", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  const token = await local.issueToken({ actorUserId: "host", sessionId: session.id });
+
+  assert.deepEqual(ensured, [{ projectId: "eu-primary", room: session.id, maxParticipants: 4 }]);
+  assert.deepEqual(issued, ["eu-primary"]);
+  assert.equal(token.token, "gateway-token");
+  assert.equal((await repository.read()).sessions.find((item) => item.id === session.id)?.liveKitProjectId, "eu-primary");
+});
+
+test("a provider authentication response is classified separately from a transient tutor failure", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response("invalid credential", { status: 401 })) as typeof fetch;
+  try {
+    const result = await openRouterTutorCall({
+      secret: "known-bad-key",
+      model: "test-model",
+      system: "grounded",
+      context: "course context",
+      text: "question",
+      url: "https://provider.example.test/v1/chat/completions"
+    });
+    assert.equal(result.outcome, "auth_failed");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("an AI Tutor request is queued for the live session without a model, a seat change, or a token", async () => {
@@ -869,6 +947,37 @@ test("a failed tutor call does not leave the next question waiting", async () =>
   const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
   assert.equal(JSON.stringify(items).includes("The course material does not contain the answer."), false);
+});
+
+test("a failed shared-room publish settles that item and lets the next tutor request proceed", async () => {
+  const published: string[] = [];
+  const calls: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ text }) => {
+      calls.push(text);
+      return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` };
+    },
+    publishRoomChat: async ({ text }) => {
+      if (text.includes("first")) throw new Error("LiveKit unavailable");
+      published.push(text);
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Publish failure", courseId: "course-1", about: "About the shared publish failure." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Publish", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 first?", clientEventId: "evt-publish-first" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 second?", clientEventId: "evt-publish-second" });
+
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+
+  assert.deepEqual(calls, ["What ended in 1933 first?", "What ended in 1933 second?"]);
+  assert.deepEqual(published, ["Answer: What ended in 1933 second?"]);
+  assert.equal(delivered?.text, "Answer: What ended in 1933 second?");
+  const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
 });
 
 test("a second delivery does not call the model while the first is still working", async () => {

@@ -15,6 +15,8 @@ import {
   type TutorRequestRow
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
+import type { LiveKitRoomGateway } from "./liveKitGateway";
+import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import type { StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
@@ -34,9 +36,11 @@ export type StudyGroupDeps = {
   notify: (input: { userId: string; title: string; body: string }) => Promise<void>;
   sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN" }) => Promise<void>;
   liveKit: { apiKey: string; apiSecret: string; url: string };
+  liveKitProjects?: LiveKitProjectRegistry;
+  liveKitGateway?: LiveKitRoomGateway;
   tokenLogKey: Buffer;
   courseKnowledge?: (courseId: string) => Promise<string>;
-  publishRoomChat?: (input: { room: string; text: string }) => Promise<void>;
+  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
   tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
 };
@@ -457,6 +461,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           maxParticipants: input.maxParticipants,
           focus: (() => { const focus = clean(input.focus || ""); if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long."); return focus || null; })(),
           aiTutorEnabled: input.aiTutorEnabled !== false,
+          liveKitProjectId: null,
           status: "scheduled",
           startedAt: null,
           completedAt: null,
@@ -565,6 +570,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async startSession(input: { actorUserId: string; sessionId: string }) {
+      const pending = await deps.repository.read();
+      const pendingSession = pending.sessions.find((item) => item.id === input.sessionId);
+      let assignedProjectId: string | null = null;
+      if (pendingSession && pendingSession.status !== "live" && deps.liveKitProjects && deps.liveKitGateway) {
+        const { session: current, membership } = requireOpenSession(pending, input.sessionId, input.actorUserId);
+        if (membership.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can start the Live Session.");
+        const state = effectiveSessionState(current, deps.now());
+        if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
+        if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
+        if (missedUnstarted(current, deps.now(), occupancy(pending, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+        const project = current.liveKitProjectId ? deps.liveKitProjects.getAssigned(current.liveKitProjectId) : deps.liveKitProjects.selectForNewSession({ sessionId: current.id });
+        await deps.liveKitGateway.ensureRoom({ project, room: current.id, maxParticipants: current.maxParticipants });
+        assignedProjectId = project.id;
+      }
       const now = deps.now().toISOString();
       const session = await deps.repository.update((store) => {
         const { session: current, membership } = requireOpenSession(store, input.sessionId, input.actorUserId);
@@ -574,6 +593,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
         if (missedUnstarted(current, deps.now(), occupancy(store, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
         if (current.status !== "live") {
+          if (assignedProjectId) current.liveKitProjectId = assignedProjectId;
           current.status = "live";
           current.startedAt = now;
           current.updatedAt = now;
@@ -617,17 +637,40 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (row) row.leftAt = deps.now().toISOString();
       });
       try {
-        if (!deps.liveKit.apiKey || !deps.liveKit.apiSecret) throw new StudyGroupError("unavailable", "LiveKit is not configured.");
         const profile = await deps.userProfile(input.actorUserId);
-        const signed = signParticipantToken({
-          apiKey: deps.liveKit.apiKey,
-          apiSecret: deps.liveKit.apiSecret,
-          identity: input.actorUserId,
-          name: profile?.displayName || input.actorUserId,
-          room: session.id,
-          ttlSeconds: TOKEN_TTL_SECONDS,
-          now: deps.now()
-        });
+        let assignedProjectId = session.liveKitProjectId;
+        if (deps.liveKitProjects && deps.liveKitGateway && !assignedProjectId) {
+          const selected = deps.liveKitProjects.selectForNewSession({ sessionId: session.id });
+          assignedProjectId = await deps.repository.update((current) => {
+            const row = current.sessions.find((item) => item.id === session.id);
+            if (!row || row.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
+            row.liveKitProjectId ??= selected.id;
+            return row.liveKitProjectId;
+          });
+        }
+        const signed = deps.liveKitProjects && deps.liveKitGateway
+          ? await (() => {
+            if (!assignedProjectId) throw new StudyGroupError("unavailable", "LiveKit room is not assigned to a project.");
+            return deps.liveKitGateway!.issueParticipantToken({
+              project: deps.liveKitProjects!.getAssigned(assignedProjectId),
+              identity: input.actorUserId,
+              name: profile?.displayName || input.actorUserId,
+              room: session.id,
+              ttlSeconds: TOKEN_TTL_SECONDS
+            });
+          })()
+          : (() => {
+            if (!deps.liveKit.apiKey || !deps.liveKit.apiSecret || !deps.liveKit.url) throw new StudyGroupError("unavailable", "LiveKit is not configured.");
+            return signParticipantToken({
+              apiKey: deps.liveKit.apiKey,
+              apiSecret: deps.liveKit.apiSecret,
+              identity: input.actorUserId,
+              name: profile?.displayName || input.actorUserId,
+              room: session.id,
+              ttlSeconds: TOKEN_TTL_SECONDS,
+              now: deps.now()
+            });
+          })();
         const line = encryptTokenLogLine({
           userId: input.actorUserId,
           role: membership.role,
@@ -635,9 +678,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           state: "token_issued",
           at: deps.now().toISOString()
         }, deps.tokenLogKey);
-        if (line.includes(signed.token) || line.includes(deps.liveKit.apiSecret)) throw new StudyGroupError("unavailable", "Token log refused.");
+        if (line.includes(signed.token) || (!deps.liveKitGateway && line.includes(deps.liveKit.apiSecret))) throw new StudyGroupError("unavailable", "Token log refused.");
         await deps.repository.appendTokenLog(line);
-        return { token: signed.token, expiresAt: signed.expiresAt, liveKitUrl: deps.liveKit.url };
+        return { token: signed.token, expiresAt: signed.expiresAt, liveKitUrl: "url" in signed ? signed.url : deps.liveKit.url };
       } catch (error) {
         await releaseSeat();
         throw error;
@@ -722,7 +765,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
               reply = result.body.trim();
             }
           }
-          if (deps.publishRoomChat) await deps.publishRoomChat({ room: session.id, text: reply });
+          try {
+            if (deps.publishRoomChat) await deps.publishRoomChat({ room: session.id, text: reply, projectId: session.liveKitProjectId, messageId: item.id });
+          } catch {
+            // A room transport failure must not strand the session's in-flight
+            // request and prevent later participants from being served.
+            await markAnswered(item.id, session.id);
+            continue;
+          }
           await markAnswered(item.id, session.id);
           last = { text: reply };
         }

@@ -5,7 +5,11 @@ import { sendStudyGroupReminderEmail } from "@/services/emailService";
 import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, recordUserNotification } from "@/services/productStore";
 import { createStudyGroupRepository } from "./repository";
 import { createStudyGroupService, type StudyGroupService } from "./service";
-import { openRouterTutorCall, publishLiveKitData, readTutorKeys } from "./tutorAnswer";
+import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
+import { createLiveKitHealthService, type LiveKitHealthService } from "./liveKitHealth";
+import { parseLiveKitProjects } from "./liveKitProjectRegistry";
+import { createAwsLiveKitCredentialResolver, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
+import { openRouterTutorCall, readTutorKeys } from "./tutorAnswer";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
 
 async function readStoredCourseKnowledge(courseId: string) {
@@ -24,18 +28,81 @@ async function readStoredCourseKnowledge(courseId: string) {
 }
 
 const services = new Map<string, StudyGroupService>();
+const liveKitHealthServices = new Map<string, LiveKitHealthService>();
+const liveKitRuntimes = new Map<string, ReturnType<typeof liveKitRuntime>>();
 
 function tokenLogKey() {
   const encoded = process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim();
-  if (!encoded) return Buffer.alloc(32, 0);
+  if (!encoded) throw new Error("STUDY_GROUP_TOKEN_LOG_KEY is not configured.");
   const key = Buffer.from(encoded, "base64");
-  return key.length === 32 ? key : Buffer.alloc(32, 0);
+  if (key.length !== 32) throw new Error("STUDY_GROUP_TOKEN_LOG_KEY must be a 32-byte base64 value.");
+  return key;
+}
+
+function localCredentialResolver() {
+  if ((process.env.APP_ENV || "DEV").trim().toUpperCase() !== "DEV") return null;
+  const raw = process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON?.trim();
+  if (!raw) return null;
+  let values: unknown;
+  try {
+    values = JSON.parse(raw);
+  } catch {
+    throw new Error("LIVEKIT_LOCAL_CREDENTIALS_JSON is not valid JSON.");
+  }
+  if (!values || typeof values !== "object" || Array.isArray(values)) throw new Error("LIVEKIT_LOCAL_CREDENTIALS_JSON must be an object.");
+  const entries = values as Record<string, unknown>;
+  return createLiveKitCredentialResolver({
+    async getSecretValue(secretId) {
+      const value = entries[secretId];
+      return value === undefined ? undefined : JSON.stringify(value);
+    }
+  });
+}
+
+function liveKitRuntime() {
+  const projects = parseLiveKitProjects(process.env.LIVEKIT_PROJECTS_JSON);
+  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver();
+  const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
+  const gateway = createLiveKitCloudGateway({
+    resolveCredentials: (project) => resolver.resolve(project),
+    createRoomService: fakeGateway ? async () => ({
+      createRoom: async () => undefined,
+      sendData: async () => undefined,
+      removeParticipant: async () => undefined,
+      listRooms: async () => []
+    }) : undefined
+  });
+  return { projects, gateway };
+}
+
+function runtimeForDirectory(directory: string) {
+  const existing = liveKitRuntimes.get(directory);
+  if (existing) return existing;
+  const runtime = liveKitRuntime();
+  liveKitRuntimes.set(directory, runtime);
+  return runtime;
+}
+
+function healthForDirectory(directory: string) {
+  const existing = liveKitHealthServices.get(directory);
+  if (existing) return existing;
+  const liveKit = runtimeForDirectory(directory);
+  const health = createLiveKitHealthService({ registry: liveKit.projects, gateway: liveKit.gateway });
+  liveKitHealthServices.set(directory, health);
+  return health;
+}
+
+export async function studyGroupLiveKitHealth() {
+  const directory = path.join(systemRoot(), "learning_guide", "study-group");
+  return healthForDirectory(directory).check();
 }
 
 export function studyGroupService() {
   const directory = path.join(systemRoot(), "learning_guide", "study-group");
   const existing = services.get(directory);
   if (existing) return existing;
+  const liveKit = runtimeForDirectory(directory);
+  const health = healthForDirectory(directory);
   const service = createStudyGroupService({
     repository: createStudyGroupRepository(directory),
     now: () => new Date(),
@@ -74,11 +141,10 @@ export function studyGroupService() {
         return;
       }
     },
-    liveKit: {
-      apiKey: process.env.LIVEKIT_API_KEY?.trim() || "",
-      apiSecret: process.env.LIVEKIT_API_SECRET?.trim() || "",
-      url: process.env.LIVEKIT_URL?.trim() || process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim() || ""
-    },
+    // Compatibility shape for local unit-service fixtures; runtime traffic uses the registry and gateway below.
+    liveKit: { apiKey: "", apiSecret: "", url: "" },
+    liveKitProjects: liveKit.projects,
+    liveKitGateway: liveKit.gateway,
     tokenLogKey: tokenLogKey(),
     courseKnowledge: readStoredCourseKnowledge,
     tutorKeys: () => readTutorKeys(process.env.STUDY_GROUP_TUTOR_KEYS),
@@ -90,12 +156,9 @@ export function studyGroupService() {
       text: input.text,
       url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined
     }),
-    publishRoomChat: async ({ room, text }) => {
-      const apiKey = process.env.LIVEKIT_API_KEY?.trim() || "";
-      const apiSecret = process.env.LIVEKIT_API_SECRET?.trim() || "";
-      const url = process.env.LIVEKIT_URL?.trim() || process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim() || "";
-      if (!apiKey || !apiSecret || !url) return;
-      await publishLiveKitData({ url, apiKey, apiSecret, room, text, now: new Date() });
+    publishRoomChat: async ({ room, text, projectId, messageId }) => {
+      if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId });
     }
   });
   services.set(directory, service);
@@ -106,6 +169,23 @@ export function studyGroupService() {
     const timer = setInterval(() => {
       void service.dispatchDueReminders().catch(() => undefined);
     }, 30_000);
+    timer.unref();
+  }
+  const healthTimers = globalThis as typeof globalThis & { __lgStudyGroupLiveKitHealthTimers?: Set<string>; __lgStudyGroupLiveKitHealthStates?: Map<string, string> };
+  healthTimers.__lgStudyGroupLiveKitHealthTimers ??= new Set();
+  healthTimers.__lgStudyGroupLiveKitHealthStates ??= new Map();
+  const reportHealth = () => {
+    void health.check().then((snapshot) => {
+      const state = snapshot.projects.map((project) => `${project.id}:${project.status}`).join(",");
+      if (healthTimers.__lgStudyGroupLiveKitHealthStates?.get(directory) === state) return;
+      healthTimers.__lgStudyGroupLiveKitHealthStates?.set(directory, state);
+      console.info(JSON.stringify({ type: "study_group.livekit_health", ready: snapshot.ready, attentionRequired: snapshot.attentionRequired, projects: snapshot.projects.map(({ id, state, status, latencyMs, activeRooms }) => ({ id, state, status, latencyMs, ...(activeRooms === undefined ? {} : { activeRooms }) })) }));
+    }).catch(() => undefined);
+  };
+  if (!healthTimers.__lgStudyGroupLiveKitHealthTimers.has(directory)) {
+    healthTimers.__lgStudyGroupLiveKitHealthTimers.add(directory);
+    reportHealth();
+    const timer = setInterval(reportHealth, 5 * 60_000);
     timer.unref();
   }
   return service;

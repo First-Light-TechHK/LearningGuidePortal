@@ -7,5 +7,7 @@ subject: product
 source: inbox/study-group.md
 packages:
   - modules/group-study
+  - services/liveKitCredentials.ts
+  - app/api/backoffice/study-group
 blocked_reason: null
-product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/study-group-service.test.ts tests/unit/study-group-api.test.ts tests/unit/study-group-ui.test.ts
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/study-group-*.test.ts

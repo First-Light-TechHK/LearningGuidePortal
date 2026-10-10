@@ -50,3 +50,20 @@
 - Title: First come first served and no Host grant in the token
 - Steps: Overlap entry requests with different request times; decode the token
 - Expected: Earlier request time wins; the token room is this Session and has no Host claim; the log line is encrypted and has no raw token
+
+## SG-04 LiveKit operational readiness
+
+### Functional
+- Title: A configured project proves Room Service access without a mutation
+- Steps: Resolve an active project's server-side credential and run the project health probe
+- Expected: The probe lists rooms, reports only a redacted project/endpoint/status/latency snapshot, and an active healthy project makes new-session readiness true
+
+### Negative
+- Title: Unsafe configuration or unavailable authority fails closed
+- Steps: Supply an invalid endpoint, missing credential reference, unresolved secret, or a Room Service 401/403 response
+- Expected: Configuration is rejected or readiness is false with a typed redacted failure class; no key, secret reference, token, room name, prompt, or provider response body is returned
+
+### Edge
+- Title: Draining projects remain observed and a snapshot is bounded
+- Steps: Configure active, draining, and disabled projects; repeat the health read inside the cache window
+- Expected: Active and draining projects are checked once, disabled projects are skipped, a failing draining project raises attention without making an otherwise healthy active allocation unavailable, and cached reads do not repeatedly call the provider

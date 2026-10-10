@@ -1,4 +1,4 @@
-export type TutorKeyOutcome = "ok" | "failed" | "rate_limited" | "quota";
+export type TutorKeyOutcome = "ok" | "failed" | "auth_failed" | "rate_limited" | "quota";
 
 export type TutorKeyCall = (secret: string) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
 

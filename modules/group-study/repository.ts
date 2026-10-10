@@ -8,9 +8,9 @@ export type StudyGroupRepository = {
   update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>): Promise<T>;
 };
 
-function withoutMinutes(session: StudyGroupStore["sessions"][number] & { durationMinutes?: number }) {
+function withoutMinutes(session: StudyGroupStore["sessions"][number] & { durationMinutes?: number; liveKitProjectId?: string | null }) {
   const { durationMinutes: _minutes, ...rest } = session;
-  return rest;
+  return { ...rest, liveKitProjectId: rest.liveKitProjectId ?? null };
 }
 
 function normalise(value: Partial<StudyGroupStore> | null): StudyGroupStore {

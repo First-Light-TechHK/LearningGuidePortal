@@ -32,3 +32,9 @@ items:
       - ML-FR-004
       - PAY-09
     span: interaction
+  - id: INV-livekit-secret-boundary
+    text: LiveKit project credentials and participant tokens remain server-only or session-scoped; configuration diagnostics and operational health results expose only redacted operational identifiers and typed status.
+    function_ids:
+      - SG-03
+      - SG-04
+    span: interaction

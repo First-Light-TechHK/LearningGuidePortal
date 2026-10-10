@@ -68,7 +68,7 @@ export async function openRouterTutorCall(input: { secret: string; model: string
     }, { timeoutMs: 45_000, attempts: 1 });
     const latencyMs = Date.now() - started;
     const raw = await response.text();
-    if (response.status === 401 || response.status === 403) return { outcome: "failed", latencyMs };
+    if (response.status === 401 || response.status === 403) return { outcome: "auth_failed", latencyMs };
     if (response.status === 429) return { outcome: "rate_limited", latencyMs };
     if (response.status === 402 || /quota|insufficient_quota|credit/i.test(raw)) return { outcome: "quota", latencyMs };
     if (!response.ok) return { outcome: "failed", latencyMs };
