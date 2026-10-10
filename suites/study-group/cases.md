@@ -61,7 +61,7 @@
 ### Negative
 - Title: Unsafe configuration or unavailable authority fails closed
 - Steps: Supply an invalid endpoint, missing credential reference, unresolved secret, or a Room Service 401/403 response
-- Expected: Configuration is rejected or readiness is false with a typed redacted failure class; no key, secret reference, token, room name, prompt, or provider response body is returned (`INV-livekit-secret-boundary`)
+- Expected: Configuration is rejected or readiness is false with a typed redacted failure class; no key, secret reference, token, room name, prompt, or provider response body is returned; INV-livekit-secret-boundary
 
 ### Edge
 - Title: Draining projects remain observed and a snapshot is bounded
