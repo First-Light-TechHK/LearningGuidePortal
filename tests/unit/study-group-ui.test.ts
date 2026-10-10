@@ -56,6 +56,7 @@ test("host start opens the room only after entry succeeds", () => {
   assert.match(readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8"), /styles\.shareMain\} autoPlay playsInline muted/);
   assert.match(readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8"), /TrackUnpublished/);
   assert.match(readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8"), /RoomEvent\.Disconnected/);
+  assert.match(readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8"), /recovery: true/);
 });
 
 test("session title counter matches the 20 character Figma limit", () => {

@@ -146,6 +146,11 @@ test("study group API requires a session, hides sessions until join, and does no
   const issued = await call(postToken, `http://localhost/api/study-groups/sessions/${sessionId}/token`, {}, token, { sessionId });
   assert.equal(issued.status, 200);
   const issuedBody = await issued.json();
+  const malformedRecovery = await call(postToken, `http://localhost/api/study-groups/sessions/${sessionId}/token`, { recovery: "yes" }, token, { sessionId });
+  assert.equal(malformedRecovery.status, 400);
+  const simulatedRecovery = await call(postToken, `http://localhost/api/study-groups/sessions/${sessionId}/token`, { recovery: true }, token, { sessionId });
+  assert.equal(simulatedRecovery.status, 503);
+  assert.equal((await simulatedRecovery.json()).code, "unavailable");
   const storeFile = await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8");
   assert.equal(storeFile.includes(issuedBody.data.token), false);
   assert.equal(storeFile.includes("lk-secret-at-least-32-characters"), false);

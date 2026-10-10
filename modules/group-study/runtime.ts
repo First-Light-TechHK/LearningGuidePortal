@@ -64,7 +64,7 @@ function liveKitRuntime() {
   const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver();
   const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
   const gateway = createLiveKitCloudGateway({
-    resolveCredentials: (project) => resolver.resolve(project),
+    resolveCredentials: (project, options) => resolver.resolve(project, options),
     providerVerified: !fakeGateway,
     createRoomService: fakeGateway ? async () => ({
       createRoom: async () => undefined,

@@ -17,7 +17,7 @@ export type LiveKitProjectDiagnostic = Readonly<{
 }>;
 
 export interface LiveKitProjectRegistry {
-  selectForNewSession(input: { sessionId: string; region?: string }): LiveKitProjectRef;
+  selectForNewSession(input: { sessionId: string; region?: string; excludeProjectIds?: ReadonlySet<string> }): LiveKitProjectRef;
   getAssigned(projectId: string): LiveKitProjectRef;
   diagnostics(): ReadonlyArray<LiveKitProjectDiagnostic>;
 }
@@ -93,8 +93,8 @@ export function parseLiveKitProjects(raw: string | undefined): LiveKitProjectReg
 
   const byId = new Map(entries.map((project) => [project.id, project]));
   return {
-    selectForNewSession({ sessionId, region }) {
-      const candidates = active.filter((project) => !region || project.region === region);
+    selectForNewSession({ sessionId, region, excludeProjectIds }) {
+      const candidates = active.filter((project) => (!region || project.region === region) && !excludeProjectIds?.has(project.id));
       if (candidates.length === 0) throw new Error("No active LiveKit project matches the requested region.");
       const totalWeight = candidates.reduce((total, project) => total + project.weight, 0);
       let selection = stableHash(sessionId) % totalWeight;

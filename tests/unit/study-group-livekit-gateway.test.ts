@@ -126,3 +126,49 @@ test("A fake room transport cannot claim a real LiveKit account check", async ()
   assert.deepEqual(health, { projectId: "eu-primary", status: "unverified", evidence: "simulated", providerVerified: false, checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 0 });
   assert.equal("activeRooms" in health, false);
 });
+
+test("credential recovery forces one current-secret read, verifies the provider once per project, then signs caller-scoped tokens", async () => {
+  let forcedReads = 0;
+  let verificationCalls = 0;
+  const gateway = createLiveKitCloudGateway({
+    resolveCredentials: async (_project, options) => {
+      if (options?.forceRefresh) forcedReads += 1;
+      return { apiKey: "rotated-key", apiSecret: "rotated-secret" };
+    },
+    createRoomService: async (): Promise<LiveKitRoomService> => ({
+      createRoom: async () => undefined,
+      sendData: async () => undefined,
+      removeParticipant: async () => undefined,
+      listRooms: async () => { verificationCalls += 1; await Promise.resolve(); return []; }
+    }),
+    now: () => new Date("2026-10-10T12:00:00.000Z")
+  });
+
+  const [one, two] = await Promise.all([
+    gateway.recoverParticipantToken!({ project, room: "session-1", identity: "learner-1", name: "One", ttlSeconds: 600 }),
+    gateway.recoverParticipantToken!({ project, room: "session-1", identity: "learner-2", name: "Two", ttlSeconds: 600 })
+  ]);
+  const onePayload = JSON.parse(Buffer.from(one.token.split(".")[1], "base64url").toString("utf8")) as { sub: string };
+  const twoPayload = JSON.parse(Buffer.from(two.token.split(".")[1], "base64url").toString("utf8")) as { sub: string };
+  assert.equal(forcedReads, 1);
+  assert.equal(verificationCalls, 1);
+  assert.equal(onePayload.sub, "learner-1");
+  assert.equal(twoPayload.sub, "learner-2");
+});
+
+test("credential recovery rejects an unauthorized current secret without minting a replacement token", async () => {
+  const gateway = createLiveKitCloudGateway({
+    resolveCredentials: async () => ({ apiKey: "bad-key", apiSecret: "bad-secret" }),
+    createRoomService: async (): Promise<LiveKitRoomService> => ({
+      createRoom: async () => undefined,
+      sendData: async () => undefined,
+      removeParticipant: async () => undefined,
+      listRooms: async () => { throw { status: 403, detail: "do-not-leak" }; }
+    })
+  });
+
+  await assert.rejects(
+    () => gateway.recoverParticipantToken!({ project, room: "session-1", identity: "learner-1", name: "Learner", ttlSeconds: 600 }),
+    (error: unknown) => (error as { code?: string }).code === "unauthorized" && !String((error as Error).message).includes("do-not-leak")
+  );
+});

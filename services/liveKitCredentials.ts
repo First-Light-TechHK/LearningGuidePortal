@@ -6,6 +6,8 @@ type SecretValueReader = {
   getSecretValue(secretId: string): Promise<string | undefined>;
 };
 
+export type LiveKitCredentialResolveOptions = Readonly<{ forceRefresh?: boolean }>;
+
 function requiredSecretField(value: unknown, field: string) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`LiveKit credential ${field} is missing.`);
   return value.trim();
@@ -23,12 +25,33 @@ export function parseLiveKitCredentials(raw: string): LiveKitCredentials {
   return { apiKey: requiredSecretField(value.apiKey, "apiKey"), apiSecret: requiredSecretField(value.apiSecret, "apiSecret") };
 }
 
-export function createLiveKitCredentialResolver(reader: SecretValueReader) {
+export function createLiveKitCredentialResolver(
+  reader: SecretValueReader,
+  input: { now?: () => Date; cacheTtlMs?: number } = {}
+) {
+  const now = input.now ?? (() => new Date());
+  const cacheTtlMs = input.cacheTtlMs ?? 60_000;
+  const cached = new Map<string, { credentials: LiveKitCredentials; at: number }>();
+  const inFlight = new Map<string, Promise<LiveKitCredentials>>();
+
+  async function readCurrent(project: LiveKitProjectRef) {
+    const raw = await reader.getSecretValue(project.credentialSecretId);
+    if (!raw) throw new Error("LiveKit credentials are unavailable.");
+    const credentials = parseLiveKitCredentials(raw);
+    cached.set(project.credentialSecretId, { credentials, at: now().getTime() });
+    return credentials;
+  }
+
   return {
-    async resolve(project: LiveKitProjectRef): Promise<LiveKitCredentials> {
-      const raw = await reader.getSecretValue(project.credentialSecretId);
-      if (!raw) throw new Error("LiveKit credentials are unavailable.");
-      return parseLiveKitCredentials(raw);
+    async resolve(project: LiveKitProjectRef, options: LiveKitCredentialResolveOptions = {}): Promise<LiveKitCredentials> {
+      const secretId = project.credentialSecretId;
+      const existing = cached.get(secretId);
+      if (!options.forceRefresh && existing && now().getTime() - existing.at < cacheTtlMs) return existing.credentials;
+      const pending = inFlight.get(secretId);
+      if (pending) return pending;
+      const operation = readCurrent(project).finally(() => { inFlight.delete(secretId); });
+      inFlight.set(secretId, operation);
+      return operation;
     }
   };
 }

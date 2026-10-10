@@ -1,5 +1,5 @@
 import { AccessToken, DataPacket_Kind, RoomServiceClient } from "livekit-server-sdk";
-import type { LiveKitCredentials, LiveKitProjectHealthStatus, LiveKitRoomGateway } from "./liveKitGateway";
+import { LiveKitGatewayError, type LiveKitCredentials, type LiveKitProjectHealthStatus, type LiveKitRoomGateway } from "./liveKitGateway";
 import type { LiveKitProjectRef } from "./liveKitProjectRegistry";
 
 export type LiveKitRoomService = {
@@ -10,7 +10,7 @@ export type LiveKitRoomService = {
 };
 
 type CloudGatewayDeps = {
-  resolveCredentials: (project: LiveKitProjectRef) => Promise<LiveKitCredentials>;
+  resolveCredentials: (project: LiveKitProjectRef, options?: { forceRefresh?: boolean }) => Promise<LiveKitCredentials>;
   createRoomService?: (project: LiveKitProjectRef, credentials: LiveKitCredentials) => Promise<LiveKitRoomService>;
   providerVerified?: boolean;
   now?: () => Date;
@@ -56,40 +56,114 @@ function healthFailure(error: unknown): LiveKitProjectHealthStatus {
   return "unreachable";
 }
 
+function recoveryFailure(error: unknown) {
+  const status = healthFailure(error);
+  if (status === "unauthorized" || status === "rate_limited") return new LiveKitGatewayError(status);
+  return new LiveKitGatewayError("unreachable");
+}
+
 export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGateway {
   const now = deps.now ?? (() => new Date());
   const providerVerified = deps.providerVerified !== false;
-  const roomService = async (project: LiveKitProjectRef) => {
-    const credentials = await deps.resolveCredentials(project);
+  const roomService = async (project: LiveKitProjectRef, options?: { forceRefresh?: boolean }) => {
+    const credentials = await deps.resolveCredentials(project, options);
     return deps.createRoomService ? deps.createRoomService(project, credentials) : defaultRoomService(project, credentials);
   };
+  const recoveryVerifications = new Map<string, Promise<LiveKitCredentials>>();
+
+  async function verifiedCurrentCredentials(project: LiveKitProjectRef) {
+    const existing = recoveryVerifications.get(project.id);
+    if (existing) return existing;
+    const operation = (async () => {
+      let credentials: LiveKitCredentials;
+      let service: LiveKitRoomService;
+      try {
+        credentials = await deps.resolveCredentials(project, { forceRefresh: true });
+        service = deps.createRoomService ? await deps.createRoomService(project, credentials) : defaultRoomService(project, credentials);
+      } catch {
+        throw new LiveKitGatewayError("credential_unavailable");
+      }
+      if (!providerVerified) throw new LiveKitGatewayError("unverified");
+      try {
+        await service.listRooms();
+      } catch (error) {
+        throw recoveryFailure(error);
+      }
+      return credentials;
+    })().finally(() => { recoveryVerifications.delete(project.id); });
+    recoveryVerifications.set(project.id, operation);
+    return operation;
+  }
+
+  async function participantToken(credentials: LiveKitCredentials, input: { project: LiveKitProjectRef; room: string; identity: string; name: string; ttlSeconds: number }) {
+    const token = new AccessToken(credentials.apiKey, credentials.apiSecret, { identity: input.identity, name: input.name, ttl: input.ttlSeconds });
+    token.addGrant({ room: input.room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true });
+    return {
+      token: await token.toJwt(),
+      expiresAt: new Date(now().getTime() + input.ttlSeconds * 1_000).toISOString(),
+      url: input.project.url
+    };
+  }
 
   return {
     async ensureRoom({ project, room, maxParticipants }) {
-      await (await roomService(project)).createRoom({ room, maxParticipants });
-    },
-    async issueParticipantToken({ project, room, identity, name, ttlSeconds }) {
-      const credentials = await deps.resolveCredentials(project);
-      const token = new AccessToken(credentials.apiKey, credentials.apiSecret, { identity, name, ttl: ttlSeconds });
-      token.addGrant({ room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true });
-      return {
-        token: await token.toJwt(),
-        expiresAt: new Date(now().getTime() + ttlSeconds * 1_000).toISOString(),
-        url: project.url
-      };
-    },
-    async publishTutorMessage({ project, room, messageId, text }) {
-      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text }));
-      await (await roomService(project)).sendData(room, payload, "RELIABLE", {});
-    },
-    async removeParticipant({ project, room, identity }) {
-      await (await roomService(project)).removeParticipant(room, identity);
-    },
-    async healthCheck({ project }) {
-      const startedAt = now().getTime();
       let service: LiveKitRoomService;
       try {
         service = await roomService(project);
+      } catch {
+        throw new LiveKitGatewayError("credential_unavailable");
+      }
+      try {
+        await service.createRoom({ room, maxParticipants });
+      } catch (error) {
+        throw recoveryFailure(error);
+      }
+    },
+    async issueParticipantToken({ project, room, identity, name, ttlSeconds }) {
+      let credentials: LiveKitCredentials;
+      try {
+        credentials = await deps.resolveCredentials(project);
+      } catch {
+        throw new LiveKitGatewayError("credential_unavailable");
+      }
+      return participantToken(credentials, { project, room, identity, name, ttlSeconds });
+    },
+    async recoverParticipantToken({ project, room, identity, name, ttlSeconds }) {
+      const credentials = await verifiedCurrentCredentials(project);
+      return participantToken(credentials, { project, room, identity, name, ttlSeconds });
+    },
+    async publishTutorMessage({ project, room, messageId, text }) {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text }));
+      let service: LiveKitRoomService;
+      try {
+        service = await roomService(project);
+      } catch {
+        throw new LiveKitGatewayError("credential_unavailable");
+      }
+      try {
+        await service.sendData(room, payload, "RELIABLE", {});
+      } catch (error) {
+        throw recoveryFailure(error);
+      }
+    },
+    async removeParticipant({ project, room, identity }) {
+      let service: LiveKitRoomService;
+      try {
+        service = await roomService(project);
+      } catch {
+        throw new LiveKitGatewayError("credential_unavailable");
+      }
+      try {
+        await service.removeParticipant(room, identity);
+      } catch (error) {
+        throw recoveryFailure(error);
+      }
+    },
+    async healthCheck({ project, forceRefresh }) {
+      const startedAt = now().getTime();
+      let service: LiveKitRoomService;
+      try {
+        service = await roomService(project, forceRefresh ? { forceRefresh: true } : undefined);
       } catch {
         return { projectId: project.id, status: "credential_unavailable", evidence: "credential_resolution", providerVerified: false, checkedAt: now().toISOString(), latencyMs: Math.max(0, now().getTime() - startedAt) };
       }

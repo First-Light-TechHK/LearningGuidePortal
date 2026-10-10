@@ -201,7 +201,7 @@ test("a failed seat grant writes no meeting and no token log", async () => {
   assert.equal((await logLines()).length, logBefore);
 });
 
-test("a failed token issuance does not keep the seat", async () => {
+test("a failed token issuance keeps the admitted seat available for retry", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Token seat", courseId: "course-1", about: "About the group." });
   const session = await service.scheduleSession({
     actorUserId: "host",
@@ -219,7 +219,7 @@ test("a failed token issuance does not keep the seat", async () => {
     () => blocked.issueToken({ actorUserId: "host", sessionId: session.id }),
     (error: unknown) => codeOf(error) === "unavailable"
   );
-  assert.deepEqual(await activeUsers(session.id), [], "failed token issuance kept the seat");
+  assert.deepEqual(await activeUsers(session.id), ["host"], "failed token issuance evicted the seat");
   assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), false);
   assert.equal((await logLines()).length, logBefore);
 });

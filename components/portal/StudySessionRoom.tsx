@@ -104,6 +104,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   leftRef.current = left;
   sessionStateRef.current = session?.state || "";
   const [connectAttempt, setConnectAttempt] = useState(0);
+  const [recoveryRequired, setRecoveryRequired] = useState(false);
+  const recoveryUsedRef = useRef(false);
   const [sideTab, setSideTab] = useState<"participants" | "chat">("participants");
   groupRef.current = group;
 
@@ -122,8 +124,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     if (detail.ok) setGroup(detail.data);
   }
 
-  async function connect(generation: number) {
-    const issued = await studyGroupRequest<{ token: string; liveKitUrl: string }>(`/api/study-groups/sessions/${sessionId}/token`, { method: "POST", body: "{}" });
+  async function connect(generation: number, recovery: boolean) {
+    const issued = await studyGroupRequest<{ token: string; liveKitUrl: string }>(`/api/study-groups/sessions/${sessionId}/token`, { method: "POST", body: JSON.stringify(recovery ? { recovery: true } : {}) });
     if (!issued.ok || !issued.data.liveKitUrl) throw new Error(issued.ok ? "unavailable" : issued.code);
     const { Room, RoomEvent } = await import("livekit-client");
     const room = new Room({
@@ -207,7 +209,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setCameraOn(false);
       setSharing(false);
       setShareTrack(null);
-      setErrorCode("connect_failed");
+      if (!recoveryUsedRef.current) {
+        recoveryUsedRef.current = true;
+        setRecoveryRequired(true);
+        setConnectAttempt((attempt) => attempt + 1);
+      } else setErrorCode("connect_failed");
     });
     try {
       await room.connect(issued.data.liveKitUrl, issued.data.token);
@@ -222,6 +228,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     roomRef.current = room;
     setRoomApi(room);
     setConnected(true);
+    recoveryUsedRef.current = false;
+    setRecoveryRequired(false);
     setErrorCode("");
     paint();
     void room.startAudio().catch(() => undefined);
@@ -280,6 +288,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     const generation = connectGeneration.current + 1;
     connectGeneration.current = generation;
     let timer = 0;
+    const recovery = recoveryRequired;
     const run = (triesLeft: number) => {
       void (async () => {
         await releaseRoom();
@@ -287,23 +296,29 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
         if (connectGeneration.current !== generation) return;
         if (!entered.ok) throw new Error(entered.code);
-        await connect(generation);
+        await connect(generation, recovery);
       })().catch((error: unknown) => {
         if (connectGeneration.current !== generation) return;
         if (triesLeft > 0) {
           timer = window.setTimeout(() => run(triesLeft - 1), 600);
           return;
         }
+        if (!recovery && !recoveryUsedRef.current) {
+          recoveryUsedRef.current = true;
+          setRecoveryRequired(true);
+          setConnectAttempt((attempt) => attempt + 1);
+          return;
+        }
         const code = error instanceof Error ? error.message : "";
         setErrorCode(code in copy.errors ? code : "connect_failed");
       });
     };
-    run(2);
+    run(recovery ? 0 : 1);
     return () => {
       connectGeneration.current += 1;
       window.clearTimeout(timer);
     };
-  }, [session?.state, connected, left, seated, connectAttempt]);
+  }, [session?.state, connected, left, seated, connectAttempt, recoveryRequired]);
 
   useEffect(() => {
     if (session?.state !== "live") return;
@@ -437,7 +452,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           <p className={styles.liveClock}><span className={styles.liveDot} aria-hidden="true">●</span> {fill(roomCopy.liveClock, { time: clock }).replace(/^●\s*/, "")}</p>
         </div>
         {session.focus ? <p>{session.focus}</p> : null}
-        {errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
+        {errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
         <div ref={audioRoot} hidden />
         {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
         <div className={styles.videos}>

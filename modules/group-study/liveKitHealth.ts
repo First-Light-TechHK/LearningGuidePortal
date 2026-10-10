@@ -41,7 +41,14 @@ export function createLiveKitHealthService(deps: LiveKitHealthDeps): LiveKitHeal
   async function fresh() {
     const expected = deps.registry.diagnostics().filter((project) => project.state !== "disabled");
     const projects = await Promise.all(expected.map(async (diagnostic) => {
-      const result = await deps.gateway.healthCheck({ project: deps.registry.getAssigned(diagnostic.id) });
+      let result;
+      try {
+        // Health must prove the currently configured secret can make a
+        // provider control-plane request; cached signing material is not proof.
+        result = await deps.gateway.healthCheck({ project: deps.registry.getAssigned(diagnostic.id), forceRefresh: true });
+      } catch {
+        result = { projectId: diagnostic.id, status: "unreachable" as const, evidence: "provider_error" as const, providerVerified: false, checkedAt: now().toISOString(), latencyMs: 0 };
+      }
       return {
         id: diagnostic.id,
         endpointHost: diagnostic.endpointHost,

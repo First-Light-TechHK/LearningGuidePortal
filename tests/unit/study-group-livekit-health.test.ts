@@ -55,3 +55,22 @@ test("LiveKit health reports new-session readiness false when an active project 
   assert.equal(snapshot.attentionRequired, true);
   assert.equal(snapshot.projects.find((item) => item.id === "active")?.status, "unauthorized");
 });
+
+test("LiveKit health forces a current credential check and isolates one unexpected project failure", async () => {
+  const forced: string[] = [];
+  const health = createLiveKitHealthService({
+    registry,
+    gateway: gateway(async ({ project, forceRefresh }) => {
+      if (forceRefresh) forced.push(project.id);
+      if (project.id === "draining") throw new Error("transport detail must not escape");
+      return { projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: "2026-10-10T12:00:00.000Z", latencyMs: 1 };
+    }),
+    now: () => new Date("2026-10-10T12:00:00.000Z")
+  });
+
+  const snapshot = await health.check();
+  assert.deepEqual(forced, ["active", "draining"]);
+  assert.equal(snapshot.ready, true);
+  assert.equal(snapshot.projects.find((item) => item.id === "draining")?.status, "unreachable");
+  assert.equal(JSON.stringify(snapshot).includes("transport detail"), false);
+});

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
+import { LiveKitGatewayError } from "../../modules/group-study/liveKitGateway";
 import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
@@ -402,7 +403,7 @@ test("session schedule, attendance, capacity, start and token follow the P0 rule
   assert.equal((await repository.read()).meetings.find((item) => item.sessionId === soon.id)?.endedAt, NOW);
 });
 
-test("a failed token issuance does not keep the seat", async () => {
+test("a failed token issuance keeps the admitted seat available for a retry", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Token seat", courseId: "course-1", about: "About the group." });
   const session = await service.scheduleSession({
     actorUserId: "host",
@@ -432,7 +433,7 @@ test("a failed token issuance does not keep the seat", async () => {
     (error: unknown) => (error as { code: string }).code === "unavailable"
   );
   const stillSeated = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt);
-  assert.deepEqual(stillSeated.map((item) => item.userId), []);
+  assert.deepEqual(stillSeated.map((item) => item.userId), ["host"]);
   assert.equal((await repository.read()).meetings.some((item) => item.sessionId === session.id), false);
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   const restored = await service.issueToken({ actorUserId: "host", sessionId: session.id });
@@ -440,7 +441,7 @@ test("a failed token issuance does not keep the seat", async () => {
   assert.equal((await repository.read()).presences.some((item) => item.sessionId === session.id && item.userId === "host" && item.enteredAt && !item.leftAt), true);
 });
 
-test("an incomplete LiveKit endpoint rejects token issuance before retaining a seat or audit log", async () => {
+test("an incomplete LiveKit endpoint rejects token issuance without writing an audit token or evicting the user", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Endpoint check", courseId: "course-1", about: "About the endpoint check." });
   const session = await service.scheduleSession({
     actorUserId: "host",
@@ -459,13 +460,14 @@ test("an incomplete LiveKit endpoint rejects token issuance before retaining a s
   );
 
   const stored = await repository.read();
-  assert.equal(stored.presences.some((item) => item.sessionId === session.id && item.userId === "host" && !item.leftAt), false);
+  assert.equal(stored.presences.some((item) => item.sessionId === session.id && item.userId === "host" && !item.leftAt), true);
   await assert.rejects(() => readFile(path.join(directory, "token-issuance.log"), "utf8"), { code: "ENOENT" });
 });
 
 test("a live session keeps its selected LiveKit project for room creation and token issuance", async () => {
   const ensured: Array<{ projectId: string; room: string; maxParticipants: number }> = [];
   const issued: string[] = [];
+  const recovered: string[] = [];
   const local = serviceWith({
     liveKitProjects: parseLiveKitProjects(JSON.stringify([{
       id: "eu-primary",
@@ -479,6 +481,10 @@ test("a live session keeps its selected LiveKit project for room creation and to
         issued.push(project.id);
         return { token: "gateway-token", expiresAt: "2026-09-19T02:10:00.000Z", url: `wss://${room}.example.test` };
       },
+      recoverParticipantToken: async ({ project, room }) => {
+        recovered.push(project.id);
+        return { token: "recovered-gateway-token", expiresAt: "2026-09-19T02:10:00.000Z", url: `wss://${room}.example.test` };
+      },
       publishTutorMessage: async () => undefined,
       removeParticipant: async () => undefined,
       healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
@@ -490,11 +496,110 @@ test("a live session keeps its selected LiveKit project for room creation and to
 
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   const token = await local.issueToken({ actorUserId: "host", sessionId: session.id });
+  const recovery = await local.issueToken({ actorUserId: "host", sessionId: session.id, recovery: true });
 
   assert.deepEqual(ensured, [{ projectId: "eu-primary", room: session.id, maxParticipants: 4 }]);
   assert.deepEqual(issued, ["eu-primary"]);
+  assert.deepEqual(recovered, ["eu-primary"]);
   assert.equal(token.token, "gateway-token");
+  assert.equal(recovery.token, "recovered-gateway-token");
   assert.equal((await repository.read()).sessions.find((item) => item.id === session.id)?.liveKitProjectId, "eu-primary");
+});
+
+test("a new room falls back once to another active project, while an assigned room remains pinned", async () => {
+  const projects = parseLiveKitProjects(JSON.stringify([
+    { id: "eu-primary", url: "wss://eu-primary.livekit.cloud", state: "active", credentialSecretId: "learning-guide/livekit/eu-primary" },
+    { id: "eu-standby", url: "wss://eu-standby.livekit.cloud", state: "active", credentialSecretId: "learning-guide/livekit/eu-standby" }
+  ]));
+  const calls: string[] = [];
+  const local = serviceWith({
+    liveKitProjects: projects,
+    liveKitGateway: {
+      ensureRoom: async ({ project }) => {
+        calls.push(project.id);
+        if (calls.length === 1) throw new LiveKitGatewayError("unreachable");
+      },
+      issueParticipantToken: async ({ project }) => ({ token: `token-${project.id}`, expiresAt: "2026-09-19T02:10:00.000Z", url: project.url }),
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Fallback room", courseId: "course-1", about: "About failover." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Fallback", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+
+  assert.equal(calls.length, 2);
+  assert.notEqual(calls[0], calls[1]);
+  const assigned = (await repository.read()).sessions.find((row) => row.id === session.id)?.liveKitProjectId;
+  assert.equal(assigned, calls[1]);
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.deepEqual(calls, [calls[0], calls[1]]);
+});
+
+test("concurrent host starts share one room-creation operation", async () => {
+  let creates = 0;
+  let releaseCreate: (() => void) | undefined;
+  let signalCreate: (() => void) | undefined;
+  const createGate = new Promise<void>((resolve) => { releaseCreate = resolve; });
+  const createStarted = new Promise<void>((resolve) => { signalCreate = resolve; });
+  const local = serviceWith({
+    liveKitProjects: parseLiveKitProjects(JSON.stringify([{
+      id: "eu-primary",
+      url: "wss://eu-primary.livekit.cloud",
+      state: "active",
+      credentialSecretId: "learning-guide/livekit/eu-primary"
+    }])),
+    liveKitGateway: {
+      ensureRoom: async () => { creates += 1; signalCreate!(); await createGate; },
+      issueParticipantToken: async () => ({ token: "gateway-token", expiresAt: "2026-09-19T02:10:00.000Z", url: "wss://eu-primary.livekit.cloud" }),
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Start once", courseId: "course-1", about: "About start coordination." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Concurrent", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  const first = local.startSession({ actorUserId: "host", sessionId: session.id });
+  const second = local.startSession({ actorUserId: "host", sessionId: session.id });
+  await createStarted;
+  assert.equal(creates, 1);
+  releaseCreate!();
+  const [one, two] = await Promise.all([first, second]);
+  assert.equal(one.state, "live");
+  assert.equal(two.state, "live");
+  assert.equal((await repository.read()).meetings.filter((meeting) => meeting.sessionId === session.id).length, 1);
+});
+
+test("a failed verified-token recovery preserves the admitted seat and redacts provider failure", async () => {
+  const local = serviceWith({
+    liveKitProjects: parseLiveKitProjects(JSON.stringify([{
+      id: "eu-primary",
+      url: "wss://eu-primary.livekit.cloud",
+      state: "active",
+      credentialSecretId: "learning-guide/livekit/eu-primary"
+    }])),
+    liveKitGateway: {
+      ensureRoom: async () => undefined,
+      issueParticipantToken: async () => ({ token: "gateway-token", expiresAt: "2026-09-19T02:10:00.000Z", url: "wss://eu-primary.livekit.cloud" }),
+      recoverParticipantToken: async () => { throw new LiveKitGatewayError("unauthorized"); },
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Recovery seat", courseId: "course-1", about: "About provider recovery." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Recovery", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+
+  await assert.rejects(
+    () => local.issueToken({ actorUserId: "host", sessionId: session.id, recovery: true }),
+    (error: unknown) => (error as { code?: string; message?: string }).code === "unavailable" && !(error as { message?: string }).message?.includes("unauthorized")
+  );
+  assert.equal((await repository.read()).presences.some((row) => row.sessionId === session.id && row.userId === "host" && !row.leftAt), true);
 });
 
 test("a provider authentication response is classified separately from a transient tutor failure", async () => {

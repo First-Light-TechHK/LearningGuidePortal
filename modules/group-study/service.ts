@@ -15,7 +15,7 @@ import {
   type TutorRequestRow
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
-import type { LiveKitRoomGateway } from "./liveKitGateway";
+import { LiveKitGatewayError, type LiveKitRoomGateway } from "./liveKitGateway";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import type { StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
@@ -105,6 +105,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   const entryJobs: EntryJob[] = [];
   let entrySeq = 0;
   let draining = false;
+  const startingSessions = new Map<string, Promise<unknown>>();
   const tutorDraining = new Set<string>();
   const tutorPools = new Map<string, ReturnType<typeof createTutorKeyPool>>();
 
@@ -569,7 +570,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return seat(input);
     },
 
-    async startSession(input: { actorUserId: string; sessionId: string }) {
+    startSession(input: { actorUserId: string; sessionId: string }) {
+      const alreadyStarting = startingSessions.get(input.sessionId);
+      if (alreadyStarting) return alreadyStarting as Promise<ReturnType<typeof sessionView>>;
+      const operation = (async () => {
       const pending = await deps.repository.read();
       const pendingSession = pending.sessions.find((item) => item.id === input.sessionId);
       let assignedProjectId: string | null = null;
@@ -580,9 +584,31 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
         if (missedUnstarted(current, deps.now(), occupancy(pending, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
-        const project = current.liveKitProjectId ? deps.liveKitProjects.getAssigned(current.liveKitProjectId) : deps.liveKitProjects.selectForNewSession({ sessionId: current.id });
-        await deps.liveKitGateway.ensureRoom({ project, room: current.id, maxParticipants: current.maxParticipants });
-        assignedProjectId = project.id;
+        if (current.liveKitProjectId) {
+          const project = deps.liveKitProjects.getAssigned(current.liveKitProjectId);
+          try {
+            await deps.liveKitGateway.ensureRoom({ project, room: current.id, maxParticipants: current.maxParticipants });
+          } catch (error) {
+            if (error instanceof LiveKitGatewayError) throw new StudyGroupError("unavailable", "LiveKit cannot create this room right now.");
+            throw error;
+          }
+          assignedProjectId = project.id;
+        } else {
+          const unavailable = new Set<string>();
+          const activeProjectCount = deps.liveKitProjects.diagnostics().filter((project) => project.state === "active").length;
+          while (unavailable.size < activeProjectCount) {
+            const project = deps.liveKitProjects.selectForNewSession({ sessionId: current.id, excludeProjectIds: unavailable });
+            try {
+              await deps.liveKitGateway.ensureRoom({ project, room: current.id, maxParticipants: current.maxParticipants });
+              assignedProjectId = project.id;
+              break;
+            } catch (error) {
+              if (!(error instanceof LiveKitGatewayError)) throw error;
+              unavailable.add(project.id);
+            }
+          }
+          if (!assignedProjectId) throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
+        }
       }
       const now = deps.now().toISOString();
       const session = await deps.repository.update((store) => {
@@ -607,6 +633,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         return current;
       });
       return sessionView(await deps.repository.read(), session, input.actorUserId);
+      })().finally(() => { startingSessions.delete(input.sessionId); });
+      startingSessions.set(input.sessionId, operation);
+      return operation;
     },
 
     async leaveSession(input: { actorUserId: string; sessionId: string }) {
@@ -625,17 +654,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       });
     },
 
-    async issueToken(input: { actorUserId: string; sessionId: string }) {
+    async issueToken(input: { actorUserId: string; sessionId: string; recovery?: boolean }) {
       const store = await deps.repository.read();
       const { session, membership } = requireOpenSession(store, input.sessionId, input.actorUserId);
       const state = effectiveSessionState(session, deps.now());
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
       const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
       if (!presence) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting a token.");
-      const releaseSeat = () => deps.repository.update((current) => {
-        const row = current.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
-        if (row) row.leftAt = deps.now().toISOString();
-      });
       try {
         const profile = await deps.userProfile(input.actorUserId);
         let assignedProjectId = session.liveKitProjectId;
@@ -651,13 +676,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const signed = deps.liveKitProjects && deps.liveKitGateway
           ? await (() => {
             if (!assignedProjectId) throw new StudyGroupError("unavailable", "LiveKit room is not assigned to a project.");
-            return deps.liveKitGateway!.issueParticipantToken({
+            const tokenInput = {
               project: deps.liveKitProjects!.getAssigned(assignedProjectId),
               identity: input.actorUserId,
               name: profile?.displayName || input.actorUserId,
               room: session.id,
               ttlSeconds: TOKEN_TTL_SECONDS
-            });
+            };
+            if (!input.recovery) return deps.liveKitGateway!.issueParticipantToken(tokenInput);
+            if (!deps.liveKitGateway!.recoverParticipantToken) throw new StudyGroupError("unavailable", "LiveKit credential recovery is unavailable.");
+            return deps.liveKitGateway!.recoverParticipantToken(tokenInput);
           })()
           : (() => {
             if (!deps.liveKit.apiKey || !deps.liveKit.apiSecret || !deps.liveKit.url) throw new StudyGroupError("unavailable", "LiveKit is not configured.");
@@ -682,7 +710,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         await deps.repository.appendTokenLog(line);
         return { token: signed.token, expiresAt: signed.expiresAt, liveKitUrl: "url" in signed ? signed.url : deps.liveKit.url };
       } catch (error) {
-        await releaseSeat();
+        // Issuing a token is not a user leave. Keeping the admission row makes
+        // both an initial failure and a verified-recovery failure retryable,
+        // and prevents concurrent token requests from evicting a valid user.
+        if (error instanceof LiveKitGatewayError) throw new StudyGroupError("unavailable", "LiveKit cannot issue a verified participant token right now.");
         throw error;
       }
     },
