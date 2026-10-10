@@ -576,6 +576,36 @@ test("tutor requests stay one asker per item and follow server receipt order", a
   assert.equal(items.filter((item) => item.userId === "host" && item.text === "alpha from host").length, 1);
 });
 
+test("tutor delivery keeps enqueue order when requests share a timestamp", async () => {
+  const calls: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async () => undefined,
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ text }) => {
+      calls.push(text);
+      return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` };
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Timestamp queue", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Timestamp queue", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 first?", clientEventId: "evt-timestamp-first" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 second?", clientEventId: "evt-timestamp-second" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 third?", clientEventId: "evt-timestamp-third" });
+  await repository.update((store) => {
+    const queued = store.tutorRequests.filter((item) => item.sessionId === session.id);
+    queued[0].id = "m-first";
+    queued[1].id = "z-second";
+    queued[2].id = "a-third";
+  });
+
+  await local.deliverTutorAnswer({ sessionId: session.id });
+
+  assert.deepEqual(calls, ["What ended in 1933 first?", "What ended in 1933 second?", "What ended in 1933 third?"]);
+});
+
 test("reminders go to the host and plan-to-attend members only, once", async () => {
   access.add("planner:course-1");
   access.add("quiet:course-1");
@@ -762,6 +792,30 @@ test("a rate-limited tutor key fails over to the next healthy key", async () => 
   const stored = JSON.stringify(await repository.read());
   assert.equal(stored.includes("fake-key-rate-limited"), false);
   assert.equal(stored.includes("fake-key-healthy"), false);
+});
+
+test("a rate-limited tutor key stays unhealthy across separate queue deliveries", async () => {
+  const secrets: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933 after the constitution of 1919 could not hold the government.",
+    tutorKeys: () => [{ id: "rate-limited", secret: "fake-key-rate-limited" }, { id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ secret }) => {
+      secrets.push(secret);
+      if (secret === "fake-key-rate-limited") return { outcome: "rate_limited", latencyMs: 3 };
+      return { outcome: "ok", latencyMs: 4, body: "The republic ended in 1933." };
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Persistent keys", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Persistent", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 3600, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-persistent-1" });
+  await local.deliverTutorAnswer({ sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 again?", clientEventId: "evt-persistent-2" });
+  await local.deliverTutorAnswer({ sessionId: session.id });
+
+  assert.deepEqual(secrets, ["fake-key-rate-limited", "fake-key-healthy", "fake-key-healthy"]);
 });
 
 test("one delivery answers every waiting question in receipt order", async () => {

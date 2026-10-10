@@ -11,7 +11,8 @@ import {
   type GroupRole,
   type LiveSessionRow,
   type StudyGroupRow,
-  type StudyGroupStore
+  type StudyGroupStore,
+  type TutorRequestRow
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
 import type { StudyGroupRepository } from "./repository";
@@ -77,6 +78,17 @@ function plannedCount(store: StudyGroupStore, sessionId: string) {
   return store.intents.filter((item) => item.sessionId === sessionId && !item.cancelledAt).length;
 }
 
+function nextTutorRequest(requests: TutorRequestRow[], sessionId: string, inFlightOnly: boolean) {
+  let next: TutorRequestRow | null = null;
+  for (const item of requests) {
+    if (item.sessionId !== sessionId || item.answeredAt || (inFlightOnly && !item.inFlight)) continue;
+    // Repository updates append requests in receipt order. Preserve that order
+    // when the clock has only millisecond precision, including for old rows.
+    if (!next || item.receivedAt.localeCompare(next.receivedAt) < 0) next = item;
+  }
+  return next;
+}
+
 type EntryJob = {
   requestedAt: string;
   seq: number;
@@ -90,6 +102,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   let entrySeq = 0;
   let draining = false;
   const tutorDraining = new Set<string>();
+  const tutorPools = new Map<string, ReturnType<typeof createTutorKeyPool>>();
+
+  function tutorPoolFor(keys: Array<{ id: string; secret: string }>) {
+    const keySet = JSON.stringify(keys);
+    const existing = tutorPools.get(keySet);
+    if (existing) return existing;
+    const pool = createTutorKeyPool({
+      keys,
+      call: async () => ({ outcome: "failed", latencyMs: 0 })
+    });
+    tutorPools.clear();
+    tutorPools.set(keySet, pool);
+    return pool;
+  }
 
   function enqueueEntry<T>(requestedAt: string, run: () => Promise<T>) {
     return new Promise<T>((resolve, reject) => {
@@ -661,9 +687,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           if (!row || row.answeredAt) return;
           row.answeredAt = deps.now().toISOString();
           row.inFlight = false;
-          const next = store.tutorRequests
-            .filter((entry) => entry.sessionId === sessionId && !entry.answeredAt)
-            .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id))[0];
+          const next = nextTutorRequest(store.tutorRequests, sessionId, false);
           if (next) next.inFlight = true;
         });
       };
@@ -673,9 +697,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           const snapshot = await deps.repository.read();
           const session = snapshot.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
           if (!session) return last;
-          const item = snapshot.tutorRequests
-            .filter((entry) => entry.sessionId === session.id && entry.inFlight && !entry.answeredAt)
-            .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id))[0];
+          const item = nextTutorRequest(snapshot.tutorRequests, session.id, true);
           if (!item) return last;
           const group = snapshot.groups.find((entry) => entry.id === session.groupId);
           const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
@@ -692,11 +714,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
                 await markAnswered(item.id, session.id);
                 continue;
               }
-              const pool = createTutorKeyPool({
-                keys,
-                call: (secret) => deps.tutorCall!({ secret, text: item.text, context })
-              });
-              const result = await pool.execute(item.text);
+              const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
               if (!result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret))) {
                 await markAnswered(item.id, session.id);
                 continue;

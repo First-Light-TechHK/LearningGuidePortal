@@ -22,16 +22,16 @@ export function createTutorKeyPool(input: { keys: Array<{ id: string; secret: st
   }));
 
   return {
-    async execute(text: string) {
+    async execute(text: string, call: TutorKeyCall = input.call) {
       void text;
       for (const state of states) {
         if (!state.healthy) continue;
         state.requests += 1;
-        const result = await input.call(state.secret);
+        const result = await call(state.secret);
         state.latencyMs += result.latencyMs;
         if (result.outcome !== "ok") {
           state.errors += 1;
-          state.healthy = false;
+          if (result.outcome !== "failed") state.healthy = false;
           continue;
         }
         return { keyId: state.id, body: result.body ?? "", log: `key ${state.id} ok` };
