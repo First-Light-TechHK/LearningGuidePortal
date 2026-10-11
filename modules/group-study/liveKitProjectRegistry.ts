@@ -19,6 +19,7 @@ export type LiveKitProjectDiagnostic = Readonly<{
 export interface LiveKitProjectRegistry {
   selectForNewSession(input: { sessionId: string; region?: string; excludeProjectIds?: ReadonlySet<string> }): LiveKitProjectRef;
   getAssigned(projectId: string): LiveKitProjectRef;
+  all(): ReadonlyArray<LiveKitProjectRef>;
   diagnostics(): ReadonlyArray<LiveKitProjectDiagnostic>;
 }
 
@@ -108,6 +109,9 @@ export function parseLiveKitProjects(raw: string | undefined): LiveKitProjectReg
       const project = byId.get(projectId);
       if (!project || project.state === "disabled") throw new Error("The assigned LiveKit project is unavailable.");
       return project;
+    },
+    all() {
+      return [...entries];
     },
     diagnostics() {
       return entries.map(({ id, endpointHost, region, state }) => ({ id, endpointHost, region, state }));

@@ -6,6 +6,21 @@ import { isManagedEnvironment, runtimeConfiguration } from "./runtimeConfig";
 let cached: { expires: number; result: Awaited<ReturnType<typeof checkDependencies>> } | undefined;
 let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
 
+// Redacted Study Group readiness (slice-3 preflight entry): the store kind and
+// whether the LiveKit configuration is present. Values are never echoed — the
+// file store is reported whenever it is selected explicitly or would be
+// selected because no DATABASE_URL exists.
+function studyGroupReadiness(): { store: "postgresql" | "file"; configured: boolean } {
+  const explicit = (process.env.STUDY_GROUP_STORE || "").trim().toLowerCase();
+  const store = explicit === "file" || explicit === "filesystem" || !process.env.DATABASE_URL?.trim()
+    ? "file"
+    : "postgresql";
+  return {
+    store,
+    configured: Boolean(process.env.LIVEKIT_PROJECTS_JSON?.trim() && process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim())
+  };
+}
+
 async function checkDependencies() {
   const checks = { database: false, paymentMigration: false, storage: false };
   try {
@@ -24,11 +39,12 @@ async function checkDependencies() {
 
 export async function deploymentReadiness() {
   const config = runtimeConfiguration();
-  if (!isManagedEnvironment() || !config.ready) return { ready: config.ready, checks: null };
+  const studyGroup = studyGroupReadiness();
+  if (!isManagedEnvironment() || !config.ready) return { ready: config.ready, checks: null, studyGroup };
   if (!cached || cached.expires < Date.now()) {
     pending ??= checkDependencies();
     try { cached = { result: await pending, expires: Date.now() + 15000 }; }
     finally { pending = undefined; }
   }
-  return { ready: Object.values(cached.result).every(Boolean), checks: cached.result };
+  return { ready: Object.values(cached.result).every(Boolean), checks: cached.result, studyGroup };
 }

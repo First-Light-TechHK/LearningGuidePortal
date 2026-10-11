@@ -4,6 +4,14 @@ Study Group uses `{ ok, code, message, data }`. `GET /api/study-groups?view=disc
 
 `view=reminders` requires a signed-in caller and returns up to five `{ body, createdAt }` Live Session reminder or Study Group cancelled notifications for that caller; other notification types are not returned. The `token` route body must be a JSON object, and `{ recovery: true }` requests the provider-recovery path; an invalid recovery value returns `validation` (400), and when recovery is unavailable or fails the response is a typed `unavailable` (503) that keeps the caller's admission row for a later retry. `POST /api/study-groups/sessions/:sessionId/livekit-incident` accepts `{ code }` from the bounded client-reportable incident set, requires an entered participant, and returns `202 { accepted: true }`; an invalid code returns `validation` (400) and a caller without an active presence returns `forbidden` (403). The incident endpoint records redacted client telemetry only: it is never an authority for provider lifecycle events and never releases a seat. Operator health is `GET /api/backoffice/study-group/livekit-health`: an active operator session is required (otherwise 403), the response is redacted health (snapshot `checkedAt`, `ready`, `attentionRequired`; per project `id`, `endpointHost`, optional `region`, `state`, `status`, `evidence`, `providerVerified`, `checkedAt`, `latencyMs`, optional `activeRooms`), it returns 200 when ready and 503 otherwise, and it never includes credentials, secret references, tokens, or participant content.
 
+```ts
+// POST /api/livekit/webhook (provider → Portal)
+// Header: Authorization — LiveKit-signed HS256 JWT with the `sha256` body claim and `exp`
+// Body: LiveKit webhook JSON, read raw before parsing
+```
+
+`POST /api/livekit/webhook` carries no session; the provider signature is the authentication. Processing is verify → unique webhook receipt → event mapping: `participant_left` for a known session closes that identity's open presence, anything else is recorded and ignored, and a duplicate event id returns `duplicate` with no side effects. Responses: 200 `{ ok: true, status: "processed" | "ignored" | "duplicate" }`; 400 `{ ok: false, code: "invalid_signature" }` for a missing or unverifiable signature; 503 `{ ok: false, code: "webhook_unavailable" }` on the file store or unverifiable configuration (fail-closed); 500 `{ ok: false, code: "webhook_failed" }`, after which the provider's retry carries the same event id and processing resumes. Webhooks never grant membership or authorization. The endpoint requires the PostgreSQL store.
+
 Course-authoring extension: `PUT /api/backoffice/courses/:courseId/draft`, contract `contracts/course-authoring.ts`; active operator and same-origin request required. A stale `expectedUpdatedAt` returns 409. See `lgteacher-integration.md` for response codes and preservation rules.
 
 所有 JSON API 使用：

@@ -11,6 +11,28 @@ export type {
   TutorRequestStatus
 } from "./domain";
 
+// The receipt status union mirrors the CHECK on study_group_webhook_receipts
+// in db/migrations/012_study_group_persistence.sql.
+export type WebhookReceiptStatus = "received" | "processed" | "ignored" | "failed";
+export type WebhookReceiptRow = Readonly<{
+  receiptId: string;
+  status: WebhookReceiptStatus;
+  failureClass: string | null;
+}>;
+
+// Redacted operational metrics (Phase C slice 3): counts and one age only —
+// never identities, session ids, receipt ids, or payload contents. These feed
+// the CloudWatch metric filters behind the release-gate alarms
+// (release-runbook.md § Study Group / LiveKit release gate).
+export type StudyGroupOperationalMetrics = Readonly<{
+  tutorQueued: number;
+  tutorInFlight: number;
+  tutorDeadLetter: number;
+  tutorOldestQueuedAgeSeconds: number;
+  webhookAbandoned: number;
+  webhookFailed: number;
+}>;
+
 // The port is extended additively (design §3.1): the durable tutor-queue and
 // outbox operations are implemented by the PostgreSQL adapter
 // (repositories/studyGroupRepository.ts) and, to keep one service code path,
@@ -39,7 +61,20 @@ export type StudyGroupRepository = {
 
   // webhook receipts (used by the slice-2 route; operations land now)
   insertWebhookReceipt(input: { receiptId: string; eventType: string; sessionId: string | null; payload: unknown }): Promise<boolean>;
+  getWebhookReceipt(receiptId: string): Promise<WebhookReceiptRow | null>;
   markWebhookProcessed(input: { receiptId: string; result: "processed" | "ignored" | "failed"; failureClass?: string }): Promise<void>;
+
+  // bounded reconciliation sweeps (slice-2 design §4). Sweep A abandons
+  // receipts stuck in `received`; sweep B lists live sessions that still have
+  // an open presence. Both are PostgreSQL-only facts about durable dedupe and
+  // presence state, so the file adapter refuses them like the receipt ops.
+  abandonStaleWebhookReceipts(input: { olderThanSeconds: number; limit: number }): Promise<number>;
+  listLiveSessionsWithOpenPresences(limit: number): Promise<ReadonlyArray<{ id: string; liveKitProjectId: string | null }>>;
+
+  // redacted operational metrics (slice-3 design §5.2): one aggregate read of
+  // durable facts only. The file adapter refuses it like the receipt ops; the
+  // PostgreSQL implementation serves the runtime metrics timer.
+  studyGroupOperationalMetrics(): Promise<StudyGroupOperationalMetrics>;
 };
 
 export class StudyGroupStoreUnsupportedError extends Error {
@@ -276,8 +311,20 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     insertWebhookReceipt() {
       throw new StudyGroupStoreUnsupportedError("insertWebhookReceipt");
     },
+    getWebhookReceipt() {
+      throw new StudyGroupStoreUnsupportedError("getWebhookReceipt");
+    },
     markWebhookProcessed() {
       throw new StudyGroupStoreUnsupportedError("markWebhookProcessed");
+    },
+    abandonStaleWebhookReceipts() {
+      throw new StudyGroupStoreUnsupportedError("abandonStaleWebhookReceipts");
+    },
+    listLiveSessionsWithOpenPresences() {
+      throw new StudyGroupStoreUnsupportedError("listLiveSessionsWithOpenPresences");
+    },
+    studyGroupOperationalMetrics() {
+      throw new StudyGroupStoreUnsupportedError("studyGroupOperationalMetrics");
     }
   };
 }

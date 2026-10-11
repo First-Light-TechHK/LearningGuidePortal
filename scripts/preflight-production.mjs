@@ -11,7 +11,9 @@ const required = [
   "WECHAT_APP_ID",
   "WECHAT_APP_SECRET",
   "SES_FROM_EMAIL",
-  "OPENROUTER_API_KEY"
+  "OPENROUTER_API_KEY",
+  "LIVEKIT_PROJECTS_JSON",
+  "STUDY_GROUP_TOKEN_LOG_KEY"
 ];
 
 const missing = required.filter((name) => !process.env[name]?.trim());
@@ -30,6 +32,27 @@ try {
   if (parsed.protocol !== "https:") missing.push("NEXT_PUBLIC_APP_URL must use HTTPS");
 } catch {
   missing.push("NEXT_PUBLIC_APP_URL must be a valid HTTPS URL");
+}
+
+// Study Group release gate. Diagnostics never echo env values — only the rule
+// violation — and a failing entry blocks promotion exactly like the checks above.
+if ((process.env.STUDY_GROUP_STORE || "").trim().toLowerCase() === "file") {
+  missing.push("STUDY_GROUP_STORE must not be the file store in production");
+}
+if (process.env.LIVEKIT_PROJECTS_JSON?.trim()) {
+  let hasActiveProject = false;
+  try {
+    const projects = JSON.parse(process.env.LIVEKIT_PROJECTS_JSON);
+    hasActiveProject = Array.isArray(projects)
+      && projects.some((project) => project !== null && typeof project === "object" && project.state === "active");
+  } catch {
+    hasActiveProject = false;
+  }
+  if (!hasActiveProject) missing.push("LIVEKIT_PROJECTS_JSON must be a JSON array with at least one active project");
+}
+const tokenLogKey = process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim();
+if (tokenLogKey && Buffer.from(tokenLogKey, "base64").length !== 32) {
+  missing.push("STUDY_GROUP_TOKEN_LOG_KEY must be a 32-byte base64 value");
 }
 
 if (missing.length) {

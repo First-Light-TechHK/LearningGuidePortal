@@ -68,6 +68,7 @@ function liveKitRuntime() {
   const gateway = createLiveKitCloudGateway({
     resolveCredentials: (project, options) => resolver.resolve(project, options),
     providerVerified: !fakeGateway,
+    registry: projects,
     createRoomService: fakeGateway ? async () => ({
       createRoom: async () => undefined,
       sendData: async () => undefined,
@@ -75,7 +76,7 @@ function liveKitRuntime() {
       listRooms: async () => []
     }) : undefined
   });
-  return { projects, gateway };
+  return { projects, gateway, providerVerified: !fakeGateway };
 }
 
 function runtimeForDirectory(directory: string) {
@@ -214,6 +215,36 @@ export function studyGroupService() {
     healthTimers.__lgStudyGroupLiveKitHealthTimers.add(key);
     reportHealth();
     const timer = setInterval(reportHealth, 5 * 60_000);
+    timer.unref();
+  }
+  // Bounded reconciliation timer (slice-2 design §4): sweep A plus sweep B
+  // every 5 minutes, PostgreSQL store and a provider-verified gateway only
+  // (the DEV fake gateway has no participant listing, so there is nothing to
+  // reconcile against). A throwing tick is swallowed, same contract as the
+  // reminder and health timers.
+  const reconcileTimers = globalThis as typeof globalThis & { __lgStudyGroupReconcileTimers?: Set<string> };
+  reconcileTimers.__lgStudyGroupReconcileTimers ??= new Set();
+  if (backend === "postgres" && liveKit.providerVerified && !reconcileTimers.__lgStudyGroupReconcileTimers.has(key)) {
+    reconcileTimers.__lgStudyGroupReconcileTimers.add(key);
+    const timer = setInterval(() => {
+      void service.reconcileLiveKitState().catch(() => undefined);
+    }, 5 * 60_000);
+    timer.unref();
+  }
+  // Redacted operational metrics timer (slice-3 design §5.2 aim): one regular
+  // 5-minute sample of counts for the CloudWatch metric filters, PostgreSQL
+  // store only. Unlike the health timer there is deliberately no dedupe — the
+  // alarms need a steady sample — and a throwing tick is swallowed and
+  // dropped, same contract as the reminder, health and reconcile timers.
+  const metricsTimers = globalThis as typeof globalThis & { __lgStudyGroupMetricsTimers?: Set<string> };
+  metricsTimers.__lgStudyGroupMetricsTimers ??= new Set();
+  if (backend === "postgres" && !metricsTimers.__lgStudyGroupMetricsTimers.has(key)) {
+    metricsTimers.__lgStudyGroupMetricsTimers.add(key);
+    const timer = setInterval(() => {
+      void service.operationalMetrics()
+        .then((metrics) => console.info(JSON.stringify({ type: "study_group.metrics", store: "postgres", ...metrics })))
+        .catch(() => undefined);
+    }, 5 * 60_000);
     timer.unref();
   }
   return service;

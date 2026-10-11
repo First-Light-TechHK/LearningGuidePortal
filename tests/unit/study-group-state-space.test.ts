@@ -133,7 +133,11 @@ function gatedRepository(base: StudyGroupRepository, gate: ReturnType<typeof cre
     markOutboxDelivered: (input) => base.markOutboxDelivered(input),
     markOutboxFailed: (input) => base.markOutboxFailed(input),
     insertWebhookReceipt: (input) => base.insertWebhookReceipt(input),
-    markWebhookProcessed: (input) => base.markWebhookProcessed(input)
+    getWebhookReceipt: (receiptId) => base.getWebhookReceipt(receiptId),
+    markWebhookProcessed: (input) => base.markWebhookProcessed(input),
+    abandonStaleWebhookReceipts: (input) => base.abandonStaleWebhookReceipts(input),
+    listLiveSessionsWithOpenPresences: (limit) => base.listLiveSessionsWithOpenPresences(limit),
+    studyGroupOperationalMetrics: () => base.studyGroupOperationalMetrics()
   };
 }
 

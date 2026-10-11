@@ -14,7 +14,7 @@ import {
   type TutorRequestRow,
   type TutorRequestStatus
 } from "@/modules/group-study/domain";
-import type { StudyGroupRepository } from "@/modules/group-study/repository";
+import type { StudyGroupOperationalMetrics, StudyGroupRepository, WebhookReceiptRow } from "@/modules/group-study/repository";
 
 // Study Group production store (Phase C slice 1, design §3.1/§3.2). SQL lives
 // only here (AGENTS: repositories own SQL); the schema is
@@ -128,6 +128,28 @@ type OutboxDbRow = {
   failure_class: string | null;
   created_at: Date;
   delivered_at: Date | null;
+};
+
+type WebhookReceiptDbRow = {
+  receipt_id: string;
+  status: WebhookReceiptRow["status"];
+  failure_class: string | null;
+};
+
+type LiveSessionRefDbRow = {
+  id: string;
+  livekit_project_id: string | null;
+};
+
+// COUNT(*) arrives as a bigint string and FLOOR(...) as a numeric string;
+// Number() maps both to the integer metrics the service reports.
+type OperationalMetricsDbRow = {
+  tutor_queued: string | number;
+  tutor_in_flight: string | number;
+  tutor_dead_letter: string | number;
+  tutor_oldest_queued_age_seconds: string | number;
+  webhook_abandoned: string | number;
+  webhook_failed: string | number;
 };
 
 function iso(value: Date): string;
@@ -247,6 +269,18 @@ function mapOutbox(row: OutboxDbRow): OutboxRow {
     createdAt: iso(row.created_at),
     deliveredAt: iso(row.delivered_at)
   };
+}
+
+function mapWebhookReceipt(row: WebhookReceiptDbRow): WebhookReceiptRow {
+  return {
+    receiptId: row.receipt_id,
+    status: row.status,
+    failureClass: row.failure_class
+  };
+}
+
+function mapLiveSessionRef(row: LiveSessionRefDbRow): { id: string; liveKitProjectId: string | null } {
+  return { id: row.id, liveKitProjectId: row.livekit_project_id };
 }
 
 async function loadStore(client: PoolClient): Promise<StudyGroupStore> {
@@ -640,11 +674,82 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
+  async function getWebhookReceipt(receiptId: string): Promise<WebhookReceiptRow | null> {
+    const result = await query<WebhookReceiptDbRow>(
+      "SELECT receipt_id, status, failure_class FROM study_group_webhook_receipts WHERE receipt_id = $1",
+      [receiptId]
+    );
+    return result.rows[0] ? mapWebhookReceipt(result.rows[0]) : null;
+  }
+
   async function markWebhookProcessed(input: { receiptId: string; result: "processed" | "ignored" | "failed"; failureClass?: string }) {
     await query(
       `UPDATE study_group_webhook_receipts SET status = $2, failure_class = $3, processed_at = NOW() WHERE receipt_id = $1`,
       [input.receiptId, input.result, input.failureClass ?? null]
     );
+  }
+
+  async function abandonStaleWebhookReceipts(input: { olderThanSeconds: number; limit: number }): Promise<number> {
+    // Sweep A (design §4): one bounded statement. Receipts stuck in `received`
+    // past the grace window become failed/abandoned so a crashed delivery is
+    // visible to slice-3 dead-letter metrics instead of leaking silently; a
+    // provider retry still resumes them (design §3), so no event is lost.
+    const result = await query(
+      `UPDATE study_group_webhook_receipts
+       SET status = 'failed', failure_class = 'abandoned', processed_at = NOW()
+       WHERE receipt_id IN (
+         SELECT receipt_id FROM study_group_webhook_receipts
+         WHERE status = 'received' AND received_at < NOW() - ($1::int * INTERVAL '1 second')
+         ORDER BY received_at, receipt_id
+         LIMIT $2
+       )`,
+      [input.olderThanSeconds, input.limit]
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async function listLiveSessionsWithOpenPresences(limit: number): Promise<ReadonlyArray<{ id: string; liveKitProjectId: string | null }>> {
+    // Sweep B (design §4): at most `limit` sessions in status `live` with an
+    // open presence, oldest-observed first (started_at, then id) so a bounded
+    // tick walks the backlog in a stable order.
+    const result = await query<LiveSessionRefDbRow>(
+      `SELECT ls.id, ls.livekit_project_id FROM live_sessions ls
+       WHERE ls.status = 'live' AND ls.livekit_project_id IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM study_group_presences sp
+           WHERE sp.session_id = ls.id AND sp.left_at IS NULL)
+       ORDER BY ls.started_at ASC NULLS LAST, ls.id ASC
+       LIMIT $1`,
+      [limit]
+    );
+    return result.rows.map(mapLiveSessionRef);
+  }
+
+  async function studyGroupOperationalMetrics(): Promise<StudyGroupOperationalMetrics> {
+    // Redacted operational counts (slice-3 design §5.2): one bounded aggregate
+    // statement of scalar subselects over durable state. Counts and whole
+    // seconds only — no identities, ids, or payloads leave this query; the
+    // oldest queued age coalesces to 0 when nothing is queued.
+    await ensureSchema();
+    const result = await query<OperationalMetricsDbRow>(
+      `SELECT
+         (SELECT count(*) FROM study_group_tutor_requests WHERE status = 'queued') AS tutor_queued,
+         (SELECT count(*) FROM study_group_tutor_requests WHERE status = 'in_flight') AS tutor_in_flight,
+         (SELECT count(*) FROM study_group_tutor_requests WHERE status = 'dead_letter') AS tutor_dead_letter,
+         (SELECT COALESCE(FLOOR(EXTRACT(EPOCH FROM (NOW() - MIN(received_at)))), 0)
+            FROM study_group_tutor_requests WHERE status = 'queued') AS tutor_oldest_queued_age_seconds,
+         (SELECT count(*) FROM study_group_webhook_receipts WHERE status = 'failed' AND failure_class = 'abandoned') AS webhook_abandoned,
+         (SELECT count(*) FROM study_group_webhook_receipts WHERE status = 'failed') AS webhook_failed`
+    );
+    const row = result.rows[0];
+    return {
+      tutorQueued: Number(row.tutor_queued),
+      tutorInFlight: Number(row.tutor_in_flight),
+      tutorDeadLetter: Number(row.tutor_dead_letter),
+      tutorOldestQueuedAgeSeconds: Number(row.tutor_oldest_queued_age_seconds),
+      webhookAbandoned: Number(row.webhook_abandoned),
+      webhookFailed: Number(row.webhook_failed)
+    };
   }
 
   return {
@@ -657,6 +762,10 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     markOutboxDelivered,
     markOutboxFailed,
     insertWebhookReceipt,
-    markWebhookProcessed
+    getWebhookReceipt,
+    markWebhookProcessed,
+    abandonStaleWebhookReceipts,
+    listLiveSessionsWithOpenPresences,
+    studyGroupOperationalMetrics
   };
 }

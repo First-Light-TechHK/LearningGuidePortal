@@ -678,7 +678,11 @@ test("a member start in flight cannot poison the Host's start", async () => {
     markOutboxDelivered: (input) => repository.markOutboxDelivered(input),
     markOutboxFailed: (input) => repository.markOutboxFailed(input),
     insertWebhookReceipt: (input) => repository.insertWebhookReceipt(input),
-    markWebhookProcessed: (input) => repository.markWebhookProcessed(input)
+    getWebhookReceipt: (receiptId) => repository.getWebhookReceipt(receiptId),
+    markWebhookProcessed: (input) => repository.markWebhookProcessed(input),
+    abandonStaleWebhookReceipts: (input) => repository.abandonStaleWebhookReceipts(input),
+    listLiveSessionsWithOpenPresences: (limit) => repository.listLiveSessionsWithOpenPresences(limit),
+    studyGroupOperationalMetrics: () => repository.studyGroupOperationalMetrics()
   };
   const local = serviceWith({ repository: gatedRepository });
   const group = await local.createGroup({ actorUserId: "host", title: "Host start race", courseId: "course-1", about: "About the start race." });

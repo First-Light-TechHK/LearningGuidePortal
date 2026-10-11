@@ -14,10 +14,10 @@ import {
   type StudyGroupStore
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
-import { LiveKitGatewayError, type LiveKitRoomGateway } from "./liveKitGateway";
+import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
-import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
-import type { StudyGroupRepository } from "./repository";
+import type { LiveKitProjectRef, LiveKitProjectRegistry } from "./liveKitProjectRegistry";
+import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
 import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, retrieveCourseKnowledge } from "./tutorAnswer";
@@ -54,6 +54,34 @@ export type GroupView = StudyGroupRow & {
   courseSlug: string;
   live: boolean;
 };
+
+export type StudyGroupWebhookOutcome = Readonly<{ status: "processed" | "ignored" | "duplicate" }>;
+
+// Sweep B never closes a presence younger than this (slice-2 design §4, with
+// the extra safety margin): a user mid-join or mid-re-join must never be raced
+// by the repair path.
+const RECONCILE_GRACE_SECONDS = 120;
+
+function presenceAgeMs(presence: { enteredAt: string | null; requestedAt: string }): number {
+  // The enter path reuses one row per user/session and refreshes BOTH
+  // enteredAt and requestedAt on re-entry (`seat()`), so enteredAt is the
+  // honest presence age; a waiting row has no enteredAt yet and `requestedAt`
+  // is the "<ISO>#<seq>" receipt string, so only its ISO prefix is parsed.
+  return Date.parse(presence.enteredAt ?? presence.requestedAt.split("#", 1)[0]);
+}
+
+// Typed failure of the slice-2 webhook path (design §3 HTTP mapping): the
+// route maps invalid_signature to 400 and webhook_unavailable to 503, and
+// never leaks provider detail.
+export class StudyGroupWebhookError extends Error {
+  readonly code: "invalid_signature" | "webhook_unavailable";
+
+  constructor(code: "invalid_signature" | "webhook_unavailable") {
+    super("The webhook could not be accepted.");
+    this.name = "StudyGroupWebhookError";
+    this.code = code;
+  }
+}
 
 function clean(value: string) {
   return value.trim();
@@ -930,6 +958,139 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.subject, text: copy.body, locale: profile.locale });
       }
+    },
+
+    async handleLiveKitWebhook(input: { rawBody: string; authHeader: string | null }): Promise<StudyGroupWebhookOutcome> {
+      // Receipt-first ordering (slice-2 design §3): verify → insert receipt →
+      // act → mark. A failure before the mark leaves the row `received` so the
+      // provider retry (or sweep A plus retry) resumes instead of being
+      // swallowed as a duplicate.
+      const gateway = deps.liveKitGateway;
+      if (!gateway?.verifyWebhook) throw new StudyGroupWebhookError("webhook_unavailable");
+      let event: LiveKitWebhookEvent;
+      try {
+        event = await gateway.verifyWebhook({ rawBody: input.rawBody, authHeader: input.authHeader });
+      } catch (error) {
+        if (error instanceof LiveKitGatewayError && error.code === "unverified") throw new StudyGroupWebhookError("invalid_signature");
+        throw new StudyGroupWebhookError("webhook_unavailable");
+      }
+      // The gateway already parsed this body; parsing cannot throw on real traffic.
+      const payload = JSON.parse(input.rawBody) as unknown;
+      let inserted: boolean;
+      try {
+        inserted = await deps.repository.insertWebhookReceipt({
+          receiptId: event.eventId,
+          eventType: event.eventType,
+          sessionId: event.room,
+          payload
+        });
+      } catch (error) {
+        if (error instanceof StudyGroupStoreUnsupportedError) throw new StudyGroupWebhookError("webhook_unavailable");
+        throw error;
+      }
+      if (!inserted) {
+        const existing = await deps.repository.getWebhookReceipt(event.eventId);
+        // Only a crashed (`received`) or swept (`failed`/`abandoned`) delivery
+        // resumes; every other existing state is a settled duplicate that must
+        // have no side effect and no second mark (mirrors the stripe_events rule).
+        if (existing && !(existing.status === "received" || (existing.status === "failed" && existing.failureClass === "abandoned"))) {
+          return { status: "duplicate" };
+        }
+      }
+      let result: "processed" | "ignored" = "ignored";
+      if (event.eventType === "participant_left" && event.room && event.participantIdentity) {
+        const room = event.room;
+        const identity = event.participantIdentity;
+        // The only mapping action: close that identity's open presence row
+        // inside the serialized mutate. It can never grant anything — no
+        // membership, role, meeting, token, or session-status change.
+        result = await deps.repository.update((store) => {
+          const session = store.sessions.find((item) => item.id === room);
+          if (!session) return "ignored" as const;
+          const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
+          if (presence) presence.leftAt = event.createdAt ?? deps.now().toISOString();
+          return "processed" as const;
+        });
+      }
+      // Success only: an unexpected action failure above propagates with the
+      // receipt still `received` (route 500; the retry resumes it).
+      await deps.repository.markWebhookProcessed({ receiptId: event.eventId, result });
+      return { status: result };
+    },
+
+    async reconcileLiveKitState(): Promise<{ abandonedReceipts: number; sessionsChecked: number; presencesClosed: number }> {
+      // Bounded reconciliation (slice-2 design §4). Sweep A errors propagate:
+      // the runtime timer swallows and logs a tick at its layer.
+      const abandonedReceipts = await deps.repository.abandonStaleWebhookReceipts({ olderThanSeconds: 300, limit: 50 });
+      // Sweep B needs a provider-verified participant read; absence means the
+      // capability is unavailable and the sweep is skipped, never guessed.
+      const gateway = deps.liveKitGateway;
+      if (!gateway?.listParticipants) return { abandonedReceipts, sessionsChecked: 0, presencesClosed: 0 };
+      const sessions = await deps.repository.listLiveSessionsWithOpenPresences(5);
+      let sessionsChecked = 0;
+      let presencesClosed = 0;
+      for (const session of sessions) {
+        let project: LiveKitProjectRef;
+        try {
+          if (!deps.liveKitProjects || !session.liveKitProjectId) throw new Error("The Live Session has no resolvable LiveKit project.");
+          project = deps.liveKitProjects.getAssigned(session.liveKitProjectId);
+        } catch {
+          // A dangling assignment cannot be probed. Redacted incident only —
+          // never identities, tokens, or payloads — and no check is counted.
+          emitLiveKitIncident({
+            sessionId: session.id,
+            projectId: session.liveKitProjectId,
+            code: classifyLiveKitIncident({ source: "gateway", code: "credential_unavailable", phase: "existing_room" }).code,
+            source: "gateway"
+          });
+          continue;
+        }
+        let participants: ReadonlyArray<{ identity: string }>;
+        try {
+          participants = await gateway.listParticipants({ project, room: session.id });
+        } catch (error) {
+          emitLiveKitIncident({
+            sessionId: session.id,
+            projectId: project.id,
+            code: classifyLiveKitIncident({
+              source: "gateway",
+              code: error instanceof LiveKitGatewayError ? error.code : "unreachable",
+              phase: "existing_room"
+            }).code,
+            source: "gateway"
+          });
+          sessionsChecked += 1;
+          continue;
+        }
+        sessionsChecked += 1;
+        const presentIdentities = new Set(participants.map((participant) => participant.identity));
+        // The only repair action: conditionally close open presences of this
+        // session whose identity the provider no longer lists, inside the
+        // serialized mutate. It can never grant anything, and rows younger
+        // than the grace window are left alone so a join in flight is never
+        // raced.
+        presencesClosed += await deps.repository.update((store) => {
+          const now = deps.now();
+          let closed = 0;
+          for (const presence of store.presences) {
+            if (presence.sessionId !== session.id || presence.leftAt !== null || presentIdentities.has(presence.userId)) continue;
+            const age = presenceAgeMs(presence);
+            if (!Number.isFinite(age) || now.getTime() - age <= RECONCILE_GRACE_SECONDS * 1000) continue;
+            presence.leftAt = now.toISOString();
+            closed += 1;
+          }
+          return closed;
+        });
+      }
+      return { abandonedReceipts, sessionsChecked, presencesClosed };
+    },
+
+    async operationalMetrics(): Promise<StudyGroupOperationalMetrics> {
+      // Redacted counts only (slice-3 design §5.2): a thin passthrough. Errors
+      // propagate — including the file adapter's typed
+      // StudyGroupStoreUnsupportedError — and the runtime metrics timer
+      // swallows a failing tick at its layer.
+      return deps.repository.studyGroupOperationalMetrics();
     },
 
     listReminders(actorUserId: string) {

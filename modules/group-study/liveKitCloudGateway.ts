@@ -1,17 +1,21 @@
-import { AccessToken, DataPacket_Kind, RoomServiceClient } from "livekit-server-sdk";
-import { LiveKitGatewayError, type LiveKitCredentials, type LiveKitProjectHealthStatus, type LiveKitRoomGateway } from "./liveKitGateway";
-import type { LiveKitProjectRef } from "./liveKitProjectRegistry";
+import { AccessToken, DataPacket_Kind, RoomServiceClient, WebhookReceiver, type WebhookEvent } from "livekit-server-sdk";
+import { LiveKitGatewayError, type LiveKitCredentials, type LiveKitProjectHealthStatus, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
+import type { LiveKitProjectRef, LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 
 export type LiveKitRoomService = {
   createRoom(input: { room: string; maxParticipants: number }): Promise<void>;
   sendData(room: string, data: Uint8Array, kind: "RELIABLE", options: { destinationIdentities?: string[] }): Promise<void>;
   removeParticipant(room: string, identity: string): Promise<void>;
+  // Optional so transports that only create/remove (fakes, legacy fixtures)
+  // keep working; the cloud gateway treats a missing reader as unreachable.
+  listParticipants?(room: string): Promise<ReadonlyArray<{ identity: string }>>;
   listRooms(): Promise<ReadonlyArray<unknown>>;
 };
 
 type CloudGatewayDeps = {
   resolveCredentials: (project: LiveKitProjectRef, options?: { forceRefresh?: boolean }) => Promise<LiveKitCredentials>;
   createRoomService?: (project: LiveKitProjectRef, credentials: LiveKitCredentials) => Promise<LiveKitRoomService>;
+  registry?: LiveKitProjectRegistry;
   providerVerified?: boolean;
   now?: () => Date;
 };
@@ -32,6 +36,15 @@ function defaultRoomService(project: LiveKitProjectRef, credentials: LiveKitCred
     },
     async removeParticipant(room, identity) {
       await client.removeParticipant(room, identity);
+    },
+    async listParticipants(room) {
+      const participants = await client.listParticipants(room);
+      // Only the identity crosses this boundary; a provider entry without one
+      // is skipped rather than guessed.
+      return participants
+        .map((participant) => participant.identity)
+        .filter((identity): identity is string => typeof identity === "string" && identity.length > 0)
+        .map((identity) => ({ identity }));
     },
     async listRooms() {
       return client.listRooms();
@@ -60,6 +73,26 @@ function recoveryFailure(error: unknown) {
   const status = healthFailure(error);
   if (status === "unauthorized" || status === "rate_limited") return new LiveKitGatewayError(status);
   return new LiveKitGatewayError("unreachable");
+}
+
+// The `iss` claim is read without trusting it: it only chooses which project's
+// secret will be used for the real cryptographic validation.
+function jwtIssuer(authHeader: string): string | null {
+  const parts = authHeader.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as { iss?: unknown };
+    return typeof payload.iss === "string" && payload.iss.trim() ? payload.iss : null;
+  } catch {
+    return null;
+  }
+}
+
+// Webhook createdAt is unix microseconds (proto int64, bigint at runtime).
+function createdAtIso(value: unknown): string | null {
+  const micros = typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!Number.isFinite(micros) || micros <= 0) return null;
+  return new Date(micros / 1000).toISOString();
 }
 
 export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGateway {
@@ -95,8 +128,59 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
     return operation;
   }
 
-  async function participantToken(credentials: LiveKitCredentials, input: { project: LiveKitProjectRef; room: string; identity: string; name: string; ttlSeconds: number }) {
-    const token = new AccessToken(credentials.apiKey, credentials.apiSecret, { identity: input.identity, name: input.name, ttl: input.ttlSeconds });
+  async function verifyWebhook({ rawBody, authHeader }: { rawBody: string; authHeader: string | null }): Promise<LiveKitWebhookEvent> {
+    // Every rejection is the same typed `unverified`: no issuer, key id, or
+    // payload detail may leave this boundary.
+    if (!deps.registry || !providerVerified || !rawBody) throw new LiveKitGatewayError("unverified");
+    const issuer = authHeader ? jwtIssuer(authHeader) : null;
+    if (!issuer) throw new LiveKitGatewayError("unverified");
+    for (const project of deps.registry.all()) {
+      let credentials: LiveKitCredentials;
+      try {
+        credentials = await deps.resolveCredentials(project);
+      } catch {
+        continue;
+      }
+      if (credentials.apiKey !== issuer) continue;
+      let event: WebhookEvent;
+      try {
+        event = await new WebhookReceiver(credentials.apiKey, credentials.apiSecret).receive(rawBody, authHeader ?? undefined);
+      } catch {
+        throw new LiveKitGatewayError("unverified");
+      }
+      const eventId = event.id.trim();
+      const eventType = event.event.trim();
+      if (!eventId || !eventType) throw new LiveKitGatewayError("unverified");
+      return {
+        eventId,
+        eventType,
+        room: event.room?.name.trim() ? event.room.name : null,
+        participantIdentity: event.participant?.identity.trim() ? event.participant.identity : null,
+        createdAt: createdAtIso(event.createdAt),
+        projectId: project.id
+      };
+    }
+    throw new LiveKitGatewayError("unverified");
+  }
+
+  async function listParticipants({ project, room }: { project: LiveKitProjectRef; room: string }): Promise<ReadonlyArray<{ identity: string }>> {
+    let service: LiveKitRoomService;
+    try {
+      service = await roomService(project);
+    } catch {
+      throw new LiveKitGatewayError("credential_unavailable");
+    }
+    // A transport without the capability must fail typed here: reading a
+    // missing list as "nobody is present" would close live seats.
+    if (!service.listParticipants) throw new LiveKitGatewayError("unreachable");
+    try {
+      return await service.listParticipants(room);
+    } catch (error) {
+      throw recoveryFailure(error);
+    }
+  }
+
+  async function participantToken(credentials: LiveKitCredentials, input: { project: LiveKitProjectRef; room: string; identity: string; name: string; ttlSeconds: number }) {    const token = new AccessToken(credentials.apiKey, credentials.apiSecret, { identity: input.identity, name: input.name, ttl: input.ttlSeconds });
     token.addGrant({ room: input.room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true });
     return {
       token: await token.toJwt(),
@@ -159,6 +243,12 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
         throw recoveryFailure(error);
       }
     },
+    verifyWebhook,
+    // Participant listing is a provider-verified capability: the DEV fake
+    // gateway (providerVerified: false) intentionally has no such member, and
+    // reconciliation reads the absence as "capability unavailable" and skips
+    // sweep B rather than treating it as an empty room.
+    ...(providerVerified ? { listParticipants } : {}),
     async healthCheck({ project, forceRefresh }) {
       const startedAt = now().getTime();
       let service: LiveKitRoomService;
