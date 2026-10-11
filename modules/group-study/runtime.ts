@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
 import { sendStudyGroupReminderEmail } from "@/services/emailService";
-import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, recordUserNotification } from "@/services/productStore";
+import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification } from "@/services/productStore";
 import { createStudyGroupRepository } from "./repository";
 import { createStudyGroupService, type StudyGroupService } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
@@ -135,6 +135,7 @@ export function studyGroupService() {
     notify: async (input) => {
       await recordUserNotification(input.userId, input.title, input.body);
     },
+    listReminders: (userId) => listStudyGroupReminders(userId),
     sendMail: async (input) => {
       try {
         await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text });

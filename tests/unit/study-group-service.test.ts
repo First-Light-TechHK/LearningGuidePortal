@@ -38,6 +38,7 @@ beforeEach(async () => {
     accessibleCourses: async (userId) => access.has(`${userId}:course-1`) ? [{ id: "course-1", title: "German History", slug: "german-history" }] : [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: userId === "nomail" ? null : `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input); },
+    listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     liveKit,
     tokenLogKey
@@ -437,6 +438,7 @@ test("a failed token issuance keeps the admitted seat available for a retry", as
     accessibleCourses: async () => [],
     userProfile: async (userId) => ({ id: userId, displayName: userId, email: `${userId}@example.test`, locale: "en-GB" }),
     notify: async () => undefined,
+    listReminders: async () => [],
     sendMail: async () => undefined,
     liveKit: { apiKey: "", apiSecret: "", url: "" },
     tokenLogKey
@@ -920,12 +922,20 @@ function serviceWith(extra: Partial<StudyGroupDeps>) {
     accessibleCourses: async (userId) => access.has(`${userId}:course-1`) ? [{ id: "course-1", title: "German History", slug: "german-history" }] : [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input); },
+    listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
     tokenLogKey,
     ...extra
   });
 }
+
+test("the reminders view is served through the service port", async () => {
+  const withReminders = serviceWith({
+    listReminders: async (userId) => [{ body: `${userId} reminder`, createdAt: "2026-09-19T02:00:00.000Z" }]
+  });
+  assert.deepEqual(await withReminders.listReminders("host"), [{ body: "host reminder", createdAt: "2026-09-19T02:00:00.000Z" }]);
+});
 
 test("a full session refuses the Host when six people are already in", async () => {
   for (const userId of ["m1", "m2", "m3", "m4", "m5", "m6"]) access.add(`${userId}:course-1`);

@@ -370,3 +370,17 @@ test("create, join, schedule, and a full session refuses the Host", async () => 
   assert.equal(seated.length, 6);
   assert.equal(seated.some((item) => item.userId === "api-host"), false);
 });
+
+test("the reminders view requires a session and returns only reminder notifications", async () => {
+  const anonymous = await call(getGroups, "http://localhost/api/study-groups?view=reminders");
+  assert.equal(anonymous.status, 401);
+  const store = await import("../../services/productStore");
+  await store.recordUserNotification("api-host", "Live Session reminder", "Weimar 1933 starts in 10 minutes.");
+  await store.recordUserNotification("api-host", "Order receipt", "Not a reminder.");
+  const response = await call(getGroups, "http://localhost/api/study-groups?view=reminders", undefined, token);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.data.some((item: { body: string }) => item.body === "Weimar 1933 starts in 10 minutes."), true);
+  assert.equal(body.data.some((item: { body: string }) => item.body === "Not a reminder."), false);
+});

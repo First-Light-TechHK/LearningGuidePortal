@@ -33,6 +33,7 @@ function serviceWith(liveKit: StudyGroupDeps["liveKit"]) {
     accessibleCourses: async () => [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input.title); },
+    listReminders: async () => [],
     sendMail: async (input) => { mails.push(input.subject); },
     liveKit,
     tokenLogKey

@@ -35,6 +35,7 @@ export type StudyGroupDeps = {
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
   notify: (input: { userId: string; title: string; body: string }) => Promise<void>;
+  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string }>>;
   sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN" }) => Promise<void>;
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
@@ -887,6 +888,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.subject, text: copy.body, locale: profile.locale });
       }
+    },
+
+    listReminders(actorUserId: string) {
+      return deps.listReminders(actorUserId);
     },
 
     listCreatableCourses(actorUserId: string) {
