@@ -22,7 +22,7 @@ One question is in flight per Live Session. Later questions wait. Order is the s
 
 ## Labels and seats
 
-The Join control for a Study Group reads "Join Study Group". The Hosting chip is shown only when the current user is the Host. A Live Session does not reserve a Host seat. The maximum of 6 includes the Host. A full session refuses another entry, including the Host.
+The Join control for a Study Group reads "Join Study Group". The Hosting chip is shown only when the current user is the Host. A Live Session does not reserve a Host seat. The maximum of 6 includes the Host. A full session refuses another entry, including the Host. The Host does not enter the member waiting flow: during Starting Soon the Host's control is Start Live Session, and a Host visible on the waiting screen is told to start when ready instead of reading the member wording.
 
 ## Related Lesson
 

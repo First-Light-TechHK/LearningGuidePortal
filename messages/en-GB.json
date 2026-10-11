@@ -588,6 +588,7 @@
     "sessionFull": "Session full",
     "start": "Start Live Session",
     "waiting": "Waiting for the host to start the session...",
+    "hostWaiting": "You are the Host. Start the session when you are ready.",
     "upToParticipants": "Up to {count} participants",
     "editSession": "Edit Session",
     "cancelSession": "Cancel Session",

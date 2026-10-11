@@ -583,6 +583,7 @@
     "sessionFull": "人数已满",
     "start": "开始直播课",
     "waiting": "等待主持人开始本节...",
+    "hostWaiting": "你是本节主持人，准备好后点击开始。",
     "upToParticipants": "最多 {count} 人",
     "editSession": "编辑本节",
     "cancelSession": "取消本节",

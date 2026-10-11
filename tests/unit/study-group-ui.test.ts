@@ -292,3 +292,12 @@ test("the ended screen and live clock follow the Live Session frames", () => {
   assert.match(app, /session\.state === "live" \? "liveNow"/);
   assert.match(app, /URLSearchParams\(window\.location\.search\)\.get\("group"\)/);
 });
+
+test("the Host starts from the session controls instead of waiting in the member flow", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /session\.state === "live" \|\| \(session\.state === "starting_soon" && selected\.role !== "host"\)/);
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  assert.match(room, /group\?\.role === "host" \? copy\.hostWaiting : copy\.waiting/);
+  assert.equal(en.studyGroupsPage.hostWaiting, "You are the Host. Start the session when you are ready.");
+  assert.equal(zh.studyGroupsPage.hostWaiting, "你是本节主持人，准备好后点击开始。");
+});
