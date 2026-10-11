@@ -18,6 +18,14 @@ Overlay I/O failures require a diagnosis against the current contract. Confirm t
 - UAT release tooling now requires the latest successful Verify, Overlay and Forge push runs and their required jobs for the exact branch revision. CLI and workflow releases execute the same SIT-reference catalogue/media and authenticated-browser acceptance runner. A receipt records failures as well as successes. The runtime pins archived curriculum media to reviewed S3 object versions in `deploy/uat-course-media.json`; changing a source object cannot silently replace the pinned UAT asset.
 - The concise AUTH-05 SMTP-outage regression creates a pending account with asserted setup, ages its token beyond the cooldown and makes any SMTP transport creation fail. Duplicate registration must still return the accepted pending response without a session and leave the stored user and token unchanged. This regression passes.
 
+## Study Group PostgreSQL proofs in the Overlay tree (11 October 2026)
+
+- The `study-group` suite product command now runs the unit suite followed by `scripts/studygroup-io-postgres.sh`, which runs the PostgreSQL io proofs (`tests/io/postgres/*.test.ts`) against a real PostgreSQL 16.
+- The script is fail-closed: it uses `DATABASE_URL` when set, otherwise starts and removes a disposable `postgres:16` container via docker, and refuses (non-zero) when neither is available; it never skips silently. Overlay runs therefore need docker on the host unless a DATABASE_URL is provided.
+- `trace.yaml` now maps three integration items under SG-03 (`SG-03/persistence/functional|negative|edge`) grounded in the two-process proofs: durable first-wins project assignment and retry reuse; capacity loser `session_full` and occupancy CHECK; two-process first-come-first-served admission, double-seat UNIQUE backstop, append-only token log. The functional item relates to SG-04 (incident reporting of the assigned project).
+- Tutor-queue, outbox, reminder and webhook-receipt proofs run inside the same command but have no leaf in cases.md and are therefore not traced.
+- The standalone `Study Group PG I/O` workflow keeps its own signal (typecheck + the same script against a service container); the suite command is the one authoritative entrypoint.
+
 The sections below record the original tool integration and historical expected failures at `ec9e129`; they are not a statement that the current UAT branch is expected to fail.
 
 ## 现在是什么

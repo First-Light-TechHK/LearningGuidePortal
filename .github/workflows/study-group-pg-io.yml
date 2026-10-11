@@ -2,7 +2,8 @@
 # (atomic seat admission, single-flight tutor claim, first-wins project
 # assignment, reminder de-duplication) proven across real worker processes
 # against a real PostgreSQL. This is deliberately a separate job from Verify,
-# which excludes database-backed io tests.
+# which excludes database-backed io tests. The proof step runs scripts/studygroup-io-postgres.sh,
+# shared with the Overlay study-group suite, so local and CI entrypoints stay identical.
 name: Study Group PG I/O
 
 on:
@@ -52,4 +53,4 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.io.json
 
       - name: Run the PostgreSQL io proofs
-        run: npm run test:io:pg
+        run: bash scripts/studygroup-io-postgres.sh

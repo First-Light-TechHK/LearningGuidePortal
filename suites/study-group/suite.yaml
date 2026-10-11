@@ -10,4 +10,4 @@ packages:
   - services/liveKitCredentials.ts
   - app/api/backoffice/study-group
 blocked_reason: null
-product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/study-group-*.test.ts
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/study-group-*.test.ts && bash scripts/studygroup-io-postgres.sh

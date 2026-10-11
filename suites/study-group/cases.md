@@ -39,17 +39,17 @@
 ### Functional
 - Title: Host start keeps waiting occupancy and writes one meeting
 - Steps: Enter during Starting Soon, then start
-- Expected: State becomes live; occupancy is unchanged; one meeting row
+- Expected: State becomes live; occupancy is unchanged; one meeting row; racing or repeated starts keep one durable LiveKit project assignment
 
 ### Negative
 - Title: Capacity, closed Session, and a token for someone outside
 - Steps: Fill the Session; enter too early; request a token without entering
-- Expected: session_full, session_not_open, or forbidden
+- Expected: session_full, session_not_open, or forbidden; a second process racing for the last seat loses with session_full and stored occupancy cannot exceed the maximum
 
 ### Edge
 - Title: First come first served and no Host grant in the token
-- Steps: Overlap entry requests with different request times; decode the token
-- Expected: Earlier request time wins; the token room is this Session and has no Host claim; the log line is encrypted and has no raw token
+- Steps: Overlap entry requests with different request times; race two processes for the last seat; decode the token
+- Expected: Earlier request time wins and a two-process race grants exactly one seat; the token room is this Session and has no Host claim; the log line is encrypted and has no raw token; the token log is append-only
 
 ## SG-04 LiveKit operational readiness
 
