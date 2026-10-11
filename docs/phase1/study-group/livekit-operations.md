@@ -14,15 +14,15 @@ The operator maintains a registry of projects. A project contains a stable id, w
 
 ## Normal monitoring
 
-Monitor, per project: room provision success/latency, token issuance failure, signed webhook verification, duplicate/late webhook events, stale presence reconciliation, capacity rejection, tutor lease age/retry/dead-letter count and provider error rate. Metrics contain a project id and failure class only; they contain no participant content, tokens, prompts or credentials.
+Monitor, per project: room provision success/latency, token issuance failure, capacity rejection and provider error rate today; signed webhook verification, duplicate/late webhook events, stale presence reconciliation and tutor lease age/retry/dead-letter count become monitorable with the release-gated signed webhook receiver and durable tutor queue. Metrics contain a project id and failure class only; they contain no participant content, tokens, prompts or credentials.
 
 The service performs a redacted control-plane probe when Study Group starts and every five minutes thereafter. The probe resolves the server-side credential and calls the non-mutating Room Service room listing for every `active` and `draining` project; it caches a completed snapshot for one minute and emits a structured state-change event only when a project's health changes. The Operator-only `GET /api/backoffice/study-group/livekit-health` endpoint exposes the cached project id, endpoint host, lifecycle state, health class, evidence source, `providerVerified`, latency and active-room count. `activeRooms` exists only when the evidence source is `provider_api` and `providerVerified=true`, meaning the current Room Service call returned it; credential-resolution, provider-error and simulated states never invent an equivalent value. `LIVEKIT_FAKE_GATEWAY=1` always returns `unverified` / `simulated`, so local or CI fakes cannot be offered as account evidence. It never returns a raw provider error, credential reference, token, learner identity or room name. A failed `active` probe makes new-session readiness false; a failed `draining` probe is an explicit alert because assigned rooms may still depend on it.
 
 This probe validates application credentials and Room Service reachability. It cannot prove remaining paid allowance, plan feature entitlement or every media path: LiveKit enforces quotas per project and may reject new operations when a limit is reached. Capacity monitoring therefore also needs the LiveKit dashboard/Analytics API where the plan permits it, CloudWatch alarms over the redacted application events, and an application-side admission budget that is lower than the provider's confirmed limit. Do not scrape the browser dashboard or put a dashboard session/token in the application.
 
-Participant access tokens are different from the project API credential. The browser must not poll or retain the project credential. It should use the short-lived participant token returned by the application, rely on LiveKit's connected-session refresh behaviour, and request one replacement from the server only for a bounded reconnect/expiry flow. The server repeats entitlement, membership, room assignment and project-state checks before issuing that replacement.
+Participant access tokens are different from the project API credential. The browser must not poll or retain the project credential. It should use the short-lived participant token returned by the application, rely on LiveKit's connected-session refresh behaviour, and request one replacement from the server only for a bounded reconnect/expiry flow. The server repeats membership, session-state, seat, room assignment and project-state checks before issuing that replacement today; adding a Course-entitlement recheck to that path is a release-gated design item, not current behaviour.
 
-The release smoke runs only against an authorised non-production project: provision a room, connect two test identities, send one reliable shared message, leave, verify a signed webhook and confirm the RDS seat is released. It must not use a personal account or a production learner identity.
+The pre-enable release smoke — required once the RDS-backed seat lifecycle and the signed webhook receiver exist — runs only against an authorised non-production project: provision a room, connect two test identities, send one reliable shared message, leave, verify a signed webhook and confirm the RDS seat is released. It must not use a personal account or a production learner identity. The control-plane staging smoke described below proves only that the staging credentials are accepted and can manage a room; it is not this gate.
 
 ## Incident model and LiveKit joint testing
 
@@ -47,7 +47,7 @@ This control-plane smoke proves that the configured staging credentials are curr
 
 1. Create a replacement key in the current LiveKit project; do not revoke the working key yet.
 2. Store the replacement under a new AWS Secrets Manager version/reference and update the registry without putting raw credentials in source or browser configuration.
-3. Deploy/reload the server-side resolver and complete the non-production room/token/webhook smoke.
+3. Deploy/reload the server-side resolver and complete the non-production room/token smoke (plus the webhook step once the signed webhook receiver exists).
 4. Keep both versions for at least the maximum issued token TTL and the agreed rollback window. Monitor provider authentication failures.
 5. Revoke the old key only after the overlap and verification period; record project id, timestamp, actor and redacted evidence in the release record.
 6. If verification fails, return the resolver to the old secret version; do not move active sessions to another project.
@@ -59,6 +59,8 @@ For a new-session provider failure, return a typed temporary-unavailable state a
 For retirement, mark the project `draining`; ensure no new session is assigned; wait for every assigned session, token TTL and reconciliation window to end; then mark it `disabled` and revoke the credential. Keep the operational evidence with the release record.
 
 ## Incident response
+
+The webhook, reconciliation and durable tutor-delivery responses below describe the target operational model; they apply once those release-gated features exist. Today there is no LiveKit webhook receiver, no reconciliation loop, and tutor delivery ownership is in-process (container-local JSON and in-memory delivery ownership are release blockers).
 
 - Invalid webhook signature: reject, do not write state, alert on sustained failures.
 - Missing webhook or browser crash: reconciliation checks the provider/session mapping after the configured grace period and records the reason for any seat release.
