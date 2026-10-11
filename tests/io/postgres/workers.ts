@@ -8,7 +8,7 @@ import path from "node:path";
 import { createPostgresStudyGroupRepository } from "../../../repositories/studyGroupRepository";
 import type { StudyGroupRepository } from "../../../modules/group-study/repository";
 import { createStudyGroupService } from "../../../modules/group-study/service";
-import { LiveKitGatewayError, type LiveKitRoomGateway } from "../../../modules/group-study/liveKitGateway";
+import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "../../../modules/group-study/liveKitGateway";
 import { parseLiveKitProjects } from "../../../modules/group-study/liveKitProjectRegistry";
 import { getPool } from "../../../services/persistence/db";
 
@@ -42,7 +42,9 @@ async function waitForGo() {
 // counts its own provider, gateway, and notification calls, so the parent
 // test can require exactly-once totals across processes.
 
-function buildServiceFixture() {
+type ReconcileParticipants = { present: string[]; failRoom?: string };
+
+function buildServiceFixture(webhookEvent?: LiveKitWebhookEvent, reconcileParticipants?: ReconcileParticipants) {
   const stats = {
     tutorCalls: 0,
     published: [] as string[],
@@ -66,14 +68,37 @@ function buildServiceFixture() {
     removeParticipant: async () => undefined,
     healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: TEST_NOW, latencyMs: 0, activeRooms: 0 })
   };
+  // The service-webhook mode resolves verifyWebhook straight from the
+  // environment: the gateway signature check itself is unit-covered
+  // (tests/unit/study-group-webhook-service.test.ts); this mode is the
+  // database-semantics proof of the typed outcome.
+  if (webhookEvent) gateway.verifyWebhook = async () => webhookEvent;
+  // The reconcile-reader option (service-reconcile mode): sweep B reads
+  // participants only when the mode attaches the provider read. Without the
+  // option there is no listParticipants member at all, which the service
+  // treats as a missing capability (sweep B skipped, never guessed) — the
+  // same shape as production without a provider read.
+  if (reconcileParticipants) {
+    gateway.listParticipants = async ({ room }) => {
+      if (reconcileParticipants.failRoom && room === reconcileParticipants.failRoom) {
+        throw new LiveKitGatewayError("rate_limited");
+      }
+      return reconcileParticipants.present.map((identity) => ({ identity }));
+    };
+  }
   return { stats, projects, gateway };
 }
 
-function serviceFor(repository: StudyGroupRepository) {
-  const { stats, projects, gateway } = buildServiceFixture();
+function serviceFor(
+  repository: StudyGroupRepository,
+  webhookEvent?: LiveKitWebhookEvent,
+  reconcileParticipants?: ReconcileParticipants,
+  now: () => Date = () => new Date(TEST_NOW)
+) {
+  const { stats, projects, gateway } = buildServiceFixture(webhookEvent, reconcileParticipants);
   const service = createStudyGroupService({
     repository,
-    now: () => new Date(TEST_NOW),
+    now,
     hasCourseAccess: async () => true,
     courseSummary: async (courseId) => ({ id: courseId, title: "German History", slug: "german-history" }),
     accessibleCourses: async () => [],
@@ -219,6 +244,44 @@ async function main(): Promise<Record<string, unknown>> {
       const { service, stats } = serviceFor(repository);
       await service.dispatchDueReminders();
       return { role: ROLE, notifications: stats.notifications, mails: stats.mails };
+    }
+    case "service-webhook": {
+      const eventId = required("LG_IO_EVENT_ID");
+      const sessionId = required("LG_IO_SESSION");
+      const eventType = process.env.LG_IO_EVENT_TYPE || "participant_left";
+      const { service } = serviceFor(repository, {
+        eventId,
+        eventType,
+        room: sessionId,
+        participantIdentity: required("LG_IO_IDENTITY"),
+        createdAt: required("LG_IO_CREATED_AT"),
+        projectId: "io-project"
+      });
+      const outcome = await service.handleLiveKitWebhook({
+        rawBody: JSON.stringify({ event: eventType, id: eventId, room: { name: sessionId } }),
+        authHeader: "io-test"
+      });
+      return { role: ROLE, outcome };
+    }
+    case "service-reconcile": {
+      // Sweep B attaches its provider reader only when the environment asks
+      // for it: LG_IO_PRESENT set (even to the empty string) or LG_IO_FAIL_ROOM
+      // set. With neither set the fixture has no listParticipants member, so
+      // the service must skip sweep B entirely (no-reader no-sweep rule).
+      const present = process.env.LG_IO_PRESENT;
+      const failRoom = process.env.LG_IO_FAIL_ROOM;
+      const reconcileParticipants: ReconcileParticipants | undefined = present !== undefined || failRoom !== undefined
+        ? {
+            present: (present ?? "").split(",").map((value) => value.trim()).filter(Boolean),
+            failRoom: failRoom || undefined
+          }
+        : undefined;
+      // Sweep A ages receipts against SQL NOW() and sweep B ages presences
+      // against deps.now(), so reconciliation runs on the real clock here:
+      // the other service modes pin TEST_NOW for their timetable operations.
+      const { service } = serviceFor(repository, undefined, reconcileParticipants, () => new Date());
+      const outcome = await service.reconcileLiveKitState();
+      return { role: ROLE, ...outcome };
     }
     default:
       throw new Error(`unknown LG_IO_MODE ${MODE}`);

@@ -8,7 +8,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { getPool } from "../../../services/persistence/db";
 import { createPostgresStudyGroupRepository } from "../../../repositories/studyGroupRepository";
@@ -192,17 +192,38 @@ function sleep(ms: number) {
  * readiness, then release the shared barrier so all workers run their
  * operation at the same time. Each worker holds its own pool, so only the
  * database can arbitrate the race.
+ *
+ * Options beyond the timeouts are additive and default off, so the Study Group
+ * proofs keep their exact behaviour:
+ *  - workerFile: spawn this absolute entry file instead of workers.ts.
+ *  - perWorkerCwd: give each worker its own tmp working directory (with
+ *    data/knowledge_system/learning_guide/) so a local file lock cannot mask
+ *    database arbitration; the tsx loader is then referenced by absolute file
+ *    URL because a tmp cwd cannot resolve the bare "tsx" specifier.
  */
-export async function runWorkers(specs: WorkerSpec[], options: { timeoutMs?: number; readyTimeoutMs?: number } = {}): Promise<WorkerOutcome[]> {
+export async function runWorkers(
+  specs: WorkerSpec[],
+  options: { timeoutMs?: number; readyTimeoutMs?: number; workerFile?: string; perWorkerCwd?: boolean } = {}
+): Promise<WorkerOutcome[]> {
   const timeoutMs = options.timeoutMs ?? 30_000;
   const readyTimeoutMs = options.readyTimeoutMs ?? 20_000;
+  const workerFile = options.workerFile ?? WORKER_FILE;
   const dir = mkdtempSync(path.join(tmpdir(), "lg-sg-io-"));
   const barrierDir = path.join(dir, "barrier");
   mkdirSync(barrierDir, { recursive: true });
+  const workerDirs: string[] = [];
   const children = specs.map((spec, index) => {
     const role = String.fromCharCode(65 + index);
-    const child = spawn(process.execPath, ["--import", "tsx", "--require", REGISTER_TS_CONFIG_PATHS, WORKER_FILE], {
-      cwd: PRODUCT_ROOT,
+    let cwd = PRODUCT_ROOT;
+    let loaderArgs = ["--import", "tsx"];
+    if (options.perWorkerCwd) {
+      cwd = mkdtempSync(path.join(tmpdir(), "lg-io-cwd-"));
+      workerDirs.push(cwd);
+      mkdirSync(path.join(cwd, "data", "knowledge_system", "learning_guide"), { recursive: true });
+      loaderArgs = ["--import", pathToFileURL(path.join(PRODUCT_ROOT, "node_modules", "tsx", "dist", "loader.mjs")).href];
+    }
+    const child = spawn(process.execPath, [...loaderArgs, "--require", REGISTER_TS_CONFIG_PATHS, workerFile], {
+      cwd,
       env: { ...process.env, LG_IO_MODE: spec.mode, LG_IO_ROLE: role, LG_IO_BARRIER_DIR: barrierDir, ...spec.env }
     });
     return { role, spec, child };
@@ -226,6 +247,7 @@ export async function runWorkers(specs: WorkerSpec[], options: { timeoutMs?: num
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     }
     rmSync(dir, { recursive: true, force: true });
+    for (const workerDir of workerDirs) rmSync(workerDir, { recursive: true, force: true });
   }
 }
 
