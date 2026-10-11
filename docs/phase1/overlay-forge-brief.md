@@ -26,6 +26,15 @@ Overlay I/O failures require a diagnosis against the current contract. Confirm t
 - Tutor-queue, outbox, reminder and webhook-receipt proofs run inside the same command but have no leaf in cases.md and are therefore not traced.
 - The standalone `Study Group PG I/O` workflow keeps its own signal (typecheck + the same script against a service container); the suite command is the one authoritative entrypoint.
 
+### Study Group slice 2–3, the ORDER-02 fix, and the PostgreSQL proof wave (11 October 2026)
+
+- `app/api/livekit/webhook` accepts provider-signed events (raw-body HS256 validation via the SDK receiver, issuer-routed per project) and processes them receipt-first: `study_group_webhook_receipts` is the unique receipt, a crashed delivery stays `received` and is resumed by the retry, a settled duplicate has zero side effects, and the only mapping is closing one open presence on `participant_left`. Webhooks never grant membership or authorization.
+- A bounded reconciliation timer (PostgreSQL + provider-verified only) abandons stale receipts past a 300-second/50-row window and repairs presence drift for at most 5 live sessions per 5-minute tick, closing only rows past a 120-second grace whose identity the provider no longer lists.
+- Production fail-closed entries: `preflight:production` blocks the file store, a missing or non-32-byte token-log key and a project registry without an active project; `/api/health/config` surfaces `studyGroup.store`; the runtime emits a redacted `study_group.metrics` line (counts only) every five minutes for the runbook's alarm filters.
+- `scripts/pg-io-postgres.sh` generalises the disposable-PostgreSQL runner (the study-group wrapper delegates to it), and the payment, visitor-trial and order suites chain their own PostgreSQL proofs; `trace.yaml` gains 11 persistence/webhook/reconcile items (SG-03, SG-04, PAY-03, PAY-05, TRIAL-01, TRIAL-02, ORDER-02).
+- The ORDER-02 defect is fixed with a failing test first: a refunded Stripe subscription can no longer be revived by a later renewal `invoice.paid` (the renewal is still recorded — the guard blocks access, not the money fact). `tests/unit/refund-then-invoice.test.ts` (previously cited but absent) now exists, with a two-process companion in `tests/io/postgres/order-persistence.test.ts`.
+- Local deterministic evidence for this wave: 467 unit tests, 101 integration tests, 35 PostgreSQL io proofs in one disposable container, `overlay run` 7/7 suites. The deployed non-production smoke and the key-rotation drill remain operational gates (release-runbook §Study Group).
+
 The sections below record the original tool integration and historical expected failures at `ec9e129`; they are not a statement that the current UAT branch is expected to fail.
 
 ## 现在是什么

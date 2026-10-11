@@ -10,4 +10,4 @@ packages:
   - modules/payment-management
   - modules/portal
 blocked_reason: null
-product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/visitor-trial.test.ts
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/visitor-trial.test.ts && bash scripts/pg-io-postgres.sh tests/io/postgres/visitor-trial-persistence.test.ts

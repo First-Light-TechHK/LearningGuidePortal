@@ -51,6 +51,17 @@ items:
     level: integration
     case_id: SG-03/persistence/edge
     type: edge
+  - function_id: SG-03
+    level: integration
+    case_id: SG-03/webhook/edge
+    type: edge
+    span: interaction
+    relates:
+      - SG-04
+  - function_id: SG-03
+    level: integration
+    case_id: SG-03/reconcile/edge
+    type: edge
   - function_id: SG-04
     level: integration
     case_id: SG-04/livekit-operations/functional
@@ -59,6 +70,13 @@ items:
     level: integration
     case_id: SG-04/livekit-operations/negative
     type: negative
+  - function_id: SG-04
+    level: integration
+    case_id: SG-04/webhook/negative
+    type: negative
+    span: interaction
+    relates:
+      - SG-03
   - function_id: SG-04
     level: integration
     case_id: SG-04/livekit-operations/edge

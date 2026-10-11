@@ -19,6 +19,17 @@ items:
     span: interaction
     relates:
       - TRIAL-02
+  - function_id: TRIAL-01
+    level: integration
+    case_id: TRIAL-01/persistence/functional
+    type: functional
+    span: interaction
+    relates:
+      - TRIAL-02
+  - function_id: TRIAL-01
+    level: integration
+    case_id: TRIAL-01/persistence/edge
+    type: edge
   - function_id: TRIAL-02
     level: integration
     case_id: TRIAL-02/io/functional
@@ -34,3 +45,7 @@ items:
     level: integration
     case_id: TRIAL-02/io/edge
     type: edge
+  - function_id: TRIAL-02
+    level: integration
+    case_id: TRIAL-02/persistence/negative
+    type: negative

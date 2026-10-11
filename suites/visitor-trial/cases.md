@@ -30,6 +30,9 @@ Visitor-facing checks are TRIAL-01 / TRIAL-02 (unique ids; payment suite keeps P
 - Title: Second trial start while live does not extend validTo
 - Steps: Complete trial; POST trial quote + /api/trial again; complete again
 - Expected: Same order id; entitlement `source=trial`; `validTo` unchanged
+- Title: Two processes on PostgreSQL starting one trial grant one activation
+- Steps: Two worker processes with independent working directories start and complete the same demo trial against PostgreSQL; then a third redelivery
+- Expected: Identical `order.id` from both processes; exactly one trial order, one trial subscription, one active entitlement; the redelivery returns the same ids with `validTo` unchanged
 - Title: Trial expiry at validTo denies check and study writes
 - Steps: Complete trial; set entitlement.validTo to now; GET entitlements/check; POST study/events on a locked lesson
 - Expected: `allowed` false; study/events 403; INV-expired-no-learn
@@ -55,3 +58,6 @@ Visitor-facing checks are TRIAL-01 / TRIAL-02 (unique ids; payment suite keeps P
 - Title: Trial after a paid purchase does not grant
 - Steps: Purchase the course; POST trial quote + /api/trial
 - Expected: HTTP 400; entitlement `source` stays purchase; INV-one-charge
+- Title: On PostgreSQL the paid-purchase refusal holds and never moves validTo
+- Steps: Complete a purchase, then attempt a trial start against PostgreSQL
+- Expected: Refused (already has active access); zero trial orders; the paid entitlement keeps its id and `validTo`; INV-one-charge

@@ -85,13 +85,16 @@ PAY-01..07 Stripe internals stay specified. Executable I/O covers the HTTP-visib
 - Title: Two processes checking out one quote share one order
 - Steps: Two worker processes call createPendingDemoOrder on the same product.json
 - Expected: Same `order.id`. This is the file-lock proof, not the in-process queue.
+- Title: Two processes on PostgreSQL still share one order
+- Steps: Two worker processes with independent working directories create the pending order for one quote against PostgreSQL
+- Expected: Same `order.id`; exactly one order row for the quote. The transaction advisory lock and the payment-key table arbitrate, not the local file lock
 ## PAY-04 Refund revive
 
 
 ### Functional
 - Title: Unpaid signed completion grants nothing
 - Steps: POST webhook `checkout.session.completed` with `payment_status=unpaid`
-- Expected: HTTP 200 `pending`; entitlement false. Operator refund + later `invoice.paid` remains specified
+- Expected: HTTP 200 `pending`; entitlement false. Operator refund + later `invoice.paid` is locked by the ORDER-02 service and PostgreSQL proofs (access never revives)
 
 
 ### Negative
@@ -113,7 +116,7 @@ PAY-01..07 Stripe internals stay specified. Executable I/O covers the HTTP-visib
 ### Functional
 - Title: Repeating complete does not create a second grant
 - Steps: Demo confirm `complete` twice on the same order
-- Expected: Still allowed once; INV-one-charge. Table UNIQUE on stripe_events remains specified
+- Expected: Still allowed once; INV-one-charge. On PostgreSQL the event key is UNIQUE in `product_payment_keys` under the transaction advisory lock
 
 
 ### Negative
@@ -142,6 +145,12 @@ PAY-01..07 Stripe internals stay specified. Executable I/O covers the HTTP-visib
 - Title: Concurrent demo complete of one order grants once
 - Steps: Quote; checkout; two parallel POST demo confirm `complete`
 - Expected: One subscription row; entitlement allowed once; INV-one-charge
+- Title: Two processes delivering the same signed paid event grant once
+- Steps: Two worker processes with independent working directories deliver the identical Stripe event id against PostgreSQL, then a third sequential redelivery
+- Expected: Exactly one applies (the loser observes `duplicate:true` or an idempotent resume); exactly one event key row; one purchase subscription; one active entitlement; the third delivery is `duplicate:true` and `validTo` is unchanged; INV-one-charge
+- Title: Two processes completing one demo order return one subscription
+- Steps: Two worker processes with independent working directories complete the same demo order against PostgreSQL
+- Expected: Identical subscription and entitlement ids from both processes; one subscription row; one active entitlement; `validTo` identical
 ## PAY-06 Grace D+3
 
 
@@ -265,4 +274,4 @@ PAY-01..07 Stripe internals stay specified. Executable I/O covers the HTTP-visib
 - Steps: Two worker processes call createPendingDemoTrialOrderFromQuote on the same product.json
 - Expected: Same `order.id`
 
-Specified / not tested now (prose, not a function_id): no live Stripe in this suite. Do not treat demo `order.id` reuse or webhook fixtures as these proofs: PAY-01 true `$0 invoice.paid` on a trialing Stripe subscription; PAY-02 Stripe cancel of the source subscription; PAY-03 a second Stripe Checkout Session (`sessions.create`); PAY-04 operator refund then later `invoice.paid` revive; PAY-05 table UNIQUE on `stripe_events`; PAY-06 grace = original `validTo` + 3 days; PAY-07 `invoice.paid` clearing `cancel_at_period_end`; PAY-08 Stripe resync `filter()` deleting the previous entitlement row. AUTH-04 Google signup promotion stays specified until a real OAuth path exists.
+Specified / not tested now (prose, not a function_id): no live Stripe in this suite. Do not treat demo `order.id` reuse or webhook fixtures as these proofs: PAY-01 true `$0 invoice.paid` on a trialing Stripe subscription; PAY-02 Stripe cancel of the source subscription; PAY-03 a second Stripe Checkout Session (`sessions.create`); PAY-06 grace = original `validTo` + 3 days; PAY-07 `invoice.paid` clearing `cancel_at_period_end`; PAY-08 Stripe resync `filter()` deleting the previous entitlement row. AUTH-04 Google signup promotion stays specified until a real OAuth path exists.

@@ -43,6 +43,10 @@ items:
     level: integration
     case_id: PAY-03/io/edge
     type: edge
+  - function_id: PAY-03
+    level: integration
+    case_id: PAY-03/persistence/edge
+    type: edge
   - function_id: PAY-04
     level: integration
     case_id: PAY-04/io/functional
@@ -70,6 +74,14 @@ items:
   - function_id: PAY-05
     level: integration
     case_id: PAY-05/io/concurrent-complete
+    type: edge
+  - function_id: PAY-05
+    level: integration
+    case_id: PAY-05/persistence/functional
+    type: functional
+  - function_id: PAY-05
+    level: integration
+    case_id: PAY-05/persistence/edge
     type: edge
   - function_id: PAY-01
     level: unit

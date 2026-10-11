@@ -51,7 +51,7 @@ Credential stores are write-only by design: GitHub environment secrets cannot be
 
 1. Create a replacement key in the current LiveKit project; do not revoke the working key yet.
 2. Store the replacement under a new AWS Secrets Manager version/reference and update the registry without putting raw credentials in source or browser configuration.
-3. Deploy/reload the server-side resolver and complete the non-production room/token smoke (plus the webhook step once the signed webhook receiver exists).
+3. Deploy/reload the server-side resolver and complete the non-production room/token smoke, including the signed participant-left webhook step (the receiver now exists at `/api/livekit/webhook`).
 4. Keep both versions for at least the maximum issued token TTL and the agreed rollback window. Monitor provider authentication failures.
 5. Revoke the old key only after the overlap and verification period; record project id, timestamp, actor and redacted evidence in the release record.
 6. If verification fails, return the resolver to the old secret version; do not move active sessions to another project.
@@ -64,7 +64,7 @@ For retirement, mark the project `draining`; ensure no new session is assigned; 
 
 ## Incident response
 
-The webhook, reconciliation and durable tutor-delivery responses below describe the target operational model; they apply once those release-gated features exist. Today there is no LiveKit webhook receiver, no reconciliation loop, and tutor delivery ownership is in-process (container-local JSON and in-memory delivery ownership are release blockers).
+The webhook, reconciliation and durable tutor-delivery responses below are implemented for the PostgreSQL store (migrations 012): `app/api/livekit/webhook` verifies the provider signature and records a unique receipt before acting, the bounded reconciliation timer repairs missed webhooks and drifted presence, and tutor delivery runs on the durable claim/settle/outbox. The file store remains a single-process DEV adapter whose webhook path fails closed (503) and which is a release blocker in production (see the release-runbook gate).
 
 - Invalid webhook signature: reject, do not write state, alert on sustained failures.
 - Missing webhook or browser crash: reconciliation checks the provider/session mapping after the configured grace period and records the reason for any seat release.

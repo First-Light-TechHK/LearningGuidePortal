@@ -10,4 +10,4 @@ packages:
   - modules/subscription-management
   - modules/order-management
 blocked_reason: null
-product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/payment.test.ts
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/payment.test.ts && bash scripts/pg-io-postgres.sh tests/io/postgres/payment-persistence.test.ts

@@ -49,7 +49,7 @@
 ### Edge
 - Title: First come first served and no Host grant in the token
 - Steps: Overlap entry requests with different request times; race two processes for the last seat; decode the token
-- Expected: Earlier request time wins and a two-process race grants exactly one seat; the token room is this Session and has no Host claim; the log line is encrypted and has no raw token; the token log is append-only
+- Expected: Earlier request time wins and a two-process race grants exactly one seat; the token room is this Session and has no Host claim; the log line is encrypted and has no raw token; the token log is append-only; a signed provider participant-left closes the seat exactly once (duplicate deliveries and crashed retries cannot close twice, unknown rooms change nothing), and a webhook missed entirely is repaired by bounded reconciliation after the grace window
 
 ## SG-04 LiveKit operational readiness
 
@@ -61,7 +61,7 @@
 ### Negative
 - Title: Unsafe configuration or unavailable authority fails closed
 - Steps: Supply an invalid endpoint, missing credential reference, unresolved secret, or a Room Service 401/403 response
-- Expected: Configuration is rejected or readiness is false with a typed redacted failure class; no key, secret reference, token, room name, prompt, or provider response body is returned; INV-livekit-secret-boundary
+- Expected: Configuration is rejected or readiness is false with a typed redacted failure class; no key, secret reference, token, room name, prompt, or provider response body is returned; a webhook whose signature cannot be verified (tampered body, wrong key, expired token, unknown issuer) is rejected without any state change; INV-livekit-secret-boundary
 
 ### Edge
 - Title: Draining projects remain observed and a snapshot is bounded

@@ -3,7 +3,7 @@
 Black-box I/O against `/api/backoffice/orders`.
 Suite is active. Overlay select runs this product_command.
 
-Student and unauthenticated callers cannot list or refund orders. Operator refund + later `invoice.paid` must not revive access; that hop is specified until an operator seed exists.
+Student and unauthenticated callers cannot list or refund orders. Operator refund + later `invoice.paid` must not revive access; that contract is locked at the service and PostgreSQL level (`tests/unit/refund-then-invoice.test.ts`, `tests/io/postgres/order-persistence.test.ts`) while the operator HTTP hop itself stays specified until an operator seed exists.
 
 Register always creates a student. `BACKOFFICE_OPERATOR_EMAIL` is unused for role. There is no public operator seed, so operator refund HTTP is blocked.
 
@@ -34,8 +34,8 @@ Register always creates a student. `BACKOFFICE_OPERATOR_EMAIL` is unused for rol
 
 ### Functional
 - Title: Operator refund then later invoice.paid must not revive
-- Steps: Specified HTTP. Service lock: `tests/unit/refund-then-invoice.test.ts` and `tests/unit/pay-invariants.test.ts` refund then `applyVerifiedStripeEvent` invoice.paid
-- Expected: Entitlement stays false after the invoice. HTTP still not executable: no operator seed; register stays student; `BACKOFFICE_OPERATOR_EMAIL` does not grant `role=operator`
+- Steps: Specified HTTP. Service lock: `tests/unit/refund-then-invoice.test.ts` and `tests/io/postgres/order-persistence.test.ts` refund then `applyVerifiedStripeEvent` invoice.paid
+- Expected: Entitlement stays false after the invoice; the renewal order is still recorded (money fact, no revival). HTTP still not executable: no operator seed; register stays student; `BACKOFFICE_OPERATOR_EMAIL` does not grant `role=operator`
 
 
 ### Negative
@@ -48,3 +48,6 @@ Register always creates a student. `BACKOFFICE_OPERATOR_EMAIL` is unused for rol
 - Title: Operator refund HTTP is blocked
 - Steps: There is no public register/login that yields `isOperator`
 - Expected: Specified / blocked until an operator seed exists. Do not weaken student 403 to invent an operator path
+- Title: Refund racing a renewal invoice converges to revoked
+- Steps: Two worker processes with independent working directories refund the paid order and deliver the renewal `invoice.paid` against PostgreSQL, then a follow-up renewal
+- Expected: In every interleaving the end state is a refunded order, a non-active subscription and a revoked entitlement; each delivery is recorded once; no revival; INV-one-charge
