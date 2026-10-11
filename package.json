@@ -15,6 +15,7 @@
     "test:e2e": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.e2e.config.ts",
     "test:e2e:studygroup": "playwright test --config=playwright.studygroup.config.ts",
     "test:io": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/*.test.ts",
+    "test:io:pg": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/io/postgres/*.test.ts",
     "test:ci": "npx tsc --noEmit && npm run test:unit && npm run test:integration",
     "test:local": "npm run test:e2e && npm run smoke:product",
     "test:smoke:ci": "node scripts/smoke-product.mjs",

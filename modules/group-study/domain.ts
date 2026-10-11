@@ -73,6 +73,8 @@ export type ReminderRow = {
   sentAt: string;
 };
 
+export type TutorRequestStatus = "queued" | "in_flight" | "answered" | "dead_letter";
+
 export type TutorRequestRow = {
   id: string;
   sessionId: string;
@@ -82,6 +84,36 @@ export type TutorRequestRow = {
   receivedAt: string;
   inFlight: boolean;
   answeredAt?: string | null;
+  // Durable queue fields (Phase C slice 1, design §3.1). Additive: the file
+  // store leaves them undefined; the PostgreSQL adapter always sets them, and
+  // inFlight mirrors `status === "in_flight"` on every row it returns.
+  status?: TutorRequestStatus;
+  seq?: number;
+  leaseOwner?: string | null;
+  leaseExpiresAt?: string | null;
+  nextAttemptAt?: string | null;
+  attempts?: number;
+  terminalReason?: string | null;
+  outboxMessageId?: string | null;
+};
+
+export type OutboxKind = "room_message";
+export type OutboxStatus = "queued" | "sending" | "delivered" | "failed" | "dead";
+
+export type OutboxRow = {
+  id: string;
+  kind: OutboxKind;
+  dedupeKey: string;
+  sessionId: string;
+  payload: { room: string; projectId: string; text: string; messageId: string };
+  status: OutboxStatus;
+  attempts: number;
+  leaseOwner: string | null;
+  leaseExpiresAt: string | null;
+  nextAttemptAt: string | null;
+  failureClass: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
 };
 
 export type StudyGroupStore = {
@@ -93,6 +125,7 @@ export type StudyGroupStore = {
   meetings: MeetingRow[];
   reminders: ReminderRow[];
   tutorRequests: TutorRequestRow[];
+  outbox: OutboxRow[];
 };
 
 export const SESSION_DURATION_SECONDS = [1800, 2700, 3600, 5400] as const;
@@ -100,7 +133,7 @@ export const STARTING_SOON_MS = 10 * 60 * 1000;
 export const TOKEN_TTL_SECONDS = 10 * 60;
 
 export function emptyStore(): StudyGroupStore {
-  return { groups: [], memberships: [], sessions: [], intents: [], presences: [], meetings: [], reminders: [], tutorRequests: [] };
+  return { groups: [], memberships: [], sessions: [], intents: [], presences: [], meetings: [], reminders: [], tutorRequests: [], outbox: [] };
 }
 
 export function plannedEndMs(session: { startsAt: string; durationSeconds: number }) {
