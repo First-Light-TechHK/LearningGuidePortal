@@ -12,7 +12,8 @@ const sessionSecret = "e2e-session-secret-at-least-32-chars!!";
 //   real LiveKit project; the docker/nginx webServers are then skipped and the
 //   Next dev server talks to that project via the DEV-only local credential
 //   resolver. Cloud values are read from process.env only and never written to
-//   disk. Example: set -a; . /tmp/lg-e2e-cloud.env; set +a; npm run test:e2e:studygroup
+//   disk. Export the three variables (or source a local, git-ignored env file)
+//   before running npm run test:e2e:studygroup.
 const cloudUrl = process.env.STUDYGROUP_E2E_LIVEKIT_URL?.trim();
 const cloudKey = process.env.STUDYGROUP_E2E_LIVEKIT_KEY?.trim();
 const cloudSecret = process.env.STUDYGROUP_E2E_LIVEKIT_SECRET?.trim();
