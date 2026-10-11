@@ -2,10 +2,10 @@
 .meta { color: #6b7280; font-size: 13px; }
 .header { display: flex; align-items: center; height: 68px; padding: 0 40px; background: #fff; border-bottom: 1px solid #e4e7ec; position: relative; }
 .brand { display: inline-flex; align-items: center; gap: 8px; color: #0a0a0a; font-size: 20px; font-weight: 600; text-decoration: none; }
-.nav { display: flex; gap: 30px; margin-left: 66px; font-size: 14px; }
-.nav a { color: #4a5565; font-weight: 500; text-decoration: none; }
+.nav { display: flex; gap: 30px; margin-left: 66px; font-size: 14px; align-self: stretch; }
+.nav a { position: relative; display: inline-flex; align-items: center; color: #4a5565; font-weight: 500; text-decoration: none; }
 .nav a.active { color: #155dfc; font-weight: 700; text-transform: capitalize; }
-.mark { position: absolute; left: 338px; bottom: 0; width: 95px; height: 4px; background: #155dfc; }
+.nav a.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #155dfc; }
 .tools { margin-left: auto; display: flex; align-items: center; gap: 16px; }
 .tools :global(.portal-language) { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
 .lang { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
@@ -60,7 +60,7 @@
 .actions { display: flex; justify-content: space-between; margin-top: 8px; }
 .ghost, .primary { height: 37px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .ghost { width: 80px; border: 1px solid #e4e7ed; background: #fff; color: #6b7280; }
-.primary { min-width: 200px; border: 0; background: #1d6bff; color: #fff; padding: 0 16px; }
+.primary { display: inline-flex; align-items: center; justify-content: center; min-width: 200px; border: 0; background: #1d6bff; color: #fff; padding: 0 16px; text-decoration: none; }
 .primary:disabled { opacity: .45; cursor: not-allowed; }
 .toast { width: min(450px, 100%); margin: 0 auto 18px; display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); padding: 16px 18px; }
 .toast strong { display: block; font-size: 16px; }
@@ -194,7 +194,6 @@
 @media (max-width: 800px) {
   .header { padding: 0 16px; }
   .nav { display: none; }
-  .mark { display: none; }
   .layout, .detail, .room, .pair, .sheet, .facts { grid-template-columns: 1fr; }
   .filters { flex-direction: column; }
   .filters select, .filters input { width: 100%; }

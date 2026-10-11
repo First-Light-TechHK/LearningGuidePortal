@@ -17,10 +17,9 @@ export function StudyGroupHeader({ locale, signedIn, displayName }: { locale: Lo
       </Link>
       <nav className={styles.nav} aria-label="Primary navigation">
         <Link href={`/${locale}/portal/courses`} prefetch={false}>{copy.navigation.courses}</Link>
-        <Link className="active" href={`/${locale}/portal/study-groups`} prefetch={false}>{copy.navigation.studyGroups}</Link>
+        <Link className={styles.active} href={`/${locale}/portal/study-groups`} prefetch={false}>{copy.navigation.studyGroups}</Link>
         <Link href={`/${locale}/pricing`} prefetch={false}>{copy.navigation.pricing}</Link>
       </nav>
-      <span className={styles.mark} aria-hidden="true" />
       <div className={styles.tools}>
         <Suspense fallback={<span className={styles.lang}>EN</span>}>
           <PortalLanguageLink locale={locale} label={locale === "zh-CN" ? "zh" : "en"} />

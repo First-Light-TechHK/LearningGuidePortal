@@ -301,3 +301,22 @@ test("the Host starts from the session controls instead of waiting in the member
   assert.equal(en.studyGroupsPage.hostWaiting, "You are the Host. Start the session when you are ready.");
   assert.equal(zh.studyGroupsPage.hostWaiting, "你是本节主持人，准备好后点击开始。");
 });
+
+test("the active navigation underline tracks the active link instead of a fixed offset", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.equal(css.includes("left: 338px"), false);
+  assert.equal(css.includes(".mark"), false);
+  assert.match(css, /\.nav a \{[^}]*position: relative[^}]*\}/);
+  assert.match(css, /\.nav a\.active::after \{[^}]*left: 0;[^}]*right: 0;[^}]*bottom: 0;[^}]*\}/);
+  const header = readFileSync(new URL("../../components/portal/StudyGroupHeader.tsx", import.meta.url), "utf8");
+  assert.equal(header.includes("styles.mark"), false);
+  assert.equal(header.includes('className="active"'), false);
+  assert.match(header, /className=\{styles\.active\} href=\{`\/\$\{locale\}\/portal\/study-groups`\}/);
+});
+
+test("the join gate call-to-action centres its label for the sign-in link", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(css, /\n\.primary \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;[^}]*text-decoration: none;[^}]*\}/);
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /<a className=\{styles\.primary\} href=\{signedIn \?/);
+});
