@@ -312,6 +312,12 @@ test("the active navigation underline tracks the active link instead of a fixed 
   assert.equal(header.includes("styles.mark"), false);
   assert.equal(header.includes('className="active"'), false);
   assert.match(header, /className=\{styles\.active\} href=\{`\/\$\{locale\}\/portal\/study-groups`\}/);
+  // Design source (LG-YL · Study_Group_UIFinal header): nav starts at x=252 with the
+  // brand text ending at 219 (margin 33px), and the active item and its 4px bar are #1d6bff.
+  assert.match(css, /\.nav \{[^}]*margin-left: 33px[^}]*\}/);
+  assert.match(css, /\.nav a\.active \{[^}]*color: #1d6bff[^}]*\}/);
+  assert.match(css, /\.nav a\.active::after \{[^}]*background: #1d6bff[^}]*\}/);
+  assert.equal(css.includes("#155dfc"), false);
 });
 
 test("the join gate call-to-action centres its label for the sign-in link", () => {
@@ -319,4 +325,24 @@ test("the join gate call-to-action centres its label for the sign-in link", () =
   assert.match(css, /\n\.primary \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;[^}]*text-decoration: none;[^}]*\}/);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /<a className=\{styles\.primary\} href=\{signedIn \?/);
+});
+
+test("the final design tokens pin the join gate, session chips, and secondary buttons", () => {
+  // LG-YL / Study_Group_UIFinal (page 599:2), 1440x1024 frames.
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.tools \{[^}]*gap: 20px[^}]*\}/); // 599:930 header EN/bell/avatar gaps
+  assert.match(css, /\.sheet \{[^}]*grid-template-columns: minmax\(0, 1fr\) 230px;[^}]*gap: 30px;[^}]*padding: 30px 8px 30px 30px/); // 599:930 article 510..1152, members panel 1182..1412
+  assert.match(css, /\.joinAction \.primary \{ min-width: 230px; \}/); // 599:1035 CTA 230x36
+  assert.match(css, /\.sessionState\[data-state="scheduled"\] \{[^}]*background: #e0f5e5;[^}]*color: #26ad61/); // 599:685 Upcoming badge
+  assert.match(css, /\.sessionState\[data-state="live"\], \.sessionState\[data-state="starting_soon"\] \{[^}]*background: rgba\(245,70,73,\.2\)/); // 599:702 Live now badge
+  assert.match(css, /\.reminderHint \{[^}]*background: #fff9f1[^}]*\}/); // 599:721 reminder pill
+  assert.match(css, /\.planningTag \{[^}]*background: #eef9f3[^}]*\}/); // 599:744 planning pill
+  assert.match(css, /\.endCard \{ width: min\(640px, 100%\)/); // 599:1398 card 433..1072
+  assert.match(css, /\.ghost \{[^}]*color: #111827[^}]*\}/); // 599:627 Button/Edit Group label
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /styles\.planningTag/);
+  assert.match(app, /styles\.hostFoot\}><button className=\{styles\.ghost\} type="button"/); // member Leave Study Group sits in the Members column
+  assert.match(app, /study-groups\/\$\{selected\.id\}\/leave/);
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  assert.match(room, /line\.tutor \? null : <time dateTime=\{line\.at\}>/); // 599:1276 tutor line has no timestamp
 });
