@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
+import { isManagedEnvironment } from "@/services/runtimeConfig";
 import { sendStudyGroupReminderEmail } from "@/services/emailService";
 import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification } from "@/services/productStore";
+import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
 import { createStudyGroupRepository } from "./repository";
 import { createStudyGroupService, type StudyGroupService } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
@@ -98,14 +100,33 @@ export async function studyGroupLiveKitHealth() {
   return healthForDirectory(directory).check();
 }
 
+// Store selection (design §3.4), fail-closed: managed environments can never
+// fall back to the container-local JSON file, and DATABASE_URL presence means
+// PostgreSQL; only local DEV without PostgreSQL uses the file store.
+function studyGroupPersistenceBackend(): "postgres" | "file" {
+  const explicit = (process.env.STUDY_GROUP_STORE || "").trim().toLowerCase();
+  if (explicit === "postgres") return "postgres";
+  if (explicit === "file") {
+    if (isManagedEnvironment()) throw new Error("The file Study Group store is not available in managed environments.");
+    return "file";
+  }
+  const hasDb = Boolean(process.env.DATABASE_URL?.trim());
+  if (isManagedEnvironment() || hasDb) return "postgres";
+  return "file";
+}
+
 export function studyGroupService() {
   const directory = path.join(systemRoot(), "learning_guide", "study-group");
-  const existing = services.get(directory);
+  // The cache key is the backend, not the directory: one process serves one
+  // Study Group store and the reminder timer stays per store.
+  const backend = studyGroupPersistenceBackend();
+  const key = backend === "postgres" ? "postgres" : directory;
+  const existing = services.get(key);
   if (existing) return existing;
   const liveKit = runtimeForDirectory(directory);
   const health = healthForDirectory(directory);
   const service = createStudyGroupService({
-    repository: createStudyGroupRepository(directory),
+    repository: backend === "postgres" ? createPostgresStudyGroupRepository() : createStudyGroupRepository(directory),
     now: () => new Date(),
     hasCourseAccess: async (userId, courseId) => (await checkEntitlement(userId, courseId)).allowed,
     courseSummary: async (courseId) => {
@@ -168,11 +189,11 @@ export function studyGroupService() {
       await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId });
     }
   });
-  services.set(directory, service);
+  services.set(key, service);
   const timers = globalThis as typeof globalThis & { __lgStudyGroupReminderTimers?: Set<string> };
   timers.__lgStudyGroupReminderTimers ??= new Set();
-  if (!timers.__lgStudyGroupReminderTimers.has(directory)) {
-    timers.__lgStudyGroupReminderTimers.add(directory);
+  if (!timers.__lgStudyGroupReminderTimers.has(key)) {
+    timers.__lgStudyGroupReminderTimers.add(key);
     const timer = setInterval(() => {
       void service.dispatchDueReminders().catch(() => undefined);
     }, 30_000);
@@ -184,13 +205,13 @@ export function studyGroupService() {
   const reportHealth = () => {
     void health.check().then((snapshot) => {
       const state = snapshot.projects.map((project) => `${project.id}:${project.status}`).join(",");
-      if (healthTimers.__lgStudyGroupLiveKitHealthStates?.get(directory) === state) return;
-      healthTimers.__lgStudyGroupLiveKitHealthStates?.set(directory, state);
+      if (healthTimers.__lgStudyGroupLiveKitHealthStates?.get(key) === state) return;
+      healthTimers.__lgStudyGroupLiveKitHealthStates?.set(key, state);
       console.info(JSON.stringify({ type: "study_group.livekit_health", ready: snapshot.ready, attentionRequired: snapshot.attentionRequired, projects: snapshot.projects.map(({ id, state, status, evidence, providerVerified, latencyMs, activeRooms }) => ({ id, state, status, evidence, providerVerified, latencyMs, ...(activeRooms === undefined ? {} : { activeRooms }) })) }));
     }).catch(() => undefined);
   };
-  if (!healthTimers.__lgStudyGroupLiveKitHealthTimers.has(directory)) {
-    healthTimers.__lgStudyGroupLiveKitHealthTimers.add(directory);
+  if (!healthTimers.__lgStudyGroupLiveKitHealthTimers.has(key)) {
+    healthTimers.__lgStudyGroupLiveKitHealthTimers.add(key);
     reportHealth();
     const timer = setInterval(reportHealth, 5 * 60_000);
     timer.unref();

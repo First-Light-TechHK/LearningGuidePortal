@@ -11,8 +11,7 @@ import {
   type GroupRole,
   type LiveSessionRow,
   type StudyGroupRow,
-  type StudyGroupStore,
-  type TutorRequestRow
+  type StudyGroupStore
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
 import { LiveKitGatewayError, type LiveKitRoomGateway } from "./liveKitGateway";
@@ -83,17 +82,6 @@ function occupancy(store: StudyGroupStore, sessionId: string) {
 
 function plannedCount(store: StudyGroupStore, sessionId: string) {
   return store.intents.filter((item) => item.sessionId === sessionId && !item.cancelledAt).length;
-}
-
-function nextTutorRequest(requests: TutorRequestRow[], sessionId: string, inFlightOnly: boolean) {
-  let next: TutorRequestRow | null = null;
-  for (const item of requests) {
-    if (item.sessionId !== sessionId || item.answeredAt || (inFlightOnly && !item.inFlight)) continue;
-    // Repository updates append requests in receipt order. Preserve that order
-    // when the clock has only millisecond precision, including for old rows.
-    if (!next || item.receivedAt.localeCompare(next.receivedAt) < 0) next = item;
-  }
-  return next;
 }
 
 type EntryJob = {
@@ -257,6 +245,53 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       }
       return { occupancy: occupancy(store, session.id) };
     });
+  }
+
+  // Design §3.2 "Session project assignment": the durable first-wins
+  // assignment is written BEFORE any provider call, so a crashed or racing
+  // start can never pick a different project. `credential_unavailable` and
+  // `unauthorized` are definitive (no room can exist on that project), so the
+  // assignment may CAS-advance to the next candidate; `unreachable`,
+  // `rate_limited` and `unverified` are ambiguous, pin the assignment, and
+  // surface `unavailable` for a retry against the same project.
+  async function provisionProject(current: LiveSessionRow, projects: LiveKitProjectRegistry, gateway: LiveKitRoomGateway) {
+    const activeProjectCount = projects.diagnostics().filter((project) => project.state === "active").length;
+    const excluded = new Set<string>();
+    let pinned: string | null = current.liveKitProjectId;
+    for (let attempt = 0; attempt < activeProjectCount; attempt += 1) {
+      if (!pinned && excluded.size >= activeProjectCount) break;
+      const candidateId = pinned ?? projects.selectForNewSession({ sessionId: current.id, excludeProjectIds: excluded }).id;
+      const assigned = await deps.repository.update((store) => {
+        const row = store.sessions.find((item) => item.id === current.id);
+        if (!row || row.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
+        row.liveKitProjectId ??= candidateId;
+        return row.liveKitProjectId ?? candidateId;
+      });
+      try {
+        await gateway.ensureRoom({ project: projects.getAssigned(assigned), room: current.id, maxParticipants: current.maxParticipants });
+        return assigned;
+      } catch (error) {
+        if (!(error instanceof LiveKitGatewayError)) throw error;
+        emitLiveKitIncident({
+          sessionId: current.id,
+          projectId: assigned,
+          code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: pinned ? "existing_room" : "new_room" }).code,
+          source: "gateway"
+        });
+        if (error.code !== "credential_unavailable" && error.code !== "unauthorized") {
+          // A room may exist on this project. Keep the durable assignment so a
+          // retry provisions against the same project.
+          throw new StudyGroupError("unavailable", "LiveKit cannot create this room right now.");
+        }
+        await deps.repository.update((store) => {
+          const row = store.sessions.find((item) => item.id === current.id);
+          if (row && row.liveKitProjectId === assigned) row.liveKitProjectId = null;
+        });
+        excluded.add(assigned);
+        pinned = null;
+      }
+    }
+    throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
   }
 
   return {
@@ -598,45 +633,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
         if (missedUnstarted(current, deps.now(), occupancy(pending, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
-        if (current.liveKitProjectId) {
-          const project = deps.liveKitProjects.getAssigned(current.liveKitProjectId);
-          try {
-            await deps.liveKitGateway.ensureRoom({ project, room: current.id, maxParticipants: current.maxParticipants });
-          } catch (error) {
-            if (error instanceof LiveKitGatewayError) {
-              emitLiveKitIncident({
-                sessionId: current.id,
-                projectId: project.id,
-                code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: "existing_room" }).code,
-                source: "gateway"
-              });
-              throw new StudyGroupError("unavailable", "LiveKit cannot create this room right now.");
-            }
-            throw error;
-          }
-          assignedProjectId = project.id;
-        } else {
-          const unavailable = new Set<string>();
-          const activeProjectCount = deps.liveKitProjects.diagnostics().filter((project) => project.state === "active").length;
-          while (unavailable.size < activeProjectCount) {
-            const project = deps.liveKitProjects.selectForNewSession({ sessionId: current.id, excludeProjectIds: unavailable });
-            try {
-              await deps.liveKitGateway.ensureRoom({ project, room: current.id, maxParticipants: current.maxParticipants });
-              assignedProjectId = project.id;
-              break;
-            } catch (error) {
-              if (!(error instanceof LiveKitGatewayError)) throw error;
-              emitLiveKitIncident({
-                sessionId: current.id,
-                projectId: project.id,
-                code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: "new_room" }).code,
-                source: "gateway"
-              });
-              unavailable.add(project.id);
-            }
-          }
-          if (!assignedProjectId) throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
-        }
+        assignedProjectId = await provisionProject(current, deps.liveKitProjects, deps.liveKitGateway);
       }
       const now = deps.now().toISOString();
       const session = await deps.repository.update((store) => {
@@ -778,7 +775,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (!session.aiTutorEnabled) throw new StudyGroupError("forbidden", "AI Tutor is not enabled for this Live Session.");
         const seated = store.presences.some((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
         if (!seated) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting AI Tutor.");
-        const inFlight = store.tutorRequests.some((item) => item.sessionId === session.id && item.inFlight);
+        // No enqueue-time in-flight marking (design §3.3c): the durable claim
+        // owns the single-flight marker, so a new item simply waits as queued.
         const row = {
           id: randomUUID(),
           sessionId: session.id,
@@ -786,7 +784,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           clientEventId,
           text,
           receivedAt,
-          inFlight: !inFlight
+          inFlight: false,
+          status: "queued" as const
         };
         store.tutorRequests.push(row);
         return row;
@@ -794,6 +793,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async deliverTutorAnswer(input: { sessionId: string }) {
+      // In-process anti-reentrancy only: the file store is single-process, and
+      // the observable timing (a second drain waits, then finds nothing to
+      // claim) stays as before. Correctness across instances is the durable
+      // claim/settle/outbox flow below (design §3.2, hazard 2).
       for (;;) {
         if (!tutorDraining.has(input.sessionId)) {
           tutorDraining.add(input.sessionId);
@@ -801,29 +804,36 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         }
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      const markAnswered = async (itemId: string, sessionId: string) => {
-        await deps.repository.update((store) => {
-          const row = store.tutorRequests.find((entry) => entry.id === itemId);
-          if (!row || row.answeredAt) return;
-          row.answeredAt = deps.now().toISOString();
-          row.inFlight = false;
-          const next = nextTutorRequest(store.tutorRequests, sessionId, false);
-          if (next) next.inFlight = true;
-        });
-      };
+      const leaseOwner = randomUUID();
       try {
         let last: { text: string } | null = null;
         for (;;) {
+          // Claim before any provider work: at most one in-flight item per
+          // session, lease-bounded, receipt-ordered across all instances.
+          const item = await deps.repository.claimNextTutorRequest({
+            sessionId: input.sessionId,
+            leaseOwner,
+            leaseSeconds: 60,
+            maxAttempts: 5
+          });
+          if (!item) break;
           const snapshot = await deps.repository.read();
-          const session = snapshot.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
-          if (!session) return last;
-          const item = nextTutorRequest(snapshot.tutorRequests, session.id, true);
-          if (!item) return last;
+          const session = snapshot.sessions.find((entry) => entry.id === input.sessionId && entry.status !== "removed");
+          if (!session) {
+            // The room was removed after the question was queued; the item can
+            // never be answered, and settling it keeps the store free of strands.
+            await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_removed" } });
+            continue;
+          }
+          // Grounding and the model call run outside every transaction and
+          // lock; the claim lease, not the process, guards the window.
           const group = snapshot.groups.find((entry) => entry.id === session.groupId);
           const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
           const context = retrieveCourseKnowledge(corpus, item.text);
-          let reply = COURSE_MATERIAL_ABSENT;
-          if (context) {
+          let reply: string | null = null;
+          if (!context) {
+            reply = COURSE_MATERIAL_ABSENT;
+          } else {
             const terms = courseQuestionTerms(item.text);
             const missing = terms.filter((term) => !context.toLowerCase().includes(term.toLowerCase()));
             if (terms.length > 0 && missing.length * 2 > terms.length) {
@@ -831,28 +841,57 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             } else {
               const keys = deps.tutorKeys?.() ?? [];
               if (!deps.tutorCall || keys.length === 0) {
-                await markAnswered(item.id, session.id);
-                continue;
+                reply = null;
+              } else {
+                const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
+                reply = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? null : result.body.trim();
               }
-              const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
-              if (!result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret))) {
-                await markAnswered(item.id, session.id);
-                continue;
-              }
-              reply = result.body.trim();
             }
           }
-          try {
-            if (deps.publishRoomChat) await deps.publishRoomChat({ room: session.id, text: reply, projectId: session.liveKitProjectId, messageId: item.id });
-          } catch {
-            // A room transport failure must not strand the session's in-flight
-            // request and prevent later participants from being served.
-            await markAnswered(item.id, session.id);
+          if (reply === null) {
+            // Terminal without a reply: the item settles so it cannot stall
+            // later questions, and nothing is published.
+            await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "answered", terminalReason: "model_failed" } });
             continue;
           }
-          await markAnswered(item.id, session.id);
-          last = { text: reply };
+          // Settle with the outbox row in one transaction; the publish below is
+          // at-least-once and retried on a later drain if it fails.
+          await deps.repository.settleTutorRequest({
+            id: item.id,
+            leaseOwner,
+            outcome: { status: "answered", terminalReason: reply === COURSE_MATERIAL_ABSENT ? "course_material_absent" : "answered" },
+            outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply, messageId: item.id }
+          });
+          if (!deps.publishRoomChat) last = { text: reply };
         }
+        const publish = deps.publishRoomChat;
+        if (publish) {
+          for (;;) {
+            const message = await deps.repository.claimNextOutboxMessage({ sessionId: input.sessionId, leaseOwner, leaseSeconds: 60 });
+            if (!message) break;
+            try {
+              await publish({
+                room: message.payload.room,
+                text: message.payload.text,
+                projectId: message.payload.projectId || null,
+                messageId: message.payload.messageId
+              });
+              await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
+              last = { text: message.payload.text };
+            } catch (error) {
+              // A failed publish never blocks the queue: the request is already
+              // settled, and the outbox row retries on the next drain.
+              await deps.repository.markOutboxFailed({
+                id: message.id,
+                leaseOwner,
+                failureClass: error instanceof LiveKitGatewayError ? error.code : "publish_failed",
+                maxAttempts: 5,
+                retryDelaySeconds: Math.min(30, 5 * Math.max(1, message.attempts))
+              });
+            }
+          }
+        }
+        return last;
       } finally {
         tutorDraining.delete(input.sessionId);
       }

@@ -126,7 +126,14 @@ function gatedRepository(base: StudyGroupRepository, gate: ReturnType<typeof cre
     // check-then-act or stale-snapshot regression would still read fresh data and pass.
     read: async () => { const result = await base.read(); if (point === "read") await gate.wait(); return result; },
     appendTokenLog: (line) => base.appendTokenLog(line),
-    update: async (mutate) => { if (point === "update") await gate.wait(); return base.update(mutate); }
+    update: async (mutate) => { if (point === "update") await gate.wait(); return base.update(mutate); },
+    claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
+    settleTutorRequest: (input) => base.settleTutorRequest(input),
+    claimNextOutboxMessage: (input) => base.claimNextOutboxMessage(input),
+    markOutboxDelivered: (input) => base.markOutboxDelivered(input),
+    markOutboxFailed: (input) => base.markOutboxFailed(input),
+    insertWebhookReceipt: (input) => base.insertWebhookReceipt(input),
+    markWebhookProcessed: (input) => base.markWebhookProcessed(input)
   };
 }
 

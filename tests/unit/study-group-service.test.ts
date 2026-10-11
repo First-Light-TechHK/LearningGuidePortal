@@ -533,7 +533,10 @@ test("a new room falls back once to another active project, while an assigned ro
     liveKitGateway: {
       ensureRoom: async ({ project }) => {
         calls.push(project.id);
-        if (calls.length === 1) throw new LiveKitGatewayError("unreachable");
+        // Design §4.4 amendment 3: only definitive rejections
+        // (credential_unavailable / unauthorized) may advance the durable
+        // assignment to the standby project; ambiguous outcomes pin it.
+        if (calls.length === 1) throw new LiveKitGatewayError("unauthorized");
       },
       issueParticipantToken: async ({ project }) => ({ token: `token-${project.id}`, expiresAt: "2026-09-19T02:10:00.000Z", url: project.url }),
       publishTutorMessage: async () => undefined,
@@ -552,6 +555,42 @@ test("a new room falls back once to another active project, while an assigned ro
   assert.equal(assigned, calls[1]);
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   assert.deepEqual(calls, [calls[0], calls[1]]);
+});
+
+test("an ambiguous provisioning failure pins the assignment and the retry reuses the same project", async () => {
+  const projects = parseLiveKitProjects(JSON.stringify([
+    { id: "eu-primary", url: "wss://eu-primary.livekit.cloud", state: "active", credentialSecretId: "learning-guide/livekit/eu-primary" },
+    { id: "eu-standby", url: "wss://eu-standby.livekit.cloud", state: "active", credentialSecretId: "learning-guide/livekit/eu-standby" }
+  ]));
+  const calls: string[] = [];
+  const local = serviceWith({
+    liveKitProjects: projects,
+    liveKitGateway: {
+      // An ambiguous failure (a room may have been created): the start stays
+      // unavailable and never advances to the standby project (design §3.2).
+      ensureRoom: async ({ project }) => {
+        calls.push(project.id);
+        throw new LiveKitGatewayError("unreachable");
+      },
+      issueParticipantToken: async ({ project }) => ({ token: `token-${project.id}`, expiresAt: "2026-09-19T02:10:00.000Z", url: project.url }),
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Pinned room", courseId: "course-1", about: "About the pinned assignment." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Pinned", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+
+  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+  assert.equal(calls.length, 1);
+  const pinned = (await repository.read()).sessions.find((row) => row.id === session.id)?.liveKitProjectId;
+  assert.equal(pinned, calls[0]);
+
+  // The retry provisions the SAME stored project instead of the standby one.
+  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+  assert.deepEqual(calls, [calls[0], calls[0]]);
+  assert.equal((await repository.read()).sessions.find((row) => row.id === session.id)?.liveKitProjectId, calls[0]);
 });
 
 test("provider failures emit one normalized incident without exposing the gateway error", async () => {
@@ -632,7 +671,14 @@ test("a member start in flight cannot poison the Host's start", async () => {
       return repository.read();
     },
     appendTokenLog: (line) => repository.appendTokenLog(line),
-    update: (mutate) => repository.update(mutate)
+    update: (mutate) => repository.update(mutate),
+    claimNextTutorRequest: (input) => repository.claimNextTutorRequest(input),
+    settleTutorRequest: (input) => repository.settleTutorRequest(input),
+    claimNextOutboxMessage: (input) => repository.claimNextOutboxMessage(input),
+    markOutboxDelivered: (input) => repository.markOutboxDelivered(input),
+    markOutboxFailed: (input) => repository.markOutboxFailed(input),
+    insertWebhookReceipt: (input) => repository.insertWebhookReceipt(input),
+    markWebhookProcessed: (input) => repository.markWebhookProcessed(input)
   };
   const local = serviceWith({ repository: gatedRepository });
   const group = await local.createGroup({ actorUserId: "host", title: "Host start race", courseId: "course-1", about: "About the start race." });
@@ -834,8 +880,11 @@ test("tutor requests stay one asker per item and follow server receipt order", a
   assert.deepEqual(items.map((item) => item.text), ["alpha from host", "beta from member"]);
   assert.equal(items[0].receivedAt, NOW);
   assert.equal(items[1].receivedAt, NOW);
-  assert.equal(items.filter((item) => item.inFlight).length, 1);
-  assert.equal(items[0].inFlight, true);
+  // Design §4.4 amendment 2: enqueue no longer pre-marks the first item in
+  // flight (the durable claim is the single-flight marker); every new item
+  // waits as `queued` until a drain claims it.
+  assert.equal(items.filter((item) => item.inFlight).length, 0);
+  assert.equal(items.every((item) => item.status === "queued" && !item.inFlight), true);
   assert.equal(items.filter((item) => item.userId === "host" && item.text === "alpha from host").length, 1);
 });
 

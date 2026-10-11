@@ -7,7 +7,7 @@ import { transitionLiveKitClient } from "@/modules/group-study/liveKitClientReco
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
-import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -182,11 +182,20 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setErrorCode("connect_failed");
     };
     room.on(RoomEvent.DataReceived, (payload, participant) => {
-      const message = JSON.parse(new TextDecoder().decode(payload)) as { type: string; text?: string; raised?: boolean };
+      const message = JSON.parse(new TextDecoder().decode(payload)) as { type: string; id?: string; text?: string; raised?: boolean };
       const from = participant?.name || participant?.identity || "participant";
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
       if (message.type === "tutor" && message.text) {
-        setChat((items) => [...items, { id: `tutor-${items.length}`, from: roomCopy.tutorName, text: message.text || "", at: chatStamp(), tutor: true }]);
+        // The server republishes a crashed tutor answer with the same message
+        // id; keying the line by that id drops the repeat instead of
+        // double-rendering it.
+        setChat((items) => tutorChatLines(items, {
+          id: message.id ? `tutor-${message.id}` : `tutor-${items.length}`,
+          from: roomCopy.tutorName,
+          text: message.text || "",
+          at: chatStamp(),
+          tutor: true
+        }));
         setSideTab("chat");
         return;
       }

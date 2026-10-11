@@ -51,6 +51,14 @@ export function tutorQueueBody(message: string) {
   return { message };
 }
 
+// The outbox publishes at-least-once: a crash between publish and settle can
+// republish an answer with the same tutor message id, so chat lines keyed by
+// that id render once (design §3.2, client companion).
+export function tutorChatLines<T extends { id: string }>(current: T[], line: T): T[] {
+  if (current.some((item) => item.id === line.id)) return current;
+  return [...current, line];
+}
+
 export function sessionNotStarted(session: { state: string; occupancy: number; startsAt: string; durationSeconds: number }, now = Date.now()) {
   if (session.state !== "starting_soon" || session.occupancy > 0) return false;
   const end = Date.parse(session.startsAt) + session.durationSeconds * 1000;
