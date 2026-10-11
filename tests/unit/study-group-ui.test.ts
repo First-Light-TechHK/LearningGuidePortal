@@ -85,8 +85,8 @@ test("study group pane shows empty, error, and a selected group without inventin
 });
 
 test("Join Study Group is the join label and Hosting is only for the Host", () => {
-  assert.equal(en.studyGroupsPage.joinGroup, "Join Study Group");
-  assert.equal(zh.studyGroupsPage.joinGroup, "加入学习小组");
+  assert.equal(en.studyGroupsPage.joinGroup, "Join Now");
+  assert.equal(zh.studyGroupsPage.joinGroup, "立即加入");
   const source = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(source, /\{copy\.joinGroup\}/);
   assert.match(source, /selected\.role === "host" \? <span className=\{styles\.hostChip\}>\{copy\.hosting\}<\/span> : null/);
@@ -143,11 +143,14 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.equal(en.studyGroupsPage.errors.start_in_past, "Start Time must be in the future.");
   assert.equal(zh.studyGroupsPage.errors.start_in_past, "开始时间必须还在将来。");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /dialog !== "waiting" && dialog !== "attendees"/);
-  assert.equal(en.studyGroupsPage.courseAccessRequired, "Course access required. You don't currently have access to {course}. Get Course access to join this Study Group.");
-  assert.equal(fill(en.studyGroupsPage.courseAccessRequired, { course: "German History" }), "Course access required. You don't currently have access to German History. Get Course access to join this Study Group.");
-  assert.equal(zh.studyGroupsPage.courseAccessRequired, "需要课程访问权限。你目前没有{course}的访问权限。获取课程访问权限后才能加入这个学习小组。");
+  assert.equal(en.studyGroupsPage.courseAccessRequired, "Course access required, You don't currently have access to {course}.\nGet Course access to join this Study Group.");
+  assert.equal(fill(en.studyGroupsPage.courseAccessRequired, { course: "German History" }), "Course access required, You don't currently have access to German History.\nGet Course access to join this Study Group.");
+  assert.equal(zh.studyGroupsPage.courseAccessRequired, "需要课程访问权限，你目前没有{course}的访问权限。\n获取课程访问权限后才能加入这个学习小组。");
+  assert.equal(en.studyGroupsPage.joinAccess, "You have access to this Course.\nJoin this Study Group to view and take part in its Live Sessions.");
+  assert.equal(zh.studyGroupsPage.joinAccess, "你有这门课的访问权限。\n加入学习小组后可以查看并参加直播课。");
+  assert.match(readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8"), /\.joinNote \{[^}]*white-space: pre-line[^}]*\}/);
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /copy\.courseAccessRequired/);
-  assert.equal(en.studyGroupsPage.getCourseAccess, "Get Course access");
+  assert.equal(en.studyGroupsPage.getCourseAccess, "View Course");
   assert.equal(en.studyGroupsPage.enableAiTutor, "Enable AI Tutor for this session");
   assert.equal(zh.studyGroupsPage.enableAiTutor, "为本节启用 AI Tutor");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /styles\.switchText\}>\{copy\.enableAiTutor\}/);
@@ -191,7 +194,8 @@ test("a starting-soon Live Session shows its title, time, duration, and occupanc
   assert.match(app, /copy\.upToParticipants/);
   assert.match(app, /waitingSession\.title/);
   assert.match(app, /waitingSession\.focus/);
-  assert.match(app, /sessionScheduleLabel\(locale, waitingSession\)/);
+  assert.match(app, /sessionDateLabel\(locale, waitingSession\.startsAt\)/);
+  assert.match(app, /sessionTimeLabel\(locale, waitingSession\)/);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /sessionScheduleLabel\(locale, session\)/);
   assert.match(room, /copy\.currentlyInSession/);
@@ -252,7 +256,8 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
   assert.match(app, /setAttendeeSessionId\(null\)/);
   assert.match(app, /setEditingSession\(null\)/);
   assert.match(app, /setAttendees\(current\.attendees\)/);
-  assert.match(app, /dialog === "waiting" \? <button/);
+  assert.match(app, /dialog !== "waiting" \? \(/);
+  assert.match(app, /styles\.waitingBanner/);
   assert.match(app, /sessions\/\$\{sessionId\}\/leave/);
   assert.match(app, /result\.code === "not_found"/);
   assert.match(app, /live: result\.data\.live/);
@@ -331,18 +336,61 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   // LG-YL / Study_Group_UIFinal (page 599:2), 1440x1024 frames.
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   assert.match(css, /\.tools \{[^}]*gap: 20px[^}]*\}/); // 599:930 header EN/bell/avatar gaps
-  assert.match(css, /\.sheet \{[^}]*grid-template-columns: minmax\(0, 1fr\) 230px;[^}]*gap: 30px;[^}]*padding: 30px 8px 30px 30px/); // 599:930 article 510..1152, members panel 1182..1412
+  assert.match(css, /\.sheet \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 230px; gap: 30px;[^}]*padding: 8px 8px 30px 30px/); // 599:930 article 510..1152, Detail Side 1182..1412
+  assert.match(css, /\.sheet > article \{ margin-top: 22px; \}/);
+  assert.match(css, /\.memberCol \{[^}]*padding: 20px[^}]*\}/);
+  assert.match(css, /\.hostFoot \{ margin: auto -20px 0/);
+  assert.match(css, /\.hostFoot p \{[^}]*text-align: center[^}]*\}/); // 599:770 hosting note
   assert.match(css, /\.joinAction \.primary \{ min-width: 230px; \}/); // 599:1035 CTA 230x36
   assert.match(css, /\.sessionState\[data-state="scheduled"\] \{[^}]*background: #e0f5e5;[^}]*color: #26ad61/); // 599:685 Upcoming badge
   assert.match(css, /\.sessionState\[data-state="live"\], \.sessionState\[data-state="starting_soon"\] \{[^}]*background: rgba\(245,70,73,\.2\)/); // 599:702 Live now badge
   assert.match(css, /\.reminderHint \{[^}]*background: #fff9f1[^}]*\}/); // 599:721 reminder pill
   assert.match(css, /\.planningTag \{[^}]*background: #eef9f3[^}]*\}/); // 599:744 planning pill
   assert.match(css, /\.endCard \{ width: min\(640px, 100%\)/); // 599:1398 card 433..1072
+  assert.match(css, /\.endCard h1 \{ font-size: 28px; \}/);
+  assert.match(css, /\.endCard \.primary \{ min-width: 152px; \}/);
   assert.match(css, /\.ghost \{[^}]*color: #111827[^}]*\}/); // 599:627 Button/Edit Group label
+  assert.match(css, /\.signInLink \{[^}]*color: #4a5565[^}]*\}/); // 599:971 header Sign In variant
+  assert.match(css, /\.live \{ position: absolute; top: 8px; right: 8px/); // 599:44 sidebar Live chip inset
+  assert.match(css, /\.joined \{ background: #d1f1dd; color: #2dad5c; \}/);
+  assert.match(css, /\.empty \{[^}]*padding-top: 130px; \}/); // 599:8 rhythm: title 218, art 395, h2 573, body 614
+  assert.match(css, /\.empty img \{ width: 250px; height: 150px; margin-top: 160px/);
+  assert.match(css, /\.joinBanner \{[^}]*margin: 0 0 12px;[^}]*\}/);
+  assert.match(css, /\.locked \{ position: relative; height: 175px;/); // 599:930 Rectangle 112 642x175
+  assert.match(css, /\.lockedAvatars i \{ width: 26px; height: 26px;[^}]*background: #ebedf2/);
+  assert.match(css, /\.session \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 152px; column-gap: 16px; align-items: center;[^}]*padding: 16px 25px 16px 16px/); // 599:315 action column
+  assert.match(css, /\.row \{ display: flex; flex-direction: column; align-items: stretch; gap: 8px; \}/);
+  assert.match(css, /\.modal \.waitingBanner \{[^}]*border: 1px solid #1d6bff;[^}]*background: #f1f7ff;/); // 599:752
+  assert.match(css, /\.waitingFacts \{[^}]*background: #fbfbfb;[^}]*border: 1px solid #e4e7ec;[^}]*border-radius: 8px/); // 599:751
+  assert.match(css, /\.createdToast \{ position: absolute; top: 10px; left: 50%;[^}]*width: min\(450px/); // 599:2083 toast 450x78 at 725,98
+  assert.match(css, /\.controls button \{ flex-direction: column;[^}]*min-height: 56px/); // 599:1276 icon-over-label controls
+  assert.match(css, /\.controls \.shareControl svg \{ color: #f54649; \}/);
+  assert.match(css, /\.chatForm \{ position: relative; display: block; min-height: 72px/); // 599:1276
+  assert.match(css, /\.sendButton \{ position: absolute; right: 8px; bottom: 8px;/);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /styles\.planningTag/);
   assert.match(app, /styles\.hostFoot\}><button className=\{styles\.ghost\} type="button"/); // member Leave Study Group sits in the Members column
   assert.match(app, /study-groups\/\$\{selected\.id\}\/leave/);
+  assert.match(app, /<LockedCard \/>/); // 599:930 skeletons keep fact rows + avatar row
+  assert.match(app, /className=\{styles\.createdToast\}/); // 599:1975 created toast over the form
+  assert.equal(app.includes('className={styles.created}'), false);
+  assert.equal(app.includes("waitingSession.occupancy"), false); // 599:531 shows no occupancy line
+  assert.equal(app.includes('dialog === "waiting" ? <button'), false); // 599:531 has no footer action
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /line\.tutor \? null : <time dateTime=\{line\.at\}>/); // 599:1276 tutor line has no timestamp
+  assert.match(room, /roomCopy\.crumbGroupInfo/);
+  assert.match(room, /roomCopy\.crumbSession/);
+  assert.match(room, /&gt;/); // 599:1117 breadcrumb separators
+  assert.match(room, /\.join\(" \| "\)/); // 599:1398 end-card meta separator
+  assert.match(room, /styles\.shareControl/);
+  assert.match(room, /styles\.controlGlyph/);
+  // both locales carry the design copy and the new breadcrumb keys
+  assert.equal(en.studyGroupsPage.room.crumbGroups, "Study Group");
+  assert.equal(en.studyGroupsPage.room.crumbGroupInfo, "Study Group Info");
+  assert.equal(en.studyGroupsPage.room.crumbSession, "Session");
+  assert.equal(zh.studyGroupsPage.room.crumbGroups, "学习小组");
+  assert.equal(zh.studyGroupsPage.room.crumbGroupInfo, "学习小组信息");
+  assert.equal(zh.studyGroupsPage.room.crumbSession, "直播课");
+  assert.equal(en.portal.signIn, "Sign In");
+  assert.equal(zh.portal.signIn, "登录");
 });

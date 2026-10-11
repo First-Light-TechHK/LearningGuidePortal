@@ -25,7 +25,7 @@ export function StudyGroupHeader({ locale, signedIn, displayName }: { locale: Lo
           <PortalLanguageLink locale={locale} label={locale === "zh-CN" ? "zh" : "en"} />
         </Suspense>
         {signedIn ? <Link href={`/${locale}/account/my-learning/notifications`} aria-label={copy.notifications}><Image className={styles.bell} src="/portal/study-groups/bell.svg" width={20} height={20} alt="" /></Link> : null}
-        {signedIn ? <Link className={styles.avatar} href={`/${locale}/account/my-learning`} prefetch={false}>{initial}</Link> : <Link href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}
+        {signedIn ? <Link className={styles.avatar} href={`/${locale}/account/my-learning`} prefetch={false}>{initial}</Link> : <Link className={styles.signInLink} href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}
       </div>
     </header>
   );

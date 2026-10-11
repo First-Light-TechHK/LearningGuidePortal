@@ -423,11 +423,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     return (
       <nav className={styles.crumb} aria-label={roomCopy.crumbGroups}>
         <button type="button" onClick={() => void exitTo(`/${locale}/portal`)}>{roomCopy.crumbHome}</button>
-        <span aria-hidden="true">/</span>
+        <span aria-hidden="true">&gt;</span>
         <button type="button" onClick={() => void exitTo(`/${locale}/portal/study-groups`)}>{roomCopy.crumbGroups}</button>
-        {group ? <><span aria-hidden="true">/</span><button type="button" onClick={() => void exitTo(`/${locale}/portal/study-groups?group=${group.id}`)}>{group.title}</button></> : null}
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{session.title}</span>
+        <span aria-hidden="true">&gt;</span>
+        {group ? <button type="button" onClick={() => void exitTo(`/${locale}/portal/study-groups?group=${group.id}`)}>{roomCopy.crumbGroupInfo}</button> : <span>{roomCopy.crumbGroupInfo}</span>}
+        <span aria-hidden="true">&gt;</span>
+        <span aria-current="page">{roomCopy.crumbSession}</span>
       </nav>
     );
   }
@@ -444,7 +445,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           <h1>{ended ? roomCopy.endedTitle : roomCopy.youLeft}</h1>
           <p className={styles.endTitle}>{group?.title || session.title}</p>
           {session.focus ? <p>{session.focus}</p> : null}
-          <p className={styles.meta}>{[group?.courseTitle, fill(roomCopy.groupStudy, { count: plannedMinutes(session) })].filter(Boolean).join(" · ")}</p>
+          <p className={styles.meta}>{[group?.courseTitle, fill(roomCopy.groupStudy, { count: plannedMinutes(session) })].filter(Boolean).join(" | ")}</p>
           {ended ? endedParts(roomCopy.endedBody).map((line) => <p key={line}>{line}</p>) : null}
           <a className={styles.primary} href={group ? `/${locale}/portal/courses/${group.courseSlug}` : `/${locale}/portal/study-groups`}>{roomCopy.returnToCourse}</a>
         </div>
@@ -518,8 +519,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         <div className={styles.controls}>
           {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void setMedia("mic", !micOn).catch(() => setMicOn(false))}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void setMedia("camera", !cameraOn).catch(() => setCameraOn(false))}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
-          {controls.includes("share") ? <button type="button" aria-pressed={sharing} disabled={!connected} onClick={() => void setMedia("share", !sharing).catch(() => setSharing(false))}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
-          {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><ControlIcon kind="people" /><strong>{present}</strong> {roomCopy.participants}</button> : null}
+          {controls.includes("share") ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => void setMedia("share", !sharing).catch(() => setSharing(false))}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
+          {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
           {controls.includes("raise-hand") ? <button type="button" aria-pressed={Boolean(roomApi?.localParticipant.identity && hands.includes(roomApi.localParticipant.identity))} disabled={!connected} onClick={() => { const identity = roomApi?.localParticipant.identity || ""; if (!identity) return; const raised = !hands.includes(identity); setHands((items) => raisedHands(items, identity, raised)); void publish({ type: "raise-hand", raised }); }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
           {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
         </div>
