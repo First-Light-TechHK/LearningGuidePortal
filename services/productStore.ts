@@ -2220,8 +2220,10 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           paid.servicePeriodStart = event.periodStart;
           paid.servicePeriodEnd = event.periodEnd;
           if (!initial) data.orders.unshift(paid);
+          // ORDER-02: a refund for this Stripe subscription is final — a later invoice records the money but must never revive access.
+          const refundedForSubscription = data.orders.some(item => item.stripeSubscriptionId === event.subscriptionId && item.status === "refunded");
           // Older invoices cannot move the current paid period backwards.
-          if (paid.status !== "refunded" && new Date(event.periodEnd) >= new Date(subscription.validTo) && !["canceled", "unpaid", "incomplete_expired", "paused"].includes(event.subscriptionStatus || "")) {
+          if (!refundedForSubscription && paid.status !== "refunded" && new Date(event.periodEnd) >= new Date(subscription.validTo) && !["canceled", "unpaid", "incomplete_expired", "paused"].includes(event.subscriptionStatus || "")) {
             subscription.validFrom = event.periodStart;
             subscription.validTo = event.periodEnd;
             subscription.state = subscription.cancelAtPeriodEnd ? "cancel_at_period_end" : "active";
