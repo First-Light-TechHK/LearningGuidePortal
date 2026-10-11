@@ -614,6 +614,45 @@ test("concurrent host starts share one room-creation operation", async () => {
   assert.equal((await repository.read()).meetings.filter((meeting) => meeting.sessionId === session.id).length, 1);
 });
 
+test("a member start in flight cannot poison the Host's start", async () => {
+  access.add("member:course-1");
+  let releaseRead: (() => void) | undefined;
+  let signalRead: (() => void) | undefined;
+  const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+  const readStarted = new Promise<void>((resolve) => { signalRead = resolve; });
+  let gateArmed = false;
+  let gateUsed = false;
+  const gatedRepository: StudyGroupRepository = {
+    read: async () => {
+      if (gateArmed && !gateUsed) {
+        gateUsed = true;
+        signalRead!();
+        await readGate;
+      }
+      return repository.read();
+    },
+    appendTokenLog: (line) => repository.appendTokenLog(line),
+    update: (mutate) => repository.update(mutate)
+  };
+  const local = serviceWith({ repository: gatedRepository });
+  const group = await local.createGroup({ actorUserId: "host", title: "Host start race", courseId: "course-1", about: "About the start race." });
+  await local.joinGroup({ actorUserId: "member", groupId: group.id });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Race", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: NOW });
+  gateArmed = true;
+  const memberStart = local.startSession({ actorUserId: "member", sessionId: session.id });
+  await readStarted;
+  const hostStart = local.startSession({ actorUserId: "host", sessionId: session.id });
+  releaseRead!();
+  await assert.rejects(
+    () => memberStart,
+    (error: unknown) => (error as { code?: string }).code === "forbidden"
+  );
+  const view = await hostStart;
+  assert.equal(view.state, "live");
+});
+
 test("a failed verified-token recovery preserves the admitted seat and redacts provider failure", async () => {
   const local = serviceWith({
     liveKitProjects: parseLiveKitProjects(JSON.stringify([{

@@ -582,7 +582,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     startSession(input: { actorUserId: string; sessionId: string }) {
-      const alreadyStarting = startingSessions.get(input.sessionId);
+      // Single-flight is scoped to the caller: a shared entry keyed only by
+      // session handed a member's rejection to the Host's concurrent start.
+      const startKey = `${input.sessionId}:${input.actorUserId}`;
+      const alreadyStarting = startingSessions.get(startKey);
       if (alreadyStarting) return alreadyStarting as Promise<ReturnType<typeof sessionView>>;
       const operation = (async () => {
       const pending = await deps.repository.read();
@@ -658,8 +661,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         return current;
       });
       return sessionView(await deps.repository.read(), session, input.actorUserId);
-      })().finally(() => { startingSessions.delete(input.sessionId); });
-      startingSessions.set(input.sessionId, operation);
+      })().finally(() => { startingSessions.delete(startKey); });
+      startingSessions.set(startKey, operation);
       return operation;
     },
 
