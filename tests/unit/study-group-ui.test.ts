@@ -84,7 +84,7 @@ test("study group pane shows empty, error, and a selected group without inventin
   assert.equal(studyGroupPane({ status: "ready", selected: { role: "member", sessions: [] } }).kind, "sessions");
 });
 
-test("Join Study Group is the join label and Hosting is only for the Host", () => {
+test("the join label reads Join Now and Hosting is only for the Host", () => {
   assert.equal(en.studyGroupsPage.joinGroup, "Join Now");
   assert.equal(zh.studyGroupsPage.joinGroup, "立即加入");
   const source = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
@@ -318,11 +318,11 @@ test("the active navigation underline tracks the active link instead of a fixed 
   assert.equal(header.includes('className="active"'), false);
   assert.match(header, /className=\{styles\.active\} href=\{`\/\$\{locale\}\/portal\/study-groups`\}/);
   // Design source (LG-YL · Study_Group_UIFinal header): nav starts at x=252 with the
-  // brand text ending at 219 (margin 33px), and the active item and its 4px bar are #1d6bff.
+  // brand text ending at 219 (margin 33px); the active label (599:25) and its 4px bar
+  // (599:42, 95x4 at 338,64) are #155dfc.
   assert.match(css, /\.nav \{[^}]*margin-left: 33px[^}]*\}/);
-  assert.match(css, /\.nav a\.active \{[^}]*color: #1d6bff[^}]*\}/);
-  assert.match(css, /\.nav a\.active::after \{[^}]*background: #1d6bff[^}]*\}/);
-  assert.equal(css.includes("#155dfc"), false);
+  assert.match(css, /\.nav a\.active \{ color: #155dfc; font-weight: 700[^}]*\}/);
+  assert.match(css, /\.nav a\.active::after \{[^}]*background: #155dfc[^}]*\}/);
 });
 
 test("the join gate call-to-action centres its label for the sign-in link", () => {
@@ -341,14 +341,14 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(css, /\.memberCol \{[^}]*padding: 20px[^}]*\}/);
   assert.match(css, /\.hostFoot \{ margin: auto -20px 0/);
   assert.match(css, /\.hostFoot p \{[^}]*text-align: center[^}]*\}/); // 599:770 hosting note
-  assert.match(css, /\.joinAction \.primary \{ min-width: 230px; \}/); // 599:1035 CTA 230x36
+  assert.match(css, /\.joinAction \.primary \{ min-width: 230px; height: 36px; font-size: 12px; \}/); // 599:1035 CTA 230x36, 599:1036 12px SemiBold
   assert.match(css, /\.sessionState\[data-state="scheduled"\] \{[^}]*background: #e0f5e5;[^}]*color: #26ad61/); // 599:685 Upcoming badge
   assert.match(css, /\.sessionState\[data-state="live"\], \.sessionState\[data-state="starting_soon"\] \{[^}]*background: rgba\(245,70,73,\.2\)/); // 599:702 Live now badge
   assert.match(css, /\.reminderHint \{[^}]*background: #fff9f1[^}]*\}/); // 599:721 reminder pill
-  assert.match(css, /\.planningTag \{[^}]*background: #eef9f3[^}]*\}/); // 599:744 planning pill
+  assert.match(css, /\.planningTag \{[^}]*border-radius: 4px;[^}]*background: #eef9f3[^}]*\}/); // 599:744 r4 pill
   assert.match(css, /\.endCard \{ width: min\(640px, 100%\)/); // 599:1398 card 433..1072
   assert.match(css, /\.endCard h1 \{ font-size: 28px; \}/);
-  assert.match(css, /\.endCard \.primary \{ min-width: 152px; \}/);
+  assert.match(css, /\.endCard \.primary \{ min-width: 152px; height: 36px; font-size: 12px; \}/); // 599:1455
   assert.match(css, /\.ghost \{[^}]*color: #111827[^}]*\}/); // 599:627 Button/Edit Group label
   assert.match(css, /\.signInLink \{[^}]*color: #4a5565[^}]*\}/); // 599:971 header Sign In variant
   assert.match(css, /\.live \{ position: absolute; top: 8px; right: 8px/); // 599:44 sidebar Live chip inset
@@ -356,19 +356,29 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(css, /\.empty \{[^}]*padding-top: 130px; \}/); // 599:8 rhythm: title 218, art 395, h2 573, body 614
   assert.match(css, /\.empty img \{ width: 250px; height: 150px; margin-top: 160px/);
   assert.match(css, /\.joinBanner \{[^}]*margin: 0 0 12px;[^}]*\}/);
-  assert.match(css, /\.locked \{ position: relative; height: 175px;/); // 599:930 Rectangle 112 642x175
+  assert.match(css, /\.locked \{ position: relative; height: 175px; background: #fff; border: 1px solid #e4e7ec; border-radius: 8px/); // 599:932 Rectangle 112 642x175 r8
   assert.match(css, /\.lockedAvatars i \{ width: 26px; height: 26px;[^}]*background: #ebedf2/);
   assert.match(css, /\.session \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 152px; column-gap: 16px; align-items: center;[^}]*padding: 16px 25px 16px 16px/); // 599:315 action column
   assert.match(css, /\.row \{ display: flex; flex-direction: column; align-items: stretch; gap: 8px; \}/);
   assert.match(css, /\.modal \.waitingBanner \{[^}]*border: 1px solid #1d6bff;[^}]*background: #f1f7ff;/); // 599:752
   assert.match(css, /\.waitingFacts \{[^}]*background: #fbfbfb;[^}]*border: 1px solid #e4e7ec;[^}]*border-radius: 8px/); // 599:751
-  assert.match(css, /\.createdToast \{ position: absolute; top: 10px; left: 50%;[^}]*width: min\(450px/); // 599:2083 toast 450x78 at 725,98
-  assert.match(css, /\.controls button \{ flex-direction: column;[^}]*min-height: 56px/); // 599:1276 icon-over-label controls
+  assert.match(css, /\.createdToast \{ position: absolute; top: 30px; left: 50%;[^}]*width: min\(450px/); // 599:2083 toast 450x78 at 725,98 (= 68 + 30)
+  assert.match(css, /\.controls button \{ flex-direction: column;[^}]*min-height: 51px;[^}]*font-weight: 500; color: rgba\(0,0,0,\.4\); background: #fbfbfb/); // 599:1210-1234 51px #fbfbfb 12px Medium black/40
   assert.match(css, /\.controls \.shareControl svg \{ color: #f54649; \}/);
-  assert.match(css, /\.chatForm \{ position: relative; display: block; min-height: 72px/); // 599:1276
-  assert.match(css, /\.sendButton \{ position: absolute; right: 8px; bottom: 8px;/);
+  assert.match(css, /\.chatForm \{ position: relative; display: block; min-height: 100px;[^}]*border: 1px solid #e4e7ed; border-radius: 8px/); // 599:1392 266x100 r8 #e4e7ed
+  assert.match(css, /\.sendButton \{ position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px/); // 599:1394 24x24 inset 4/4
+  assert.match(css, /\.participantBadge \{ width: 16px; height: 16px;/); // 599:1224-29 16x16 badge beside the 16px icon
+  assert.match(css, /\.divider \{ display: inline-block; width: 1px; height: 10px; background: #d0d5dd/); // 599:503/475/516/1454 divider rules
+  assert.match(css, /\.crumb \{[^}]*font-weight: 400; color: #7c7c7c; \}/); // 599:1156 breadcrumb items
+  assert.match(css, /\.crumbChevron \{ width: 12px; height: 12px/); // 599:1157/1160/1163 chevrons
+  assert.match(css, /\.joinNote \{[^}]*margin: 40px 0 20px/); // 599:930/1457 cards->note 40, note->CTA 20
+  assert.match(css, /\.endMark \{ width: 60px; height: 60px;[^}]*background: #f6f9fd; color: #1d6bff;[^}]*font-size: 32px/); // 599:1445
+  assert.match(css, /\.meta \{ display: inline-flex; align-items: center; gap: 8px; \}/); // 599:1454 end-card meta divider
+  assert.match(css, /\.sessionState\[data-state="scheduled"\] \{ padding: 4px 10px;/); // 599:685 px-10
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /styles\.planningTag/);
+  assert.match(app, /session\.viewerPlanned \? <p className=\{styles\.planningTag\}>\{copy\.planning\}<\/p> : null/); // 599:744 pill sits in the card body at rel(16,133)
+  assert.match(app, /<FactIcon kind="date" \/>\{sessionDateLabel\(locale, session\.startsAt\)\}<span className=\{styles\.divider\} aria-hidden="true" \/>\{sessionTimeLabel\(locale, session\)\}/); // 599:693-4 date | time one row
   assert.match(app, /styles\.hostFoot\}><button className=\{styles\.ghost\} type="button"/); // member Leave Study Group sits in the Members column
   assert.match(app, /study-groups\/\$\{selected\.id\}\/leave/);
   assert.match(app, /<LockedCard \/>/); // 599:930 skeletons keep fact rows + avatar row
@@ -380,8 +390,8 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(room, /line\.tutor \? null : <time dateTime=\{line\.at\}>/); // 599:1276 tutor line has no timestamp
   assert.match(room, /roomCopy\.crumbGroupInfo/);
   assert.match(room, /roomCopy\.crumbSession/);
-  assert.match(room, /&gt;/); // 599:1117 breadcrumb separators
-  assert.match(room, /\.join\(" \| "\)/); // 599:1398 end-card meta separator
+  assert.match(room, /CrumbChevron/); // 599:1117 breadcrumb chevron separators
+  assert.match(room, /styles\.divider\} aria-hidden="true" \/>\{fill\(roomCopy\.groupStudy/); // 599:1454 end-card meta divider
   assert.match(room, /styles\.shareControl/);
   assert.match(room, /styles\.controlGlyph/);
   // both locales carry the design copy and the new breadcrumb keys
@@ -393,4 +403,13 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.equal(zh.studyGroupsPage.room.crumbSession, "直播课");
   assert.equal(en.portal.signIn, "Sign In");
   assert.equal(zh.portal.signIn, "登录");
+});
+
+test("the retained create form cannot submit twice while the request is in flight", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /const \[creating, setCreating\] = useState\(false\)/);
+  assert.match(app, /if \(creating\) return;/);
+  assert.match(app, /type="submit" disabled=\{creating\}/);
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.sessionBody \{ min-width: 0; \}/);
 });

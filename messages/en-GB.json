@@ -520,7 +520,7 @@
     "selectCourse": "Select Course",
     "enterDescription": "Enter the description...",
     "createdTitle": "Study Group Created",
-    "createdBody": "You're all set.",
+    "createdBody": "You’re all set.",
     "openGroup": "Open Group",
     "openStudyGroup": "Open Study Group",
     "arrangeLead": "Arrange a live study session for this Study Group",
@@ -621,7 +621,7 @@
       "speaking": "Speaking",
       "camera": "Camera",
       "share": "Share",
-      "raiseHand": "Raise hand",
+      "raiseHand": "Raise Hand",
       "leave": "Leave Session",
       "host": "Host",
       "chatPlaceholder": "Type your message...",
@@ -633,7 +633,7 @@
       "groupStudy": "{count}-minute Group Study",
       "endedTitle": "Thanks for studying together",
       "endedBody": "The Session has ended. You can return to the lesson and continue learning.",
-      "returnToCourse": "Return to course",
+      "returnToCourse": "Return to Course",
       "youLeft": "You left the Live Session."
     },
     "errors": {

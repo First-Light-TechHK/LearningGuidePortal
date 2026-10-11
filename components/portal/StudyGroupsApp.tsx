@@ -80,6 +80,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [errorCode, setErrorCode] = useState("error");
   const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | null>(null);
   const [createdGroup, setCreatedGroup] = useState<{ id: string; title: string; courseTitle: string } | null>(null);
+  const [creating, setCreating] = useState(false);
   const [editingSession, setEditingSession] = useState<StudySession | null>(null);
   const [waitingSession, setWaitingSession] = useState<StudySession | null>(null);
   const [attendees, setAttendees] = useState<StudySession["attendees"]>([]);
@@ -269,16 +270,22 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
 
   async function submitCreate(form: FormData) {
-    const result = await studyGroupRequest<StudyGroupDetail>("/api/study-groups", {
-      method: "POST",
-      body: JSON.stringify({ title: form.get("title"), courseId: form.get("courseId"), about: form.get("about") })
-    });
-    if (!result.ok) {
-      setErrorCode(result.code);
-      return;
+    if (creating) return;
+    setCreating(true);
+    try {
+      const result = await studyGroupRequest<StudyGroupDetail>("/api/study-groups", {
+        method: "POST",
+        body: JSON.stringify({ title: form.get("title"), courseId: form.get("courseId"), about: form.get("about") })
+      });
+      if (!result.ok) {
+        setErrorCode(result.code);
+        return;
+      }
+      setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
+      await loadLists();
+    } finally {
+      setCreating(false);
     }
-    setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
-    await loadLists();
   }
 
   function openSchedule() {
@@ -464,7 +471,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
           <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
           <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
           <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={200} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(event.target.value.slice(0, 200))} /><span className={styles.counter}>{createAbout.length}/200</span></span></label>
-          <div className={styles.actions}><button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button><button className={styles.primary} type="submit">{copy.create}</button></div>
+          <div className={styles.actions}><button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
           {errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
         </form> : null}
         {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" && !createdGroup ? (
@@ -497,19 +504,19 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   {session.focus ? <p>{session.focus}</p> : null}
                   {session.relatedLessonId ? <p>{(selected.lessons || []).find((lesson) => lesson.id === session.relatedLessonId)?.title}</p> : null}
                   <ul className={styles.factList}>
-                    <li><FactIcon kind="date" />{sessionDateLabel(locale, session.startsAt)}</li>
-                    <li><FactIcon kind="time" />{sessionTimeLabel(locale, session)}</li>
+                    <li><FactIcon kind="date" />{sessionDateLabel(locale, session.startsAt)}<span className={styles.divider} aria-hidden="true" />{sessionTimeLabel(locale, session)}</li>
                     <li><FactIcon kind="duration" />{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</li>
-                    <li data-live={!sessionNotStarted(session) && (session.state === "live" || session.state === "starting_soon") ? "true" : undefined}><FactIcon kind="people" />{sessionNotStarted(session) ? copy.notStartedBody : session.state === "completed" ? <>{fill(copy.attended, { count: session.attendees.length })} | {fill(copy.maximumLine, { count: session.maxParticipants })}</> : session.state === "scheduled" ? <>{fill(copy.plannedCount, { count: session.plannedCount })} | {fill(copy.maximumLine, { count: session.maxParticipants })}</> : fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</li>
+                    <li data-live={!sessionNotStarted(session) && (session.state === "live" || session.state === "starting_soon") ? "true" : undefined}><FactIcon kind="people" />{sessionNotStarted(session) ? copy.notStartedBody : session.state === "completed" ? <>{fill(copy.attended, { count: session.attendees.length })}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : session.state === "scheduled" ? <>{fill(copy.plannedCount, { count: session.plannedCount })}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</li>
                   </ul>
                   {session.state === "scheduled" && (selected.role === "host" || session.viewerPlanned) ? <p className={styles.reminderHint}>{copy.reminderHint}</p> : null}
                   {session.attendees.length ? <p className={styles.avatarRow}>{session.attendees.slice(0, 4).map((person) => <span key={person.userId}>{person.displayName.slice(0, 1).toUpperCase()}</span>)}{session.attendees.length > 4 ? <span className={styles.avatarMore}>+{session.attendees.length - 4}</span> : null}</p> : null}
+                  {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <p className={styles.planningTag}>{copy.planning}</p> : null}
                   </div>
                   <div className={styles.row}>
                     {selected.role === "host" && session.state === "starting_soon" && !sessionNotStarted(session) ? <button className={styles.primary} type="button" onClick={() => void startSession(session)}>{copy.start}</button> : null}
                     {!sessionNotStarted(session) && (session.state === "live" || (session.state === "starting_soon" && selected.role !== "host")) ? <button className={styles.primary} type="button" disabled={session.occupancy >= session.maxParticipants} onClick={() => void enter(session)}>{session.occupancy >= session.maxParticipants ? copy.sessionFull : copy.joinNow}</button> : null}
                     {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && selected.role === "member" && !session.viewerPlanned ? <><button className={styles.primary} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/plan`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.plan}</button><p className={styles.planNote}>{copy.planNote}</p></> : null}
-                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <><button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel-attendance`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelAttendance}</button><p className={styles.planningTag}>{copy.planning}</p></> : null}
+                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel-attendance`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelAttendance}</button> : null}
                     {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.ghost} type="button" onClick={() => openEditSession(session)}>{copy.editSession}</button> : null}
                     {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelSession}</button> : null}
                     <button className={styles.textButton} type="button" onClick={() => { setAttendeeSessionId(session.id); setAttendees(session.attendees); setDialog("attendees"); }}>{copy.viewAttendees}<span aria-hidden="true"> ›</span></button>
@@ -538,7 +545,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 <h2 id="study-group-dialog-title" className={styles.waitingBanner}><HourglassIcon /><span>{copy.waiting}</span></h2>
                 <p className={styles.waitingTitle}>{waitingSession.title}</p>
                 <ul className={styles.waitingFacts}>
-                  <li><FactIcon kind="date" />{sessionDateLabel(locale, waitingSession.startsAt)}<span className={styles.waitingDivider} aria-hidden="true" />{sessionTimeLabel(locale, waitingSession)}<FactIcon kind="duration" />{fill(copy.plannedDuration, { count: plannedMinutes(waitingSession) })}</li>
+                  <li><FactIcon kind="date" />{sessionDateLabel(locale, waitingSession.startsAt)}<span className={styles.divider} aria-hidden="true" />{sessionTimeLabel(locale, waitingSession)}<FactIcon kind="duration" />{fill(copy.plannedDuration, { count: plannedMinutes(waitingSession) })}</li>
                   <li><FactIcon kind="people" />{fill(copy.upToParticipants, { count: waitingSession.maxParticipants })}</li>
                 </ul>
                 {waitingSession.focus ? <><h3 className={styles.waitingFocus}>{copy.focus}</h3><p>{waitingSession.focus}</p></> : null}

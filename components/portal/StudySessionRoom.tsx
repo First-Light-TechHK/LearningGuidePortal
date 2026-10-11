@@ -17,13 +17,17 @@ function tileStatus(copy: { muted: string; speaking: string; micOn: string }, ti
 }
 
 function ControlIcon({ kind }: { kind: "mic" | "camera" | "share" | "people" | "hand" | "leave" }) {
-  const props = { viewBox: "0 0 24 24", width: 18, height: 18, "aria-hidden": true as const, fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  const props = { viewBox: "0 0 24 24", width: 16, height: 16, "aria-hidden": true as const, fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   if (kind === "mic") return <svg {...props}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
   if (kind === "camera") return <svg {...props}><path d="M3 8h11v9H3zM14 11l6-3v9l-6-3" /></svg>;
   if (kind === "share") return <svg {...props}><rect x="4" y="5" width="16" height="12" rx="2" /><path d="M10 11h4M12 9v4" /></svg>;
   if (kind === "people") return <svg {...props}><circle cx="9" cy="8" r="2.5" /><circle cx="16" cy="9" r="2" /><path d="M4 18c.6-2.4 2.4-3.5 5-3.5s4.4 1.1 5 3.5M14 14.5c1.6 0 3 .7 3.8 2.5" /></svg>;
   if (kind === "hand") return <svg {...props}><path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11M11 8V5.5a1.5 1.5 0 0 1 3 0V12M14 9V7.5a1.5 1.5 0 0 1 3 0V14c0 3-2 5-5 5h-1c-2 0-3-.8-4-2l-2.5-3.5a1.5 1.5 0 0 1 2.2-2L8 13" /></svg>;
   return <svg {...props}><path d="M14 4h4v4M18 4l-7 7M10 6H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4" /></svg>;
+}
+
+function CrumbChevron() {
+  return <svg className={styles.crumbChevron} viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
 function TileMic({ status, label }: { status: "muted" | "speaking" | "mic-on"; label: string }) {
@@ -423,11 +427,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     return (
       <nav className={styles.crumb} aria-label={roomCopy.crumbGroups}>
         <button type="button" onClick={() => void exitTo(`/${locale}/portal`)}>{roomCopy.crumbHome}</button>
-        <span aria-hidden="true">&gt;</span>
+        <CrumbChevron />
         <button type="button" onClick={() => void exitTo(`/${locale}/portal/study-groups`)}>{roomCopy.crumbGroups}</button>
-        <span aria-hidden="true">&gt;</span>
+        <CrumbChevron />
         {group ? <button type="button" onClick={() => void exitTo(`/${locale}/portal/study-groups?group=${group.id}`)}>{roomCopy.crumbGroupInfo}</button> : <span>{roomCopy.crumbGroupInfo}</span>}
-        <span aria-hidden="true">&gt;</span>
+        <CrumbChevron />
         <span aria-current="page">{roomCopy.crumbSession}</span>
       </nav>
     );
@@ -445,7 +449,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           <h1>{ended ? roomCopy.endedTitle : roomCopy.youLeft}</h1>
           <p className={styles.endTitle}>{group?.title || session.title}</p>
           {session.focus ? <p>{session.focus}</p> : null}
-          <p className={styles.meta}>{[group?.courseTitle, fill(roomCopy.groupStudy, { count: plannedMinutes(session) })].filter(Boolean).join(" | ")}</p>
+          <p className={styles.meta}>{group?.courseTitle ? <>{group.courseTitle}<span className={styles.divider} aria-hidden="true" />{fill(roomCopy.groupStudy, { count: plannedMinutes(session) })}</> : fill(roomCopy.groupStudy, { count: plannedMinutes(session) })}</p>
           {ended ? endedParts(roomCopy.endedBody).map((line) => <p key={line}>{line}</p>) : null}
           <a className={styles.primary} href={group ? `/${locale}/portal/courses/${group.courseSlug}` : `/${locale}/portal/study-groups`}>{roomCopy.returnToCourse}</a>
         </div>
