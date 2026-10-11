@@ -1,0 +1,55 @@
+# Study Group PostgreSQL I/O evidence: the four release-gate guarantees
+# (atomic seat admission, single-flight tutor claim, first-wins project
+# assignment, reminder de-duplication) proven across real worker processes
+# against a real PostgreSQL. This is deliberately a separate job from Verify,
+# which excludes database-backed io tests.
+name: Study Group PG I/O
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: study-group-pg-io-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pg-io:
+    name: Study Group PostgreSQL I/O
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lg
+          POSTGRES_PASSWORD: lg
+          POSTGRES_DB: study_group_io
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lg -d study_group_io"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://lg:lg@127.0.0.1:5432/study_group_io
+      DATABASE_SSL: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck the io project
+        run: npx tsc --noEmit -p tsconfig.io.json
+
+      - name: Run the PostgreSQL io proofs
+        run: npm run test:io:pg
