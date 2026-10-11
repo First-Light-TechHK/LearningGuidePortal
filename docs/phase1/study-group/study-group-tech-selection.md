@@ -8,7 +8,7 @@ The selections below are the ones this design uses. The branch has not moved Gro
 
 Live Sessions run in the browser on LiveKit Cloud. The PRD names that platform for the room, audio, video, screen share, presence, and data transport. Shared Chat stays in the room. It is not a database row.
 
-The application service signs a short-lived participant token. The browser receives that token and the project WebSocket URL. The LiveKit API secret stays on the server.
+The application service issues a short-lived participant token through the LiveKit cloud gateway (`liveKitCloudGateway.ts`), with the TTL from `TOKEN_TTL_SECONDS` (600 seconds, `domain.ts`). The browser receives that token and the project WebSocket URL. The LiveKit API secret stays on the server.
 
 Rejected:
 
@@ -20,7 +20,7 @@ Rejected:
 
 Group, membership, Live Session, attendance intent, presence, the one meeting row, and reminder rows are product records. They belong in the same RDS PostgreSQL database as the rest of Learning Guide. DEV, SIT, UAT, and PPE/PROD already use that database. App Runner instances do not keep a private disk.
 
-The logical tables are `study_groups`, `study_group_memberships`, `live_sessions`, `study_group_attendance_intents`, `study_group_presences`, `study_group_meetings`, `study_group_reminders`, and `study_group_tutor_queue`. The tutor queue is session-scoped. A row is user id, session id, text, and server receipt time. Nothing in this phase selects or deletes those rows. Chat is not one of these tables. `live_sessions.duration_seconds` is only 1800, 2700, 3600, or 5400, the stored form of the choices 30, 45, 60, and 90 minutes. The Figma session card shows `45 mins`. Seat grant and its release, and the single meeting insert, run inside a database transaction. External idempotency for a repeated Host Start is the unique meeting row for that Live Session.
+The logical tables are `study_groups`, `study_group_memberships`, `live_sessions`, `study_group_attendance_intents`, `study_group_presences`, `study_group_meetings`, `study_group_reminders`, and `study_group_tutor_queue`. The tutor queue is session-scoped. A row is user id, session id, text, client idempotency key, server receipt time, an `inFlight` flag and `answeredAt`. The service enqueues and drains those rows in process today; the durable lease shape is target design gated on the RDS phase (see `decisions.md`). Chat is not one of these tables. `live_sessions.duration_seconds` is only 1800, 2700, 3600, or 5400, the stored form of the choices 30, 45, 60, and 90 minutes. The Figma session card shows `45 mins`. Seat grant and its release, and the single meeting insert, run inside a database transaction. External idempotency for a repeated Host Start is the unique meeting row for that Live Session.
 
 The branch does not do this yet. `modules/group-study/repository.ts` reads and writes one JSON file, `study-group.json`, and appends `token-issuance.log` beside it. The in-process queue serializes writers only inside one process.
 
@@ -38,7 +38,7 @@ This follows the existing Learning Guide split.
 - The Route Handler parses the request, reads the session, calls the application service, and returns `{ ok, code, message, data }`.
 - `modules/group-study/service.ts` holds the rules: Course access, Host actions, state, the six-person cap, request-time order, token signing, and the encrypted log line.
 - The repository is the only place that writes the rows.
-- LiveKit is called only to connect the browser with a token the service already signed. Stripe is not involved.
+- LiveKit is called to provision the room through Room Service, to sign or verify participant and recovery tokens through the LiveKit gateway, and to publish the tutor reply as a shared data message. The browser connects with the token the service returns. Stripe is not involved.
 
 Rejected:
 
@@ -49,7 +49,7 @@ Rejected:
 
 The service signs a participant token for one user and one Live Session. The grants are join, publish, subscribe, and data. Those grants are the same for the Host and for a Joined Member. The token carries the user id and display name. It does not carry a Host label, a Host role, or room admin.
 
-The branch implements that shape in `modules/group-study/liveKitToken.ts` and returns it from `POST /api/study-groups/sessions/:sessionId/token`. The TTL in that code is 600 seconds. The PRD says the token is short-lived and does not give a number. 600 seconds is the branch value, not a second product rule.
+The runtime signs that token through the LiveKit cloud gateway (`liveKitCloudGateway.ts`), with the TTL from `TOKEN_TTL_SECONDS` (600 seconds, `domain.ts`); `modules/group-study/liveKitToken.ts` is a local compatibility signer kept for unit fixtures. The token is returned from `POST /api/study-groups/sessions/:sessionId/token`. The PRD says the token is short-lived and does not give a number. 600 seconds is the branch value, not a second product rule.
 
 Rejected:
 
@@ -61,12 +61,12 @@ Rejected:
 
 The Study Group tutor uses a direct model call. No agent framework is added. `package.json` on `main` has none. The call layer is a lightweight distributed service, not a heavy platform. It keeps a pool of API keys. On auth failure, rate limit, or quota, it uses another key. It records request count, errors, and latency per key, and sends traffic only to healthy keys. Raw keys are never logged, never committed, and never sent to the browser.
 
-The model vendor is not chosen. How a reply re-enters the LiveKit room is not chosen. The queue remains per Live Session. Course context for an answer is supplied by a later design. The shape of that context, how a knowledge base is built, the structure of the base, and the structure of a piece of knowledge are not chosen. This note adds no schema, table, or sample content for that base.
+`decisions.md` closed these points: the model is OpenRouter through the existing client, or the configured OpenAI-compatible URL; the reply re-enters the room as one shared LiveKit data message; and Course context is lexical retrieval over existing Course Knowledge text. The queue remains per Live Session. This note adds no schema, table, or sample content for that base.
 
 Not used:
 
 - Vercel AI SDK, LiveKit Agents, Claude Agent SDK, and LangGraph. The call stays direct. No new framework dependency is added.
-- A per-user tutor identity or a course-wide tutor identity. Whether the tutor is one per user or one shared by a Course is not decided.
+- A per-user tutor identity or a course-wide tutor identity. `decisions.md` closes this: the tutor is the Related Course tutor, shared in the Live Session chat.
 
 ## Encrypted issuance log
 

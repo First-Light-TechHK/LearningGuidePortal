@@ -100,6 +100,8 @@ Product-aggregate data changes use numbered scripts under `db/data-migrations/`.
 
 ### Study Group / LiveKit release gate
 
+The signed webhook receiver, presence reconciliation, and tutor queue leases and dead-letter counts have no implementation on the current branch; they are to-be-built items in the RDS phase, with the same release-gated scope recorded in [study-group/livekit-operations.md](study-group/livekit-operations.md).
+
 - Production Study Group requires the RDS migration for sessions, presence, tutor queue leases and webhook receipts; container-local JSON and in-memory delivery ownership are release blockers.
 - Configure `LIVEKIT_PROJECTS_JSON` with non-secret project ids/endpoints and AWS Secrets Manager references only. Production configuration must include at least one active project, valid token-log key, webhook secret and a resolvable credential reference. The browser never receives a provider secret or secret reference.
 - Before enabling Study Group, run the non-production LiveKit smoke: provision a room, connect two authorised test identities, publish a shared data message, process a signed participant-left webhook and verify the released seat. Record the project id, commit SHA and redacted evidence.

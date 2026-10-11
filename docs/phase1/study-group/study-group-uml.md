@@ -94,9 +94,9 @@ classDiagram
 
 `AttendanceIntent` does not hold a seat. `Presence` holds a seat while `enteredAt` is set and `leftAt` is empty. `Meeting` exists only after Host Start, one row for that Live Session.
 
-`durationSeconds` is one of 1800, 2700, 3600, or 5400. Those are the choices 30, 45, 60, and 90 minutes. The Figma session card shows `45 mins`. Branch `18a1046` still names the field `durationMinutes` and accepts any integer of at least 1.
+`durationSeconds` is one of 1800, 2700, 3600, or 5400. Those are the choices 30, 45, 60, and 90 minutes. The Figma session card shows `45 mins`. Branch `18a1046` named the field `durationMinutes` and accepted any integer of at least 1; HEAD stores `durationSeconds` with only those four values.
 
-`TutorQueueItem` is one undrained queue item. `receivedAt` is the server receipt time. The queue is not Chat, and it is not a seat or a token. Branch `18a1046` does not have this queue.
+`TutorQueueItem` is one session-scoped queue item. `receivedAt` is the server receipt time. The queue is not Chat, and it is not a seat or a token. Branch `18a1046` did not have this queue; HEAD stores it and the service drains it in process. Durable delivery ownership is target design gated on the RDS phase.
 
 ## Create Study Group
 
@@ -157,7 +157,7 @@ The seat grant is the repository write. Token signing is a later step and is not
 
 ## Token issuance
 
-The service signs the token only after a seat exists. The token grants join, publish, subscribe, and data. It has no Host label. On a signing failure the seat from this operation is removed before the error returns. No log line is written. On success the repository appends one encrypted line, then the token goes to the browser. LiveKit sees the token only after that.
+The service signs the token only after a seat exists. The token grants join, publish, subscribe, and data. It has no Host label. On a signing failure the admission row is kept for retry — issuing a token is not a user leave — and no log line is written. On success the repository appends one encrypted line, then the token goes to the browser. LiveKit sees the token only after that.
 
 ```mermaid
 sequenceDiagram
@@ -174,8 +174,7 @@ sequenceDiagram
   alt No seat, or Session completed, or LiveKit secret missing
     Service-->>UI: error, no token, no log line
   else Seat exists and signing fails
-    Service->>Repo: release that seat
-    Repo-->>Service: occupancy without this user
+    Service->>Service: keep the admission row for retry
     Service-->>UI: error, no token, no log line
   else Signing succeeds
     Service->>Service: reject the line if it contains the token or the API secret
@@ -190,7 +189,7 @@ Chat and Raise Hand after connect are LiveKit data messages. They do not call th
 
 ## AI Tutor queue
 
-The queue belongs to one Live Session. The service appends an item. Nothing drains it. The append does not read occupancy and does not sign a token. Chat remains a LiveKit data message and does not become this item.
+The queue belongs to one Live Session. The service appends an item, then one delivery drains the Session in process: it takes the next unserved item in receipt order, retrieves only existing course text, calls the model, and publishes a grounded answer as a shared LiveKit data message. The append does not read occupancy and does not sign a token. Chat remains a LiveKit data message and does not become this item.
 
 ```mermaid
 sequenceDiagram
@@ -199,15 +198,18 @@ sequenceDiagram
   participant LiveKit
   Service->>Repo: append item userId, sessionId, text, server receipt time
   Repo-->>Service: item stored
-  Note over Repo: no reader and no delete
-  Note over Service: no model, no Course Knowledge, no screen parse
+  Service->>Repo: read the next unserved item
+  Service->>Service: retrieve existing course text, call the model
+  Service->>LiveKit: publish the answer as one shared data message
+  Service->>Repo: settle the item and advance the next
+  Note over Service: no screen parse
   Note over Service: occupancy and token issuance stay as they were
   Note over LiveKit: Chat stays in the room
 ```
 
 ## Live Session state
 
-Cancel before start removes the record from the lists. There is no Cancelled card. The clock reaching the scheduled time does not enter Live. The planned duration ending does not enter Completed. Completed is the last participant leaving after Host Start.
+Cancel before start removes the record from the lists. There is no Cancelled card. The clock reaching the scheduled time does not enter Live. The planned duration ending does not enter Completed. Completed is the last participant leaving after Host Start. Host cancel of the Group removes every unstarted Session and completes a live one for the whole group.
 
 ```mermaid
 stateDiagram-v2
@@ -217,6 +219,7 @@ stateDiagram-v2
   StartingSoon --> Live: Host Start
   StartingSoon --> Removed: Host cancels
   Live --> Completed: last participant leaves
+  Live --> Completed: Host cancels the Group
   Completed --> [*]
   Removed --> [*]
 ```

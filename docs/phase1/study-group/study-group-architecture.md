@@ -7,10 +7,10 @@ Design for Oliver Zhang. Sources are PRD v0.10, the locked decisions below, and 
 - Chat stays in LiveKit. No chat row.
 - One meeting record per meeting. No token audit table. One encrypted log line per issuance. The line has no raw token and no API secret.
 - A Live Session holds at most 6 people including the Host. The Host sets the Session maximum from 2 to 6. Admission is first come, first served by the time the server receives the enter request.
-- AI Tutor is the shared Related Course tutor in a Live Session. The queue is per Live Session only: an item is the user id, session id, original text and server receipt time. One question is delivered at a time, in server receipt order; later questions do not cancel or merge earlier ones. There is no private per-user tutor or course-wide tutor identity. The service performs lexical retrieval over existing published lesson text and existing Course Knowledge files; it does not create a new knowledge base or parse participant screens. When context is sufficient, it makes one direct OpenRouter-compatible chat-completion call with a server-side grounding prompt. The answer re-enters the room as one shared reliable LiveKit data message with no destination list. No agent framework is used. Tutor request ownership, retry and terminal-failure state are durable so two application instances cannot make duplicate model calls or leave later questions blocked. The API key pool switches away from authentication, rate-limit and quota failures; raw keys never enter the repository, logs or browser.
+- AI Tutor is the shared Related Course tutor in a Live Session. The queue is per Live Session only: an item is the user id, session id, original text and server receipt time. One question is delivered at a time, in server receipt order; later questions do not cancel or merge earlier ones. There is no private per-user tutor or course-wide tutor identity. The service performs lexical retrieval over existing published lesson text and existing Course Knowledge files; it does not create a new knowledge base or parse participant screens. When context is sufficient, it makes one direct OpenRouter-compatible chat-completion call with a server-side grounding prompt. The answer re-enters the room as one shared reliable LiveKit data message with no destination list. No agent framework is used. Tutor request ownership, retry and terminal-failure state must be durable so two application instances cannot make duplicate model calls or leave later questions blocked; that durability is target design gated on the RDS phase, and today delivery ownership is an in-process set inside one application instance. The API key pool switches away from authentication, rate-limit and quota failures; raw keys never enter the repository, logs or browser.
 - The Host manages the Group only outside the room. In the room the Host has the same permissions as a participant. The LiveKit token has no Host label.
-- Session Title is required and is at most 20 characters. That is the Figma counter `7/20` on frame `599:1806`. The longer sample title on that frame is not the limit. PRD v0.10 does not state another length. The branch still rejects a Session Title over 80 characters in `scheduleSession` and `editSession`, and the schedule input has no `maxLength`.
-- Planned duration is required. The Host chooses 30, 45, 60, or 90 minutes. Those choices are stored as 1800, 2700, 3600, and 5400 seconds. There is no other duration. The Figma session card shows `45 mins`. Branch `18a1046` still stores `durationMinutes` and accepts any integer of at least 1.
+- Session Title is required and is at most 20 characters. That is the Figma counter `7/20` on frame `599:1806`. The longer sample title on that frame is not the limit. PRD v0.10 does not state another length. HEAD enforces the 20-character limit in `scheduleSession` and `editSession`, and the title input carries `maxLength` and the counter.
+- Planned duration is required. The Host chooses 30, 45, 60, or 90 minutes. Those choices are stored as 1800, 2700, 3600, and 5400 seconds. There is no other duration. The Figma session card shows `45 mins`. HEAD stores `durationSeconds` and accepts only those four values.
 
 ## Layers
 
@@ -18,8 +18,8 @@ Design for Oliver Zhang. Sources are PRD v0.10, the locked decisions below, and 
 |---|---|
 | UI | Study Groups pages, forms, Session Full, Waiting for Host Start, and the room. Sends HTTP. Connects to LiveKit with the returned token. Sends Chat and Raise Hand as LiveKit data. Does not decide Course access, capacity, or the token grants. |
 | Route Handler | Parses the body, reads the session, calls the application service, returns `{ ok, code, message, data }`. |
-| Application service | Course access, Host and Member rules, Session state, the 2–6 cap, request-time order, meeting creation, token signing, the encrypted line, seat release when signing fails, and appending one tutor-queue item. It does not call a model. |
-| Repository | Study Group, membership, Live Session, attendance intent, presence, the one meeting row, reminders, the issuance log line, and the session-scoped tutor queue. Nothing in this phase reads that queue. |
+| Application service | Course access, Host and Member rules, Session state, the 2–6 cap, request-time order, meeting creation, token signing, the encrypted line, keeping the caller's admission row when signing fails, and appending and draining the tutor queue through the tutor call. |
+| Repository | Study Group, membership, Live Session, attendance intent, presence, the one meeting row, reminders, the issuance log line, and the session-scoped tutor queue, which the in-process drain reads and settles. |
 | LiveKit | The room, audio, video, screen share, presence on the wire, and data messages, including Chat. It does not store Group rows, it does not count seats, and it does not drain the tutor queue. |
 
 Course access is read from Entitlement. Group Study does not write Entitlement. Notifications for cancel-group and the T-10 reminder go through the existing notification and mail services. The service decides who is in the audience.
@@ -44,7 +44,7 @@ Enter and token are separate requests. Enter is the seat grant. Token is the cre
 | Meeting | One row when the Host starts that Session. `startedAt`, and `endedAt` when the last participant leaves after start. A second Start does not insert another row. | A row at schedule time. A token. |
 | Reminder | One sent mark per Session and user, for the Host and for members who still Plan to Attend. | A reminder to every Group member. |
 | Issuance log | One encrypted line per successful issuance: user id, role, session id, `token_issued`, time. | The raw token, the API secret, a token table. |
-| Tutor queue | Session-scoped user id, session id, text, receipt time, idempotency key, delivery state, lease, bounded attempts and a safe shared-message identifier. | A raw API key, token, screen bytes, seat change, or browser-visible grounding prompt. The service drains the queue through a durable claim/settle protocol. |
+| Tutor queue | Session-scoped user id, session id, text, receipt time, idempotency key, an `inFlight` flag and `answeredAt`. A durable delivery lease, bounded attempts and a dead-letter state are target design gated on the RDS phase. | A raw API key, token, screen bytes, seat change, or browser-visible grounding prompt. Today the service drains the queue in process, one delivery per Session; the durable claim/settle protocol is target design gated on the RDS phase. |
 | LiveKit room | Media and Chat while people are connected. | A database copy of Chat, a recording, or screen pixels for AI Tutor. |
 
 The selected production store is RDS PostgreSQL. The branch's local JSON repository is only a temporary test/dev adapter; production does not use `study-group.json`, `token-issuance.log`, container-local state, or in-memory queue ownership.
@@ -53,7 +53,7 @@ The selected production store is RDS PostgreSQL. The branch's local JSON reposit
 
 Group membership, for one user: Discoverable, then Joined, or Hosting from create. Leave returns a member to Discoverable while the Group stays active. The Host does not leave. Cancel Group is terminal for the pages. Completed Session rows stay in the store. The cancelled Group is not listed.
 
-Live Session: Scheduled, then Starting Soon at T-10, then Live only when the Host starts, then Completed when the last participant leaves after start. Cancel before start removes the record. The scheduled clock and the planned duration do not start or complete the Session. Waiting for Host Start is the member's page during Starting Soon, not a second Session state. People on that page count toward occupancy. Host Start moves them into the room without another enter, and the count stays.
+Live Session: Scheduled, then Starting Soon at T-10, then Live only when the Host starts, then Completed when the last participant leaves after start. Cancel before start removes the record. The scheduled clock and the planned duration do not start or complete the Session. Waiting for Host Start is the member's page during Starting Soon, not a second Session state. People on that page count toward occupancy. Host Start moves them into the room without another enter, and the count stays. One edge closes entry: once the planned end passes with zero occupancy, the Session is missed-unstarted. Enter and Host Start then refuse with `session_not_open` ("This Live Session was not started.") even though `effectiveSessionState` still reports `starting_soon`; the UI shows "Not started".
 
 A Group card Live badge means some child Session is Live. It is not a Group state.
 
@@ -65,19 +65,19 @@ Each user operation that changes a seat, a meeting, a token, or the log is split
 
 **Host Start.** The service checks the Host and Starting Soon. The repository sets the Session to Live, moves waiting presences to the live phase, and inserts one meeting row if that Session does not have one. Occupancy is unchanged. This step does not sign a token.
 
-**Token.** The service reads the seat. It signs a participant token with no Host label. If signing fails, the repository releases that seat, and no log line is written. If signing succeeds, the repository appends one encrypted line that contains neither the token nor the API secret, and the Route returns the token. The UI then connects to LiveKit.
+**Token.** The service reads the seat. It signs a participant token with no Host label. If signing fails, the admission row is kept for retry — issuing a token is not a user leave — and no log line is written. If signing succeeds, the repository appends one encrypted line that contains neither the token nor the API secret, and the Route returns the token. The UI then connects to LiveKit.
 
 **Leave.** The repository sets `leftAt`. If the Session is Live and occupancy is then zero, the Session becomes Completed and the meeting row gets `endedAt`.
 
-**Tutor queue append.** The service records one item for that Session: user id, session id, text, client idempotency key and the time the server received it. A worker atomically leases the next eligible item, retrieves only existing course text, and publishes a grounded answer as a shared LiveKit data message. Retryable failures use a bounded retry policy; terminal failure settles the item and advances the next item. This append/delivery is not part of enter, Host Start, token issuance, or leave. Occupancy and the token are unchanged.
+**Tutor queue append.** The service records one item for that Session: user id, session id, text, client idempotency key and the time the server received it. One delivery drains a Session in process: it takes the next unserved item in receipt order, retrieves only existing course text, calls the model, and publishes a grounded answer as a shared LiveKit data message; an item that cannot be served is settled so the next item proceeds. The atomic lease, bounded retry policy and dead-letter settlement are target design gated on the RDS phase. This append/delivery is not part of enter, Host Start, token issuance, or leave. Occupancy and the token are unchanged.
 
-The system prompt for a later call is server-side only. The browser does not receive it. A later call may pass course context beside the item text. That context's shape is open. The prompt allows a course fact only when it is in the context passed with that call. Participant text cannot override that. The screen is not parsed.
+The system prompt for a later call is server-side only. The browser does not receive it. The tutor call passes course context beside the item text; `decisions.md` closes that shape — lexical retrieval over the stored Course text. The prompt allows a course fact only when it is in the context passed with that call. Participant text cannot override that. The screen is not parsed.
 
 The call is direct. No agent framework is added. The call layer is a lightweight distributed service. It keeps a pool of API keys, switches to another key on auth failure, rate limit or quota, records request count, errors and latency per key, and sends traffic only to healthy keys. Raw keys are never logged, never put in the repo and never sent to the browser. The model is OpenRouter-compatible and replies re-enter the assigned LiveKit room through the LiveKit gateway.
 
-The queue is per Live Session only. One question is in flight at a time, in server receipt order. A later question does not cancel or merge with an earlier one. The answer is tied to the asker and the original text. This design does not add a per-user tutor identity or a course-wide tutor identity. Whether the tutor is one per user or one shared by a Course is not decided. How the knowledge base is built, the structure of the base, and the structure of a piece of knowledge are not decided.
+The queue is per Live Session only. One question is in flight at a time, in server receipt order. A later question does not cancel or merge with an earlier one. The answer is tied to the asker and the original text. This design does not add a per-user tutor identity or a course-wide tutor identity; `decisions.md` closes the point — the tutor is the Related Course tutor, shared in the Live Session chat. `decisions.md` also closes the knowledge shape: lexical retrieval over the Course text that already exists, with no new knowledge base, table, or import.
 
-On branch `18a1046`, `enterSession` writes the presence and returns. `issueToken` does not clear that presence when signing fails. The atomic step above is the design. The branch has not combined them. The branch stores the AI Tutor flag and has no tutor queue.
+On branch `18a1046`, `enterSession` writes the presence and returns, `issueToken` does not clear that presence when signing fails, and there is no tutor queue. That history is superseded: HEAD keeps the admission row on signing failure for retry (a test locks it) and stores the session-scoped tutor queue, drained in process. Durable delivery ownership remains target design gated on the RDS phase.
 
 ## Emergency behavior the PRD already states
 
@@ -89,12 +89,12 @@ On branch `18a1046`, `enterSession` writes the presence and returns. `issueToken
 - After Host Start, the last participant leaving sets Completed.
 - Host cancel of an unstarted Session removes it from the lists.
 - Host cancel of the Group makes it inaccessible, cancels upcoming Sessions, removes it from My and Discover, notifies members, and keeps completed Session rows in the store.
-- Enter during Starting Soon shows Waiting for Host Start and counts toward capacity. The scheduled time does not start the Session. People already waiting stay on that page until Host Start or cancel.
+- Enter during Starting Soon shows Waiting for Host Start and counts toward capacity. The scheduled time does not start the Session. People already waiting stay on that page until Host Start or cancel. A missed unstarted Session (planned end passed, nobody seated) refuses entry; the page shows Not started.
 - The LiveKit API secret stays on the server. The browser receives only the short-lived token for that user and that Session.
 
 ## PRD coverage
 
-Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch does what that sentence says. `misses` means the sentence is not done. `contradicts` means the branch does the opposite.
+Verdicts are against PRD v0.10, re-verified against the current branch on 2026-10-11. `meets` means the branch does what that sentence says. `partial` means one part of the sentence is done and another is not. `misses` means the sentence is not done. `contradicts` means the branch does the opposite.
 
 ### Success criteria
 
@@ -105,12 +105,12 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | SC-003 | Valid Course access joins immediately, with no Host approval. | meets | `joinGroup` inserts membership. |
 | SC-004 | No Course access cannot join and is sent to get access. | meets | Join returns `course_access_required`. The page links to the Course. |
 | SC-005 | Membership is larger than six. The six-person limit is per Live Session. | meets | Join has no cap. Enter uses `maxParticipants`. |
-| SC-006 | Host can schedule, edit, cancel, and start an eligible Live Session. | misses | Schedule, cancel, and start exist. Edit is an API that changes title only, and the page has no Edit Session control. |
+| SC-006 | Host can schedule, edit, cancel, and start an eligible Live Session. | meets | Schedule, cancel, start, and the Edit Session dialog; `editSession` accepts every field. |
 | SC-007 | Plan to Attend and Cancel Attendance do not reserve a place. | meets | Intent rows are separate from presence. |
 | SC-008 | A Live Session supports 2–6 concurrent participants including the Host. | meets | Schedule accepts 2–6. Occupancy counts entered people, including a Host who has entered. |
-| SC-009 | Live participants share the same in-room controls for their own media, screen share, Chat, Raise Hand, and Leave. | misses | The control list does not vary by role. Mic, camera, and share only call the enable path, and the room does not render a media element. |
-| SC-010 | When AI Tutor is enabled, any live participant can invoke it in shared Chat. | misses | The flag is stored. The room has no tutor invoke. The design seam is an undrained queue. The branch does not have that queue. |
-| SC-011 | AI Tutor follows Course AI Tutor and Course Knowledge, and does not parse the shared screen. | misses | No tutor call exists, so the screen is not parsed. The grounding behavior is not implemented. |
+| SC-009 | Live participants share the same in-room controls for their own media, screen share, Chat, Raise Hand, and Leave. | meets | Live controls are the same for every role; mic, camera, and share toggle; camera tiles and the main share stage render. |
+| SC-010 | When AI Tutor is enabled, any live participant can invoke it in shared Chat. | meets | Tutor entry in the chat form; `enqueueTutor` checks the flag, a live Session and a seat. The reply arrives as a shared LiveKit data message. |
+| SC-011 | AI Tutor follows Course AI Tutor and Course Knowledge, and does not parse the shared screen. | partial | Grounding retrieval over existing Course Knowledge and the grounding prompt exist; the screen is not parsed; the open part is configuration parity with the Related Course AI Tutor — the group tutor uses its own server-side prompt and key pool. |
 | SC-012 | The Session becomes Completed after the final participant leaves. | meets | After start, occupancy zero sets `completed`. |
 | SC-013 | From T-10, joined members may enter and wait, and they count toward occupancy before Host Start. | meets | `effectiveSessionState` and `enterSession`. |
 
@@ -126,17 +126,17 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | BR-006 | A Group Live badge means a child Session is Live. | meets | `groupIsLive` uses child state `live` only. |
 | BR-007 | Only valid Course access may join. No Host approval. | meets | `joinGroup`. |
 | BR-008 | Membership is not limited by the six-person cap. | meets | No cap on join. |
-| BR-009 | The member list is scrollable and can hold many members. | meets | All active members render. The page can scroll. The member column has no inner scroller. |
+| BR-009 | The member list is scrollable and can hold many members. | meets | All active members render; the member list scrolls (`.memberList` has `overflow-y: auto`). |
 | BR-010 | Host may edit title and about. Course cannot be edited. | meets | Edit form and `editGroup`. |
 | BR-011 | Cancel Group makes it unavailable, removes it from lists, cancels upcoming Sessions, notifies members, and keeps completed history in the store. | meets | Status `cancelled`, scheduled Sessions `removed`, in-site notify, completed rows kept. |
 | BR-012 | Each Live Session supports 2–6 including the Host. | meets | Validation and occupancy. |
-| BR-013 | Related Lesson is optional metadata and need not show on P0 cards. | misses | Cards omit it. The schedule control does not submit `relatedLessonId`, so a lesson cannot be saved. A blank lesson still schedules. |
+| BR-013 | Related Lesson is optional metadata and need not show on P0 cards. | meets | Cards omit it. The schedule and edit controls list that Course's lessons and submit the chosen id; a blank lesson still schedules. |
 | BR-014 | AI Tutor defaults on and can be turned off before start. | meets | `aiTutorEnabled !== false`, checkbox default checked. |
 | BR-015 | Starting Soon begins at T-10. Entry waits for the Host. The clock does not start the Session. | meets | `STARTING_SOON_MS` and `startSession`. |
-| BR-016 | Edit and Cancel are available only before the Session starts. | misses | Cancel is offered through Starting Soon and refused after Live. Edit is not offered on the page. |
+| BR-016 | Edit and Cancel are available only before the Session starts. | meets | Edit and Cancel controls show for the Host before start; the service refuses both once the Session is live. |
 | BR-017 | Cancel removes the record. No Cancelled card. | meets | Status `removed`, filtered out of views. |
 | BR-018 | Plan to Attend never reserves a live place. | meets | Intent is not occupancy. |
-| BR-019 | Host and Plan-to-Attend members get a reminder at T-10 by in-site notification and email. Cancelling attendance removes the member reminder. | misses | Audience and both channels exist inside `dispatchDueReminders`. That function runs when My Study Groups is loaded, not from a clock. |
+| BR-019 | Host and Plan-to-Attend members get a reminder at T-10 by in-site notification and email. Cancelling attendance removes the member reminder. | meets | Audience and both channels inside `dispatchDueReminders`; a 30-second timer runs it, plus the My list loads. |
 | BR-020 | A joined member may enter from T-10 without Plan to Attend, if capacity and Course access allow, and sees Waiting for Host Start. | meets | Enter ignores intent. The page shows the waiting dialog. |
 | BR-021 | At capacity, further entry is blocked and the UI shows Session Full. | meets | `session_full` and a disabled Session full control. |
 | BR-022 | Participant and Host can view Completed history. | meets | Completed rows stay in the member Session list and are read-only apart from view attendees. |
@@ -146,8 +146,8 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | BR-026 | Leave Session exits only that user. The Session stays Live while someone remains. | meets | `leaveSession`. |
 | BR-027 | The final participant leaving completes the Session. | meets | Only after the Session is Live. |
 | BR-028 | No Host-disconnect grace or Host-leave auto-end. | meets | Those paths are absent. |
-| BR-029 | Any current participant may invoke the tutor in shared Chat when it is enabled. | misses | No invoke path. |
-| BR-030 | Answers and questions follow Course AI Tutor and Course Knowledge. | misses | No tutor call. |
+| BR-029 | Any current participant may invoke the tutor in shared Chat when it is enabled. | meets | Tutor entry in the chat form; `enqueueTutor` requires a seat, a live Session and the flag. |
+| BR-030 | Answers and questions follow Course AI Tutor and Course Knowledge. | partial | Grounding retrieval over existing Course Knowledge; the model call uses the shared OpenRouter client; the open part is configuration parity with the Related Course AI Tutor (own server-side prompt and key pool today). |
 | BR-031 | The tutor does not parse the shared screen. | meets | Nothing sends screen content to a tutor. |
 | BR-032 | Course access is revalidated before Join Study Group and Join Live Session. | meets | `joinGroup` and `enterSession` call `hasCourseAccess`. |
 | BR-033 | A waiting entrant counts toward occupancy. Plan to Attend alone does not. | meets | Occupancy is open presences. |
@@ -161,19 +161,19 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | GS-HOME-002 My contains Joined and Hosted Groups, visually distinct. | meets | Badges Hosted and Joined. |
 | GS-HOME-003 Discover contains Groups the user has neither joined nor hosted. No duplicate across the two lists. | meets | `listDiscover` and `listMine`. |
 | GS-HOME-004 Discover filters by Course and keyword. | meets | `courseId` and `q`. |
-| GS-HOME-005 A Live badge on a Group card when a child Session is Live. | misses | My cards show it. Discover cards do not. |
+| GS-HOME-005 A Live badge on a Group card when a child Session is Live. | meets | My and Discover cards both show it. |
 | Create requires Title, Related Course, and About. Course choices are those with access. Create assigns the Host and makes the Group discoverable. Cancel writes nothing. | meets | Create form and `createGroup`. |
-| GS-CREATE-006 Success shows a confirmation with title and Course. | misses | Copy keys exist. Create opens the Group directly. |
+| GS-CREATE-006 Success shows a confirmation with title and Course. | meets | The created panel shows the title and Related Course. |
 | GS-CREATE-007 The creator is already Host. No second save. | meets | Membership is written in create. |
-| GS-CREATE-008 Go to Study Group opens the Host view. | misses | There is no confirmation action. The Host view opens immediately from create. |
+| GS-CREATE-008 Go to Study Group opens the Host view. | meets | The created panel offers Open Group, which opens the Group view. |
 | Host detail shows Hosting, read-only Course, about, members, and no-session copy. Schedule, Edit Group, and Cancel Group are Host actions. Cancel asks for confirmation. | meets | Host column and `window.confirm`. |
-| Schedule requires title, date, start time, duration, and maximum 2–6. Related Lesson and focus are optional. AI Tutor defaults on. Scheduling does not remind every member. | meets | The form requires a duration and `scheduleSession` requires an integer of at least 1. The branch stores that integer as `durationMinutes` and does not limit it to 30, 45, 60, or 90 minutes, or to 1800, 2700, 3600, and 5400 seconds. The lesson dropdown has no options and is not submitted. |
-| Host list shows Starting Soon, occupancy for entered people, edit and cancel before start, plan count, view attendees, completed history, and another schedule action. | misses | Those states and actions exist except Edit Session, which is not on the page. |
+| Schedule requires title, date, start time, duration, and maximum 2–6. Related Lesson and focus are optional. AI Tutor defaults on. Scheduling does not remind every member. | meets | The form requires duration 30, 45, 60, or 90 minutes and `scheduleSession` stores `durationSeconds` as 1800, 2700, 3600, or 5400 and accepts nothing else. The lesson dropdown lists that Course's lessons and submits the chosen id. |
+| Host list shows Starting Soon, occupancy for entered people, edit and cancel before start, plan count, view attendees, completed history, and another schedule action. | meets | Those states and actions exist, including the Edit Session dialog. |
 | GS-JOIN-001 through GS-JOIN-005 Overview and members before join, Sessions hidden, Join enabled with Course access, immediate join, Group moves to My. | meets | `sessions` is null until membership. Join banner is shown. |
 | GS-ACCESS-001 through GS-ACCESS-005 Discover without Course access, overview and members visible, Sessions hidden, Join unavailable, Get Course access, then the normal not-joined state after access. | meets | `canJoin` false links to the Course page. |
 | Joined detail shows Starting Soon, Live occupancy, Session Full, Plan to Attend, Cancel Attendance, completed history, and Leave Study Group. | meets | Session cards and leave. |
-| Waiting page after enter during Starting Soon. The user counts toward capacity. Host Start moves them without another join. | meets | Waiting dialog, presence row, poll, then the room. The branch uses a dialog on the Group page rather than a separate route. |
-| Room shows a Host badge with no moderation, own mic and camera, screen share, participants, shared Chat, Raise Hand, and Leave. No mute-others, remove, Invite to Speak, End Session, or Host grace. | misses | Badge, Chat, Raise Hand, and Leave match. Media controls do not toggle off and do not show the shared screen as the main area. The forbidden Host controls are absent. |
+| Waiting page after enter during Starting Soon. The user counts toward capacity. Host Start moves them without another join. | meets | Waiting dialog on the Group page and the standalone session route (`/[locale]/portal/study-groups/sessions/:sessionId`), which renders the waiting screen with the Host Start control; presence row, poll, then the room. |
+| Room shows a Host badge with no moderation, own mic and camera, screen share, participants, shared Chat, Raise Hand, and Leave. No mute-others, remove, Invite to Speak, End Session, or Host grace. | meets | Badge, Chat, Raise Hand, Leave, the mic/camera/share toggles, camera tiles, and the main share stage match. The forbidden Host controls are absent. |
 
 ### State model
 
@@ -184,7 +184,7 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | Hosting adds edit, cancel, schedule, and start, and still has member actions. | meets | Role checks. The Host plan button is not on the page. The Host still receives the reminder without planning. |
 | Cancelled Group has no member access. | meets | Active-only reads. |
 | Scheduled allows Host edit and cancel, and member plan. Entry is closed. | meets | `session_not_open` before T-10. |
-| Starting Soon allows enter and wait, and Host start, edit, and cancel, until Start. No auto-start. | misses | Enter, start, and cancel match. Edit is missing on the page. |
+| Starting Soon allows enter and wait, and Host start, edit, and cancel, until Start. No auto-start. | meets | Enter, start, edit, and cancel match. A Session past its planned end with zero occupancy refuses enter and start. |
 | Live allows enter while capacity remains, with equal room controls. | meets | Enter in `live`. Room controls do not add Host moderation. |
 | Completed is read-only history after the last leave, with actual attendees. | meets | `showActual` uses presences. No start, edit, or cancel. |
 | Plan to Attend creates intent and reminder eligibility and does not reserve capacity. Cancel Attendance removes them. | meets | Intent rows and reminder audience. |
@@ -196,24 +196,24 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 |---|---|---|
 | Study Group fields: id, title, Course, about, Host, status, timestamps. | meets | `StudyGroupRow`. |
 | Membership fields: group, user, role, joined and left. | meets | `MembershipRow`. |
-| Live Session fields: id, group, title, optional lesson, start, duration, max, focus, AI Tutor flag, state. | meets | `LiveSessionRow`. The branch field is `durationMinutes`. The closed duration values are 1800, 2700, 3600, and 5400 seconds. |
+| Live Session fields: id, group, title, optional lesson, start, duration, max, focus, AI Tutor flag, state. | meets | `LiveSessionRow` stores `durationSeconds`; the closed values are 1800, 2700, 3600, and 5400. |
 | Attendance intent fields. | meets | `AttendanceIntentRow`. |
 | Actual attendance joined and left times. | meets | `PresenceRow`. |
 | Course access checked on create, join, and enter. The module does not own Entitlements. | meets | `checkEntitlement` through `hasCourseAccess`. |
 | Invalid Course access blocks the restricted action and points the user to restore access. | meets | `course_access_required` and the Course link. |
 | Learning Guide owns records, access, metadata, intent, reminders, and the AI Tutor flag. LiveKit owns the room and media. | meets | Split in `service.ts` and `StudySessionRoom`. |
 | The API secret is not sent to the browser. The client token is short-lived and scoped to the user and Session. | meets | Token route returns the token and URL. The branch TTL is 600 seconds. |
-| AI Tutor uses the Related Course configuration and current Course Knowledge, not a Group-chosen Knowledge Release. The screen is not sent. | misses | No tutor runtime. The screen is not sent. |
+| AI Tutor uses the Related Course configuration and current Course Knowledge, not a Group-chosen Knowledge Release. The screen is not sent. | partial | Grounding reads existing Course Knowledge; the screen is not sent; the open part is the Related Course AI Tutor configuration parity. |
 
 ### Notifications
 
 | Specified | Branch | Evidence |
 |---|---|---|
-| Plan to Attend puts that member on the T-10 reminder, in-site and email. | misses | The audience rule matches. Delivery runs from the My list load. |
+| Plan to Attend puts that member on the T-10 reminder, in-site and email. | meets | The audience rule and both channels match; the 30-second reminder timer runs `dispatchDueReminders`. |
 | Cancel Attendance drops that member's future reminder. | meets | Cancelled intent is excluded. |
 | Leave Study Group drops that member's future Plan to Attend reminders. | meets | Intents cancelled and membership inactive. |
 | Cancel Study Group notifies current members. | meets | In-site notification. The PRD does not name email for this one. |
-| The Host receives the T-10 reminder without Plan to Attend. Other members who did not plan do not. | misses | The audience matches. The clock trigger does not. |
+| The Host receives the T-10 reminder without Plan to Attend. Other members who did not plan do not. | meets | The audience rule matches; the reminder timer supplies the clock. |
 | Session-cancel notification is not expanded. | meets | Cancel Session does not notify. |
 
 ### Exceptions
@@ -240,10 +240,10 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 |---|---|---|
 | Only an authenticated user may create, join, or enter. Discovery may follow the site session policy. | meets | Mutations require a session. Discover does not. |
 | The server checks role, Course access, state, and capacity before restricted actions. | meets | Service checks. |
-| The LiveKit API secret stays on the server. | meets | Used only in `signParticipantToken`. |
+| The LiveKit API secret stays on the server. | meets | Resolved server-side and used only in the LiveKit gateway credential path. |
 | The participant token is short-lived and scoped. | meets | JWT `exp`, room, and publish, subscribe, data. |
 | No recording or playback. | meets | No recording path. |
-| AI Tutor messages are shared Session content. No private AI channel. | misses | There is no tutor message path yet. |
+| AI Tutor messages are shared Session content. No private AI channel. | meets | The tutor reply is one shared LiveKit data message with no destination list. |
 | The shared screen is not analysed by AI Tutor. | meets | No screen upload. |
 | The page stays usable with a long member list. | meets | Members are rendered as a list. |
 | Each Live Session enforces its 2–6 maximum including the Host. | meets | Enter check. |
@@ -256,10 +256,10 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | TC-001 | No-selection message, My and Discover visible. | meets | Empty state. |
 | TC-002 | Hosted Group is in My and not in Discover. | meets | Service test. |
 | TC-003 | Joined Group is in My and not in Discover. | meets | Service test. |
-| TC-004 | Live child shows the Group Live badge. | misses | My cards only. |
+| TC-004 | Live child shows the Group Live badge. | meets | My and Discover cards. |
 | TC-005 | Create Course list is current access only. | meets | `accessibleCourses`. |
 | TC-006 | Missing required field blocks create. | meets | Validation. |
-| TC-007 | Create makes the user Host and the Group discoverable. | meets | Service test. The confirmation screen is still absent. |
+| TC-007 | Create makes the user Host and the Group discoverable. | meets | Service test. |
 | TC-008 | Title and about editable. Course read-only. | meets | Edit form. |
 | TC-009 | Cancel Group removes lists, cancels upcoming, notifies, keeps completed rows. | meets | Service test. |
 | TC-010 | Many members scroll and the count shows. | meets | Count badge and a full list. |
@@ -267,11 +267,11 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | TC-012 | Blank Related Lesson still schedules. | meets | Null lesson is allowed. |
 | TC-013 | AI Tutor defaults on and can be unchecked. | meets | Checkbox. |
 | TC-014 | Starting Soon at T-10. | meets | `effectiveSessionState`. |
-| TC-015 | Host can edit before start. | misses | No page control. API title-only. |
+| TC-015 | Host can edit before start. | meets | Edit Session dialog and `editSession`. |
 | TC-016 | Host can cancel before start. The record disappears. | meets | `cancelSession`. |
 | TC-017 | Edit and cancel unavailable after Live start. | meets | Service refuses when status is not `scheduled`. |
 | TC-018 | Final leave sets Completed. | meets | Service test. |
-| TC-019 | Host sees finished history and actual attendees. | meets | Completed card and attendee list. The card does not print the word Completed. |
+| TC-019 | Host sees finished history and actual attendees. | meets | Completed card and attendee list. |
 | TC-020 | Discover with access shows overview and members, Join on, Sessions hidden. | meets | `getGroup`. |
 | TC-021 | Join is immediate and moves the Group to My. | meets | Join then reload. |
 | TC-022 | No access shows overview, Join off, Get Course access. | meets | Join gate. |
@@ -283,25 +283,25 @@ Verdicts are against PRD v0.10 on branch `18a1046`. `meets` means the branch doe
 | TC-028 | Completed history is read-only for a participant. | meets | No live actions on that state. |
 | TC-029 | Leave removes membership, future plans, and returns Discover. | meets | Service test. |
 | TC-030 | Host badge in the room, no extra moderation. | meets | Badge from membership. Token test asserts no host claim. |
-| TC-031 | User can toggle own mic and camera. | misses | The buttons only enable. |
-| TC-032 | Any participant can start and stop screen sharing. | misses | The button only enables. The shared view is not the main area. |
+| TC-031 | User can toggle own mic and camera. | meets | `setMedia` toggles mic and camera (`setMicrophoneEnabled`, `setCameraEnabled`). |
+| TC-032 | Any participant can start and stop screen sharing. | meets | `setScreenShareEnabled` toggles; the shared track renders as the main stage. |
 | TC-033 | Raise Hand is visible without approval. | meets | Data message. |
 | TC-034 | Leave Session exits only the current user. | meets | `leaveSession`. |
 | TC-035 | Host leave does not end the Session or start a grace countdown. | meets | Session stays Live while others remain. |
-| TC-036 | AI Tutor disabled means invoke is unavailable. | meets | No invoke control. |
-| TC-037 | AI Tutor enabled means any participant can invoke it. | misses | Flag only. |
-| TC-038 | Prompt and response visible to current participants. | misses | No tutor messages. |
-| TC-039 | A learning answer follows Course grounding. | misses | No tutor call. |
-| TC-040 | An understanding-check question stays inside Course Knowledge. | misses | No tutor call. |
+| TC-036 | AI Tutor disabled means invoke is unavailable. | meets | The tutor entry control renders only when `aiTutorEnabled`. |
+| TC-037 | AI Tutor enabled means any participant can invoke it. | meets | Tutor entry in the chat form and `enqueueTutor` for a seated, live participant. |
+| TC-038 | Prompt and response visible to current participants. | meets | The question is posted to Chat; the reply arrives as a shared LiveKit data message and renders in the chat log. |
+| TC-039 | A learning answer follows Course grounding. | meets | Grounding retrieval over Course Knowledge and the grounding prompt; the reply is published to the room. |
+| TC-040 | An understanding-check question stays inside Course Knowledge. | meets | The grounding prompt answers only from the supplied Course context. |
 | TC-041 | The tutor does not infer the shared screen. | meets | No screen payload. |
-| TC-042 | A typed topic can be answered inside Course grounding. | misses | No tutor call. |
+| TC-042 | A typed topic can be answered inside Course grounding. | meets | Retrieval and the grounding prompt over existing Course Knowledge. |
 | TC-043 | Expired Course access blocks Join Now. | meets | `enterSession` rechecks access. |
 | TC-044 | Join Now before Host Start shows Waiting for Host Start. | meets | Waiting dialog. |
 | TC-045 | A waiting member counts in occupancy. | meets | Presence before start. |
 | TC-046 | Plan to Attend does not change occupancy. | meets | Intent only. |
 | TC-047 | Host Start with waiters goes Live, without a second join, and keeps the count. | meets | `startSession` and the waiting poll. |
 | TC-048 | The scheduled time does not start the Session. | meets | Start is a Host action. |
-| TC-049 | At T-10 the Host and planners get in-site and email reminders. Others do not. | misses | Audience matches. Trigger is the My list request. |
+| TC-049 | At T-10 the Host and planners get in-site and email reminders. Others do not. | meets | Audience rule and both channels; the 30-second reminder timer. |
 
 ### Out of scope
 

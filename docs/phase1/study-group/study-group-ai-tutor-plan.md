@@ -12,30 +12,30 @@ This phase does not call a model from the enqueue path. It stores the Live Sessi
 - The same client event id returns the original item.
 - The item is not a chat row and not a token row.
 - Enqueue does not change occupancy, does not issue a LiveKit token, and does not call a provider.
-- There is no drain, no Course Knowledge call, and no understanding-check generation.
+- The enqueue path has no drain and no Course Knowledge call; the implemented delivery path drains the queue (see decisions.md). There is still no understanding-check generation.
 - Do not put an AI Tutor participant in the LiveKit room.
 
 ## Queue
 
 The queue that exists in this design is per Live Session only. Items are ordered by server receipt time. One question for that Session is in flight at a time. A later question does not cancel or merge with an earlier one. An answer is tied to the asker and to the original text. This plan does not add a per-user tutor identity or a course-wide tutor identity.
 
-Whether the tutor is one per user or one shared by a Course is undecided.
+decisions.md closes this: the tutor is the Related Course tutor, shared in the Live Session chat, with no private per-user channel.
 
 ## Server-side prompt
 
-The prompt wording is a server-side constant. It is not returned by the token route, not written into LiveKit metadata, and not shipped to the browser. Participant text is untrusted data inside a delimiter and cannot override these limits. The tutor does not parse the screen. Replies are for the shared room. This phase still does not call a model.
+The prompt wording is a server-side constant. It is not returned by the token route, not written into LiveKit metadata, and not shipped to the browser. Participant text is untrusted data inside a delimiter and cannot override these limits. The tutor does not parse the screen. Replies are for the shared room. The model call happens on the implemented delivery path, not in this prompt constant.
 
-Answers may use only course context that a later design supplies. The shape of that context is open. If the needed point is not in the context passed with that call, the tutor says it is not in the course material. It does not present a model completion as a course fact.
+Answers may use only course context that a later design supplies. decisions.md closes that shape: lexical retrieval over the course's existing stored text (published lesson text and the Course Knowledge files). If the needed point is not in the context passed with that call, the tutor says it is not in the course material. It does not present a model completion as a course fact.
 
 ## Knowledge base
 
-Undecided. This plan does not choose how the base is built, the structure of the base, or the structure of a piece of knowledge. It does not add a schema, a table, or sample content for that base.
+Closed by decisions.md: no new knowledge base, table, schema, or import is added. A piece of knowledge is the course's existing stored text, retrieved lexically.
 
 ## Call
 
 The model call is direct. No new framework is added. `package.json` on `main` has no agent framework. The call layer is a lightweight distributed service, not a heavy platform. It keeps a pool of API keys. On auth failure, rate limit, or quota, it switches to another key. It records request count, errors, and latency per key, and sends traffic only to healthy keys. Raw keys are never logged, never put in the repo, and never sent to the browser.
 
-The model vendor is not chosen. How a reply re-enters LiveKit is not chosen.
+This plan left the model vendor and the reply path open. decisions.md later closed both: a direct OpenRouter-compatible chat completion (with `STUDY_GROUP_TUTOR_URL` as an OpenAI-compatible alternative) and one shared, reliable LiveKit data message with no destination list.
 
 ## Later phase
 
