@@ -4,8 +4,8 @@ Design for the Study Group production core on the product's existing RDS Postgre
 
 Sources this design is built from and must stay consistent with:
 
-- `work/HANDOFF.md` § "Completion criteria for the next delivery" and § "Phase C — implement the production safety core" (read-only checkout reference: `/Users/nihao/Documents/Codex/2026-10-10/ni-dao/work/HANDOFF.md`).
-- `work/studygroup-races/FIX-PROPOSAL.md` — the four reproduced cross-process hazards (seat oversubscription, duplicate tutor drain, whole-file lost update, duplicate reminders; 30/30 reproduced each) and the RDS fix shape. This document is the concrete, repo-grounded version of that proposal.
+- The work handoff's "Completion criteria for the next delivery" and "Phase C — implement the production safety core" sections (the handoff is kept outside the repository; its requirements are restated below).
+- The out-of-repository cross-process race reproductions (seat oversubscription, duplicate tutor drain, whole-file lost update, duplicate reminders; 30/30 reproduced each) and their fix proposal, kept alongside the work handoff. This document is the concrete, repo-grounded version of that proposal.
 - `docs/phase1/study-group/study-group-architecture.md` § "Atomic steps" and the RDS-gated wording (line 50, 60–80).
 - `docs/phase1/release-runbook.md` § "Study Group / LiveKit release gate" (lines 101–109).
 - `AGENTS.md` (repositories own SQL; services own rules; external idempotency keys need unique constraints; Order/Payment/Subscription/Entitlement writes repeatable).
