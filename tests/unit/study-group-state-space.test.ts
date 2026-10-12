@@ -137,6 +137,7 @@ function gatedRepository(base: StudyGroupRepository, gate: ReturnType<typeof cre
     markWebhookProcessed: (input) => base.markWebhookProcessed(input),
     abandonStaleWebhookReceipts: (input) => base.abandonStaleWebhookReceipts(input),
     listLiveSessionsWithOpenPresences: (limit) => base.listLiveSessionsWithOpenPresences(limit),
+    listSessionsWithPendingTutorWork: (input) => base.listSessionsWithPendingTutorWork(input),
     studyGroupOperationalMetrics: () => base.studyGroupOperationalMetrics()
   };
 }

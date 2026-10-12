@@ -65,7 +65,7 @@ Receipt dedupe is a database guarantee: `insertWebhookReceipt` on the file adapt
 
 ## 7. Non-goals
 
-Slice 3 only: CloudWatch metrics/alarms (webhook failure rate, dead-letter counts, reconciliation drift), fail-closed production preflight entry, reminder notification/email outbox legs, removing the file adapter. Also out: any `room_finished` ⇒ session-end mapping (the session lifecycle keeps its existing rules; reconciliation only repairs occupancy).
+Slice 3 only: CloudWatch metrics/alarms (webhook failure rate, dead-letter counts, reconciliation drift), fail-closed production preflight entry, reminder notification/email outbox legs, removing the file adapter. Also out: any `room_finished` ⇒ session-end mapping — webhook repair and reconciliation now COMPLETE a live session when its last open presence closes (the reducing counterpart of the leave rule), but a `room_finished` ⇒ session-end mapping remains out of scope.
 
 ## 8. Operations note (not code)
 

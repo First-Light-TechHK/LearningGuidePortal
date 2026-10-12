@@ -725,6 +725,25 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     return result.rows.map(mapLiveSessionRef);
   }
 
+  async function listSessionsWithPendingTutorWork(input: { limit: number }): Promise<string[]> {
+    await ensureSchema();
+    const result = await getPool().query<{ session_id: string }>(
+      `SELECT DISTINCT session_id FROM (
+         SELECT session_id FROM study_group_tutor_requests
+         WHERE (status = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= NOW()))
+            OR (status = 'in_flight' AND (lease_expires_at IS NULL OR lease_expires_at <= NOW()))
+         UNION
+         SELECT session_id FROM study_group_outbox
+         WHERE (status IN ('queued', 'failed') AND (next_attempt_at IS NULL OR next_attempt_at <= NOW()))
+            OR (status = 'sending' AND (lease_expires_at IS NULL OR lease_expires_at <= NOW()))
+       ) AS pending
+       ORDER BY session_id
+       LIMIT $1`,
+      [input.limit]
+    );
+    return result.rows.map((row) => row.session_id);
+  }
+
   async function studyGroupOperationalMetrics(): Promise<StudyGroupOperationalMetrics> {
     // Redacted operational counts (slice-3 design §5.2): one bounded aggregate
     // statement of scalar subselects over durable state. Counts and whole
@@ -766,6 +785,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     markWebhookProcessed,
     abandonStaleWebhookReceipts,
     listLiveSessionsWithOpenPresences,
+    listSessionsWithPendingTutorWork,
     studyGroupOperationalMetrics
   };
 }

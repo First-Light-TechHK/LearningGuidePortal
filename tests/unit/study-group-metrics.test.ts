@@ -138,7 +138,7 @@ test("health/config detects the file store and reports the studyGroup entry with
   assert.equal(JSON.stringify(body).includes(tokenKey), false);
 });
 
-test("health/config reports postgresql only with the store selected and DATABASE_URL present", async () => {
+test("health/config reports the store the runtime would select (exact name or DATABASE_URL presence)", async () => {
   process.env.APP_ENV = "DEV";
   process.env.DATABASE_URL = "postgres://lg:lg@db.example.test:5432/learningguide";
   delete process.env.STUDY_GROUP_TOKEN_LOG_KEY;
@@ -149,13 +149,13 @@ test("health/config reports postgresql only with the store selected and DATABASE
   process.env.STUDY_GROUP_STORE = "postgres";
   const postgresql = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
   assert.deepEqual(postgresql.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
-  // `filesystem` is the file store even when a database exists.
+  // An unrecognized name falls through to the DATABASE_URL rule, as the runtime does.
   process.env.STUDY_GROUP_STORE = "filesystem";
   const filesystem = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(filesystem.studyGroup, { store: "file", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
-  // No DATABASE_URL means the file store regardless of the selected name.
+  assert.deepEqual(filesystem.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
+  // Explicit postgres wins over a missing DATABASE_URL, as the runtime does.
   delete process.env.DATABASE_URL;
   process.env.STUDY_GROUP_STORE = "postgres";
   const noDatabase = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(noDatabase.studyGroup, { store: "file", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
+  assert.deepEqual(noDatabase.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
 });

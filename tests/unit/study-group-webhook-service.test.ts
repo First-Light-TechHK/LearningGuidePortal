@@ -96,6 +96,7 @@ async function webhookFixture(options: { gateway?: LiveKitRoomGateway } = {}): P
     },
     abandonStaleWebhookReceipts: (input) => base.abandonStaleWebhookReceipts(input),
     listLiveSessionsWithOpenPresences: (limit) => base.listLiveSessionsWithOpenPresences(limit),
+    listSessionsWithPendingTutorWork: (input) => base.listSessionsWithPendingTutorWork(input),
     studyGroupOperationalMetrics: () => base.studyGroupOperationalMetrics()
   };
   const deps: StudyGroupDeps = {
@@ -377,6 +378,37 @@ test("the webhook flow cannot change memberships, roles, sessions, or token stat
   assert.deepEqual(after.groups, before.groups);
   assert.equal(after.memberships.find((row) => row.groupId === group.id && row.userId === "member")?.role, "member");
   assert.equal(await tokenLog(f.directory), tokenLogBefore);
+});
+
+test("participant_left that closes the last open presence completes the session and ends its meeting", async () => {
+  let next: LiveKitWebhookEvent | null = null;
+  const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
+  const { session } = await seededRoom(f);
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  const membershipsBefore = (await f.repository.read()).memberships;
+
+  // The member's departure leaves the Host present: the session stays live.
+  next = webhookEvent(session.id, { eventId: "evt-member-left" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-member-left" }), authHeader: "Bearer signed-token" }),
+    { status: "processed" }
+  );
+  assert.equal((await f.repository.read()).sessions.find((row) => row.id === session.id)?.status, "live");
+
+  // The Host's departure closes the last open presence: the live session
+  // completes and its meeting ends at the event time.
+  next = webhookEvent(session.id, { eventId: "evt-host-left", participantIdentity: "host" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-host-left" }), authHeader: "Bearer signed-token" }),
+    { status: "processed" }
+  );
+  const store = await f.repository.read();
+  const completed = store.sessions.find((row) => row.id === session.id);
+  assert.equal(completed?.status, "completed");
+  assert.equal(completed?.completedAt, CLOSED_AT);
+  assert.equal(store.meetings.find((row) => row.sessionId === session.id)?.endedAt, CLOSED_AT);
+  assert.deepEqual(store.memberships, membershipsBefore);
+  assert.equal(store.memberships.find((row) => row.groupId === session.groupId && row.userId === "member")?.role, "member");
 });
 
 // Signature-rejection observability (flood-safe): the service counts only

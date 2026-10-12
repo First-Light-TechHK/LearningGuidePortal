@@ -728,6 +728,7 @@ test("a member start in flight cannot poison the Host's start", async () => {
     markWebhookProcessed: (input) => repository.markWebhookProcessed(input),
     abandonStaleWebhookReceipts: (input) => repository.abandonStaleWebhookReceipts(input),
     listLiveSessionsWithOpenPresences: (limit) => repository.listLiveSessionsWithOpenPresences(limit),
+    listSessionsWithPendingTutorWork: (input) => repository.listSessionsWithPendingTutorWork(input),
     studyGroupOperationalMetrics: () => repository.studyGroupOperationalMetrics()
   };
   const local = serviceWith({ repository: gatedRepository });
@@ -1217,6 +1218,92 @@ test("one delivery answers every waiting question in receipt order", async () =>
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
 });
 
+test("a transient publish failure schedules its own retry and delivers in the same process", async () => {
+  const published: string[] = [];
+  const scheduled: Array<{ run: () => void; delayMs: number }> = [];
+  let publishAttempts = 0;
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({ outcome: "ok", latencyMs: 1, body: "The republic ended in 1933." }),
+    publishRoomChat: async ({ text }) => {
+      publishAttempts += 1;
+      if (publishAttempts === 1) throw new Error("LiveKit unavailable");
+      published.push(text);
+    },
+    scheduleRetry: (run, delayMs) => { scheduled.push({ run, delayMs }); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Own retry", courseId: "course-1", about: "About the own retry." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Own retry", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-own-retry" });
+
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+
+  // The first publish failed: nothing was delivered and the failing context
+  // scheduled its own re-drain on the outbox backoff (attempt 1 → 5s).
+  assert.equal(publishAttempts, 1);
+  assert.equal(delivered, null);
+  assert.deepEqual(published, []);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delayMs, 5000);
+  const failed = (await repository.read()).outbox.find((row) => row.sessionId === session.id);
+  assert.equal(failed?.status, "failed");
+  assert.equal(failed?.attempts, 1);
+  assert.equal(failed?.deliveredAt, null);
+
+  // The production timer would fire once the row's backoff has elapsed; the
+  // test collapses that wall-clock wait and invokes the scheduled drain,
+  // then waits for the durable row to settle (a claimed row is `sending`
+  // until markOutboxDelivered commits).
+  await repository.update((store) => {
+    for (const row of store.outbox) {
+      if (row.status === "failed") row.nextAttemptAt = new Date(Date.now() - 1000).toISOString();
+    }
+  });
+  scheduled[0].run();
+  const deadline = Date.now() + 2_000;
+  let after = (await repository.read()).outbox.find((row) => row.sessionId === session.id);
+  while (after?.status !== "delivered" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    after = (await repository.read()).outbox.find((row) => row.sessionId === session.id);
+  }
+
+  assert.equal(publishAttempts, 2);
+  assert.deepEqual(published, ["The republic ended in 1933."]);
+  assert.equal(scheduled.length, 1);
+  assert.equal(after?.status, "delivered");
+});
+
+test("recoverTutorWork drains stranded tutor work without an inbound ask", async () => {
+  const published: string[] = [];
+  const local = serviceWith({
+    publishRoomChat: async ({ text }) => { published.push(text); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Stranded work", courseId: "course-1", about: "About the stranded work." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Stranded", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What happened in 1928?", clientEventId: "evt-stranded" });
+
+  // No deliverTutorAnswer and no inbound HTTP path: only the recovery sweep.
+  const recovered = await local.recoverTutorWork();
+
+  assert.equal(recovered.sessions, 1);
+  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  const store = await repository.read();
+  const request = store.tutorRequests.find((item) => item.clientEventId === "evt-stranded");
+  assert.equal(request?.status, "answered");
+  assert.equal(store.outbox.length, 1);
+  assert.equal(store.outbox.every((row) => row.status === "delivered"), true);
+
+  // The work is settled: a second sweep finds nothing and republishes nothing.
+  const again = await local.recoverTutorWork();
+  assert.equal(again.sessions, 0);
+  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+});
+
 test("a failed tutor call does not leave the next question waiting", async () => {
   const published: string[] = [];
   const local = serviceWith({
@@ -1254,7 +1341,10 @@ test("a failed shared-room publish settles that item and lets the next tutor req
     publishRoomChat: async ({ text }) => {
       if (text.includes("first")) throw new Error("LiveKit unavailable");
       published.push(text);
-    }
+    },
+    // The retry stays observed only where a test wants it: a stray 5s timer
+    // must never fire across later tests.
+    scheduleRetry: () => undefined
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Publish failure", courseId: "course-1", about: "About the shared publish failure." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Publish", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });

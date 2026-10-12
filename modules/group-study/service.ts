@@ -48,6 +48,10 @@ export type StudyGroupDeps = {
   publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
   tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
+  // Injectable scheduler for the failing context's own re-drain (test seam):
+  // the default is an unref'd setTimeout so a pending retry never keeps the
+  // process alive.
+  scheduleRetry?: (run: () => void, delayMs: number) => void | ReturnType<typeof setTimeout>;
 };
 
 export type GroupView = StudyGroupRow & {
@@ -111,6 +115,18 @@ function occupancy(store: StudyGroupStore, sessionId: string) {
   return store.presences.filter((item) => item.sessionId === sessionId && item.enteredAt && !item.leftAt).length;
 }
 
+// Shared completion rule (leave, webhook repair, reconciliation): a live
+// session whose last open presence closes is completed and its meeting ended.
+// The rule only ever reduces state — it can never grant anything.
+function completeLiveSessionIfEmpty(store: StudyGroupStore, session: StudyGroupStore["sessions"][number], now: string) {
+  if (session.status !== "live" || occupancy(store, session.id) !== 0) return;
+  session.status = "completed";
+  session.completedAt = now;
+  session.updatedAt = now;
+  const meeting = store.meetings.find((item) => item.sessionId === session.id);
+  if (meeting && !meeting.endedAt) meeting.endedAt = now;
+}
+
 function plannedCount(store: StudyGroupStore, sessionId: string) {
   return store.intents.filter((item) => item.sessionId === sessionId && !item.cancelledAt).length;
 }
@@ -130,6 +146,23 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   const startingSessions = new Map<string, Promise<unknown>>();
   const tutorDraining = new Set<string>();
   const tutorPools = new Map<string, ReturnType<typeof createTutorKeyPool>>();
+  // One pending re-drain per session: a failed publish schedules its own
+  // retry in this process with the same backoff the outbox row already
+  // carries. The poll sweep exists only for work stranded by a process that
+  // died — a live process never waits on it.
+  const pendingTutorRetries = new Map<string, void | ReturnType<typeof setTimeout>>();
+  function scheduleTutorRetry(sessionId: string, delayMs: number) {
+    if (pendingTutorRetries.has(sessionId)) return;
+    const schedule = deps.scheduleRetry ?? ((run: () => void, ms: number) => {
+      const timer = setTimeout(run, ms);
+      timer.unref();
+      return timer;
+    });
+    pendingTutorRetries.set(sessionId, schedule(() => {
+      pendingTutorRetries.delete(sessionId);
+      void drainTutorSession(sessionId).catch(() => undefined);
+    }, delayMs));
+  }
   // Signature-rejection counter: counts are per-instance (each App Runner
   // instance counts only the rejections it saw; multi-instance aggregation is
   // acceptable for the alarm). Only invalid/missing signatures increment it —
@@ -147,6 +180,119 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     tutorPools.clear();
     tutorPools.set(keySet, pool);
     return pool;
+  }
+
+  // Shared drain body: deliverTutorAnswer is the inbound-ask path and
+  // recoverTutorWork the stranded-work path; both run this same durable
+  // claim/settle/outbox flow.
+  async function drainTutorSession(sessionId: string) {
+    // In-process anti-reentrancy only: the file store is single-process, and
+    // the observable timing (a second drain waits, then finds nothing to
+    // claim) stays as before. Correctness across instances is the durable
+    // claim/settle/outbox flow below (design §3.2, hazard 2).
+    for (;;) {
+      if (!tutorDraining.has(sessionId)) {
+        tutorDraining.add(sessionId);
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const leaseOwner = randomUUID();
+    try {
+      let last: { text: string } | null = null;
+      for (;;) {
+        // Claim before any provider work: at most one in-flight item per
+        // session, lease-bounded, receipt-ordered across all instances.
+        const item = await deps.repository.claimNextTutorRequest({
+          sessionId,
+          leaseOwner,
+          leaseSeconds: 60,
+          maxAttempts: 5
+        });
+        if (!item) break;
+        const snapshot = await deps.repository.read();
+        const session = snapshot.sessions.find((entry) => entry.id === sessionId && entry.status !== "removed");
+        if (!session) {
+          // The room was removed after the question was queued; the item can
+          // never be answered, and settling it keeps the store free of strands.
+          await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_removed" } });
+          continue;
+        }
+        // Grounding and the model call run outside every transaction and
+        // lock; the claim lease, not the process, guards the window.
+        const group = snapshot.groups.find((entry) => entry.id === session.groupId);
+        const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
+        const context = retrieveCourseKnowledge(corpus, item.text);
+        let reply: string | null = null;
+        if (!context) {
+          reply = COURSE_MATERIAL_ABSENT;
+        } else {
+          const terms = courseQuestionTerms(item.text);
+          const missing = terms.filter((term) => !context.toLowerCase().includes(term.toLowerCase()));
+          if (terms.length > 0 && missing.length * 2 > terms.length) {
+            reply = COURSE_MATERIAL_ABSENT;
+          } else {
+            const keys = deps.tutorKeys?.() ?? [];
+            if (!deps.tutorCall || keys.length === 0) {
+              reply = null;
+            } else {
+              const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
+              reply = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? null : result.body.trim();
+            }
+          }
+        }
+        if (reply === null) {
+          // Terminal without a reply: the item settles so it cannot stall
+          // later questions, and nothing is published.
+          await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "answered", terminalReason: "model_failed" } });
+          continue;
+        }
+        // Settle with the outbox row in one transaction; the publish below is
+        // at-least-once and retried on a later drain if it fails.
+        await deps.repository.settleTutorRequest({
+          id: item.id,
+          leaseOwner,
+          outcome: { status: "answered", terminalReason: reply === COURSE_MATERIAL_ABSENT ? "course_material_absent" : "answered" },
+          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply, messageId: item.id }
+        });
+        if (!deps.publishRoomChat) last = { text: reply };
+      }
+      const publish = deps.publishRoomChat;
+      if (publish) {
+        for (;;) {
+          const message = await deps.repository.claimNextOutboxMessage({ sessionId, leaseOwner, leaseSeconds: 60 });
+          if (!message) break;
+          try {
+            await publish({
+              room: message.payload.room,
+              text: message.payload.text,
+              projectId: message.payload.projectId || null,
+              messageId: message.payload.messageId
+            });
+            await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
+            last = { text: message.payload.text };
+          } catch (error) {
+            // A failed publish never blocks the queue: the request is already
+            // settled, and the failing context schedules its own re-drain with
+            // the same backoff the durable row carries (the failed row is not
+            // due, so the loop simply skips it). The poll sweep is only for
+            // work stranded by a process that died.
+            const retryDelaySeconds = Math.min(30, 5 * Math.max(1, message.attempts));
+            await deps.repository.markOutboxFailed({
+              id: message.id,
+              leaseOwner,
+              failureClass: error instanceof LiveKitGatewayError ? error.code : "publish_failed",
+              maxAttempts: 5,
+              retryDelaySeconds
+            });
+            if (message.attempts < 5) scheduleTutorRetry(sessionId, retryDelaySeconds * 1000);
+          }
+        }
+      }
+      return last;
+    } finally {
+      tutorDraining.delete(sessionId);
+    }
   }
 
   function emitLiveKitIncident(input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway" }) {
@@ -705,13 +851,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && !item.leftAt);
         if (presence) presence.leftAt = now;
-        if (session.status === "live" && occupancy(store, session.id) === 0) {
-          session.status = "completed";
-          session.completedAt = now;
-          session.updatedAt = now;
-          const meeting = store.meetings.find((item) => item.sessionId === session.id);
-          if (meeting && !meeting.endedAt) meeting.endedAt = now;
-        }
+        completeLiveSessionIfEmpty(store, session, now);
       });
     },
 
@@ -832,109 +972,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       });
     },
 
-    async deliverTutorAnswer(input: { sessionId: string }) {
-      // In-process anti-reentrancy only: the file store is single-process, and
-      // the observable timing (a second drain waits, then finds nothing to
-      // claim) stays as before. Correctness across instances is the durable
-      // claim/settle/outbox flow below (design §3.2, hazard 2).
-      for (;;) {
-        if (!tutorDraining.has(input.sessionId)) {
-          tutorDraining.add(input.sessionId);
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      const leaseOwner = randomUUID();
-      try {
-        let last: { text: string } | null = null;
-        for (;;) {
-          // Claim before any provider work: at most one in-flight item per
-          // session, lease-bounded, receipt-ordered across all instances.
-          const item = await deps.repository.claimNextTutorRequest({
-            sessionId: input.sessionId,
-            leaseOwner,
-            leaseSeconds: 60,
-            maxAttempts: 5
-          });
-          if (!item) break;
-          const snapshot = await deps.repository.read();
-          const session = snapshot.sessions.find((entry) => entry.id === input.sessionId && entry.status !== "removed");
-          if (!session) {
-            // The room was removed after the question was queued; the item can
-            // never be answered, and settling it keeps the store free of strands.
-            await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_removed" } });
-            continue;
-          }
-          // Grounding and the model call run outside every transaction and
-          // lock; the claim lease, not the process, guards the window.
-          const group = snapshot.groups.find((entry) => entry.id === session.groupId);
-          const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
-          const context = retrieveCourseKnowledge(corpus, item.text);
-          let reply: string | null = null;
-          if (!context) {
-            reply = COURSE_MATERIAL_ABSENT;
-          } else {
-            const terms = courseQuestionTerms(item.text);
-            const missing = terms.filter((term) => !context.toLowerCase().includes(term.toLowerCase()));
-            if (terms.length > 0 && missing.length * 2 > terms.length) {
-              reply = COURSE_MATERIAL_ABSENT;
-            } else {
-              const keys = deps.tutorKeys?.() ?? [];
-              if (!deps.tutorCall || keys.length === 0) {
-                reply = null;
-              } else {
-                const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
-                reply = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? null : result.body.trim();
-              }
-            }
-          }
-          if (reply === null) {
-            // Terminal without a reply: the item settles so it cannot stall
-            // later questions, and nothing is published.
-            await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "answered", terminalReason: "model_failed" } });
-            continue;
-          }
-          // Settle with the outbox row in one transaction; the publish below is
-          // at-least-once and retried on a later drain if it fails.
-          await deps.repository.settleTutorRequest({
-            id: item.id,
-            leaseOwner,
-            outcome: { status: "answered", terminalReason: reply === COURSE_MATERIAL_ABSENT ? "course_material_absent" : "answered" },
-            outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply, messageId: item.id }
-          });
-          if (!deps.publishRoomChat) last = { text: reply };
-        }
-        const publish = deps.publishRoomChat;
-        if (publish) {
-          for (;;) {
-            const message = await deps.repository.claimNextOutboxMessage({ sessionId: input.sessionId, leaseOwner, leaseSeconds: 60 });
-            if (!message) break;
-            try {
-              await publish({
-                room: message.payload.room,
-                text: message.payload.text,
-                projectId: message.payload.projectId || null,
-                messageId: message.payload.messageId
-              });
-              await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
-              last = { text: message.payload.text };
-            } catch (error) {
-              // A failed publish never blocks the queue: the request is already
-              // settled, and the outbox row retries on the next drain.
-              await deps.repository.markOutboxFailed({
-                id: message.id,
-                leaseOwner,
-                failureClass: error instanceof LiveKitGatewayError ? error.code : "publish_failed",
-                maxAttempts: 5,
-                retryDelaySeconds: Math.min(30, 5 * Math.max(1, message.attempts))
-              });
-            }
-          }
-        }
-        return last;
-      } finally {
-        tutorDraining.delete(input.sessionId);
-      }
+    deliverTutorAnswer(input: { sessionId: string }) {
+      return drainTutorSession(input.sessionId);
+    },
+
+    async recoverTutorWork() {
+      // Bounded recovery (global review risk 1): leases and outbox rows
+      // stranded by a crash have no inbound ask left to wake them. The claim
+      // path keeps single-flight, so a session another instance is actively
+      // draining simply yields nothing to claim.
+      const sessions = await deps.repository.listSessionsWithPendingTutorWork({ limit: 5 });
+      for (const sessionId of sessions) await drainTutorSession(sessionId);
+      return { sessions: sessions.length };
     },
 
     async dispatchDueReminders() {
@@ -1018,13 +1067,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const room = event.room;
         const identity = event.participantIdentity;
         // The only mapping action: close that identity's open presence row
-        // inside the serialized mutate. It can never grant anything — no
-        // membership, role, meeting, token, or session-status change.
+        // inside the serialized mutate. It also completes the session and ends
+        // its meeting when this was the last open presence of a live session —
+        // the same reducing rule as an explicit leave — and can never grant
+        // membership, role, token, or access.
         result = await deps.repository.update((store) => {
           const session = store.sessions.find((item) => item.id === room);
           if (!session) return "ignored" as const;
           const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
           if (presence) presence.leftAt = event.createdAt ?? deps.now().toISOString();
+          completeLiveSessionIfEmpty(store, session, event.createdAt ?? deps.now().toISOString());
           return "processed" as const;
         });
       }
@@ -1088,11 +1140,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         }
         sessionsChecked += 1;
         const presentIdentities = new Set(participants.map((participant) => participant.identity));
-        // The only repair action: conditionally close open presences of this
-        // session whose identity the provider no longer lists, inside the
-        // serialized mutate. It can never grant anything, and rows younger
-        // than the grace window are left alone so a join in flight is never
-        // raced.
+        // The only repair actions: conditionally close open presences of this
+        // session whose identity the provider no longer lists — and, when that
+        // closed the last open presence of a live session, complete the session
+        // and end its meeting (the reducing counterpart of the leave rule,
+        // never a grant) — inside the serialized mutate. Rows younger than the
+        // grace window are left alone so a join in flight is never raced.
         presencesClosed += await deps.repository.update((store) => {
           const now = deps.now();
           let closed = 0;
@@ -1103,6 +1156,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             presence.leftAt = now.toISOString();
             closed += 1;
           }
+          const sessionRow = store.sessions.find((entry) => entry.id === session.id);
+          if (sessionRow) completeLiveSessionIfEmpty(store, sessionRow, now.toISOString());
           return closed;
         });
       }

@@ -70,6 +70,12 @@ export type StudyGroupRepository = {
   // presence state, so the file adapter refuses them like the receipt ops.
   abandonStaleWebhookReceipts(input: { olderThanSeconds: number; limit: number }): Promise<number>;
   listLiveSessionsWithOpenPresences(limit: number): Promise<ReadonlyArray<{ id: string; liveKitProjectId: string | null }>>;
+  // Bounded tutor recovery (global review risk 1): session ids whose durable
+  // tutor work has no inbound ask left to wake it — queued items that came due,
+  // in-flight leases that expired, and outbox rows that are due or whose send
+  // lease expired. The drain itself re-claims through the normal single-flight
+  // claim, so a session another instance is actively draining yields nothing.
+  listSessionsWithPendingTutorWork(input: { limit: number }): Promise<string[]>;
 
   // redacted operational metrics (slice-3 design §5.2): one aggregate read of
   // durable facts only. The file adapter refuses it like the receipt ops; the
@@ -299,6 +305,22 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     });
   }
 
+  async function listSessionsWithPendingTutorWork(input: { limit: number }): Promise<string[]> {
+    const store = await read();
+    const now = Date.now();
+    const pending = new Set<string>();
+    for (const row of store.tutorRequests) {
+      const status = tutorStatus(row);
+      if (status === "queued" && dueAt(row.nextAttemptAt, now)) pending.add(row.sessionId);
+      if (status === "in_flight" && (!row.leaseExpiresAt || Date.parse(row.leaseExpiresAt) <= now)) pending.add(row.sessionId);
+    }
+    for (const row of store.outbox) {
+      if ((row.status === "queued" || row.status === "failed") && dueAt(row.nextAttemptAt, now)) pending.add(row.sessionId);
+      if (row.status === "sending" && (!row.leaseExpiresAt || Date.parse(row.leaseExpiresAt) <= now)) pending.add(row.sessionId);
+    }
+    return [...pending].sort().slice(0, input.limit);
+  }
+
   return {
     read,
     appendTokenLog,
@@ -308,6 +330,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     claimNextOutboxMessage,
     markOutboxDelivered,
     markOutboxFailed,
+    listSessionsWithPendingTutorWork,
     insertWebhookReceipt() {
       throw new StudyGroupStoreUnsupportedError("insertWebhookReceipt");
     },

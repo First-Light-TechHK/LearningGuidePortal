@@ -96,6 +96,7 @@ async function reconcileFixture(options: {
       calls.listLimits.push(limit);
       return [...state.sessions];
     },
+    listSessionsWithPendingTutorWork: (input) => base.listSessionsWithPendingTutorWork(input),
     studyGroupOperationalMetrics: () => base.studyGroupOperationalMetrics()
   };
   const listed = options.listParticipants;
@@ -197,6 +198,25 @@ test("sweep B closes only provider-absent presences past the grace window", asyn
   assert.deepEqual(after.memberships, before.memberships);
   assert.deepEqual(after.tutorRequests, before.tutorRequests);
   assert.deepEqual(f.incidents, []);
+});
+
+test("sweep B closing the last open presence completes the live session", async () => {
+  const f = await reconcileFixture({ listParticipants: async () => [] });
+  f.state.sessions = [{ id: "s-1", liveKitProjectId: "eu-primary" }];
+  await seedStore(f, [presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD, phase: "live" })]);
+
+  const result = await f.service.reconcileLiveKitState();
+
+  assert.deepEqual(result, { abandonedReceipts: 0, sessionsChecked: 1, presencesClosed: 1 });
+  assert.deepEqual(f.calls.providerReads, [{ projectId: "eu-primary", room: "s-1" }]);
+  const after = await f.repository.read();
+  assert.equal(after.presences.find((row) => row.sessionId === "s-1" && row.userId === "u-1")?.leftAt, NOW);
+  const completed = after.sessions.find((row) => row.id === "s-1");
+  assert.equal(completed?.status, "completed");
+  assert.equal(completed?.completedAt, NOW);
+  assert.equal(after.meetings.find((row) => row.id === "m-1")?.endedAt, NOW);
+  // The unlisted second session keeps its live status untouched.
+  assert.equal(after.sessions.find((row) => row.id === "s-2")?.status, "live");
 });
 
 test("a provider failure on one session reports a redacted incident and the next session still reconciles", async () => {

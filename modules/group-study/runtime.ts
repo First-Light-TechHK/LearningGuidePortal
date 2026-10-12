@@ -150,6 +150,10 @@ export function studyGroupService() {
   const existing = services.get(key);
   if (existing) return existing;
   const liveKit = runtimeForDirectory(directory);
+  // Swallowed reminder-mail failures are counted per instance (counts only —
+  // never an address or a message) and drained into one redacted line on the
+  // metrics cadence below, mirroring the webhook-rejection counter.
+  let reminderMailFailures = 0;
   const service = createStudyGroupService({
     repository: backend === "postgres" ? createPostgresStudyGroupRepository() : createStudyGroupRepository(directory),
     now: () => new Date(),
@@ -186,7 +190,7 @@ export function studyGroupService() {
       try {
         await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text });
       } catch {
-        return;
+        reminderMailFailures += 1;
       }
     },
     // Compatibility shape for local unit-service fixtures; runtime traffic uses the registry and gateway below.
@@ -258,15 +262,46 @@ export function studyGroupService() {
   // Bounded reconciliation timer (slice-2 design §4): sweep A plus sweep B
   // every 5 minutes, PostgreSQL store and a provider-verified gateway only
   // (the DEV fake gateway has no participant listing, so there is nothing to
-  // reconcile against). A throwing tick is swallowed, same contract as the
-  // reminder and health timers.
+  // reconcile against). A tick that repaired or abandoned anything logs one
+  // redacted summary line; a throwing tick logs the redacted
+  // study_group.reconcile_failed line (the release-gate alarm keys on it) —
+  // never error detail, same contract as the reminder and health timers.
   const reconcileTimers = globalThis as typeof globalThis & { __lgStudyGroupReconcileTimers?: Set<string> };
   reconcileTimers.__lgStudyGroupReconcileTimers ??= new Set();
   if (backend === "postgres" && liveKit.providerVerified && !reconcileTimers.__lgStudyGroupReconcileTimers.has(key)) {
     reconcileTimers.__lgStudyGroupReconcileTimers.add(key);
     const timer = setInterval(() => {
-      void service.reconcileLiveKitState().catch(() => undefined);
+      void (async () => {
+        try {
+          const result = await service.reconcileLiveKitState();
+          if (result.abandonedReceipts > 0 || result.presencesClosed > 0) {
+            console.info(JSON.stringify({ type: "study_group.reconcile", ...result }));
+          }
+        } catch {
+          // Redacted failure signal only: no error detail reaches the log.
+          console.info(JSON.stringify({ type: "study_group.reconcile_failed" }));
+        }
+      })();
     }, 5 * 60_000);
+    timer.unref();
+  }
+  // Dedicated tutor-recovery timer (global review risk 1): exclusively the
+  // crashed-process fallback — a live process retries its own failed work on
+  // the outbox backoff (scheduleTutorRetry in the service), so only work
+  // stranded by a process that died remains here, and the 60s claim lease
+  // plus this tick bound its recovery latency; the lease cannot be shortened
+  // without risking two instances answering at once. Gated like the
+  // reconcile timer, with one immediate run so a freshly booted instance
+  // picks up work stranded by the previous one; a throwing tick is swallowed,
+  // same contract as the sweep above.
+  const tutorRecoveryTimers = globalThis as typeof globalThis & { __lgStudyGroupTutorRecoveryTimers?: Set<string> };
+  tutorRecoveryTimers.__lgStudyGroupTutorRecoveryTimers ??= new Set();
+  if (backend === "postgres" && liveKit.providerVerified && !tutorRecoveryTimers.__lgStudyGroupTutorRecoveryTimers.has(key)) {
+    tutorRecoveryTimers.__lgStudyGroupTutorRecoveryTimers.add(key);
+    void service.recoverTutorWork().catch(() => undefined);
+    const timer = setInterval(() => {
+      void service.recoverTutorWork().catch(() => undefined);
+    }, 15 * 1000);
     timer.unref();
   }
   // Redacted operational metrics timer (slice-3 design §5.2 aim): one regular
@@ -277,7 +312,8 @@ export function studyGroupService() {
   // On the same cadence, signature rejections drain first: at most one redacted
   // line per tick (never per rejection, so sustained invalid_signature 400s
   // cannot flood the log), consumed synchronously so a failing metrics sample
-  // below can never lose a count.
+  // below can never lose a count. The same cadence drains swallowed
+  // reminder-mail failures the same way: one redacted count line per tick.
   const metricsTimers = globalThis as typeof globalThis & { __lgStudyGroupMetricsTimers?: Set<string> };
   metricsTimers.__lgStudyGroupMetricsTimers ??= new Set();
   if (backend === "postgres" && !metricsTimers.__lgStudyGroupMetricsTimers.has(key)) {
@@ -285,6 +321,10 @@ export function studyGroupService() {
     const timer = setInterval(() => {
       const rejectionLine = webhookRejectionLogLine(service);
       if (rejectionLine) console.info(rejectionLine);
+      if (reminderMailFailures > 0) {
+        console.info(JSON.stringify({ type: "study_group.reminder_mail_failed", count: reminderMailFailures }));
+        reminderMailFailures = 0;
+      }
       void service.operationalMetrics()
         .then((metrics) => console.info(JSON.stringify({ type: "study_group.metrics", store: "postgres", ...metrics })))
         .catch(() => undefined);

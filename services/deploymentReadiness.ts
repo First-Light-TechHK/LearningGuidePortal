@@ -46,9 +46,11 @@ function studyGroupReadiness(): {
   simulated: boolean;
 } {
   const explicit = (process.env.STUDY_GROUP_STORE || "").trim().toLowerCase();
-  const store = explicit === "file" || explicit === "filesystem" || !process.env.DATABASE_URL?.trim()
-    ? "file"
-    : "postgresql";
+  // Mirror studyGroupPersistenceBackend (modules/group-study/runtime.ts): only
+  // the exact values "postgres" and "file" are honored; anything else falls
+  // through to DATABASE_URL presence. Reporting a store the runtime would not
+  // pick misleads operators.
+  const store = explicit === "postgres" ? "postgresql" : explicit === "file" ? "file" : process.env.DATABASE_URL?.trim() ? "postgresql" : "file";
   const onDev = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV";
   return {
     store,
