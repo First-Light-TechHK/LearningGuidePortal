@@ -64,7 +64,7 @@
 5. 合并进 App Runner 服务：`LIVEKIT_PROJECTS_JSON` 进普通变量；`STUDY_GROUP_TOKEN_LOG_KEY` 与 `STUDY_GROUP_TUTOR_KEYS` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。代码读的是同名环境变量，自身零改动。
 6. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。同一响应里的三个自查字段（代码在健康面核实，无需 AWS 访问）：`studyGroup.tutorKeys` 应为 `configured`（AI Tutor 可用）、`credentialSource` 应为 `secrets-manager`（未被本地凭据遮蔽）、`simulated` 应为 `false`（未开假网关）。
 
-未配置期间的已知行为（代码已固化，测试见 §9.4）：数据功能可用；直播操作 503；每个进程启动时打一行脱敏 `study_group.livekit_health`（`configured:false`），供 CloudWatch 报警。若会话在未配置时开始：房间在首次加入时由 LiveKit 按默认容量自动创建（应用侧席位上限仍生效），项目分配在第一次发令牌时自动补齐并持久化；补齐前对账可能每 5 分钟记录一条脱敏 `credential_unavailable` 事件（噪音，不是数据损坏）。
+未配置期间的已知行为（代码已固化，测试见 §9.4）：数据功能可用；直播操作 503；按 5 分钟周期重复打一行脱敏 `study_group.livekit_health`（`configured:false`），供 CloudWatch 报警。若会话在未配置时开始：房间在首次加入时由 LiveKit 按默认容量自动创建（应用侧席位上限仍生效），项目分配在第一次发令牌时自动补齐并持久化；补齐前对账可能每 5 分钟记录一条脱敏 `credential_unavailable` 事件（噪音，不是数据损坏）。
 
 ## 6. App Runner 机制笔记（实现者必读）
 
