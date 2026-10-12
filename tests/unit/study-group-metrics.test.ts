@@ -50,7 +50,7 @@ function serviceWithRepository(repository: StudyGroupRepository) {
   return createStudyGroupService(deps);
 }
 
-const environmentKeys = ["APP_ENV", "STUDY_GROUP_STORE", "DATABASE_URL", "LIVEKIT_PROJECTS_JSON", "STUDY_GROUP_TOKEN_LOG_KEY"] as const;
+const environmentKeys = ["APP_ENV", "STUDY_GROUP_STORE", "DATABASE_URL", "LIVEKIT_PROJECTS_JSON", "STUDY_GROUP_TOKEN_LOG_KEY", "STUDY_GROUP_TUTOR_KEYS", "LIVEKIT_LOCAL_CREDENTIALS_JSON", "LIVEKIT_FAKE_GATEWAY"] as const;
 const savedEnvironment = new Map(environmentKeys.map((key) => [key, process.env[key]]));
 
 after(async () => {
@@ -119,13 +119,16 @@ test("the emitted metrics sample is counts only with exactly the six numeric fie
 test("health/config detects the file store and reports the studyGroup entry without echoing values", async () => {
   delete process.env.STUDY_GROUP_STORE;
   delete process.env.DATABASE_URL;
+  delete process.env.STUDY_GROUP_TUTOR_KEYS;
+  delete process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON;
+  delete process.env.LIVEKIT_FAKE_GATEWAY;
   process.env.APP_ENV = "DEV";
   const projectsJson = JSON.stringify([{ id: "lg-dev", url: "wss://lg-dev.livekit.cloud", state: "active", credentialSecretId: "lg/livekit/dev" }]);
   const tokenKey = Buffer.alloc(32, 11).toString("base64");
   process.env.LIVEKIT_PROJECTS_JSON = projectsJson;
   process.env.STUDY_GROUP_TOKEN_LOG_KEY = tokenKey;
   const body = await (await healthConfig()).json() as Record<string, unknown>;
-  assert.deepEqual(body.studyGroup, { store: "file", configured: true });
+  assert.deepEqual(body.studyGroup, { store: "file", configured: true, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
   // Threading the entry through must not change the existing keys.
   for (const key of ["environment", "ready", "storage", "payment", "authentication"]) {
     assert.equal(key in body, true, `existing key ${key} must remain`);
@@ -139,17 +142,20 @@ test("health/config reports postgresql only with the store selected and DATABASE
   process.env.APP_ENV = "DEV";
   process.env.DATABASE_URL = "postgres://lg:lg@db.example.test:5432/learningguide";
   delete process.env.STUDY_GROUP_TOKEN_LOG_KEY;
+  delete process.env.STUDY_GROUP_TUTOR_KEYS;
+  delete process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON;
+  delete process.env.LIVEKIT_FAKE_GATEWAY;
   process.env.LIVEKIT_PROJECTS_JSON = JSON.stringify([{ id: "lg-prod", url: "wss://lg-prod.livekit.cloud", state: "active", credentialSecretId: "lg/livekit/prod" }]);
   process.env.STUDY_GROUP_STORE = "postgres";
   const postgresql = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(postgresql.studyGroup, { store: "postgresql", configured: false });
+  assert.deepEqual(postgresql.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
   // `filesystem` is the file store even when a database exists.
   process.env.STUDY_GROUP_STORE = "filesystem";
   const filesystem = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(filesystem.studyGroup, { store: "file", configured: false });
+  assert.deepEqual(filesystem.studyGroup, { store: "file", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
   // No DATABASE_URL means the file store regardless of the selected name.
   delete process.env.DATABASE_URL;
   process.env.STUDY_GROUP_STORE = "postgres";
   const noDatabase = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(noDatabase.studyGroup, { store: "file", configured: false });
+  assert.deepEqual(noDatabase.studyGroup, { store: "file", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
 });

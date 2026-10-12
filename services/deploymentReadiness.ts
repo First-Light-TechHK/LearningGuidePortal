@@ -10,14 +10,52 @@ let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
 // whether the LiveKit configuration is present. Values are never echoed — the
 // file store is reported whenever it is selected explicitly or would be
 // selected because no DATABASE_URL exists.
-function studyGroupReadiness(): { store: "postgresql" | "file"; configured: boolean } {
+//
+// The extra fields answer "is the deployed environment wired the honest way?"
+// without AWS access:
+// - tutorKeys: mirrors the acceptance rule of readTutorKeys
+//   (modules/group-study/tutorAnswer.ts) so readiness never claims a pool the
+//   runtime would ignore; `invalid` means the variable exists but yields no
+//   usable key.
+// - credentialSource: `local` means LIVEKIT_LOCAL_CREDENTIALS_JSON is set on a
+//   DEV deployment, where it silently shadows Secrets Manager.
+// - simulated: LIVEKIT_FAKE_GATEWAY=1 is honored only on DEV; it disables
+//   webhook verification and reconciliation.
+function tutorKeyState(): "configured" | "missing" | "invalid" {
+  const raw = process.env.STUDY_GROUP_TUTOR_KEYS?.trim();
+  if (!raw) return "missing";
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return "invalid";
+    const usable = parsed.some((item) => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as { id?: unknown; secret?: unknown };
+      return typeof record.id === "string" && record.id.trim() !== "" && typeof record.secret === "string" && record.secret.trim() !== "";
+    });
+    return usable ? "configured" : "invalid";
+  } catch {
+    return "invalid";
+  }
+}
+
+function studyGroupReadiness(): {
+  store: "postgresql" | "file";
+  configured: boolean;
+  tutorKeys: "configured" | "missing" | "invalid";
+  credentialSource: "secrets-manager" | "local";
+  simulated: boolean;
+} {
   const explicit = (process.env.STUDY_GROUP_STORE || "").trim().toLowerCase();
   const store = explicit === "file" || explicit === "filesystem" || !process.env.DATABASE_URL?.trim()
     ? "file"
     : "postgresql";
+  const onDev = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV";
   return {
     store,
-    configured: Boolean(process.env.LIVEKIT_PROJECTS_JSON?.trim() && process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim())
+    configured: Boolean(process.env.LIVEKIT_PROJECTS_JSON?.trim() && process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim()),
+    tutorKeys: tutorKeyState(),
+    credentialSource: onDev && Boolean(process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON?.trim()) ? "local" : "secrets-manager",
+    simulated: onDev && process.env.LIVEKIT_FAKE_GATEWAY === "1"
   };
 }
 

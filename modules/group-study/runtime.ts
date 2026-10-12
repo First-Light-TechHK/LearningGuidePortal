@@ -10,6 +10,7 @@ import { createStudyGroupService, type StudyGroupService } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
 import { parseLiveKitProjects } from "./liveKitProjectRegistry";
+import { awsRegion } from "@/services/persistence/config";
 import { createAwsLiveKitCredentialResolver, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
 import { openRouterTutorCall, readTutorKeys } from "./tutorAnswer";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
@@ -76,7 +77,11 @@ function liveKitRuntime() {
     return { projects: null, gateway: null, providerVerified: false };
   }
   const projects = parseLiveKitProjects(rawProjects);
-  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver();
+  // Explicit region: the rest of the persistence stack resolves through
+  // awsRegion() with its ap-southeast-1 fallback; the SDK default chain alone
+  // would throw "Region is missing" if the platform ever stops setting
+  // AWS_REGION.
+  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({ region: awsRegion() });
   const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
   const gateway = createLiveKitCloudGateway({
     resolveCredentials: (project, options) => resolver.resolve(project, options),
@@ -220,12 +225,17 @@ export function studyGroupService() {
     }, 30_000);
     timer.unref();
   }
-  // One redacted signal per process when Study Group has no LiveKit project
-  // configuration yet. The health timer below stays silent in that state, so
-  // this line is what a CloudWatch alarm (release-runbook, Study Group gate)
-  // keys on. It carries no values, no credential references and no identities.
+  // Redacted signal while Study Group has no LiveKit project configuration.
+  // The health timer below stays silent in that state, so this line is what a
+  // CloudWatch alarm (release-runbook, Study Group gate) keys on. It carries no
+  // values, no credential references and no identities. It repeats on the
+  // health cadence: a service that goes idle after its first request must still
+  // produce the line, otherwise the alarm goes quiet exactly when it matters.
   if (!liveKit.projects || !liveKit.gateway) {
-    console.info(JSON.stringify({ type: "study_group.livekit_health", configured: false, ready: false, attentionRequired: false, projects: [] }));
+    const emitUnconfigured = () => console.info(JSON.stringify({ type: "study_group.livekit_health", configured: false, ready: false, attentionRequired: false, projects: [] }));
+    emitUnconfigured();
+    const timer = setInterval(emitUnconfigured, 5 * 60_000);
+    timer.unref();
   }
   const healthTimers = globalThis as typeof globalThis & { __lgStudyGroupLiveKitHealthTimers?: Set<string>; __lgStudyGroupLiveKitHealthStates?: Map<string, string> };
   healthTimers.__lgStudyGroupLiveKitHealthTimers ??= new Set();
