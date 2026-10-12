@@ -13,7 +13,7 @@
 ## 2. 与代码分层的关系
 
 - SG 代码只依赖两个接口：LiveKit 网关（房间、令牌、数据消息）与令牌日志加密钥。代码不接触具体凭据。
-- 钥在 AWS 上自动签发与注入：LiveKit 钥对存入 Secrets Manager，运行时由实例读取（`credentialSecretId`）；令牌日志钥由配置工作流自动生成，经 App Runner 注入。人工不选择、不转抄钥值。
+- 钥在 AWS 上自动签发与注入：LiveKit 钥对存入 Secrets Manager，运行时由实例读取（`credentialSecretId`）；令牌日志钥自动生成一次，经 App Runner 注入。人工不选择、不转抄钥值。
 - 轮换沿用既有设计（`livekit-operations.md` §Key rotation）：create → inject → overlap → revoke，只存一份、从不回读。
 - 零配置环境（配置尚未执行时）：数据功能照常（浏览 / 建组 / 入组 / 排期 / 开始）；直播类操作返回类型化 `unavailable`（HTTP 503）；后台健康面报告 not ready。生产由 preflight 直接阻断。
 
@@ -35,7 +35,7 @@
 |---|---|
 | SG 开发 | 触发工作流。跑环境测试。不动 AWS |
 | 平台 / 技术负责人 | LiveKit 项目与钥。AWS 密钥。IAM。轮换 |
-| CI（GitHub Actions） | 持有 AWS 部署凭据。执行配置工作流 |
+| CI（GitHub Actions） | 持有 AWS 部署凭据（GitHub 仓库密钥）。执行开通步骤 |
 
 ## 4. 各环境计划
 
@@ -52,7 +52,7 @@
 
 ## 5. 执行载体：repo 工作流
 
-当前落地的是 DEV 一次性版本：`.github/workflows/study-group-dev-config.yml`（已进仓库；push 触发一次，或手动 dispatch 重跑）。SIT/UAT/PPE 的参数化版本（输入 `dev/sit/uat/ppe`，读每环境坐标表）是它平台审过后的直接推广，步骤相同。步骤：
+工作流草稿已按业主决定暂缓提交（先等等）。开通按下面的步骤执行：由平台手工完成，或在工作流经平台审过后落地复用。SIT/UAT/PPE 用同一套步骤（换环境名）。步骤：
 
 1. 读仓库坐标表（非密）：每环境的 App Runner ARN、站点域名、密钥名、项目 id/网址。
 2. 校验该环境已开通。未开通：立即失败。
@@ -81,7 +81,7 @@
 ## 8. 轮换与已暴露钥处置
 
 1. **LiveKit 钥对**：按 `livekit-operations.md` §Key rotation 执行 create → inject → overlap → revoke。写入 Secrets Manager 新版本即可——应用在运行时按 `credentialSecretId` 读取，**不需要改 App Runner 配置**；重叠期 ≥ 最大 token TTL（600 秒）+ 回滚窗口；监控鉴权失败后再吊销旧钥。每次轮换后跑一次冒烟。
-2. **令牌日志钥**：轮换 = 生成新值写入 Secrets Manager 新版本 → 重跑配置工作流（滚动重启把新值注入实例）→ 旧日志行以旧钥版本离线解密。已泄露的钥必须实际换掉。
+2. **令牌日志钥**：轮换 = 生成新值写入 Secrets Manager 新版本 → 重新执行开通步骤（触发滚动重启把新值注入实例）→ 旧日志行以旧钥版本离线解密。已泄露的钥必须实际换掉。
 3. **staging 钥：实际轮换**（已暴露过）。步骤：LiveKit 控制台建新钥（命名 `ci-smoke`）→ 更新 GitHub `livekit-staging` 环境密钥（CI 冒烟专用副本，与 Secrets Manager 同步更新，避免漂移）→ 跑冒烟工作流确认绿 → 吊销旧钥 → 记录证据（项目 id、时间、操作人）。
 4. SIT/UAT/PPE 首配即用各自的新钥。无历史包袱。
 
