@@ -49,6 +49,7 @@
 | PPE/PROD | 新建生产项目 | 待平台执行 |
 
 密钥命名：`lg-<env>-studygroup-livekit`（存 apiKey/apiSecret）、`lg-<env>-studygroup-token-log-key`（存 token 加密钥）、`lg-<env>-studygroup-tutor-keys`（存 AI Tutor 钥池 JSON，`[{"id","secret"}]`）。每环境三条，互不复用。三条都是真凭据，都只存 Secrets Manager；普通环境变量会被 `describe-service` 明文回显，禁止把任何钥值放进普通变量。
+消费方式（业主决定）：LiveKit 钥对 = 应用**运行时**按 `credentialSecretId` 从 Secrets Manager 读取（保持不变，轮换 ≤60 秒生效）；令牌日志钥与 tutor 钥池 = App Runner `RuntimeEnvironmentSecrets` **启动注入**（同款，轮换后重部署生效）。
 令牌日志钥由工作流自动签发（`openssl rand -base64 32`，首次创建；已存在则不覆盖）。LiveKit 钥对来自 LiveKit 控制台（平台建项目时创建），**一次性写入 Secrets Manager，此后只存这一处**——不再复制到 GitHub 或 repo。
 工作流读取的仓库变量（非密）：`LIVEKIT_DEV_PROJECT_URL`（DEV 项目的 wss 网址，必填）、`LIVEKIT_DEV_PROJECT_ID`（可选，默认 `dev-primary`）。
 
