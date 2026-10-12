@@ -220,6 +220,13 @@ export function studyGroupService() {
     }, 30_000);
     timer.unref();
   }
+  // One redacted signal per process when Study Group has no LiveKit project
+  // configuration yet. The health timer below stays silent in that state, so
+  // this line is what a CloudWatch alarm (release-runbook, Study Group gate)
+  // keys on. It carries no values, no credential references and no identities.
+  if (!liveKit.projects || !liveKit.gateway) {
+    console.info(JSON.stringify({ type: "study_group.livekit_health", configured: false, ready: false, attentionRequired: false, projects: [] }));
+  }
   const healthTimers = globalThis as typeof globalThis & { __lgStudyGroupLiveKitHealthTimers?: Set<string>; __lgStudyGroupLiveKitHealthStates?: Map<string, string> };
   healthTimers.__lgStudyGroupLiveKitHealthTimers ??= new Set();
   healthTimers.__lgStudyGroupLiveKitHealthStates ??= new Map();

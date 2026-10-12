@@ -495,7 +495,17 @@ test("a missing token log key blocks issuance as typed unavailability before any
       issueParticipantToken: async ({ room }) => {
         signed.push(room);
         return { token: "unused-token", expiresAt: "2026-09-19T02:10:00.000Z", url: `wss://${room}.example.test` };
-      }
+      },
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async () => undefined,
+      healthCheck: async ({ project }) => ({
+        projectId: project.id,
+        status: "healthy",
+        evidence: "provider_api",
+        providerVerified: true,
+        checkedAt: NOW,
+        latencyMs: 1
+      })
     },
     tokenLogKey: () => null
   });

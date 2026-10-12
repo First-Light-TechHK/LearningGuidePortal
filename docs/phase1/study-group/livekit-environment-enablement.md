@@ -17,6 +17,18 @@
 - 轮换沿用既有设计（`livekit-operations.md` §Key rotation）：create → inject → overlap → revoke，只存一份、从不回读。
 - 零配置环境（配置尚未执行时）：数据功能照常（浏览 / 建组 / 入组 / 排期 / 开始）；直播类操作返回类型化 `unavailable`（HTTP 503）；后台健康面报告 not ready。生产由 preflight 直接阻断。
 
+### 2.1 环境矩阵（本地 / 测试 / 线上，不混淆）
+
+| 环境 | 钥来源 | 值类型 | 谁提供 |
+|---|---|---|---|
+| 本地开发（开发者机器） | 无配置也可用（数据功能）；要测直播用本地 docker LiveKit 或本地 `.env.local` 自建值 | 本地假值 | 开发者自己 |
+| CI 单测 / 集成 | 测试文件内自带假 fixture（如 `wss://livekit.example.test`、`lk-secret-at-least-32-characters`） | 假值 | 不需要任何人提供 |
+| CI staging 冒烟 | GitHub `livekit-staging` Environment 密钥（CI 专用消费钥） | 真实（staging 项目） | 平台 |
+| DEV（线上） | Secrets Manager `lg-dev-studygroup-livekit` / `lg-dev-studygroup-token-log-key` | 真实（DEV 项目） | 平台 / 开通工作流 |
+| SIT / UAT / PPE（线上） | 同上，按环境命名 | 真实（各环境项目） | 平台 / 开通工作流 |
+
+规则：文档、代码示例、测试一律只用假值。真实值只存在于 AWS Secrets Manager（和 CI 专用的 GitHub Environment，按 §8 与 Secrets Manager 同步轮换）。repo、聊天、日志、浏览器永远不含真实值。本地临时脚本与探针放 `/tmp`，不进 repo 工作区。
+
 ## 3. 角色分工
 
 | 角色 | 职责 |
@@ -38,9 +50,9 @@
 令牌日志钥由工作流自动签发（`openssl rand -base64 32`，首次创建；已存在则不覆盖）。LiveKit 钥对来自 LiveKit 控制台（平台建项目时创建），**一次性写入 Secrets Manager，此后只存这一处**——不再复制到 GitHub 或 repo。
 工作流读取的仓库变量（非密）：`LIVEKIT_DEV_PROJECT_URL`（DEV 项目的 wss 网址，必填）、`LIVEKIT_DEV_PROJECT_ID`（可选，默认 `dev-primary`）。
 
-## 5. 执行载体：一个参数化的 repo 工作流
+## 5. 执行载体：repo 工作流
 
-`study-group-config.yml`（草稿已在 repo，待平台审）。输入：环境（dev/sit/uat/ppe）。步骤：
+当前落地的是 DEV 一次性版本：`.github/workflows/study-group-dev-config.yml`（已进仓库；push 触发一次，或手动 dispatch 重跑）。SIT/UAT/PPE 的参数化版本（输入 `dev/sit/uat/ppe`，读每环境坐标表）是它平台审过后的直接推广，步骤相同。步骤：
 
 1. 读仓库坐标表（非密）：每环境的 App Runner ARN、站点域名、密钥名、项目 id/网址。
 2. 校验该环境已开通。未开通：立即失败。
@@ -48,6 +60,8 @@
 4. 令牌日志钥自动签发：不存在则以 `openssl rand -base64 32` 生成并写入 `lg-<env>-studygroup-token-log-key`；已存在则保持原值（不覆盖，旧日志行仍以旧钥版本解密）。
 5. 合并进 App Runner 服务：`LIVEKIT_PROJECTS_JSON` 进普通变量；`STUDY_GROUP_TOKEN_LOG_KEY` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。
 6. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。
+
+未配置期间的已知行为（代码已固化，测试见 §9.4）：数据功能可用；直播操作 503；每个进程启动时打一行脱敏 `study_group.livekit_health`（`configured:false`），供 CloudWatch 报警。若会话在未配置时开始：房间在首次加入时由 LiveKit 按默认容量自动创建（应用侧席位上限仍生效），项目分配在第一次发令牌时自动补齐并持久化；补齐前对账可能每 5 分钟记录一条脱敏 `credential_unavailable` 事件（噪音，不是数据损坏）。
 
 ## 6. App Runner 机制笔记（实现者必读）
 

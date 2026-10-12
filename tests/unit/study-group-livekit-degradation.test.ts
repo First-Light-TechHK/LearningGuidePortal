@@ -70,9 +70,13 @@ after(async () => {
 });
 
 test("with no LiveKit configuration the data surface works and token issuance answers typed unavailability", async () => {
-  const discover = await call(getGroups, "http://localhost/api/study-groups?view=discover", undefined, token);
-  assert.equal(discover.status, 200);
-  assert.equal((await discover.json()).ok, true);
+  const logged: string[] = [];
+  const originalInfo = console.info;
+  console.info = (...args: unknown[]) => { logged.push(args.map(String).join(" ")); };
+  try {
+    const discover = await call(getGroups, "http://localhost/api/study-groups?view=discover", undefined, token);
+    assert.equal(discover.status, 200);
+    assert.equal((await discover.json()).ok, true);
 
   const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Zero config", courseId: "deg-course", about: "Data operations need no LiveKit configuration." }, token);
   assert.equal(created.status, 200);
@@ -100,10 +104,20 @@ test("with no LiveKit configuration the data surface works and token issuance an
   assert.equal(issuedBody.ok, false);
   assert.equal(issuedBody.code, "unavailable");
 
-  // Unconfigured health is not ready and reports no projects — never a
-  // vacuous "all zero projects are healthy".
-  const health = await studyGroupLiveKitHealth();
-  assert.equal(health.ready, false);
-  assert.equal(health.attentionRequired, false);
-  assert.deepEqual(health.projects, []);
+    // Unconfigured health is not ready and reports no projects — never a
+    // vacuous "all zero projects are healthy".
+    const health = await studyGroupLiveKitHealth();
+    assert.equal(health.ready, false);
+    assert.equal(health.attentionRequired, false);
+    assert.deepEqual(health.projects, []);
+  } finally {
+    console.info = originalInfo;
+  }
+
+  // The unconfigured state is observable: one redacted health line that a
+  // CloudWatch alarm can key on, carrying no names and no values.
+  const signal = logged.filter((line) => line.includes('"type":"study_group.livekit_health"'));
+  assert.equal(signal.length >= 1, true);
+  assert.equal(signal[0].includes('"configured":false'), true);
+  assert.equal(signal[0].includes("LIVEKIT"), false);
 });
