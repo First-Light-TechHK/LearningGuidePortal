@@ -41,7 +41,7 @@ beforeEach(async () => {
     listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     liveKit,
-    tokenLogKey
+    tokenLogKey: () => tokenLogKey,
   });
 });
 
@@ -441,7 +441,7 @@ test("a failed token issuance keeps the admitted seat available for a retry", as
     listReminders: async () => [],
     sendMail: async () => undefined,
     liveKit: { apiKey: "", apiSecret: "", url: "" },
-    tokenLogKey
+    tokenLogKey: () => tokenLogKey,
   });
   await assert.rejects(
     () => blocked.issueToken({ actorUserId: "host", sessionId: session.id }),
@@ -478,6 +478,42 @@ test("an incomplete LiveKit endpoint rejects token issuance without writing an a
   const stored = await repository.read();
   assert.equal(stored.presences.some((item) => item.sessionId === session.id && item.userId === "host" && !item.leftAt), true);
   await assert.rejects(() => readFile(path.join(directory, "token-issuance.log"), "utf8"), { code: "ENOENT" });
+});
+
+test("a missing token log key blocks issuance as typed unavailability before anything is signed", async () => {
+  const ensured: string[] = [];
+  const signed: string[] = [];
+  const keyless = serviceWith({
+    liveKitProjects: parseLiveKitProjects(JSON.stringify([{
+      id: "eu-primary",
+      url: "wss://eu-primary.livekit.cloud",
+      state: "active",
+      credentialSecretId: "learning-guide/livekit/eu-primary"
+    }])),
+    liveKitGateway: {
+      ensureRoom: async ({ room }) => { ensured.push(room); },
+      issueParticipantToken: async ({ room }) => {
+        signed.push(room);
+        return { token: "unused-token", expiresAt: "2026-09-19T02:10:00.000Z", url: `wss://${room}.example.test` };
+      }
+    },
+    tokenLogKey: () => null
+  });
+  const group = await keyless.createGroup({ actorUserId: "host", title: "Keyless", courseId: "course-1", about: "Data operations must work before the platform issues the key." });
+  const session = await keyless.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Open", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
+  await keyless.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  assert.equal((await keyless.startSession({ actorUserId: "host", sessionId: session.id })).state, "live");
+  assert.deepEqual(ensured, [session.id]);
+
+  await assert.rejects(
+    () => keyless.issueToken({ actorUserId: "host", sessionId: session.id }),
+    (error: unknown) => (error as { code?: string }).code === "unavailable"
+  );
+  // The key resolves before signing: no provider call and no audit line.
+  assert.deepEqual(signed, []);
+  await assert.rejects(() => readFile(path.join(directory, "token-issuance.log"), "utf8"), { code: "ENOENT" });
+  const stored = await repository.read();
+  assert.equal(stored.presences.some((item) => item.sessionId === session.id && item.userId === "host" && !item.leftAt), true);
 });
 
 test("a live session keeps its selected LiveKit project for room creation and token issuance", async () => {
@@ -1017,7 +1053,7 @@ function serviceWith(extra: Partial<StudyGroupDeps>) {
     listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
-    tokenLogKey,
+    tokenLogKey: () => tokenLogKey,
     ...extra
   });
 }

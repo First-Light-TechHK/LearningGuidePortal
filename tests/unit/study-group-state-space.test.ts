@@ -46,7 +46,7 @@ async function makeFixture(extra: Partial<StudyGroupDeps> = {}): Promise<Fixture
     listReminders: async () => [],
     sendMail: async () => undefined,
     liveKit: { apiKey: "lk-key", apiSecret: SECRET, url: "wss://livekit.example.test" },
-    tokenLogKey,
+    tokenLogKey: () => tokenLogKey,
     courseKnowledge: async () => "The Weimar republic ended in 1933. The constitution of 1919 could not hold the government.",
     publishRoomChat: async ({ text }) => { published.push(text); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],

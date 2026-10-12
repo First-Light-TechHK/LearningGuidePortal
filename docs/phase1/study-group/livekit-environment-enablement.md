@@ -1,0 +1,79 @@
+# 环境配置提案：Study Group 的 LiveKit 供给（给平台 / 技术负责人）
+
+目标：按商业化标准，为 DEV → SIT → UAT → PPE 路径中的每个环境提供 Study Group 配置。执行者不是 SG 开发。SG 开发只负责在 repo 内触发与测试。
+
+## 1. 商业化标准（五条）
+
+1. 每环境真实 LiveKit 项目。钥按环境隔离。
+2. 钥按消费方拆分。CI 一把、服务一把。吊销互不牵连。
+3. 轮换按期执行。已暴露的钥（含曾出现在会话中的 staging 钥）必须实际轮换，不是演练。
+4. 配置供给走 CI/CD 通道。可审计、可重复。
+5. 生产 fail-closed：preflight 拦截缺配置的 PPE/PROD（已实现）。
+
+## 2. 与代码分层的关系
+
+- SG 代码只依赖两个接口：LiveKit 网关（房间、令牌、数据消息）与令牌日志加密钥。代码不接触具体凭据。
+- 钥在 AWS 上自动签发与注入：LiveKit 钥对存入 Secrets Manager，运行时由实例读取（`credentialSecretId`）；令牌日志钥由配置工作流自动生成，经 App Runner 注入。人工不选择、不转抄钥值。
+- 轮换沿用既有设计（`livekit-operations.md` §Key rotation）：create → inject → overlap → revoke，只存一份、从不回读。
+- 零配置环境（配置尚未执行时）：数据功能照常（浏览 / 建组 / 入组 / 排期 / 开始）；直播类操作返回类型化 `unavailable`（HTTP 503）；后台健康面报告 not ready。生产由 preflight 直接阻断。
+
+## 3. 角色分工
+
+| 角色 | 职责 |
+|---|---|
+| SG 开发 | 触发工作流。跑环境测试。不动 AWS |
+| 平台 / 技术负责人 | LiveKit 项目与钥。AWS 密钥。IAM。轮换 |
+| CI（GitHub Actions） | 持有 AWS 部署凭据。执行配置工作流 |
+
+## 4. 各环境计划
+
+| 环境 | LiveKit 项目 | 状态 |
+|---|---|---|
+| DEV | 新建 `learning-guide-dev` | 代码已零配置可用（数据功能 200、直播操作 503）；真实钥待平台执行 |
+| SIT | 新建 `learning-guide-sit` | 待平台执行 |
+| UAT | 新建 `learning-guide-uat` | 待平台执行 |
+| PPE/PROD | 新建生产项目 | 待平台执行 |
+
+密钥命名：`lg-<env>-studygroup-livekit`（存 apiKey/apiSecret）、`lg-<env>-studygroup-token-log-key`（存 token 加密钥）。每环境两条，互不复用。
+令牌日志钥由工作流自动签发（`openssl rand -base64 32`，首次创建；已存在则不覆盖）。LiveKit 钥对来自 LiveKit 控制台（平台建项目时创建），**一次性写入 Secrets Manager，此后只存这一处**——不再复制到 GitHub 或 repo。
+工作流读取的仓库变量（非密）：`LIVEKIT_DEV_PROJECT_URL`（DEV 项目的 wss 网址，必填）、`LIVEKIT_DEV_PROJECT_ID`（可选，默认 `dev-primary`）。
+
+## 5. 执行载体：一个参数化的 repo 工作流
+
+`study-group-config.yml`（草稿已在 repo，待平台审）。输入：环境（dev/sit/uat/ppe）。步骤：
+
+1. 读仓库坐标表（非密）：每环境的 App Runner ARN、站点域名、密钥名、项目 id/网址。
+2. 校验该环境已开通。未开通：立即失败。
+3. 校验 `lg-<env>-studygroup-livekit` 已存在于 Secrets Manager（平台建 LiveKit 项目后写入一次）。缺失：立即失败，并打印平台侧的一次性写入命令（值只来自 LiveKit 控制台，不经过 repo / 聊天 / GitHub）。
+4. 令牌日志钥自动签发：不存在则以 `openssl rand -base64 32` 生成并写入 `lg-<env>-studygroup-token-log-key`；已存在则保持原值（不覆盖，旧日志行仍以旧钥版本解密）。
+5. 合并进 App Runner 服务：`LIVEKIT_PROJECTS_JSON` 进普通变量；`STUDY_GROUP_TOKEN_LOG_KEY` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。
+6. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。
+
+## 6. App Runner 机制笔记（实现者必读）
+
+1. `describe-service` 会返回现有普通环境变量的**值**。输出只能进文件，禁止 echo / cat / set -x。
+2. `update-service` 用你给它的 SourceConfiguration **整体替换**。必须先 describe 再合并回传。
+3. `--cli-input-json` 只接受这些顶层键：`ServiceArn`、`SourceConfiguration`、`InstanceConfiguration`、`AutoScalingConfigurationArn`、`HealthCheckConfiguration`、`NetworkConfiguration`、`ObservabilityConfiguration`。其他键（含 `EncryptionConfiguration`）会被拒。
+4. `AutoScalingConfigurationArn` 在 describe 输出的 `Service.AutoScalingConfigurationSummary` 下。
+5. `RuntimeEnvironmentSecrets` 的值必须是 Secrets Manager 的**完整 ARN**（含随机后缀）。用 `--query ARN --output text` 取。
+6. 离线校验技巧：`--endpoint-url http://127.0.0.1:9` 能跑完整客户端模型校验且触不到 AWS。可用于测试。
+7. `configured: true` 只说明变量存在，不说明可解析。终验必须打匿名 discover API。
+
+## 7. 需要的 AWS 权限（平台授予）
+
+1. 执行工作流的 IAM 用户/角色：`apprunner:DescribeService`、`apprunner:UpdateService`、`secretsmanager:CreateSecret`、`secretsmanager:PutSecretValue`、`secretsmanager:DescribeSecret`。
+2. App Runner **实例角色**：`secretsmanager:GetSecretValue`，覆盖两条密钥（启动注入 + 运行时读取）。
+
+## 8. 轮换与已暴露钥处置
+
+1. **LiveKit 钥对**：按 `livekit-operations.md` §Key rotation 执行 create → inject → overlap → revoke。写入 Secrets Manager 新版本即可——应用在运行时按 `credentialSecretId` 读取，**不需要改 App Runner 配置**；重叠期 ≥ 最大 token TTL（600 秒）+ 回滚窗口；监控鉴权失败后再吊销旧钥。每次轮换后跑一次冒烟。
+2. **令牌日志钥**：轮换 = 生成新值写入 Secrets Manager 新版本 → 重跑配置工作流（滚动重启把新值注入实例）→ 旧日志行以旧钥版本离线解密。已泄露的钥必须实际换掉。
+3. **staging 钥：实际轮换**（已暴露过）。步骤：LiveKit 控制台建新钥（命名 `ci-smoke`）→ 更新 GitHub `livekit-staging` 环境密钥（CI 冒烟专用副本，与 Secrets Manager 同步更新，避免漂移）→ 跑冒烟工作流确认绿 → 吊销旧钥 → 记录证据（项目 id、时间、操作人）。
+4. SIT/UAT/PPE 首配即用各自的新钥。无历史包袱。
+
+## 9. 验收
+
+1. 每个已开通环境的 `configured` 为 true，且匿名 discover 200。
+2. 轮换记录齐备。
+3. 生产 preflight 在缺配置时阻断（已有测试）。
+4. 零配置环境页面可用：数据功能 200、直播操作返回类型化 503——由 `tests/unit/study-group-livekit-degradation.test.ts` 固化；令牌日志钥先于签名解析（缺钥不签名、不写日志、保留席位）由 `tests/unit/study-group-service.test.ts` 固化。

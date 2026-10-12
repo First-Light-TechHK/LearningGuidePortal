@@ -117,7 +117,7 @@ async function reconcileFixture(options: {
     liveKitGateway: gateway,
     liveKitProjects: options.registry ?? parseLiveKitProjects(PROJECTS_JSON),
     liveKitIncidentReporter: (incident) => { incidents.push({ ...incident }); },
-    tokenLogKey
+    tokenLogKey: () => tokenLogKey,
   };
   return { directory, service: createStudyGroupService(deps), repository, state, calls, incidents };
 }

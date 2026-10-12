@@ -72,7 +72,7 @@ Not used:
 
 Each successful issuance appends one line. The line is AES-256-GCM. The payload is user id, Group role, session id, the state `token_issued`, and the time. The line does not contain the raw token or the API secret. There is no token table and no token audit table.
 
-The key is `STUDY_GROUP_TOKEN_LOG_KEY`, a 32-byte key separate from the LiveKit secret. The branch writes the line in `token-issuance.log`. Under the PostgreSQL selection, that line stays an append-only log, not a token row.
+The key is `STUDY_GROUP_TOKEN_LOG_KEY`, a 32-byte key separate from the LiveKit secret. The branch writes the line in `token-issuance.log`. Under the PostgreSQL selection, that line stays an append-only log, not a token row. The key is auto-issued per environment: the enablement workflow generates it once (`openssl rand -base64 32`) into Secrets Manager and App Runner injects it; the service resolves it lazily at issuance, so every data operation works before the platform has issued it (a missing key answers the typed `unavailable` state and never signs).
 
 Rejected:
 

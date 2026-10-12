@@ -1,0 +1,202 @@
+# One-shot configurator for the Study Group DEV deployment. Idempotent: safe to
+# re-run any number of times.
+#
+# Purpose: give the DEV App Runner service (learning-guide-portal) the two
+# settings Study Group is missing, without anyone needing a laptop AWS session.
+# The token log key is auto-issued here; the LiveKit key pair is a platform
+# precondition that lives only in Secrets Manager:
+#   1. Precondition: Secrets Manager `lg-dev-studygroup-livekit` exists
+#      ({"apiKey":...,"apiSecret":...}) — the platform writes it once, straight
+#      from the LiveKit console. The value never enters GitHub or this repo.
+#   2. Auto-issue: Secrets Manager `lg-dev-studygroup-token-log-key` — created
+#      here with `openssl rand -base64 32` when missing; never overwritten, so
+#      old log lines stay decryptable with their recorded key version.
+#   3. App Runner RuntimeEnvironmentVariables += LIVEKIT_PROJECTS_JSON  (fixed, non-secret)
+#   4. App Runner RuntimeEnvironmentSecrets   += STUDY_GROUP_TOKEN_LOG_KEY = <FULL ARN of 2>
+#   5. Verify /api/health/config flips studyGroup.configured to true and the
+#      anonymous discover API answers 200.
+#
+# Runbook: docs/phase1/study-group/livekit-environment-enablement.md — §5 for this
+# workflow, §4 for the per-environment secret names, §7 for the
+# App Runner instance role that must be allowed to read both Secrets Manager
+# entries.
+#
+# Why a push trigger: `workflow_dispatch` only becomes available once this file
+# exists on the default branch, and this repo's default branch is protected, so
+# the dispatch button may not exist when the operator is ready to run this. The
+# self-referential `paths` push trigger runs the configuration as soon as this
+# file lands on a branch — in practice the push/merge that first carries it
+# into `dev` — and re-runs idempotently if the file is ever edited.
+#
+# Security notes (guide §4.3):
+#   - `aws apprunner describe-service` returns the VALUES of every existing
+#     runtime environment variable (Stripe keys, DATABASE_URL, ...). Its output
+#     goes straight to a file and is never echoed.
+#   - `aws apprunner update-service` echoes the full merged configuration; its
+#     stdout is redirected to /dev/null.
+#   - No `set -x`; secret values only ever travel from step env vars into
+#     Secrets Manager and the payload file. Logs contain names, never values.
+#   - `--cli-input-json` uses PascalCase member names and only the fields
+#     UpdateService actually accepts: ServiceArn, SourceConfiguration,
+#     InstanceConfiguration, AutoScalingConfigurationArn,
+#     HealthCheckConfiguration, NetworkConfiguration,
+#     ObservabilityConfiguration. EncryptionConfiguration is deliberately
+#     absent: describe-service returns it, but update-service rejects it ("can
+#     be set only when you create the service").
+#   - The update payload always starts from the full describe-service output so
+#     the complete source configuration is preserved (update-service replaces
+#     whatever SourceConfiguration it is given).
+
+name: study-group-dev-config
+
+on:
+  push:
+    paths:
+      - .github/workflows/study-group-dev-config.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: study-group-dev-config
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    name: Configure and verify DEV Study Group settings
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
+    steps:
+      - name: Require the project URL variable
+        env:
+          LIVEKIT_DEV_PROJECT_URL: ${{ vars.LIVEKIT_DEV_PROJECT_URL }}
+        run: |
+          set -u
+          if [ -z "${LIVEKIT_DEV_PROJECT_URL:-}" ]; then
+            echo "::error::LIVEKIT_DEV_PROJECT_URL is empty. Set the repository variable first (livekit-environment-enablement.md §4)."
+            exit 1
+          fi
+          echo "Input present (name only): LIVEKIT_DEV_PROJECT_URL"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      - name: Require the platform-issued LiveKit secret
+        env:
+          LIVEKIT_SECRET_NAME: lg-dev-studygroup-livekit
+        run: |
+          set -uo pipefail
+          if ! aws secretsmanager describe-secret --secret-id "$LIVEKIT_SECRET_NAME" >/dev/null 2>&1; then
+            echo "::error::$LIVEKIT_SECRET_NAME is missing from Secrets Manager. The platform writes it once, directly from the LiveKit console:"
+            echo "::error::aws secretsmanager create-secret --name $LIVEKIT_SECRET_NAME --secret-string '{\"apiKey\":\"<from LiveKit console>\",\"apiSecret\":\"<from LiveKit console>\"}'"
+            exit 1
+          fi
+          echo "Precondition met (name only): $LIVEKIT_SECRET_NAME"
+
+      - name: Auto-issue the token log key (create-if-missing)
+        id: secrets
+        run: |
+          set -euo pipefail
+          name="lg-dev-studygroup-token-log-key"
+
+          if aws secretsmanager describe-secret --secret-id "$name" >/dev/null 2>&1; then
+            echo "Token log key already exists; keeping the current value (old log lines stay decryptable)."
+          else
+            # Generated here, written straight into Secrets Manager. The value is
+            # never echoed, never logged, and never written to the runner disk.
+            aws secretsmanager create-secret --name "$name" --secret-string "$(openssl rand -base64 32)" >/dev/null
+            echo "Token log key issued."
+          fi
+
+          arn="$(aws secretsmanager describe-secret --secret-id "$name" --query ARN --output text)"
+          echo "token_log_key_arn=${arn}" >> "$GITHUB_OUTPUT"
+
+      - name: Merge the Study Group settings into the App Runner service
+        env:
+          APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
+          LIVEKIT_DEV_PROJECT_URL: ${{ vars.LIVEKIT_DEV_PROJECT_URL }}
+          LIVEKIT_DEV_PROJECT_ID: ${{ vars.LIVEKIT_DEV_PROJECT_ID || 'dev-primary' }}
+          TOKEN_LOG_KEY_SECRET_ARN: ${{ steps.secrets.outputs.token_log_key_arn }}
+        run: |
+          set -euo pipefail
+          described="$RUNNER_TEMP/described.json"
+          update="$RUNNER_TEMP/update.json"
+
+          # Full describe output, to a file only: it contains the VALUES of the
+          # existing plain-text runtime environment variables.
+          aws apprunner describe-service --service-arn "$APP_RUNNER_SERVICE_ARN" > "$described"
+
+          if [ "$(jq -r '.Service.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues | type' "$described")" != "object" ]; then
+            echo "::error::describe-service did not return CodeConfigurationValues; refusing to patch the service."
+            exit 1
+          fi
+
+          # Fixed, non-secret project inventory (guide §3.3). The secret NAME in
+          # credentialSecretId is resolved by the app through Secrets Manager.
+          projects_json="$(jq -c -n --arg url "$LIVEKIT_DEV_PROJECT_URL" --arg id "$LIVEKIT_DEV_PROJECT_ID" --arg ref "lg-dev-studygroup-livekit" '[{id:$id,url:$url,state:"active",weight:1,credentialSecretId:$ref}]')"
+
+          # Build the update payload from ONLY the fields update-service accepts
+          # (PascalCase for --cli-input-json), then merge both Study Group
+          # entries into the code configuration, preserving every existing
+          # variable and secret reference.
+          jq --arg projects "$projects_json" --arg token_log_key_arn "$TOKEN_LOG_KEY_SECRET_ARN" '
+            {
+              ServiceArn: .Service.ServiceArn,
+              SourceConfiguration: .Service.SourceConfiguration,
+              InstanceConfiguration: .Service.InstanceConfiguration,
+              HealthCheckConfiguration: .Service.HealthCheckConfiguration,
+              AutoScalingConfigurationArn: (.Service.AutoScalingConfigurationArn // .Service.AutoScalingConfigurationSummary.AutoScalingConfigurationArn),
+              NetworkConfiguration: .Service.NetworkConfiguration,
+              ObservabilityConfiguration: .Service.ObservabilityConfiguration
+            }
+            | with_entries(select(.value != null))
+            | .SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentVariables += {LIVEKIT_PROJECTS_JSON: $projects}
+            | .SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues.RuntimeEnvironmentSecrets += {STUDY_GROUP_TOKEN_LOG_KEY: $token_log_key_arn}
+          ' "$described" > "$update"
+
+          # update-service echoes the merged configuration; keep it off stdout.
+          # The call auto-deploys the new revision.
+          aws apprunner update-service --cli-input-json "file://$update" > /dev/null
+          rm -f "$described" "$update"
+          echo "App Runner update accepted: LIVEKIT_PROJECTS_JSON and STUDY_GROUP_TOKEN_LOG_KEY merged into the DEV service."
+
+      - name: Verify the live DEV configuration (12 attempts x 30 s)
+        run: |
+          set -uo pipefail
+          attempts=12
+          sleep_s=30
+          health_file="$RUNNER_TEMP/health-config.json"
+          discover_file="$RUNNER_TEMP/study-groups-discover.json"
+          last_study_group="(no response)"
+          last_status="(no response)"
+          last_snippet="(no response)"
+          for attempt in $(seq 1 "$attempts"); do
+            echo "attempt ${attempt}/${attempts}"
+            if curl -sS --max-time 20 https://ilovelearningguide.com/api/health/config -o "$health_file"; then
+              last_study_group="$(jq -c '.studyGroup' "$health_file" 2>/dev/null || printf 'unparseable')"
+              configured="$(jq -r '.studyGroup.configured' "$health_file" 2>/dev/null || printf 'false')"
+            else
+              last_study_group="(health request failed)"
+              configured="false"
+            fi
+            echo "studyGroup=${last_study_group}"
+
+            last_status="$(curl -sS --max-time 20 -o "$discover_file" -w '%{http_code}' 'https://ilovelearningguide.com/api/study-groups?view=discover&courseId=&q=' || true)"
+            [ -n "$last_status" ] || last_status="(request failed)"
+            last_snippet="$(head -c 200 "$discover_file" 2>/dev/null || true)"
+            echo "discover HTTP ${last_status}; body[0:200]=${last_snippet}"
+
+            if [ "$configured" = "true" ] && [ "$last_status" = "200" ]; then
+              echo "Study Group is configured on DEV."
+              exit 0
+            fi
+            sleep "$sleep_s"
+          done
+          echo "::error::Timed out after ${attempts} attempts. Last observed: studyGroup=${last_study_group} discover_http=${last_status} body[0:200]=${last_snippet}"
+          exit 1

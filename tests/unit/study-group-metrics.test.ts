@@ -45,7 +45,7 @@ function serviceWithRepository(repository: StudyGroupRepository) {
     listReminders: async () => [],
     sendMail: async () => undefined,
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
-    tokenLogKey: Buffer.alloc(32, 7)
+    tokenLogKey: () => Buffer.alloc(32, 7)
   };
   return createStudyGroupService(deps);
 }

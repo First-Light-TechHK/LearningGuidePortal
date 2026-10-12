@@ -56,6 +56,8 @@ Credential stores are write-only by design: GitHub environment secrets cannot be
 5. Revoke the old key only after the overlap and verification period; record project id, timestamp, actor and redacted evidence in the release record.
 6. If verification fails, return the resolver to the old secret version; do not move active sessions to another project.
 
+The application resolves the project credential from Secrets Manager at runtime (`credentialSecretId`), so a LiveKit key rotation needs no application configuration change. The token-issuance log key is a separate, application-owned secret, auto-issued once per environment by the enablement workflow into the same store and injected by App Runner; after its version changes, one rolling redeploy picks it up. The per-environment enablement plan and the current section numbers live in `livekit-environment-enablement.md`.
+
 ## Project outage and retirement
 
 For a new-session provider failure, return a typed temporary-unavailable state and alert. The registry may select another healthy active project only before a room is created. Do not silently fail over an existing room.

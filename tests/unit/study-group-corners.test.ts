@@ -36,7 +36,7 @@ function serviceWith(liveKit: StudyGroupDeps["liveKit"]) {
     listReminders: async () => [],
     sendMail: async (input) => { mails.push(input.subject); },
     liveKit,
-    tokenLogKey
+    tokenLogKey: () => tokenLogKey,
   });
 }
 

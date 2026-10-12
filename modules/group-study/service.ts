@@ -40,7 +40,10 @@ export type StudyGroupDeps = {
   liveKitProjects?: LiveKitProjectRegistry;
   liveKitGateway?: LiveKitRoomGateway;
   liveKitIncidentReporter?: (input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway" }) => void;
-  tokenLogKey: Buffer;
+  // Resolved lazily at issuance only: data operations must work on an
+  // environment where the key is not configured yet (managed environments get
+  // it injected from Secrets Manager; DEV resolves it on first real issuance).
+  tokenLogKey: () => Buffer | null;
   courseKnowledge?: (courseId: string) => Promise<string>;
   publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
@@ -717,6 +720,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!presence) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting a token.");
       let assignedProjectId = session.liveKitProjectId;
       try {
+        // Key first: a token must never be signed when the audit log line
+        // cannot be written. An unset key is a typed unavailability, not a 500.
+        const tokenLogKey = deps.tokenLogKey();
+        if (!tokenLogKey) throw new StudyGroupError("unavailable", "The Study Group token issuance log key is not configured.");
         const profile = await deps.userProfile(input.actorUserId);
         if (deps.liveKitProjects && deps.liveKitGateway && !assignedProjectId) {
           const selected = deps.liveKitProjects.selectForNewSession({ sessionId: session.id });
@@ -759,7 +766,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           sessionId: session.id,
           state: "token_issued",
           at: deps.now().toISOString()
-        }, deps.tokenLogKey);
+        }, tokenLogKey);
         if (line.includes(signed.token) || (!deps.liveKitGateway && line.includes(deps.liveKit.apiSecret))) throw new StudyGroupError("unavailable", "Token log refused.");
         await deps.repository.appendTokenLog(line);
         return { token: signed.token, expiresAt: signed.expiresAt, liveKitUrl: "url" in signed ? signed.url : deps.liveKit.url };

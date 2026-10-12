@@ -110,7 +110,7 @@ async function webhookFixture(options: { gateway?: LiveKitRoomGateway } = {}): P
     sendMail: async () => undefined,
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
     liveKitGateway: options.gateway ?? stubGateway(async () => { throw new Error("no webhook verify configured"); }),
-    tokenLogKey
+    tokenLogKey: () => tokenLogKey,
   };
   return { directory, service: createStudyGroupService(deps), repository, receipts, hooks, calls, access };
 }

@@ -110,7 +110,7 @@ function serviceFor(
     liveKitProjects: projects,
     liveKitGateway: gateway,
     liveKitIncidentReporter: (incident) => { stats.incidents.push(incident); },
-    tokenLogKey: Buffer.alloc(32, 7),
+    tokenLogKey: () => Buffer.alloc(32, 7),
     courseKnowledge: async () => "The Weimar republic ended in 1933.",
     publishRoomChat: async ({ text }) => { stats.published.push(text); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
