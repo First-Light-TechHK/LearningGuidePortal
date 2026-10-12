@@ -95,4 +95,28 @@
 3. 生产 preflight 在缺配置时阻断（已有测试）。
 4. 零配置环境页面可用：数据功能 200、直播操作返回类型化 503——由 `tests/unit/study-group-livekit-degradation.test.ts` 固化；令牌日志钥先于签名解析（缺钥不签名、不写日志、保留席位）由 `tests/unit/study-group-service.test.ts` 固化。
 5. 部署自查（代码核实，不需 AWS 访问）：`/api/health/config` 的 `studyGroup` 显示 `tutorKeys:"configured"`、`credentialSource:"secrets-manager"`、`simulated:false`——由 `tests/unit/study-group-readiness.test.ts` 固化。
-6. 部署盖章（平台侧一行接线）：dev-deploy 部署成功后调用仓库内已有的 `scripts/apprunner-set-version.mjs` 写入当次 SHA，健康面的 `version` 才如实。部署工作流属平台范围，SG 侧只提供脚本与步骤。
+6. 部署盖章（平台侧接线，使用引用已备齐）：
+   - 脚本：`scripts/apprunner-set-version.mjs`（已在仓库）。用法：设两个环境变量后直接运行——`APP_RUNNER_SERVICE_ARN`（该环境的服务 ARN）、`APP_VERSION`（当次部署的 SHA）。脚本自己合并进 `RuntimeEnvironmentVariables`、触发滚动更新并等待成功。
+   - 接线：dev-deploy 在"部署完成"后加一步 `node scripts/apprunner-set-version.mjs`，env 传上述两个值（`APP_VERSION: ${{ github.sha }}`）。
+   - 注意：脚本通过 update-service 写入变量，因此会产生第二次滚动重启；能接受就用，不接受则改为在部署本身的同一次 update-service 里带上 `APP_VERSION`（平台自行选择）。
+   - 验证：`/api/health` 的 `version` 等于当次 SHA。
+
+### 9.1 Secrets Manager 使用引用速查（照抄）
+
+```
+Secrets Manager 条目（每环境三条）:
+  lg-<env>-studygroup-livekit        {"apiKey":"...","apiSecret":"..."}
+  lg-<env>-studygroup-token-log-key  <openssl rand -base64 32 的输出>
+  lg-<env>-studygroup-tutor-keys     [{"id":"...","secret":"..."}]
+
+App Runner 普通变量:
+  LIVEKIT_PROJECTS_JSON = [{"id":"dev-primary","url":"wss://<项目>.livekit.cloud","state":"active","weight":1,"credentialSecretId":"lg-dev-studygroup-livekit"}]
+  （credentialSecretId 必须与实际密钥名一致；应用运行时按它读 Secrets Manager）
+
+App Runner RuntimeEnvironmentSecrets（值 = 密钥完整 ARN，含随机后缀）:
+  STUDY_GROUP_TOKEN_LOG_KEY = <ARN of lg-<env>-studygroup-token-log-key>
+  STUDY_GROUP_TUTOR_KEYS    = <ARN of lg-<env>-studygroup-tutor-keys>
+
+部署后自查（无需 AWS 访问）: /api/health/config 的 studyGroup 三项
+  configured=true, tutorKeys="configured", credentialSource="secrets-manager", simulated=false
+```
