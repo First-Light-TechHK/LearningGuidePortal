@@ -4,13 +4,30 @@ import type { TutorKeyOutcome } from "./tutorKeyPool";
 
 export const COURSE_MATERIAL_ABSENT = "The course material does not contain the answer.";
 
-const STOP_WORDS = new Set(["what", "when", "where", "which", "that", "this", "with", "from", "have", "does", "about", "your", "into", "they", "them", "were", "been", "would", "could", "should", "their", "there", "again", "more", "than", "says", "said", "just", "only", "also", "very", "much", "many", "even", "still", "then", "here", "each", "both", "same", "most", "well", "back", "like", "over", "such", "some", "other", "why", "how", "relate", "related", "between"]);
+const STOP_WORDS = new Set(["what", "when", "where", "which", "that", "this", "with", "from", "have", "does", "about", "your", "into", "they", "them", "were", "been", "would", "could", "should", "their", "there", "again", "more", "than", "says", "said", "just", "only", "also", "very", "much", "many", "even", "still", "then", "here", "each", "both", "same", "most", "well", "back", "like", "over", "such", "some", "other", "why", "how", "relate", "related", "between", "give", "show", "tell", "please", "understanding", "check", "checks", "question", "questions", "quiz", "quizzes"]);
+
+// Common Chinese framing words (kept as bigrams, matching the CJK expansion
+// below) that carry no course content. Without these, a polite request such as
+// \u8bf7\u4ecb\u7ecd\u4e00\u4e0bX would count mostly-missing framing bigrams and be refused as
+// outside the course material even when X is covered.
+const ZH_STOP_WORDS = new Set(["\u4ecb\u7ecd", "\u4e00\u4e0b", "\u5173\u4e8e", "\u4ec0\u4e48", "\u662f\u8c01", "\u544a\u8bc9", "\u8bf4\u8bf4", "\u8bb2\u8bb2", "\u89e3\u91ca", "\u5e2e\u6211", "\u80fd\u4e0d\u80fd", "\u53ef\u4ee5", "\u51fa\u4e00", "\u9053\u9898", "\u51fa\u9898"]);
+
+function cjkQuestionTerms(run: string): string[] {
+  // A contiguous CJK run carries no spaces, so the whole sentence matched as
+  // one term can never be found in the course text. Use overlapping bigrams
+  // for runs longer than two characters; the retrieval and the missing-term
+  // ratio both operate on those.
+  if (run.length <= 2) return [run];
+  const terms: string[] = [];
+  for (let index = 0; index < run.length - 1; index += 1) terms.push(run.slice(index, index + 2));
+  return terms;
+}
 
 export function courseQuestionTerms(question: string) {
   return [
     ...(question.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []),
-    ...(question.match(/[\u3400-\u9fff]{2,}/g) ?? [])
-  ].filter((term, index, all) => !STOP_WORDS.has(term) && all.indexOf(term) === index);
+    ...(question.match(/[\u3400-\u9fff]{2,}/g) ?? []).flatMap((run) => cjkQuestionTerms(run))
+  ].filter((term, index, all) => !STOP_WORDS.has(term) && !ZH_STOP_WORDS.has(term) && all.indexOf(term) === index);
 }
 
 export function retrieveCourseKnowledge(corpus: string, question: string) {

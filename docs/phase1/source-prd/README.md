@@ -1,12 +1,13 @@
 # 原始需求文件
 
-以下七份 DOCX 是本项目 Phase 1 的需求输入。它们定义要做什么，不定义必须采用哪一个开源框架或 AWS 服务。具体实现以根目录 `PROJECT.md`、`AGENTS.md`、`DESIGN.md` 和本目录其他工程文件为准。
+以下八份 DOCX 是本项目 Phase 1 的需求输入。它们定义要做什么，不定义必须采用哪一个开源框架或 AWS 服务。具体实现以根目录 `PROJECT.md`、`AGENTS.md`、`DESIGN.md` 和本目录其他工程文件为准。
 
 | PRD | 对应 Business Function |
 |---|---|
 | `Portal_PRD_v1.0_0814.docx` | Learning Guide Portal、Tourists Visit、Course Management |
 | `Registration_Authentication_PRD_v1.0_0814.docx` | User Registration、User Authentication |
 | `Visitor_Trial_PRD_v1.0_0814.docx` | Tourists Visit、Purchase、Subscription Management |
+| `Learning_Guide_Study_Group_PRD_v0.10_EN.docx` | Group Study |
 | `Payment_Management_PRD_v1.0_0814.docx` | Payment Management |
 | `Order_Management_PRD_v1.0_0814.docx` | Order Management |
 | `Subscription_Management_PRD_v1.0_0814.docx` | Subscription Management |

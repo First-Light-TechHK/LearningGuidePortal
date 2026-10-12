@@ -195,10 +195,10 @@ test("cancelling a group ends a live session and closes its one meeting", async 
   assert.equal(view.state, "completed");
 });
 
-test("a waiting entrant is listed without a plan, and a scheduled list stays with planners", async () => {
+test("View attendees shows planners until the Session is live, then the actual entrants (PRD 6.6)", async () => {
   access.add("walker:course-1");
   access.add("planner-only:course-1");
-  const group = await service.createGroup({ actorUserId: "host", title: "Who is waiting", courseId: "course-1", about: "Attendees follow the seat." });
+  const group = await service.createGroup({ actorUserId: "host", title: "Who is waiting", courseId: "course-1", about: "Attendees follow the Session state." });
   await service.joinGroup({ actorUserId: "walker", groupId: group.id });
   await service.joinGroup({ actorUserId: "planner-only", groupId: group.id });
   const soon = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon list", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
@@ -206,7 +206,14 @@ test("a waiting entrant is listed without a plan, and a scheduled list stays wit
   await service.planToAttend({ actorUserId: "planner-only", sessionId: soon.id });
   const waiting = await service.getSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal(waiting.state, "starting_soon");
-  assert.deepEqual(waiting.attendees.map((item) => item.userId), ["walker"]);
+  // Unstarted (including Starting Soon): the planned list, not the waiting entrants.
+  assert.deepEqual(waiting.attendees.map((item) => item.userId), ["planner-only"]);
+  assert.equal(waiting.occupancy, 1);
+  await service.startSession({ actorUserId: "host", sessionId: soon.id });
+  const live = await service.getSession({ actorUserId: "host", sessionId: soon.id });
+  assert.equal(live.state, "live");
+  // Live: the actual entrants; a planner who never entered is not an attendee.
+  assert.deepEqual(live.attendees.map((item) => item.userId), ["walker"]);
   const later = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Later list", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await service.planToAttend({ actorUserId: "planner-only", sessionId: later.id });
   const upcoming = await service.getSession({ actorUserId: "host", sessionId: later.id });
@@ -1003,6 +1010,33 @@ test("reminders go to the host and plan-to-attend members only, once", async () 
   assert.equal(notes.some((item) => item.body.includes("Too early") || item.body.includes("Already due") || item.body.includes("Already live")), false);
   assert.equal(early.title, "Too early");
   assert.equal(past.title, "Already due");
+});
+
+test("leaving the group cancels the member's future reminder end-to-end", async () => {
+  access.add("leaver:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Leave reminders", courseId: "course-1", about: "Leave about." });
+  await service.joinGroup({ actorUserId: "leaver", groupId: group.id });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Leave session", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "leaver", sessionId: session.id });
+  await service.leaveGroup({ actorUserId: "leaver", groupId: group.id });
+  notes.length = 0;
+  mails.length = 0;
+  await service.dispatchDueReminders();
+  assert.deepEqual(notes.filter((item) => item.body.includes("Leave session")).map((item) => item.userId).sort(), ["host"]);
+  assert.deepEqual(mails.filter((item) => item.text.includes("Leave session")).map((item) => item.to), ["host@example.test"]);
+});
+
+test("a Group card shows Live only while a child Session is live (BR-006)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Badge", courseId: "course-1", about: "Badge about." });
+  const mine = async () => (await service.listMine("host")).find((item) => item.id === group.id)!;
+  assert.equal((await mine()).live, false);
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Badge session", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
+  assert.equal((await mine()).live, false);
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await mine()).live, true);
+  await service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await mine()).live, false);
 });
 
 test("a zh-CN reminder uses the Chinese sentence", async () => {

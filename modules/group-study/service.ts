@@ -350,7 +350,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   async function sessionView(store: StudyGroupStore, session: LiveSessionRow, actorUserId: string) {
     const state = effectiveSessionState(session, deps.now());
     if (state === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
-    const showActual = state === "starting_soon" || state === "live" || state === "completed";
+    // PRD 6.6: View attendees shows the PLANNED attendees for an unstarted
+    // Session and actual attendees once the Session is live or completed.
+    // Starting Soon is still unstarted; entered waiting users count towards
+    // occupancy (BR-033) but do not replace the planned list yet.
+    const showActual = state === "live" || state === "completed";
     const people = showActual
       ? store.presences.filter((item) => item.sessionId === session.id && item.enteredAt && (state === "completed" || !item.leftAt))
       : store.intents.filter((item) => item.sessionId === session.id && !item.cancelledAt);

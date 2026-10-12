@@ -12,7 +12,7 @@ This phase does not call a model from the enqueue path. It stores the Live Sessi
 - The same client event id returns the original item.
 - The item is not a chat row and not a token row.
 - Enqueue does not change occupancy, does not issue a LiveKit token, and does not call a provider.
-- The enqueue path has no drain and no Course Knowledge call; the implemented delivery path drains the queue (see decisions.md). There is still no understanding-check generation.
+- The enqueue path has no drain and no Course Knowledge call; the implemented delivery path drains the queue (see decisions.md). On request in the shared Chat the tutor can ask one grounded understanding-check question (prompt constant in `tutorPrompt.ts`; retrieval rules incl. Chinese bigrams in `tutorAnswer.ts`; `tests/unit/study-group-tutor-retrieval.test.ts`).
 - Do not put an AI Tutor participant in the LiveKit room.
 
 ## Queue
