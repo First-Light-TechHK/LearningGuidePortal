@@ -1092,13 +1092,14 @@ export async function updatePaymentSettings(input: { name: string; publishableKe
 
 function liveEntitlement(data: ProductData, userId: string, courseId: string) {
   const course = data.courses.find((item) => item.id === courseId);
-  const entitlement = course ? data.entitlements.find((item) => item.userId === userId && item.state === "active" && entitlementCoversCourse(item, course)) : null;
-  if (!entitlement) return null;
-  if (new Date(entitlement.validTo) <= new Date()) {
+  if (!course) return null;
+  const currentTime = new Date();
+  for (const entitlement of data.entitlements) {
+    if (entitlement.userId !== userId || entitlement.state !== "active" || !entitlementCoversCourse(entitlement, course)) continue;
+    if (new Date(entitlement.validTo) > currentTime) return entitlement;
     entitlement.state = "expired";
-    return null;
   }
-  return entitlement;
+  return null;
 }
 
 function activeEntitlement(data: ProductData, userId: string, courseId: string) {
@@ -1539,8 +1540,13 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     subscription.validFrom = start;
     subscription.validTo = end;
     subscription.graceEndsAt = null;
-    const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.state === "active");
-    if (entitlement) entitlement.validTo = end;
+    // D3: a paid renewal revives the entitlement even after a sweep expired it,
+    // mirroring the invoice branch of applyVerifiedStripeEvent.
+    const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription));
+    if (entitlement) {
+      entitlement.state = "active";
+      entitlement.validTo = end;
+    }
     const initialOrder = data.orders.find((order) => order.stripeSubscriptionId === input.subscriptionId && order.kind === "purchase" && !order.stripeInvoiceId);
     if (initialOrder) {
       initialOrder.stripeInvoiceId = input.invoiceId;
@@ -1797,7 +1803,10 @@ export async function getLearningOverview(userId: string) {
     });
     const empty = overviewEmptyState(courses.length, accessState);
     const orders = data.orders.filter((item) => item.userId === userId).map((order) => ({ ...order, plan: order.planSnapshot || data.plans.find((plan) => plan.id === order.planId) || null }));
-    const entitlements = data.entitlements.filter((item) => item.userId === userId && item.state === "active" && new Date(item.validTo) > currentTime);
+    // D2 LEARN-04: the "Current access" list follows the same existence + published
+    // requirement as activeEntitlement; an entitlement only covers an unpublished
+    // course must not be presented as live access.
+    const entitlements = data.entitlements.filter((item) => item.userId === userId && item.state === "active" && new Date(item.validTo) > currentTime && data.courses.some((course) => course.status === "published" && entitlementCoversCourse(item, course)));
     return {
       courses,
       subscriptions,
