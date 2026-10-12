@@ -3,8 +3,12 @@ import Link from "next/link";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "@/lib/courseDetailPresentation";
-import { getCoursePage, getProductCourse, listPlans } from "@/services/productStore";
+import { getCoursePage, getProductCourse, getCourseLearningMode, listPlans } from "@/services/productStore";
+import { CourseLearningModeDialog } from "@/components/portal/CourseLearningModeDialog";
+import { isCourseLearningMode } from "@/contracts/course-learning-mode";
+import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
+import { CourseCurriculumAction } from "@/components/portal/CourseCurriculumAction";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { StreamedContent } from "@/components/portal/StreamedContent";
@@ -14,13 +18,16 @@ import styles from "@/components/portal/course-detail.module.css";
 
 const asset = (name: string) => `/portal/course-detail/${name}.svg`;
 
-export default async function CourseDetailPage({ params }: {
+export default async function CourseDetailPage({ params, searchParams }: {
   params: Promise<{ locale: string; slug: string }>;
+  searchParams?: Promise<{ learningMode?: string }>;
 }) {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const user = await currentProductUser();
   const [page, course] = await Promise.all([getCoursePage(slug, user?.id), getProductCourse(slug)]);
+  const savedMode = user && course ? await getCourseLearningMode(user.id, course.id) : null;
+  const requestedMode = (await searchParams)?.learningMode;
   const messages = getMessages(locale);
   const copy = messages.portal;
   const detail = messages.courseDetailDesign;
@@ -106,7 +113,7 @@ export default async function CourseDetailPage({ params }: {
                           <h3><span>{detail.lesson} {index + 1}</span>{lessonHref ? <Link href={lessonHref}>{lesson.title}</Link> : lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
-                        {lessonHref ? <Link className={styles.preview} href={lessonHref} data-course-cta-link={lesson.access === "entitled" ? "continue_learning" : page.cta === "continue_preview" ? "continue_preview" : "start_preview"}>{lesson.access === "entitled" ? messages.learning.continue : detail.preview}</Link> : null}
+                        <CourseCurriculumAction lesson={lesson} href={lessonHref} className={styles.preview} copy={detail} cta={page.cta} />
                       </article>;
                     })}
                   </div>
@@ -128,6 +135,7 @@ export default async function CourseDetailPage({ params }: {
         )}
       </>}
       <PortalFooter locale={locale} />
+      {page.pageState === "available" && course && !savedMode && availableCourseLearningModes(course).length > 1 ? <CourseLearningModeDialog key={`${user?.id || "visitor"}:${course.id}`} courseId={course.id} locale={locale} signedIn={Boolean(user)} pendingMode={user && isCourseLearningMode(requestedMode) ? requestedMode : null}/> : null}
       </StreamedContent>
     </main>
   );

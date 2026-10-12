@@ -38,6 +38,10 @@ test.beforeAll(async () => {
       billing_scheme: "per_unit", transform_quantity: null, recurring: { interval: mapping.termMonths === 6 ? "month" : "year", interval_count: mapping.termMonths === 6 ? 6 : 1, usage_type: "licensed" } } as Stripe.Price);
   }
   store = productStore;
+  for (const [months,key,env] of [[6,"lg_upgrade_60","STRIPE_PRICE_UPGRADE_SIX_MONTHS"],[12,"lg_upgrade_120","STRIPE_PRICE_UPGRADE_ONE_YEAR"]] as const) {
+    process.env[env]=key;
+    catalog.set(key,{id:"price_"+key,active:true,lookup_key:key,type:"one_time",currency:"usd",unit_amount:months===6?6000:12000,billing_scheme:"per_unit",transform_quantity:null,recurring:null,livemode:false} as Stripe.Price);
+  }
   payment = paymentService;
   prices = stripePriceService;
   webhook = paymentWebhook;
@@ -229,22 +233,42 @@ test("failed invoice grace is stable and recovery restores expired access", asyn
   expect(start).toBeLessThan(end);
 });
 
-test("upgrade collects the difference once and changes the existing recurring subscription", async () => {
-  const result = await checkout("european-humanities-pc-6");
+for (const months of [6,12] as const) test(`upgrade collects the configured ${months}-month one-time Price and changes the existing recurring subscription`, async () => {
+  const amount=months===6?6000:12000,upgradeId=months===6?"price_lg_upgrade_60":"price_lg_upgrade_120";
+  const result = await checkout(`european-humanities-pc-${months}`);
   const { session, subscription, end } = paidSession(result.order);
-  expect((await send("checkout.session.completed", "evt_upgrade_source", session.id)).status).toBe(200);
+  expect((await send("checkout.session.completed", `evt_upgrade_source_${months}`, session.id)).status).toBe(200);
   const source = (await store.getLearningOverview(result.buyer.id)).subscriptions[0];
   const { quote } = await store.createUpgradeQuote(result.buyer.id, source.id);
-  expect(quote.amountMinor).toBe(6000);
+  expect(quote.amountMinor).toBe(amount);
+  expect(quote.upgradePrice?.stripePriceId).toBe(upgradeId);
   const upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
   const upgradeSession = sessions.get(upgraded.order.stripeCheckoutSessionId!)!;
-  Object.assign(upgradeSession, { status: "complete", payment_status: "paid", amount_total: 6000, line_items: { has_more: false, data: [{ quantity: 1 }] } });
-  expect((await send("checkout.session.completed", "evt_upgrade_paid", upgradeSession.id)).status).toBe(200);
-  expect((await send("checkout.session.completed", "evt_upgrade_paid", upgradeSession.id)).status).toBe(200);
-  expect(subscription.items.data[0].price.id).toBe("price_everything-pc-6");
+  expect(requests.at(-1)!.input.mode).toBe("payment");
+  expect(requests.at(-1)!.input.line_items).toEqual([{quantity:1,price:upgradeId}]);
+  Object.assign(upgradeSession, { status: "complete", payment_status: "paid", amount_total: amount, line_items: { has_more: false, data: [{ quantity: 1,price:{id:"wrong_price"} }] } });
+  expect((await send("checkout.session.completed", `evt_upgrade_paid_${months}`, upgradeSession.id)).status).toBe(400);
+  expect(subscription.items.data[0].price.id).toBe(`price_european-humanities-pc-${months}`);
+  upgradeSession.line_items!.data[0].price={id:upgradeId} as Stripe.Price;
+  expect((await send("checkout.session.completed", `evt_upgrade_paid_${months}`, upgradeSession.id)).status).toBe(200);
+  expect((await send("checkout.session.completed", `evt_upgrade_paid_${months}`, upgradeSession.id)).status).toBe(200);
+  expect(subscription.items.data[0].price.id).toBe(`price_everything-pc-${months}`);
   const active = (await store.getLearningOverview(result.buyer.id)).subscriptions.filter(item => item.state === "active");
   expect(active).toHaveLength(1);
   expect(active[0].stripeSubscriptionId).toBe(subscription.id);
   expect(active[0].validTo).toBe(new Date(end * 1000).toISOString());
   expect(active[0].stripeCustomerId).toBe(source.stripeCustomerId);
+});
+
+test("upgrade Price rejects missing configuration, recurring products, wrong amounts and inactive Prices",async()=>{
+  const saved=process.env.STRIPE_PRICE_UPGRADE_SIX_MONTHS;
+  delete process.env.STRIPE_PRICE_UPGRADE_SIX_MONTHS;
+  await expect(prices.resolveUpgradePrice(6)).rejects.toMatchObject({code:"price_unavailable"});
+  process.env.STRIPE_PRICE_UPGRADE_SIX_MONTHS=saved;
+  const valid=catalog.get("lg_upgrade_60")!;
+  for(const patch of [{active:false},{unit_amount:6100},{currency:"gbp"},{type:"recurring",recurring:{interval:"month",interval_count:6}}]) {
+    catalog.set("lg_upgrade_60",{...valid,...patch} as Stripe.Price);
+    await expect(prices.resolveUpgradePrice(6)).rejects.toMatchObject({code:"price_unavailable"});
+  }
+  catalog.set("lg_upgrade_60",valid);
 });

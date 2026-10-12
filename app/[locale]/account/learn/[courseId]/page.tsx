@@ -1,20 +1,28 @@
-import Link from "next/link";
+import { nextLessonHref } from "@/lib/lessonContinuation";
 import { redirect, notFound } from "next/navigation";
 import { currentProductUser } from "@/services/productAuth";
-import { checkEntitlement, getLearningOverview, getProductCourse } from "@/services/productStore";
-import { getMessages } from "@/lib/i18n/messages";
+import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningMode } from "@/services/productStore";
 import { localeFrom } from "@/lib/i18n/config";
-import { LearningRoom } from "@/components/portal/LearningRoom";
+import { PreviewLessonView } from "@/components/portal/PreviewLessonView";
+import { PortalHeader } from "@/components/portal/PortalHeader";
+import { previewLessonOutline } from "@/lib/previewLessonPresentation";
+import { courseImageFor } from "@/components/portal/CourseThumbnail";
+import { signCourseMediaUrl } from "@/services/persistence/s3";
 import { sanitiseLessonContents } from "@/services/lessonContent";
 import { signCourseMediaReferences } from "@/services/courseMediaSigning";
+import { isCourseLearningMode } from "@/contracts/course-learning-mode";
 
-export default async function LearningPage({ params, searchParams }: { params: Promise<{ locale: string; courseId: string }>; searchParams: Promise<{ lessonId?: string }> }) {
+export default async function LearningPage({ params, searchParams }: { params: Promise<{ locale: string; courseId: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string }> }) {
   const { locale: rawLocale, courseId } = await params;
   const locale = localeFrom(rawLocale);
-  const { lessonId } = await searchParams;
+  const { lessonId, viewMode, contentId } = await searchParams;
   const user = await currentProductUser();
   if (!user) {
-    const destination = `/${locale}/account/learn/${encodeURIComponent(courseId)}${lessonId ? `?lessonId=${encodeURIComponent(lessonId)}` : ''}`;
+    const query = new URLSearchParams();
+    if (lessonId) query.set("lessonId", lessonId);
+    if (contentId) query.set("contentId", contentId);
+    if (isCourseLearningMode(viewMode)) query.set("viewMode", viewMode);
+    const destination = `/${locale}/account/learn/${encodeURIComponent(courseId)}${query.size ? `?${query}` : ''}`;
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`);
   }
   const course = await getProductCourse(courseId);
@@ -25,7 +33,14 @@ export default async function LearningPage({ params, searchParams }: { params: P
   const lesson = lessonId ? lessons.find((item) => item.id === lessonId) : lessons[0];
   if (!lesson) notFound();
   lesson.contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
+  const preferredMode = isCourseLearningMode(viewMode) ? viewMode : await getCourseLearningMode(user.id, course.id);
   const overview = await getLearningOverview(user.id);
   const study = overview.courses.find((item) => item.courseId === course.id);
-  return <main className="portal-page portal-page-wide" data-course-id={course.id} data-lesson-id={lesson.id}><header className="portal-header"><Link className="portal-brand" href={`/${locale}/portal`}><span className="portal-brand-mark">LG</span><span>{getMessages(locale).brand}</span></Link><Link href={`/${locale}/account/my-learning`}>{getMessages(locale).learning.title}</Link></header><div className="learning-layout"><aside className="lesson-nav" aria-label="Course lessons"><p className="portal-eyebrow">{course.title}</p>{course.sections.map((section, sectionIndex) => <div className="lesson-nav-section" key={`${section.id}-${sectionIndex}`}><strong>{section.title}</strong>{section.lessons.map((item, lessonIndex) => <Link className={item.id === lesson.id ? "active" : ""} href={`/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(item.id)}`} key={`${item.id}-${sectionIndex}-${lessonIndex}`}>{item.title}<small>{item.durationMinutes} {getMessages(locale).learning.minutes}</small></Link>)}</div>)}</aside><LearningRoom key={`room-${lesson.id}`} locale={locale} courseId={course.id} lesson={lesson} initialCompleted={study?.completedLessonIds.includes(lesson.id) || false} copy={getMessages(locale).learning} fallbackImageUrl="/portal/exh.jpg" /></div></main>;
+  const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
+  return <main className="portal-page portal-public-lesson-page">
+    <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
+    <PreviewLessonView key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={course.subtitle || course.description}
+      lesson={lesson} outline={previewLessonOutline(course, locale, true)} poster={poster} preferredMode={preferredMode} initialContentId={contentId || (study?.currentLessonId === lesson.id ? study.currentContentId : null)} entitled
+      studyEndpoint="/api/study/events" initialCompleted={study?.completedLessonIds.includes(lesson.id) || false} nextHref={nextLessonHref(locale, course.id, lessons, lesson.id)} />
+  </main>;
 }

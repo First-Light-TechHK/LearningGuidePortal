@@ -1,6 +1,93 @@
 {
+  "textExhibit": { "imageTitle": "Image detail study", "videoTitle": "Flowers in motion", "modelTitle": "Vase form study" },
+  "exhibitDialog": { "courseExhibit": "Course exhibit", "close": "Close exhibit", "about": "About this exhibit", "source": "Source", "collection": "Course exhibit collection", "returnHint": "Close the exhibit to return to the same point in the lesson. Playback will remain paused.", "modelHint": "Drag to rotate · Scroll to zoom", "imageHint": "Drag to move · Scroll to zoom", "videoHint": "Play video · Scroll to zoom", "modelDescription": "This exhibit provides a closer view of the object introduced during the lesson. Rotate and zoom to inspect its form and details.", "imageDescription": "This exhibit provides a closer view of the image introduced during the lesson. Drag and zoom to inspect its details.", "videoDescription": "Watch the video introduced during the lesson. Use the playback controls to explore it at your own pace.", "controls": "Exhibit viewer controls", "zoom": "Zoom level", "zoomIn": "Zoom in", "zoomOut": "Zoom out", "reset": "Reset", "loading": "Loading exhibit…", "failed": "The exhibit could not be loaded. Close and reopen it to retry." },
+  "videoExhibit": { "available": "Exhibit Available", "untitled": "Exhibit", "notNow": "Not Now", "view": "View exhibit", "types": { "text": "Article", "video": "Video", "image": "Image", "audio": "Audio", "model3d": "3D Model", "exercise": "Exercise" } },
+  "exploration": {
+    "title":"Exploration", "description":"Discover supporting materials and explore ideas further.", "reading":"Recommended Reading", "exhibits":"Exhibits", "thisLesson":"This lesson", "wholeCourse":"Whole course", "scope":"Exploration scope", "close":"Close Exploration", "book":"BOOK", "article":"ARTICLE", "lesson":"Lesson {number}", "future":"More exhibits will become available as you progress through the course.", "locked":"Future Lesson content remains locked.", "empty":"No supporting materials available."
+  },
+  "understandingOverview": {
+    "title": "Understanding", "description": "Review assessment status and your latest result across the course", "back": "Back to lesson",
+    "progress": "Your Progress", "completedCount": "{completed} of {total} completed", "courseAssessment": "Course Assessment", "lessonAssessments": "Lesson Assessments",
+    "lessonAssessment": "Lesson / Assessment", "status": "Status", "latestResult": "Latest Result", "action": "Action", "completed": "Completed", "current": "Current lesson",
+    "evaluated": "Evaluated", "inProgress": "In progress", "available": "Available", "locked": "Available after lesson completion", "answered": "3 of 20 answered", "strong": "Strong",
+    "viewResult": "View result", "continue": "Continue", "start": "Start"
+  },
+  "applicationTest": {
+    "title": "Application Test", "apply": "Apply Your Knowledge", "aiEvaluated": "AI EVALUATED", "submit": "Submit for AI evaluation",
+    "back": "Back to Understanding", "evaluating": "Evaluating your response...", "evaluationNote": "The evaluation status replaces the submit action; the prompt and saved response remain in context.",
+    "yourResponse": "Your Response", "overall": "Overall Assessment", "strongResponse": "Strong Response", "latest": "Latest Attempt",
+    "strengths": "What you did well", "improvement": "Area to improve", "retryNote": "If AI evaluation fails, the saved response remains available and can be retried without retyping.",
+    "expand": "Expand dialog", "restore": "Restore dialog size"
+  },
+  "knowledgeTest": {
+    "title": "Knowledge Test", "result": "Result Review", "flashcards": "Knowledge Flashcards", "lesson": "Lesson {number}",
+    "review": "Review what you learned", "question": "Question", "yourAnswer": "Your Answer", "placeholder": "Write your answer in your own words...",
+    "saved": "Saved automatically", "exit": "Exit", "check": "Check answer", "reference": "Reference Answer", "emptyAnswer": "No answer entered",
+    "selfAssessment": "How Did You Do?", "mark": "Mark yourself", "wrong": "I got it wrong", "right": "I got it right", "next": "Next",
+    "strongUnderstanding": "Strong Understanding", "needsReview": "Needs Review", "strong": "Strong", "correct": "{correct}/{total} cards marked correct",
+    "basedOn": "Based on your self-assessment", "reviewAll": "Review All Cards", "cards": "{count} cards", "openCard": "Open Saved Card", "done": "Done", "emptyList": "No cards in this list"
+  },
+  "lessonCompleted": {
+    "title": "Lesson {number} completed",
+    "description": "Choose a test to check your understanding, or continue learning",
+    "knowledge": "Knowledge Test",
+    "application": "Application Test",
+    "fluency": "Fluency Test",
+    "questions": "Questions",
+    "openResponse": "Open response",
+    "forLesson": "For this lesson",
+    "courseAssessment": "Course-level AI assessment",
+    "start": "Start test",
+    "comingSoon": "Coming soon",
+    "continue": "Continue",
+    "unavailable": "This lesson does not have a test available yet."
+  },
+  "videoCompletion": {
+    "label": "Lesson completion",
+    "watched": "Lesson {number} · {percent}% Watched",
+    "question": "Have you completed this lesson?",
+    "keepWatching": "Keep watching",
+    "complete": "Complete lesson"
+  },
+  "courseLearningMode": {
+    "title": "How would you like to learn?",
+    "description": "Choose a preferred mode for this course. You can switch at any time.",
+    "video": "Video Mode",
+    "text": "Text Mode",
+    "savedNote": "Your preference will be saved to My Learning for this course",
+    "continue": "Continue",
+    "continueVideo": "Continue with Video",
+    "continueText": "Continue with Text",
+    "saving": "Saving…",
+    "close": "Close",
+    "saveError": "Your preference could not be saved. Please try again."
+  },
+  "upgradePanel": {
+    "eyebrow": "Upgrade subscription", "title": "Upgrade to PC Everything",
+    "description": "Pay a one-time upgrade fee based on your subscription term. Review the amount before payment. Your existing expiry date is retained. Other Category subscriptions are unchanged.",
+    "calculate": "View upgrade price", "error": "Upgrade price calculation failed."
+  },
+  "overviewV1": {
+    "learning": "Your learning", "description": "Showing all courses you have started", "lessons": "{count} lessons",
+    "video": "Video Mode", "text": "Text Mode",
+    "categories": { "chinese": "Chinese Humanities", "science": "Science", "european": "European Humanities" },
+    "actions": { "resume": "Resume Learning", "review": "Review Course", "plans": "View plans" }
+  },
+  "learningOverview": {
+    "learning": "Learning courses",
+    "previewed": "Previewed courses",
+    "continue": "Continue",
+    "currentLesson": "Current: Lesson {number}",
+    "detail": "Course detail",
+    "noLearning": "You have not started any courses yet.",
+    "noPreviewed": "You have not previewed any courses yet."
+  },
   "brand": "Learning Guide",
   "previewVideoDesign": {
+    "learningMode": "Learning mode",
+    "videoMode": "Video mode",
+    "textMode": "Text mode",
+    "noLessonsInMode": "No lessons available in this mode.",
     "back": "Back to course details",
     "outline": "COURSE OUTLINE",
     "deepLearning": "Deep Learning",
@@ -75,6 +162,7 @@
     "less": "Less",
     "more": "More",
     "preview": "Preview",
+    "start": "Start",
     "provides": "This course provides",
     "features": [
       "Video & text dual-mode learning",
@@ -828,13 +916,32 @@
   },
   "subscriptionDesign": {
     "allAttempts": "All payment attempts",
-    "intro": "View your subscriptions, recent payments and account actions.",
+    "intro": "View your subscription plans and payment history here.",
     "records": "Subscription records",
     "recordsIntro": "Your successful payments, valid periods and receipts.",
     "periodUnavailable": "Period not recorded",
     "paymentNote": "Each successful payment is listed separately. Receipts are available for recorded payments.",
     "noPayments": "You have no successful subscription payments yet.",
-    "viewPlans": "View plans"
+    "viewPlans": "View plans",
+    "active": "Active",
+    "renewalCanceled": "Auto-Renewal Cancelled",
+    "paymentFailed": "Payment Failed",
+    "expired": "Subscription Expired",
+    "cancelRenewal": "Cancel auto-renewal",
+    "accessUntil": "Access until",
+    "gracePeriod": "Grace period ends",
+    "expiredOn": "Expired on",
+    "subscribeAgain": "Subscribe again",
+    "paymentHistory": "Payment history",
+    "paymentDate": "Payment date",
+    "status": "Status",
+    "viewReceipt": "View receipt",
+    "noHistory": "No payment history yet.",
+    "noSubscriptions": "You have not subscribed to any products yet.",
+    "imageUnavailable": "Product image unavailable",
+    "updateFailed": "Subscription update failed.",
+    "billingFailed": "Billing could not be opened.",
+    "statusUnavailable": "Subscription status unavailable"
   },
   "cancelDesign": {
     "accessUntil": "Your access remains active until {date}.",

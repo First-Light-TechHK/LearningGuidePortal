@@ -1,6 +1,93 @@
 {
+  "textExhibit": { "imageTitle": "图片细节观察", "videoTitle": "花朵动态观察", "modelTitle": "花瓶形态观察" },
+  "exhibitDialog": { "courseExhibit": "课程展示", "close": "关闭展示", "about": "关于此展示", "source": "来源", "collection": "课程展示资源", "returnHint": "关闭展示后将返回课时中的原位置，视频保持暂停。", "modelHint": "拖动旋转 · 滚动缩放", "imageHint": "拖动移动 · 滚动缩放", "videoHint": "播放视频 · 滚动缩放", "modelDescription": "近距离查看课时中介绍的物体，旋转和缩放以观察其形态和细节。", "imageDescription": "近距离查看课时中介绍的图片，拖动和缩放以观察其细节。", "videoDescription": "观看课时中介绍的视频，使用播放控件按自己的节奏探索。", "controls": "展示查看控件", "zoom": "缩放比例", "zoomIn": "放大", "zoomOut": "缩小", "reset": "重置", "loading": "正在加载展示…", "failed": "无法加载展示，关闭后重新打开以重试。" },
+  "videoExhibit": { "available": "可查看展示内容", "untitled": "展示内容", "notNow": "暂不查看", "view": "查看展示", "types": { "text": "文章", "video": "视频", "image": "图片", "audio": "音频", "model3d": "3D 模型", "exercise": "练习" } },
+  "exploration": {
+    "title":"探索", "description":"发现辅助资料，进一步探索相关想法。", "reading":"推荐阅读", "exhibits":"展示资源", "thisLesson":"当前课时", "wholeCourse":"整门课程", "scope":"探索范围", "close":"关闭探索", "book":"书籍", "article":"文章", "lesson":"课时 {number}", "future":"随着课程学习的推进，将有更多展示资源可用。", "locked":"后续课时的内容仍未开放。", "empty":"暂无辅助资料。"
+  },
+  "understandingOverview": {
+    "title": "理解测试", "description": "查看本课程的测试状态和最新结果", "back": "返回课时",
+    "progress": "你的进度", "completedCount": "已完成 {completed} / {total}", "courseAssessment": "课程测试", "lessonAssessments": "课时测试",
+    "lessonAssessment": "课时 / 测试", "status": "状态", "latestResult": "最新结果", "action": "操作", "completed": "已完成", "current": "当前课时",
+    "evaluated": "已评估", "inProgress": "进行中", "available": "可开始", "locked": "完成课时后可开始", "answered": "已回答 3 / 20 题", "strong": "掌握良好",
+    "viewResult": "查看结果", "continue": "继续", "start": "开始"
+  },
+  "applicationTest": {
+    "title": "应用测试", "apply": "应用所学知识", "aiEvaluated": "AI 评估", "submit": "提交 AI 评估",
+    "back": "返回理解测试", "evaluating": "正在评估你的回答……", "evaluationNote": "评估状态替代提交按钮，题目和已保存的回答仍保留在页面中。",
+    "yourResponse": "你的回答", "overall": "总体评价", "strongResponse": "回答良好", "latest": "最近一次作答",
+    "strengths": "做得好的地方", "improvement": "可以改进的地方", "retryNote": "如果 AI 评估失败，已保存的回答仍可使用，无需重新输入即可重试。",
+    "expand": "放大弹窗", "restore": "恢复弹窗大小"
+  },
+  "knowledgeTest": {
+    "title": "知识测试", "result": "结果回顾", "flashcards": "知识卡片", "lesson": "课时 {number}",
+    "review": "回顾所学内容", "question": "问题", "yourAnswer": "你的答案", "placeholder": "用自己的话写下答案……",
+    "saved": "自动保存", "exit": "退出", "check": "核对答案", "reference": "参考答案", "emptyAnswer": "尚未填写答案",
+    "selfAssessment": "你答得怎么样？", "mark": "自我评价", "wrong": "我答错了", "right": "我答对了", "next": "下一题",
+    "strongUnderstanding": "掌握良好", "needsReview": "需要复习", "strong": "已掌握", "correct": "{correct}/{total} 张卡片标记为正确",
+    "basedOn": "根据你的自我评价", "reviewAll": "回顾所有卡片", "cards": "{count} 张卡片", "openCard": "打开已保存卡片", "done": "完成", "emptyList": "此列表暂无卡片"
+  },
+  "lessonCompleted": {
+    "title": "第 {number} 课时已完成",
+    "description": "选择测试来检验您的理解，或继续学习",
+    "knowledge": "知识测试",
+    "application": "应用测试",
+    "fluency": "熟练度测试",
+    "questions": "题目",
+    "openResponse": "开放式回答",
+    "forLesson": "本课时",
+    "courseAssessment": "课程级 AI 评估",
+    "start": "开始测试",
+    "comingSoon": "即将推出",
+    "continue": "继续",
+    "unavailable": "本课时暂无可用测试。"
+  },
+  "videoCompletion": {
+    "label": "课时完成提示",
+    "watched": "第 {number} 课时 · 已观看 {percent}%",
+    "question": "您已完成本课时的学习吗？",
+    "keepWatching": "继续观看",
+    "complete": "完成课时"
+  },
+  "courseLearningMode": {
+    "title": "你希望如何学习？",
+    "description": "为这门课程选择偏好的学习模式。你可以随时切换。",
+    "video": "视频模式",
+    "text": "文本模式",
+    "savedNote": "你的偏好将保存到“我的学习”中的这门课程",
+    "continue": "继续",
+    "continueVideo": "以视频模式继续",
+    "continueText": "以文本模式继续",
+    "saving": "保存中…",
+    "close": "关闭",
+    "saveError": "无法保存你的偏好，请重试。"
+  },
+  "upgradePanel": {
+    "eyebrow": "升级订阅", "title": "升级到 PC Everything",
+    "description": "按当前订阅期限支付一次性补差价，付款前可确认金额。保留原到期日，其他分类订阅不受影响。",
+    "calculate": "查看升级价格", "error": "升级价格计算失败。"
+  },
+  "overviewV1": {
+    "learning": "你的学习", "description": "显示你已开始学习的所有课程", "lessons": "{count} 个课时",
+    "video": "视频模式", "text": "文本模式",
+    "categories": { "chinese": "中国人文", "science": "科学", "european": "欧洲人文" },
+    "actions": { "resume": "继续学习", "review": "回顾课程", "plans": "查看订阅方案" }
+  },
+  "learningOverview": {
+    "learning": "学习中的课程",
+    "previewed": "试看过的课程",
+    "continue": "继续学习",
+    "currentLesson": "当前：第 {number} 课时",
+    "detail": "课程详情",
+    "noLearning": "你尚未开始学习任何课程。",
+    "noPreviewed": "你尚未试看任何课程。"
+  },
   "brand": "Learning Guide",
   "previewVideoDesign": {
+    "learningMode": "学习模式",
+    "videoMode": "视频模式",
+    "textMode": "文本模式",
+    "noLessonsInMode": "该模式下暂无课时。",
     "back": "返回课程详情",
     "outline": "课程目录",
     "deepLearning": "深度学习",
@@ -75,6 +162,7 @@
     "less": "收起",
     "more": "展开",
     "preview": "试看",
+    "start": "开始",
     "provides": "本课程提供",
     "features": [
       "视频与文本双模式学习",
@@ -823,13 +911,32 @@
   },
   "subscriptionDesign": {
     "allAttempts": "所有付款记录",
-    "intro": "查看订阅、付款记录和账户操作。",
+    "intro": "在此查看您的订阅产品和付款记录。",
     "records": "订阅记录",
     "recordsIntro": "查看成功付款、有效期及收据。",
     "periodUnavailable": "未记录有效期",
     "paymentNote": "每次成功付款分别列出，可查看对应收据。",
     "noPayments": "您还没有成功的订阅付款记录。",
-    "viewPlans": "查看方案"
+    "viewPlans": "查看方案",
+    "active": "订阅有效",
+    "renewalCanceled": "已取消自动续订",
+    "paymentFailed": "付款失败",
+    "expired": "订阅已过期",
+    "cancelRenewal": "取消自动续订",
+    "accessUntil": "可访问至",
+    "gracePeriod": "宽限期结束日期",
+    "expiredOn": "过期日期",
+    "subscribeAgain": "重新订阅",
+    "paymentHistory": "付款记录",
+    "paymentDate": "付款日期",
+    "status": "状态",
+    "viewReceipt": "查看收据",
+    "noHistory": "暂无付款记录。",
+    "noSubscriptions": "您尚未订阅任何产品。",
+    "imageUnavailable": "暂无产品图片",
+    "updateFailed": "订阅更新失败。",
+    "billingFailed": "无法打开账单管理。",
+    "statusUnavailable": "暂时无法获取订阅状态"
   },
   "cancelDesign": {
     "accessUntil": "您可以继续访问至 {date}。",

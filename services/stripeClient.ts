@@ -68,6 +68,7 @@ export const createHostedCheckout = (input: SubscriptionCheckoutInput) => subscr
 export const createHostedTrialCheckout = (input: SubscriptionCheckoutInput) => subscriptionCheckout(input, true);
 
 export async function createHostedUpgradeCheckout(input: {
+  upgradePriceId: string;
   origin: string;
   locale: "en-GB" | "zh-CN";
   userEmail: string | null;
@@ -83,7 +84,7 @@ export async function createHostedUpgradeCheckout(input: {
   const session = await getStripe().checkout.sessions.create({
     mode: "payment", ...sandboxCheckoutOptions(),
     customer_email: input.userEmail || undefined,
-    line_items: [{ quantity: 1, price_data: { currency: input.currency, unit_amount: input.amountMinor, product_data: { name: input.planName } } }],
+    line_items: [{ quantity: 1, price:input.upgradePriceId }],
     metadata: { app: "learning_guide", kind: "upgrade", orderId: input.orderId, userId: input.userId, quoteId: input.quoteId, planId: input.planId, sourceSubscriptionId: input.sourceSubscriptionId },
     success_url: `${input.origin}/${input.locale}/account/my-learning/subscription?orderId=${encodeURIComponent(input.orderId)}`,
     cancel_url: `${input.origin}/${input.locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(input.quoteId)}`

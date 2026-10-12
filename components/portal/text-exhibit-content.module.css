@@ -1,0 +1,5 @@
+.content { min-width:0; }
+.content > div { margin-bottom:24px; }
+.content :global(.la-prose) { color:rgba(23,36,59,.8); font:400 20px/30px Inter,Arial,sans-serif; }
+.content :global(.la-prose h1),.content :global(.la-prose h2),.content :global(.la-prose h3) { color:#17243b; font-weight:700; font-size:24px; line-height:30px; margin:0; }
+@media(max-width:700px) { .content :global(.la-prose) { font-size:17px; line-height:27px; }.content :global(.la-prose h1),.content :global(.la-prose h2),.content :global(.la-prose h3) { font-size:22px; line-height:28px; } }

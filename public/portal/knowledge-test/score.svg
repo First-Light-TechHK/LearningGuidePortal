@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Frame 64">
+<mask id="mask0_0_17" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<circle id="Ellipse 17" cx="8" cy="8" r="8" fill="#D9D9D9"/>
+</mask>
+<g mask="url(#mask0_0_17)">
+<circle id="Ellipse 18" cx="8" cy="8" r="8" fill="#D9D9D9"/>
+<rect id="Rectangle 111" y="3" width="16" height="13" fill="#4F39F6"/>
+</g>
+</g>
+</svg>

@@ -12,6 +12,24 @@ export function validateSubscriptionPrice(price: Stripe.Price, termMonths: 6 | 1
     || price.billing_scheme !== "per_unit" || price.transform_quantity) throw new PaymentError("price_unavailable", 503);
 }
 
+export function validateUpgradePrice(price: Stripe.Price, termMonths: 6 | 12): void {
+  if (!price.active || price.type !== "one_time" || price.recurring || price.currency !== "usd"
+    || price.unit_amount !== (termMonths === 6 ? 6000 : 12000) || price.billing_scheme !== "per_unit" || price.transform_quantity
+    || process.env.STRIPE_SANDBOX === "1" && price.livemode) throw new PaymentError("price_unavailable", 503);
+}
+
+export async function resolveUpgradePrice(termMonths: 6 | 12): Promise<StripePriceSnapshot> {
+  const lookupKey = process.env[termMonths === 6 ? "STRIPE_PRICE_UPGRADE_SIX_MONTHS" : "STRIPE_PRICE_UPGRADE_ONE_YEAR"]?.trim();
+  if (!lookupKey) throw new PaymentError("price_unavailable", 503);
+  try {
+    const result = lookupKey.startsWith("price_") ? {data:[await getStripe().prices.retrieve(lookupKey,{expand:["product"]})]}
+      : await getStripe().prices.list({lookup_keys:[lookupKey],active:true,limit:2,expand:["data.product"]});
+    if (result.data.length !== 1) throw new PaymentError("price_unavailable",503);
+    const price = result.data[0];validateUpgradePrice(price,termMonths);
+    return {stripePriceId:price.id,lookupKey,amountMinor:price.unit_amount!,currency:"usd",termMonths,...stripeProductPresentation(price)};
+  } catch { throw new PaymentError("price_unavailable",503); }
+}
+
 export async function resolveSubscriptionPrice(planId: string): Promise<StripePriceSnapshot> {
   const mapping = subscriptionPrices.find(item => item.id === planId);
   const lookupKey = mapping && process.env[mapping.env]?.trim();

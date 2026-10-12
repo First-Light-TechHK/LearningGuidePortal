@@ -1,0 +1,21 @@
+.dialog { position:fixed; box-sizing:border-box; width:720px; max-width:calc(100vw - 32px); height:639px; max-height:calc(100dvh - 32px); margin:auto; transform:translateY(-42.5px); padding:32px 51px 40px; border:0; border-radius:20px; background:#fff; color:#15233a; font-family:Inter,Arial,sans-serif; text-align:center; overflow:auto; }
+.dialog::backdrop { background:#0006; }
+.success { display:block; margin:0 auto; }
+.dialog > h2 { margin:24px 0 0; font-size:26px; font-weight:700; line-height:32px; }
+.description { margin:11px 0 0; color:#0006; font-size:14px; line-height:17px; }
+.tests { display:grid; gap:12px; width:612px; max-width:100%; margin-top:29px; }
+.test { position:relative; isolation:isolate; display:flex; align-items:center; gap:16px; min-height:92px; padding:18px 28px 18px 20px; text-align:left; }
+.test::before { content:""; position:absolute; z-index:-1; inset:-.5px 0; background:url('/portal/lesson-complete/row.svg') no-repeat center; pointer-events:none; }
+.icon { display:flex; align-items:center; justify-content:center; width:52px; height:52px; flex-shrink:0; border-radius:26px; background:#e8f1ff; }
+.testCopy { flex:1; min-width:0; }
+.testCopy h3 { margin:0 0 8px; color:#000; font-size:16px; font-weight:500; line-height:19px; }
+.testCopy p { display:flex; align-items:center; gap:8px; margin:0; color:#0006; font-size:12px; line-height:15px; }
+.divider { transform:rotate(90deg); }
+.start { flex-shrink:0; width:152px; height:36px; padding:0 12px; border:1px solid #1d6bff; border-radius:20px; background:#fff; color:#1d6bff; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.disabled { opacity:.4; }
+.disabled::before { background-image:url('/portal/lesson-complete/disabled-row.svg'); }
+.disabled .start { border:0; background:#dbdbdb; color:#525252; cursor:default; }
+.continue { display:block; width:200px; height:46px; margin:40px auto 0; padding:0 12px; border:0; border-radius:8px; background:#1d6bff; color:#fff; font-family:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+.notice { position:absolute; bottom:14px; left:24px; right:24px; margin:0; color:#64748b; font-size:12px; line-height:16px; }
+.dialog button:focus-visible { outline:2px solid #1d6bff; outline-offset:3px; }
+@media(max-width:700px),(max-height:750px) { .dialog { height:auto; transform:none; padding:24px 20px; }.dialog > h2 { font-size:23px; }.description { line-height:20px; }.test { gap:12px; flex-wrap:wrap; padding:16px; border:1px solid #dbe3f0; border-radius:12px; }.test::before { display:none; }.testCopy { flex-basis:calc(100% - 64px); }.testCopy p { flex-wrap:wrap; gap:6px; }.start { margin-left:auto; }.tests { margin-top:24px; }.continue { margin-top:24px; }.notice { position:static; margin-top:16px; } }

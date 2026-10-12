@@ -1,0 +1,46 @@
+.page:global(.portal-account-page) { background:#f8fafd; }
+.page > :global(.portal-header),.page > :global(.portal-footer) { grid-column:1 / -1; }
+.page > :global(.account-nav) { grid-column:2; width:280px; padding:49px 30px 32px; }
+.page > :global(.account-nav) > :global(.account-nav-title) { display:none; }
+.page > :global(.account-nav) :global(.account-nav-support) { margin-top:auto; }
+.page > .dashboard { grid-column:3; grid-row:2; min-width:0; min-height:955px; width:100%; margin:0; padding:50px 38px 76px 0; }
+.dashboard > * { width:min(915px,calc(100% - 96px)); margin-left:auto; margin-right:auto; }
+.welcome { margin-top:0; margin-bottom:45px; padding-left:5px; font-size:31px; font-weight:600; line-height:40px; color:#15233a; }
+.heading { padding-left:5px; }
+.heading h2,.previewSection h2 { margin:0; font-size:23px; font-weight:600; line-height:30px; color:#15233a; }
+.heading p { margin:2px 0 15px; font-size:14px; line-height:20px; color:#64748b; }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,400px)); justify-content:space-between; gap:24px; }
+.card { min-width:0; overflow:hidden; border:1px solid #e4e8ef; border-radius:16px; background:#fff; }
+.cover { position:relative; height:184px; overflow:hidden; }
+.cover :global(.course-thumbnail) { width:100%; height:100%; object-fit:cover; }
+.category { display:inline-flex; width:max-content; max-width:100%; padding:5px 9px; border-radius:20px; background:#ecf1ff; color:#155dfc; font-size:11px; font-weight:600; line-height:15px; overflow-wrap:anywhere; }
+.cover .category { position:absolute; top:10px; left:18px; max-width:calc(100% - 36px); }
+.cardBody { padding:11px 17px 21px; }
+.cardHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:23px; }
+.cardHeading h3 { min-width:0; margin:0; color:#1e293b; font-size:17px; font-weight:700; line-height:23px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mode { flex-shrink:0; color:#687386; font-size:12px; line-height:17px; }
+.progressRow { display:flex; align-items:center; gap:10px; margin-top:11px; height:20px; }
+.progress { flex:1; height:7px; border-radius:4px; background:#dbe3f0; overflow:hidden; }
+.progress > span { display:block; height:100%; border-radius:4px; background:#246bfd; }
+.percentage { min-width:37px; color:#1660d8; font-size:12px; font-weight:600; line-height:20px; text-align:right; }
+.cardBottom { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; min-height:20px; color:#64748b; font-size:12px; line-height:20px; }
+.cardBottom > span { min-width:0; overflow-wrap:anywhere; }
+.cardBottom a { flex-shrink:0; color:#155dfc; font-size:13px; font-weight:600; text-decoration:none; }
+.cardBottom a:hover,.detail:hover { text-decoration:underline; }
+.completed .progress > span { background:#1a8c4f; }
+.completed .percentage { color:#1a7340; }
+.completed .cardBottom a { color:#64748b; }
+.previewSection { margin-top:33px; }
+.previewSection h2 { margin-left:5px; margin-bottom:22px; }
+.previewList { display:grid; gap:12px; }
+.previewRow { display:grid; grid-template-columns:160px minmax(0,1fr) auto; align-items:center; gap:28px; min-height:93px; padding:11px 28px 11px 18px; background:url('/portal/overview/preview-row.svg') center / 100% 100% no-repeat; }
+.previewRow.lastRow { background-image:url('/portal/overview/preview-row-last.svg'); }
+.previewCover { height:72px; overflow:hidden; border-radius:5px; }
+.previewCover :global(.course-thumbnail) { width:100%; height:100%; object-fit:cover; }
+.previewIdentity { min-width:0; }
+.previewIdentity h3 { margin:11px 0 0; font-size:15px; font-weight:700; line-height:23px; color:#172034; overflow-wrap:anywhere; }
+.detail { color:#246beb; font-size:12px; font-weight:700; text-decoration:none; white-space:nowrap; }
+.empty { padding:24px; border:1px solid #e4e8ef; border-radius:16px; background:#fff; color:#64748b; }
+@media(max-width:1100px) { .page > .dashboard { padding-right:0; }.page > :global(.account-nav) { width:280px; padding:32px 16px; }.dashboard > * { width:calc(100% - 48px); }.grid { gap:20px; }.cardHeading { align-items:flex-start; flex-direction:column; gap:4px; }.cardHeading h3 { max-width:100%; }.previewRow { grid-template-columns:130px minmax(0,1fr); gap:16px; padding:16px; }.detail { grid-column:2; justify-self:start; } }
+@media(max-width:850px) { .grid { grid-template-columns:minmax(0,1fr); }.cover { height:185px; }.cardHeading { flex-direction:row; align-items:center; } }
+@media(max-width:720px) { .page:global(.portal-account-page) { display:block; }.page > :global(.account-nav) { width:100%; padding:16px 20px; }.page > .dashboard { min-height:600px; padding:28px 0 48px; }.dashboard > * { width:calc(100% - 40px); }.welcome { font-size:26px; line-height:34px; padding-left:0; margin-bottom:32px; }.heading { padding-left:0; }.previewSection h2 { margin-left:0; }.previewRow { grid-template-columns:100px minmax(0,1fr); column-gap:14px; row-gap:8px; }.previewIdentity h3 { margin-top:7px; font-size:14px; line-height:20px; }.previewCover { height:72px; }.category { font-size:10px; padding:4px 7px; }.previewIdentity .category { width:auto; }.cardHeading h3 { white-space:normal; }.mode { font-size:11px; } }

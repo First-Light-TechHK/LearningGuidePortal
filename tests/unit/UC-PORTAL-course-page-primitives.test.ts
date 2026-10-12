@@ -3,6 +3,13 @@ import { after, before, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "os";
 import path from "path";
+import { createRequire } from "node:module";
+import { build } from "esbuild";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { getMessages } from "../../lib/i18n/messages";
+import type { CoursePage } from "../../lib/coursePage";
+import type { CourseCurriculumAction } from "../../components/portal/CourseCurriculumAction";
 import {
   COURSE_ID,
   PREVIEW_LP,
@@ -23,8 +30,33 @@ const originalCwd = process.cwd();
 const originalStorageBackend = process.env.STORAGE_BACKEND;
 let isolatedCwd: string;
 let store: typeof import("../../services/productStore");
+let Action: typeof CourseCurriculumAction;
+
+function assertCurriculumActions(page: CoursePage) {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const copy = getMessages(locale).courseDetailDesign;
+    for (const lesson of page.syllabus) {
+      const href = !lesson.openable ? null : lesson.access === "entitled"
+        ? `/${locale}/account/learn/${COURSE_ID}?lessonId=${lesson.lessonId}`
+        : `/${locale}/portal/courses/${COURSE_ID}/public-lesson?lessonId=${lesson.lessonId}`;
+      const html = renderToStaticMarkup(createElement(Action, { lesson, href, copy, className: "preview", cta: page.cta }));
+      assert.ok(html.includes(`>${lesson.access === "entitled" ? copy.start : copy.preview}</`), html);
+      if (href) {
+        assert.ok(html.includes(`href="${href}"`), html);
+        assert.ok(!html.includes("disabled"), html);
+      } else {
+        assert.ok(html.includes("<button") && html.includes("disabled"), html);
+        assert.ok(!html.includes("href="), html);
+      }
+    }
+  }
+}
 
 before(async () => {
+  const bundle = await build({ entryPoints: [path.join(originalCwd, "components/portal/CourseCurriculumAction.tsx")], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime", "next/link"] });
+  const compiled = { exports: {} as { CourseCurriculumAction: typeof CourseCurriculumAction } };
+  new Function("module", "exports", "require", bundle.outputFiles[0].text)(compiled, compiled.exports, createRequire(import.meta.url));
+  Action = compiled.exports.CourseCurriculumAction;
   isolatedCwd = await mkdtemp(path.join(tmpdir(), "lg-uc-portal-course-"));
   process.chdir(isolatedCwd);
   process.env.STORAGE_BACKEND = "local";
@@ -67,6 +99,7 @@ test("UC-PORTAL-1: visitor syllabus is previewable vs locked", async () => {
   assert.equal(page.cta, "start_preview");
   assert.equal(page.secondaryCta, "view_plans");
   assert.equal(page.accessState, "none");
+  assertCurriculumActions(page);
 });
 
 test("UC-PORTAL-1: a later lesson remains locked even when legacy data marks it public", async () => {
@@ -100,6 +133,7 @@ test("ML-FR-004: opening a preview LP records unique progress and switches CTA t
   assert.equal(page.openedLearningPointCount, 1);
   assert.equal(page.totalLearningPoints, 2);
   assert.equal(page.progress, 50);
+  assertCurriculumActions(page);
 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
@@ -136,6 +170,44 @@ test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learni
   assert.equal(page.cta, "continue_learning");
   assert.equal(page.secondaryCta, null);
   assert.ok(page.syllabus.every((item) => item.access === "entitled" && item.openable));
+  assertCurriculumActions(page);
+});
+
+test("Everything subscription grants Start actions for every published course and lesson", async () => {
+  const user = await verifiedUser(store, "uc-portal-everything@example.test");
+  const { quote } = await store.createQuote(user.id, "everything-pc-6");
+  const { order } = await store.createPendingDemoOrder(user.id, quote.id);
+  await store.completeDemoOrder(user.id, order.id);
+  for (const course of await store.listPublishedCourses()) {
+    assert.equal((await store.checkEntitlement(user.id, course.id)).allowed, true);
+    const page = await store.getCoursePage(course.slug, user.id);
+    assert.ok(page.syllabus.every(lesson => lesson.access === "entitled" && lesson.openable));
+    assertCurriculumActions(page);
+  }
+});
+
+test("an expired earlier entitlement must not hide valid Everything access", async () => {
+  const user = await verifiedUser(store, "uc-portal-everything-overlap@example.test");
+  const { quote } = await store.createQuote(user.id, "everything-pc-6");
+  const { order } = await store.createPendingDemoOrder(user.id, quote.id);
+  await store.completeDemoOrder(user.id, order.id);
+  const data = await readProductData();
+  data.entitlements.unshift({ id:"old-course-entitlement", userId:user.id, courseId:COURSE_ID, scope:"course", scopeId:COURSE_ID, source:"purchase", state:"active", validTo:new Date(Date.now()-86400000).toISOString() });
+  await writeProductData(data);
+  assert.equal((await store.checkEntitlement(user.id, COURSE_ID)).allowed, true);
+  data.entitlements[0].validTo = "invalid-date";
+  await writeProductData(data);
+  assert.equal((await store.checkEntitlement(user.id, COURSE_ID)).allowed, true);
+  const everything = data.entitlements.find((item: { userId:string; scope:string }) => item.userId === user.id && item.scope === "everything");
+  assert.ok(everything);
+  everything.state = "revoked";
+  await writeProductData(data);
+  assert.equal((await store.checkEntitlement(user.id, COURSE_ID)).allowed, false,"invalid expiry and revoked Everything cannot grant access");
+  everything.state = "active";
+  await writeProductData(data);
+  const page = await store.getCoursePage(COURSE_ID, user.id);
+  assertCurriculumActions(page);
+  assert.ok(page.syllabus.every(lesson => lesson.access === "entitled"));
 });
 
 test("UC-PORTAL-5: expired access is View plans and private LPs lock again", async () => {
@@ -153,6 +225,7 @@ test("UC-PORTAL-5: expired access is View plans and private LPs lock again", asy
   assert.equal(page.cta, "view_plans");
   assert.equal(page.syllabus.find((item) => item.lessonId === PREVIEW_LP)?.access, "previewable");
   assert.equal(page.syllabus.find((item) => item.lessonId === PRIVATE_LP)?.access, "locked");
+  assertCurriculumActions(page);
 });
 
 test("three trial stories stay distinct: 3-day $0 trial is Continue learning, not preview minutes", async () => {
@@ -165,6 +238,7 @@ test("three trial stories stay distinct: 3-day $0 trial is Continue learning, no
   assert.notEqual(page.cta, "start_preview");
   assert.notEqual(page.cta, "continue_preview");
   assert.ok(page.syllabus.every((item) => item.access === "entitled"));
+  assertCurriculumActions(page);
 });
 
 test("ML-FR-022: unpublished course is withdrawn with identity, not a silent empty page", async () => {

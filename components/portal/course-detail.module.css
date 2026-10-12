@@ -54,6 +54,8 @@ details[open] .toggle img { transform: none; }
 .page .lessonDescription p { margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .page .preview { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 116px; min-height: 42px; padding: 10px 16px; border-radius: 10px; background: #155dfc; color: #fff; font-size: 16px; font-weight: 500; line-height: 20px; text-decoration: none; }
 .page a:focus-visible, .page summary:focus-visible { outline: 2px solid #155dfc; outline-offset: 4px; }
+.page button.preview { border: 0; font-family: inherit; }
+.page .preview:disabled { opacity: .5; cursor: not-allowed; }
 /* Keep the shared components; scope this screen's Figma presentation. */
 .page :global(.portal-footer) { background: #155dfc; padding-bottom: 29px; }
 .page :global(.portal-footer-social) { gap: 20px; }

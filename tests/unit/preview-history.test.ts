@@ -14,7 +14,7 @@ test('preview viewers without entitlement save an open event, refresh history an
     await page.goto('http://preview.test/');
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
     await page.waitForFunction(() => (window as unknown as {refreshed: boolean}).refreshed);
-    assert.deepEqual(requests, [{ courseId: 'course', lessonId: 'public', event: 'open' }]);
+    assert.deepEqual(requests, [{ courseId: 'course', lessonId: 'public', event: 'open', seconds: 0, clientEventId: 'open_course_public' }]);
     assert.equal(await page.getByRole('button', { name: 'Complete', exact: true }).count(), 0);
     await page.close();
   } finally { await browser.close(); }

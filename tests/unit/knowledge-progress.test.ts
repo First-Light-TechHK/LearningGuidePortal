@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import { test, before, after } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { build } from "esbuild";
+import { createRequire } from "node:module";
+import { courseKnowledgePoints, knowledgeProgress } from "../../lib/knowledgeProgress";
+import type { ProductCourse } from "../../services/productStore";
+import { COURSE_ID, PREVIEW_LP, PRIVATE_LP, verifiedUser, purchaseCourse, readProductData, writeProductData } from "./helpers/my-learning";
+
+const originalCwd=process.cwd(), backend=process.env.STORAGE_BACKEND;
+let isolated:string, store:typeof import("../../services/productStore");
+before(async()=>{ isolated=await mkdtemp(path.join(tmpdir(),"lg-knowledge-progress-"));process.chdir(isolated);process.env.STORAGE_BACKEND="local";store=await import("../../services/productStore"); });
+after(async()=>{ process.chdir(originalCwd);if(backend===undefined)delete process.env.STORAGE_BACKEND;else process.env.STORAGE_BACKEND=backend;if(isolated&&path.dirname(isolated)===tmpdir())await rm(isolated,{recursive:true,force:true}); });
+
+test("same-mode ordinal excludes other modes and inactive points across lessons",()=>{
+  const course={sections:[{lessons:[{id:"a",contents:[{id:"v1",type:"video"},{id:"t1",type:"text"},{id:"hidden",type:"video",active:false}]},{id:"b",contents:[{id:"v2",type:"video"},{id:"v3",type:"video"},{id:"t2",type:"pdf"}]},{id:"legacy",body:"Reading"}]}]} as ProductCourse;
+  assert.equal(courseKnowledgePoints(course,"video").length,3);
+  assert.equal(knowledgeProgress(course,"video",{lessonId:"b",contentId:"v2"}).progress,67);
+  assert.equal(knowledgeProgress(course,"text",{lessonId:"b",contentId:"t2"}).progress,67);
+  assert.equal(knowledgeProgress(course,"text",{lessonId:"legacy",contentId:null}).progress,100);
+  assert.equal(knowledgeProgress(course,"video",{lessonId:"a",contentId:"hidden"}).progress,0);
+  assert.equal(knowledgeProgress({sections:[]},"video").progress,0);
+});
+
+test("save current knowledge point per mode, replay safely and deny inaccessible/foreign points",async()=>{
+  const user=await verifiedUser(store,"knowledge-progress@example.test");await purchaseCourse(store,user.id);
+  const data=await readProductData(),course=data.courses.find((c:ProductCourse)=>c.id===COURSE_ID);
+  const lessons=course.sections.flatMap((s:{lessons:unknown[]})=>s.lessons);
+  lessons[0].contents=[{id:"v1",title:"One",type:"video",mode:"lecture",url:"/one.mp4",nodes:[]},{id:"v2",title:"Two",type:"video",mode:"lecture",url:"/two.mp4",nodes:[]},{id:"t1",title:"Text",type:"text",mode:"lecture",html:"Text",nodes:[]}];
+  lessons[1].contents=[{id:"v3",title:"Three",type:"video",mode:"lecture",url:"/three.mp4",nodes:[]},{id:"t2",title:"PDF",type:"pdf",mode:"lecture",url:"/two.pdf",nodes:[]},{id:"hidden",type:"video",active:false}];
+  data.courses.forEach((item:ProductCourse)=>{item.cover="/portal/course-book.jpg";item.thumbnailPath="/portal/course-book.jpg";});
+  await writeProductData(data);
+  const open=(lessonId:string,contentId:string,learningMode:"video"|"text",clientEventId:string,access:"paid"|"preview"="paid")=>store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId,contentId,learningMode,event:"open",seconds:0,clientEventId},access);
+  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,67);
+  assert.equal((await open(PRIVATE_LP,"t2","text","text-second"))!.progress,100);
+  const back=await open(PREVIEW_LP,"v1","video","video-back");assert.equal(back!.progress,33);assert.equal(back!.knowledgePositions?.text?.contentId,"t2");
+  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,33,"replayed older event cannot move the cursor");
+  const card=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
+  assert.equal(card.progress,33);assert.equal(card.totalLearningPoints,3);assert.equal(card.currentContentId,"v1");assert.equal(card.mode,"video");
+  const display=await (await import("../../services/learningOverviewDisplay")).getLearningOverviewDisplay(user.id);
+  assert.equal(display.learning.find(item=>item.courseId===COURSE_ID)!.progress,33);
+  await assert.rejects(open(PREVIEW_LP,"t1","video","wrong-mode"),/Knowledge point not found/);
+  await assert.rejects(open(PREVIEW_LP,"v3","video","foreign-point"),/Knowledge point not found/);
+  await assert.rejects(open(PRIVATE_LP,"hidden","video","inactive"),/Knowledge point not found/);
+  await assert.rejects(open(PRIVATE_LP,"v3","video","preview-private","preview"),/outside the preview/);
+  const other=await verifiedUser(store,"knowledge-denied@example.test");
+  await assert.rejects(store.recordStudyEvent({userId:other.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,contentId:"v1",learningMode:"video",event:"open",seconds:0,clientEventId:"denied"}),/Course access is required/);
+  const apiState={user:null as null|{id:string},record:store.recordStudyEvent};
+  (globalThis as unknown as {knowledgeApiState:typeof apiState}).knowledgeApiState=apiState;
+  const bundle=await build({entryPoints:[path.join(originalCwd,"app/api/study/events/route.ts")],bundle:true,write:false,platform:"node",format:"cjs",external:["next/server"],plugins:[{name:"session",setup(b){
+    b.onResolve({filter:/services\/(productAuth|productStore)$/},args=>({path:args.path,namespace:"session"}));
+    b.onLoad({filter:/.*/,namespace:"session"},args=>({contents:args.path.endsWith("productAuth")?"export async function currentProductUser(){return globalThis.knowledgeApiState.user}":"export async function recordStudyEvent(input){return globalThis.knowledgeApiState.record(input)}"}));
+  }}]});
+  const compiled={exports:{} as {POST:(request:Request)=>Promise<Response>}};
+  new Function("require","module","exports",bundle.outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports);
+  const invoke=(contentId="v2",eventId="api-open")=>compiled.exports.POST(new Request("http://localhost/api/study/events",{method:"POST",body:JSON.stringify({courseId:COURSE_ID,lessonId:PREVIEW_LP,contentId,learningMode:"video",event:"open",seconds:0,clientEventId:eventId})}));
+  assert.equal((await invoke()).status,401);
+  apiState.user={id:other.id};assert.equal((await invoke()).status,403);
+  apiState.user={id:user.id};assert.equal((await invoke("v3")).status,400);
+  const response=await invoke();assert.equal(response.status,200);assert.equal((await response.json()).record.progress,67);
+  assert.equal((await invoke()).status,200);assert.equal((await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!.progress,67);
+});

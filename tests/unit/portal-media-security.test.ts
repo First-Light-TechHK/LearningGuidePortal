@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 
 const run = promisify(execFile);
@@ -63,7 +64,7 @@ test("compressed oversized images and byte oversize uploads are rejected", async
 test("independent upload processes cannot overwrite each other's library entries", async () => {
   const modulePath = require.resolve("../../services/portalMedia");
   const register = require.resolve("../../scripts/register-tsconfig-paths.cjs");
-  const loader = require.resolve("tsx");
+  const loader = pathToFileURL(require.resolve("tsx")).href;
   const code = `const {savePortalMedia}=require(${JSON.stringify(modulePath)}); (async()=>{const bytes=Buffer.from(process.env.IMAGE_FIXTURE,"base64");const assets=[];for(let i=0;i<3;i++)assets.push(await savePortalMedia("parallel.png",bytes));console.log(JSON.stringify(assets));})().catch(error=>{console.error(error);process.exitCode=1;});`;
   const results = await Promise.all(Array.from({ length: 3 }, () => run(process.execPath, ["--import", loader, "--require", register, "-e", code], { cwd: directory, env: { ...process.env, STORAGE_BACKEND: "local", IMAGE_FIXTURE: images.png.toString("base64") }, timeout: 20_000 })));
   const ids: string[] = results.flatMap(result => JSON.parse(result.stdout).map((asset: { id: string }) => asset.id));

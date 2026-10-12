@@ -133,3 +133,8 @@
 
 .la-video-controls { position:absolute; bottom:0; left:0; right:0; background:rgba(16,24,32,.92); }
 .la-controlled-video:fullscreen video, .la-video-expanded video { height:calc(100dvh - 52px)!important; max-height:calc(100dvh - 52px)!important; }
+.la-video-fullscreen-exhibit { display:none; }
+.la-controlled-video:fullscreen .la-video-fullscreen-exhibit,.la-video-expanded .la-video-fullscreen-exhibit { display:block; position:absolute; z-index:3; left:24px; right:24px; bottom:76px; max-width:900px; margin-inline:auto; }
+.la-video-fullscreen-exhibit > section { margin-top:0; background:#edf3ff; box-shadow:0 4px 24px #0004; }
+@media(max-width:600px) { .la-controlled-video:fullscreen .la-video-fullscreen-exhibit,.la-video-expanded .la-video-fullscreen-exhibit { left:12px; right:12px; bottom:112px; } }
+@media(max-height:400px) { .la-video-fullscreen-exhibit > section { min-height:60px; padding:8px; flex-wrap:nowrap; }.la-video-fullscreen-exhibit img { width:40px; height:40px; }.la-video-fullscreen-exhibit h2 { font-size:13px; line-height:16px; } }

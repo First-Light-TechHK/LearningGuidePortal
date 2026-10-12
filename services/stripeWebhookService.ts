@@ -25,6 +25,7 @@ async function checkoutEvent(event: { id: string; type: string }, sessionId: str
   if (!lines || lines.has_more || lines.data.length !== 1 || lines.data[0].quantity !== 1) throw new Error("Checkout items mismatch.");
   let subscription: Stripe.Subscription;
   if (upgrade) {
+    if (order.upgradePrice && (lines.data[0].price?.id !== order.upgradePrice.stripePriceId || order.amountMinor !== order.upgradePrice.amountMinor)) throw new Error("Upgrade price mismatch.");
     if (session.mode !== "payment" || session.payment_status !== "paid" || !context.source?.stripeSubscriptionId) throw new Error("Invalid upgrade payment.");
     subscription = await stripe.subscriptions.retrieve(context.source.stripeSubscriptionId);
     if (identifier(subscription.customer) !== context.source.stripeCustomerId || subscription.items.data.length !== 1) throw new Error("Upgrade subscription mismatch.");

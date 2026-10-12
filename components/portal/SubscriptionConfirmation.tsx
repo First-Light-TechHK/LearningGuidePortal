@@ -83,7 +83,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
         <div><dt>{copy.term}</dt><dd className="upgrade-validity">{upgrade.validUntil.replace("{date}", new Date(upgradeSource.validTo).toLocaleDateString(locale))}</dd></div>
       </dl><span className="upgrade-art" aria-hidden="true" /></section>
       <section className="upgrade-price" aria-labelledby="upgrade-price-heading"><h2 id="upgrade-price-heading">{upgrade.price}</h2><dl>
-        <div><dt>{upgrade.targetPrice}</dt><dd>{money(quote.amountMinor + (quote.creditMinor ?? 0))}</dd></div>
+        <div><dt>{upgrade.targetPrice}</dt><dd>{money(plan.amountMinor)}</dd></div>
         <div><dt>{upgrade.credit}</dt><dd>{money(quote.creditMinor ?? 0)}</dd></div>
         <div><dt>{upgrade.payToday}</dt><dd>{money(quote.amountMinor)}</dd></div>
       </dl></section>

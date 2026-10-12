@@ -1,29 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { CourseLearningMode } from "@/contracts/course-learning-mode";
 import { useRouter } from "next/navigation";
 
-export function PreviewProgress({ courseId, lessonId, seconds, initialCompleted, copy, canComplete = true }: {
+export function PreviewProgress({ courseId, lessonId, contentId, learningMode, seconds, initialCompleted, copy, canComplete = true, endpoint = "/api/study/preview" }: {
   courseId: string; lessonId: string; seconds: number; initialCompleted: boolean;
+  contentId?: string | null; learningMode?: CourseLearningMode;
   copy: { completeLesson: string; completed: string; saveError: string };
   canComplete?: boolean;
+  endpoint?: "/api/study/preview" | "/api/study/events";
 }) {
   const router = useRouter();
   const [completed, setCompleted] = useState(initialCompleted);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const openRequest = useRef<{ key: string; id: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/study/preview", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, event: "open" }) })
+    const key = `${courseId}:${lessonId}:${learningMode || ""}:${contentId || ""}`;
+    if (openRequest.current?.key !== key) openRequest.current = { key, id: learningMode ? `open_${Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join("_")}` : `open_${courseId}_${lessonId}` };
+    fetch(endpoint, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, ...(learningMode ? {contentId:contentId || null,learningMode} : {}), event: "open", seconds:0, clientEventId:openRequest.current.id }) })
       .then(response => { if (!response.ok) setError(copy.saveError); else router.refresh(); })
       .catch(error => { if (error.name !== "AbortError") setError(copy.saveError); });
     return () => controller.abort();
-  }, [courseId, lessonId, copy.saveError]);
+  }, [courseId, lessonId, contentId, learningMode, copy.saveError, endpoint]);
 
   async function complete() {
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/study/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, event: "complete", seconds }) });
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, event: "complete", seconds, clientEventId:`complete_${courseId}_${lessonId}` }) });
       if (!response.ok) throw new Error(copy.saveError);
       setCompleted(true); router.refresh();
     } catch { setError(copy.saveError); }

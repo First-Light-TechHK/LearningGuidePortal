@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { EXHIBIT_ZOOM, type ExhibitViewerControls } from '@/contracts/exhibit-viewer';
 import { RotateCcw, Rotate3D } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -22,10 +23,13 @@ function disposeObject(root: THREE.Object3D) {
   resources.forEach(resource => resource.dispose());
 }
 
-export function CourseModelPreview({ url, title = '', locale }: { url: string; title?: string; locale: LessonLocale }) {
-  const host = useRef<HTMLDivElement>(null), actions = useRef<{ reset: () => void; rotate: (value: boolean) => void } | null>(null);
+export function CourseModelPreview({ url, title = '', locale, exhibit = false, controlsRef, onZoomChange, onReadyChange }: { url: string; title?: string; locale: LessonLocale; exhibit?: boolean; controlsRef?: Ref<ExhibitViewerControls>; onZoomChange?: (zoom: number) => void; onReadyChange?: (ready: boolean) => void }) {
+  const host = useRef<HTMLDivElement>(null), actions = useRef<{ reset: () => void; rotate: (value: boolean) => void; zoom: (factor: number) => void } | null>(null);
+  const zoomChanged = useRef(onZoomChange); zoomChanged.current = onZoomChange;
+  useImperativeHandle(controlsRef, () => ({ reset: () => actions.current?.reset(), zoom: factor => actions.current?.zoom(factor) }), []);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading'), [rotating, setRotating] = useState(false);
   const t = lessonMessages(locale);
+  useEffect(() => { onReadyChange?.(state === 'ready'); }, [state, onReadyChange]);
   useEffect(() => {
     if (!host.current) return; const container: HTMLDivElement = host.current;
     const abort = new AbortController(); let disposed = false, renderer: THREE.WebGLRenderer | undefined, controls: OrbitControls | undefined;
@@ -35,7 +39,7 @@ export function CourseModelPreview({ url, title = '', locale }: { url: string; t
       try {
         if (!(/^\/(?!\/)/.test(url) || /^https:\/\//.test(url)) || /[\u0000-\u0020\\]/.test(url)) throw new Error('url');
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.setClearColor(0xf3f6f5); renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.setClearColor(exhibit ? 0x000000 : 0xf3f6f5); renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.domElement.setAttribute('aria-label', title || t.model3d); renderer.domElement.tabIndex = 0;
         container.appendChild(renderer.domElement);
         const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
@@ -63,8 +67,11 @@ export function CourseModelPreview({ url, title = '', locale }: { url: string; t
         const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3()), centre = box.getCenter(new THREE.Vector3());
         const extent = Math.max(size.x, size.y, size.z); if (!Number.isFinite(extent) || extent <= 0) throw new Error('empty');
         model.position.sub(centre); model.scale.multiplyScalar(2 / extent); model.position.multiplyScalar(2 / extent); scene.add(model);
-        const reset = () => { const distance = 1.8 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.min(1, camera.aspect); camera.position.set(distance * 0.7, distance * 0.4, distance); controls!.target.set(0, 0, 0); controls!.update(); };
-        actions.current = { reset, rotate: value => { if (controls) controls.autoRotate = value; } }; reset();
+        let baselineDistance = 1;
+        const reset = () => { controls!.enableDamping = false; controls!.update(); const distance = 1.8 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.min(1, camera.aspect); camera.position.set(distance * 0.7, distance * 0.4, distance); controls!.target.set(0, 0, 0); baselineDistance = camera.position.length(); controls!.minDistance = baselineDistance / EXHIBIT_ZOOM.max; controls!.maxDistance = baselineDistance / EXHIBIT_ZOOM.min; controls!.update(); controls!.enableDamping = true; zoomChanged.current?.(1); };
+        const zoom = (factor: number) => { if (!controls || !Number.isFinite(factor) || factor <= 0) return; const offset = camera.position.clone().sub(controls.target); const distance = THREE.MathUtils.clamp(offset.length() / factor, controls.minDistance, controls.maxDistance); camera.position.copy(controls.target).add(offset.setLength(distance)); controls.update(); };
+        controls.addEventListener('change', () => zoomChanged.current?.(baselineDistance / camera.position.distanceTo(controls!.target)));
+        actions.current = { reset, zoom, rotate: value => { if (controls) controls.autoRotate = value; } }; reset();
         const clock = new THREE.Clock();
         const draw = () => { if (disposed) return; frame = requestAnimationFrame(draw); mixer?.update(Math.min(clock.getDelta(), 0.1)); controls!.update(); renderer!.render(scene, camera); };
         draw(); setState('ready');
@@ -72,6 +79,6 @@ export function CourseModelPreview({ url, title = '', locale }: { url: string; t
     }
     void start();
     return () => { disposed = true; abort.abort(); cancelAnimationFrame(frame); observer?.disconnect(); controls?.dispose(); mixer?.stopAllAction(); if (model) { mixer?.uncacheRoot(model); disposeObject(model); } renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove(); actions.current = null; };
-  }, [url, title, t.model3d]);
-  return <div className="la-model la"><div ref={host} className="la-model-canvas"/>{state !== 'ready' && <p className="la-model-status" role={state === 'error' ? 'alert' : 'status'}>{state === 'error' ? t.unsupportedModel : t.loading}</p>}<div className="la-model-tools"><button type="button" className="la-icon" title={t.resetView} aria-label={t.resetView} disabled={state !== 'ready'} onClick={() => actions.current?.reset()}><RotateCcw size={18}/></button><button type="button" className="la-icon" title={t.rotate} aria-label={t.rotate} aria-pressed={rotating} disabled={state !== 'ready'} onClick={() => { actions.current?.rotate(!rotating); setRotating(!rotating); }}><Rotate3D size={18}/></button></div></div>;
+  }, [url, title, t.model3d, exhibit]);
+  return <div className="la-model la"><div ref={host} className="la-model-canvas"/>{state !== 'ready' && <p className="la-model-status" role={state === 'error' ? 'alert' : 'status'}>{state === 'error' ? t.unsupportedModel : t.loading}</p>}{!exhibit && <div className="la-model-tools"><button type="button" className="la-icon" title={t.resetView} aria-label={t.resetView} disabled={state !== 'ready'} onClick={() => actions.current?.reset()}><RotateCcw size={18}/></button><button type="button" className="la-icon" title={t.rotate} aria-label={t.rotate} aria-pressed={rotating} disabled={state !== 'ready'} onClick={() => { actions.current?.rotate(!rotating); setRotating(!rotating); }}><Rotate3D size={18}/></button></div>}</div>;
 }

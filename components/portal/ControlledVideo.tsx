@@ -1,11 +1,12 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type VideoHTMLAttributes } from 'react';
+import { forwardRef, useEffect, useLayoutEffect, useImperativeHandle, useRef, useState, type ReactNode, type VideoHTMLAttributes } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, PictureInPicture2 } from 'lucide-react';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
+import { playbackDuration } from '@/lib/videoLessonCompletion';
 
 // Fullscreen the container so the browser never substitutes its native video toolbar.
-export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement> & { locale: LessonLocale }>(function ControlledVideo({ locale, onPlay, onPause, onEnded, onTimeUpdate, onLoadedMetadata, onDurationChange, onVolumeChange, onRateChange, ...props }, ref) {
+export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement> & { locale: LessonLocale; fullscreenOverlay?: ReactNode; onFullscreenChange?: (active:boolean)=>void; exitFullscreenRequested?:boolean }>(function ControlledVideo({ locale, fullscreenOverlay, onFullscreenChange, exitFullscreenRequested, onPlay, onPause, onEnded, onTimeUpdate, onLoadedMetadata, onDurationChange, onVolumeChange, onRateChange, ...props }, ref) {
   const media = useRef<HTMLVideoElement>(null), container = useRef<HTMLDivElement>(null);
   useImperativeHandle(ref, () => media.current!);
   const t = lessonMessages(locale);
@@ -35,7 +36,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   }
   const clock = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
   function updateDuration(video: HTMLVideoElement) {
-    setDuration(Number.isFinite(video.duration) ? video.duration : video.seekable.length ? video.seekable.end(video.seekable.length - 1) : 0);
+    setDuration(playbackDuration(video));
   }
   async function toggle() {
     const video = media.current;
@@ -52,6 +53,12 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     } catch { setExpanded(value => !value); }
   }
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const update = () => onFullscreenChange?.(expanded || document.fullscreenElement === container.current);
+    update();document.addEventListener('fullscreenchange',update);
+    return () => document.removeEventListener('fullscreenchange',update);
+  }, [expanded,onFullscreenChange]);
+  useLayoutEffect(() => { if(exitFullscreenRequested)setExpanded(false); }, [exitFullscreenRequested]);
   return <div ref={container} className={`la-controlled-video${expanded ? ' la-video-expanded' : ''}`}>
     <video {...props} ref={media} controls={false} playsInline onContextMenu={event => event.preventDefault()}
       onPlay={event => { setPlaying(true); onPlay?.(event); }}
@@ -63,6 +70,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       onVolumeChange={event => { setMuted(event.currentTarget.muted); onVolumeChange?.(event); }}
       onRateChange={event => { setRate(event.currentTarget.playbackRate); onRateChange?.(event); }}/>
     {pipActive && <div className="la-video-pip-status" role="status">{t.videoPipActive}</div>}
+    {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
       <input type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration} onChange={event => { if (media.current) media.current.currentTime = Number(event.target.value); }}/>

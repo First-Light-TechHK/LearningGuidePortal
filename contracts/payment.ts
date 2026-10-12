@@ -9,6 +9,9 @@ export type StripePriceSnapshot = {
   stripeProductId?: string;
 };
 
+// One-time payment Price, separate from the Everything renewal Price.
+export type StripeUpgradePriceSnapshot = StripePriceSnapshot;
+
 export const subscriptionPrices = [
   { id: "everything-pc-6", env: "STRIPE_PRICE_EVERYTHING_SIX_MONTHS", scope: "everything", scopeId: "*", termMonths: 6 },
   { id: "everything-pc-12", env: "STRIPE_PRICE_EVERYTHING_YEAR", scope: "everything", scopeId: "*", termMonths: 12 },

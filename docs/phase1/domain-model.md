@@ -56,6 +56,12 @@ erDiagram
 
 ## 3. 状态规则
 
+Configured upgrade Price: optional `ProductQuote.upgradePrice` / `ProductOrder.upgradePrice` snapshots the one-time USD upgrade Price independently of `price` (Everything renewal). This uses existing JSONB/aggregate payloads; no relational DDL is needed. Upgrade charge is fixed by term ($60/$120), not prorated by remaining days. Paid Webhook changes the existing Stripe Subscription and replaces Category access with Everything until the same validTo; duplicate events must not create a second Subscription/Entitlement.
+
+Knowledge-point progress revision: `ProductStudyRecord` adds optional `currentMode` and `knowledgePositions` (video/text → `{ lessonId, contentId }`); `ProductStudyEvent` adds optional `learningMode` and `contentId`. Identities, not client percentages or ordinal numbers, are persisted in existing JSONB/aggregate payloads. No relational DDL/backfill; historical lesson-only records remain readable until point-aware navigation. Server derives ordinal/denominator from active course content each time, excluding other modes and inactive content. Per-mode current positions can move backwards and cannot grant access. Course percentage reaching 100 is a position indicator, independent of an explicit complete-Lesson event or a video's >=98% completion prompt.
+
+Lesson knowledge-point access: the numbered entries (1.1, 1.2, etc.) are the owning Lesson's `LessonContent` items. Every active item inherits that Lesson's server-authorised access; no separate knowledge-point Entitlement or prerequisite completion is required. Disabled/unpublished content remains unavailable, and preview limits still apply to preview-only access.
+
 Mandatory WeChat email binding supersedes the previous rule allowing no-email sessions for business access. A valid active WeChat session without verified email is accepted only by binding-specific identity readers; normal Session readers require a nonempty verified email. The additive JSON collection `emailBindingTokens` contains ProductToken fields plus pending `email`. Tokens are hashed, expire in 24 hours, and are issued atomically with a 60-second per-user cooldown. Reissue removes superseded tokens. Confirmation atomically rechecks email ownership, updates the same User, and marks the token used; successful replay is idempotent. No password is created and no Account/Order/Subscription identity changes. Existing JSON stores initialise this collection on read. No relational migration is applied; the separate production relational migration remains outstanding.
 
 Stripe lookup-key payment additions: `ProductQuote.price` / `ProductOrder.price` contain `stripePriceId`, `lookupKey`, `amountMinor`, `currency`, and `termMonths`; `planSnapshot` preserves the purchased scope and term. An order also fixes Checkout origin and locale for identical idempotent retries. `009_product_payment_keys.sql` adds unique event, quote, Checkout and invoice identities. The existing product aggregate remains JSON: PostgreSQL deployments serialize writers using a transaction advisory lock and commit the JSON and payment identity constraints together; local DEV uses the process queue and atomic file rename. This is not a migration of all product entities to relational tables, and local storage must remain single-process.
@@ -91,3 +97,29 @@ PaymentAttempt: created -> pending -> succeeded / failed / refunded
 本地可用 Docker PostgreSQL；DEV/SIT/UAT/PPE/PROD 使用各自 RDS database 或 schema，不共享生产数据。
 
 Lesson public metadata includes optional `summary` (plain text, maximum 500 characters). Existing aggregates without it remain valid. It is independent of body/contents and section title; no relational DDL is needed for current course aggregate persistence.
+
+User stores optional `courseLearningModes: Record<courseId, "video" | "text">`. Missing entries mean no confirmed choice. This additive metadata persists in the existing User payload via the product transaction/repository and PostgreSQL ORM snapshot; older users require no DDL or backfill. The account and course form the unique key. It selects a media presentation only and cannot change Entitlement, Order, Payment or Subscription.
+
+
+Overview presentation sample: `contracts/learning-overview-display.ts` separates `LearningOverviewCourse` (mode, progress, currentLesson, currentLessonId) from `PreviewOverviewCourse` (course identity only; no progress). Per user request all published catalogue courses appear in both lists temporarily. `services/learningOverviewDisplay.ts` creates deterministic sample percentages without creating or modifying Study Records, Study Events, Entitlements or user learning-mode choices. No schema migration.
+
+
+Subscription record presentation: `contracts/subscription-records.ts` defines the minimal Subscription/Order DTOs and `services/subscriptionRecords.ts` groups renewal payments by Stripe Subscription id, or local source/plan/service period. Paid/refunded historical products without a Subscription row retain payment history with an unavailable status; the UI never infers active/expired access from an Order. No schema or data migration. Product presentation still comes from the server-pinned Price/plan snapshot.
+# Sample Knowledge Test UI state
+
+KnowledgeQuestion and KnowledgeResponse are session-local presentation data for the six sample cards requested for the completion dialog. Ratings are self-assessments, not authoritative automated grades. Result grouping and percentage are derived from those ratings. They are not persisted as LessonCompletion, Entitlement, subscription or production assessment facts.
+
+
+## Application Test sample state
+
+ApplicationTestSample contains the single design prompt and illustrative feedback. The dialog keeps the answer and simulated evaluation state in memory until it closes. Fixed sample feedback is not a production AI grade and does not create Understanding/Assessment records, LessonCompletion or Entitlement. No database changes.
+
+
+## Understanding overview presentation sample
+
+UnderstandingOverviewDisplay has completed/total/percent plus ordered sample lesson titles and presentation states completed/current/locked. These are the explicitly requested Figma sample values; they are independent of the course's authoritative Study records. The actual course identity, published state, requested lesson ownership and access are resolved on the server before the sample page is rendered. No schema migration or persisted assessment state.
+
+
+## Exploration presentation samples
+
+Reading metadata and course exhibit cards are user-requested samples generated for the currently displayed course. Card IDs include course ID, while media reuses local sample assets. Future locked-card placeholders are presentation elements and do not calculate or change Entitlement or lesson availability. No persistence is introduced.

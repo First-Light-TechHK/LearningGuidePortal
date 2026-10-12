@@ -1,7 +1,7 @@
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent } from "@/contracts/payment";
 import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
-import { resolveSubscriptionPrice } from "./stripePriceService";
+import { resolveSubscriptionPrice, resolveUpgradePrice } from "./stripePriceService";
 import { productTransaction } from "@/repositories/productTransactionRepository";
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "crypto";
 import { constants as fsConstants } from "fs";
@@ -25,10 +25,13 @@ import {
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
+import type { KnowledgePositions } from "@/contracts/knowledge-progress";
+import { knowledgeProgress, courseKnowledgePoints } from "@/lib/knowledgeProgress";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 import { applyDataMigrations } from "./dataMigrations";
 import { isValidName, normaliseName, validateName } from "@/lib/nameValidation";
+import { CourseLearningModeError, isCourseLearningMode, type CourseLearningMode, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -39,6 +42,7 @@ const TRIAL_DAYS = 3;
 
 export type Locale = "en-GB" | "zh-CN";
 export type ProductUser = {
+  courseLearningModes?: Record<string, CourseLearningMode>;
   id: string;
   email: string | null;
   passwordHash: string | null;
@@ -101,6 +105,7 @@ export type ProductPlan = {
   trialEligible?: boolean;
 };
 export type ProductQuote = {
+  upgradePrice?: StripePriceSnapshot;
   price?: StripePriceSnapshot;
   planSnapshot?: ProductPlan;
   id: string;
@@ -115,6 +120,7 @@ export type ProductQuote = {
   createdAt: string;
 };
 export type ProductOrder = {
+  upgradePrice?: StripePriceSnapshot;
   price?: StripePriceSnapshot;
   planSnapshot?: ProductPlan;
   checkoutOrigin?: string;
@@ -174,6 +180,8 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  knowledgePositions?: KnowledgePositions;
+  currentMode?: CourseLearningMode;
   id: string;
   userId: string;
   courseId: string;
@@ -185,6 +193,8 @@ export type ProductStudyRecord = {
   completedAt: string | null;
 };
 export type ProductStudyEvent = {
+  contentId?: string | null;
+  learningMode?: CourseLearningMode;
   id: string;
   userId: string;
   courseId: string;
@@ -480,6 +490,26 @@ export async function persistDataMigrations() {
 
 export async function persistCatalogueMigrations() {
   return persistDataMigrations();
+}
+
+export async function getCourseLearningMode(userId: string, courseId: string): Promise<CourseLearningMode | null> {
+  const data = await ensureProductData();
+  const user = data.users.find(item => item.id === userId && item.status === "active");
+  const modes = user?.courseLearningModes;
+  const mode = modes && Object.hasOwn(modes, courseId) ? modes[courseId] : null;
+  return isCourseLearningMode(mode) ? mode : null;
+}
+
+export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown): Promise<CourseLearningModeResult> {
+  if (!isCourseLearningMode(mode)) throw new CourseLearningModeError("invalid");
+  return editData(data => {
+    const user = data.users.find(item => item.id === userId && item.status === "active");
+    if (!user) throw new CourseLearningModeError("unauthorised");
+    const course = data.courses.find(item => item.id === courseId && item.status === "published");
+    if (!course) throw new CourseLearningModeError("notFound");
+    user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
+    return { courseId: course.id, mode };
+  });
 }
 
 async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -1021,7 +1051,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
     const completedLessonIds = [...new Set(courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId))];
     const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && entitlementCoversCourse(item, course));
 
-    return buildCoursePage({
+    const page = buildCoursePage({
       course,
       hasLiveEntitlement: Boolean(entitlement),
       accessEnded,
@@ -1029,6 +1059,12 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       openedLessonIds,
       completedLessonIds,
     });
+    const record = data.studyRecords.find(item => item.userId === userId && item.courseId === course.id);
+    if (record?.knowledgePositions && record.currentMode) {
+      const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
+      return { ...page, progress:position.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
+    }
+    return page;
   });
 }
 
@@ -1203,6 +1239,7 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
 export async function createUpgradeQuote(userId: string, subscriptionId: string) {
   const preliminary = paymentMode() === "stripe" ? upgradeCalculation(await ensureProductData(), userId, subscriptionId) : undefined;
   const price = preliminary ? await resolveSubscriptionPrice(preliminary.target.id) : undefined;
+  const upgradePrice = price ? await resolveUpgradePrice(price.termMonths) : undefined;
   return editData((data) => {
     if (price && preliminary) {
       const target = data.plans.find(item => item.id === preliminary.target.id);
@@ -1211,11 +1248,11 @@ export async function createUpgradeQuote(userId: string, subscriptionId: string)
     const calculation = upgradeCalculation(data, userId, subscriptionId);
     const createdAt = now();
     const quote: ProductQuote = {
-      price, planSnapshot: { ...calculation.target },
+      price, upgradePrice, planSnapshot: { ...calculation.target },
       id: id("quote"),
       userId,
       planId: calculation.target.id,
-      amountMinor: calculation.amountMinor,
+      amountMinor: upgradePrice?.amountMinor ?? calculation.amountMinor,
       currency: calculation.target.currency,
       kind: "upgrade",
       sourceSubscriptionId: subscriptionId,
@@ -1292,7 +1329,7 @@ function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, t
     if (existing && entitlement) return { order, subscription: existing, entitlement };
   }
   const calculation = upgradeCalculation(data, userId, sourceId);
-  if (calculation.target.id !== targetPlan.id || calculation.amountMinor !== order.amountMinor) throw new Error("The upgrade quote is no longer valid. Please calculate the price again.");
+  if (calculation.target.id !== targetPlan.id || (order.upgradePrice?.amountMinor ?? calculation.amountMinor) !== order.amountMinor) throw new Error("The upgrade quote is no longer valid. Please calculate the price again.");
   if (!(["pending", "paid"] as string[]).includes(order.status)) throw new Error("This upgrade payment attempt cannot be completed.");
   const source = data.subscriptions.find((item) => item.id === sourceId && item.userId === userId);
   if (!source) throw new Error("The source subscription could not be found.");
@@ -1454,7 +1491,7 @@ export async function createPendingStripeUpgradeOrderFromQuote(userId: string, q
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe" && item.kind === "upgrade" && ["pending", "paid"].includes(item.status));
     if (existing) return { order: existing, plan };
-    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", price: quote.price, planSnapshot: quote.planSnapshot, sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
+    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", price: quote.price, upgradePrice: quote.upgradePrice, planSnapshot: quote.planSnapshot, sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
   });
@@ -1756,7 +1793,10 @@ export async function getLearningOverview(userId: string) {
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
       const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === courseId);
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
-      const computed = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
+      const mode = record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModes?.[courseId] || "text";
+      const pointProgress = course && record?.knowledgePositions ? knowledgeProgress(course, mode, record.knowledgePositions[mode]) : null;
+      const computed = pointProgress ? { progress: pointProgress.progress, progressFailed: !pointProgress.total, completed: pointProgress.total > 0 && pointProgress.current === pointProgress.total }
+        : courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
       const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
       const previewLesson = course ? publicFirstLesson(course) : null;
       const previewLessons = previewLesson ? [previewLesson] : [];
@@ -1780,6 +1820,8 @@ export async function getLearningOverview(userId: string) {
         startedAt: record?.startedAt || null,
         updatedAt: record?.updatedAt || entitlement?.validTo || null,
         currentLessonId: record?.currentLessonId || null,
+        currentContentId: pointProgress?.contentId || null,
+        mode,
         currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
@@ -1787,8 +1829,8 @@ export async function getLearningOverview(userId: string) {
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
         courseStatus: course?.status || "draft",
         totalSeconds: record?.totalSeconds || 0,
-        openedLearningPointCount: openedLessonIds.length,
-        totalLearningPoints: lessons.length,
+        openedLearningPointCount: pointProgress?.current ?? openedLessonIds.length,
+        totalLearningPoints: pointProgress?.total ?? lessons.length,
         progress: computed.progress,
         progressFailed: computed.progressFailed,
         completedAt: computed.completed ? record?.completedAt || now() : null,
@@ -1928,7 +1970,7 @@ export async function applyStripeOrderState(input: { orderId: string; operatorId
   });
 }
 
-export async function recordStudyEvent(input: { userId: string; courseId: string; lessonId: string; event: ProductStudyEvent["event"]; seconds: number; clientEventId: string }, access: "paid" | "preview" = "paid") {
+export async function recordStudyEvent(input: { userId: string; courseId: string; lessonId: string; contentId?: string | null; learningMode?: CourseLearningMode; event: ProductStudyEvent["event"]; seconds: number; clientEventId: string }, access: "paid" | "preview" = "paid") {
   return editData((data) => {
     if (!input.clientEventId.trim()) throw new Error("A client event id is required.");
     if (!["open", "video_progress", "text_progress", "complete"].includes(input.event)) throw new Error("Invalid study event.");
@@ -1938,6 +1980,10 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
     if (access === "preview" && input.event === "complete") throw new Error("Preview lessons cannot be completed.");
     const lesson = course?.sections.flatMap((section) => section.lessons).find((item) => item.id === input.lessonId);
     if (!lesson) throw new Error("Lesson not found.");
+    if (input.learningMode !== undefined && !isCourseLearningMode(input.learningMode)) throw new Error("Invalid learning mode.");
+    if (input.contentId !== undefined && input.contentId !== null && typeof input.contentId !== "string") throw new Error("Invalid content id.");
+    if (input.contentId !== undefined && !input.learningMode) throw new Error("A learning mode is required for a knowledge point.");
+    if (input.learningMode && !courseKnowledgePoints(course, input.learningMode).some(point => point.lessonId === lesson.id && point.contentId === (input.contentId || null))) throw new Error("Knowledge point not found.");
     if (access === "preview" && publicFirstLesson(course)?.id !== lesson.id) throw new Error("This lesson is outside the preview range.");
     const existingClientEvent = data.studyEvents.some((event) => event.userId === input.userId && event.clientEventId === input.clientEventId);
     if (existingClientEvent) {
@@ -1958,11 +2004,17 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
       data.studyRecords.unshift(record);
     }
     record.currentLessonId = input.lessonId;
+    if (input.learningMode && input.event === "open") {
+      record.currentMode = input.learningMode;
+      record.knowledgePositions = { ...record.knowledgePositions, [input.learningMode]: { lessonId: lesson.id, contentId: input.contentId || null } };
+    }
     record.totalSeconds += seconds;
     record.totalSeconds = Math.min(totalCourseSeconds, record.totalSeconds);
     const lessons = course.sections.flatMap((section) => section.lessons);
     const openedIds = uniqueOpenedLearningPointIds(data.studyEvents.filter((event) => event.userId === input.userId && event.courseId === input.courseId));
-    const computed = courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
+    const pointProgress = record.knowledgePositions && record.currentMode ? knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]) : null;
+    const computed = pointProgress ? { progress: pointProgress.progress, completed: pointProgress.total > 0 && pointProgress.current === pointProgress.total }
+      : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
     // D2.1 stored progress follows unique LPs; seconds stay on the record for study telemetry only.
     record.progress = computed.progress ?? 0;
     record.completedAt = computed.completed ? record.completedAt || now() : null;

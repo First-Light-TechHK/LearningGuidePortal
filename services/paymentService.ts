@@ -1,7 +1,7 @@
 import type { ProductUser } from "./productStore";
 import { attachStripeCheckoutSession, completeDemoUpgradeOrder, createPendingDemoOrder, createPendingDemoTrialOrder, createPendingDemoTrialOrderFromQuote, createPendingDemoUpgradeOrderFromQuote, createPendingStripeOrder, createPendingStripeTrialOrderFromQuote, createPendingStripeUpgradeOrderFromQuote, createQuote, getQuoteForUser, prepareStripeCheckout } from "./productStore";
 import { createHostedCheckout, createHostedTrialCheckout, createHostedUpgradeCheckout, getStripe } from "./stripeClient";
-import { validateSubscriptionPrice } from "./stripePriceService";
+import { validateSubscriptionPrice, validateUpgradePrice } from "./stripePriceService";
 import { PaymentError } from "@/contracts/payment";
 import { isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
 
@@ -41,6 +41,11 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
   validateSubscriptionPrice(remotePrice, price.termMonths);
   if (remotePrice.unit_amount !== price.amountMinor || remotePrice.currency !== price.currency) throw new PaymentError("quote_expired");
   if (upgrade) {
+    const upgradePrice = quoted.quote.upgradePrice;
+    if (!upgradePrice) throw new PaymentError("quote_expired");
+    const remoteUpgradePrice = await getStripe().prices.retrieve(upgradePrice.stripePriceId);
+    validateUpgradePrice(remoteUpgradePrice,price.termMonths);
+    if (remoteUpgradePrice.unit_amount !== quoted.quote.amountMinor || remoteUpgradePrice.unit_amount !== upgradePrice.amountMinor || remoteUpgradePrice.currency !== upgradePrice.currency) throw new PaymentError("quote_expired");
     const source = quoted.sourceSubscription;
     if (!source?.stripeSubscriptionId || !source.stripeCustomerId) throw new PaymentError("invalid_request");
     const remote = await getStripe().subscriptions.retrieve(source.stripeSubscriptionId);
@@ -61,7 +66,7 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
   }
   const input = { origin: order.checkoutOrigin!, locale: order.checkoutLocale!, userEmail: user.email, orderId: order.id, userId: user.id, quoteId: order.quoteId, planId: pending.plan.id, courseId: pending.plan.courseId, scopeType: pending.plan.scope, scopeId: pending.plan.scopeId || pending.plan.category, planName: pending.plan.name, amountMinor: price.amountMinor, currency: price.currency, termMonths: price.termMonths, price };
   const session = trial ? await createHostedTrialCheckout(input) : upgrade
-    ? await createHostedUpgradeCheckout({ ...input, amountMinor: order.amountMinor, sourceSubscriptionId: quoted.quote.sourceSubscriptionId! })
+    ? await createHostedUpgradeCheckout({ ...input, amountMinor: order.amountMinor, upgradePriceId:order.upgradePrice!.stripePriceId, sourceSubscriptionId: quoted.quote.sourceSubscriptionId! })
     : await createHostedCheckout(input);
   await attachStripeCheckoutSession(user.id, order.id, session.id);
   return { order: { ...order, stripeCheckoutSessionId: session.id }, checkoutUrl: session.url };

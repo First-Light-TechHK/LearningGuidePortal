@@ -120,6 +120,10 @@ npm run stripe:listen
 
 The CLI prints a `whsec_...` signing secret. Put that value in `.env.local` as `STRIPE_WEBHOOK_SECRET` and restart Next.js. Keep the Stripe CLI process running while testing; it is the local receiver that forwards signed events.
 
+`npm run stripe:listen` now reads `NEXT_PUBLIC_APP_URL` from the local Next.js environment and forwards to that port, rather than always forwarding to 3011. For an application at `http://localhost:3000`, the target is `http://localhost:3000/api/payment/webhook`. Stripe CLI must be installed and authenticated first.
+
+If an Everything test payment completed before forwarding was running, the local Order remains pending and no Entitlement exists. After confirming the payment in Stripe, recover the missed actual `checkout.session.completed` event with `node --env-file=.env.local --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/replay-local-stripe-checkout.ts <local-order-id>`. Omitting the ID selects the latest pending six-month Everything order. The script permits only DEV/local storage and Stripe test credentials, retrieves the actual provider event, and delivers it through the existing idempotent verified payment handler. It never grants access based on browser success. Replaying the same event is safe. Refresh course detail afterwards; all entitled lessons should show Start.
+
 The local product flow is then:
 
 ```text

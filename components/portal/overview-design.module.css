@@ -1,0 +1,32 @@
+.page:global(.portal-account-page) { background:#f8fafd; font-family:Inter,Arial,sans-serif; }
+.page > :global(.portal-header),.page > :global(.portal-footer) { grid-column:1 / -1; }
+.page > :global(.account-nav) { grid-column:2; width:280px; padding:52px 30px 58px; }
+.page > :global(.account-nav) > :global(.account-nav-title) { display:none; }
+.page > :global(.account-nav) :global(.account-nav-support) { height:132px; margin-top:auto; padding:20px 16px; }
+.page :global(.account-nav-support) strong { line-height:21px; }
+.page :global(.account-nav-support) p { margin:8px 0 12px; color:#64748b; }
+.page :global(.account-nav-support) a { color:#1660d8; font-weight:600; }
+.page > .dashboard { grid-column:3; grid-row:2; min-width:0; width:100%; min-height:1150px; margin:0; padding:50px 64px 80px; }
+.dashboard > * { width:min(946px,100%); margin-inline:auto; }
+.dashboard h1 { margin:0 auto 70px; color:#15233a; font-size:31px; font-weight:600; line-height:40px; }
+.heading h2 { margin:0; color:#15233a; font-size:23px; line-height:30px; font-weight:600; }
+.heading p { margin:2px 0 14px 3px; color:#64748b; font-size:13px; line-height:20px; }
+.list { display:grid; gap:22px; }
+.card { display:grid; grid-template-columns:280px minmax(0,1fr) 156px; align-items:center; gap:24px; min-height:178px; padding:23px 27px 23px 23px; border:1px solid #dbe3f0; border-radius:10px; background:#fff; }
+.cover { width:280px; height:130px; border-radius:5px; overflow:hidden; }
+.cover img { display:block; width:280px; height:130px; object-fit:cover; }
+.historyCover img { height:148.252px; object-fit:fill; transform:translateY(-13.156px); }
+.content { min-width:0; width:326px; max-width:100%; }
+.category { display:inline-flex; max-width:100%; padding:5px 9px; border-radius:10px; background:#ecf1ff; color:#155dfc; font-size:11px; line-height:15px; font-weight:600; }
+.content h3 { margin:12px 0 0; color:#15233a; font-size:21px; line-height:27px; font-weight:600; overflow-wrap:anywhere; }
+.metadata { margin:0; color:#64748b; font-size:14px; line-height:20px; }
+.track { height:7px; margin-top:15px; border-radius:4px; background:#dbe3f0; overflow:hidden; }
+.track > span { display:block; height:100%; background:#246bfd; border-radius:4px; }
+.progressLabels { display:flex; justify-content:space-between; gap:12px; margin-top:7px; color:#687386; font-size:12px; line-height:17px; }
+.progressLabels strong { color:#1660d8; font-size:12px; font-weight:600; }
+.completed .track > span { background:#1a8c4f; }.completed .progressLabels strong { color:#1a7340; }
+.action { display:flex; align-items:center; justify-content:center; min-height:42px; padding:10px 12px; border:1px solid #dbe3f0; border-radius:7px; background:#fff; color:#1660d8; font-size:13px; font-weight:600; line-height:20px; text-align:center; text-decoration:none; }
+.action:hover { background:#e8f1ff; }.action:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
+@media(max-width:1300px) { .page > .dashboard { padding-inline:40px; }.dashboard > * { width:100%; }.card { grid-template-columns:220px minmax(0,1fr); gap:20px; }.cover { width:220px; grid-row:1 / 3; }.cover img { width:220px; }.action { grid-column:2; justify-self:start; min-width:156px; } }
+@media(max-width:1000px) { .page > :global(.account-nav) { width:280px; padding:40px 16px; }.page > .dashboard { padding-inline:24px; }.dashboard > * { width:100%; }.card { grid-template-columns:minmax(0,1fr); padding:20px; }.cover { grid-row:auto; width:100%; }.cover img { width:100%; }.action { grid-column:auto; justify-self:stretch; } }
+@media(max-width:720px) { .page:global(.portal-account-page) { display:block; }.page > :global(.account-nav) { width:100%; padding:16px 20px; }.page > .dashboard { min-height:600px; padding:28px 20px 56px; }.dashboard > * { width:100%; }.dashboard h1 { margin:0 0 40px; font-size:26px; line-height:34px; }.cover { height:160px; }.cover img { height:160px; }.historyCover img { height:182.464px; transform:translateY(-16.192px); }.content h3 { font-size:20px; }.action { width:100%; } }

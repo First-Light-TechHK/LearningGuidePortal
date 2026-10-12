@@ -451,7 +451,7 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
   }
   try {
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    browser = await chromium.launch({ timeout: LIMIT.navigation });
+    browser = await chromium.launch({ timeout: LIMIT.navigation, channel: process.env.PLAYWRIGHT_CHANNEL || undefined });
     const publicContext = await context({ width: 1440, height: 1000 });
     const student = await login(credentials, 'student_login');
     let locked;
@@ -589,8 +589,13 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
             const path = `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${encodeURIComponent(lesson.id)}`;
             await assertPage(page, path, origin, deadline);
             const root = await checkLessonIdentity(page, course, lesson, deadline);
-            requireCheck(normaliseText(await root.locator('.lesson-nav > .portal-eyebrow').textContent()) === normaliseText(course.title), 'learning_course_title_mismatch');
-            requireCheck(await root.locator(`.lesson-nav a.active[href=${selectorValue(path)}]`).count() === 1, 'active_lesson_navigation_mismatch');
+            requireCheck(normaliseText(await root.locator('aside').first().locator('h2').textContent()) === normaliseText(course.title), 'learning_course_title_mismatch');
+            const activeLinks = root.locator('a[aria-current="page"]');
+            requireCheck(await activeLinks.count() === 1 && await activeLinks.evaluate((link, expected) => {
+              const actual = new URL(link.href);
+              const target = new URL(expected, location.origin);
+              return actual.pathname === target.pathname && actual.searchParams.get('lessonId') === target.searchParams.get('lessonId');
+            }, path), 'active_lesson_navigation_mismatch');
             const metrics = await exerciseLesson(page, root, lesson, origin, deadline, audit, step, lessonScope);
             evidence.coverage.lessons += 1;
             return metrics;
