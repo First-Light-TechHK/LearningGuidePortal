@@ -6,7 +6,7 @@ import { sendStudyGroupReminderEmail } from "@/services/emailService";
 import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification } from "@/services/productStore";
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
 import { createStudyGroupRepository } from "./repository";
-import { createStudyGroupService, type StudyGroupService } from "./service";
+import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
 import { parseLiveKitProjects } from "./liveKitProjectRegistry";
@@ -274,11 +274,17 @@ export function studyGroupService() {
   // store only. Unlike the health timer there is deliberately no dedupe — the
   // alarms need a steady sample — and a throwing tick is swallowed and
   // dropped, same contract as the reminder, health and reconcile timers.
+  // On the same cadence, signature rejections drain first: at most one redacted
+  // line per tick (never per rejection, so sustained invalid_signature 400s
+  // cannot flood the log), consumed synchronously so a failing metrics sample
+  // below can never lose a count.
   const metricsTimers = globalThis as typeof globalThis & { __lgStudyGroupMetricsTimers?: Set<string> };
   metricsTimers.__lgStudyGroupMetricsTimers ??= new Set();
   if (backend === "postgres" && !metricsTimers.__lgStudyGroupMetricsTimers.has(key)) {
     metricsTimers.__lgStudyGroupMetricsTimers.add(key);
     const timer = setInterval(() => {
+      const rejectionLine = webhookRejectionLogLine(service);
+      if (rejectionLine) console.info(rejectionLine);
       void service.operationalMetrics()
         .then((metrics) => console.info(JSON.stringify({ type: "study_group.metrics", store: "postgres", ...metrics })))
         .catch(() => undefined);

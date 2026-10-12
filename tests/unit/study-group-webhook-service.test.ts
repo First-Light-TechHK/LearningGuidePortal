@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, test } from "node:test";
 import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "../../modules/group-study/liveKitGateway";
 import { createStudyGroupRepository, StudyGroupStoreUnsupportedError, type StudyGroupRepository, type WebhookReceiptStatus } from "../../modules/group-study/repository";
-import { createStudyGroupService, StudyGroupWebhookError, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
+import { createStudyGroupService, StudyGroupWebhookError, webhookRejectionLogLine, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 
 // Slice-2 service contract (production-persistence-slice2-design.md §3): the
 // webhook path verifies, records the receipt first, maps the event through a
@@ -377,4 +377,100 @@ test("the webhook flow cannot change memberships, roles, sessions, or token stat
   assert.deepEqual(after.groups, before.groups);
   assert.equal(after.memberships.find((row) => row.groupId === group.id && row.userId === "member")?.role, "member");
   assert.equal(await tokenLog(f.directory), tokenLogBefore);
+});
+
+// Signature-rejection observability (flood-safe): the service counts only
+// invalid/missing signatures in-process (per-instance), and the runtime's
+// 5-minute metrics timer drains the counter into ONE redacted line per
+// non-empty cadence — never one line per rejection.
+
+test("each unverified signature increments the per-instance counter, and consuming resets it", async () => {
+  const f = await webhookFixture({ gateway: stubGateway(async () => { throw new LiveKitGatewayError("unverified"); }) });
+
+  await assert.rejects(
+    () => f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-bad-1" }), authHeader: null }),
+    (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "invalid_signature"
+  );
+  await assert.rejects(
+    () => f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-bad-2" }), authHeader: "Bearer wrong" }),
+    (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "invalid_signature"
+  );
+
+  assert.equal(f.service.consumeWebhookRejectionCount?.(), 2);
+  // Consuming resets: a second read sees only rejections recorded since.
+  assert.equal(f.service.consumeWebhookRejectionCount?.(), 0);
+});
+
+test("the drain fires exactly one redacted line only when the count is above zero, and resets", async () => {
+  const signatureSentinel = "super-secret-signature-value";
+  const f = await webhookFixture({ gateway: stubGateway(async () => { throw new LiveKitGatewayError("unverified"); }) });
+
+  // A silent cadence: nothing rejected means no line at all.
+  assert.equal(webhookRejectionLogLine(f.service), null);
+
+  for (const id of ["evt-a", "evt-b"]) {
+    await assert.rejects(
+      () => f.service.handleLiveKitWebhook({
+        rawBody: JSON.stringify({ id, echo: signatureSentinel }),
+        authHeader: `Bearer ${signatureSentinel}`
+      }),
+      (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "invalid_signature"
+    );
+  }
+
+  const line = webhookRejectionLogLine(f.service);
+  assert.equal(line, '{"type":"study_group.webhook_rejected","reason":"invalid_signature","count":2}');
+  // Redacted: the line echoes neither the header nor the raw body.
+  assert.equal(line?.includes(signatureSentinel), false);
+  // Emit-and-reset: the drained line leaves nothing behind for the next tick.
+  assert.equal(webhookRejectionLogLine(f.service), null);
+  assert.equal(f.service.consumeWebhookRejectionCount?.(), 0);
+});
+
+test("the drain treats a stand-in service without the counter as zero", () => {
+  assert.equal(webhookRejectionLogLine({}), null);
+  assert.equal(webhookRejectionLogLine({ consumeWebhookRejectionCount: () => 0 }), null);
+  assert.equal(
+    webhookRejectionLogLine({ consumeWebhookRejectionCount: () => 5 }),
+    '{"type":"study_group.webhook_rejected","reason":"invalid_signature","count":5}'
+  );
+});
+
+test("webhook_unavailable failures and malformed bodies never count as signature rejections", async () => {
+  // Provider failure other than unverified.
+  const provider = await webhookFixture({ gateway: stubGateway(async () => { throw new LiveKitGatewayError("credential_unavailable"); }) });
+  await assert.rejects(
+    () => provider.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-1" }), authHeader: "Bearer signed-token" }),
+    (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "webhook_unavailable"
+  );
+  // Unexpected provider error.
+  const exploded = await webhookFixture({ gateway: stubGateway(async () => { throw new Error("provider exploded"); }) });
+  await assert.rejects(
+    () => exploded.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-1" }), authHeader: "Bearer signed-token" }),
+    (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "webhook_unavailable"
+  );
+  // Gateway without webhook verification at all.
+  const unconfigured = await webhookFixture({ gateway: stubGateway() });
+  await assert.rejects(
+    () => unconfigured.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-1" }), authHeader: "Bearer signed-token" }),
+    (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "webhook_unavailable"
+  );
+  // Store that refuses the receipt (typed), reached only after a VERIFIED signature.
+  const store = await webhookFixture({ gateway: stubGateway(async () => webhookEvent("s-unused", { eventId: "evt-store" })) });
+  store.hooks.insertError = new StudyGroupStoreUnsupportedError("insertWebhookReceipt");
+  await assert.rejects(
+    () => store.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-store" }), authHeader: "Bearer signed-token" }),
+    (error: unknown) => error instanceof StudyGroupWebhookError && error.code === "webhook_unavailable"
+  );
+  // A verified signature over a malformed body fails in parsing, not signing.
+  const malformed = await webhookFixture({ gateway: stubGateway(async () => webhookEvent("s-1", { eventId: "evt-malformed" })) });
+  await assert.rejects(
+    () => malformed.service.handleLiveKitWebhook({ rawBody: "{not-json", authHeader: "Bearer signed-token" }),
+    (error: unknown) => error instanceof SyntaxError
+  );
+
+  for (const f of [provider, exploded, unconfigured, store, malformed]) {
+    assert.equal(f.service.consumeWebhookRejectionCount?.(), 0);
+    assert.equal(webhookRejectionLogLine(f.service), null);
+  }
 });

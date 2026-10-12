@@ -130,6 +130,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   const startingSessions = new Map<string, Promise<unknown>>();
   const tutorDraining = new Set<string>();
   const tutorPools = new Map<string, ReturnType<typeof createTutorKeyPool>>();
+  // Signature-rejection counter: counts are per-instance (each App Runner
+  // instance counts only the rejections it saw; multi-instance aggregation is
+  // acceptable for the alarm). Only invalid/missing signatures increment it —
+  // never provider or store failures — and the runtime metrics timer drains it.
+  let webhookRejectionCount = 0;
 
   function tutorPoolFor(keys: Array<{ id: string; secret: string }>) {
     const keySet = JSON.stringify(keys);
@@ -978,7 +983,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       try {
         event = await gateway.verifyWebhook({ rawBody: input.rawBody, authHeader: input.authHeader });
       } catch (error) {
-        if (error instanceof LiveKitGatewayError && error.code === "unverified") throw new StudyGroupWebhookError("invalid_signature");
+        if (error instanceof LiveKitGatewayError && error.code === "unverified") {
+          // The exact place an invalid or missing signature is determined.
+          webhookRejectionCount += 1;
+          throw new StudyGroupWebhookError("invalid_signature");
+        }
         throw new StudyGroupWebhookError("webhook_unavailable");
       }
       // The gateway already parsed this body; parsing cannot throw on real traffic.
@@ -1023,6 +1032,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // receipt still `received` (route 500; the retry resumes it).
       await deps.repository.markWebhookProcessed({ receiptId: event.eventId, result });
       return { status: result };
+    },
+
+    consumeWebhookRejectionCount() {
+      // Read-and-reset in one synchronous step: the metrics timer drains the
+      // returned value, so no count is dropped or reported twice.
+      const count = webhookRejectionCount;
+      webhookRejectionCount = 0;
+      return count;
     },
 
     async reconcileLiveKitState(): Promise<{ abandonedReceipts: number; sessionsChecked: number; presencesClosed: number }> {
@@ -1110,4 +1127,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   };
 }
 
-export type StudyGroupService = ReturnType<typeof createStudyGroupService>;
+// The metrics timer's emit-and-reset step, kept a small pure function so the
+// cadence behavior is testable without timers: consume the counter (resetting
+// it) and return the one redacted line when the count is above zero, else
+// null. The line carries only the fixed type, the fixed reason and a number —
+// never the signature, the header, the raw body, or any identity — and fires
+// once per non-empty cadence, never per rejection (flood-safe).
+export function webhookRejectionLogLine(service: { consumeWebhookRejectionCount?: () => number }): string | null {
+  const count = service.consumeWebhookRejectionCount?.() ?? 0;
+  if (count <= 0) return null;
+  return JSON.stringify({ type: "study_group.webhook_rejected", reason: "invalid_signature", count });
+}
+
+export type StudyGroupService = Omit<ReturnType<typeof createStudyGroupService>, "consumeWebhookRejectionCount"> & {
+  // Optional so lightweight service stand-ins in other fixtures keep
+  // compiling; the runtime timer treats an absent method as a zero counter.
+  consumeWebhookRejectionCount?: () => number;
+};
