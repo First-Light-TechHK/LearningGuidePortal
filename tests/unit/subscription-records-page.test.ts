@@ -45,7 +45,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
       assert.equal(await cards.count(),4);
       assert.equal(await page.getByRole("table").count(),0);
       assert.equal(await cards.locator('button[aria-expanded="false"]').count(),4);
-      assert.deepEqual(await cards.locator('img').evaluateAll(nodes => nodes.filter(node => !node.src.endsWith("svg")).map(node => new URL(node.src).pathname)),images.map(image => `/portal/subscriptions/${image}.png`));
+      assert.deepEqual(await cards.locator('img').evaluateAll(nodes => nodes.flatMap(node => { const image = node as HTMLImageElement; return image.src?.endsWith("svg") ? [] : [new URL(image.src).pathname]; })),images.map(image => `/portal/subscriptions/${image}.png`));
       await page.screenshot({path:`test-results/subscription-records/${locale}-collapsed.png`});
       await cards.nth(0).locator('button[aria-expanded]').click();
       await page.getByRole("table").waitFor();

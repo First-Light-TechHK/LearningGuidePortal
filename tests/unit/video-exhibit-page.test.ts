@@ -123,8 +123,8 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await time(25); await bar.waitFor();
       await page.locator("video").evaluate(`video=>{let paused=false;Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});video.pause=()=>{paused=true;};video.play=()=>{paused=false;return Promise.resolve();};}`);
       await bar.getByRole("button").last().click(); await page.getByRole("dialog").waitFor(); await page.getByRole("dialog").locator('img[alt="Image exhibit"]').waitFor();
-      assert.equal(await page.locator("video").evaluate(video=>video.paused),true); await page.keyboard.press("Escape");
-      assert.equal(await page.locator("video").evaluate(video=>video.paused && video.currentTime===25),true,"closing the exhibit leaves lesson paused at the same point");
+      assert.equal(await page.locator("video").evaluate(video=>(video as HTMLVideoElement).paused),true); await page.keyboard.press("Escape");
+      assert.equal(await page.locator("video").evaluate(video=>{ const media = video as HTMLVideoElement; return media.paused && media.currentTime===25; }),true,"closing the exhibit leaves lesson paused at the same point");
       await time(9,"seeked");await time(10);await bar.waitFor();await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/video-exhibit/${locale}-mobile.png`,fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       await time(30,"seeked");assert.equal(await bar.count(),0,"forward seek clears prompt and skips prior nodes");
       await mount("trial",false);await time(20);assert.equal(await bar.count(),0,"trial gate runs before timed nodes");

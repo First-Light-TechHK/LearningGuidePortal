@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { canPromptVideoCompletion, videoCompletionPercent, playbackDuration } from "../../lib/videoLessonCompletion";
 
 test("progress uses actual media duration with the same finite fallback as the video toolbar", () => {
-  const seekable={length:1,end:()=>37.5} as TimeRanges;
+  const seekable={length:1,end:()=>37.5} as unknown as TimeRanges;
   assert.equal(playbackDuration({duration:37.5,seekable}),37.5);
   assert.equal(playbackDuration({duration:Infinity,seekable}),37.5);
   assert.equal(playbackDuration({duration:NaN,seekable:{length:0} as TimeRanges}),0);
