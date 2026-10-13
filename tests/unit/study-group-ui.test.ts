@@ -32,7 +32,7 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.deepEqual(tutorQueueBody("Why did 1928 look stable?"), { message: "Why did 1928 look stable?" });
   assert.equal("prompt" in tutorQueueBody("Why did 1928 look stable?"), false);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /tutorQueueBody\(text\)/);
+  assert.match(room, /tutorQueueBody\(\(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\)\)/);
   assert.match(room, /<time dateTime=\{line\.at\}>/);
   assert.match(room, /session\.aiTutorEnabled \?/);
   assert.equal(room.includes("/api/ai-tutor"), false);
@@ -90,7 +90,7 @@ test("the join label reads Join Now and Hosting is only for the Host", () => {
   const source = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(source, /\{copy\.joinGroup\}/);
   assert.match(source, /selected\.role === "host" \? <span className=\{styles\.hostChip\}>\{copy\.hosting\}<\/span> : null/);
-  assert.match(source, /selected\.role === "host" \? <div className=\{styles\.hostFoot\}>/);
+  assert.match(source, /selected\.role === "host" \? <div className=\{`\$\{styles\.hostFoot\} \$\{styles\.hostFootWithCopy\}`\}>/);
   assert.equal(source.includes("{copy.hosting}</span> : null"), true);
 });
 
@@ -266,8 +266,8 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
 
 test("the ended screen and live clock follow the Live Session frames", () => {
   assert.equal(en.studyGroupsPage.room.endedBody, "The Session has ended. You can return to the lesson and continue learning.");
-  assert.equal(en.studyGroupsPage.room.chatPlaceholder, "Type your message...");
-  assert.equal(zh.studyGroupsPage.room.chatPlaceholder, "输入消息...");
+  assert.equal(en.studyGroupsPage.room.chatPlaceholder, "Type your message or @AI Tutor...");
+  assert.equal(zh.studyGroupsPage.room.chatPlaceholder, "输入消息或 @AI Tutor...");
   assert.equal(en.studyGroupsPage.room.tutorName, "AI Tutor");
   assert.equal(fill(en.studyGroupsPage.room.groupStudy, { count: 45 }), "45-minute Group Study");
   assert.equal(fill(en.studyGroupsPage.room.liveClock, { time: "32:18" }), "● Live 32:18");
@@ -347,12 +347,12 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(css, /\.reminderHint \{[^}]*background: #fff9f1[^}]*\}/); // 599:721 reminder pill
   assert.match(css, /\.planningTag \{[^}]*border-radius: 4px;[^}]*background: #eef9f3[^}]*\}/); // 599:744 r4 pill
   assert.match(css, /\.endCard \{ width: min\(640px, 100%\)/); // 599:1398 card 433..1072
-  assert.match(css, /\.endCard h1 \{ font-size: 28px; \}/);
+  assert.match(css, /\.endCard h1 \{ font-size: 28px; font-weight: 700; color: #000; \}/); // 599:1448 h1 28px/700 #000
   assert.match(css, /\.endCard \.primary \{ min-width: 152px; height: 36px; font-size: 12px; \}/); // 599:1455
   assert.match(css, /\.ghost \{[^}]*color: #111827[^}]*\}/); // 599:627 Button/Edit Group label
   assert.match(css, /\.signInLink \{[^}]*color: #4a5565[^}]*\}/); // 599:971 header Sign In variant
   assert.match(css, /\.live \{ position: absolute; top: 8px; right: 8px/); // 599:44 sidebar Live chip inset
-  assert.match(css, /\.joined \{ background: #d1f1dd; color: #2dad5c; \}/);
+  assert.match(css, /\.joined \{ background: #d1f1dd; color: #16a34a; \}/); // 599:47 sidebar Joined chip text #16a34a
   assert.match(css, /\.empty \{[^}]*padding-top: 130px; \}/); // 599:8 rhythm: title 218, art 395, h2 573, body 614
   assert.match(css, /\.empty img \{ width: 250px; height: 150px; margin-top: 160px/);
   assert.match(css, /\.joinBanner \{[^}]*margin: 0 0 12px;[^}]*\}/);
@@ -412,4 +412,180 @@ test("the retained create form cannot submit twice while the request is in fligh
   assert.match(app, /type="submit" disabled=\{creating\}/);
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   assert.match(css, /\.sessionBody \{ min-width: 0; \}/);
+});
+
+test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor modes", () => {
+  // 599:1117: equal 7:4 tiles, ~10px gaps, left-aligned 2x2 grid; a single
+  // participant keeps one standard 490px tile instead of a stretched strip.
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.videos \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 10px; max-width: 990px; \}/);
+  assert.match(css, /\.videosSingle \{ grid-template-columns: minmax\(0, 490px\); justify-content: center; \}/);
+  assert.match(css, /\.tile \{ position: relative; overflow: hidden; aspect-ratio: 7 \/ 4; min-height: 0;/);
+  assert.match(css, /\.room \{[^}]*align-items: start;[^}]*\}/);
+  // 599:1276: chat body is flush-left across the whole column at 13px, the
+  // tutor avatar is 20px, and the tutor name is #111827 instead of blue.
+  assert.match(css, /\.chatBody \{ margin: 4px 0 0; color: #344054; font-size: 13px; \}/);
+  assert.equal(css.includes("margin: 4px 0 0 36px"), false);
+  assert.match(css, /\.tutorAvatar \{ width: 20px; height: 20px; border-radius: 10px;[^}]*font-size: 11px; \}/);
+  assert.match(css, /\.tutorName \{ color: #111827; \}/);
+  assert.match(css, /\.tutorBody \{ color: #1d6bff; \}/);
+  assert.match(css, /\.tutorLead \{ color: #111827; \}/);
+  assert.match(css, /\.tutorDisclosure \{ color: #9a3412; font-size: 12px; font-weight: 600; \}/);
+
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  assert.match(room, /mode\?: "course" \| "general" \| "unavailable"/);
+  assert.match(room, /message\.text \|\| message\.mode === "unavailable"/);
+  assert.match(room, /mode: message\.mode === "general" \|\| message\.mode === "unavailable" \? message\.mode : "course"/);
+  assert.match(room, /line\.mode === "unavailable"\s*\?\s*roomCopy\.tutorUnavailable/);
+  assert.match(room, /line\.mode === "general" \? <span className=\{styles\.tutorDisclosure\}>\{roomCopy\.tutorGeneral\}<\/span>/);
+  assert.match(room, /index === 0\s*\?\s*<strong key="lead" className=\{styles\.tutorLead\}>\{row\}<\/strong>/);
+  assert.match(room, /<span key=\{index\} className=\{styles\.tutorRow\}>\{row\}<\/span>/);
+  assert.match(room, /line\.text\.split\("\\n"\)\.filter\(\(row\) => row\.trim\(\)\)/);
+
+  assert.equal(en.studyGroupsPage.room.tutorGeneral, "Not covered in the course material — a general answer:");
+  assert.equal(en.studyGroupsPage.room.tutorUnavailable, "AI Tutor is temporarily unavailable. Please try again.");
+  assert.equal(zh.studyGroupsPage.room.tutorGeneral, "课程材料未覆盖此内容，以下为一般性解答。");
+  assert.equal(zh.studyGroupsPage.room.tutorUnavailable, "AI Tutor 暂时不可用，请稍后重试。");
+});
+
+test("the Host Control frame pins the placeholder tile, name strip, hand badge, and centred controls", () => {
+  // GS / 10 Live Session - Host Control: camera-off tiles are light grey with a
+  // centred grey person, the caption is a full-width strip, and the control
+  // group (Leave Session included) is centred on the stage.
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.tile\[data-video="off"\] \{ background: #f2f4f7; \}/);
+  assert.match(css, /\.tile \.tilePlaceholder \{ position: absolute; inset: 0; display: grid; place-items: center; \}/);
+  assert.match(css, /\.tilePlaceholder i \{ width: 90px; height: 90px; border-radius: 45px; background: #e4e7ec; color: #98a2b3;/);
+  assert.match(css, /\.tile \.tileCaption \{ position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba\(17, 24, 39, \.55\); padding: 6px 12px; \}/);
+  assert.match(css, /\.tile \.speakingDot \{ display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 3px; background: #4ade80;/);
+  assert.match(css, /\.tile \.tileHand \{ position: absolute; top: 8px; right: 8px; z-index: 2;/);
+  // 599:1117 renders the host suffix in caps ("Anna Williams · HOST").
+  assert.match(css, /\.tile \.tileHost \{ text-transform: uppercase; \}/);
+  assert.match(css, /\.tile \.tileMic\[data-status="muted"\] \{ background: #f54649; color: #fff; \}/);
+  assert.match(css, /\.controls \{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; \}/);
+  assert.equal(/\.controls \.leaveControl \{[^}]*margin-left/.test(css), false);
+
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  assert.match(room, /const camera = cameraTracks\[tile\.identity\] \?\? null;/);
+  assert.match(room, /data-video=\{camera \? "on" : "off"\}/);
+  assert.match(room, /<span className=\{styles\.tilePlaceholder\} aria-hidden="true"><i><PersonGlyph \/><\/i><\/span>/);
+  assert.match(room, /hands\.includes\(tile\.identity\) \? <span className=\{styles\.tileHand\} role="img" aria-label=\{roomCopy\.raiseHand\}>✋<\/span> : null/);
+  assert.equal(room.includes('" · " + roomCopy.raiseHand'), false); // the caption no longer carries a Raise Hand suffix
+  assert.match(room, /\{tile\.speaking \? <i className=\{styles\.speakingDot\} aria-hidden="true" \/> : null\}/);
+  assert.match(room, /\{tile\.host \? <span className=\{styles\.tileHost\}> · \{roomCopy\.host\}<\/span> : ""\}/);
+  // The focus line moved from under the title to directly above the controls.
+  assert.match(room, /\{session\.focus \? <p>\{session\.focus\}<\/p> : null\}\s*<div className=\{styles\.controls\}>/);
+  assert.match(room, /<\/div>\s*\{errorText \? <p className=\{styles\.alert\}/);
+});
+
+test("typing @ in the chat opens a mention list for AI Tutor and the present members", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.chatForm input::placeholder \{ color: #98a2b3; \}/);
+  assert.match(css, /\.mentionMenu \{ position: absolute; left: 0; right: 0; bottom: calc\(100% \+ 6px\);[^}]*background: #fff;[^}]*border-radius: 10px;[^}]*box-shadow: 0 10px 24px rgba\(16, 24, 40, \.14\); \}/);
+  assert.match(css, /\.mentionMenu button \{ display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px;[^}]*\}/);
+  assert.match(css, /\.mentionMenu button:hover, \.mentionMenu button\[aria-selected="true"\] \{ background: #f5f7fa; \}/);
+
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  // "@" opens the list only at the start of the draft or after a space.
+  assert.match(room, /const at = upToCaret\.lastIndexOf\("@"\);/);
+  assert.match(room, /if \(at < 0 \|\| \(at > 0 && upToCaret\[at - 1\] !== " "\)\) \{/);
+  assert.match(room, /setMention\(\{ start: at, query: upToCaret\.slice\(at \+ 1\), index: 0 \}\);/);
+  // Candidates: AI Tutor first (only when enabled), members in roster order,
+  // deduplicated, without the local participant, prefix-filtered, capped at 6.
+  assert.match(room, /session\.aiTutorEnabled \? \[\{ key: "tutor", name: roomCopy\.tutorName, tutor: true \}\] : \[\]/);
+  assert.match(room, /person\.key === roomApi\?\.localParticipant\.identity \|\| seenNames\.has\(person\.name\)/);
+  assert.match(room, /row\.name\.toLowerCase\(\)\.startsWith\(fragment\)/);
+  assert.match(room, /if \(mentionRows\.length === 6\) break;/);
+  // Rendering: white card listbox above the input, star avatar for AI Tutor.
+  assert.match(room, /styles\.mentionMenu\} role="listbox" aria-label=\{roomCopy\.mentionList\}/);
+  assert.match(room, /role="option" aria-selected=\{index === mentionIndex\}/);
+  assert.match(room, /row\.tutor \? styles\.tutorAvatar : styles\.rosterInitial/);
+  // Picking replaces the "@fragment" with "@name ", returns focus, and marks the tutor switch.
+  assert.match(room, /const next = `\$\{draft\.slice\(0, mention\.start\)\}@\$\{row\.name\} \$\{draft\.slice\(mention\.start \+ 1 \+ mention\.query\.length\)\}`;/);
+  assert.match(room, /caretRef\.current = mention\.start \+ row\.name\.length \+ 2;/);
+  assert.match(room, /input\.setSelectionRange\(caretRef\.current, caretRef\.current\)/);
+  assert.match(room, /if \(row\.tutor\) setAddressTutor\(true\);/);
+  assert.match(room, /onMouseDown=\{\(event\) => \{ event\.preventDefault\(\); chooseMention\(row\); \}\}/);
+  // Keyboard: arrows move, Escape closes, Enter selects instead of sending.
+  assert.match(room, /if \(!mention \|\| mentionRows\.length === 0\) return;/);
+  // IME composition (Chinese/Japanese input) must not lose Enter/Escape/arrows to the popup.
+  assert.match(room, /if \(event\.nativeEvent\.isComposing \|\| event\.keyCode === 229\) return;/);
+  assert.match(room, /event\.key === "ArrowDown"/);
+  assert.match(room, /event\.key === "ArrowUp"/);
+  assert.match(room, /event\.key === "Escape"/);
+  assert.match(room, /event\.key === "Enter"\) \{ event\.preventDefault\(\); chooseMention\(mentionRows\[mentionIndex\]\); \}/);
+  // Submission: a typed "@AI Tutor " prefix queues the body without the prefix.
+  assert.match(room, /const mentionsTutor = \(addressTutor \|\| hasPrefix\) && session\.aiTutorEnabled/);
+  assert.match(room, /tutorQueueBody\(\(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\)\)/);
+
+  assert.equal(en.studyGroupsPage.room.mentionList, "Mention AI Tutor or a participant");
+  assert.equal(zh.studyGroupsPage.room.mentionList, "提及 AI Tutor 或参与者");
+});
+
+test("the Live Session end card follows 599:1398 and its CTA never overlaps the meta row", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // The CTA moved into its own centred block row: as an inline element after
+  // the inline-flex meta line it shared that line and collided with it.
+  assert.match(css, /\.endActions \{ display: flex; justify-content: center; margin-top: 28px; \}/);
+  assert.match(css, /\.endCard h1 \{ margin: 0 0 18px; \}/);
+  assert.match(css, /\.endCard \.meta \{ display: flex; justify-content: center; margin: 4px 0 0; color: #000; \}/);
+  assert.match(css, /\.endCard \.endBody \{ margin: 0; color: rgba\(0, 0, 0, \.4\); font-size: 14px; line-height: 17px; \}/);
+  assert.match(css, /\.endCard \.meta \+ \.endBody \{ margin-top: 48px; \}/);
+  // Narrow screens reset the desktop-only offsets so the card cannot overflow.
+  assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.endCard \{ margin: -35px auto 0; \}[\s\S]*\}/);
+  assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.hostFootWithCopy \{ margin-bottom: 0; \}[\s\S]*\}/);
+
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  // 599:1398 shows no focus row in the end card; only the live stage keeps one.
+  assert.equal(room.split("{session.focus ? <p>{session.focus}</p> : null}").length - 1, 1);
+  assert.match(room, /endedParts\(roomCopy\.endedBody\)\.map\(\(line\) => <p className=\{styles\.endBody\} key=\{line\}>\{line\}<\/p>\)/);
+  assert.match(room, /<div className=\{styles\.endActions\}><a className=\{styles\.primary\} href=\{group \?/);
+});
+
+test(":has() is gone from the stylesheet and the single-tile layout is a plain class", () => {
+  // Legacy-browser safety: the layout hooks are rendered in JSX instead of :has().
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.equal(css.includes(":has("), false);
+  assert.match(css, /\.videosSingle \{ grid-template-columns: minmax\(0, 490px\); justify-content: center; \}/);
+  assert.match(css, /\.hostFootWithCopy \{ margin-bottom: -42px; \}/);
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  assert.match(room, /\$\{styles\.videos\}\$\{tiles\.length <= 1 \? ` \$\{styles\.videosSingle\}` : ""\}/);
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /selected\.role === "host" \? <div className=\{`\$\{styles\.hostFoot\} \$\{styles\.hostFootWithCopy\}`\}><p>\{copy\.hostingNote\}<\/p>/);
+});
+
+test("creating a group keeps only the persistent top toast and the normal pane", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // Success closes the create dialog, refreshes the lists, and leaves the
+  // toast over a normally rendered pane instead of blanking it.
+  assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*await loadLists\(\);/);
+  assert.match(app, /className=\{styles\.createdToast\}/);
+  assert.equal(app.includes("&& !createdGroup"), false);
+});
+
+test("camera and microphone buttons check permission state and surface targeted guidance", () => {
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  assert.match(room, /navigator\.permissions\.query\(\{ name: kind === "mic" \? "microphone" : "camera" \}\)/);
+  // denied never re-prompts: skip the doomed call and point at the browser controls.
+  assert.match(room, /if \(permission\.state === "denied"\) \{\s*watchMediaPermission\(permission\.status\);\s*setMediaNotice\(\{ kind, device: false \}\);\s*return;\s*\}/);
+  assert.match(room, /onClick=\{\(\) => void toggleMedia\("mic", !micOn\)\}/);
+  assert.match(room, /onClick=\{\(\) => void toggleMedia\("camera", !cameraOn\)\}/);
+  // Failure fallback keeps the state reset; permission errors get the address-bar
+  // guidance and missing/busy devices get the device guidance.
+  assert.match(room, /if \(kind === "mic"\) setMicOn\(false\);\s*if \(kind === "camera"\) setCameraOn\(false\);/);
+  assert.match(room, /if \(isPermissionMediaError\(error\) \|\| isDeviceMediaError\(error\)\) \{\s*watchMediaPermission\(permission\.status\);\s*setMediaNotice\(\{ kind, device: isDeviceMediaError\(error\) \}\);\s*\}/);
+  assert.match(room, /name === "NotAllowedError" \|\| name === "PermissionDeniedError";/);
+  assert.match(room, /name === "NotFoundError" \|\| name === "NotReadableError";/);
+  // Once the browser reports the grant, the notice dismisses itself.
+  assert.match(room, /if \(status\.state === "granted"\) setMediaNotice\(null\);/);
+  assert.match(room, /\{mediaNotice \? <p className=\{styles\.alert\} role="alert">\{mediaNotice\.device \? roomCopy\.mediaDeviceBlocked : mediaNotice\.kind === "camera" \? roomCopy\.mediaBlockedCamera : roomCopy\.mediaBlockedMic\}/);
+  assert.match(room, /onClick=\{\(\) => setMediaNotice\(null\)\}>\{copy\.close\}<\/button>/);
+  assert.match(room, /permissionWatchRef\.current\.onchange = null/);
+
+  assert.equal(en.studyGroupsPage.room.mediaBlockedCamera, "Chrome is blocking camera access for this site. Click the camera icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Camera.");
+  assert.equal(zh.studyGroupsPage.room.mediaBlockedCamera, "Chrome 已阻止本站点使用摄像头。点击地址栏的摄像头图标，选择「允许」后重试；若图标里没有可改的选项，请在 macOS 系统设置 → 隐私与安全性 → 摄像头 中允许 Chrome。");
+  assert.equal(en.studyGroupsPage.room.mediaBlockedMic, "Chrome is blocking microphone access for this site. Click the microphone icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Microphone.");
+  assert.equal(zh.studyGroupsPage.room.mediaBlockedMic, "Chrome 已阻止本站点使用麦克风。点击地址栏的麦克风图标，选择「允许」后重试；若图标里没有可改的选项，请在 macOS 系统设置 → 隐私与安全性 → 麦克风 中允许 Chrome。");
+  assert.equal(en.studyGroupsPage.room.mediaDeviceBlocked, "No camera or microphone was found, or the device is in use by another application. Close the other app and try again.");
+  assert.equal(zh.studyGroupsPage.room.mediaDeviceBlocked, "未找到摄像头或麦克风，或设备正被其他应用占用。请关闭占用后重试。");
 });

@@ -282,6 +282,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         return;
       }
       setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
+      setDialog(null);
       await loadLists();
     } finally {
       setCreating(false);
@@ -463,7 +464,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       <section className={styles.main} aria-live="polite">
         {pane.kind === "loading" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
         {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => void loadLists()}>{copy.retry}</button></div> : null}
-        {pane.kind === "empty" && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
+        {pane.kind === "empty" && dialog !== "create" ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
         {createdGroup ? <div className={styles.createdToast} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setDialog(null); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
         {dialog === "create" ? <form className={styles.panel} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
           <h2>{copy.create}</h2>
@@ -474,12 +475,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
           <div className={styles.actions}><button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
           {errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
         </form> : null}
-        {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" && !createdGroup ? (
+        {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" ? (
           <div className={styles.sheet}>
             <article>
               <h2 className={styles.groupTitle}>{selected.title}</h2>
               {selected.role === "host" ? <span className={styles.hostChip}>{copy.hosting}</span> : null}
-              {selected.role === "member" ? <span className={styles.hostChip}>{copy.joined}</span> : null}
+              {selected.role === "member" ? <span className={`${styles.hostChip} ${styles.joinedChip}`}>{copy.joined}</span> : null}
               <div className={styles.facts}>
                 <div><h3>{copy.relatedCourse}</h3><p>{selected.courseTitle}</p></div>
                 <div><h3 className={styles.aboutLabel}>{copy.about}</h3><p className={styles.aboutBody}>{selected.about}</p></div>
@@ -530,7 +531,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <ul className={styles.memberList}>
                 {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{member.displayName.slice(0, 1)}</span><span>{member.displayName}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
-              {selected.role === "host" ? <div className={styles.hostFoot}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={async () => { if (!window.confirm(copy.confirmCancelGroup)) return; await studyGroupRequest(`/api/study-groups/${selected.id}/cancel`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.cancelGroup}</button></div> : null}
+              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={async () => { if (!window.confirm(copy.confirmCancelGroup)) return; await studyGroupRequest(`/api/study-groups/${selected.id}/cancel`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.cancelGroup}</button></div> : null}
               {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/${selected.id}/leave`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.leaveGroup}</button></div> : null}
             </aside>
           </div>

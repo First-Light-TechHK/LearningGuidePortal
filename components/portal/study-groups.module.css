@@ -7,29 +7,36 @@
 .nav a.active { color: #155dfc; font-weight: 700; text-transform: capitalize; }
 .nav a.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #155dfc; }
 .tools { margin-left: auto; display: flex; align-items: center; gap: 20px; }
-.tools :global(.portal-language) { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
+/* 599:36 header language chip: 22px tall at y23 (the global .portal-language sets min-height 26/colour #475467 with !important, so pin both here). */
+.tools :global(.portal-language) { display: inline-flex; align-items: center; gap: 6px; height: 22px; min-height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565 !important; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
 .lang { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
 .signInLink { color: #4a5565; font-size: 14px; font-weight: 500; text-decoration: none; }
 .bell { width: 20px; height: 20px; }
+/* 599:40 notification bell: centre the 20px icon in the header tool row (icon y24). */
+.tools a[href*="/notifications"] { display: inline-flex; align-items: center; }
 .avatar { width: 32px; height: 32px; border-radius: 18px; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 13px; font-weight: 600; text-decoration: none; }
 .layout { display: grid; grid-template-columns: 460px minmax(0, 1fr); min-height: calc(100vh - 68px); }
 .sidebar { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1); padding: 32px 30px 40px; overflow: auto; }
 .main { position: relative; padding: 20px; min-width: 0; }
 .title { margin: 0; color: #1d6bff; font-size: 24px; font-weight: 700; }
-.sectionHead { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 12px; }
-.sectionHead h2 { margin: 0; font-size: 18px; font-weight: 600; }
+/* 599:56/599:59 section heading: 18px/600 #111827; the 14.125px bottom margin lands the mine-card slots at the design y 232/364 (599:10/599:11). */
+.sectionHead { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 14.125px; font-size: 18px; font-weight: 600; color: #111827; }
+.sectionHead h2 { margin: 0; font-size: 18px; font-weight: 600; color: #111827; }
 .create { width: 172px; height: 36px; border: 0; border-radius: 8px; background: #1d6bff; color: #fff; font: inherit; font-size: 13px; font-weight: 600; padding: 0 16px; cursor: pointer; }
 .tabs { display: flex; gap: 18px; margin: 8px 0 16px; font-size: 14px; font-weight: 500; }
 .noMine { margin: 28px 0 36px; color: #111827; opacity: .35; font-size: 12px; text-align: center; }
 .tabs button { border: 0; background: transparent; padding: 0 0 4px; font: inherit; cursor: pointer; color: #111827; opacity: .4; }
 .tabs button[aria-pressed="true"] { color: #1d6bff; opacity: 1; box-shadow: inset 0 -2px 0 #1d6bff; }
-.card { position: relative; width: 100%; text-align: left; background: #fbfbfb; border: 1px solid #e4e7ec; border-radius: 8px; padding: 16px; margin: 0 0 12px; cursor: pointer; font: inherit; color: inherit; }
+/* 599:10/599:11 sidebar cards: 120px tall on a 132px pitch (16/16/15 padding keeps the design card height). */
+.card { position: relative; width: 100%; text-align: left; background: #fbfbfb; border: 1px solid #e4e7ec; border-radius: 8px; padding: 16px 16px 15px; margin: 0 0 12px; cursor: pointer; font: inherit; color: inherit; }
 .card[aria-current="true"] { background: #f1f7ff; border: 2px solid #1d6bff; border-radius: 12px; outline: none; }
 .card h3 { margin: 0 48px 4px 0; font-size: 16px; font-weight: 600; line-height: 19px; }
 .course { margin: 0; color: #000; opacity: .4; font-size: 12px; font-weight: 500; }
 .role { display: inline-flex; margin-top: 8px; border-radius: 8px; padding: 2px 8px; font-size: 12px; }
 .hosted { background: #e8f1ff; color: #1d6bff; }
-.joined { background: #d1f1dd; color: #2dad5c; }
+.joined { background: #d1f1dd; color: #16a34a; }
+/* 599:397 sheet "Joined" chip (role=member) is the blue family in the design; the host chip stays green (599:852). The compound selector out-ranks the green .hostChip that the same span also carries. */
+.hostChip.joinedChip { background: #e8f1ff; color: #1d6bff; }
 .live { position: absolute; top: 8px; right: 8px; background: rgba(245,70,73,.14); color: #f54649; border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 600; }
 .count { margin: 8px 0 0; color: #111827; opacity: .6; font-size: 11px; font-weight: 500; }
 .openLabel { margin: 8px 0 0; color: #175cd3; font-size: 12px; font-weight: 600; }
@@ -42,13 +49,14 @@
 .empty { min-height: 720px; display: grid; justify-items: center; align-content: start; text-align: center; padding-top: 130px; }
 .empty img { width: 250px; height: 150px; margin-top: 160px; object-fit: cover; object-position: center 33%; }
 .empty p:first-of-type { margin: 0; color: #111827; opacity: .2; font-size: 14px; font-weight: 500; }
-.empty p.endTitle { margin: 8px 0; color: #175cd3; opacity: 1; font-size: 16px; font-weight: 600; }
+.empty p.endTitle { margin: 8px 0; color: #1d6bff; opacity: 1; font-size: 16px; font-weight: 600; }
 .empty h2 { margin: 28px 0 0; color: #1d6bff; font-size: 24px; font-weight: 700; line-height: 29px; }
 .empty .body { max-width: 569px; margin: 12px 0 0; color: #6b7280; font-size: 14px; line-height: 17px; }
 .panel { width: min(760px, 100%); margin: 160px auto 0; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1); padding: 30px; box-sizing: border-box; }
 .panel h2 { margin: 0; font-size: 24px; font-weight: 700; color: #0a0a0a; }
-.lead { margin: 8px 0 22px; color: #000; opacity: .4; font-size: 14px; }
-.field { display: grid; gap: 8px; margin-bottom: 18px; font-size: 12px; font-weight: 600; }
+/* 599:1955 first field label: design lead-to-label gap 28px. */
+.lead { margin: 8px 0 28px; color: #000; opacity: .4; font-size: 14px; }
+.field { display: grid; gap: 8px; margin-bottom: 18px; font-size: 12px; font-weight: 600; color: #111827; }
 .req { color: #f54649; }
 .field input, .field select, .field textarea { width: 100%; min-height: 42px; padding: 10px 14px; font-weight: 400; font-size: 12px; }
 .field textarea { min-height: 130px; resize: vertical; }
@@ -61,6 +69,8 @@
 .actions { display: flex; justify-content: space-between; margin-top: 8px; }
 .ghost, .primary { height: 37px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .ghost { width: 80px; border: 1px solid #e4e7ed; background: #fff; color: #111827; }
+/* 599:1971/599:1834 dialog + create-form Cancel label is #6b7280 (the host-footer ghost keeps #111827, 599:869). */
+.actions .ghost, .dialogActions .ghost { color: #6b7280; }
 .primary { display: inline-flex; align-items: center; justify-content: center; min-width: 200px; border: 0; background: #1d6bff; color: #fff; padding: 0 16px; text-decoration: none; }
 .primary:disabled { opacity: .45; cursor: not-allowed; }
 .toast { width: min(450px, 100%); margin: 0 auto 18px; display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); padding: 16px 18px; }
@@ -97,14 +107,19 @@
 .memberAvatar { width: 28px; height: 28px; border-radius: 17px; background: #e8f1ff; color: #1d6bff; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
 .hostTag { margin-left: auto; background: #e8f1ff; color: #1d6bff; border-radius: 8px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
 .hostFoot { margin: auto -20px 0; display: grid; gap: 8px; }
+/* 599:867/869/871 host footer buttons land at y 872/916/960: 36px tall, 12px/600 labels on a 44px pitch, the block's last edge 42px below the column's content line. */
+.hostFootWithCopy { margin-bottom: -42px; }
 .hostFoot p { margin: 0 0 12px; color: #000; opacity: .4; font-size: 12px; text-align: center; }
-.hostFoot .primary, .hostFoot .ghost, .hostFoot .danger { width: 100%; }
+.hostFoot .primary, .hostFoot .ghost, .hostFoot .danger { width: 100%; height: 36px; font-size: 12px; }
 .toast { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); width: min(450px, calc(100% - 32px)); }
 .session { display: grid; grid-template-columns: minmax(0, 1fr) 152px; column-gap: 16px; align-items: center; background: #fff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 25px 16px 16px; margin-bottom: 12px; }
 .sessionBody { min-width: 0; }
+/* 599:488 session-card title: 14px/600 #000 (the UA h3 1.17em/bold otherwise leaks). */
+.sessionBody h3 { font-size: 14px; font-weight: 600; color: #000; }
 .factList { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
 .factList li { display: flex; align-items: center; gap: 8px; color: #667085; font-size: 13px; }
-.factList li[data-live="true"] { color: #175cd3; font-weight: 600; }
+/* 599:492 "4/6 currently in session" row: 12px/500 #1d6bff in the design. */
+.factList li[data-live="true"] { color: #1d6bff; font-weight: 500; font-size: 12px; }
 .badge { display: inline-flex; margin-right: 8px; border-radius: 8px; padding: 2px 8px; font-size: 12px; }
 .sessionState { display: inline-flex; margin: 0 0 8px; border-radius: 8px; padding: 2px 8px; font-size: 12px; font-weight: 600; background: #f2f4f7; color: #344054; }
 .reminders { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
@@ -130,20 +145,23 @@
 .alert { color: #f54649; }
 .modal { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; padding: 24px; background: rgba(16, 24, 40, .45); display: grid; place-items: center; }
 .modal form { width: min(540px, 100%); max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; background: #fff; border-radius: 12px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-.modal h2 { margin: 0; font-size: 24px; font-weight: 700; color: #111827; }
-.modal .waitingBanner { display: grid; justify-items: center; gap: 12px; margin: 0 0 25px; padding: 16px; border: 1px solid #1d6bff; border-radius: 12px; background: #f1f7ff; color: #1d6bff; font-size: 14px; font-weight: 500; }
+.modal h2 { margin: 0; font-size: 24px; font-weight: 700; color: #0a0a0a; }
+.modal .waitingBanner { display: grid; justify-items: center; gap: 10px; margin: 0 0 25px; padding: 16px; border: 1px solid #1d6bff; border-radius: 12px; background: #f1f7ff; color: #1d6bff; font-size: 14px; font-weight: 500; }
 .waitingTitle { margin: 0 0 12px; font-size: 20px; font-weight: 700; color: #111827; }
 .waitingFacts { list-style: none; margin: 0 0 16px; padding: 12px; display: grid; gap: 12px; background: #fbfbfb; border: 1px solid #e4e7ec; border-radius: 8px; font-size: 14px; font-weight: 500; color: rgba(0,0,0,.4); }
 .waitingFacts li { display: flex; align-items: center; gap: 8px; }
 .waitingFacts svg { width: 16px; height: 16px; flex: none; }
 .divider { display: inline-block; width: 1px; height: 10px; background: #d0d5dd; flex: none; vertical-align: middle; }
-.waitingFocus { margin: 0 0 6px; font-size: 14px; }
+.waitingFocus { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+/* 599:755 focus body text is 12px in the design. */
+.waitingFocus + p { font-size: 12px; }
 .contextCard { margin: 16px 0 18px; background: #f7f8fa; border-radius: 8px; padding: 12px; }
 .contextCard strong { display: block; font-size: 14px; font-weight: 600; }
 .contextCard span { display: block; margin-top: 6px; color: #6b7280; font-size: 12px; }
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 18px; font-size: 12px; font-weight: 600; }
 .switchText { font-size: 12px; font-weight: 400; }
-.switch input { appearance: none; width: 32px; height: 16px; margin: 0; border-radius: 999px; background: #d0d5dd; position: relative; cursor: pointer; }
+/* 599:1823 AI Tutor switch: 32x16 knob track (global input padding/border otherwise inflates the checkbox past 34x30). */
+.switch input { appearance: none; width: 32px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: #d0d5dd; position: relative; cursor: pointer; }
 .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
 .switch input:checked { background: #1d6bff; }
 .switch input:checked::after { left: 18px; }
@@ -164,42 +182,51 @@
 .lockedAvatars i { width: 26px; height: 26px; border-radius: 13px; background: #ebedf2; }
 .joinAction { display: flex; justify-content: center; margin-top: 8px; }
 .joinAction .primary { min-width: 230px; height: 36px; font-size: 12px; }
-.crumb { display: flex; align-items: center; gap: 10px; min-height: 55px; padding: 0 42px; background: #fff; border-bottom: 1px solid #e4e7ec; font-size: 14px; font-weight: 400; color: #7c7c7c; }
+/* 599:1154/599:1315/599:1431 breadcrumb sits at y70 (2px below the 68px header). */
+.crumb { display: flex; align-items: center; gap: 10px; min-height: 55px; margin-top: 2px; padding: 0 42px; background: #fff; border-bottom: 1px solid #e4e7ec; font-size: 14px; font-weight: 400; color: #7c7c7c; }
 .crumb button { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .crumbChevron { width: 12px; height: 12px; flex: none; }
-.room { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; padding: 24px; }
+/* 599:1118/599:1278 stage panel: padding-top compensates the crumb's +2 so the panels keep their position. */
+.room { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; padding: 22px 24px 24px; }
 .stage, .side { background: #fff; border: 1px solid #e4e7ec; border-radius: 16px; padding: 20px; }
 .stageHead { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
-.stageHead h1 { margin: 0; }
+.stageHead h1 { margin: 0; font-weight: 700; }
 .coursePill { border-radius: 999px; background: #e8f1ff; color: #175cd3; font-size: 12px; font-weight: 600; padding: 4px 10px; white-space: nowrap; }
-.liveClock { margin: 0 0 0 auto; color: #111827; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.liveClock { margin: 0 0 0 auto; color: #16a34a; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .liveDot { color: #12b76a; margin-right: 6px; }
-.tileCaption { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.tile .tileCaption { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba(17, 24, 39, .55); padding: 6px 12px; }
 .tile .tileMic { width: 22px; height: 22px; display: grid; place-items: center; flex: none; border-radius: 11px; background: rgba(0, 0, 0, .35); }
 .tile .tileMic[data-status="speaking"], .tile .tileMic[data-status="mic-on"] { color: #12b76a; }
-.tile .tileMic[data-status="muted"] { color: #f04438; }
+.tile .tileMic[data-status="muted"] { background: #f54649; color: #fff; }
 .shareMain { width: 100%; min-height: 360px; max-height: 62vh; background: #101828; border-radius: 12px; object-fit: contain; }
-.videos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.videos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 990px; }
+.videosSingle { grid-template-columns: minmax(0, 490px); justify-content: center; }
 .controls button[aria-pressed="true"] { background: #1d6bff; color: #fff; border-color: #1d6bff; }
-.tile { position: relative; overflow: hidden; min-height: 180px; border-radius: 12px; background: #101828; color: #fff; display: grid; align-items: end; padding: 12px; }
+.tile { position: relative; overflow: hidden; aspect-ratio: 7 / 4; min-height: 0; border-radius: 12px; background: #101828; color: #fff; display: grid; align-items: end; padding: 12px; }
 .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .tile span { position: relative; z-index: 1; }
-.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.tile[data-video="off"] { background: #f2f4f7; }
+.tile .tilePlaceholder { position: absolute; inset: 0; display: grid; place-items: center; }
+.tilePlaceholder i { width: 90px; height: 90px; border-radius: 45px; background: #e4e7ec; color: #98a2b3; display: grid; place-items: center; }
+.tile .tileHand { position: absolute; top: 8px; right: 8px; z-index: 2; font-size: 16px; }
+.tile .speakingDot { display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 3px; background: #4ade80; vertical-align: middle; }
+.tile .tileHost { text-transform: uppercase; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; }
 .controls button, .textButton { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e4e7ec; background: #fff; border-radius: 8px; min-height: 40px; padding: 0 12px; font: inherit; cursor: pointer; }
-.controls button { flex-direction: column; gap: 4px; min-height: 51px; padding: 8px 14px; font-size: 12px; font-weight: 500; color: rgba(0,0,0,.4); background: #fbfbfb; }
+.controls button { flex-direction: column; gap: 4px; min-height: 51px; padding: 7px 14px; font-size: 12px; font-weight: 500; color: rgba(0,0,0,.4); background: #fbfbfb; }
 .controls button svg { color: #344054; }
 .controlGlyph { display: flex; align-items: center; gap: 4px; }
 .participantBadge { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 8px; background: #e8f1ff; color: #1d6bff; font-size: 9px; font-weight: 500; }
 .controls button[aria-pressed="true"] { background: #1d6bff; color: #fff; border-color: #1d6bff; }
 .controls button[aria-pressed="true"] svg { color: #fff; }
-.controls .leaveControl { flex-direction: row; gap: 6px; min-height: 40px; padding: 0 12px; margin-left: auto; color: #d92d20; border-color: #f04438; background: #fff; }
-.controls .leaveControl svg { color: #d92d20; }
+.controls .leaveControl { flex-direction: row; gap: 6px; min-height: 40px; padding: 0 12px; color: #f54649; font-weight: 600; border-color: #f04438; background: #fff; }
+.controls .leaveControl svg { color: #f54649; }
 .controls .shareControl svg { color: #f54649; }
 .controls .shareControl[aria-pressed="true"] { background: #fff; color: #98a2b3; border-color: #e4e7ec; }
 .controls .shareControl[aria-pressed="true"] svg { color: #f54649; }
 .participantCount { position: relative; }
 .tile .speakingPill { position: absolute; top: 12px; left: 12px; z-index: 2; background: #1d6bff; color: #fff; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 600; }
-.controls .leaveControl { margin-left: auto; color: #d92d20; border-color: #f04438; background: #fff; }
+.controls .leaveControl { color: #f54649; border-color: #f04438; background: #fff; }
 .side { display: flex; flex-direction: column; min-height: 520px; gap: 12px; }
 .sideTabs { display: flex; gap: 18px; border-bottom: 1px solid #e4e7ec; }
 .sideTabs button { border: 0; border-radius: 0; background: transparent; padding: 0 0 8px; min-height: 0; font: inherit; font-weight: 600; color: #6b7280; cursor: pointer; }
@@ -216,18 +243,35 @@
 .chatLine { margin: 0; }
 .chatHead { display: flex; align-items: center; gap: 8px; }
 .chatHead time { margin-left: auto; color: #98a2b3; font-size: 12px; }
-.chatBody { margin: 4px 0 0 36px; color: #344054; font-size: 14px; }
+.chatBody { margin: 4px 0 0; color: #344054; font-size: 13px; }
 .chatHost { background: #e8f1ff; color: #1d6bff; border-radius: 8px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
-.tutorAvatar { width: 28px; height: 28px; border-radius: 14px; background: #1d6bff; color: #fff; display: grid; place-items: center; flex: none; font-size: 14px; }
-.tutorName { color: #1d6bff; }
+.tutorAvatar { width: 20px; height: 20px; border-radius: 10px; background: #1d6bff; color: #fff; display: grid; place-items: center; flex: none; font-size: 11px; }
+.tutorName { color: #111827; }
+.tutorBody { color: #1d6bff; }
+.tutorLead { color: #111827; }
+.tutorLead, .tutorRow, .tutorDisclosure { display: block; }
+.tutorDisclosure { color: #9a3412; font-size: 12px; font-weight: 600; }
 .chatForm { position: relative; display: block; min-height: 100px; padding: 12px 36px 12px 12px; border: 1px solid #e4e7ed; border-radius: 8px; }
 .chatForm input { width: 100%; border: 0; font: inherit; outline: none; background: transparent; }
+.chatForm input::placeholder { color: #98a2b3; }
 .sendButton { position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px; border: 0; border-radius: 12px; background: #1d6bff; color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; }
 .sendButton svg { width: 12px; height: 12px; }
 .sendButton:disabled { opacity: .45; cursor: default; }
-.endCard { width: min(640px, 100%); background: #fff; border: 1px solid #e4e7ec; border-radius: 16px; padding: 40px 24px; }
-.endCard h1 { font-size: 28px; }
+.mentionMenu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 6; display: grid; gap: 2px; padding: 4px; background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; box-shadow: 0 10px 24px rgba(16, 24, 40, .14); }
+.mentionMenu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 13px; color: #111827; text-align: left; }
+.mentionMenu button:hover, .mentionMenu button[aria-selected="true"] { background: #f5f7fa; }
+/* 599:1444 end card at x433/y220: margin-left 66 recentres the 640px card on 753, margin-top -35 lands it 95px below the crumb. */
+.endCard { width: min(640px, 100%); background: #fff; border: 1px solid #e4e7ec; border-radius: 16px; padding: 40px 24px; margin: -35px 0 0 66px; }
+.endCard h1 { font-size: 28px; font-weight: 700; color: #000; }
 .endCard .primary { min-width: 152px; height: 36px; font-size: 12px; }
+/* 599:1398 end card rows: the CTA sits in its own centred block row (the inline
+   meta line previously let the inline-flex anchor flow onto it), body lines are
+   the #999-weight grey at a 17px pitch, 48px below the meta divider row. */
+.endCard h1 { margin: 0 0 18px; }
+.endCard .meta { display: flex; justify-content: center; margin: 4px 0 0; color: #000; }
+.endCard .endBody { margin: 0; color: rgba(0, 0, 0, .4); font-size: 14px; line-height: 17px; }
+.endCard .meta + .endBody { margin-top: 48px; }
+.endActions { display: flex; justify-content: center; margin-top: 28px; }
 .meta { display: inline-flex; align-items: center; gap: 8px; }
 .endMark { width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 30px; background: #f6f9fd; color: #1d6bff; display: grid; place-items: center; font-size: 32px; font-weight: 600; }
 .endTitle { color: #1d6bff; font-weight: 600; }
@@ -241,4 +285,8 @@
   .filters { flex-direction: column; }
   .filters select, .filters input { width: 100%; }
   .main { padding: 16px; }
+  /* Narrow widths: the 66px left offset would overflow (<706px cards), and the
+     host-footer -42px shift is a desktop-only alignment — reset both. */
+  .endCard { margin: -35px auto 0; }
+  .hostFootWithCopy { margin-bottom: 0; }
 }

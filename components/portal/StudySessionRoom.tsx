@@ -35,13 +35,39 @@ function TileMic({ status, label }: { status: "muted" | "speaking" | "mic-on"; l
   return <span className={styles.tileMic} data-status={status} aria-label={label}>{status === "muted" ? <svg {...props}><path d="M9 10v2a3 3 0 0 0 5 2M15 11V6a3 3 0 0 0-5.5-1.5M5 5l14 14M12 17v3M8 11a4 4 0 0 0 .5 2" /></svg> : <svg {...props}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>}</span>;
 }
 
+function PersonGlyph() {
+  return <svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true" fill="currentColor"><circle cx="32" cy="20" r="13" /><path d="M6 64c0-14.4 11.6-24 26-24s26 9.6 26 24H6Z" /></svg>;
+}
+
+// The Permissions API is not available everywhere; anything but an explicit
+// "prompt" or "denied" is treated as unknown so the normal call still runs.
+async function mediaPermission(kind: "mic" | "camera"): Promise<{ state: PermissionState | "unknown"; status: PermissionStatus | null }> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions) return { state: "unknown", status: null };
+    const status = await navigator.permissions.query({ name: kind === "mic" ? "microphone" : "camera" });
+    return { state: status.state, status };
+  } catch {
+    return { state: "unknown", status: null };
+  }
+}
+
+function isPermissionMediaError(error: unknown) {
+  const name = error instanceof Error ? error.name : "";
+  return name === "NotAllowedError" || name === "PermissionDeniedError";
+}
+
+function isDeviceMediaError(error: unknown) {
+  const name = error instanceof Error ? error.name : "";
+  return name === "NotFoundError" || name === "NotReadableError";
+}
+
 function elapsedClock(startedAt: string | null) {
   if (!startedAt) return "00:00";
   const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-type ChatLine = { id: string; from: string; text: string; at: string; host?: boolean; tutor?: boolean };
+type ChatLine = { id: string; from: string; text: string; at: string; host?: boolean; tutor?: boolean; mode?: "course" | "general" | "unavailable" };
 
 function endedParts(body: string) {
   const splitAt = body.search(/[.。]\s+\S/);
@@ -59,6 +85,7 @@ function chatLabel(at: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(date);
 }
 type Tile = { identity: string; name: string; host: boolean; mic: boolean; speaking: boolean };
+type MentionRow = { key: string; name: string; tutor?: boolean };
 type AttachableTrack = { attach: (element: HTMLMediaElement) => HTMLMediaElement; detach: (element: HTMLMediaElement) => HTMLMediaElement[] };
 type LocalMedia = { setMicrophoneEnabled: (on: boolean) => Promise<unknown>; setCameraEnabled: (on: boolean) => Promise<unknown>; setScreenShareEnabled: (on: boolean) => Promise<unknown>; publishData: (data: Uint8Array, options: { reliable: boolean }) => Promise<unknown>; identity?: string; isMicrophoneEnabled: boolean; isCameraEnabled: boolean };
 
@@ -95,6 +122,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [shareTrack, setShareTrack] = useState<AttachableTrack | null>(null);
   const [cameraTracks, setCameraTracks] = useState<Record<string, AttachableTrack>>({});
   const [addressTutor, setAddressTutor] = useState(false);
+  const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
+  const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
+  const permissionWatchRef = useRef<PermissionStatus | null>(null);
   const [clock, setClock] = useState("00:00");
   const shareVideo = useRef<HTMLVideoElement>(null);
   const audioRoot = useRef<HTMLDivElement>(null);
@@ -182,10 +214,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setErrorCode("connect_failed");
     };
     room.on(RoomEvent.DataReceived, (payload, participant) => {
-      const message = JSON.parse(new TextDecoder().decode(payload)) as { type: string; id?: string; text?: string; raised?: boolean };
+      const message = JSON.parse(new TextDecoder().decode(payload)) as { type: string; id?: string; text?: string; raised?: boolean; mode?: string };
       const from = participant?.name || participant?.identity || "participant";
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
-      if (message.type === "tutor" && message.text) {
+      // An "unavailable" tutor message carries an empty text by contract, so
+      // the empty-text guard lets exactly that case through.
+      if (message.type === "tutor" && (message.text || message.mode === "unavailable")) {
         // The server republishes a crashed tutor answer with the same message
         // id; keying the line by that id drops the repeat instead of
         // double-rendering it.
@@ -194,7 +228,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           from: roomCopy.tutorName,
           text: message.text || "",
           at: chatStamp(),
-          tutor: true
+          tutor: true,
+          mode: message.mode === "general" || message.mode === "unavailable" ? message.mode : "course"
         }));
         setSideTab("chat");
         return;
@@ -403,6 +438,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     return () => { shareTrack.detach(element); };
   }, [shareTrack]);
 
+  useEffect(() => {
+    if (caretRef.current === null) return;
+    const input = chatInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(caretRef.current, caretRef.current);
+    caretRef.current = null;
+  });
+
+  useEffect(() => () => {
+    if (permissionWatchRef.current) permissionWatchRef.current.onchange = null;
+  }, []);
+
   async function setMedia(kind: "mic" | "camera" | "share", enabled: boolean) {
     const local = roomApi?.localParticipant;
     if (!local) return;
@@ -413,6 +461,39 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     if (kind === "mic") setMicOn(enabled);
     if (kind === "camera") setCameraOn(enabled);
     if (kind === "share") setSharing(enabled);
+  }
+
+  function watchMediaPermission(status: PermissionStatus | null) {
+    if (permissionWatchRef.current) permissionWatchRef.current.onchange = null;
+    permissionWatchRef.current = status;
+    if (!status) return;
+    status.onchange = () => {
+      if (status.state === "granted") setMediaNotice(null);
+    };
+  }
+
+  async function toggleMedia(kind: "mic" | "camera", enabled: boolean) {
+    const permission = await mediaPermission(kind);
+    // A denied permission never prompts again, so skip the doomed call and
+    // point at the browser controls instead. "prompt" keeps the normal call —
+    // that is what raises the browser's own permission dialog.
+    if (permission.state === "denied") {
+      watchMediaPermission(permission.status);
+      setMediaNotice({ kind, device: false });
+      return;
+    }
+    try {
+      await setMedia(kind, enabled);
+    } catch (error) {
+      if (kind === "mic") setMicOn(false);
+      if (kind === "camera") setCameraOn(false);
+      // Permission errors get the address-bar guidance; missing/busy devices
+      // (NotFoundError / NotReadableError) get the device guidance instead.
+      if (isPermissionMediaError(error) || isDeviceMediaError(error)) {
+        watchMediaPermission(permission.status);
+        setMediaNotice({ kind, device: isDeviceMediaError(error) });
+      }
+    }
   }
 
   async function releaseRoom() {
@@ -457,10 +538,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           {ended ? <span className={styles.endMark} aria-hidden="true">✓</span> : null}
           <h1>{ended ? roomCopy.endedTitle : roomCopy.youLeft}</h1>
           <p className={styles.endTitle}>{group?.title || session.title}</p>
-          {session.focus ? <p>{session.focus}</p> : null}
           <p className={styles.meta}>{group?.courseTitle ? <>{group.courseTitle}<span className={styles.divider} aria-hidden="true" />{fill(roomCopy.groupStudy, { count: plannedMinutes(session) })}</> : fill(roomCopy.groupStudy, { count: plannedMinutes(session) })}</p>
-          {ended ? endedParts(roomCopy.endedBody).map((line) => <p key={line}>{line}</p>) : null}
-          <a className={styles.primary} href={group ? `/${locale}/portal/courses/${group.courseSlug}` : `/${locale}/portal/study-groups`}>{roomCopy.returnToCourse}</a>
+          {ended ? endedParts(roomCopy.endedBody).map((line) => <p className={styles.endBody} key={line}>{line}</p>) : null}
+          <div className={styles.endActions}><a className={styles.primary} href={group ? `/${locale}/portal/courses/${group.courseSlug}` : `/${locale}/portal/study-groups`}>{roomCopy.returnToCourse}</a></div>
         </div>
       </section>
       </>
@@ -501,9 +581,45 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       }));
   const errorText = errorCode ? copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error : "";
 
+  const mentionRows: MentionRow[] = [];
+  if (mention) {
+    const fragment = mention.query.toLowerCase();
+    const candidates: MentionRow[] = session.aiTutorEnabled ? [{ key: "tutor", name: roomCopy.tutorName, tutor: true }] : [];
+    const seenNames = new Set<string>();
+    for (const person of roster) {
+      if (person.key === roomApi?.localParticipant.identity || seenNames.has(person.name)) continue;
+      seenNames.add(person.name);
+      candidates.push({ key: person.key, name: person.name });
+    }
+    for (const row of candidates) {
+      if (mentionRows.length === 6) break;
+      if (row.name.toLowerCase().startsWith(fragment)) mentionRows.push(row);
+    }
+  }
+  const mentionIndex = mention ? Math.min(mention.index, mentionRows.length - 1) : 0;
+
   async function publish(message: { type: string; text?: string; raised?: boolean }) {
     if (!roomApi) return;
     await roomApi.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(message)), { reliable: true });
+  }
+
+  function updateMention(value: string, caret: number) {
+    const upToCaret = value.slice(0, caret);
+    const at = upToCaret.lastIndexOf("@");
+    if (at < 0 || (at > 0 && upToCaret[at - 1] !== " ")) {
+      setMention(null);
+      return;
+    }
+    setMention({ start: at, query: upToCaret.slice(at + 1), index: 0 });
+  }
+
+  function chooseMention(row: MentionRow) {
+    if (!mention) return;
+    const next = `${draft.slice(0, mention.start)}@${row.name} ${draft.slice(mention.start + 1 + mention.query.length)}`;
+    caretRef.current = mention.start + row.name.length + 2;
+    setDraft(next);
+    if (row.tutor) setAddressTutor(true);
+    setMention(null);
   }
 
   return (
@@ -516,22 +632,28 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           {group?.courseTitle ? <span className={styles.coursePill}>{group.courseTitle}</span> : null}
           <p className={styles.liveClock}><span className={styles.liveDot} aria-hidden="true">●</span> {fill(roomCopy.liveClock, { time: clock }).replace(/^●\s*/, "")}</p>
         </div>
-        {session.focus ? <p>{session.focus}</p> : null}
         {errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
         <div ref={audioRoot} hidden />
         {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
-        <div className={styles.videos}>
-          {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : roomCopy.notConnected}</span></div> : tiles.map((tile) => (
-            <div className={styles.tile} key={tile.identity}>
-              <ParticipantCamera track={cameraTracks[tile.identity] ?? null} />
-              {tile.speaking ? <span className={styles.speakingPill}>{roomCopy.speaking}</span> : null}
-              <span className={styles.tileCaption}><span>{tile.name}{tile.host ? ` · ${roomCopy.host}` : ""}{hands.includes(tile.identity) ? " · " + roomCopy.raiseHand : ""}</span><TileMic status={participantStatus(tile)} label={tileStatus(roomCopy, tile)} /></span>
-            </div>
-          ))}
+        <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
+          {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : roomCopy.notConnected}</span></div> : tiles.map((tile) => {
+            const camera = cameraTracks[tile.identity] ?? null;
+            return (
+              <div className={styles.tile} data-video={camera ? "on" : "off"} key={tile.identity}>
+                <ParticipantCamera track={camera} />
+                {camera ? null : <span className={styles.tilePlaceholder} aria-hidden="true"><i><PersonGlyph /></i></span>}
+                {tile.speaking ? <span className={styles.speakingPill}>{roomCopy.speaking}</span> : null}
+                {hands.includes(tile.identity) ? <span className={styles.tileHand} role="img" aria-label={roomCopy.raiseHand}>✋</span> : null}
+                <span className={styles.tileCaption}><span>{tile.name}{tile.host ? <span className={styles.tileHost}> · {roomCopy.host}</span> : ""}{tile.speaking ? <i className={styles.speakingDot} aria-hidden="true" /> : null}</span><TileMic status={participantStatus(tile)} label={tileStatus(roomCopy, tile)} /></span>
+              </div>
+            );
+          })}
         </div>
+        {mediaNotice ? <p className={styles.alert} role="alert">{mediaNotice.device ? roomCopy.mediaDeviceBlocked : mediaNotice.kind === "camera" ? roomCopy.mediaBlockedCamera : roomCopy.mediaBlockedMic} <button className={styles.textButton} type="button" onClick={() => setMediaNotice(null)}>{copy.close}</button></p> : null}
+        {session.focus ? <p>{session.focus}</p> : null}
         <div className={styles.controls}>
-          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void setMedia("mic", !micOn).catch(() => setMicOn(false))}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
-          {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void setMedia("camera", !cameraOn).catch(() => setCameraOn(false))}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
+          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
+          {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
           {controls.includes("share") ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => void setMedia("share", !sharing).catch(() => setSharing(false))}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
           {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
           {controls.includes("raise-hand") ? <button type="button" aria-pressed={Boolean(roomApi?.localParticipant.identity && hands.includes(roomApi.localParticipant.identity))} disabled={!connected} onClick={() => { const identity = roomApi?.localParticipant.identity || ""; if (!identity) return; const raised = !hands.includes(identity); setHands((items) => raisedHands(items, identity, raised)); void publish({ type: "raise-hand", raised }); }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
@@ -552,27 +674,60 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         ) : (
           <>
             <div className={styles.chatLog} role="tabpanel" aria-live="polite">
-              {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(line.at)}</time>}</div><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p></article>)}
+              {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(line.at)}</time>}</div>{line.tutor ? (
+                <p className={`${styles.chatBody} ${styles.tutorBody}`}>
+                  {line.mode === "unavailable"
+                    ? roomCopy.tutorUnavailable
+                    : <>
+                        {line.mode === "general" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorGeneral}</span> : null}
+                        {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
+                          ? <strong key="lead" className={styles.tutorLead}>{row}</strong>
+                          : <span key={index} className={styles.tutorRow}>{row}</span>)}
+                      </>}
+                </p>
+              ) : <p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {
               event.preventDefault();
               const text = draft.trim();
               if (!text || !connected) return;
-              const mention = addressTutor && session.aiTutorEnabled;
-              const chatText = mention ? `${roomCopy.aiTutor} ${text}` : text;
+              const prefix = `${roomCopy.aiTutor} `;
+              const hasPrefix = text.startsWith(prefix);
+              const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled;
+              const chatText = mentionsTutor && !hasPrefix ? `${roomCopy.aiTutor} ${text}` : text;
               void publish({ type: "chat", text: chatText });
               setChat((items) => [...items, { id: `local-${items.length}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" }]);
-              if (mention) {
-                void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody(text)) }).then((queued) => {
+              if (mentionsTutor) {
+                void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody((hasPrefix ? text.slice(prefix.length) : text).trim())) }).then((queued) => {
                   if (!queued.ok) setErrorCode(queued.code);
                 });
               }
+              setMention(null);
               setDraft("");
               setAddressTutor(false);
             }}>
               {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} onClick={() => setAddressTutor((on) => !on)}>{roomCopy.aiTutor}</button> : null}
-              <input aria-label={roomCopy.chat} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={roomCopy.chatPlaceholder} disabled={!connected} />
+              {mentionRows.length > 0 ? (
+                <div className={styles.mentionMenu} role="listbox" aria-label={roomCopy.mentionList}>
+                  {mentionRows.map((row, index) => (
+                    <button type="button" role="option" aria-selected={index === mentionIndex} key={row.key} onMouseDown={(event) => { event.preventDefault(); chooseMention(row); }}>
+                      <span className={row.tutor ? styles.tutorAvatar : styles.rosterInitial} aria-hidden="true">{row.tutor ? "✦" : row.name.slice(0, 1)}</span>
+                      {row.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <input ref={chatInputRef} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
+                // IME composition (Chinese/Japanese input): Enter picks the candidate and
+                // Escape/arrows drive the IME — the mention popup must not steal those.
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (!mention || mentionRows.length === 0) return;
+                if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); }
+                else if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); }
+                else if (event.key === "Escape") { event.preventDefault(); setMention(null); }
+                else if (event.key === "Enter") { event.preventDefault(); chooseMention(mentionRows[mentionIndex]); }
+              }} placeholder={roomCopy.chatPlaceholder} disabled={!connected} />
               <button className={styles.sendButton} type="submit" disabled={!connected} aria-label={roomCopy.send}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 8.5 14 2 9 14l-1.5-4.5L2 8.5Z" fill="currentColor" /></svg></button>
             </form>
           </>
