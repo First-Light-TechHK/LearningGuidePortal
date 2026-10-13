@@ -6,7 +6,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 import { LiveKitGatewayError } from "../../modules/group-study/liveKitGateway";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
+import { openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
@@ -880,8 +880,8 @@ test("an AI Tutor request is queued for the live session without a model, a seat
     }
     assert.equal(logAfter, logBefore);
     const promptBefore = STUDY_GROUP_TUTOR_SYSTEM_PROMPT;
-    assert.match(promptBefore, /course context supplied on that call/i);
-    assert.match(promptBefore, /does not contain the answer/i);
+    assert.match(promptBefore, /supplies the course material of the Related Course inside <course_material>/i);
+    assert.match(promptBefore, /Never refuse and never reply that you cannot answer/i);
     const injected = await service.enqueueTutor({
       actorUserId: "host",
       sessionId: session.id,
@@ -1127,14 +1127,18 @@ test("a full session refuses the Host when six people are already in", async () 
   assert.equal(seated.some((item) => item.userId === "host"), false);
 });
 
-test("empty course knowledge refuses without a model call", async () => {
+test("empty course knowledge still answers: the model is called and the reply is forced to general", async () => {
   const calls: string[] = [];
-  const published: string[] = [];
+  const contexts: string[] = [];
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
     courseKnowledge: async () => "",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
-    tutorCall: async () => { calls.push("called"); return { outcome: "ok", latencyMs: 1, body: "invented fact" }; }
+    // The model tries to claim course grounding; with an empty context the
+    // service must downgrade the reply to general rather than present it as
+    // course content.
+    tutorCall: async ({ text, context }) => { calls.push(text); contexts.push(context); return { outcome: "ok", latencyMs: 1, body: "COURSE\nPleasure is the absence of pain." }; }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Empty knowledge", courseId: "course-1", about: "About the group." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Empty", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 2700, maxParticipants: 4, aiTutorEnabled: true });
@@ -1142,20 +1146,20 @@ test("empty course knowledge refuses without a model call", async () => {
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-empty" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ["What ended in 1933?"]);
+  assert.deepEqual(contexts, [""]);
+  assert.deepEqual(delivered, { text: "Pleasure is the absence of pain.", mode: "general" });
+  assert.deepEqual(published, [{ text: "Pleasure is the absence of pain.", mode: "general" }]);
   const stored = JSON.stringify(await repository.read());
-  assert.equal(stored.includes("invented fact"), false);
   assert.equal(stored.includes("fake-key-healthy"), false);
 });
 
-test("a question with no usable tutor key does not block the material-absent reply", async () => {
+test("a question with no usable tutor key publishes an unavailable message instead of blocking", async () => {
   const calls: string[] = [];
-  const published: string[] = [];
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
     courseKnowledge: async () => "The Weimar republic ended in 1933.",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [],
     tutorCall: async () => { calls.push("called"); return { outcome: "ok", latencyMs: 1, body: "invented" }; }
   });
@@ -1166,9 +1170,81 @@ test("a question with no usable tutor key does not block the material-absent rep
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-matched" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-absent" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
   assert.deepEqual(calls, []);
+  assert.deepEqual(delivered, { text: "", mode: "unavailable" });
+  assert.deepEqual(published, [
+    { text: "", mode: "unavailable" },
+    { text: "", mode: "unavailable" }
+  ]);
+  const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.equal(items.every((item) => item.answeredAt && !item.inFlight && item.terminalReason === "model_failed"), true);
+  assert.equal(JSON.stringify(items).includes("invented"), false);
+});
+
+test("the whole course material reaches the model verbatim", async () => {
+  const corpus = ["The Weimar republic ended in 1933.", "Detail paragraph. ".repeat(4_000)].join("\n\n").trim();
+  const contexts: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => corpus,
+    publishRoomChat: async () => undefined,
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ context }) => { contexts.push(context); return { outcome: "ok", latencyMs: 1, body: "COURSE\nThe republic ended in 1933." }; }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Verbatim", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Verbatim", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-verbatim" });
+  await local.deliverTutorAnswer({ sessionId: session.id });
+  // Owner decision: no server-side retrieval or truncation — the model gets
+  // the entire stored course material, however large.
+  assert.equal(corpus.length > 14_000, true);
+  assert.deepEqual(contexts, [corpus]);
+});
+
+test("a COURSE-tagged reply keeps the course mode and a cleaned structured text", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "Epicurus: pleasure is the absence of pain; friendship is central.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({
+      outcome: "ok",
+      latencyMs: 1,
+      body: "COURSE\n**Epicurus** taught that pleasure is the absence of pain.\n- Friendship is central to happiness.\n- The good life is tranquil."
+    })
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Tagged", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Tagged", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What did Epicurus teach?", clientEventId: "evt-tagged" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(delivered, {
+    text: "Epicurus taught that pleasure is the absence of pain.\n• Friendship is central to happiness.\n• The good life is tranquil.",
+    mode: "course"
+  });
+  assert.deepEqual(published, [delivered]);
+});
+
+test("a reply that clamps away to nothing becomes an unavailable message", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({ outcome: "ok", latencyMs: 1, body: "COURSE\n---" })
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Empty clamp", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Empty clamp", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-clamp-empty" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(delivered, { text: "", mode: "unavailable" });
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
+  const item = (await repository.read()).tutorRequests.find((entry) => entry.clientEventId === "evt-clamp-empty");
+  assert.equal(item?.terminalReason, "model_failed");
 });
 
 test("a rate-limited tutor key fails over to the next healthy key", async () => {
@@ -1245,9 +1321,11 @@ test("one delivery answers every waiting question in receipt order", async () =>
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 again?", clientEventId: "evt-drain-2" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-drain-3" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(calls, ["What ended in 1933?", "What ended in 1933 again?"]);
-  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: What ended in 1933 again?", COURSE_MATERIAL_ABSENT]);
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  // Every question reaches the model now, including the one the material does
+  // not cover; an untagged fake reply defaults to the general mode.
+  assert.deepEqual(calls, ["What ended in 1933?", "What ended in 1933 again?", "qqqqzzzz"]);
+  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: What ended in 1933 again?", "Answer: qqqqzzzz"]);
+  assert.deepEqual(delivered, { text: "Answer: qqqqzzzz", mode: "general" });
   const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
 });
@@ -1311,9 +1389,9 @@ test("a transient publish failure schedules its own retry and delivers in the sa
 });
 
 test("recoverTutorWork drains stranded tutor work without an inbound ask", async () => {
-  const published: string[] = [];
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
-    publishRoomChat: async ({ text }) => { published.push(text); }
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Stranded work", courseId: "course-1", about: "About the stranded work." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Stranded", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
@@ -1322,27 +1400,30 @@ test("recoverTutorWork drains stranded tutor work without an inbound ask", async
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What happened in 1928?", clientEventId: "evt-stranded" });
 
   // No deliverTutorAnswer and no inbound HTTP path: only the recovery sweep.
+  // Without a tutor key the stranded item still gets its (unavailable) message.
   const recovered = await local.recoverTutorWork();
 
   assert.equal(recovered.sessions, 1);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
   const store = await repository.read();
   const request = store.tutorRequests.find((item) => item.clientEventId === "evt-stranded");
   assert.equal(request?.status, "answered");
+  assert.equal(request?.terminalReason, "model_failed");
   assert.equal(store.outbox.length, 1);
+  assert.equal(store.outbox[0].payload.mode, "unavailable");
   assert.equal(store.outbox.every((row) => row.status === "delivered"), true);
 
   // The work is settled: a second sweep finds nothing and republishes nothing.
   const again = await local.recoverTutorWork();
   assert.equal(again.sessions, 0);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
 });
 
-test("a failed tutor call does not leave the next question waiting", async () => {
-  const published: string[] = [];
+test("a failed tutor call publishes an unavailable message and does not leave the next question waiting", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
     courseKnowledge: async () => "The Weimar republic ended in 1933.",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
     tutorCall: async ({ text }) => text.includes("fail")
       ? { outcome: "failed", latencyMs: 1 }
@@ -1355,11 +1436,18 @@ test("a failed tutor call does not leave the next question waiting", async () =>
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 fail", clientEventId: "evt-fail" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-after-fail" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(published, ["The republic ended in 1933."]);
-  assert.equal(delivered?.text, "The republic ended in 1933.");
+  // The failed call still produces a message — an unavailable one — so the
+  // asker is never left with silence; the next question then answers normally.
+  assert.deepEqual(published, [
+    { text: "", mode: "unavailable" },
+    { text: "The republic ended in 1933.", mode: "general" }
+  ]);
+  assert.deepEqual(delivered, { text: "The republic ended in 1933.", mode: "general" });
   const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
-  assert.equal(JSON.stringify(items).includes("The course material does not contain the answer."), false);
+  assert.equal(items.find((item) => item.clientEventId === "evt-fail")?.terminalReason, "model_failed");
+  assert.equal(items.find((item) => item.clientEventId === "evt-after-fail")?.terminalReason, "answered");
+  assert.equal(JSON.stringify(items).includes("does not contain the answer"), false);
 });
 
 test("a failed shared-room publish settles that item and lets the next tutor request proceed", async () => {
@@ -1453,20 +1541,19 @@ test("a model reply is published as written", async () => {
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
   assert.deepEqual(calls, ["called"]);
   assert.deepEqual(published, [body]);
-  assert.equal(delivered?.text, body);
-  assert.deepEqual(courseQuestionTerms("How does friendship relate to happiness?"), ["friendship", "happiness"]);
+  assert.deepEqual(delivered, { text: body, mode: "general" });
 });
 
-test("a question whose content words are mostly absent does not call the model", async () => {
-  const published: string[] = [];
+test("a question the course material does not cover is still answered, in the general mode", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
   const calls: string[] = [];
   const local = serviceWith({
     courseKnowledge: async () => "Epicurus writes about pleasure, desire, and friendship.",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
     tutorCall: async () => {
       calls.push("called");
-      return { outcome: "ok", latencyMs: 1, body: "The formula is C8H10N4O2, isolated in 1819." };
+      return { outcome: "ok", latencyMs: 1, body: "GENERAL\nThe formula is C8H10N4O2, isolated in 1819.\n• Caffeine is a stimulant." };
     }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Formula", courseId: "course-1", about: "About the group." });
@@ -1475,9 +1562,17 @@ test("a question whose content words are mostly absent does not call the model",
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What is the chemical formula of caffeine, and in which year did Epicurus publish that formula?", clientEventId: "evt-formula" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(calls, []);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  // The old pre-model refusal is gone: the model answers, the GENERAL tag is
+  // parsed off, and the reply carries the general mode for client labelling.
+  assert.deepEqual(calls, ["called"]);
+  assert.deepEqual(delivered, {
+    text: "The formula is C8H10N4O2, isolated in 1819.\n• Caffeine is a stimulant.",
+    mode: "general"
+  });
+  assert.deepEqual(published, [{
+    text: "The formula is C8H10N4O2, isolated in 1819.\n• Caffeine is a stimulant.",
+    mode: "general"
+  }]);
 });
 
 test("a blank related lesson still schedules and a chosen lesson id is stored", async () => {
@@ -1510,7 +1605,8 @@ test("shared LiveKit publish has no private destination and no secret", async ()
       apiKey: "lk-key",
       apiSecret: "lk-secret-at-least-32-characters",
       room: "room-1",
-      text: COURSE_MATERIAL_ABSENT,
+      text: "The republic ended in 1933.",
+      mode: "course",
       now: new Date(NOW)
     });
   } finally {
@@ -1521,9 +1617,54 @@ test("shared LiveKit publish has no private destination and no secret", async ()
   const body = JSON.parse(calls[0].body) as { room: string; data: string; destination_identities?: string[] };
   assert.equal(body.room, "room-1");
   assert.equal(body.destination_identities, undefined);
-  const decoded = JSON.parse(Buffer.from(body.data, "base64").toString("utf8")) as { type: string; text: string };
+  const decoded = JSON.parse(Buffer.from(body.data, "base64").toString("utf8")) as { type: string; text: string; mode: string };
   assert.equal(decoded.type, "tutor");
-  assert.equal(decoded.text, COURSE_MATERIAL_ABSENT);
+  assert.equal(decoded.text, "The republic ended in 1933.");
+  assert.equal(decoded.mode, "course");
   assert.equal(calls[0].body.includes("lk-secret-at-least-32-characters"), false);
   assert.equal(calls[0].authorization.includes("lk-secret-at-least-32-characters"), false);
+});
+
+test("a legacy outbox row without a mode publishes as course", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Legacy row", courseId: "course-1", about: "About the legacy row." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Legacy", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-legacy" });
+  // Rows settled before the mode field existed carry no mode in their payload.
+  const claimed = await repository.claimNextTutorRequest({ sessionId: session.id, leaseOwner: "legacy-owner", leaseSeconds: 60, maxAttempts: 5 });
+  assert.ok(claimed);
+  await repository.settleTutorRequest({
+    id: claimed.id,
+    leaseOwner: "legacy-owner",
+    outcome: { status: "answered", terminalReason: "answered" },
+    outbox: { room: session.id, projectId: "", text: "Legacy answer.", messageId: claimed.id }
+  });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.equal(delivered?.mode, "course");
+  assert.deepEqual(published, [{ text: "Legacy answer.", mode: "course" }]);
+});
+
+test("a reply that contains a tutor key secret is never published", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({ outcome: "ok", latencyMs: 1, body: "COURSE\nThe key is fake-key-healthy, do not share it." })
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Leak", courseId: "course-1", about: "About the leak." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Leak", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-leak" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.equal(delivered?.mode, "unavailable");
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
+  const stored = JSON.stringify(await repository.read());
+  assert.equal(stored.includes("fake-key-healthy"), false);
 });

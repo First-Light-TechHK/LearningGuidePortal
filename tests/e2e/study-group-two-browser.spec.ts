@@ -9,8 +9,9 @@ const PLAN_ID = "epicureanism-pc-6";
 const COURSE_ID = "epicureanism";
 const CONSENTS = { renewal: true, terms: true, refund: true };
 const TUTOR_QUESTION = "What does the course teach about pleasure?";
+// The mock model answers "COURSE\nMock tutor reply: ..."; the tutor pipeline
+// strips the mode-tag line, so the chat shows the remaining text.
 const MOCK_TUTOR_REPLY = "Mock tutor reply: the course text explains this topic.";
-const ABSENT_REPLY = "The course material does not contain the answer.";
 
 function freshEmail(side: string) {
   return `e2e-sg-${side}-${Date.now()}@example.com`;
@@ -137,7 +138,9 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
 
     await expect(tutorLine(pageB)).toBeVisible();
     const tutorTextB = ((await tutorLine(pageB).textContent()) || "").trim();
-    expect([MOCK_TUTOR_REPLY, ABSENT_REPLY], "tutor reply text").toContain(tutorTextB);
+    // The tutor never refuses any more; the mock's fixed answer (minus the
+    // stripped mode-tag line) is the only reply this environment can produce.
+    expect(tutorTextB, "tutor reply text").toBe(MOCK_TUTOR_REPLY);
     await expect(tutorLine(pageA)).toBeVisible();
     const tutorTextA = ((await tutorLine(pageA).textContent()) || "").trim();
     expect(tutorTextA, "both browsers see the same tutor reply").toBe(tutorTextB);

@@ -216,8 +216,8 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
       const credentials = await verifiedCurrentCredentials(project);
       return participantToken(credentials, { project, room, identity, name, ttlSeconds });
     },
-    async publishTutorMessage({ project, room, messageId, text }) {
-      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text }));
+    async publishTutorMessage({ project, room, messageId, text, mode }) {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text, mode }));
       let service: LiveKitRoomService;
       try {
         service = await roomService(project);

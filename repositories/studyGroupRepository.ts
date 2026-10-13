@@ -579,7 +579,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
   async function settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string };
+    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
   }) {
     await ensureSchema();
     const client = await getPool().connect();

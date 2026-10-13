@@ -155,7 +155,7 @@ export async function ensureSchema() {
           lease_expires_at TIMESTAMPTZ,           -- claim lease (60 s)
           next_attempt_at TIMESTAMPTZ,            -- retry schedule / claimable-at; NULL = claimable now
           attempts INTEGER NOT NULL DEFAULT 0,
-          terminal_reason TEXT,                   -- 'answered' | 'course_material_absent' | 'model_failed' | 'attempts_exhausted'
+          terminal_reason TEXT,                   -- 'answered' | 'model_failed' | 'attempts_exhausted' (legacy rows may carry 'course_material_absent')
           outbox_message_id TEXT,                 -- set when an answer was handed to the outbox
           answered_at TIMESTAMPTZ,
           UNIQUE (session_id, user_id, client_event_id)   -- enqueue idempotency (external id)
@@ -169,7 +169,7 @@ export async function ensureSchema() {
           kind TEXT NOT NULL CHECK (kind IN ('room_message')),  -- later slices extend the CHECK
           dedupe_key TEXT NOT NULL UNIQUE,        -- tutor request id == LiveKit messageId
           session_id TEXT NOT NULL REFERENCES live_sessions(id),
-          payload JSONB NOT NULL,                 -- { room, projectId, text, messageId }
+          payload JSONB NOT NULL,                 -- { room, projectId, text, messageId, mode } ('mode' optional on legacy rows)
           status TEXT NOT NULL CHECK (status IN ('queued', 'sending', 'delivered', 'failed', 'dead')),
           attempts INTEGER NOT NULL DEFAULT 0,
           lease_owner TEXT,

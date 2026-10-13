@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
@@ -15,16 +15,44 @@ import { createAwsLiveKitCredentialResolver, createLiveKitCredentialResolver } f
 import { openRouterTutorCall, readTutorKeys } from "./tutorAnswer";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
 
+// Tutor model settings live here, in one place, so a later backoffice
+// knowledge base can become their source without touching call sites.
+// STUDY_GROUP_TUTOR_MAX_TOKENS is a runaway guard (see tutorAnswer.ts), and
+// STUDY_GROUP_TUTOR_REASONING pins an explicit reasoning effort; when unset,
+// the shared OpenRouter layer keeps its CoT default (off, auto-stripped on 400).
+function tutorMaxTokensFromEnv() {
+  const raw = Number.parseInt(process.env.STUDY_GROUP_TUTOR_MAX_TOKENS?.trim() || "", 10);
+  return Number.isFinite(raw) && raw >= 64 && raw <= 4096 ? raw : 700;
+}
+
+function tutorReasoningFromEnv(): { effort: string } | undefined {
+  const raw = process.env.STUDY_GROUP_TUTOR_REASONING?.trim().toLowerCase();
+  return raw === "none" || raw === "minimal" || raw === "low" || raw === "medium" || raw === "high" ? { effort: raw } : undefined;
+}
+
 async function readStoredCourseKnowledge(courseId: string) {
   const course = await getProductCourse(courseId);
   const lessons = (course?.sections ?? []).flatMap((section) => section.lessons).map((lesson) => `${lesson.title}\n${lesson.body}`.trim()).filter(Boolean);
   const root = path.join(process.cwd(), "knowledge", course?.slug || courseId);
   const parts = [...lessons];
-  for (const file of ["knowledge-pack.json", "canon-excerpts.md", "sources.md"]) {
+  // The whole Course Knowledge directory goes to the tutor verbatim (owner
+  // decision): every file, sorted by name, each headed by its filename so the
+  // model can tell the sources apart. No whitelist and no pre-filtering — the
+  // model itself fuzzy-matches a question against the raw material.
+  let names: string[] = [];
+  try {
+    names = (await readdir(root, { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    // This course has no Course Knowledge directory: lessons only.
+  }
+  for (const name of names) {
     try {
-      parts.push(await readFile(path.join(root, file), "utf8"));
+      parts.push(`# ${name}\n${await readFile(path.join(root, name), "utf8")}`);
     } catch {
-      // This course has no file in the existing Course Knowledge directory.
+      // An unreadable file is skipped like a missing one.
     }
   }
   return parts.join("\n\n");
@@ -211,12 +239,14 @@ export function studyGroupService() {
       system: STUDY_GROUP_TUTOR_SYSTEM_PROMPT,
       context: input.context,
       text: input.text,
+      maxTokens: tutorMaxTokensFromEnv(),
+      reasoning: tutorReasoningFromEnv(),
       url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined
     }),
-    publishRoomChat: async ({ room, text, projectId, messageId }) => {
+    publishRoomChat: async ({ room, text, projectId, messageId, mode }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode });
     }
   });
   services.set(key, service);

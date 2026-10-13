@@ -1,12 +1,14 @@
 // Local OpenAI-compatible tutor mock for the Study Group two-browser E2E test.
 // Serves the minimal surface modules/group-study/tutorAnswer.ts parses:
 //   - POST /v1/chat/completions -> { choices: [{ message: { content } }] }
-// The reply deliberately mentions "the course text" so assertions can pin it.
+// The reply follows the tutor reply contract: the first line is the mode tag
+// (stripped before publish), the rest deliberately mentions "the course text"
+// so assertions can pin the visible message text.
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.STUDYGROUP_TUTOR_MOCK_PORT || 8788);
 const HOST = "127.0.0.1";
-const REPLY = "Mock tutor reply: the course text explains this topic.";
+const REPLY = "COURSE\nMock tutor reply: the course text explains this topic.";
 
 const server = createServer((request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || HOST}`);

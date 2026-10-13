@@ -105,7 +105,7 @@ export type OutboxRow = {
   kind: OutboxKind;
   dedupeKey: string;
   sessionId: string;
-  payload: { room: string; projectId: string; text: string; messageId: string };
+  payload: { room: string; projectId: string; text: string; messageId: string; mode?: string };
   status: OutboxStatus;
   attempts: number;
   leaseOwner: string | null;

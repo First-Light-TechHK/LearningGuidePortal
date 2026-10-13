@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS study_group_tutor_requests (
   lease_expires_at TIMESTAMPTZ,           -- claim lease (60 s)
   next_attempt_at TIMESTAMPTZ,            -- retry schedule / claimable-at; NULL = claimable now
   attempts INTEGER NOT NULL DEFAULT 0,
-  terminal_reason TEXT,                   -- 'answered' | 'course_material_absent' | 'model_failed' | 'attempts_exhausted'
+  terminal_reason TEXT,                   -- 'answered' | 'model_failed' | 'attempts_exhausted' (legacy rows may carry 'course_material_absent')
   outbox_message_id TEXT,                 -- set when an answer was handed to the outbox
   answered_at TIMESTAMPTZ,
   UNIQUE (session_id, user_id, client_event_id)   -- enqueue idempotency (external id)
@@ -175,7 +175,7 @@ CREATE TABLE IF NOT EXISTS study_group_outbox (
   kind TEXT NOT NULL CHECK (kind IN ('room_message')),  -- later slices extend the CHECK
   dedupe_key TEXT NOT NULL UNIQUE,        -- tutor request id == LiveKit messageId
   session_id TEXT NOT NULL REFERENCES live_sessions(id),
-  payload JSONB NOT NULL,                 -- { room, projectId, text, messageId }
+  payload JSONB NOT NULL,                 -- { room, projectId, text, messageId, mode } ('mode' optional on legacy rows)
   status TEXT NOT NULL CHECK (status IN ('queued', 'sending', 'delivered', 'failed', 'dead')),
   attempts INTEGER NOT NULL DEFAULT 0,
   lease_owner TEXT,
@@ -352,7 +352,7 @@ RETURNING *;
 
    ✱ These two refinements fix holes in the FIX-PROPOSAL sketch: its `WHERE status IN ('queued')` would let a second claim take the next queued row while the first is in flight, and `ORDER BY received_at, id` is not receipt order for UUID ids. The partial unique index `… (session_id) WHERE status='in_flight'` is the hard backstop. When the candidate row is an expired lease whose `attempts` has already reached `maxAttempts`, `claimNextTutorRequest` marks it `dead_letter` (`terminal_reason='attempts_exhausted'`) and re-runs its (bounded) claim once more before returning, so dead letters never block later questions within the same drain call and a single poisoned item cannot stall the queue. A claimer that loses a concurrent claim race surfaces as a partial-index unique violation (23505) on the second `UPDATE`; the adapter catches that code and returns "no claim" — the loser performs no model call, which is the single-flight guarantee, not an error path.
 2. Model call + grounding — outside every lock and transaction.
-3. `settleTutorRequest` — one short transaction: guarded `UPDATE … WHERE id=$ AND lease_owner=$ AND status='in_flight'` sets `answered`/`dead_letter` + `terminal_reason` + `outbox_message_id`; when a reply exists (including `COURSE_MATERIAL_ABSENT`), `INSERT INTO study_group_outbox (dedupe_key = request id, kind='room_message', payload {room, projectId, text, messageId=request id}) ON CONFLICT (dedupe_key) DO NOTHING`. This is the FIX-PROPOSAL §2.3 outbox, with `dedupe_key` giving "at most one outbox row per tutor item".
+3. `settleTutorRequest` — one short transaction: guarded `UPDATE … WHERE id=$ AND lease_owner=$ AND status='in_flight'` sets `answered`/`dead_letter` + `terminal_reason` + `outbox_message_id`; every settled tutor item now carries a reply — a grounded or general answer, or an empty-text unavailable notice — so it does `INSERT INTO study_group_outbox (dedupe_key = request id, kind='room_message', payload {room, projectId, text, messageId=request id, mode}) ON CONFLICT (dedupe_key) DO NOTHING`. This is the FIX-PROPOSAL §2.3 outbox, with `dedupe_key` giving "at most one outbox row per tutor item".
 4. Publish — `claimNextOutboxMessage` (same `FOR UPDATE SKIP LOCKED` pattern) → `deps.publishRoomChat` (unchanged deps shape, `service.ts:166–169`) → `markOutboxDelivered`; failure → `markOutboxFailed` with backoff, bounded by `maxAttempts` (5) → `dead` with a redacted `failure_class`. The drain loop never blocks on a failed publish: the item is already settled, and the outbox row retries on the next drain.
 
    Honesty correction to the backbone: the FIX-PROPOSAL says "LiveKit's `messageId` dedupes at-least-once retries". In this codebase it does not — the gateway embeds `id` in the payload (`modules/group-study/liveKitCloudGateway.ts:135–146`) and the room appends every tutor message without id de-duplication (`components/portal/StudySessionRoom.tsx:186–191`). Slice 1 therefore includes the tiny client-side companion: key tutor chat entries by the payload `id` and drop repeats, so a crash between publish and `markOutboxDelivered` cannot double-render an answer. Server-side, the only duplicate window is exactly that crash window (claim lease prevents concurrent publishers).

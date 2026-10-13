@@ -20,7 +20,7 @@ import type { LiveKitProjectRef, LiveKitProjectRegistry } from "./liveKitProject
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, retrieveCourseKnowledge } from "./tutorAnswer";
+import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
 
 export type CourseSummary = { id: string; title: string; slug: string };
 export type UserProfile = { id: string; displayName: string; email: string | null; locale: "en-GB" | "zh-CN" };
@@ -45,7 +45,7 @@ export type StudyGroupDeps = {
   // it injected from Secrets Manager; DEV resolves it on first real issuance).
   tokenLogKey: () => Buffer | null;
   courseKnowledge?: (courseId: string) => Promise<string>;
-  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string }) => Promise<void>;
+  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
   tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
   // Injectable scheduler for the failing context's own re-drain (test seam):
@@ -199,7 +199,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
     const leaseOwner = randomUUID();
     try {
-      let last: { text: string } | null = null;
+      let last: { text: string; mode: string } | null = null;
       for (;;) {
         // Claim before any provider work: at most one in-flight item per
         // session, lease-bounded, receipt-ordered across all instances.
@@ -219,43 +219,39 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           continue;
         }
         // Grounding and the model call run outside every transaction and
-        // lock; the claim lease, not the process, guards the window.
+        // lock; the claim lease, not the process, guards the window. The whole
+        // course material goes to the model verbatim (owner decision): the
+        // model itself fuzzy-matches a question against it, across languages,
+        // so no server-side retrieval or threshold may short-circuit the call.
         const group = snapshot.groups.find((entry) => entry.id === session.groupId);
         const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
-        const context = retrieveCourseKnowledge(corpus, item.text);
-        let reply: string | null = null;
-        if (!context) {
-          reply = COURSE_MATERIAL_ABSENT;
-        } else {
-          const terms = courseQuestionTerms(item.text);
-          const missing = terms.filter((term) => !context.toLowerCase().includes(term.toLowerCase()));
-          if (terms.length > 0 && missing.length * 2 > terms.length) {
-            reply = COURSE_MATERIAL_ABSENT;
-          } else {
-            const keys = deps.tutorKeys?.() ?? [];
-            if (!deps.tutorCall || keys.length === 0) {
-              reply = null;
-            } else {
-              const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
-              reply = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? null : result.body.trim();
-            }
+        const context = corpus.trim();
+        const keys = deps.tutorKeys?.() ?? [];
+        let reply: { text: string; mode: "course" | "general" | "unavailable" } = { text: "", mode: "unavailable" };
+        if (deps.tutorCall && keys.length > 0) {
+          const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
+          const body = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? "" : result.body.trim();
+          if (body) {
+            const parsed = parseTutorReply(body);
+            const text = clampTutorReply(parsed.text);
+            // Without course material in context, a "course" tag cannot be
+            // honoured: the reply must stay general.
+            if (text) reply = { text, mode: context ? parsed.mode : "general" };
           }
         }
-        if (reply === null) {
-          // Terminal without a reply: the item settles so it cannot stall
-          // later questions, and nothing is published.
-          await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "answered", terminalReason: "model_failed" } });
-          continue;
-        }
         // Settle with the outbox row in one transaction; the publish below is
-        // at-least-once and retried on a later drain if it fails.
+        // at-least-once and retried on a later drain if it fails. Every item
+        // settles as answered and produces exactly one room message — an
+        // unavailable one (empty text, mode "unavailable") when no usable
+        // tutor key or call produced a reply, so the client can show its own
+        // "temporarily unavailable" copy instead of nothing.
         await deps.repository.settleTutorRequest({
           id: item.id,
           leaseOwner,
-          outcome: { status: "answered", terminalReason: reply === COURSE_MATERIAL_ABSENT ? "course_material_absent" : "answered" },
-          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply, messageId: item.id }
+          outcome: { status: "answered", terminalReason: reply.mode === "unavailable" ? "model_failed" : "answered" },
+          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply.text, messageId: item.id, mode: reply.mode }
         });
-        if (!deps.publishRoomChat) last = { text: reply };
+        if (!deps.publishRoomChat) last = { text: reply.text, mode: reply.mode };
       }
       const publish = deps.publishRoomChat;
       if (publish) {
@@ -263,14 +259,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           const message = await deps.repository.claimNextOutboxMessage({ sessionId, leaseOwner, leaseSeconds: 60 });
           if (!message) break;
           try {
+            // Legacy outbox rows predate the mode field; the client contract
+            // reads a missing mode as "course".
+            const mode = message.payload.mode || "course";
             await publish({
               room: message.payload.room,
               text: message.payload.text,
               projectId: message.payload.projectId || null,
-              messageId: message.payload.messageId
+              messageId: message.payload.messageId,
+              mode
             });
             await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
-            last = { text: message.payload.text };
+            last = { text: message.payload.text, mode };
           } catch (error) {
             // A failed publish never blocks the queue: the request is already
             // settled, and the failing context schedules its own re-drain with
