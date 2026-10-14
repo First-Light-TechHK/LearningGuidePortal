@@ -53,6 +53,17 @@ export function studyGroupErrorPlace(input: { status: PaneStatus; dialog: StudyG
   return "none";
 }
 
+/**
+ * F-2 (dev audit 2026-10-14): "error" was doing double duty as both the server's
+ * generic 500 code (http.ts) and the client's "no error" sentinel, so a real 500
+ * landed in the errorCode slot but rendered nowhere - the click appeared to do
+ * nothing. The slot now idles under its own sentinel; every other code, "error"
+ * included, is a real failure the one error slot must show.
+ */
+export function studyGroupHasError(errorCode: string) {
+  return errorCode !== "idle";
+}
+
 export type StudyGroupMutationAction = "plan" | "cancel-attendance" | "cancel-session" | "leave";
 
 /**

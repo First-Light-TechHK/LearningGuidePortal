@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { sessionStateLabel, studyGroupErrorPlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
+import { sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
 import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -78,7 +78,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<StudyGroupDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
-  const [errorCode, setErrorCode] = useState("error");
+  const [errorCode, setErrorCode] = useState("idle");
   const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | "cancel-group" | null>(null);
   const [createdGroup, setCreatedGroup] = useState<{ id: string; title: string; courseTitle: string } | null>(null);
   const [creating, setCreating] = useState(false);
@@ -287,7 +287,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const pane = studyGroupPane({ status, selected: selected ? { role: selected.role, sessions: selected.sessions ?? null } : null });
   const visibleMine = mine.filter((group) => mineFilter === "all" || group.role === "host");
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
-  const errorPlace = studyGroupErrorPlace({ status, dialog, hasSelected: Boolean(selected), hasError: errorCode !== "error" && errorCode !== "ok" });
+  const errorPlace = studyGroupErrorPlace({ status, dialog, hasSelected: Boolean(selected), hasError: studyGroupHasError(errorCode) });
 
   async function submitCreate(form: FormData) {
     if (creating) return;
@@ -303,7 +303,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       }
       setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
       setDialog(null);
-      setErrorCode("ok");
+      setErrorCode("idle");
       setCreateTitle("");
       setCreateAbout("");
       await loadLists();
@@ -322,7 +322,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         setErrorCode(result.code);
         return;
       }
-      setErrorCode("ok");
+      setErrorCode("idle");
       setSelected(null);
       setSelectedId(null);
       await loadLists();
@@ -342,7 +342,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         setErrorCode(outcome.errorCode);
         return;
       }
-      setErrorCode("ok");
+      setErrorCode("idle");
       await openGroup(groupId);
     } finally {
       setMutating(null);
@@ -359,7 +359,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         setErrorCode(outcome.errorCode);
         return;
       }
-      setErrorCode("ok");
+      setErrorCode("idle");
       if (outcome.clearSelection) {
         setSelected(null);
         setSelectedId(null);
@@ -371,18 +371,18 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   }
 
   function closeDialog() {
-    setErrorCode("ok");
+    setErrorCode("idle");
     setDialog(null);
   }
 
   function closeWaiting() {
-    setErrorCode("ok");
+    setErrorCode("idle");
     setDialog(null);
     setWaitingSession(null);
   }
 
   function openSchedule() {
-    setErrorCode("ok");
+    setErrorCode("idle");
     setSessionTitle("");
     setSessionFocus("");
     setSessionDate("");
@@ -395,7 +395,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   }
 
   function openEditSession(session: StudySession) {
-    setErrorCode("ok");
+    setErrorCode("idle");
     const local = localDateTime(session.startsAt);
     setEditingSession(session);
     setSessionTitle(session.title.slice(0, SESSION_TITLE_MAX));
@@ -419,7 +419,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
-    setErrorCode("ok");
+    setErrorCode("idle");
     setDialog(null);
     await openGroup(selected.id);
     await loadLists();
@@ -444,7 +444,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
-    setErrorCode("ok");
+    setErrorCode("idle");
     setDialog(null);
     await openGroup(selected.id);
   }
@@ -471,7 +471,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
-    setErrorCode("ok");
+    setErrorCode("idle");
     setDialog(null);
     setEditingSession(null);
     await openGroup(selected.id);
@@ -517,7 +517,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}</li>)}</ul> : null}
         <div className={styles.sectionHead}>
           <h2>{copy.myGroups}</h2>
-          {signedIn ? <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("ok"); setDialog("create"); }}>+ {copy.create}</button> : null}
+          {signedIn ? <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("idle"); setDialog("create"); }}>+ {copy.create}</button> : null}
         </div>
         <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
           <button type="button" aria-pressed={mineFilter === "all"} onClick={() => setMineFilter("all")}>{copy.all}</button>
@@ -558,9 +558,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       </aside>
       <section className={styles.main} aria-live="polite">
         {pane.kind === "loading" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
-        {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => { setErrorCode("ok"); void loadLists(); }}>{copy.retry}</button></div> : null}
+        {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => { setErrorCode("idle"); void loadLists(); }}>{copy.retry}</button></div> : null}
         {pane.kind === "empty" && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
-        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("ok"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
+        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("idle"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
         {dialog === "create" ? (
           <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={creating}>
             <form className={styles.createForm} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>

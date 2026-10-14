@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "../../modules/group-study/uiState";
+import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "../../modules/group-study/uiState";
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
@@ -564,7 +564,7 @@ test("creating a group hands the whole panel to the success state and reopening 
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   // BUG-0097: success closes the create dialog, clears any stale error and the form
   // values, and refreshes the lists; the panel then shows only the created state.
-  assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*setErrorCode\("ok"\);\s*setCreateTitle\(""\);\s*setCreateAbout\(""\);\s*await loadLists\(\);/);
+  assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*setErrorCode\("idle"\);\s*setCreateTitle\(""\);\s*setCreateAbout\(""\);\s*await loadLists\(\);/);
   // The empty pane and the group sheet step aside while the success state owns the panel.
   assert.match(app, /pane\.kind === "empty" && dialog !== "create" && !createdGroup/);
   assert.match(app, /dialog !== "create" && !createdGroup \? \(/);
@@ -576,8 +576,8 @@ test("creating a group hands the whole panel to the success state and reopening 
   assert.match(app, /openGroupId\.current = id;\s*setSelectedId\(id\);\s*setCreatedGroup\(null\);/);
   // BUG-0110: closing the success page resets the form and errorCode, so the next
   // Create dialog opens clean and the same name cannot be resubmitted by accident.
-  assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("ok"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
-  assert.match(app, /setCreatedGroup\(null\); setCreateTitle\(""\); setCreateAbout\(""\); setErrorCode\("ok"\); setDialog\("create"\);/);
+  assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("idle"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
+  assert.match(app, /setCreatedGroup\(null\); setCreateTitle\(""\); setCreateAbout\(""\); setErrorCode\("idle"\); setDialog\("create"\);/);
 });
 
 test("identical reminder messages render as one row on the Study Groups sidebar", () => {
@@ -614,23 +614,23 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.notEqual(studyGroupErrorPlace({ status: "error", dialog: "edit", hasSelected: true, hasError: true }), "dialog");
 
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /const errorPlace = studyGroupErrorPlace\(\{ status, dialog, hasSelected: Boolean\(selected\), hasError: errorCode !== "error" && errorCode !== "ok" \}\);/);
+  assert.match(app, /const errorPlace = studyGroupErrorPlace\(\{ status, dialog, hasSelected: Boolean\(selected\), hasError: studyGroupHasError\(errorCode\) \}\);/);
   assert.equal(app.split('{errorPlace === "').length - 1, 3);
   assert.match(app, /\{errorPlace === "create" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.match(app, /\{errorPlace === "sheet" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.match(app, /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.equal(app.includes('dialog !== "waiting" && dialog !== "attendees"'), false); // superseded by the dialog slot
   // Dismissing any dialog retires its error so the same message cannot reappear in the sheet.
-  assert.match(app, /function closeDialog\(\) \{\s*setErrorCode\("ok"\);\s*setDialog\(null\);\s*\}/);
+  assert.match(app, /function closeDialog\(\) \{\s*setErrorCode\("idle"\);\s*setDialog\(null\);\s*\}/);
   assert.match(app, /onClick=\{closeDialog\}/);
   // Retry clears the stale code before reloading: a recovered list must not leave a ghost alert.
-  assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
+  assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("idle"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
 test("the waiting dialog offers a Close control that releases the hold without breaking the enter flow", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   // BUG-0107: the join/waiting popup had no way out; it now carries a Close button.
-  assert.match(app, /function closeWaiting\(\) \{\s*setErrorCode\("ok"\);\s*setDialog\(null\);\s*setWaitingSession\(null\);\s*\}/);
+  assert.match(app, /function closeWaiting\(\) \{\s*setErrorCode\("idle"\);\s*setDialog\(null\);\s*setWaitingSession\(null\);\s*\}/);
   assert.match(app, /\) : \(\n\s*<div className=\{styles\.dialogActions\}>\n\s*<button className=\{styles\.ghost\} type="button" onClick=\{closeWaiting\}>\{copy\.close\}<\/button>\n\s*<\/div>\n\s*\)\}/);
   // The enter flow itself is untouched: the poll only follows a live waitingSession and
   // pushes into the room, so clearing it on close just stops the poll and releases the hold.
@@ -645,9 +645,9 @@ test("a successful Session mutation clears the stale errorCode so the old alert 
   // previous errorCode, so the sheet kept re-rendering the old alert although the session
   // had been created. Every dialog submit now resets the errorCode before closing the
   // dialog and refreshing the open group.
-  assert.match(app, /setErrorCode\("ok"\);\s*setDialog\(null\);\s*await openGroup\(selected\.id\);\s*\}/);
-  assert.match(app, /setErrorCode\("ok"\);\s*setDialog\(null\);\s*await openGroup\(selected\.id\);\s*await loadLists\(\);/);
-  assert.match(app, /setErrorCode\("ok"\);\s*setDialog\(null\);\s*setEditingSession\(null\);\s*await openGroup\(selected\.id\);/);
+  assert.match(app, /setErrorCode\("idle"\);\s*setDialog\(null\);\s*await openGroup\(selected\.id\);\s*\}/);
+  assert.match(app, /setErrorCode\("idle"\);\s*setDialog\(null\);\s*await openGroup\(selected\.id\);\s*await loadLists\(\);/);
+  assert.match(app, /setErrorCode\("idle"\);\s*setDialog\(null\);\s*setEditingSession\(null\);\s*await openGroup\(selected\.id\);/);
 });
 
 test("the Schedule dialog keeps long Study Group copy inside its context card", () => {
@@ -684,7 +684,7 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.match(app, /<p className=\{styles\.confirmBody\}>\{copy\.confirmCancelGroup\}<\/p>/);
   assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{cancelling\}>\{copy\.cancel\}<\/button><button className=\{styles\.danger\} type="submit" disabled=\{cancelling\}>\{copy\.cancelGroup\}<\/button>/);
   // A failed cancellation keeps the sheet selected so studyGroupErrorPlace has a home for the error.
-  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("ok"\);\s*setSelected\(null\);\s*setSelectedId\(null\);\s*await loadLists\(\);/);
+  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("idle"\);\s*setSelected\(null\);\s*setSelectedId\(null\);\s*await loadLists\(\);/);
   assert.match(css, /\.confirmBody \{ margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; \}/);
   assert.match(css, /\.dialogActions \.danger:disabled \{ opacity: \.45; cursor: not-allowed; \}/);
   assert.equal(en.studyGroupsPage.cancelGroupConfirmTitle, "Cancel this Study Group?");
@@ -783,7 +783,7 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   assert.match(app, /\} catch \{\s*if \(openGroupId\.current !== id\) return;\s*setErrorCode\("error"\);\s*setStatus\("error"\);\s*\}/);
   // The pane error is driven by status (studyGroupPane), so the synthetic code still
   // renders the generic copy and the Retry button.
-  assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p><button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button><\/div> : null\}/);
+  assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p><button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("idle"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button><\/div> : null\}/);
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
   assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
 });
@@ -838,6 +838,25 @@ test("a rejected fetch or a non-JSON body resolves as a network failure instead 
   assert.equal(app.split('{errorPlace === "').length - 1, 3);
   assert.match(app, /if \(!outcome\.ok\) \{\s*setErrorCode\(outcome\.errorCode\);\s*return;\s*\}/);
   assert.match(app, /if \(!result\.ok\) \{ setErrorCode\(result\.code\); return; \} await loadLists\(\); await openGroup\(selected\.id\);/);
+  assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
+  assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
+});
+
+test("the idle sentinel is its own value so a generic 500 error code renders in the one error slot", () => {
+  // F-2 (dev audit 2026-10-14): http.ts maps unexpected failures to code "error" (500)
+  // while the component used "error" as its no-error sentinel, so a real 500 was
+  // swallowed and the click appeared to do nothing. The sentinel is now "idle" (owned by
+  // studyGroupHasError); "error" is an ordinary renderable code with the generic copy.
+  assert.equal(studyGroupHasError("idle"), false);
+  assert.equal(studyGroupHasError("error"), true);
+  assert.equal(studyGroupHasError("network"), true);
+  assert.equal(studyGroupHasError("not_found"), true);
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: null, hasSelected: true, hasError: studyGroupHasError("error") }), "sheet");
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /const \[errorCode, setErrorCode\] = useState\("idle"\)/);
+  assert.match(app, /hasError: studyGroupHasError\(errorCode\)/);
+  assert.equal(app.includes('errorCode !== "error"'), false);
+  assert.equal(app.includes('setErrorCode("ok")'), false);
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
   assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
 });
