@@ -221,10 +221,12 @@ export type ProductNotification = {
   body: string;
   readAt: string | null;
   createdAt: string;
-  // Set on T-10 "Live Session reminder" rows so the reminders view can be
-  // checked against the Live Session's current state (BUG-0109). Rows written
-  // before this linkage existed carry no sessionId and are never shown as
-  // pending reminders: their validity cannot be verified.
+  // Set on T-10 reminder rows so the reminders view can be checked against
+  // the Live Session's current state (BUG-0109). Rows written before this
+  // linkage existed carry no sessionId and are never shown as pending
+  // reminders: their validity cannot be verified. The title is localised at
+  // write time (hunt L1): "Live Session reminder" for en-GB, "直播课提醒"
+  // for zh-CN.
   sessionId?: string;
 };
 export type ProductSession = { id: string; tokenHash: string; userId: string; expiresAt: string; createdAt: string };
@@ -2049,13 +2051,19 @@ export async function saveConversation(conversation: ProductConversation) {
 
 // The portal reminders strip (GET /api/study-groups?view=reminders): only
 // currently valid T-10 reminders are pending prompts (BUG-0109). The
-// cancellation notice ("Study Group cancelled") is a notification-center
-// fact, not a reminder, so a cancelled Study Group contributes nothing here.
+// cancellation notice ("Study Group cancelled" / "学习小组已取消") is a
+// notification-center fact, not a reminder, so a cancelled Study Group
+// contributes nothing here.
 // Validity is decided by the caller's predicate over each row (the Study
 // Group module's rule over its own Session, Group, membership and
 // Plan-to-Attend state; it also resolves pre-linkage rows written before the
 // sessionId field existed) — the read-side backstop for reminder rows the
 // cancelling actions could not withdraw.
+// The reminder title is localised at write time (hunt L1), so the marker
+// check accepts the known per-locale titles; the en-GB one is the exact
+// string earlier environments already carry.
+const STUDY_GROUP_REMINDER_TITLES = new Set(["Live Session reminder", "直播课提醒"]);
+
 export async function listStudyGroupReminders(
   userId: string,
   isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string }) => boolean | Promise<boolean>
@@ -2065,7 +2073,7 @@ export async function listStudyGroupReminders(
   const seenSessionIds = new Set<string>();
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
-    if (item.userId !== userId || item.title !== "Live Session reminder") continue;
+    if (item.userId !== userId || !STUDY_GROUP_REMINDER_TITLES.has(item.title)) continue;
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
     if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);

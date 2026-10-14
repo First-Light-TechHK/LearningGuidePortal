@@ -695,8 +695,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       await deps.withdrawReminders?.({ sessionIds });
       await Promise.all(notified.map(async (userId) => {
         const profile = await deps.userProfile(userId);
-        const body = profile?.locale === "zh-CN" ? "这个学习小组已经不再可用。" : "This Study Group is no longer available.";
-        await deps.notify({ userId, title: "Study Group cancelled", body });
+        // Title and body share the recipient's locale (hunt L1): the body was
+        // already localised while the title stayed hard-coded English, so a
+        // zh-CN member got a mixed-language card.
+        const copy = profile?.locale === "zh-CN"
+          ? { title: "学习小组已取消", body: "这个学习小组已经不再可用。" }
+          : { title: "Study Group cancelled", body: "This Study Group is no longer available." };
+        await deps.notify({ userId, title: copy.title, body: copy.body });
       }));
     },
 
@@ -1070,11 +1075,15 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const due = await deps.repository.update((store) => dueJobs(store, true));
       for (const job of due) {
         const profile = await deps.userProfile(job.userId);
+        // The row title is localised at write time and doubles as the reminders
+        // view's marker (hunt L1): the en-GB title must stay exactly this
+        // string — the view filters on the known per-locale titles — and the
+        // zh-CN title is its Chinese counterpart. Both match the email subject.
         const copy = profile?.locale === "zh-CN"
-          ? { subject: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
-          : { subject: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
-        await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body, sessionId: job.sessionId });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.subject, text: copy.body, locale: profile.locale });
+          ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
+          : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
+        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
       }
     },
 

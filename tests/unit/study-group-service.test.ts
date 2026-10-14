@@ -1013,6 +1013,8 @@ test("reminders go to the host and plan-to-attend members only, once", async () 
   await service.dispatchDueReminders();
   const reminded = notes.filter((item) => item.body.includes("Reminder session")).map((item) => item.userId).sort();
   assert.deepEqual(reminded, ["host", "planner"]);
+  // The en-GB title stays the exact row marker the reminders view filters on.
+  assert.equal(notes.filter((item) => item.body.includes("Reminder session")).every((item) => item.title === "Live Session reminder"), true);
   assert.deepEqual(mails.filter((item) => item.text.includes("Reminder session")).map((item) => item.to).sort(), ["host@example.test", "planner@example.test"]);
   notes.length = 0;
   mails.length = 0;
@@ -1064,7 +1066,7 @@ test("a Group card shows Live only while a child Session is live (BR-006)", asyn
 });
 
 test("a zh-CN reminder uses the Chinese sentence", async () => {
-  const localNotes: Array<{ body: string }> = [];
+  const localNotes: Array<{ title: string; body: string }> = [];
   const localMails: Array<{ subject: string; text: string }> = [];
   access.add("host-zh:course-1");
   const zh = serviceWith({
@@ -1076,11 +1078,14 @@ test("a zh-CN reminder uses the Chinese sentence", async () => {
   await zh.scheduleSession({ actorUserId: "host-zh", groupId: group.id, title: "中文课", startsAt: "2026-09-19T02:08:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await zh.dispatchDueReminders();
   assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.body, "中文课 将在 10 分钟后开始。");
+  // The notification title follows the recipient's locale too (hunt L1): the
+  // body was already Chinese while the title stayed hard-coded English.
+  assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.title, "直播课提醒");
   assert.equal(localMails.find((item) => item.text.includes("中文课"))?.subject, "直播课提醒");
 });
 
 test("a zh-CN member is told in Chinese that the Study Group was cancelled", async () => {
-  const localNotes: Array<{ userId: string; body: string }> = [];
+  const localNotes: Array<{ userId: string; title: string; body: string }> = [];
   access.add("host-zh-cancel:course-1");
   access.add("member-zh-cancel:course-1");
   const zh = serviceWith({
@@ -1091,6 +1096,9 @@ test("a zh-CN member is told in Chinese that the Study Group was cancelled", asy
   await zh.joinGroup({ actorUserId: "member-zh-cancel", groupId: group.id });
   await zh.cancelGroup({ actorUserId: "host-zh-cancel", groupId: group.id });
   assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.body, "这个学习小组已经不再可用。");
+  // The title is localised the same way (hunt L1): no English/Chinese mix on
+  // one notification card.
+  assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.title, "学习小组已取消");
 });
 
 test("a live participant queues their own text and the response has no tutor answer", async () => {
