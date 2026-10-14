@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { sessionStateLabel, studyGroupErrorPlace, studyGroupPane } from "@/modules/group-study/uiState";
+import { sessionStateLabel, studyGroupErrorPlace, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
@@ -119,7 +119,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setMine(myResult.data);
     setDiscover(discoverResult.data);
     if (courseResult.ok) setCourses(courseResult.data);
-    if (reminderResult.ok) setReminders(reminderResult.data);
+    if (reminderResult.ok) setReminders(uniqueReminderBodies(reminderResult.data));
     const incoming = [
       ...(courseResult.ok ? courseResult.data : []),
       ...myResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle })),

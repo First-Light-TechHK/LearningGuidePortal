@@ -52,3 +52,17 @@ export function studyGroupErrorPlace(input: { status: PaneStatus; dialog: StudyG
   if (input.hasSelected) return "sheet";
   return "none";
 }
+
+/**
+ * BUG-0100: the reminder strip rendered the same notification body twice when the
+ * server list carried two identical entries. Collapse repeated bodies to one row
+ * (keeping the first/newest); distinct bodies are untouched.
+ */
+export function uniqueReminderBodies<T extends { body: string }>(reminders: T[]): T[] {
+  const seen = new Set<string>();
+  return reminders.filter((item) => {
+    if (seen.has(item.body)) return false;
+    seen.add(item.body);
+    return true;
+  });
+}

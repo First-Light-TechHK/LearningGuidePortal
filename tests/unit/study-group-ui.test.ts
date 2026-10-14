@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupPane } from "../../modules/group-study/uiState";
+import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupPane, uniqueReminderBodies } from "../../modules/group-study/uiState";
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
@@ -573,6 +573,23 @@ test("creating a group hands the whole panel to the success state and reopening 
   // Create dialog opens clean and the same name cannot be resubmitted by accident.
   assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("ok"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
   assert.match(app, /setCreatedGroup\(null\); setCreateTitle\(""\); setCreateAbout\(""\); setErrorCode\("ok"\); setDialog\("create"\);/);
+});
+
+test("identical reminder messages render as one row on the Study Groups sidebar", () => {
+  // BUG-0100 (screenshot): the sidebar rendered two identical "这个学习小组已经不再可用。"
+  // rows because the reminder list carried the same body twice. The list view collapses
+  // identical bodies, keeping the first (newest) entry; distinct bodies are untouched.
+  const reminders = [
+    { body: "这个学习小组已经不再可用。", createdAt: "2026-10-14T10:00:00.000Z" },
+    { body: "这个学习小组已经不再可用。", createdAt: "2026-10-14T10:00:00.000Z" },
+    { body: "Life of Horace starts in 10 minutes.", createdAt: "2026-10-14T09:50:00.000Z" }
+  ];
+  assert.deepEqual(uniqueReminderBodies(reminders), [reminders[0], reminders[2]]);
+  assert.deepEqual(uniqueReminderBodies([]), []);
+  assert.deepEqual(uniqueReminderBodies([{ body: "One" }, { body: "Two" }, { body: "One" }]), [{ body: "One" }, { body: "Two" }]);
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /if \(reminderResult\.ok\) setReminders\(uniqueReminderBodies\(reminderResult\.data\)\);/);
+  assert.match(app, /<ul className=\{styles\.reminders\}>\{reminders\.map\(\(item\) => <li role="status" key=\{`\$\{item\.createdAt\}-\$\{item\.body\}`\}>\{item\.body\}<\/li>\)\}<\/ul>/);
 });
 
 test("one error is shown in exactly one place: the failing pane, create form, dialog, or sheet", () => {
