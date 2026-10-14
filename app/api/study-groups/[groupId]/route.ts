@@ -6,7 +6,7 @@ export async function GET(request: Request, context: { params: Promise<{ groupId
   const { groupId } = await context.params;
   try {
     const service = studyGroupService();
-    if (user) await service.dispatchDueReminders();
+    if (user) await service.dispatchDueRemindersOnRequest();
     return studyGroupData(await service.getGroup({ actorUserId: user?.id || null, groupId }));
   } catch (error) {
     return studyGroupFailure(error);

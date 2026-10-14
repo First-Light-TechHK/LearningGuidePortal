@@ -1052,6 +1052,56 @@ test("leaving the group cancels the member's future reminder end-to-end", async 
   assert.deepEqual(mails.filter((item) => item.text.includes("Leave session")).map((item) => item.to), ["host@example.test"]);
 });
 
+test("request-triggered reminder dispatch is single-flight and throttled to one sweep per window", async () => {
+  let clock = Date.parse(NOW);
+  let reads = 0;
+  const counting: StudyGroupRepository = { ...repository, read: async () => { reads += 1; return repository.read(); } };
+  const localNotes: Array<{ userId: string; body: string }> = [];
+  const local = serviceWith({
+    repository: counting,
+    now: () => new Date(clock),
+    notify: async (input) => { localNotes.push(input); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Throttle group", courseId: "course-1", about: "About the throttle." });
+  await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Throttle one", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+
+  // The first request sweeps immediately: due reminders are delivered on the
+  // spot, not deferred to the runtime timer.
+  const readsBeforeFirst = reads;
+  await local.dispatchDueRemindersOnRequest();
+  assert.equal(localNotes.filter((item) => item.body.includes("Throttle one")).length, 1);
+  assert.equal(reads > readsBeforeFirst, true);
+
+  // A request inside the window is skipped without touching the store at all,
+  // even though a new reminder became due meanwhile.
+  await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Throttle two", startsAt: "2026-09-19T02:10:25.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  clock += 25_000;
+  const readsAfterFirst = reads;
+  await local.dispatchDueRemindersOnRequest();
+  assert.equal(localNotes.some((item) => item.body.includes("Throttle two")), false);
+  assert.equal(reads, readsAfterFirst, "a throttled request performs no store read");
+
+  // Once the window has elapsed, the next request performs a full sweep.
+  clock += 5_000;
+  await local.dispatchDueRemindersOnRequest();
+  assert.equal(localNotes.some((item) => item.body.includes("Throttle two")), true);
+
+  // Two concurrent requests outside any window share one sweep (single
+  // flight): exactly one store read for the pair when nothing is due.
+  clock += 30_000;
+  const readsBeforeConcurrent = reads;
+  await Promise.all([local.dispatchDueRemindersOnRequest(), local.dispatchDueRemindersOnRequest()]);
+  assert.equal(reads - readsBeforeConcurrent, 1);
+
+  // The unthrottled sweep (the runtime timer's entry point) is never governed
+  // by the request window: it runs even right after a request-triggered sweep.
+  await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Throttle three", startsAt: "2026-09-19T02:11:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const readsBeforeTimer = reads;
+  await local.dispatchDueReminders();
+  assert.equal(localNotes.some((item) => item.body.includes("Throttle three")), true);
+  assert.equal(reads > readsBeforeTimer, true);
+});
+
 test("a Group card shows Live only while a child Session is live (BR-006)", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Badge", courseId: "course-1", about: "Badge about." });
   const mine = async () => (await service.listMine("host")).find((item) => item.id === group.id)!;

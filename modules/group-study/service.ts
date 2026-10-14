@@ -498,6 +498,67 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
   }
 
+  async function dispatchDueReminders() {
+    const now = deps.now();
+    const dueJobs = (store: StudyGroupStore, record: boolean) => {
+      const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string }> = [];
+      for (const session of store.sessions) {
+        if (session.status !== "scheduled") continue;
+        const startsAt = new Date(session.startsAt).getTime();
+        if (now.getTime() < startsAt - STARTING_SOON_MS || now.getTime() >= startsAt) continue;
+        const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
+        if (!group) continue;
+        const audience = new Set<string>([group.hostUserId]);
+        for (const intent of store.intents) {
+          if (intent.sessionId === session.id && !intent.cancelledAt) audience.add(intent.userId);
+        }
+        for (const userId of audience) {
+          if (!activeMembership(store, group.id, userId)) continue;
+          if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
+          if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
+          jobs.push({ userId, sessionId: session.id, sessionTitle: session.title });
+        }
+      }
+      return jobs;
+    };
+    if (dueJobs(await deps.repository.read(), false).length === 0) return;
+    const due = await deps.repository.update((store) => dueJobs(store, true));
+    for (const job of due) {
+      const profile = await deps.userProfile(job.userId);
+      // The row title is localised at write time and doubles as the reminders
+      // view's marker (hunt L1): the en-GB title must stay exactly this
+      // string — the view filters on the known per-locale titles — and the
+      // zh-CN title is its Chinese counterpart. Both match the email subject.
+      const copy = profile?.locale === "zh-CN"
+        ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
+        : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
+      await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
+      if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+    }
+  }
+
+  // The portal's view routes call this on every poll. A sweep reads the whole
+  // store, so polling must not turn into a per-request scan (hunt L5): at most
+  // one sweep per window, never two sweeps in flight, and a request inside
+  // the window is skipped without touching the store at all. The unthrottled
+  // dispatchDueReminders stays the runtime timer's, the worker's and the
+  // tests' entry point, so reminder delivery never depends on this path.
+  const REQUEST_DISPATCH_INTERVAL_MS = 30_000;
+  let requestDispatchAt = Number.NEGATIVE_INFINITY;
+  let requestDispatchRunning = false;
+  async function dispatchDueRemindersOnRequest() {
+    if (requestDispatchRunning) return;
+    const timestamp = deps.now().getTime();
+    if (timestamp - requestDispatchAt < REQUEST_DISPATCH_INTERVAL_MS) return;
+    requestDispatchRunning = true;
+    requestDispatchAt = timestamp;
+    try {
+      await dispatchDueReminders();
+    } finally {
+      requestDispatchRunning = false;
+    }
+  }
+
   return {
     async createGroup(input: { actorUserId: string; title: string; courseId: string; about: string }) {
       const title = requireText(input.title, "Study Group Title", 50);
@@ -1048,44 +1109,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return { sessions: sessions.length };
     },
 
-    async dispatchDueReminders() {
-      const now = deps.now();
-      const dueJobs = (store: StudyGroupStore, record: boolean) => {
-        const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string }> = [];
-        for (const session of store.sessions) {
-          if (session.status !== "scheduled") continue;
-          const startsAt = new Date(session.startsAt).getTime();
-          if (now.getTime() < startsAt - STARTING_SOON_MS || now.getTime() >= startsAt) continue;
-          const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
-          if (!group) continue;
-          const audience = new Set<string>([group.hostUserId]);
-          for (const intent of store.intents) {
-            if (intent.sessionId === session.id && !intent.cancelledAt) audience.add(intent.userId);
-          }
-          for (const userId of audience) {
-            if (!activeMembership(store, group.id, userId)) continue;
-            if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
-            if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
-            jobs.push({ userId, sessionId: session.id, sessionTitle: session.title });
-          }
-        }
-        return jobs;
-      };
-      if (dueJobs(await deps.repository.read(), false).length === 0) return;
-      const due = await deps.repository.update((store) => dueJobs(store, true));
-      for (const job of due) {
-        const profile = await deps.userProfile(job.userId);
-        // The row title is localised at write time and doubles as the reminders
-        // view's marker (hunt L1): the en-GB title must stay exactly this
-        // string — the view filters on the known per-locale titles — and the
-        // zh-CN title is its Chinese counterpart. Both match the email subject.
-        const copy = profile?.locale === "zh-CN"
-          ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
-          : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
-        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
-      }
-    },
+    dispatchDueReminders,
+    dispatchDueRemindersOnRequest,
 
     async handleLiveKitWebhook(input: { rawBody: string; authHeader: string | null }): Promise<StudyGroupWebhookOutcome> {
       // Receipt-first ordering (slice-2 design §3): verify → insert receipt →
