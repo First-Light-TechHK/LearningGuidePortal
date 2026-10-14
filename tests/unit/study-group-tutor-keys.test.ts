@@ -4,6 +4,16 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
+// Bug hunt 2026-10-14 (M4): the pool used to mark a key permanently
+// unhealthy for the life of the process on any non-network failure, so a
+// single 429 (or a spent quota) disabled AI Tutor in that environment until
+// a restart. The contract this file now pins: rate_limited and quota are
+// transient — the key rests for a cooldown and is retried — while
+// auth_failed stays permanent, and within one execute() call a key is
+// attempted at most once. The previous assertion set pinned the
+// permanent-skip behaviour only implicitly (it never advanced a clock); the
+// clock-injected tests below make the recovery contract explicit.
+
 const FAKE_KEYS = [
   { id: "rate-limited", secret: "fake-key-rate-limited" },
   { id: "out-of-quota", secret: "fake-key-out-of-quota" },
@@ -11,7 +21,7 @@ const FAKE_KEYS = [
   { id: "healthy", secret: "fake-key-healthy" }
 ] as const;
 
-type KeyOutcome = "ok" | "failed" | "rate_limited" | "quota";
+type KeyOutcome = "ok" | "failed" | "auth_failed" | "rate_limited" | "quota";
 
 type KeyStats = { requests: number; errors: number; latencyMs: number };
 
@@ -23,19 +33,25 @@ type TutorKeyPool = {
 type CreateTutorKeyPool = (input: {
   keys: Array<{ id: string; secret: string }>;
   call: (secret: string) => Promise<{ outcome: KeyOutcome; latencyMs: number; body?: string }>;
+  now?: () => number;
 }) => TutorKeyPool;
+
+type PoolModule = {
+  createTutorKeyPool?: CreateTutorKeyPool;
+  TUTOR_KEY_COOLDOWN_MS?: Record<string, number>;
+};
 
 const MODULES = [
   "modules/group-study/tutorKeyPool.ts",
   "services/tutorKeyPool.ts"
 ];
 
-async function loadPool(): Promise<CreateTutorKeyPool> {
+async function loadPool(): Promise<PoolModule> {
   for (const relative of MODULES) {
     const file = path.join(process.cwd(), relative);
     if (!existsSync(file)) continue;
-    const loaded = await import(pathToFileURL(file).href) as { createTutorKeyPool?: CreateTutorKeyPool };
-    if (typeof loaded.createTutorKeyPool === "function") return loaded.createTutorKeyPool;
+    const loaded = await import(pathToFileURL(file).href) as PoolModule;
+    if (typeof loaded.createTutorKeyPool === "function") return loaded;
   }
   assert.fail("tutor key pool is missing: expected createTutorKeyPool in modules/group-study/tutorKeyPool.ts or services/tutorKeyPool.ts");
 }
@@ -56,7 +72,8 @@ test("a failed, rate-limited, or out-of-quota tutor key is skipped for a healthy
     throw new Error("network");
   }) as typeof fetch;
   try {
-    const createTutorKeyPool = await loadPool();
+    const { createTutorKeyPool } = await loadPool();
+    assert.ok(createTutorKeyPool);
     const pool = createTutorKeyPool({
       keys: FAKE_KEYS.map((item) => ({ id: item.id, secret: item.secret })),
       call: async (secret) => {
@@ -70,6 +87,9 @@ test("a failed, rate-limited, or out-of-quota tutor key is skipped for a healthy
       }
     });
     const first = await pool.execute("first question");
+    // Same clock instant: the limited keys are inside their cooldown window
+    // (the recovery contract is pinned by the clock tests below) and yield to
+    // the healthy key, exactly as the permanent-skip behaviour did before.
     const second = await pool.execute("second question");
     assert.equal(first.keyId, "healthy");
     assert.equal(second.keyId, "healthy");
@@ -91,4 +111,100 @@ test("a failed, rate-limited, or out-of-quota tutor key is skipped for a healthy
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("a rate-limited key is retried after its cooldown and recovers", async () => {
+  const { createTutorKeyPool, TUTOR_KEY_COOLDOWN_MS } = await loadPool();
+  assert.ok(createTutorKeyPool && TUTOR_KEY_COOLDOWN_MS);
+  let clock = 0;
+  let attempts = 0;
+  const pool = createTutorKeyPool({
+    keys: [{ id: "limited", secret: "fake-key-rate-limited" }],
+    now: () => clock,
+    call: async () => {
+      attempts += 1;
+      return attempts === 1
+        ? { outcome: "rate_limited", latencyMs: 1 }
+        : { outcome: "ok", latencyMs: 1, body: "back again" };
+    }
+  });
+  assert.equal((await pool.execute("question one")).keyId, "", "the only key is rate-limited");
+  assert.equal(attempts, 1);
+  // Still inside the cooldown: the key is skipped, not re-attempted.
+  clock = TUTOR_KEY_COOLDOWN_MS.rate_limited - 1;
+  assert.equal((await pool.execute("question two")).keyId, "");
+  assert.equal(attempts, 1);
+  // Cooldown elapsed: the same key is attempted again and can serve traffic.
+  clock = TUTOR_KEY_COOLDOWN_MS.rate_limited;
+  const recovered = await pool.execute("question three");
+  assert.equal(recovered.keyId, "limited");
+  assert.equal(recovered.body, "back again");
+  assert.equal(attempts, 2);
+});
+
+test("a quota-limited key rests longer than a rate-limited one", async () => {
+  const { createTutorKeyPool, TUTOR_KEY_COOLDOWN_MS } = await loadPool();
+  assert.ok(createTutorKeyPool && TUTOR_KEY_COOLDOWN_MS);
+  assert.equal(TUTOR_KEY_COOLDOWN_MS.quota > TUTOR_KEY_COOLDOWN_MS.rate_limited, true);
+  let clock = 0;
+  let attempts = 0;
+  const pool = createTutorKeyPool({
+    keys: [{ id: "quota", secret: "fake-key-out-of-quota" }],
+    now: () => clock,
+    call: async () => {
+      attempts += 1;
+      return attempts === 1
+        ? { outcome: "quota", latencyMs: 1 }
+        : { outcome: "ok", latencyMs: 1, body: "quota restored" };
+    }
+  });
+  assert.equal((await pool.execute("question one")).keyId, "");
+  // Past the rate-limit cooldown the quota key still rests.
+  clock = TUTOR_KEY_COOLDOWN_MS.rate_limited;
+  assert.equal((await pool.execute("question two")).keyId, "");
+  assert.equal(attempts, 1);
+  // Past its own, longer cooldown it is retried.
+  clock = TUTOR_KEY_COOLDOWN_MS.quota;
+  assert.equal((await pool.execute("question three")).keyId, "quota");
+  assert.equal(attempts, 2);
+});
+
+test("an auth-failed key stays permanently out even after a long wait", async () => {
+  const { createTutorKeyPool } = await loadPool();
+  assert.ok(createTutorKeyPool);
+  let clock = 0;
+  let attempts = 0;
+  const pool = createTutorKeyPool({
+    keys: [{ id: "wrong-key", secret: "fake-key-auth-failed" }],
+    now: () => clock,
+    call: async () => {
+      attempts += 1;
+      return { outcome: "auth_failed", latencyMs: 1 };
+    }
+  });
+  assert.equal((await pool.execute("question one")).keyId, "");
+  clock = 24 * 60 * 60 * 1000;
+  assert.equal((await pool.execute("question two")).keyId, "");
+  assert.equal(attempts, 1, "an authenticated rejection is never retried in-process");
+});
+
+test("one execute call attempts each key at most once", async () => {
+  const { createTutorKeyPool } = await loadPool();
+  assert.ok(createTutorKeyPool);
+  const calls: string[] = [];
+  const pool = createTutorKeyPool({
+    keys: [
+      { id: "limited", secret: "fake-key-rate-limited" },
+      { id: "healthy", secret: "fake-key-healthy" }
+    ],
+    call: async (secret) => {
+      calls.push(secret);
+      return outcomeFor(secret) === "ok"
+        ? { outcome: "ok", latencyMs: 1, body: "queued" }
+        : { outcome: "rate_limited", latencyMs: 1 };
+    }
+  });
+  const result = await pool.execute("question");
+  assert.equal(result.keyId, "healthy");
+  assert.deepEqual(calls, ["fake-key-rate-limited", "fake-key-healthy"]);
 });
