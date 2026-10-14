@@ -5,7 +5,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
-import { parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
+import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -80,11 +80,6 @@ function chatStamp() {
   return new Date().toISOString();
 }
 
-function chatLabel(at: string) {
-  const date = new Date(at);
-  if (Number.isNaN(date.getTime())) return at;
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(date);
-}
 type Tile = { identity: string; name: string; host: boolean; mic: boolean; speaking: boolean };
 type MentionRow = { key: string; name: string; tutor?: boolean };
 type AttachableTrack = { attach: (element: HTMLMediaElement) => HTMLMediaElement; detach: (element: HTMLMediaElement) => HTMLMediaElement[] };
@@ -711,7 +706,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         ) : (
           <>
             <div className={styles.chatLog} role="tabpanel" aria-live="polite">
-              {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(line.at)}</time>}</div>{line.tutor ? (
+              {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
                 <p className={`${styles.chatBody} ${styles.tutorBody}`}>
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable

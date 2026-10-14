@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "../../modules/group-study/roomData";
+import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "../../modules/group-study/roomData";
 
 function roomSource() {
   return readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
@@ -99,4 +99,20 @@ test("hunt M5: the tutor queue enforces the learning-page limit at the service",
   const service = readFileSync(new URL("../../modules/group-study/service.ts", import.meta.url), "utf8");
   assert.match(service, /const TUTOR_REQUEST_MAX_LENGTH = 4000;/);
   assert.match(service, /requireText\(input\.text, "AI Tutor request", TUTOR_REQUEST_MAX_LENGTH\)/);
+});
+
+test("hunt L6: chat timestamps follow the app locale, not the browser locale", () => {
+  // A local-time wall clock with no zone so the expected hour is stable: both
+  // app locales render 24-hour HH:mm, never the browser-locale 12-hour form
+  // (an en-US browser used to turn this into 02:15 PM).
+  const at = "2026-10-14T14:15:00";
+  assert.match(chatLabel("zh-CN", at), /^\d{2}:\d{2}$/);
+  assert.match(chatLabel("en-GB", at), /^\d{2}:\d{2}$/);
+  assert.equal(/[AaPp]\.?[Mm]/.test(chatLabel("zh-CN", at)), false);
+  assert.equal(/[AaPp]\.?[Mm]/.test(chatLabel("en-GB", at)), false);
+  // An unparseable stamp echoes back instead of rendering "Invalid Date".
+  assert.equal(chatLabel("zh-CN", "not-a-date"), "not-a-date");
+  const room = roomSource();
+  assert.match(room, /chatLabel\(locale, line\.at\)/);
+  assert.equal(room.includes("Intl.DateTimeFormat(undefined"), false);
 });

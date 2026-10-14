@@ -12,6 +12,16 @@ export type RoomChatMessage = { type: "chat"; text: string };
 export type RoomRaiseHandMessage = { type: "raise-hand"; raised: boolean };
 export type RoomDataMessage = RoomTutorMessage | RoomChatMessage | RoomRaiseHandMessage;
 
+// The chat line's HH:mm stamp in the APPLICATION locale (hunt L6). The room
+// used to format with the browser locale, so a zh-CN user on an en-US
+// browser saw "02:15 PM" in chat while the session cards on the same page
+// showed "14:15". An unparseable stamp echoes back unchanged.
+export function chatLabel(locale: string, at: string) {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return at;
+  return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
 // Parses one data-channel payload into a renderable message, or null when it
 // must be dropped. The parser is where the room's trust boundary lives
 // (hunt M2): the publisher is passed in as `fromServer` because LiveKit
