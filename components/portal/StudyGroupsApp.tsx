@@ -106,49 +106,64 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
 
   async function loadLists() {
     const generation = ++listGeneration.current;
-    const [myResult, discoverResult, courseResult, reminderResult] = await Promise.all([
-      signedIn ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
-      studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
-      signedIn ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as CourseOption[] }),
-      signedIn ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Array<{ body: string; createdAt: string }> })
-    ]);
-    if (generation !== listGeneration.current) return;
-    if (!myResult.ok || !discoverResult.ok) {
+    try {
+      const [myResult, discoverResult, courseResult, reminderResult] = await Promise.all([
+        signedIn ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
+        studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
+        signedIn ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as CourseOption[] }),
+        signedIn ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Array<{ body: string; createdAt: string }> })
+      ]);
+      if (generation !== listGeneration.current) return;
+      if (!myResult.ok || !discoverResult.ok) {
+        setStatus("error");
+        setErrorCode(myResult.ok ? discoverResult.code : myResult.code);
+        return;
+      }
+      setMine(myResult.data);
+      setDiscover(discoverResult.data);
+      if (courseResult.ok) setCourses(courseResult.data);
+      if (reminderResult.ok) setReminders(uniqueReminderBodies(reminderResult.data));
+      const incoming = [
+        ...(courseResult.ok ? courseResult.data : []),
+        ...myResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle })),
+        ...discoverResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle }))
+      ];
+      setCourseOptions((current) => {
+        const next = new Map(current.map((item) => [item.id, item.title]));
+        for (const item of incoming) if (item.id && item.title) next.set(item.id, item.title);
+        return Array.from(next, ([id, title]) => ({ id, title }));
+      });
+      setStatus("ready");
+    } catch {
+      // M6: a rejected fetch (offline, a non-JSON gateway page) must land the screen
+      // on the pane error with its Retry button instead of staying on "loading"
+      // forever - the anonymous visitor has no 3s poll to self-heal.
+      if (generation !== listGeneration.current) return;
       setStatus("error");
-      setErrorCode(myResult.ok ? discoverResult.code : myResult.code);
-      return;
+      setErrorCode("error");
     }
-    setMine(myResult.data);
-    setDiscover(discoverResult.data);
-    if (courseResult.ok) setCourses(courseResult.data);
-    if (reminderResult.ok) setReminders(uniqueReminderBodies(reminderResult.data));
-    const incoming = [
-      ...(courseResult.ok ? courseResult.data : []),
-      ...myResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle })),
-      ...discoverResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle }))
-    ];
-    setCourseOptions((current) => {
-      const next = new Map(current.map((item) => [item.id, item.title]));
-      for (const item of incoming) if (item.id && item.title) next.set(item.id, item.title);
-      return Array.from(next, ([id, title]) => ({ id, title }));
-    });
-    setStatus("ready");
   }
 
   async function openGroup(id: string) {
     openGroupId.current = id;
     setSelectedId(id);
     setCreatedGroup(null);
-    const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);
-    if (openGroupId.current !== id) return;
-    if (!result.ok) {
-      setErrorCode(result.code);
+    try {
+      const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);
+      if (openGroupId.current !== id) return;
+      if (!result.ok) {
+        setErrorCode(result.code);
+        setStatus("error");
+        return;
+      }
+      setSelected(result.data);
+      setMine((current) => current.map((group) => group.id === result.data.id ? { ...group, live: result.data.live, memberCount: result.data.memberCount } : group));
+      setStatus("ready");
+    } catch {
+      if (openGroupId.current !== id) return;
+      setErrorCode("error");
       setStatus("error");
-      return;
     }
-    setSelected(result.data);
-    setMine((current) => current.map((group) => group.id === result.data.id ? { ...group, live: result.data.live, memberCount: result.data.memberCount } : group));
-    setStatus("ready");
   }
 
   async function refreshOpenGroup(id: string) {

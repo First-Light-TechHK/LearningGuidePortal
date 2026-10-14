@@ -763,3 +763,21 @@ test("camera and microphone buttons check permission state and surface targeted 
   assert.equal(en.studyGroupsPage.room.mediaDeviceBlocked, "No camera or microphone was found, or the device is in use by another application. Close the other app and try again.");
   assert.equal(zh.studyGroupsPage.room.mediaDeviceBlocked, "未找到摄像头或麦克风，或设备正被其他应用占用。请关闭占用后重试。");
 });
+
+test("a rejected list fetch lands the anonymous first screen on the error pane instead of a permanent Loading", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // M6: loadLists had no catch, so a rejected fetch (network blip, a non-JSON gateway
+  // page) left status "loading" forever for the anonymous visitor - the signed-in 3s
+  // poll is the only self-healing path and it does not run for guests. The catch lands
+  // on the existing pane error, whose Retry button re-runs loadLists.
+  assert.match(app, /async function loadLists\(\) \{\s*const generation = \+\+listGeneration\.current;\s*try \{/);
+  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current\) return;\s*setStatus\("error"\);\s*setErrorCode\("error"\);\s*\}/);
+  // The same landing covers the ?group= deep link: a rejected detail fetch must not
+  // leave a silently empty pane with no way to retry.
+  assert.match(app, /\} catch \{\s*if \(openGroupId\.current !== id\) return;\s*setErrorCode\("error"\);\s*setStatus\("error"\);\s*\}/);
+  // The pane error is driven by status (studyGroupPane), so the synthetic code still
+  // renders the generic copy and the Retry button.
+  assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p><button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button><\/div> : null\}/);
+  assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
+  assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
+});
