@@ -135,6 +135,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   async function openGroup(id: string) {
     openGroupId.current = id;
     setSelectedId(id);
+    setCreatedGroup(null);
     const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);
     if (openGroupId.current !== id) return;
     if (!result.ok) {
@@ -283,6 +284,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       }
       setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
       setDialog(null);
+      setErrorCode("ok");
+      setCreateTitle("");
+      setCreateAbout("");
       await loadLists();
     } finally {
       setCreating(false);
@@ -422,7 +426,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}</li>)}</ul> : null}
         <div className={styles.sectionHead}>
           <h2>{copy.myGroups}</h2>
-          {signedIn ? <button className={styles.create} type="button" onClick={() => { setCreateTitle(""); setCreateAbout(""); setDialog("create"); }}>+ {copy.create}</button> : null}
+          {signedIn ? <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("ok"); setDialog("create"); }}>+ {copy.create}</button> : null}
         </div>
         <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
           <button type="button" aria-pressed={mineFilter === "all"} onClick={() => setMineFilter("all")}>{copy.all}</button>
@@ -464,8 +468,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       <section className={styles.main} aria-live="polite">
         {pane.kind === "loading" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
         {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => void loadLists()}>{copy.retry}</button></div> : null}
-        {pane.kind === "empty" && dialog !== "create" ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
-        {createdGroup ? <div className={styles.createdToast} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setDialog(null); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
+        {pane.kind === "empty" && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
+        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("ok"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
         {dialog === "create" ? (
           <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
             <form className={styles.createForm} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
@@ -479,7 +483,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
             </form>
           </dialog>
         ) : null}
-        {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" ? (
+        {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" && !createdGroup ? (
           <div className={styles.sheet}>
             <article>
               <h2 className={styles.groupTitle}>{selected.title}</h2>

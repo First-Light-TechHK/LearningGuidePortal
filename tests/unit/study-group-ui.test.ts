@@ -362,7 +362,8 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(css, /\.row \{ display: flex; flex-direction: column; align-items: stretch; gap: 8px; \}/);
   assert.match(css, /\.modal \.waitingBanner \{[^}]*border: 1px solid #1d6bff;[^}]*background: #f1f7ff;/); // 599:752
   assert.match(css, /\.waitingFacts \{[^}]*background: #fbfbfb;[^}]*border: 1px solid #e4e7ec;[^}]*border-radius: 8px/); // 599:751
-  assert.match(css, /\.createdToast \{ position: absolute; top: 30px; left: 50%;[^}]*width: min\(450px/); // 599:2083 toast 450x78 at 725,98 (= 68 + 30)
+  assert.match(css, /\.createdPanel \{ width: min\(450px, 100%\); display: grid; justify-items: center; gap: 12px; text-align: center; \}/); // BUG-0097 success page: 450px card on the panel flow
+  assert.equal(css.includes(".createdToast"), false);
   assert.match(css, /\.controls button \{ flex-direction: column;[^}]*min-height: 51px;[^}]*font-weight: 500; color: rgba\(0,0,0,\.4\); background: #fbfbfb/); // 599:1210-1234 51px #fbfbfb 12px Medium black/40
   assert.match(css, /\.controls \.shareControl svg \{ color: #f54649; \}/);
   assert.match(css, /\.chatForm \{ position: relative; display: block; min-height: 100px;[^}]*border: 1px solid #e4e7ed; border-radius: 8px/); // 599:1392 266x100 r8 #e4e7ed
@@ -382,7 +383,7 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(app, /styles\.hostFoot\}><button className=\{styles\.ghost\} type="button"/); // member Leave Study Group sits in the Members column
   assert.match(app, /study-groups\/\$\{selected\.id\}\/leave/);
   assert.match(app, /<LockedCard \/>/); // 599:930 skeletons keep fact rows + avatar row
-  assert.match(app, /className=\{styles\.createdToast\}/); // 599:1975 created toast over the form
+  assert.match(app, /styles\.createdPanel/); // BUG-0097 success state takes the whole panel over
   assert.equal(app.includes('className={styles.created}'), false);
   assert.equal(app.includes("waitingSession.occupancy"), false); // 599:531 shows no occupancy line
   assert.equal(app.includes('dialog === "waiting" ? <button'), false); // 599:531 has no footer action
@@ -554,13 +555,24 @@ test(":has() is gone from the stylesheet and the single-tile layout is a plain c
   assert.match(app, /selected\.role === "host" \? <div className=\{`\$\{styles\.hostFoot\} \$\{styles\.hostFootWithCopy\}`\}><p>\{copy\.hostingNote\}<\/p>/);
 });
 
-test("creating a group keeps only the persistent top toast and the normal pane", () => {
+test("creating a group hands the whole panel to the success state and reopening Create is clean", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  // Success closes the create dialog, refreshes the lists, and leaves the
-  // toast over a normally rendered pane instead of blanking it.
-  assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*await loadLists\(\);/);
-  assert.match(app, /className=\{styles\.createdToast\}/);
-  assert.equal(app.includes("&& !createdGroup"), false);
+  // BUG-0097: success closes the create dialog, clears any stale error and the form
+  // values, and refreshes the lists; the panel then shows only the created state.
+  assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*setErrorCode\("ok"\);\s*setCreateTitle\(""\);\s*setCreateAbout\(""\);\s*await loadLists\(\);/);
+  // The empty pane and the group sheet step aside while the success state owns the panel.
+  assert.match(app, /pane\.kind === "empty" && dialog !== "create" && !createdGroup/);
+  assert.match(app, /dialog !== "create" && !createdGroup \? \(/);
+  assert.match(app, /className=\{`\$\{styles\.panel\} \$\{styles\.createdPanel\}`\} role="status"/);
+  assert.match(app, /copy\.createdTitle/);
+  assert.match(app, /copy\.createdBody/);
+  assert.match(app, /copy\.openGroup/);
+  // Opening a group from the sidebar while the success state is showing resolves that state.
+  assert.match(app, /openGroupId\.current = id;\s*setSelectedId\(id\);\s*setCreatedGroup\(null\);/);
+  // BUG-0110: closing the success page resets the form and errorCode, so the next
+  // Create dialog opens clean and the same name cannot be resubmitted by accident.
+  assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("ok"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
+  assert.match(app, /setCreatedGroup\(null\); setCreateTitle\(""\); setCreateAbout\(""\); setErrorCode\("ok"\); setDialog\("create"\);/);
 });
 
 test("the Create Study Group dialog is centred on the viewport like the module's other dialogs", () => {
