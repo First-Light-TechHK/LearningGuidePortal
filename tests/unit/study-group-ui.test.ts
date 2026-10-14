@@ -435,8 +435,13 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
 
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /mode\?: "course" \| "general" \| "unavailable"/);
-  assert.match(room, /message\.text \|\| message\.mode === "unavailable"/);
-  assert.match(room, /mode: message\.mode === "general" \|\| message\.mode === "unavailable" \? message\.mode : "course"/);
+  // The forged-tutor fix moved the dispatch (and the mode normalisation plus the
+  // empty-text "unavailable" contract) into the pure room-data parser; the room
+  // now hands it the payload and renders what the parser returns.
+  assert.match(room, /parseRoomDataMessage\(payload, !participant\)/);
+  const roomData = readFileSync(new URL("../../modules/group-study/roomData.ts", import.meta.url), "utf8");
+  assert.match(roomData, /if \(!message\.text && message\.mode !== "unavailable"\) return null;/);
+  assert.match(roomData, /mode: message\.mode === "general" \|\| message\.mode === "unavailable" \? message\.mode : "course"/);
   assert.match(room, /line\.mode === "unavailable"\s*\?\s*roomCopy\.tutorUnavailable/);
   assert.match(room, /line\.mode === "general" \? <span className=\{styles\.tutorDisclosure\}>\{roomCopy\.tutorGeneral\}<\/span>/);
   assert.match(room, /index === 0\s*\?\s*<strong key="lead" className=\{styles\.tutorLead\}>\{row\}<\/strong>/);
