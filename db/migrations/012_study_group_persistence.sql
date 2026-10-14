@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS study_group_presences (
   entered_at TIMESTAMPTZ,
   left_at TIMESTAMPTZ,
   phase TEXT NOT NULL CHECK (phase IN ('waiting', 'live')),
+  livekit_participant_sid TEXT,           -- seat's current LiveKit connection id (audit F-5); NULL = unknown
   UNIQUE (session_id, user_id)            -- one row per user+session; re-entry flips left_at
 );
 CREATE INDEX IF NOT EXISTS study_group_presences_seated_idx

@@ -156,6 +156,9 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
         eventType,
         room: event.room?.name.trim() ? event.room.name : null,
         participantIdentity: event.participant?.identity.trim() ? event.participant.identity : null,
+        // The connection-level id (audit F-5), read from the same participant
+        // object as the identity; a participant_* event always carries both.
+        participantSid: event.participant?.sid?.trim() ? event.participant.sid : null,
         createdAt: createdAtIso(event.createdAt),
         projectId: project.id
       };

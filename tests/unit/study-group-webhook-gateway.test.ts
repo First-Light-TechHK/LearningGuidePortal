@@ -73,6 +73,9 @@ test("a signed webhook verifies, resolves its project by issuer, and maps the ty
     eventType: "participant_left",
     room: "s-session-1",
     participantIdentity: "u-7",
+    // The connection-level id travels with the mapped event (audit F-5): the
+    // service matches it against the seat's recorded connection.
+    participantSid: "PA_1",
     createdAt: NOW.toISOString(),
     projectId: "beta"
   });
@@ -84,6 +87,7 @@ test("an event without a room or participant maps to null fields but still verif
   assert.equal(event.eventType, "egress_started");
   assert.equal(event.room, null);
   assert.equal(event.participantIdentity, null);
+  assert.equal(event.participantSid, null);
   assert.equal(event.projectId, "alpha");
 });
 

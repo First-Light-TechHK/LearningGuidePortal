@@ -1,0 +1,18 @@
+-- Audit F-5 (2026-10-14): the Study Group webhook could close a renewed seat
+-- when a zombie LiveKit connection's participant_left was CREATED after the
+-- user re-entered (non-graceful disconnect: the provider only times the
+-- connection out later, so the event's creation time postdates the renewed
+-- seat). The presence row now records the connection id
+-- (livekit.ParticipantInfo.sid) of the seated entry, and the close mapping
+-- refuses a participant_left that names a different connection.
+--
+-- Additive and backward-compatible: existing rows keep NULL, which the
+-- service reads as "connection unknown" and judges with the original
+-- enteredAt/createdAt guard. The ensureSchema bootstrap in
+-- services/persistence/db.ts applies the same idempotent ALTER on boot, so
+-- this file is for environments that apply migrations manually.
+--
+-- Rollback: ALTER TABLE study_group_presences DROP COLUMN livekit_participant_sid;
+-- (safe at any point — the column is optional to the service, and dropping it
+-- reverts every seat to the timestamp semantics).
+ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS livekit_participant_sid TEXT;

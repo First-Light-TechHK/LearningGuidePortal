@@ -423,9 +423,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // Entering while already seated (a reload re-runs /enter): renew the
         // row's timestamps so the presence age read by the grace window and
         // the webhook's stale-seat guard is the CURRENT entry, never the
-        // original one. Mirrors the reopen path below.
+        // original one. Mirrors the reopen path below. The recorded LiveKit
+        // connection id belongs to the previous entry generation and is
+        // cleared (audit F-5): the new connection's participant_joined
+        // webhook records its own sid, and until then the seat reports
+        // "connection unknown" (timestamp semantics).
         existing.requestedAt = input.requestedAt;
         existing.enteredAt = deps.now().toISOString();
+        existing.liveKitParticipantSid = null;
         return { occupancy: occupancy(store, session.id) };
       }
       if (missedUnstarted(session, deps.now(), occupancy(store, session.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
@@ -436,6 +441,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         existing.requestedAt = input.requestedAt;
         existing.enteredAt = enteredAt;
         existing.phase = state === "live" ? "live" : "waiting";
+        existing.liveKitParticipantSid = null;
       } else {
         store.presences.push({
           id: randomUUID(),
@@ -444,7 +450,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           requestedAt: input.requestedAt,
           enteredAt,
           leftAt: null,
-          phase: state === "live" ? "live" : "waiting"
+          phase: state === "live" ? "live" : "waiting",
+          liveKitParticipantSid: null
         });
       }
       return { occupancy: occupancy(store, session.id) };
@@ -1154,25 +1161,53 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         }
       }
       let result: "processed" | "ignored" = "ignored";
-      if (event.eventType === "participant_left" && event.room && event.participantIdentity) {
+      if (event.eventType === "participant_joined" && event.room && event.participantIdentity && event.participantSid) {
         const room = event.room;
         const identity = event.participantIdentity;
-        // The only mapping action: close that identity's open presence row
-        // inside the serialized mutate — unless the seat was (re)established
+        const sid = event.participantSid;
+        // Record which connection the seat's current holder is (audit F-5):
+        // the participant_left mapping below may then refuse to close a seat
+        // whose recorded connection differs. The same seat-generation rule
+        // gates the write: a join event that predates the seat's enteredAt
+        // reports an older generation (a delayed retry of the previous
+        // connection's join) and must not overwrite the current id. The
+        // mapping still only reduces nothing and grants nothing.
+        result = await deps.repository.update((store) => {
+          const session = store.sessions.find((item) => item.id === room);
+          if (!session) return "ignored" as const;
+          const at = event.createdAt ?? deps.now().toISOString();
+          const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
+          const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) > Date.parse(at) : false;
+          if (presence && !seatIsNewer) presence.liveKitParticipantSid = sid;
+          return "processed" as const;
+        });
+      } else if (event.eventType === "participant_left" && event.room && event.participantIdentity) {
+        const room = event.room;
+        const identity = event.participantIdentity;
+        // The close action: close that identity's open presence row inside
+        // the serialized mutate — unless the seat was (re)established
         // at or after the event's own time, in which case the event reports a
         // connection generation that no longer exists (a refresh re-entered
         // before a delayed participant_left arrived) and the fresh seat must
-        // stay open. Closing the last open presence of a live session also
-        // completes the session and ends its meeting — the same reducing rule
-        // as an explicit leave — and can never grant membership, role, token,
-        // or access.
+        // stay open. Audit F-5: a creation time alone cannot tell a late
+        // delivery from a late creation — a zombie connection's
+        // participant_left may postdate the re-entry the provider has not yet
+        // observed — so when the seat and the event both name their LiveKit
+        // connection and the ids differ, the event reports a replaced
+        // connection and must not close the fresh seat either. Absence of
+        // either id (legacy rows, sid-less events) keeps the timestamp
+        // semantics above. Closing the last open presence of a live session
+        // also completes the session and ends its meeting — the same reducing
+        // rule as an explicit leave — and can never grant membership, role,
+        // token, or access.
         result = await deps.repository.update((store) => {
           const session = store.sessions.find((item) => item.id === room);
           if (!session) return "ignored" as const;
           const at = event.createdAt ?? deps.now().toISOString();
           const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
           const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) >= Date.parse(at) : false;
-          if (presence && !seatIsNewer) presence.leftAt = at;
+          const connectionMismatch = Boolean(presence?.liveKitParticipantSid && event.participantSid && presence.liveKitParticipantSid !== event.participantSid);
+          if (presence && !seatIsNewer && !connectionMismatch) presence.leftAt = at;
           completeLiveSessionIfEmpty(store, session, at);
           return "processed" as const;
         });

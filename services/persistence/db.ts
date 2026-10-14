@@ -124,10 +124,16 @@ export async function ensureSchema() {
           entered_at TIMESTAMPTZ,
           left_at TIMESTAMPTZ,
           phase TEXT NOT NULL CHECK (phase IN ('waiting', 'live')),
+          livekit_participant_sid TEXT,           -- seat's current LiveKit connection id (audit F-5); NULL = unknown
           UNIQUE (session_id, user_id)            -- one row per user+session; re-entry flips left_at
         );
         CREATE INDEX IF NOT EXISTS study_group_presences_seated_idx
           ON study_group_presences (session_id) WHERE entered_at IS NOT NULL AND left_at IS NULL;
+        -- Audit F-5: add the seat's current LiveKit connection id to databases
+        -- whose study_group_presences predates the column (the CREATE above
+        -- only fires on a fresh table); idempotent boot self-heal mirroring
+        -- db/migrations/013_study_group_presence_connection_sid.sql.
+        ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS livekit_participant_sid TEXT;
         CREATE TABLE IF NOT EXISTS study_group_meetings (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES live_sessions(id),

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
@@ -39,6 +39,7 @@ type MutableReceipt = { receiptId: string; status: WebhookReceiptStatus; failure
 type RefreshFixture = {
   service: StudyGroupService;
   repository: StudyGroupRepository;
+  directory: string;
   clock: () => string;
   advanceSeconds: (seconds: number) => void;
   /** The provider's current room membership served to sweep B (listParticipants). */
@@ -129,6 +130,7 @@ async function refreshFixture(): Promise<RefreshFixture> {
   return {
     service: createStudyGroupService(deps),
     repository,
+    directory,
     clock: () => new Date(nowMs).toISOString(),
     advanceSeconds: (seconds) => { nowMs += seconds * 1000; },
     participants,
@@ -302,4 +304,104 @@ test("a participant_left delivered after a refresh re-entered must not close the
   const store = await f.repository.read();
   assert.equal(presenceOf(store, session.id, "host")?.leftAt, trulyLeftAt);
   assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
+});
+
+// Audit F-5: the createdAt guard only covered LATE DELIVERIES of events the
+// provider created before the re-entry. A non-graceful disconnect (browser
+// crash, network switch) leaves a zombie connection the provider removes only
+// after its own timeout, so the participant_left may be CREATED after the
+// user already re-entered — and used to close the fresh seat and complete the
+// session with the user still in the room. The seat now records the
+// connection id (ParticipantInfo.sid) of its current entry, and a left event
+// that names a different connection cannot close it; the connection's own
+// later departure still does.
+test("a participant_left for a replaced connection created after a re-entry must not close the renewed seat", async () => {
+  const f = await refreshFixture();
+  const { session } = await liveRoom(f);
+
+  // The first connection joins (its participant_joined webhook arrives).
+  f.nextEvent({ eventId: "evt-join-1", eventType: "participant_joined", room: session.id, participantIdentity: "host", participantSid: "PA-1", createdAt: new Date(Date.parse(START) + 1_000).toISOString(), projectId: "eu-primary" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-join-1" }), authHeader: "Signature test" }),
+    { status: "processed" }
+  );
+  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.liveKitParticipantSid, "PA-1");
+
+  // The connection dies without an unload signal; the user re-enters 30 s
+  // later and a new connection joins the room.
+  f.advanceSeconds(30);
+  await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
+  // The renewed seat holds no connection of its own until the new join lands.
+  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.liveKitParticipantSid, null);
+  f.nextEvent({ eventId: "evt-join-2", eventType: "participant_joined", room: session.id, participantIdentity: "host", participantSid: "PA-2", createdAt: new Date(Date.parse(START) + 31_000).toISOString(), projectId: "eu-primary" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-join-2" }), authHeader: "Signature test" }),
+    { status: "processed" }
+  );
+
+  // The provider only now times out the zombie and creates its
+  // participant_left: the event postdates the re-entry, but it reports the
+  // replaced connection PA-1 and must not close the seat holding PA-2.
+  f.advanceSeconds(20);
+  const zombieLeftAt = f.clock();
+  f.nextEvent({ eventId: "evt-zombie", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: "PA-1", createdAt: zombieLeftAt, projectId: "eu-primary" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-zombie" }), authHeader: "Signature test" }),
+    { status: "processed" }
+  );
+  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, null);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
+
+  // The current connection's own departure still closes and completes.
+  f.advanceSeconds(10);
+  const leftAt = f.clock();
+  f.nextEvent({ eventId: "evt-current-left", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: "PA-2", createdAt: leftAt, projectId: "eu-primary" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-current-left" }), authHeader: "Signature test" }),
+    { status: "processed" }
+  );
+  const store = await f.repository.read();
+  assert.equal(presenceOf(store, session.id, "host")?.leftAt, leftAt);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
+});
+
+// The backward-compatibility arm of the same contract: presence rows written
+// before the connection id existed (existing snapshots) carry no value, so
+// the timestamp semantics decide exactly as before — enteredAt >= createdAt
+// skips, otherwise the seat closes.
+test("presence snapshots without a connection id keep the timestamp semantics", async () => {
+  const f = await refreshFixture();
+  const { session } = await liveRoom(f);
+  await f.repository.update((store) => {
+    for (const presence of store.presences) delete (presence as { liveKitParticipantSid?: string | null }).liveKitParticipantSid;
+  });
+  const raw = await readFile(path.join(f.directory, "study-group.json"), "utf8");
+  assert.equal(raw.includes("liveKitParticipantSid"), false, "the legacy fixture really carries no connection id");
+
+  const legacyLeftAt = new Date(Date.parse(START) + 30_000).toISOString();
+  f.nextEvent({ eventId: "evt-legacy", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: "PA-legacy", createdAt: legacyLeftAt, projectId: "eu-primary" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-legacy" }), authHeader: "Signature test" }),
+    { status: "processed" }
+  );
+  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, legacyLeftAt);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
+});
+
+// A provider event without a connection id cannot be matched against the
+// seat's recorded one; like the legacy seat, it falls back to the timestamp
+// guard (the reconcile sweep still bounds every stale state).
+test("a participant_left without a connection id falls back to the timestamp guard", async () => {
+  const f = await refreshFixture();
+  const { session } = await liveRoom(f);
+  f.nextEvent({ eventId: "evt-join", eventType: "participant_joined", room: session.id, participantIdentity: "host", participantSid: "PA-1", createdAt: new Date(Date.parse(START) + 1_000).toISOString(), projectId: "eu-primary" });
+  await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-join" }), authHeader: "Signature test" });
+
+  const leftAt = new Date(Date.parse(START) + 30_000).toISOString();
+  f.nextEvent({ eventId: "evt-no-sid", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: null, createdAt: leftAt, projectId: "eu-primary" });
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-no-sid" }), authHeader: "Signature test" }),
+    { status: "processed" }
+  );
+  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, leftAt);
 });

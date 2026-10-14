@@ -23,6 +23,13 @@ export type LiveKitWebhookEvent = Readonly<{
   eventType: string;
   room: string | null;
   participantIdentity: string | null;
+  // The participant's connection-level id (livekit.ParticipantInfo.sid), one
+  // per connection. Audit F-5: the service matches a participant_left against
+  // the seat's recorded connection so a zombie connection's late event cannot
+  // close a seat a re-entry has re-established. Optional so fixtures written
+  // before the field existed keep compiling; its absence reads as "connection
+  // unknown" and the timestamp guard decides.
+  participantSid?: string | null;
   createdAt: string | null;
   projectId: string;
 }>;

@@ -57,6 +57,13 @@ export type PresenceRow = {
   enteredAt: string | null;
   leftAt: string | null;
   phase: "waiting" | "live";
+  // The LiveKit connection id (ParticipantInfo.sid) of the entry this seat
+  // currently holds: written when that connection's participant_joined
+  // webhook lands, cleared by seat() on every (re)entry so a new generation
+  // starts unknown (audit F-5). Optional: snapshots written before the field
+  // existed carry no value = "connection unknown", and the webhook's close
+  // falls back to the enteredAt/createdAt guard for them.
+  liveKitParticipantSid?: string | null;
 };
 
 export type MeetingRow = {
