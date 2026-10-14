@@ -146,6 +146,9 @@
 .modal { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; padding: 24px; background: rgba(16, 24, 40, .45); display: grid; place-items: center; }
 .modal form { width: min(540px, 100%); max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; background: #fff; border-radius: 12px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 .modal h2 { margin: 0; font-size: 24px; font-weight: 700; color: #0a0a0a; }
+/* BUG-0096: the Create dialog shares this module's centred overlay; the form keeps the
+   design's wider 760px card, without the old inline page-panel margins. */
+.modal .createForm { width: min(760px, 100%); margin: 0; }
 .modal .waitingBanner { display: grid; justify-items: center; gap: 10px; margin: 0 0 25px; padding: 16px; border: 1px solid #1d6bff; border-radius: 12px; background: #f1f7ff; color: #1d6bff; font-size: 14px; font-weight: 500; }
 .waitingTitle { margin: 0 0 12px; font-size: 20px; font-weight: 700; color: #111827; }
 .waitingFacts { list-style: none; margin: 0 0 16px; padding: 12px; display: grid; gap: 12px; background: #fbfbfb; border: 1px solid #e4e7ec; border-radius: 8px; font-size: 14px; font-weight: 500; color: rgba(0,0,0,.4); }

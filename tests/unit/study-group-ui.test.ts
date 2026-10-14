@@ -563,6 +563,21 @@ test("creating a group keeps only the persistent top toast and the normal pane",
   assert.equal(app.includes("&& !createdGroup"), false);
 });
 
+test("the Create Study Group dialog is centred on the viewport like the module's other dialogs", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // BUG-0096: the create form was an inline page panel (160px top margin inside the
+  // column right of the 460px sidebar), so it sat below/right of the viewport centre.
+  // It now renders inside the same fixed, centred overlay the module's dialogs use.
+  assert.match(app, /\{dialog === "create" \? \(\n\s*<dialog open className=\{styles\.modal\} aria-modal="true" aria-labelledby="study-group-dialog-title">/);
+  assert.match(app, /<form className=\{styles\.createForm\} onSubmit=\{\(event\) => \{ event\.preventDefault\(\); void submitCreate\(new FormData\(event\.currentTarget\)\); \}\}>/);
+  assert.equal(app.includes("<form className={styles.panel} onSubmit"), false);
+  // Centring comes from the shared overlay: fixed full-viewport backdrop, grid centre.
+  assert.match(css, /\.modal \{ position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; padding: 24px; background: rgba\(16, 24, 40, \.45\); display: grid; place-items: center; \}/);
+  // The create card keeps the design's 760px width without the old inline page margins.
+  assert.match(css, /\.modal \.createForm \{ width: min\(760px, 100%\); margin: 0; \}/);
+});
+
 test("camera and microphone buttons check permission state and surface targeted guidance", () => {
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /navigator\.permissions\.query\(\{ name: kind === "mic" \? "microphone" : "camera" \}\)/);

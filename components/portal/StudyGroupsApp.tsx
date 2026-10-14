@@ -466,15 +466,19 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => void loadLists()}>{copy.retry}</button></div> : null}
         {pane.kind === "empty" && dialog !== "create" ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
         {createdGroup ? <div className={styles.createdToast} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setDialog(null); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
-        {dialog === "create" ? <form className={styles.panel} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
-          <h2>{copy.create}</h2>
-          <p className={styles.lead}>{copy.createLead}</p>
-          <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
-          <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
-          <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={200} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(event.target.value.slice(0, 200))} /><span className={styles.counter}>{createAbout.length}/200</span></span></label>
-          <div className={styles.actions}><button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
-          {errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
-        </form> : null}
+        {dialog === "create" ? (
+          <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
+            <form className={styles.createForm} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
+              <h2 id="study-group-dialog-title">{copy.create}</h2>
+              <p className={styles.lead}>{copy.createLead}</p>
+              <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
+              <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+              <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={200} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(event.target.value.slice(0, 200))} /><span className={styles.counter}>{createAbout.length}/200</span></span></label>
+              <div className={styles.actions}><button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
+              {errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
+            </form>
+          </dialog>
+        ) : null}
         {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" ? (
           <div className={styles.sheet}>
             <article>
