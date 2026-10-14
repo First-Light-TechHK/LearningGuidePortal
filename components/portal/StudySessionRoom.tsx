@@ -688,7 +688,18 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
           {controls.includes("share") ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => void setMedia("share", !sharing).catch(() => setSharing(false))}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
           {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
-          {controls.includes("raise-hand") ? <button type="button" aria-pressed={Boolean(roomApi?.localParticipant.identity && hands.includes(roomApi.localParticipant.identity))} disabled={!connected} onClick={() => { const identity = roomApi?.localParticipant.identity || ""; if (!identity) return; const raised = !hands.includes(identity); setHands((items) => raisedHands(items, identity, raised)); void publish({ type: "raise-hand", raised }); }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
+          {controls.includes("raise-hand") ? <button type="button" aria-pressed={Boolean(roomApi?.localParticipant.identity && hands.includes(roomApi.localParticipant.identity))} disabled={!connected} onClick={() => {
+            const identity = roomApi?.localParticipant.identity || "";
+            if (!identity) return;
+            const raised = !hands.includes(identity);
+            setHands((items) => raisedHands(items, identity, raised));
+            // The optimistic toggle is reconciled with the publish result (hunt
+            // M5 pattern, audit F-3): a rejected broadcast reverts the local
+            // hand — but only while the failed intent is still the current
+            // state, so a newer click is never undone. No resend button and no
+            // error strip: a transient hand is retried by clicking again.
+            void publish({ type: "raise-hand", raised }).catch(() => setHands((items) => (items.includes(identity) === raised ? raisedHands(items, identity, !raised) : items)));
+          }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
           {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
         </div>
       </div>

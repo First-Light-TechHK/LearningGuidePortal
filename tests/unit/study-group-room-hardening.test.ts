@@ -95,6 +95,19 @@ test("hunt M5: chat is length-capped and a failed publish is marked, not silentl
   assert.match(room, /\{line\.failed \? <p className=\{styles\.alert\} role="alert">\{copy\.errors\.error\} <button className=\{styles\.textButton\} type="button" onClick=\{\(\) => void sendChatLine\(line\)\}>\{roomCopy\.send\}<\/button><\/p> : null\}/);
 });
 
+test("audit F-3: a failed raise-hand broadcast reverts the optimistic toggle", () => {
+  const room = roomSource();
+  // The raise-hand toggle is an optimistic local broadcast like a chat line
+  // (hunt M5): a rejected publish (network drop mid-room, oversized frame)
+  // must not leave the local button claiming a state the room never heard.
+  // The revert is guarded by the intent that failed, so a newer click that
+  // already flipped the state is never undone.
+  assert.match(
+    room,
+    /void publish\(\{ type: "raise-hand", raised \}\)\.catch\(\(\) => setHands\(\(items\) => \(items\.includes\(identity\) === raised \? raisedHands\(items, identity, !raised\) : items\)\)\);/
+  );
+});
+
 test("hunt M5: the tutor queue enforces the learning-page limit at the service", () => {
   const service = readFileSync(new URL("../../modules/group-study/service.ts", import.meta.url), "utf8");
   assert.match(service, /const TUTOR_REQUEST_MAX_LENGTH = 4000;/);
