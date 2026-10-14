@@ -5,6 +5,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
+import { parseRoomDataMessage } from "@/modules/group-study/roomData";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -215,30 +216,33 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setErrorCode("connect_failed");
     };
     room.on(RoomEvent.DataReceived, (payload, participant) => {
-      const message = JSON.parse(new TextDecoder().decode(payload)) as { type: string; id?: string; text?: string; raised?: boolean; mode?: string };
+      // The parser enforces the room's trust boundary (hunt M2): server
+      // messages arrive without a participant while member messages always
+      // carry one, only the server may speak as the AI Tutor, and malformed
+      // payloads are dropped instead of thrown.
+      const message = parseRoomDataMessage(payload, !participant);
+      if (!message) return;
       const from = participant?.name || participant?.identity || "participant";
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
-      // An "unavailable" tutor message carries an empty text by contract, so
-      // the empty-text guard lets exactly that case through.
-      if (message.type === "tutor" && (message.text || message.mode === "unavailable")) {
+      if (message.type === "tutor") {
         // The server republishes a crashed tutor answer with the same message
         // id; keying the line by that id drops the repeat instead of
         // double-rendering it.
         setChat((items) => tutorChatLines(items, {
           id: message.id ? `tutor-${message.id}` : `tutor-${items.length}`,
           from: roomCopy.tutorName,
-          text: message.text || "",
+          text: message.text,
           at: chatStamp(),
           tutor: true,
-          mode: message.mode === "general" || message.mode === "unavailable" ? message.mode : "course"
+          mode: message.mode
         }));
         setSideTab("chat");
         return;
       }
-      if (message.type === "chat" && message.text) setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text || "", at: chatStamp(), host: hostIds.has(participant?.identity || "") }]);
+      if (message.type === "chat") setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text, at: chatStamp(), host: hostIds.has(participant?.identity || "") }]);
       if (message.type === "raise-hand") {
         const identity = participant?.identity || "";
-        setHands((items) => raisedHands(items, identity, message.raised !== false));
+        setHands((items) => raisedHands(items, identity, message.raised));
       }
     });
     const paint = () => {
