@@ -5,7 +5,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { sessionStateLabel, studyGroupErrorPlace, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
+import { sessionStateLabel, studyGroupErrorPlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
+import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
 import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
@@ -82,6 +83,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [createdGroup, setCreatedGroup] = useState<{ id: string; title: string; courseTitle: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [mutating, setMutating] = useState<string | null>(null);
   const [editingSession, setEditingSession] = useState<StudySession | null>(null);
   const [waitingSession, setWaitingSession] = useState<StudySession | null>(null);
   const [attendees, setAttendees] = useState<StudySession["attendees"]>([]);
@@ -311,6 +313,45 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       await loadLists();
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function runSessionMutation(action: "plan" | "cancel-attendance" | "cancel-session", session: StudySession) {
+    if (!selected || mutating) return;
+    const groupId = selected.id;
+    setMutating(`${action}:${session.id}`);
+    try {
+      const result = await studyGroupRequest(`/api/study-groups/sessions/${session.id}/${action}`, { method: "POST", body: "{}" });
+      const outcome = studyGroupMutation({ action, result });
+      if (!outcome.ok) {
+        setErrorCode(outcome.errorCode);
+        return;
+      }
+      setErrorCode("ok");
+      await openGroup(groupId);
+    } finally {
+      setMutating(null);
+    }
+  }
+
+  async function runLeaveGroup() {
+    if (!selected || mutating) return;
+    setMutating("leave");
+    try {
+      const result = await studyGroupRequest(`/api/study-groups/${selected.id}/leave`, { method: "POST", body: "{}" });
+      const outcome = studyGroupMutation({ action: "leave", result });
+      if (!outcome.ok) {
+        setErrorCode(outcome.errorCode);
+        return;
+      }
+      setErrorCode("ok");
+      if (outcome.clearSelection) {
+        setSelected(null);
+        setSelectedId(null);
+      }
+      await loadLists();
+    } finally {
+      setMutating(null);
     }
   }
 
@@ -559,10 +600,10 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <div className={styles.row}>
                     {selected.role === "host" && session.state === "starting_soon" && !sessionNotStarted(session) ? <button className={styles.primary} type="button" onClick={() => void startSession(session)}>{copy.start}</button> : null}
                     {!sessionNotStarted(session) && (session.state === "live" || (session.state === "starting_soon" && selected.role !== "host")) ? <button className={styles.primary} type="button" disabled={session.occupancy >= session.maxParticipants} onClick={() => void enter(session)}>{session.occupancy >= session.maxParticipants ? copy.sessionFull : copy.joinNow}</button> : null}
-                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && selected.role === "member" && !session.viewerPlanned ? <><button className={styles.primary} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/plan`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.plan}</button><p className={styles.planNote}>{copy.planNote}</p></> : null}
-                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel-attendance`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelAttendance}</button> : null}
+                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && selected.role === "member" && !session.viewerPlanned ? <><button className={styles.primary} type="button" disabled={mutating !== null} onClick={() => void runSessionMutation("plan", session)}>{copy.plan}</button><p className={styles.planNote}>{copy.planNote}</p></> : null}
+                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <button className={styles.danger} type="button" disabled={mutating !== null} onClick={() => void runSessionMutation("cancel-attendance", session)}>{copy.cancelAttendance}</button> : null}
                     {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.ghost} type="button" onClick={() => openEditSession(session)}>{copy.editSession}</button> : null}
-                    {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelSession}</button> : null}
+                    {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.danger} type="button" disabled={mutating !== null} onClick={() => void runSessionMutation("cancel-session", session)}>{copy.cancelSession}</button> : null}
                     <button className={styles.textButton} type="button" onClick={() => { setAttendeeSessionId(session.id); setAttendees(session.attendees); setDialog("attendees"); }}>{copy.viewAttendees}<span aria-hidden="true"> ›</span></button>
                   </div>
                 </article>
@@ -575,7 +616,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{member.displayName.slice(0, 1)}</span><span>{member.displayName}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
               {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
-              {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/${selected.id}/leave`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.leaveGroup}</button></div> : null}
+              {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" disabled={mutating !== null} onClick={() => void runLeaveGroup()}>{copy.leaveGroup}</button></div> : null}
             </aside>
           </div>
         ) : null}

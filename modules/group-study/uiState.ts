@@ -53,6 +53,20 @@ export function studyGroupErrorPlace(input: { status: PaneStatus; dialog: StudyG
   return "none";
 }
 
+export type StudyGroupMutationAction = "plan" | "cancel-attendance" | "cancel-session" | "leave";
+
+/**
+ * M3: Plan / Cancel Attendance / Cancel Session / Leave Group advance the UI only
+ * after the server confirms the mutation. A failure reports its code through the
+ * single errorCode slot and the sheet stays as it was; only a successful Leave
+ * Group clears the selected panel, so a failed cancel can never look like a fake
+ * success that the 3s poll then undoes.
+ */
+export function studyGroupMutation(input: { action: StudyGroupMutationAction; result: { ok: boolean; code: string } }): { ok: true; clearSelection: boolean } | { ok: false; errorCode: string } {
+  if (!input.result.ok) return { ok: false, errorCode: input.result.code };
+  return { ok: true, clearSelection: input.action === "leave" };
+}
+
 /**
  * BUG-0100: the reminder strip rendered the same notification body twice when the
  * server list carried two identical entries. Collapse repeated bodies to one row

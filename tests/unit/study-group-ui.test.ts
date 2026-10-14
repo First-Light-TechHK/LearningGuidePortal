@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupPane, uniqueReminderBodies } from "../../modules/group-study/uiState";
+import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "../../modules/group-study/uiState";
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
@@ -685,6 +685,41 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.equal(zh.studyGroupsPage.cancelGroupConfirmTitle, "取消这个学习小组？");
   assert.equal(en.studyGroupsPage.confirmCancelGroup, "Upcoming Live Sessions will be removed, a Live Session that is already open will end, and members will be notified.");
   assert.equal(zh.studyGroupsPage.confirmCancelGroup, "未开始的直播课会被移除，已经开始的直播课会结束，并通知成员。");
+});
+
+test("Plan, Cancel Attendance, Cancel Session, and Leave Group only advance the UI after the server confirms", () => {
+  // M3: a failed mutation reports its code through the one errorCode slot and leaves
+  // the sheet alone; only a successful Leave Group may clear the selected panel.
+  assert.deepEqual(studyGroupMutation({ action: "plan", result: { ok: false, code: "forbidden" } }), { ok: false, errorCode: "forbidden" });
+  assert.deepEqual(studyGroupMutation({ action: "cancel-attendance", result: { ok: false, code: "conflict" } }), { ok: false, errorCode: "conflict" });
+  assert.deepEqual(studyGroupMutation({ action: "cancel-session", result: { ok: false, code: "forbidden" } }), { ok: false, errorCode: "forbidden" });
+  assert.deepEqual(studyGroupMutation({ action: "leave", result: { ok: false, code: "error" } }), { ok: false, errorCode: "error" });
+  assert.deepEqual(studyGroupMutation({ action: "plan", result: { ok: true, code: "ok" } }), { ok: true, clearSelection: false });
+  assert.deepEqual(studyGroupMutation({ action: "cancel-attendance", result: { ok: true, code: "ok" } }), { ok: true, clearSelection: false });
+  assert.deepEqual(studyGroupMutation({ action: "cancel-session", result: { ok: true, code: "ok" } }), { ok: true, clearSelection: false });
+  assert.deepEqual(studyGroupMutation({ action: "leave", result: { ok: true, code: "ok" } }), { ok: true, clearSelection: true });
+
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // One guarded runner serves the three session mutations and disables its button
+  // while the request is in flight (the Cancel Group cancelling pattern).
+  assert.match(app, /const \[mutating, setMutating\] = useState<string \| null>\(null\)/);
+  assert.match(app, /async function runSessionMutation\(action: "plan" \| "cancel-attendance" \| "cancel-session", session: StudySession\) \{\s*if \(!selected \|\| mutating\) return;/);
+  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runSessionMutation\("plan", session\)\}/);
+  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runSessionMutation\("cancel-attendance", session\)\}/);
+  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runSessionMutation\("cancel-session", session\)\}/);
+  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runLeaveGroup\(\)\}/);
+  assert.match(app, /async function runLeaveGroup\(\) \{\s*if \(!selected \|\| mutating\) return;/);
+  // Every failure lands only in the shared slot; the unconditional panel wipe is gone.
+  assert.equal(app.split("setErrorCode(outcome.errorCode)").length - 1, 2);
+  assert.match(app, /if \(outcome\.clearSelection\) \{\s*setSelected\(null\);\s*setSelectedId\(null\);\s*\}/);
+  // The silent fire-and-forget handlers are gone.
+  assert.equal(app.includes("onClick={async () => { await studyGroupRequest("), false);
+  assert.equal(app.includes("}); await openGroup(selected.id); }}"), false);
+  // The five button labels are still rendered from copy.
+  assert.match(app, /runSessionMutation\("plan", session\)\}>\{copy\.plan\}/);
+  assert.match(app, /runSessionMutation\("cancel-attendance", session\)\}>\{copy\.cancelAttendance\}/);
+  assert.match(app, /runSessionMutation\("cancel-session", session\)\}>\{copy\.cancelSession\}/);
+  assert.match(app, /runLeaveGroup\(\)\}>\{copy\.leaveGroup\}/);
 });
 
 test("the Create Study Group dialog is centred on the viewport like the module's other dialogs", () => {
