@@ -35,8 +35,17 @@ export type StudyGroupDetail = {
 export type StudyGroupResponse<T> = { ok: boolean; code: string; message: string; data: T };
 
 export async function studyGroupRequest<T>(url: string, init?: RequestInit): Promise<StudyGroupResponse<T>> {
-  const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
-  return response.json() as Promise<StudyGroupResponse<T>>;
+  try {
+    const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
+    return await response.json() as StudyGroupResponse<T>;
+  } catch {
+    // F-1 (dev audit 2026-10-14): a rejected fetch (offline, DNS failure) or a non-JSON
+    // body (a gateway error page) used to reject at the await, skip every caller's !ok
+    // branch and surface as an unhandled rejection with no UI feedback. Resolve a
+    // synthetic failure instead so the existing single error slot renders it; callers
+    // that still carry a catch keep it as belt-and-braces only.
+    return { ok: false, code: "network", message: "", data: null as T };
+  }
 }
 
 export const SESSION_TITLE_MAX = 20;

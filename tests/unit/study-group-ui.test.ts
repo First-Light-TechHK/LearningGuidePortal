@@ -4,7 +4,7 @@ import { participantStatus, raisedHands, sessionControls, sessionStateLabel, stu
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
-import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, tutorQueueBody } from "../../components/portal/studyGroupClient";
+import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
 
 test("schedule duration is a required dropdown of 30, 45, 60, and 90 minutes", () => {
   assert.deepEqual([...DURATION_MINUTE_CHOICES], [30, 45, 60, 90]);
@@ -809,4 +809,35 @@ test("the Study Group popups are real modals: showModal, Escape close, focus in,
   assert.match(modal, /previousFocus\?\.focus\(\)/);
   assert.match(modal, /onCancel=\{event => \{ event\.preventDefault\(\); if \(!busy\) onClose\(\); \}\}/);
   assert.match(modal, /onKeyDown=\{keepFocusInDialog\}/);
+});
+
+test("a rejected fetch or a non-JSON body resolves as a network failure instead of an unhandled rejection", async () => {
+  // F-1 (dev audit 2026-10-14): studyGroupRequest awaited fetch and response.json()
+  // unguarded, so an offline click (Plan / Cancel / Leave / Create / Join) rejected at
+  // the await, skipped every !ok branch, and produced an unhandled rejection with no
+  // visible feedback. The wrapper now synthesises {ok:false, code:"network"} so the
+  // existing single error slot (fe40699) renders it; callers that still carry a catch
+  // keep it as belt-and-braces only.
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (() => Promise.reject(new TypeError("Failed to fetch"))) as typeof fetch;
+    assert.deepEqual(await studyGroupRequest("/api/study-groups?view=mine"), { ok: false, code: "network", message: "", data: null });
+    globalThis.fetch = (() => Promise.resolve(new Response("<html>502 Bad Gateway</html>", { status: 502 }))) as typeof fetch;
+    assert.deepEqual(await studyGroupRequest("/api/study-groups?view=mine"), { ok: false, code: "network", message: "", data: null });
+    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify({ ok: false, code: "error", message: "Study Group request failed.", data: null }), { status: 500 }))) as typeof fetch;
+    assert.deepEqual(await studyGroupRequest("/api/study-groups?view=mine"), { ok: false, code: "error", message: "Study Group request failed.", data: null });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const client = readFileSync(new URL("../../components/portal/studyGroupClient.ts", import.meta.url), "utf8");
+  assert.match(client, /catch \{[\s\S]{0,500}?return \{ ok: false, code: "network", message: "", data: null as T \};/);
+  // The change-path handlers keep the fe40699 contract: the synthesised failure lands in
+  // the one error slot, no new display point is added, and "network" renders the generic
+  // copy (there is deliberately no copy.errors.network key; the lookup falls back).
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.equal(app.split('{errorPlace === "').length - 1, 3);
+  assert.match(app, /if \(!outcome\.ok\) \{\s*setErrorCode\(outcome\.errorCode\);\s*return;\s*\}/);
+  assert.match(app, /if \(!result\.ok\) \{ setErrorCode\(result\.code\); return; \} await loadLists\(\); await openGroup\(selected\.id\);/);
+  assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
+  assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
 });
