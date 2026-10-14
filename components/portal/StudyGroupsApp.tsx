@@ -562,7 +562,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         {pane.kind === "empty" && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
         {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("ok"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
         {dialog === "create" ? (
-          <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
+          <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={creating}>
             <form className={styles.createForm} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
               <h2 id="study-group-dialog-title">{copy.create}</h2>
               <p className={styles.lead}>{copy.createLead}</p>
@@ -572,7 +572,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <div className={styles.actions}><button className={styles.ghost} type="button" onClick={closeDialog}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
               {errorPlace === "create" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
             </form>
-          </dialog>
+          </PortalDialog>
         ) : null}
         {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" && !createdGroup ? (
           <div className={styles.sheet}>
@@ -637,7 +637,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         ) : null}
       </section>
       {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" || dialog === "waiting" || dialog === "attendees" ? (
-        <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
+        <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={dialog === "waiting" ? closeWaiting : closeDialog}>
           <form method="dialog" onSubmit={(event) => { event.preventDefault(); const formElement = event.currentTarget; if (!formElement.reportValidity()) return; const form = new FormData(formElement); if (dialog === "edit") void submitEdit(form); if (dialog === "edit-session") void submitEditSession(form); if (dialog === "schedule") void submitSchedule(form); }}>
             {dialog !== "waiting" ? <h2 id="study-group-dialog-title">{dialog === "schedule" ? copy.schedule : dialog === "attendees" ? copy.viewAttendees : dialog === "edit-session" ? copy.editSession : dialog === "edit" ? copy.editGroup : copy.create}</h2> : null}
             {dialog === "waiting" && waitingSession ? (
@@ -687,10 +687,10 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               </div>
             )}
           </form>
-        </dialog>
+        </PortalDialog>
       ) : null}
       {dialog === "cancel-group" ? (
-        <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
+        <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={cancelling}>
           <form method="dialog" onSubmit={(event) => { event.preventDefault(); void submitCancelGroup(); }}>
             <h2 id="study-group-dialog-title">{copy.cancelGroupConfirmTitle}</h2>
             <p className={styles.confirmBody}>{copy.confirmCancelGroup}</p>
@@ -698,7 +698,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <button className={styles.ghost} type="button" onClick={closeDialog} disabled={cancelling}>{copy.cancel}</button><button className={styles.danger} type="submit" disabled={cancelling}>{copy.cancelGroup}</button>
             </div>
           </form>
-        </dialog>
+        </PortalDialog>
       ) : null}
     </div>
   );

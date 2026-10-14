@@ -673,7 +673,8 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.match(app, /const \[cancelling, setCancelling\] = useState\(false\)/);
   assert.match(app, /<button className=\{styles\.danger\} type="button" onClick=\{\(\) => setDialog\("cancel-group"\)\}>\{copy\.cancelGroup\}<\/button>/);
   assert.match(app, /async function submitCancelGroup\(\) \{\s*if \(!selected \|\| cancelling\) return;/);
-  assert.match(app, /\{dialog === "cancel-group" \? \(\n\s*<dialog open className=\{styles\.modal\} aria-modal="true" aria-labelledby="study-group-dialog-title">/);
+  // L2: the confirm renders through the shared native modal (PortalDialog) with the module's centred overlay.
+  assert.match(app, /\{dialog === "cancel-group" \? \(\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{cancelling\}>/);
   assert.match(app, /<h2 id="study-group-dialog-title">\{copy\.cancelGroupConfirmTitle\}<\/h2>/);
   assert.match(app, /<p className=\{styles\.confirmBody\}>\{copy\.confirmCancelGroup\}<\/p>/);
   assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{cancelling\}>\{copy\.cancel\}<\/button><button className=\{styles\.danger\} type="submit" disabled=\{cancelling\}>\{copy\.cancelGroup\}<\/button>/);
@@ -727,8 +728,8 @@ test("the Create Study Group dialog is centred on the viewport like the module's
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   // BUG-0096: the create form was an inline page panel (160px top margin inside the
   // column right of the 460px sidebar), so it sat below/right of the viewport centre.
-  // It now renders inside the same fixed, centred overlay the module's dialogs use.
-  assert.match(app, /\{dialog === "create" \? \(\n\s*<dialog open className=\{styles\.modal\} aria-modal="true" aria-labelledby="study-group-dialog-title">/);
+  // It now renders inside the shared native modal (PortalDialog) with the same fixed, centred overlay.
+  assert.match(app, /\{dialog === "create" \? \(\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{creating\}>/);
   assert.match(app, /<form className=\{styles\.createForm\} onSubmit=\{\(event\) => \{ event\.preventDefault\(\); void submitCreate\(new FormData\(event\.currentTarget\)\); \}\}>/);
   assert.equal(app.includes("<form className={styles.panel} onSubmit"), false);
   // Centring comes from the shared overlay: fixed full-viewport backdrop, grid centre.
@@ -780,4 +781,27 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p><button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button><\/div> : null\}/);
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
   assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
+});
+
+test("the Study Group popups are real modals: showModal, Escape close, focus in, focus back, Tab contained", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // L2: a bare <dialog open> overlay has no modal semantics - Tab walked into the page
+  // behind, aria-modal="true" was a lie, and Escape did nothing. Every popup now renders
+  // through the shared native modal (PortalDialog), which calls showModal() and owns
+  // focus containment and Escape for the whole module.
+  assert.match(app, /import \{ PortalDialog \} from "\.\/PortalDialog";/);
+  assert.equal(app.includes("<dialog open"), false);
+  assert.match(app, /<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{dialog === "waiting" \? closeWaiting : closeDialog\}>/);
+  // The waiting Close control and the Cancel Group confirm controls keep their closers.
+  // Their busy states make PortalDialog ignore Escape, mirroring the disabled buttons.
+  assert.match(app, /onClick=\{closeWaiting\}>\{copy\.close\}<\/button>/);
+  assert.match(app, /onClose=\{closeDialog\} busy=\{creating\}>/);
+  assert.match(app, /onClose=\{closeDialog\} busy=\{cancelling\}>/);
+  // PortalDialog is where the modal semantics live; pin them so a regression in the
+  // shared component cannot silently turn these popups into fake modals again.
+  const modal = readFileSync(new URL("../../components/portal/PortalDialog.tsx", import.meta.url), "utf8");
+  assert.match(modal, /node\?\.showModal\(\)/);
+  assert.match(modal, /previousFocus\?\.focus\(\)/);
+  assert.match(modal, /onCancel=\{event => \{ event\.preventDefault\(\); if \(!busy\) onClose\(\); \}\}/);
+  assert.match(modal, /onKeyDown=\{keepFocusInDialog\}/);
 });
