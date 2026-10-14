@@ -124,6 +124,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [addressTutor, setAddressTutor] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
+  const [entryAttempt, setEntryAttempt] = useState(0);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
   const permissionWatchRef = useRef<PermissionStatus | null>(null);
@@ -383,9 +384,17 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       if (result.ok) setSeated(true);
       else if (result.code !== "session_not_open") setErrorCode(result.code);
       setEntryDone(true);
+    }).catch(() => {
+      if (cancelled) return;
+      // A network drop or a gateway error page rejects the entry request
+      // (hunt M1): without this branch entryDone stayed false and the page sat
+      // on Loading with no error and no way forward. Surface the connect
+      // failure instead — the retry below re-runs the whole entry request.
+      setErrorCode("connect_failed");
+      setEntryDone(true);
     });
     return () => { cancelled = true; };
-  }, [session?.state, sessionId, left]);
+  }, [session?.state, sessionId, left, entryAttempt]);
 
   useEffect(() => {
     if (session?.state !== "live" || connected || left || !seated) return;
@@ -556,6 +565,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   }
   if ((session.state === "starting_soon" || session.state === "live") && !seated && !entryDone) {
     return <p className={styles.panel} role="status">{copy.loading}</p>;
+  }
+  if ((session.state === "starting_soon" || session.state === "live") && !seated && errorCode) {
+    // Entry finished without a seat: the request failed on its way out or was
+    // refused (hunt M1). Show the failure with a retry that re-runs the entry
+    // request in place instead of leaving the viewer stuck on Loading.
+    return <>{path()}<section className={styles.empty} role="alert"><h1>{copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error}</h1><p>{session.title}</p><button className={styles.primary} type="button" onClick={() => { setErrorCode(""); setEntryDone(false); setEntryAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></section></>;
   }
   if (session.state === "scheduled") {
     return <>{path()}<section className={styles.empty} role="status"><h1>{copy.errors.session_not_open}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{copy.enterWindow}</p></section></>;
