@@ -605,6 +605,19 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
+test("the Schedule dialog keeps long Study Group copy inside its context card", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // BUG-0102: the context card repeats the Group title and About (up to 50/200 chars,
+  // possibly one unbroken word or URL); without a wrap rule that text escaped the 540px
+  // dialog. The rest of the dialog audited clean: centring comes from the shared fixed
+  // overlay, the form is height-capped with internal scrolling, and the 2x2 field grid
+  // stacks to one column below 800px.
+  assert.match(css, /\.contextCard \{[^}]*overflow-wrap: anywhere;[^}]*\}/);
+  assert.match(css, /\.modal \{ position: fixed; inset: 0;[^}]*display: grid; place-items: center; \}/);
+  assert.match(css, /\.modal form \{[^}]*max-height: calc\(100vh - 48px\); overflow: auto;[^}]*\}/);
+  assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.pair[\s\S]*grid-template-columns: 1fr;/);
+});
+
 test("a long About this Study Group string wraps instead of overflowing its column", () => {
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   // BUG-0101: the About body sits in the second facts column (minmax(0, 1fr)); a long

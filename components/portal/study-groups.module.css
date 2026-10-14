@@ -160,7 +160,9 @@
 .waitingFocus { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
 /* 599:755 focus body text is 12px in the design. */
 .waitingFocus + p { font-size: 12px; }
-.contextCard { margin: 16px 0 18px; background: #f7f8fa; border-radius: 8px; padding: 12px; }
+/* BUG-0102: the context card repeats the Group title/About; overflow-wrap is inherited
+   by both, so a long unbroken word or URL stays inside the schedule dialog. */
+.contextCard { margin: 16px 0 18px; background: #f7f8fa; border-radius: 8px; padding: 12px; overflow-wrap: anywhere; }
 .contextCard strong { display: block; font-size: 14px; font-weight: 600; }
 .contextCard span { display: block; margin-top: 6px; color: #6b7280; font-size: 12px; }
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 18px; font-size: 12px; font-weight: 600; }
