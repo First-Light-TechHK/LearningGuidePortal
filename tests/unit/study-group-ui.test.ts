@@ -860,3 +860,16 @@ test("the idle sentinel is its own value so a generic 500 error code renders in 
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
   assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
 });
+
+test("the background group refresh and the unload release beacons never surface unhandled rejections", () => {
+  // F-7/F-8 (dev audit 2026-10-14): refreshOpenGroup (3s poll) and the pagehide /
+  // effect-cleanup leave beacons could reject on a dying network with nothing to catch
+  // them. The request wrapper no longer rejects (F-1), so the poll keeps its silent
+  // failure handling - any code but not_found is ignored and the next tick self-heals -
+  // while the beacons, which run as the page unloads where no UI could ever render,
+  // swallow their rejection explicitly instead of getting a feedback surface.
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /async function refreshOpenGroup\(id: string\) \{\n\s*const result = await studyGroupRequest<StudyGroupDetail>\(`\/api\/study-groups\/\$\{id\}`\);\n\s*if \(openGroupId\.current !== id\) return;\n\s*if \(!result\.ok\) \{\n\s*if \(result\.code === "not_found"\) \{/);
+  assert.equal(app.split("keepalive: true }).catch(() => undefined)").length - 1, 2);
+  assert.equal(app.includes("keepalive: true });"), false);
+});

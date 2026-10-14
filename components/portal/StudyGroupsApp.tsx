@@ -223,7 +223,10 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       const sessionId = waitingHoldRef.current;
       if (!sessionId) return;
       waitingHoldRef.current = null;
-      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
+      // F-8b (dev audit 2026-10-14): the unload beacon is best-effort - the page is
+      // going away, so a rejection has nowhere to render; swallow it silently instead
+      // of leaving an unhandled rejection in the console.
+      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true }).catch(() => undefined);
     };
     window.addEventListener("pagehide", release);
     return () => {
@@ -242,7 +245,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     const held = waitingHoldRef.current;
     if (!held) return;
     waitingHoldRef.current = null;
-    void fetch(`/api/study-groups/sessions/${held}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
+    void fetch(`/api/study-groups/sessions/${held}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true }).catch(() => undefined);
   }, [dialog, waitingSession?.id]);
 
   useEffect(() => {
