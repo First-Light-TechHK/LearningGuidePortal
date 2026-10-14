@@ -605,6 +605,13 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
+test("a long About this Study Group string wraps instead of overflowing its column", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // BUG-0101: the About body sits in the second facts column (minmax(0, 1fr)); a long
+  // unbroken word or URL must break inside the column instead of escaping the sheet.
+  assert.match(css, /\.aboutBody \{[^}]*overflow-wrap: anywhere;[^}]*\}/);
+});
+
 test("Cancel Group confirms in the module's own dialog with cancel/confirm buttons and a busy state", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");

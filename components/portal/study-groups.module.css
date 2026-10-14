@@ -84,7 +84,8 @@
 .facts h3 { margin: 0 0 6px; font-size: 12px; color: #1d6bff; }
 .facts p { margin: 0; }
 .aboutLabel { color: #111827; font-size: 14px; font-weight: 600; }
-.aboutBody { color: #000; opacity: .6; font-size: 12px; }
+/* BUG-0101: About text may be one long word or URL; break it inside the facts column. */
+.aboutBody { color: #000; opacity: .6; font-size: 12px; overflow-wrap: anywhere; }
 .tabRow { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e4e7ec; margin-bottom: 18px; }
 .tab { color: #1d6bff; font-size: 14px; font-weight: 600; border-bottom: 2px solid #1d6bff; padding-bottom: 8px; }
 .countBadge { background: #edf3ff; color: #1d6bff; border-radius: 10px; min-width: 20px; height: 21px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; }
