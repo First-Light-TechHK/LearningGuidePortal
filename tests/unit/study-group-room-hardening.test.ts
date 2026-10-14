@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parseRoomDataMessage } from "../../modules/group-study/roomData";
+import { parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "../../modules/group-study/roomData";
 
 function roomSource() {
   return readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
@@ -79,4 +79,24 @@ test("hunt M2: the room dispatches data messages through the source-checked pars
   const room = roomSource();
   assert.match(room, /const message = parseRoomDataMessage\(payload, !participant\);/);
   assert.equal(room.includes("JSON.parse(new TextDecoder()"), false);
+});
+
+test("hunt M5: chat is length-capped and a failed publish is marked, not silently echoed", () => {
+  const room = roomSource();
+  // The input cap keeps a chat inside LiveKit's data-channel limits; a larger
+  // paste cannot be published at all (the SDK throws Message too large).
+  assert.equal(ROOM_CHAT_MAX_LENGTH, 2000);
+  assert.match(room, /maxLength=\{ROOM_CHAT_MAX_LENGTH\}/);
+  // The optimistic echo is reconciled with the publish result: a failed
+  // publish marks that line and offers a resend instead of claiming success
+  // the other participants never saw.
+  assert.match(room, /return publish\(\{ type: "chat", text: line\.text \}\)\.catch\(\(\) => markChatLine\(line\.id, true\)\);/);
+  assert.match(room, /void sendChatLine\(line\);/);
+  assert.match(room, /\{line\.failed \? <p className=\{styles\.alert\} role="alert">\{copy\.errors\.error\} <button className=\{styles\.textButton\} type="button" onClick=\{\(\) => void sendChatLine\(line\)\}>\{roomCopy\.send\}<\/button><\/p> : null\}/);
+});
+
+test("hunt M5: the tutor queue enforces the learning-page limit at the service", () => {
+  const service = readFileSync(new URL("../../modules/group-study/service.ts", import.meta.url), "utf8");
+  assert.match(service, /const TUTOR_REQUEST_MAX_LENGTH = 4000;/);
+  assert.match(service, /requireText\(input\.text, "AI Tutor request", TUTOR_REQUEST_MAX_LENGTH\)/);
 });

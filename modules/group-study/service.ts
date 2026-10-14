@@ -74,6 +74,11 @@ export type StudyGroupWebhookOutcome = Readonly<{ status: "processed" | "ignored
 // by the repair path.
 const RECONCILE_GRACE_SECONDS = 120;
 
+// The room AI Tutor question shares the learning-page message cap (4000):
+// without it, every extra character of a room question became model input
+// (hunt M5). Enforced at enqueue, before anything is stored.
+const TUTOR_REQUEST_MAX_LENGTH = 4000;
+
 function presenceAgeMs(presence: { enteredAt: string | null; requestedAt: string }): number {
   // The enter path reuses one row per user/session and refreshes BOTH
   // enteredAt and requestedAt on re-entry (`seat()`), so enteredAt is the
@@ -994,7 +999,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async enqueueTutor(input: { actorUserId: string; sessionId: string; text: string; clientEventId: string }) {
-      const text = requiredValue(input.text, "AI Tutor request");
+      const text = requireText(input.text, "AI Tutor request", TUTOR_REQUEST_MAX_LENGTH);
       const clientEventId = requiredValue(input.clientEventId, "Client event id");
       const receivedAt = deps.now().toISOString();
       return deps.repository.update((store) => {

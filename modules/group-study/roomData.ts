@@ -1,6 +1,12 @@
 // Pure helpers for the Live Session room's data channel, kept out of the
 // component so the message contract is unit-testable (bug hunt 2026-10-14).
 
+// The room chat input cap (hunt M5). LiveKit's reliable data channel rejects
+// oversized messages (SCTP maxMessageSize, ~256KB in Chrome) by throwing
+// inside publishData, which the optimistic echo used to swallow; 2000 keeps a
+// comfortable margin under that and matches what a chat message needs.
+export const ROOM_CHAT_MAX_LENGTH = 2000;
+
 export type RoomTutorMessage = { type: "tutor"; id?: string; text: string; mode: "course" | "general" | "unavailable" };
 export type RoomChatMessage = { type: "chat"; text: string };
 export type RoomRaiseHandMessage = { type: "raise-hand"; raised: boolean };

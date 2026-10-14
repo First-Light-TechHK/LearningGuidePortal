@@ -5,7 +5,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
-import { parseRoomDataMessage } from "@/modules/group-study/roomData";
+import { parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -68,7 +68,7 @@ function elapsedClock(startedAt: string | null) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-type ChatLine = { id: string; from: string; text: string; at: string; host?: boolean; tutor?: boolean; mode?: "course" | "general" | "unavailable" };
+type ChatLine = { id: string; from: string; text: string; at: string; host?: boolean; tutor?: boolean; mode?: "course" | "general" | "unavailable"; failed?: boolean };
 
 function endedParts(body: string) {
   const splitAt = body.search(/[.。]\s+\S/);
@@ -128,6 +128,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [entryAttempt, setEntryAttempt] = useState(0);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
+  const chatSequence = useRef(0);
   const permissionWatchRef = useRef<PermissionStatus | null>(null);
   const [clock, setClock] = useState("00:00");
   const shareVideo = useRef<HTMLVideoElement>(null);
@@ -627,6 +628,18 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     await roomApi.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(message)), { reliable: true });
   }
 
+  function markChatLine(id: string, failed: boolean) {
+    setChat((items) => items.map((item) => item.id === id ? { ...item, failed } : item));
+  }
+
+  // The optimistic echo must not claim success the room never saw (hunt M5):
+  // publishData rejects (for example "Message too large") instead of sending,
+  // so the line is marked failed and can be resent from the marker.
+  function sendChatLine(line: ChatLine) {
+    markChatLine(line.id, false);
+    return publish({ type: "chat", text: line.text }).catch(() => markChatLine(line.id, true));
+  }
+
   function updateMention(value: string, caret: number) {
     const upToCaret = value.slice(0, caret);
     const at = upToCaret.lastIndexOf("@");
@@ -709,7 +722,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                           : <span key={index} className={styles.tutorRow}>{row}</span>)}
                       </>}
                 </p>
-              ) : <p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>}</article>)}
+              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {
@@ -720,12 +733,13 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               const hasPrefix = text.startsWith(prefix);
               const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled;
               const chatText = mentionsTutor && !hasPrefix ? `${roomCopy.aiTutor} ${text}` : text;
-              void publish({ type: "chat", text: chatText });
-              setChat((items) => [...items, { id: `local-${items.length}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" }]);
+              const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" };
+              setChat((items) => [...items, line]);
+              void sendChatLine(line);
               if (mentionsTutor) {
                 void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody((hasPrefix ? text.slice(prefix.length) : text).trim())) }).then((queued) => {
                   if (!queued.ok) setErrorCode(queued.code);
-                });
+                }).catch(() => setErrorCode("error"));
               }
               setMention(null);
               setDraft("");
@@ -742,7 +756,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                   ))}
                 </div>
               ) : null}
-              <input ref={chatInputRef} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
+              <input ref={chatInputRef} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
                 // IME composition (Chinese/Japanese input): Enter picks the candidate and
                 // Escape/arrows drive the IME — the mention popup must not steal those.
                 if (event.nativeEvent.isComposing || event.keyCode === 229) return;

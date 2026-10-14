@@ -319,6 +319,20 @@ test("AI Tutor enqueue is idempotent and does not issue a token or call a model"
     }, token, { sessionId });
     assert.equal(replay.status, 200);
     assert.equal((await replay.json()).data.id, body.data.id);
+    // The learning-page AI Tutor cap (4000) applies to the room queue too:
+    // over the limit is a validation failure, not an unbounded model prompt.
+    const tooLong = await call(postTutor, `http://localhost/api/study-groups/sessions/${sessionId}/tutor`, {
+      text: "x".repeat(4001),
+      clientEventId: "evt-api-too-long"
+    }, token, { sessionId });
+    assert.equal(tooLong.status, 400);
+    assert.equal((await tooLong.json()).code, "validation");
+    const atLimit = await call(postTutor, `http://localhost/api/study-groups/sessions/${sessionId}/tutor`, {
+      text: "x".repeat(4000),
+      clientEventId: "evt-api-at-limit"
+    }, token, { sessionId });
+    assert.equal(atLimit.status, 200);
+    assert.equal((await atLimit.json()).data.text.length, 4000);
     const stored = JSON.parse(await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8")) as { tutorRequests: Array<{ clientEventId: string }>; presences: Array<{ sessionId: string; leftAt: string | null }>; chat?: unknown };
     assert.equal(stored.tutorRequests.filter((item) => item.clientEventId === "evt-api-1").length, 1);
     assert.equal(stored.chat, undefined);

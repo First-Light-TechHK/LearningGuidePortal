@@ -897,6 +897,30 @@ test("an AI Tutor request is queued for the live session without a model, a seat
   }
 });
 
+test("an AI Tutor request beyond the learning-page limit is refused before anything is stored", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Long question", courseId: "course-1", about: "About the limit." });
+  const session = await service.scheduleSession({
+    actorUserId: "host",
+    groupId: group.id,
+    title: "Limit session",
+    startsAt: "2026-09-19T02:06:00.000Z",
+    durationSeconds: 1800,
+    maxParticipants: 4,
+    aiTutorEnabled: true
+  });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  // The limit matches the learning-page AI Tutor message cap (4000).
+  await assert.rejects(
+    () => service.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "x".repeat(4001), clientEventId: "evt-too-long" }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const accepted = await service.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "x".repeat(4000), clientEventId: "evt-at-limit" });
+  assert.equal(accepted.text.length, 4000);
+  const stored = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.deepEqual(stored.map((item) => item.clientEventId), ["evt-at-limit"]);
+});
+
 test("tutor requests stay one asker per item and follow server receipt order", async () => {
   access.add("queue-member:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Queue group", courseId: "course-1", about: "Queue about." });
