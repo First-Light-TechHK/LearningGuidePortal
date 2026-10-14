@@ -8,9 +8,12 @@ import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } 
 import { LiveKitGatewayError } from "../../modules/group-study/liveKitGateway";
 import { openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
+import { emptyStore, type StudyGroupStore } from "../../modules/group-study/domain";
+import { createReminderListReader } from "../../modules/group-study/runtime";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
 import { parseLiveKitProjects } from "../../modules/group-study/liveKitProjectRegistry";
+import { recordUserNotification, withdrawStudyGroupReminders } from "../../services/productStore";
 
 const NOW = "2026-09-19T02:00:00.000Z";
 let directory: string;
@@ -1190,6 +1193,65 @@ test("the reminders view is served through the service port", async () => {
     listReminders: async (userId) => [{ body: `${userId} reminder`, createdAt: "2026-09-19T02:00:00.000Z" }]
   });
   assert.deepEqual(await withReminders.listReminders("host"), [{ body: "host reminder", createdAt: "2026-09-19T02:00:00.000Z" }]);
+});
+
+// Audit F-6: the reminders strip is polled every 3 s by every signed-in
+// client, and the reader took an unconditional full Study Group store read
+// per request. The reader now takes its snapshot lazily — only when the
+// viewer actually has a candidate reminder row — and once per call shared
+// by every row, with no cache across calls. Assertions count repository
+// reads.
+test("audit F-6: the reminders reader only touches the Study Group store when a candidate row exists", async () => {
+  const cwdBefore = process.cwd();
+  const env = { ...process.env };
+  const directory = await mkdtemp(path.join(tmpdir(), "lg-study-group-reminder-reads-"));
+  process.chdir(directory);
+  process.env.APP_ENV = "DEV";
+  process.env.STORAGE_BACKEND = "local";
+  delete process.env.DATABASE_URL;
+  delete process.env.STUDY_GROUP_STORE;
+  try {
+    const startsAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    const store: StudyGroupStore = emptyStore();
+    store.groups.push({ id: "g1", title: "Reads group", courseId: "course-1", about: "About the reads.", hostUserId: "viewer", status: "active", createdAt: startsAt, updatedAt: startsAt });
+    store.memberships.push({ id: "m1", groupId: "g1", userId: "viewer", role: "host", joinedAt: startsAt, leftAt: null });
+    for (const id of ["s1", "s2"]) {
+      store.sessions.push({ id, groupId: "g1", title: `Session ${id}`, relatedLessonId: null, startsAt, durationSeconds: 1800, maxParticipants: 4, focus: null, aiTutorEnabled: false, liveKitProjectId: null, status: "scheduled", startedAt: null, completedAt: null, createdAt: startsAt, updatedAt: startsAt });
+    }
+    let reads = 0;
+    const reader = createReminderListReader({ read: async () => { reads += 1; return store; } });
+
+    await recordUserNotification("viewer", "Live Session reminder", "Session s1 starts in 10 minutes.", "s1");
+    await recordUserNotification("viewer", "Live Session reminder", "Session s2 starts in 10 minutes.", "s2");
+    await recordUserNotification("quiet", "Order receipt", "Not a reminder.");
+
+    // A viewer with no candidate reminder rows never takes the store read —
+    // the common case under the 3 s poll.
+    assert.deepEqual(await reader("quiet"), []);
+    assert.equal(reads, 0, "no candidate rows means no store read");
+
+    // Candidate rows are judged against one shared snapshot per call, even
+    // with several rows in play.
+    const shown = await reader("viewer");
+    assert.equal(shown.length, 2);
+    assert.equal(reads, 1, "one read serves every candidate row of a call");
+
+    // No cache across calls: moving the Sessions out of the window hides
+    // them on the very next call, still through exactly one fresh read.
+    for (const session of store.sessions) session.startsAt = new Date(Date.now() + 6 * 60 * 60_000).toISOString();
+    assert.deepEqual(await reader("viewer"), []);
+    assert.equal(reads, 2);
+
+    // Withdrawing the rows (what the cancelling actions write) empties the
+    // view without any further store read — cancellation stays immediate.
+    await withdrawStudyGroupReminders({ sessionIds: ["s1", "s2"], userId: "viewer" });
+    assert.deepEqual(await reader("viewer"), []);
+    assert.equal(reads, 2, "withdrawn rows are gone before the store is needed");
+  } finally {
+    process.chdir(cwdBefore);
+    process.env = env;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("a full session refuses the Host when six people are already in", async () => {

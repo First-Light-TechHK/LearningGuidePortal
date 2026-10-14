@@ -117,6 +117,24 @@ export function studyGroupReminderNotificationStillValid(
   });
 }
 
+// The reminders view's reader (audit F-6): the strip is polled every 3 s by
+// every signed-in client, and the validity predicate needs the full Study
+// Group store only when the viewer actually has a candidate reminder row —
+// then exactly one snapshot per call, shared by every row, with no cache
+// across calls (each call judges against that request's own state, so a
+// rescheduled or started Session is filtered on the very next poll). A
+// viewer without pending rows never touches the store; the cancelling
+// actions keep withdrawing their rows from storage, so a cancelled reminder
+// disappears immediately, without any read. Exported for the unit test that
+// pins the read behaviour.
+export function createReminderListReader(repository: { read(): Promise<StudyGroupStore> }) {
+  return async (userId: string) => {
+    let snapshot: Promise<StudyGroupStore> | null = null;
+    return listStudyGroupReminders(userId, (item) =>
+      (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
+  };
+}
+
 const services = new Map<string, StudyGroupService>();
 const liveKitHealthServices = new Map<string, LiveKitHealthService>();
 const liveKitRuntimes = new Map<string, ReturnType<typeof liveKitRuntime>>();
@@ -276,11 +294,10 @@ export function studyGroupService() {
     // The reminders view reads the pending "Live Session reminder" rows and
     // re-checks each one against the current store through the module's own
     // validity rule: the read-side backstop behind the cancelling actions'
-    // withdrawals (BUG-0109).
-    listReminders: async (userId) => {
-      const store = await repository.read();
-      return listStudyGroupReminders(userId, (item) => studyGroupReminderNotificationStillValid(store, userId, item));
-    },
+    // withdrawals (BUG-0109), taken lazily (audit F-6) so a viewer with no
+    // candidate rows — the common case under the 3 s poll — performs no
+    // Study Group store read at all.
+    listReminders: createReminderListReader(repository),
     withdrawReminders: async (input) => {
       await withdrawStudyGroupReminders(input);
     },
