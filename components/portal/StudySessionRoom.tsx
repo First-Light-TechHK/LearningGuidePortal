@@ -147,18 +147,25 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   groupRef.current = group;
 
   async function load() {
-    const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${sessionId}`);
-    if (!current.ok) {
-      setErrorCode(current.code);
-      if (current.code === "not_found") {
-        setSession(null);
-        await releaseRoom();
+    try {
+      const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${sessionId}`);
+      if (!current.ok) {
+        setErrorCode(current.code);
+        if (current.code === "not_found") {
+          setSession(null);
+          await releaseRoom();
+        }
+        return;
       }
-      return;
+      const detail = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${current.data.groupId}`);
+      setSession(current.data);
+      if (detail.ok) setGroup(detail.data);
+    } catch {
+      // A fetch rejection (network drop, a gateway's non-JSON error page) must
+      // not surface as an unhandled rejection (audit F-7): the panel keeps its
+      // current Loading/error state and the 3 s poll retries until it heals —
+      // no separate error face for a failure the poll already owns.
     }
-    const detail = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${current.data.groupId}`);
-    setSession(current.data);
-    if (detail.ok) setGroup(detail.data);
   }
 
   async function connect(generation: number, recovery: boolean) {
@@ -521,7 +528,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       releasedRef.current = true;
       leftRef.current = true;
       await releaseRoom();
-      await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" });
+      // The leave POST is best-effort (audit F-8): a rejection must not skip
+      // the navigation below — the closed seat is owned by the webhook or the
+      // reconcile sweep, never by a stuck breadcrumb.
+      await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }).catch(() => undefined);
     }
     window.location.assign(href);
   }
@@ -700,7 +710,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
             // error strip: a transient hand is retried by clicking again.
             void publish({ type: "raise-hand", raised }).catch(() => setHands((items) => (items.includes(identity) === raised ? raisedHands(items, identity, !raised) : items)));
           }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
-          {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
+          {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }).catch(() => undefined); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
         </div>
       </div>
       <aside className={styles.side} aria-label={sideTab === "participants" ? roomCopy.participants : roomCopy.chat}>

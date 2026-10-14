@@ -108,6 +108,35 @@ test("audit F-3: a failed raise-hand broadcast reverts the optimistic toggle", (
   );
 });
 
+test("audit F-7: a rejected load cannot surface as an unhandled rejection", () => {
+  const room = roomSource();
+  const loadStart = room.indexOf("async function load()");
+  assert.notEqual(loadStart, -1);
+  const loadBody = room.slice(loadStart, room.indexOf("async function connect"));
+  // The whole body — the session fetch and the group detail — is guarded: a
+  // fetch rejection (offline, a gateway's error page) returns quietly and the
+  // 3 s poll retries; the panel keeps its current Loading/error state until
+  // the retry heals. The not_found handoff must stay inside the guarded body.
+  assert.match(loadBody, /try \{/);
+  assert.match(loadBody, /\} catch \{/);
+  assert.match(loadBody, /setSession\(null\)/);
+});
+
+test("audit F-8: a failed leave request cannot skip the room's cleanup", () => {
+  const room = roomSource();
+  // Breadcrumb navigation (exitTo): the leave POST is best-effort — a
+  // rejection must not stop the navigation (the seat is closed by the
+  // webhook or the reconcile, never by a stuck button).
+  const exitStart = room.indexOf("async function exitTo");
+  assert.notEqual(exitStart, -1);
+  const exitBody = room.slice(exitStart, room.indexOf("function path()"));
+  assert.match(exitBody, /await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\)\.catch\(\(\) => undefined\);/);
+  assert.match(exitBody, /window\.location\.assign\(href\);/);
+  // Leave button: setLeft(true) and the refreshing load() run whether or not
+  // the leave request settles — a rejection cannot leave the button "dead".
+  assert.match(room, /await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\)\.catch\(\(\) => undefined\); setLeft\(true\); await load\(\);/);
+});
+
 test("hunt M5: the tutor queue enforces the learning-page limit at the service", () => {
   const service = readFileSync(new URL("../../modules/group-study/service.ts", import.meta.url), "utf8");
   assert.match(service, /const TUTOR_REQUEST_MAX_LENGTH = 4000;/);
