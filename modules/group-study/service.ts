@@ -33,8 +33,13 @@ export type StudyGroupDeps = {
   courseLessons?: (courseId: string) => Promise<Array<{ id: string; title: string }>>;
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
-  notify: (input: { userId: string; title: string; body: string }) => Promise<void>;
+  notify: (input: { userId: string; title: string; body: string; sessionId?: string }) => Promise<void>;
   listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string }>>;
+  // Withdraws the pending reminder rows a cancelling action invalidates
+  // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
+  // Scoped to the given Live Sessions, optionally to one user. Optional so
+  // existing wiring keeps its shape; the runtime always provides it.
+  withdrawReminders?: (input: { sessionIds: string[]; userId?: string }) => Promise<void>;
   sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN" }) => Promise<void>;
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
@@ -578,7 +583,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!membership) throw new StudyGroupError("forbidden", "Join the Study Group first.");
       if (membership.role === "host") throw new StudyGroupError("forbidden", "The Host cancels the Study Group instead of leaving it.");
       const now = deps.now().toISOString();
-      await deps.repository.update((current) => {
+      const sessionIds = await deps.repository.update((current) => {
         const row = current.memberships.find((item) => item.groupId === input.groupId && item.userId === input.actorUserId && !item.leftAt);
         if (row) row.leftAt = now;
         const sessionIds = new Set(current.sessions.filter((item) => item.groupId === input.groupId && item.status === "scheduled").map((item) => item.id));
@@ -598,7 +603,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             if (meeting && !meeting.endedAt) meeting.endedAt = now;
           }
         }
+        return current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id);
       });
+      // Leaving drops the member's pending Plan-to-Attend reminders (BR-023):
+      // withdraw their reminder rows for this group's Sessions only.
+      await deps.withdrawReminders?.({ sessionIds, userId: input.actorUserId });
     },
 
     async listDiscover(input: { actorUserId: string | null; courseId?: string; query?: string }) {
@@ -640,7 +649,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async cancelGroup(input: { actorUserId: string; groupId: string }) {
       const now = deps.now().toISOString();
-      const notified = await deps.repository.update((store) => {
+      const { notified, sessionIds } = await deps.repository.update((store) => {
         const row = store.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (!row) throw new StudyGroupError("not_found", "Study Group was not found.");
         if (activeMembership(store, row.id, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can cancel the Study Group.");
@@ -663,8 +672,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             }
           }
         }
-        return store.memberships.filter((item) => item.groupId === row.id && !item.leftAt).map((item) => item.userId);
+        return {
+          notified: store.memberships.filter((item) => item.groupId === row.id && !item.leftAt).map((item) => item.userId),
+          sessionIds: store.sessions.filter((item) => item.groupId === row.id).map((item) => item.id)
+        };
       });
+      // The cancelled group's pending reminders die with it (storage honesty);
+      // the members' in-site cancellation notices below are kept.
+      await deps.withdrawReminders?.({ sessionIds });
       await Promise.all(notified.map(async (userId) => {
         const profile = await deps.userProfile(userId);
         const body = profile?.locale === "zh-CN" ? "这个学习小组已经不再可用。" : "This Study Group is no longer available.";
@@ -752,6 +767,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           if (presence.sessionId === current.id && presence.enteredAt && !presence.leftAt) presence.leftAt = now;
         }
       });
+      // The cancelled Session can start no more, so its pending reminders are
+      // withdrawn for every audience member (BUG-0109 storage honesty).
+      await deps.withdrawReminders?.({ sessionIds: [input.sessionId] });
     },
 
     async getSession(input: { actorUserId: string; sessionId: string }) {
@@ -783,11 +801,17 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async cancelAttendance(input: { actorUserId: string; sessionId: string }) {
       const now = deps.now().toISOString();
-      await deps.repository.update((store) => {
+      const cancelled = await deps.repository.update((store) => {
         requireOpenSession(store, input.sessionId, input.actorUserId);
         const existing = store.intents.find((item) => item.sessionId === input.sessionId && item.userId === input.actorUserId && !item.cancelledAt);
         if (existing) existing.cancelledAt = now;
+        return Boolean(existing);
       });
+      // Cancelling attendance removes the member's reminder (BR-019): withdraw
+      // the pending row the member's Plan to Attend produced. Only an actual
+      // cancellation withdraws — a no-op cancel must not touch a reminder that
+      // belongs to another audience reason (e.g. the Host's).
+      if (cancelled) await deps.withdrawReminders?.({ sessionIds: [input.sessionId], userId: input.actorUserId });
     },
 
     orderEntry<T>(requestedAt: string, run: () => Promise<T>) {
@@ -993,7 +1017,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     async dispatchDueReminders() {
       const now = deps.now();
       const dueJobs = (store: StudyGroupStore, record: boolean) => {
-        const jobs: Array<{ userId: string; sessionTitle: string }> = [];
+        const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string }> = [];
         for (const session of store.sessions) {
           if (session.status !== "scheduled") continue;
           const startsAt = new Date(session.startsAt).getTime();
@@ -1008,7 +1032,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             if (!activeMembership(store, group.id, userId)) continue;
             if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
             if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
-            jobs.push({ userId, sessionTitle: session.title });
+            jobs.push({ userId, sessionId: session.id, sessionTitle: session.title });
           }
         }
         return jobs;
@@ -1020,7 +1044,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const copy = profile?.locale === "zh-CN"
           ? { subject: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
           : { subject: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
-        await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body });
+        await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body, sessionId: job.sessionId });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.subject, text: copy.body, locale: profile.locale });
       }
     },

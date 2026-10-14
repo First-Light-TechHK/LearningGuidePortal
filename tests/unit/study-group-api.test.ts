@@ -22,6 +22,7 @@ let postLiveKitIncident: Route;
 let patchSession: Route;
 let postStart: Route;
 let postTutor: Route;
+let postCancelSession: Route;
 let memberToken = "";
 let otherMemberToken = "";
 let filledTokens: string[] = [];
@@ -96,6 +97,7 @@ before(async () => {
   patchSession = (await import("../../app/api/study-groups/sessions/[sessionId]/route")).PATCH as unknown as Route;
   postStart = (await import("../../app/api/study-groups/sessions/[sessionId]/start/route")).POST as unknown as Route;
   postTutor = (await import("../../app/api/study-groups/sessions/[sessionId]/tutor/route")).POST as unknown as Route;
+  postCancelSession = (await import("../../app/api/study-groups/sessions/[sessionId]/cancel/route")).POST as unknown as Route;
 });
 
 beforeEach(async () => {
@@ -371,16 +373,39 @@ test("create, join, schedule, and a full session refuses the Host", async () => 
   assert.equal(seated.some((item) => item.userId === "api-host"), false);
 });
 
-test("the reminders view requires a session and returns only reminder notifications", async () => {
+test("the reminders view requires a session and returns only current reminders", async () => {
   const anonymous = await call(getGroups, "http://localhost/api/study-groups?view=reminders");
   assert.equal(anonymous.status, 401);
   const store = await import("../../services/productStore");
+  // Legacy unlinked reminder rows and other notification titles never surface
+  // in the reminders view (BUG-0109).
   await store.recordUserNotification("api-host", "Live Session reminder", "Weimar 1933 starts in 10 minutes.");
   await store.recordUserNotification("api-host", "Order receipt", "Not a reminder.");
+  // A real upcoming Session inside its Starting Soon window produces a valid,
+  // Session-linked reminder: the My view dispatches the due reminders.
+  const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Reminder group", courseId: "api-course", about: "About the reminders." }, token);
+  const groupId = (await created.json()).data.id as string;
+  const startsAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const scheduled = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
+    title: "Weimar 1933",
+    startsAt,
+    durationSeconds: 1800,
+    maxParticipants: 4
+  }, token, { groupId });
+  const sessionId = (await scheduled.json()).data.id as string;
+  await call(getGroups, "http://localhost/api/study-groups?view=mine", undefined, token);
   const response = await call(getGroups, "http://localhost/api/study-groups?view=reminders", undefined, token);
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.equal(body.data.some((item: { body: string }) => item.body === "Weimar 1933 starts in 10 minutes."), true);
   assert.equal(body.data.some((item: { body: string }) => item.body === "Not a reminder."), false);
+  // Cancelling the Session withdraws the pending reminder from view and storage.
+  const cancelled = await call(postCancelSession, `http://localhost/api/study-groups/sessions/${sessionId}/cancel`, {}, token, { sessionId });
+  assert.equal(cancelled.status, 200);
+  const after = await call(getGroups, "http://localhost/api/study-groups?view=reminders", undefined, token);
+  const afterBody = await after.json();
+  assert.equal(afterBody.data.some((item: { body: string }) => item.body.includes("Weimar 1933")), false);
+  const data = await store.readProductAggregate();
+  assert.equal(data.notifications.some((item) => item.sessionId === sessionId), false);
 });

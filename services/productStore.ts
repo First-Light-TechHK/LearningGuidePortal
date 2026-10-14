@@ -221,6 +221,11 @@ export type ProductNotification = {
   body: string;
   readAt: string | null;
   createdAt: string;
+  // Set on T-10 "Live Session reminder" rows so the reminders view can be
+  // checked against the Live Session's current state (BUG-0109). Rows written
+  // before this linkage existed carry no sessionId and are never shown as
+  // pending reminders: their validity cannot be verified.
+  sessionId?: string;
 };
 export type ProductSession = { id: string; tokenHash: string; userId: string; expiresAt: string; createdAt: string };
 export type ProductToken = { id: string; userId: string; tokenHash: string; expiresAt: string; usedAt: string | null; createdAt: string };
@@ -2042,17 +2047,56 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
-export async function listStudyGroupReminders(userId: string) {
+// The portal reminders strip (GET /api/study-groups?view=reminders): only
+// currently valid T-10 reminders are pending prompts (BUG-0109). The
+// cancellation notice ("Study Group cancelled") is a notification-center
+// fact, not a reminder, so a cancelled Study Group contributes nothing here.
+// Validity is decided by the caller's predicate over each row (the Study
+// Group module's rule over its own Session, Group, membership and
+// Plan-to-Attend state; it also resolves pre-linkage rows written before the
+// sessionId field existed) — the read-side backstop for reminder rows the
+// cancelling actions could not withdraw.
+export async function listStudyGroupReminders(
+  userId: string,
+  isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string }) => boolean | Promise<boolean>
+) {
   const data = await readProductAggregate();
-  return data.notifications
-    .filter((item) => item.userId === userId && (item.title === "Live Session reminder" || item.title === "Study Group cancelled"))
-    .slice(0, 5)
-    .map((item) => ({ body: item.body, createdAt: item.createdAt }));
+  const reminders: Array<{ body: string; createdAt: string }> = [];
+  const seenSessionIds = new Set<string>();
+  for (const item of data.notifications) {
+    if (reminders.length >= 5) break;
+    if (item.userId !== userId || item.title !== "Live Session reminder") continue;
+    if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
+    if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId })) continue;
+    if (item.sessionId) seenSessionIds.add(item.sessionId);
+    reminders.push({ body: item.body, createdAt: item.createdAt });
+  }
+  return reminders;
 }
 
-export async function recordUserNotification(userId: string, title: string, body: string) {
+// The write-side counterpart (BUG-0109): cancelling a Study Group, cancelling
+// a Live Session, cancelling attendance or leaving the group withdraws the
+// pending reminder rows those actions invalidate, so storage matches the
+// reminders view without waiting for the read-side filter. Only session-linked
+// reminder rows are touched; other notifications are left untouched.
+export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyArray<string>; userId?: string }) {
+  const sessionIds = new Set(input.sessionIds.filter(Boolean));
+  if (!sessionIds.size) return 0;
   return editData((data) => {
-    const notification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now() };
+    const remaining = data.notifications.filter((item) => {
+      if (!item.sessionId || !sessionIds.has(item.sessionId)) return true;
+      if (input.userId && item.userId !== input.userId) return true;
+      return false;
+    });
+    const withdrawn = data.notifications.length - remaining.length;
+    data.notifications = remaining;
+    return withdrawn;
+  });
+}
+
+export async function recordUserNotification(userId: string, title: string, body: string, sessionId?: string) {
+  return editData((data) => {
+    const notification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now(), ...(sessionId ? { sessionId } : {}) };
     data.notifications.unshift(notification);
     return notification;
   });

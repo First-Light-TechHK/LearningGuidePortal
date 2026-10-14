@@ -3,8 +3,9 @@ import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
 import { sendStudyGroupReminderEmail } from "@/services/emailService";
-import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification } from "@/services/productStore";
+import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification, withdrawStudyGroupReminders } from "@/services/productStore";
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
+import { STARTING_SOON_MS, type StudyGroupStore } from "./domain";
 import { createStudyGroupRepository } from "./repository";
 import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
@@ -56,6 +57,64 @@ async function readStoredCourseKnowledge(courseId: string) {
     }
   }
   return parts.join("\n\n");
+}
+
+// BUG-0109: a T-10 reminder row is a pending prompt only while the situation
+// that produced it still holds — the Live Session is still scheduled and
+// inside its Starting Soon window (never started, never past its start), the
+// Study Group is still active, the viewer is still an active member, and a
+// non-host viewer still has a live Plan to Attend. The reminders view applies
+// this as its read-side backstop; the cancelling actions withdraw the rows
+// they invalidate first (storage honesty). Exported for the unit test that
+// pins the view's validity contract.
+export function studyGroupReminderStillValid(store: StudyGroupStore, userId: string, sessionId: string, nowMs: number = Date.now()) {
+  const session = store.sessions.find((item) => item.id === sessionId);
+  if (!session || session.status !== "scheduled") return false;
+  const startsAt = Date.parse(session.startsAt);
+  if (!Number.isFinite(startsAt)) return false;
+  if (nowMs >= startsAt || nowMs < startsAt - STARTING_SOON_MS) return false;
+  const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
+  if (!group) return false;
+  if (!store.memberships.some((item) => item.groupId === group.id && item.userId === userId && !item.leftAt)) return false;
+  if (group.hostUserId === userId) return true;
+  return store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt);
+}
+
+// Reminder notifications recorded before the sessionId linkage existed (the
+// pre-BUG-0109 rows already in production) carry the Session title inside
+// their body: "<title> starts in 10 minutes." / "<title> 将在 10 分钟后开始。"
+// (the exact copy dispatchDueReminders writes). Recover the title so those
+// rows can be resolved back to their Live Session through the viewer's own
+// recorded reminder rows and judged by the same validity rule — otherwise a
+// currently valid pre-deploy reminder would be withheld alongside the stale
+// ones it sits next to. The suffixes mirror the dispatch copy in service.ts.
+const REMINDER_BODY_SUFFIXES = [" starts in 10 minutes.", " 将在 10 分钟后开始。"];
+
+function reminderBodyTitle(body: string): string | null {
+  for (const suffix of REMINDER_BODY_SUFFIXES) {
+    if (body.endsWith(suffix)) return body.slice(0, -suffix.length);
+  }
+  return null;
+}
+
+// The reminders view's per-notification predicate: session-linked rows are
+// judged directly; a pre-linkage row shows only while at least one Live
+// Session with its title, already recorded as reminded for this viewer, is
+// still a pending Session (its reminder row is kept as the dispatch record).
+export function studyGroupReminderNotificationStillValid(
+  store: StudyGroupStore,
+  userId: string,
+  item: { body: string; sessionId?: string },
+  nowMs: number = Date.now()
+) {
+  if (item.sessionId) return studyGroupReminderStillValid(store, userId, item.sessionId, nowMs);
+  const title = reminderBodyTitle(item.body);
+  if (!title) return false;
+  return store.reminders.some((row) => {
+    if (row.userId !== userId) return false;
+    const session = store.sessions.find((itemSession) => itemSession.id === row.sessionId);
+    return Boolean(session && session.title === title && studyGroupReminderStillValid(store, userId, session.id, nowMs));
+  });
 }
 
 const services = new Map<string, StudyGroupService>();
@@ -182,8 +241,9 @@ export function studyGroupService() {
   // never an address or a message) and drained into one redacted line on the
   // metrics cadence below, mirroring the webhook-rejection counter.
   let reminderMailFailures = 0;
+  const repository = backend === "postgres" ? createPostgresStudyGroupRepository() : createStudyGroupRepository(directory);
   const service = createStudyGroupService({
-    repository: backend === "postgres" ? createPostgresStudyGroupRepository() : createStudyGroupRepository(directory),
+    repository,
     now: () => new Date(),
     hasCourseAccess: async (userId, courseId) => (await checkEntitlement(userId, courseId)).allowed,
     courseSummary: async (courseId) => {
@@ -211,9 +271,19 @@ export function studyGroupService() {
       return { id: user.id, displayName: user.nickname || user.id, email: user.email, locale: user.locale === "zh-CN" ? "zh-CN" : "en-GB" };
     },
     notify: async (input) => {
-      await recordUserNotification(input.userId, input.title, input.body);
+      await recordUserNotification(input.userId, input.title, input.body, input.sessionId);
     },
-    listReminders: (userId) => listStudyGroupReminders(userId),
+    // The reminders view reads the pending "Live Session reminder" rows and
+    // re-checks each one against the current store through the module's own
+    // validity rule: the read-side backstop behind the cancelling actions'
+    // withdrawals (BUG-0109).
+    listReminders: async (userId) => {
+      const store = await repository.read();
+      return listStudyGroupReminders(userId, (item) => studyGroupReminderNotificationStillValid(store, userId, item));
+    },
+    withdrawReminders: async (input) => {
+      await withdrawStudyGroupReminders(input);
+    },
     sendMail: async (input) => {
       try {
         await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text });
