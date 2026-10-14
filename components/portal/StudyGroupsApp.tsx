@@ -319,6 +319,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setDialog(null);
   }
 
+  function closeWaiting() {
+    setErrorCode("ok");
+    setDialog(null);
+    setWaitingSession(null);
+  }
+
   function openSchedule() {
     setErrorCode("ok");
     setSessionTitle("");
@@ -619,7 +625,11 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 <button className={styles.ghost} type="button" onClick={closeDialog}>{copy.cancel}</button>
                 {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" ? <button className={styles.primary} type="submit">{dialog === "schedule" ? copy.scheduleAction : copy.save}</button> : null}
               </div>
-            ) : null}
+            ) : (
+              <div className={styles.dialogActions}>
+                <button className={styles.ghost} type="button" onClick={closeWaiting}>{copy.close}</button>
+              </div>
+            )}
           </form>
         </dialog>
       ) : null}

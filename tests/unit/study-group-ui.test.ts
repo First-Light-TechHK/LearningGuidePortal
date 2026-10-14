@@ -622,6 +622,18 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
+test("the waiting dialog offers a Close control that releases the hold without breaking the enter flow", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // BUG-0107: the join/waiting popup had no way out; it now carries a Close button.
+  assert.match(app, /function closeWaiting\(\) \{\s*setErrorCode\("ok"\);\s*setDialog\(null\);\s*setWaitingSession\(null\);\s*\}/);
+  assert.match(app, /\) : \(\n\s*<div className=\{styles\.dialogActions\}>\n\s*<button className=\{styles\.ghost\} type="button" onClick=\{closeWaiting\}>\{copy\.close\}<\/button>\n\s*<\/div>\n\s*\)\}/);
+  // The enter flow itself is untouched: the poll only follows a live waitingSession and
+  // pushes into the room, so clearing it on close just stops the poll and releases the hold.
+  assert.match(app, /if \(!waitingSession \|\| waitingSession\.state === "live"\) return;/);
+  assert.match(app, /if \(result\.data\.state === "live"\) \{\s*waitingHandedOffRef\.current = true;\s*waitingHoldRef\.current = null;\s*router\.push\(`\/\$\{locale\}\/portal\/study-groups\/sessions\/\$\{result\.data\.id\}`\);/);
+  assert.match(app, /const held = waitingHoldRef\.current;\s*if \(!held\) return;\s*waitingHoldRef\.current = null;\s*void fetch\(`\/api\/study-groups\/sessions\/\$\{held\}\/leave`/);
+});
+
 test("a successful Session mutation clears the stale errorCode so the old alert cannot linger", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   // BUG-0106: after a failed attempt, a later successful Schedule Live Session kept the
