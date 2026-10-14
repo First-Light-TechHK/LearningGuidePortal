@@ -414,7 +414,15 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
       if (state !== "starting_soon" && state !== "live") throw new StudyGroupError("session_not_open", "The Live Session is not open yet.");
       const existing = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
-      if (existing && !existing.leftAt) return { occupancy: occupancy(store, session.id) };
+      if (existing && !existing.leftAt) {
+        // Entering while already seated (a reload re-runs /enter): renew the
+        // row's timestamps so the presence age read by the grace window and
+        // the webhook's stale-seat guard is the CURRENT entry, never the
+        // original one. Mirrors the reopen path below.
+        existing.requestedAt = input.requestedAt;
+        existing.enteredAt = deps.now().toISOString();
+        return { occupancy: occupancy(store, session.id) };
+      }
       if (missedUnstarted(session, deps.now(), occupancy(store, session.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
       if (occupancy(store, session.id) >= session.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
       const enteredAt = deps.now().toISOString();
@@ -873,11 +881,27 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return operation;
     },
 
-    async leaveSession(input: { actorUserId: string; sessionId: string }) {
+    async leaveSession(input: { actorUserId: string; sessionId: string; reason?: "unload" }) {
       const now = deps.now().toISOString();
       await deps.repository.update((store) => {
         const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && !item.leftAt);
+        if (input.reason === "unload") {
+          // Unload-class leave (pagehide: refresh, tab close, navigating away):
+          // the same browser can re-enter seconds later, so this must NEVER
+          // complete the session. With others still seated the seat is
+          // released like a leave; as the last open presence the seat is HELD
+          // and only its age renews, so the 120 s grace window plus the
+          // provider-verified reconcile (or the signed participant_left)
+          // decide the completion — the session stays discoverable to both
+          // repair paths and can never hang live with nobody in it.
+          if (presence) {
+            if (occupancy(store, session.id) > 1) presence.leftAt = now;
+            else presence.enteredAt = now;
+          }
+          completeLiveSessionIfEmpty(store, session, now);
+          return;
+        }
         if (presence) presence.leftAt = now;
         completeLiveSessionIfEmpty(store, session, now);
       });
@@ -1095,16 +1119,22 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const room = event.room;
         const identity = event.participantIdentity;
         // The only mapping action: close that identity's open presence row
-        // inside the serialized mutate. It also completes the session and ends
-        // its meeting when this was the last open presence of a live session —
-        // the same reducing rule as an explicit leave — and can never grant
-        // membership, role, token, or access.
+        // inside the serialized mutate — unless the seat was (re)established
+        // at or after the event's own time, in which case the event reports a
+        // connection generation that no longer exists (a refresh re-entered
+        // before a delayed participant_left arrived) and the fresh seat must
+        // stay open. Closing the last open presence of a live session also
+        // completes the session and ends its meeting — the same reducing rule
+        // as an explicit leave — and can never grant membership, role, token,
+        // or access.
         result = await deps.repository.update((store) => {
           const session = store.sessions.find((item) => item.id === room);
           if (!session) return "ignored" as const;
+          const at = event.createdAt ?? deps.now().toISOString();
           const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
-          if (presence) presence.leftAt = event.createdAt ?? deps.now().toISOString();
-          completeLiveSessionIfEmpty(store, session, event.createdAt ?? deps.now().toISOString());
+          const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) >= Date.parse(at) : false;
+          if (presence && !seatIsNewer) presence.leftAt = at;
+          completeLiveSessionIfEmpty(store, session, at);
           return "processed" as const;
         });
       }

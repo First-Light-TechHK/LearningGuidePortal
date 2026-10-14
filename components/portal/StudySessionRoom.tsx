@@ -336,13 +336,18 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     const release = () => {
+      // Unload (refresh, tab close, navigating away): drop the media
+      // connection and tell the server it is an unload-class leave. Unlike the
+      // explicit Leave Session action this never ends the session, so a reload
+      // re-enters the same live session; a room left for good is completed by
+      // the provider webhook or the grace-bounded reconciliation.
       const room = roomRef.current;
       roomRef.current = null;
       void room?.disconnect().catch(() => undefined);
       if (releasedRef.current || !seatedRef.current || leftRef.current) return;
       if (sessionStateRef.current !== "live" && sessionStateRef.current !== "starting_soon") return;
       releasedRef.current = true;
-      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
+      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: "unload" }), keepalive: true });
     };
     window.addEventListener("pagehide", release);
     return () => {

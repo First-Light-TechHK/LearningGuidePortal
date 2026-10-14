@@ -156,8 +156,22 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
       console.log(`[study-group-e2e] ${reason}`);
     }
 
-    // 10. Host leaves, member leaves, the session completes.
+    // 10. Host leaves; the member remains and the session stays live.
     await pageA.getByRole("button", { name: "Leave Session" }).click();
+    await expect(pageB.locator('[data-participants="1"]')).toBeVisible();
+
+    // 11. BUG-0108 regression: the LAST participant refreshes the browser. A
+    // reload is an unload, not a Leave Session — the member must land back
+    // inside the same live session (not an ended one) and the session must
+    // still be live afterwards.
+    await pageB.reload();
+    await expect(pageB.getByRole("button", { name: "Share" })).toBeEnabled();
+    await expect(pageB.locator('[data-participants="1"]')).toBeVisible();
+    const afterReload = await contextB.request.get(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
+    expect(afterReload.status(), "session view after reload").toBe(200);
+    expect((await afterReload.json()).data.state, "a refresh must not end the session").toBe("live");
+
+    // 12. The member leaves explicitly; with nobody left the session completes.
     await pageB.getByRole("button", { name: "Leave Session" }).click();
     await expect
       .poll(async () => {
