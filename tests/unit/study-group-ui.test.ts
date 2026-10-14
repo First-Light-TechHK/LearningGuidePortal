@@ -605,6 +605,17 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
+test("a successful Session mutation clears the stale errorCode so the old alert cannot linger", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // BUG-0106: after a failed attempt, a later successful Schedule Live Session kept the
+  // previous errorCode, so the sheet kept re-rendering the old alert although the session
+  // had been created. Every dialog submit now resets the errorCode before closing the
+  // dialog and refreshing the open group.
+  assert.match(app, /setErrorCode\("ok"\);\s*setDialog\(null\);\s*await openGroup\(selected\.id\);\s*\}/);
+  assert.match(app, /setErrorCode\("ok"\);\s*setDialog\(null\);\s*await openGroup\(selected\.id\);\s*await loadLists\(\);/);
+  assert.match(app, /setErrorCode\("ok"\);\s*setDialog\(null\);\s*setEditingSession\(null\);\s*await openGroup\(selected\.id\);/);
+});
+
 test("the Schedule dialog keeps long Study Group copy inside its context card", () => {
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   // BUG-0102: the context card repeats the Group title and About (up to 50/200 chars,

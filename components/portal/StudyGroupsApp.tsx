@@ -357,6 +357,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
+    setErrorCode("ok");
     setDialog(null);
     await openGroup(selected.id);
     await loadLists();
@@ -381,6 +382,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
+    setErrorCode("ok");
     setDialog(null);
     await openGroup(selected.id);
   }
@@ -407,6 +409,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
+    setErrorCode("ok");
     setDialog(null);
     setEditingSession(null);
     await openGroup(selected.id);
