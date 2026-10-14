@@ -172,6 +172,9 @@
 .hint { margin-left: 8px; color: #111827; opacity: .35; font-size: 10px; font-weight: 400; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 20px; }
 .dialogActions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+/* BUG-0099: the Cancel Group confirm body and its busy confirm button. */
+.confirmBody { margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; }
+.dialogActions .danger:disabled { opacity: .45; cursor: not-allowed; }
 .locked { position: relative; height: 175px; background: #fff; border: 1px solid #e4e7ec; border-radius: 8px; margin: 0 0 12px; }
 .lockedTitle, .lockedSub, .lockedFact1, .lockedFact2, .lockedFact3, .lockedFactBox { position: absolute; height: 17px; border-radius: 4px; background: #ebedf2; }
 .lockedTitle { left: 16px; top: 16px; width: 47px; }

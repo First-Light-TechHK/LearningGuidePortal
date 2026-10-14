@@ -605,6 +605,28 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
+test("Cancel Group confirms in the module's own dialog with cancel/confirm buttons and a busy state", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // BUG-0099: the native browser confirm is gone; the module's modal carries the copy.
+  assert.equal(app.includes("window.confirm(copy.confirmCancelGroup)"), false);
+  assert.match(app, /const \[cancelling, setCancelling\] = useState\(false\)/);
+  assert.match(app, /<button className=\{styles\.danger\} type="button" onClick=\{\(\) => setDialog\("cancel-group"\)\}>\{copy\.cancelGroup\}<\/button>/);
+  assert.match(app, /async function submitCancelGroup\(\) \{\s*if \(!selected \|\| cancelling\) return;/);
+  assert.match(app, /\{dialog === "cancel-group" \? \(\n\s*<dialog open className=\{styles\.modal\} aria-modal="true" aria-labelledby="study-group-dialog-title">/);
+  assert.match(app, /<h2 id="study-group-dialog-title">\{copy\.cancelGroupConfirmTitle\}<\/h2>/);
+  assert.match(app, /<p className=\{styles\.confirmBody\}>\{copy\.confirmCancelGroup\}<\/p>/);
+  assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{cancelling\}>\{copy\.cancel\}<\/button><button className=\{styles\.danger\} type="submit" disabled=\{cancelling\}>\{copy\.cancelGroup\}<\/button>/);
+  // A failed cancellation keeps the sheet selected so studyGroupErrorPlace has a home for the error.
+  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("ok"\);\s*setSelected\(null\);\s*setSelectedId\(null\);\s*await loadLists\(\);/);
+  assert.match(css, /\.confirmBody \{ margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; \}/);
+  assert.match(css, /\.dialogActions \.danger:disabled \{ opacity: \.45; cursor: not-allowed; \}/);
+  assert.equal(en.studyGroupsPage.cancelGroupConfirmTitle, "Cancel this Study Group?");
+  assert.equal(zh.studyGroupsPage.cancelGroupConfirmTitle, "取消这个学习小组？");
+  assert.equal(en.studyGroupsPage.confirmCancelGroup, "Upcoming Live Sessions will be removed, a Live Session that is already open will end, and members will be notified.");
+  assert.equal(zh.studyGroupsPage.confirmCancelGroup, "未开始的直播课会被移除，已经开始的直播课会结束，并通知成员。");
+});
+
 test("the Create Study Group dialog is centred on the viewport like the module's other dialogs", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");

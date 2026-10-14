@@ -78,9 +78,10 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [selected, setSelected] = useState<StudyGroupDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [errorCode, setErrorCode] = useState("error");
-  const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | null>(null);
+  const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | "cancel-group" | null>(null);
   const [createdGroup, setCreatedGroup] = useState<{ id: string; title: string; courseTitle: string } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [editingSession, setEditingSession] = useState<StudySession | null>(null);
   const [waitingSession, setWaitingSession] = useState<StudySession | null>(null);
   const [attendees, setAttendees] = useState<StudySession["attendees"]>([]);
@@ -291,6 +292,25 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       await loadLists();
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function submitCancelGroup() {
+    if (!selected || cancelling) return;
+    setCancelling(true);
+    try {
+      const result = await studyGroupRequest(`/api/study-groups/${selected.id}/cancel`, { method: "POST", body: "{}" });
+      setDialog(null);
+      if (!result.ok) {
+        setErrorCode(result.code);
+        return;
+      }
+      setErrorCode("ok");
+      setSelected(null);
+      setSelectedId(null);
+      await loadLists();
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -545,7 +565,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <ul className={styles.memberList}>
                 {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{member.displayName.slice(0, 1)}</span><span>{member.displayName}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
-              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={async () => { if (!window.confirm(copy.confirmCancelGroup)) return; await studyGroupRequest(`/api/study-groups/${selected.id}/cancel`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.cancelGroup}</button></div> : null}
+              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
               {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/${selected.id}/leave`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.leaveGroup}</button></div> : null}
             </aside>
           </div>
@@ -597,6 +617,17 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" ? <button className={styles.primary} type="submit">{dialog === "schedule" ? copy.scheduleAction : copy.save}</button> : null}
               </div>
             ) : null}
+          </form>
+        </dialog>
+      ) : null}
+      {dialog === "cancel-group" ? (
+        <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
+          <form method="dialog" onSubmit={(event) => { event.preventDefault(); void submitCancelGroup(); }}>
+            <h2 id="study-group-dialog-title">{copy.cancelGroupConfirmTitle}</h2>
+            <p className={styles.confirmBody}>{copy.confirmCancelGroup}</p>
+            <div className={styles.dialogActions}>
+              <button className={styles.ghost} type="button" onClick={closeDialog} disabled={cancelling}>{copy.cancel}</button><button className={styles.danger} type="submit" disabled={cancelling}>{copy.cancelGroup}</button>
+            </div>
           </form>
         </dialog>
       ) : null}
