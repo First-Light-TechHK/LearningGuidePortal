@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupPane } from "../../modules/group-study/uiState";
+import { participantStatus, raisedHands, sessionControls, sessionStateLabel, studyGroupErrorPlace, studyGroupPane } from "../../modules/group-study/uiState";
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
@@ -142,7 +142,7 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /copy\.enterWindow/);
   assert.equal(en.studyGroupsPage.errors.start_in_past, "Start Time must be in the future.");
   assert.equal(zh.studyGroupsPage.errors.start_in_past, "开始时间必须还在将来。");
-  assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /dialog !== "waiting" && dialog !== "attendees"/);
+  assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/); // BUG-0100: one slot-gated alert per dialog
   assert.equal(en.studyGroupsPage.courseAccessRequired, "Course access required, You don't currently have access to {course}.\nGet Course access to join this Study Group.");
   assert.equal(fill(en.studyGroupsPage.courseAccessRequired, { course: "German History" }), "Course access required, You don't currently have access to German History.\nGet Course access to join this Study Group.");
   assert.equal(zh.studyGroupsPage.courseAccessRequired, "需要课程访问权限，你目前没有{course}的访问权限。\n获取课程访问权限后才能加入这个学习小组。");
@@ -573,6 +573,36 @@ test("creating a group hands the whole panel to the success state and reopening 
   // Create dialog opens clean and the same name cannot be resubmitted by accident.
   assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("ok"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
   assert.match(app, /setCreatedGroup\(null\); setCreateTitle\(""\); setCreateAbout\(""\); setErrorCode\("ok"\); setDialog\("create"\);/);
+});
+
+test("one error is shown in exactly one place: the failing pane, create form, dialog, or sheet", () => {
+  assert.equal(studyGroupErrorPlace({ status: "error", dialog: null, hasSelected: false, hasError: true }), "pane");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "create", hasSelected: false, hasError: true }), "create");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "schedule", hasSelected: true, hasError: true }), "dialog");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "edit-session", hasSelected: true, hasError: true }), "dialog");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "edit", hasSelected: true, hasError: true }), "dialog");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: null, hasSelected: true, hasError: true }), "sheet");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "waiting", hasSelected: true, hasError: true }), "sheet");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "edit", hasSelected: true, hasError: false }), "none");
+  assert.equal(studyGroupErrorPlace({ status: "loading", dialog: null, hasSelected: false, hasError: true }), "none");
+  // The reported duplicate: the schedule dialog rendered its own alert while the group
+  // sheet behind it rendered the same message again. The dialog slot suppresses the
+  // sheet copy, and a failed pane owns the screen over any dialog slot.
+  assert.notEqual(studyGroupErrorPlace({ status: "ready", dialog: "schedule", hasSelected: true, hasError: true }), "sheet");
+  assert.notEqual(studyGroupErrorPlace({ status: "error", dialog: "edit", hasSelected: true, hasError: true }), "dialog");
+
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /const errorPlace = studyGroupErrorPlace\(\{ status, dialog, hasSelected: Boolean\(selected\), hasError: errorCode !== "error" && errorCode !== "ok" \}\);/);
+  assert.equal(app.split('{errorPlace === "').length - 1, 3);
+  assert.match(app, /\{errorPlace === "create" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
+  assert.match(app, /\{errorPlace === "sheet" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
+  assert.match(app, /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
+  assert.equal(app.includes('dialog !== "waiting" && dialog !== "attendees"'), false); // superseded by the dialog slot
+  // Dismissing any dialog retires its error so the same message cannot reappear in the sheet.
+  assert.match(app, /function closeDialog\(\) \{\s*setErrorCode\("ok"\);\s*setDialog\(null\);\s*\}/);
+  assert.match(app, /onClick=\{closeDialog\}/);
+  // Retry clears the stale code before reloading: a recovered list must not leave a ghost alert.
+  assert.match(app, /onClick=\{\(\) => \{ setErrorCode\("ok"\); void loadLists\(\); \}\}>\{copy\.retry\}/);
 });
 
 test("the Create Study Group dialog is centred on the viewport like the module's other dialogs", () => {

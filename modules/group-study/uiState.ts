@@ -35,3 +35,20 @@ export function sessionControls(input: { role: "host" | "member" | null; state: 
   if (input.state === "scheduled") actions.push("plan");
   return actions;
 }
+
+export type StudyGroupDialogKind = "create" | "edit" | "edit-session" | "schedule" | "waiting" | "attendees" | "cancel-group" | null;
+
+/**
+ * BUG-0100: exactly one error surface may render a given errorCode at a time.
+ * The failing list pane owns the screen; otherwise the open dialog that the
+ * mutation came from (create form or the edit/schedule modal) shows it; the
+ * group sheet is the fallback so the sheet alert never doubles a dialog alert.
+ */
+export function studyGroupErrorPlace(input: { status: PaneStatus; dialog: StudyGroupDialogKind; hasSelected: boolean; hasError: boolean }): "pane" | "create" | "dialog" | "sheet" | "none" {
+  if (!input.hasError) return "none";
+  if (input.status === "error") return "pane";
+  if (input.dialog === "create") return "create";
+  if (input.dialog === "edit" || input.dialog === "edit-session" || input.dialog === "schedule") return "dialog";
+  if (input.hasSelected) return "sheet";
+  return "none";
+}
