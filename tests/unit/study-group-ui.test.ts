@@ -701,6 +701,17 @@ test("the Study Groups sidebar scrolls inside the viewport instead of stretching
   assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.sidebar \{ max-height: none; \}[\s\S]*\}/);
 });
 
+test("signed-out visitors see only Discover Study Groups, without the My Study Groups controls", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // BUG-0130 (SIT): a signed-out visitor still saw the "My Study Groups" heading and the
+  // All / Hosted by Me tabs above Discover, though neither can hold anything for them.
+  // The whole block (heading, Create button, tabs) now renders only when signed in;
+  // Discover keeps its heading and filters for everyone.
+  assert.match(app, /\{signedIn \? <div className=\{styles\.sectionHead\}>\s*<h2>\{copy\.myGroups\}<\/h2>\s*<button className=\{styles\.create\}/);
+  assert.match(app, /\{signedIn \? <div className=\{styles\.tabs\} role="group" aria-label=\{copy\.myGroups\}>/);
+  assert.equal(app.includes("<h2 className={styles.sectionHead}>{copy.discover}</h2>"), true);
+});
+
 test("Cancel Group confirms in the module's own dialog with cancel/confirm buttons and a busy state", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");

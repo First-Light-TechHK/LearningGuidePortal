@@ -525,14 +525,16 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       <aside className={styles.sidebar} aria-label={copy.title}>
         <h1 className={styles.title}>{copy.title}</h1>
         {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}</li>)}</ul> : null}
-        <div className={styles.sectionHead}>
+        {/* BUG-0130: a signed-out visitor has no "My" Study Groups — the heading, Create
+            button and All / Hosted by Me tabs render only for signed-in users. */}
+        {signedIn ? <div className={styles.sectionHead}>
           <h2>{copy.myGroups}</h2>
-          {signedIn ? <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("idle"); setDialog("create"); }}>+ {copy.create}</button> : null}
-        </div>
-        <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
+          <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("idle"); setDialog("create"); }}>+ {copy.create}</button>
+        </div> : null}
+        {signedIn ? <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
           <button type="button" aria-pressed={mineFilter === "all"} onClick={() => setMineFilter("all")}>{copy.all}</button>
           <button type="button" aria-pressed={mineFilter === "host"} onClick={() => setMineFilter("host")}>{copy.hostedByMe}</button>
-        </div>
+        </div> : null}
         {signedIn && visibleMine.length === 0 ? <p className={styles.noMine}>{copy.noMine}</p> : null}
         {visibleMine.map((group) => (
           <button className={styles.card} type="button" key={group.id} aria-current={selectedId === group.id} onClick={() => void openGroup(group.id)}>
