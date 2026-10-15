@@ -1097,7 +1097,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       ? lessons.at(-1)?.id || null : currentLessonId;
     if (record?.knowledgePositions && record.currentMode) {
       const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, actionLessonId: page.pageState !== "available" ? null : position.progress === 100 ? lessons.at(-1)?.id || null : position.lessonId || actionLessonId, progress:position.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
+      return { ...page, actionLessonId: page.pageState !== "available" ? null : record.completedAt || position.progress === 100 ? lessons.at(-1)?.id || null : position.lessonId || actionLessonId, progress:position.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
     }
     return { ...page, actionLessonId: page.pageState === "available" && page.progress === 100 ? lessons.at(-1)?.id || null : actionLessonId };
   });
@@ -2067,7 +2067,7 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
       : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
     // D2.1 stored progress follows unique LPs; seconds stay on the record for study telemetry only.
     record.progress = computed.progress ?? 0;
-    record.completedAt = computed.completed ? record.completedAt || now() : null;
+    record.completedAt = record.completedAt || (computed.completed ? now() : null);
     record.updatedAt = now();
     return record;
   });

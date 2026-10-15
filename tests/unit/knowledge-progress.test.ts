@@ -51,6 +51,10 @@ test("save current knowledge point per mode, replay safely and deny inaccessible
   assert.deepEqual(completionCard.completedContentIds,["t2"]);
   assert.equal(completionCard.completedContentIds.includes("v3"),false,"same lesson text completion is not video completion");
   assert.equal((await store.getCoursePage(COURSE_ID,user.id)).progress,100);
+  await open(PREVIEW_LP,"v1","video","revisit-completed-course");
+  const revisited=await store.getCoursePage(COURSE_ID,user.id);
+  assert.equal(revisited.actionLessonId,PRIVATE_LP,"completed course keeps Start on the last lesson after revisiting an earlier point");
+  assert.ok(revisited.syllabus.every(item=>item.access==="entitled"),"revisiting a completed subscribed course must never switch to Preview");
   await assert.rejects(open(PREVIEW_LP,"t1","video","wrong-mode"),/Knowledge point not found/);
   await assert.rejects(open(PREVIEW_LP,"v3","video","foreign-point"),/Knowledge point not found/);
   await assert.rejects(open(PRIVATE_LP,"hidden","video","inactive"),/Knowledge point not found/);

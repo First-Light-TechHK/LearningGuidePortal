@@ -38,6 +38,14 @@ test("first course entry skips the chooser for single-mode courses in both local
     const element = node as { type?: unknown; props?: { children?: unknown } };
     return element.type === "mode-dialog" || hasChooser(element.props?.children);
   }
+  function assertPlainLessonTitles(node: any): void {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(assertPlainLessonTitles); return; }
+    if (node.type === "h3" && Array.isArray(node.props.children) && node.props.children[0]?.type === "span") {
+      assert.equal(typeof node.props.children[1],"string","syllabus lesson title must not be a navigation link");
+    }
+    assertPlainLessonTitles(node.props?.children);
+  }
   for (const locale of ["en-GB", "zh-CN"]) for (const user of [null, { id: "learner" }]) {
     state.user = user; state.savedMode = null; state.pageState = "available";
     const render = (lessonEntry?: string) => page({ params: Promise.resolve({ locale, slug: "course" }), searchParams: Promise.resolve({ lessonEntry }) });
@@ -47,6 +55,7 @@ test("first course entry skips the chooser for single-mode courses in both local
     ]) { state.lessons = lessons; assert.equal(hasChooser(await render()), false); }
     state.lessons = [{ contents: [{ type: "video" }] }, { contents: [{ type: "text" }] }];
     assert.equal(hasChooser(await render()), false);
+    assertPlainLessonTitles(await render());
     assert.equal(hasChooser(await render("invalid")), false);
     if (user) {
       assert.equal(hasChooser(await render("lesson")), true);

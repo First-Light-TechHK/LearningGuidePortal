@@ -48,8 +48,8 @@ test("Subscription products start collapsed, expand independently, preserve bill
       assert.equal(await page.getByRole("button",{name:locale === "zh-CN" ? "\u7ba1\u7406\u652f\u4ed8" : "Manage billing",exact:true}).count(),0);
       assert.equal(await page.getByRole("table").count(),0);
       assert.equal(await cards.locator('button[aria-expanded="false"]').count(),4);
-      assert.equal(await cards.locator('[data-product]').count(),4);
-      assert.deepEqual(await cards.first().locator('[data-product]').evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:120,height:120});
+      assert.deepEqual(await cards.locator('img').evaluateAll(nodes=>nodes.filter(node=>!node.src.endsWith("svg")).map(node=>new URL(node.src).pathname)),images.map(image=>`/portal/subscriptions/${image}.png`));
+      assert.deepEqual(await cards.first().locator('img').first().evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:120,height:120});
       await page.screenshot({path:`test-results/subscription-records/${locale}-collapsed.png`});
       await cards.nth(0).locator('button[aria-expanded]').click();
       await page.getByRole("table").waitFor();

@@ -20,7 +20,7 @@ export function PreviewProgress({ courseId, lessonId, contentId, learningMode, s
     const key = `${courseId}:${lessonId}:${learningMode || ""}:${contentId || ""}`;
     if (openRequest.current?.key !== key) openRequest.current = { key, id: learningMode ? `open_${Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join("_")}` : `open_${courseId}_${lessonId}` };
     fetch(endpoint, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, ...(learningMode ? {contentId:contentId || null,learningMode} : {}), event: "open", seconds:0, clientEventId:openRequest.current.id }) })
-      .then(response => { if (!response.ok) setError(copy.saveError); else router.refresh(); })
+      .then(response => { if (!response.ok) setError(copy.saveError); })
       .catch(error => { if (error.name !== "AbortError") setError(copy.saveError); });
   }, [courseId, lessonId, contentId, learningMode, copy.saveError, endpoint]);
 

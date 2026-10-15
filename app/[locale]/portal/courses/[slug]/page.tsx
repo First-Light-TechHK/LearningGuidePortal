@@ -115,7 +115,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                       const metadata = lessonMetadata.get(lesson.lessonId);
                       return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
-                          <h3><span>{detail.lesson} {index + 1}</span>{lessonHref ? <Link href={lessonHref}>{lesson.title}</Link> : lesson.title}</h3>
+                          <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
                         <CourseCurriculumAction lesson={lesson} href={lessonHref && (!user || needsMode) ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />

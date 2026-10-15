@@ -94,14 +94,13 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
       const order = record.orders.find(item => item.status === "paid") || record.orders[0];
       const name = order?.presentation?.name || subscription?.plan?.name || copy.plan;
       const image = order?.presentation?.image || localSubscriptionProductImage(subscription?.plan);
-      const artwork = localSubscriptionProductImage(subscription?.plan || {name});
       const state = subscription?.state || "unavailable";
       const until = subscription?.state === "grace" ? subscription.graceEndsAt || subscription.validTo : subscription?.validTo || order?.servicePeriodEnd;
       const timeLabel = record.upgradedAt ? view.upgradedOn : state === "grace" ? view.gracePeriod : state === "cancel_at_period_end" ? view.accessUntil : state === "expired" || state === "trial_canceled" ? view.expiredOn : state === "unavailable" ? copy.validPeriod : copy.validUntil;
       const status = record.upgradedAt ? view.upgraded : record.daysLeft!==null && state==="active" ? view.endingSoon : state === "active" ? subscription?.source === "trial" ? copy.trial : view.active : state === "cancel_at_period_end" ? view.renewalCanceled : state === "grace" ? view.paymentFailed : state === "trial_canceled" ? copy.canceled : state === "expired" ? view.expired : view.statusUnavailable;
       return <article className={styles.card} key={record.id} data-subscription-id={record.id} data-past={record.past}>
         <div className={styles.summary}>
-          <div className={styles.product}><h2>{name}</h2>{artwork && (!image || image.startsWith("/portal/subscriptions/")) ? <div className={styles.artwork} data-product={artwork}><strong>{name}</strong><span>Learning Guide</span></div> : image ? <Image className={styles.cover} src={image} alt={name} width={120} height={120} unoptimized/> : <div className={styles.missingCover}>{view.imageUnavailable}</div>}</div>
+          <div className={styles.product}><h2>{name}</h2>{image ? <Image className={styles.cover} src={image} alt={name} width={120} height={120} unoptimized/> : <div className={styles.missingCover}>{view.imageUnavailable}</div>}</div>
           <div className={styles.state} data-state={state}><strong>{status}</strong><div className={styles.actions}>
             {subscription && state === "active" ? <button type="button" disabled={busyId === subscription.id} onClick={() => {setReason(undefined);setReasonText("");setError("");setCancelTarget(subscription);}}>{subscription.source === "trial" ? copy.cancel : view.cancelRenewal}</button> : null}
             {subscription && state === "grace" ? <><button type="button" onClick={() => void manage(subscription.id,"pay")}>{copy.payNow} →</button><button type="button" onClick={() => void manage(subscription.id)}>{copy.updatePaymentMethod}</button></> : null}

@@ -55,7 +55,8 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.locator('nav [aria-current="page"]').filter({hasText:locale==="en-GB"?"Lesson":"课时"}).waitFor();
       assert.equal(await modeSwitch.evaluate(e=>getComputedStyle(e).paddingLeft),"6px");
       assert.equal(await modeSwitch.evaluate(e=>e.getBoundingClientRect().width===e.parentElement!.getBoundingClientRect().width),true);
-      await page.waitForFunction(()=>(window as unknown as {refreshed:boolean}).refreshed===true);
+      await page.waitForLoadState("networkidle");
+      assert.notEqual(await page.evaluate(()=>(window as unknown as {refreshed?:boolean}).refreshed),true,"background open saves must not refresh and interrupt the mode dropdown");
       assert.ok(studyEvents.some(event=>event.path==="/api/study/events" && event.body.event==="open" && event.body.contentId==="video" && event.body.learningMode==="video" && event.body.clientEventId?.startsWith("open_")));
       assert.equal(await modeSwitch.inputValue(),"video");
       const textSaved=page.waitForRequest(request=>request.url().endsWith("/api/study/events")&&request.postDataJSON()?.contentId==="text");
