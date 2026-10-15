@@ -139,5 +139,5 @@ test("the same purchase plan cannot be quoted again while access is active", asy
   const { quote } = await store.createQuote(user.id, "everything-pc-6");
   const { order } = await store.createPendingDemoOrder(user.id, quote.id);
   await store.completeDemoOrder(user.id, order.id);
-  await assert.rejects(() => store.createQuote(user.id, "everything-pc-6"), /already has active access/);
+  await assert.rejects(() => store.createQuote(user.id, "everything-pc-6"), /already_subscribed/);
 });
