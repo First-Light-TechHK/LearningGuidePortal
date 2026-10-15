@@ -151,6 +151,23 @@ test("create rejects missing fields and a learner without course access", async 
   await assert.rejects(() => service.createGroup({ actorUserId: "host", title: "x".repeat(51), courseId: "course-1", about: "About" }), (error: unknown) => (error as { code: string }).code === "validation");
 });
 
+test("create and edits reject an About beyond the 200 character limit without touching the stored row", async () => {
+  // BUG-0116 (SIT): the edit dialog must not accept About copy beyond the create
+  // limit; the server is the boundary of record either way.
+  await assert.rejects(
+    () => service.createGroup({ actorUserId: "host", title: "Limit", courseId: "course-1", about: "x".repeat(201) }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const group = await service.createGroup({ actorUserId: "host", title: "Limit", courseId: "course-1", about: "y".repeat(200) });
+  assert.equal(group.about, "y".repeat(200));
+  await assert.rejects(
+    () => service.editGroup({ actorUserId: "host", groupId: group.id, title: "Limit", about: "x".repeat(201) }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const kept = (await repository.read()).groups.find((item) => item.id === group.id);
+  assert.equal(kept?.about, "y".repeat(200));
+});
+
 test("host edits title and about, cannot change the course, and cancel keeps completed history out of the lists", async () => {
   access.add("member:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Original", courseId: "course-1", about: "Original about." });

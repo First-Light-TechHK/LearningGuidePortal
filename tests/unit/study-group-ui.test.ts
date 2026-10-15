@@ -4,7 +4,7 @@ import { participantStatus, raisedHands, sessionControls, sessionStateLabel, stu
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
-import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
+import { clampGroupAbout, DURATION_MINUTE_CHOICES, fill, GROUP_ABOUT_MAX, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
 
 test("schedule duration is a required dropdown of 30, 45, 60, and 90 minutes", () => {
   assert.deepEqual([...DURATION_MINUTE_CHOICES], [30, 45, 60, 90]);
@@ -668,6 +668,27 @@ test("a long About this Study Group string wraps instead of overflowing its colu
   // BUG-0101: the About body sits in the second facts column (minmax(0, 1fr)); a long
   // unbroken word or URL must break inside the column instead of escaping the sheet.
   assert.match(css, /\.aboutBody \{[^}]*overflow-wrap: anywhere;[^}]*\}/);
+});
+
+test("editing a Study Group clamps About to the create form's 200 character limit", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // BUG-0116 (SIT): the Edit Group dialog's About textarea was uncontrolled
+  // (defaultValue={selected?.about}) with no counter and no clamp, so text beyond the
+  // create form's 200 limit rendered in full and went back to the server untouched.
+  // It now mirrors the create field: controlled value clamped through the shared
+  // helper, the same maxLength and the same 0/200 counter.
+  assert.equal(GROUP_ABOUT_MAX, 200);
+  assert.equal(clampGroupAbout("x".repeat(250)).length, GROUP_ABOUT_MAX);
+  assert.equal(clampGroupAbout("short"), "short");
+  assert.match(app, /const \[editAbout, setEditAbout\] = useState\(""\)/);
+  assert.match(app, /function openEditGroup\(\) \{\s*setErrorCode\("idle"\);\s*setEditAbout\(clampGroupAbout\(selected\?\.about \|\| ""\)\);\s*setDialog\("edit"\);\s*\}/);
+  assert.match(app, /onClick=\{openEditGroup\}>\{copy\.editGroup\}<\/button>/);
+  assert.match(app, /<textarea name="about" required maxLength=\{GROUP_ABOUT_MAX\} value=\{editAbout\} onChange=\{\(event\) => setEditAbout\(clampGroupAbout\(event\.target\.value\)\)\} \/>/);
+  assert.match(app, /\{editAbout\.length\}\/\{GROUP_ABOUT_MAX\}/);
+  assert.equal(/<textarea name="about"[^>]*defaultValue=/.test(app), false);
+  // The create form keeps the same 200 boundary through the shared helper.
+  assert.match(app, /value=\{createAbout\} onChange=\{\(event\) => setCreateAbout\(clampGroupAbout\(event\.target\.value\)\)\}/);
+  assert.equal((app.match(/maxLength=\{GROUP_ABOUT_MAX\}/g) || []).length, 2);
 });
 
 test("Cancel Group confirms in the module's own dialog with cancel/confirm buttons and a busy state", () => {

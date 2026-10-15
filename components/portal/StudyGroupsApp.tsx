@@ -8,7 +8,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
-import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { DURATION_MINUTE_CHOICES, clampGroupAbout, fill, GROUP_ABOUT_MAX, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 type CourseOption = { id: string; title: string; slug: string };
 
@@ -98,6 +98,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [sessionLesson, setSessionLesson] = useState("");
   const [createTitle, setCreateTitle] = useState("");
   const [createAbout, setCreateAbout] = useState("");
+  const [editAbout, setEditAbout] = useState("");
   const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string }>>([]);
   const listGeneration = useRef(0);
   const openGroupId = useRef<string | null>(null);
@@ -384,6 +385,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setWaitingSession(null);
   }
 
+  function openEditGroup() {
+    setErrorCode("idle");
+    setEditAbout(clampGroupAbout(selected?.about || ""));
+    setDialog("edit");
+  }
+
   function openSchedule() {
     setErrorCode("idle");
     setSessionTitle("");
@@ -571,7 +578,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <p className={styles.lead}>{copy.createLead}</p>
               <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
               <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
-              <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={200} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(event.target.value.slice(0, 200))} /><span className={styles.counter}>{createAbout.length}/200</span></span></label>
+              <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{createAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
               <div className={styles.actions}><button className={styles.ghost} type="button" onClick={closeDialog}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
               {errorPlace === "create" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
             </form>
@@ -633,7 +640,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <ul className={styles.memberList}>
                 {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{member.displayName.slice(0, 1)}</span><span>{member.displayName}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
-              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
+              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={openEditGroup}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
               {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" disabled={mutating !== null} onClick={() => void runLeaveGroup()}>{copy.leaveGroup}</button></div> : null}
             </aside>
           </div>
@@ -659,7 +666,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <>
                 <label>{copy.groupTitle}<input name="title" required maxLength={50} defaultValue={selected?.title} /></label>
                 <p>{selected?.courseTitle}</p>
-                <label>{copy.about}<textarea name="about" required maxLength={200} defaultValue={selected?.about} /></label>
+                <label>{copy.about}<span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} value={editAbout} onChange={(event) => setEditAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{editAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
               </>
             ) : null}
             {dialog === "schedule" || dialog === "edit-session" ? (

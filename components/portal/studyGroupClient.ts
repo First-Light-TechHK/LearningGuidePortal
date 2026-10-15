@@ -50,6 +50,15 @@ export async function studyGroupRequest<T>(url: string, init?: RequestInit): Pro
 
 export const SESSION_TITLE_MAX = 20;
 
+// BUG-0116 (SIT): the create form capped About at 200 but the edit dialog rendered the
+// stored value uncontrolled, so text beyond the limit could still be shown and saved.
+// The boundary lives here once, shared by both fields (the server enforces the same 200).
+export const GROUP_ABOUT_MAX = 200;
+
+export function clampGroupAbout(value: string) {
+  return value.slice(0, GROUP_ABOUT_MAX);
+}
+
 export const DURATION_MINUTE_CHOICES = [30, 45, 60, 90] as const;
 
 export function hostMayOpenRoom(startOk: boolean, enterOk: boolean) {
