@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PurchasePanel } from "./PurchasePanel";
+import { formatPlanPrice } from "@/lib/planPricing";
 import type { Locale } from "@/lib/i18n/config";
 import type { PortalCategory } from "@/lib/portalContent";
 
@@ -18,7 +19,7 @@ export function PricingPlans({ locale, plans, categories, courseTitles, selected
     {([6, 12] as const).map((value) => <button type="button" key={value} className={value === 12 ? "pricing-term-year" : undefined} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 12 ? <span className="pricing-term-year-label">{copy.year}<span className="pricing-better-value">Better Value</span></span> : copy.sixMonths}</button>)}
   </div><div className="pricing-comparison">{(["everything", "category"] as const).map((scope) => {
     const plan = plans.find((item) => item.scope === scope && item.device === "pc" && item.termMonths === term && (scope === "everything" || (item.scopeId || item.category) === category));
-    const price = plan && plan.available !== false ? new Intl.NumberFormat(locale, { style: "currency", currency: plan.currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: plan.amountMinor % 100 ? 2 : 0 }).format(plan.amountMinor / 100) : null;
+    const price = plan && plan.available !== false ? formatPlanPrice(locale, plan) : null;
     return <article className="pricing-design-card" key={scope}>
       <header className="pricing-card-heading"><h2>{copy[scope]}</h2></header>
       <div className="pricing-card-price"><strong>{price || "—"}</strong>{plan ? <span>{plan.currency.toUpperCase()}{scope === "category" ? ` / ${copy.perCategory}` : ""}</span> : null}</div>

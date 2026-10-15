@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { formatPlanPrice } from "@/lib/planPricing";
 import { getCoursePage, getProductCourse, getCourseLearningMode, listPlans } from "@/services/productStore";
 import { CourseLearningModeDialog } from "@/components/portal/CourseLearningModeDialog";
 import { isCourseLearningMode } from "@/contracts/course-learning-mode";
@@ -36,10 +37,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const plans = page.pageState === "available" ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
   const pricingHref = `/${locale}/pricing?courseId=${encodeURIComponent(course?.id || slug)}${plan ? `&planId=${encodeURIComponent(plan.id)}` : ""}`;
-  const price = plan ? new Intl.NumberFormat(locale, {
-    style: "currency", currency: plan.currency, currencyDisplay: "narrowSymbol",
-    maximumFractionDigits: plan.amountMinor % 100 ? 2 : 0,
-  }).format(plan.amountMinor / 100) : null;
+  const price = plan ? formatPlanPrice(locale, plan) : null;
   const signedCover = await signCourseMediaUrl(course?.cover || course?.thumbnailPath || "");
   const durationParts = courseDurationParts(identity?.totalMinutes || 0);
   const durationNumber = new Intl.NumberFormat(locale);
