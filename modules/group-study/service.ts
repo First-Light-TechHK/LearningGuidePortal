@@ -606,12 +606,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     async listMine(actorUserId: string) {
       const store = await deps.repository.read();
       const views: GroupView[] = [];
+      const joinedAt = new Map<string, string>();
       for (const membership of store.memberships.filter((item) => item.userId === actorUserId && !item.leftAt)) {
         const group = store.groups.find((item) => item.id === membership.groupId && item.status === "active");
         if (!group) continue;
         const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;
+        joinedAt.set(group.id, membership.joinedAt);
         views.push(await toView(group, store, memberCount, membership.role));
       }
+      // BUG-0120 (SIT): the sidebar used to render in membership insertion order (oldest
+      // first), so a just-created Study Group appeared at the very bottom of the list.
+      // Newest group first, falling back to the newer membership on equal creation stamps.
+      views.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || (joinedAt.get(b.id) || "").localeCompare(joinedAt.get(a.id) || ""));
       return views;
     },
 

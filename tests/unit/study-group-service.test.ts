@@ -70,6 +70,18 @@ test("a learner with course access creates a discoverable group and becomes Host
   assert.equal((await service.listDiscover({ actorUserId: "host" })).some((item) => item.id === group.id), false);
 });
 
+test("My Study Groups lists the newest group first", async () => {
+  // BUG-0120 (SIT): a freshly created Study Group landed at the bottom of the sidebar
+  // (membership insertion order), so it was only visible after scrolling the column.
+  let clock = new Date(NOW).getTime();
+  const ticking = serviceWith({ now: () => new Date(clock) });
+  const first = await ticking.createGroup({ actorUserId: "host", title: "First created", courseId: "course-1", about: "Older group." });
+  clock += 60_000;
+  const second = await ticking.createGroup({ actorUserId: "host", title: "Newest group", courseId: "course-1", about: "Newer group." });
+  const mine = await ticking.listMine("host");
+  assert.deepEqual(mine.map((item) => item.id), [second.id, first.id]);
+});
+
 test("join is immediate for course access, duplicate join does not add a member, and leave returns the group to discover", async () => {
   access.add("member:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Join group", courseId: "course-1", about: "About the group." });
