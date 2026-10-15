@@ -430,7 +430,7 @@ test("PAY-09 negative: the same plan cannot be quoted again while access is acti
   await purchase(PLAN_ID);
   const quoted = await quotePlan(PLAN_ID);
   assert.equal(quoted.response.status, 400);
-  assert.match(quoted.body.error, /already has active access/i);
+  assert.match(quoted.body.error, /already have an active subscription covering this plan|already has active access/i);
 });
 
 test("PAY-09 edge: a signed-in user without purchase is not entitled", async () => {

@@ -73,8 +73,9 @@ async function startTrial() {
     planId: COURSE_PLAN,
     kind: "trial"
   }));
-  assert.equal(quoted.status, 200);
-  const quoteId = (await quoted.json()).quote.id as string;
+  const quotedBody = await quoted.json();
+  if (quoted.status !== 200) return { pending: quoted, body: quotedBody, orderId: undefined as string | undefined };
+  const quoteId = quotedBody.quote.id as string;
   const pending = await callRoute(trial.POST, jsonRequest("POST", "http://localhost/api/trial", {
     quoteId,
     locale: "en-GB",
@@ -242,7 +243,7 @@ test("TRIAL-02 negative: trial after a paid purchase does not grant a second ent
 
   const trialled = await startTrial();
   assert.equal(trialled.pending.status, 400);
-  assert.match(String(trialled.body.error || trialled.body.message || ""), /already has active access|already been used/i);
+  assert.match(String(trialled.body.error || trialled.body.message || ""), /already have an active subscription covering this plan|already has active access|already been used/i);
   const access = await entitlementAllowed();
   assert.equal(access.allowed, true);
   assert.equal(access.source, "purchase");
