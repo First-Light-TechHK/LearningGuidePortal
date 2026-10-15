@@ -691,6 +691,16 @@ test("editing a Study Group clamps About to the create form's 200 character limi
   assert.equal((app.match(/maxLength=\{GROUP_ABOUT_MAX\}/g) || []).length, 2);
 });
 
+test("the Study Groups sidebar scrolls inside the viewport instead of stretching the page", () => {
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // BUG-0129 (SIT): the sidebar had overflow:auto but no height cap, so the grid let it
+  // grow card by card and the whole page stretched as Study Groups piled up. Capping it
+  // to the viewport (the header is 68px tall) turns the column into its own scroll area;
+  // the stacked mobile layout resets the cap so the page keeps scrolling normally there.
+  assert.match(css, /\.sidebar \{ background: #fff; box-shadow: 0 1px 3px rgba\(0,0,0,\.1\), 0 1px 2px -1px rgba\(0,0,0,\.1\); padding: 32px 30px 40px; overflow: auto; max-height: calc\(100vh - 68px\); \}/);
+  assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.sidebar \{ max-height: none; \}[\s\S]*\}/);
+});
+
 test("Cancel Group confirms in the module's own dialog with cancel/confirm buttons and a busy state", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");

@@ -16,7 +16,11 @@
 .tools a[href*="/notifications"] { display: inline-flex; align-items: center; }
 .avatar { width: 32px; height: 32px; border-radius: 18px; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 13px; font-weight: 600; text-decoration: none; }
 .layout { display: grid; grid-template-columns: 460px minmax(0, 1fr); min-height: calc(100vh - 68px); }
-.sidebar { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1); padding: 32px 30px 40px; overflow: auto; }
+/* BUG-0129: the grid used to let the sidebar grow with its cards (overflow:auto with no
+   height cap), stretching the whole page as Study Groups piled up. Capping it to the
+   viewport below the 68px header makes the column its own scroll area; the stacked mobile
+   layout resets the cap. */
+.sidebar { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1); padding: 32px 30px 40px; overflow: auto; max-height: calc(100vh - 68px); }
 .main { position: relative; padding: 20px; min-width: 0; }
 .title { margin: 0; color: #1d6bff; font-size: 24px; font-weight: 700; }
 /* 599:56/599:59 section heading: 18px/600 #111827; the 14.125px bottom margin lands the mine-card slots at the design y 232/364 (599:10/599:11). */
@@ -292,6 +296,8 @@
   .header { padding: 0 16px; }
   .nav { display: none; }
   .layout, .detail, .room, .pair, .sheet, .facts { grid-template-columns: 1fr; }
+  /* BUG-0129: stacked single column — the sidebar scrolls with the page again. */
+  .sidebar { max-height: none; }
   .filters { flex-direction: column; }
   .filters select, .filters input { width: 100%; }
   .main { padding: 16px; }
