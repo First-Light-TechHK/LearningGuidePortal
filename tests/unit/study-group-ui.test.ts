@@ -68,12 +68,20 @@ test("the room distinguishes SDK reconnection, terminal disconnects, and verifie
   assert.match(room, /recoveryRequired/);
 });
 
-test("session title counter matches the 20 character Figma limit", () => {
-  assert.equal(SESSION_TITLE_MAX, 20);
-  assert.equal(sessionTitleCount(""), "0/20");
-  assert.equal(sessionTitleCount("1234567"), "7/20");
-  assert.equal(sessionTitleCount("x".repeat(20)), "20/20");
-  assert.equal(sessionTitleCount("x".repeat(21)), "20/20");
+test("session title counter matches the 50 character limit (owner ruling 2026-10-15)", () => {
+  // Owner ruling 2026-10-15 (BUG-0128): the Schedule Live Session title allows 50
+  // characters like the Study Group Title / Session Focus, so a real sample like
+  // "Classical Poetry Reading Session" (32 characters) fits. This supersedes the
+  // earlier 20 character alignment.
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.equal(SESSION_TITLE_MAX, 50);
+  assert.equal(sessionTitleCount(""), "0/50");
+  assert.equal(sessionTitleCount("1234567"), "7/50");
+  assert.equal(sessionTitleCount("Classical Poetry Reading Session"), "32/50");
+  assert.equal(sessionTitleCount("x".repeat(50)), "50/50");
+  assert.equal(sessionTitleCount("x".repeat(51)), "50/50");
+  // The dialog input follows the constant for both its maxLength and its slice.
+  assert.match(app, /<input name="title" required maxLength=\{SESSION_TITLE_MAX\} value=\{sessionTitle\} onChange=\{\(event\) => setSessionTitle\(event\.target\.value\.slice\(0, SESSION_TITLE_MAX\)\)\} \/><span className=\{styles\.counter\}>\{sessionTitleCount\(sessionTitle\)\}<\/span>/);
 });
 
 test("study group pane shows empty, error, and a selected group without inventing sessions for a visitor", () => {

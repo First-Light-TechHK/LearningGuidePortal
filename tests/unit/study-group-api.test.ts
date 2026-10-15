@@ -174,7 +174,9 @@ test("study group API requires a session, hides sessions until join, and does no
   assert.equal(wrong.status, 404);
 
   const startsLater = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
-  const title = "12345678901234567890";
+  // Owner ruling 2026-10-15 (BUG-0128): the Session Title boundary is 50 characters
+  // (this probe previously encoded the 20 character limit).
+  const title = "1234567890".repeat(5);
   const accepted = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
     title,
     startsAt: startsLater,

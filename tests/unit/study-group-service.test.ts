@@ -272,9 +272,12 @@ test("a live attendee list hides people who left and the completed list keeps th
   assert.deepEqual(done.attendees.map((item) => item.userId).sort(), ["attendee", "host"]);
 });
 
-test("session title stops at 20 characters and duration is one of four minute lengths stored as seconds", async () => {
+test("session title stops at 50 characters and duration is one of four minute lengths stored as seconds", async () => {
+  // Owner ruling 2026-10-15 (BUG-0128): Session Title now allows 50 characters, the same
+  // limit as the Study Group Title and Session Focus, so a real sample like
+  // "Classical Poetry Reading Session" (32 characters) fits; 51 still rejects.
   const group = await service.createGroup({ actorUserId: "host", title: "Duration group", courseId: "course-1", about: "Duration about." });
-  const title = "12345678901234567890";
+  const title = "1234567890".repeat(5);
   const storedSeconds = [1800, 2700, 3600, 5400];
   const scheduled = await service.scheduleSession({
     actorUserId: "host",
@@ -313,6 +316,20 @@ test("session title stops at 20 characters and duration is one of four minute le
   );
   await assert.rejects(
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: `${title}x` }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+});
+
+test("a real-world Session Title fits the 50 character limit on schedule and edit (owner ruling 2026-10-15, BUG-0128)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Title limit", courseId: "course-1", about: "About the title limit." });
+  const sample = "Classical Poetry Reading Session";
+  assert.equal(sample.length, 32);
+  const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: sample, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 4 });
+  assert.equal(scheduled.title, sample);
+  const edited = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: "1234567890".repeat(5) });
+  assert.equal(edited.title.length, 50);
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: `${"1234567890".repeat(5)}x` }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
 });

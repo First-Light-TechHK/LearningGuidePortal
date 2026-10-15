@@ -780,7 +780,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async scheduleSession(input: { actorUserId: string; groupId: string; title: string; startsAt: string; durationSeconds: number; maxParticipants: number; relatedLessonId?: string | null; focus?: string | null; aiTutorEnabled?: boolean }) {
-      const title = requireText(input.title, "Session Title", 20);
+      // Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters (the Study
+      // Group Title / Session Focus limit), mirrored by SESSION_TITLE_MAX in the client.
+      const title = requireText(input.title, "Session Title", 50);
       const startsAt = new Date(input.startsAt);
       if (Number.isNaN(startsAt.getTime())) throw new StudyGroupError("validation", "Start Time is required.");
       if (startsAt.getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
@@ -815,7 +817,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async editSession(input: { actorUserId: string; groupId: string; sessionId: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }) {
-      if (input.title !== undefined) requireText(input.title, "Session Title", 20);
+      if (input.title !== undefined) requireText(input.title, "Session Title", 50);
       if (input.startsAt !== undefined && Number.isNaN(new Date(input.startsAt).getTime())) throw new StudyGroupError("validation", "Start Time is required.");
       if (input.startsAt !== undefined && new Date(input.startsAt).getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
       if (input.durationSeconds !== undefined && !SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
@@ -833,7 +835,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can edit a Live Session.");
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Edit Session is available only before the Session starts.");
         if (input.maxParticipants !== undefined && input.maxParticipants < occupancy(store, current.id)) throw new StudyGroupError("conflict", "Maximum Participants is below the number already in the session.");
-        if (input.title !== undefined) current.title = requireText(input.title, "Session Title", 20);
+        if (input.title !== undefined) current.title = requireText(input.title, "Session Title", 50);
         if (input.relatedLessonId !== undefined) current.relatedLessonId = clean(input.relatedLessonId || "") || null;
         if (input.startsAt !== undefined) current.startsAt = new Date(input.startsAt).toISOString();
         if (input.durationSeconds !== undefined) current.durationSeconds = input.durationSeconds;

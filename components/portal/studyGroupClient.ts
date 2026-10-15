@@ -48,7 +48,10 @@ export async function studyGroupRequest<T>(url: string, init?: RequestInit): Pro
   }
 }
 
-export const SESSION_TITLE_MAX = 20;
+// Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters like the Study
+// Group Title / Session Focus (a 32 character sample like "Classical Poetry Reading
+// Session" must fit). The server enforces the same 50 in modules/group-study/service.ts.
+export const SESSION_TITLE_MAX = 50;
 
 // BUG-0116 (SIT): the create form capped About at 200 but the edit dialog rendered the
 // stored value uncontrolled, so text beyond the limit could still be shown and saved.
