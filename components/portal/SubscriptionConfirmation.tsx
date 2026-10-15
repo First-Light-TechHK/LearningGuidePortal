@@ -61,9 +61,13 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
     try {
       const endpoint = isTrial ? "/api/trial" : "/api/purchase/checkout";
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quote.id, locale, consents: { renewal: true, terms: true, refund: true } }) });
-      const data = await response.json() as { checkoutUrl?: string; error?: string };
+      const data = await response.json() as { checkoutUrl?: string; error?: string; code?: string };
       if (response.status === 401) { window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`); return; }
-      if (!response.ok || !data.checkoutUrl) throw new Error(data.error || details.checkoutError);
+      if (!response.ok || !data.checkoutUrl) {
+        const errors = getMessages(locale).paymentErrors;
+        const translated = data.code && Object.hasOwn(errors, data.code) ? errors[data.code as keyof typeof errors] : undefined;
+        throw new Error(translated || data.error || details.checkoutError);
+      }
       window.location.assign(data.checkoutUrl);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : details.checkoutError);

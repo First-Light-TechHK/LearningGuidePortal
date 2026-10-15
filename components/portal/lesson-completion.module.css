@@ -1,11 +1,10 @@
-.bar { display:flex; align-items:center; gap:13px; width:100%; margin-top:20px; padding:12px 20px 12px 12px; min-height:76px; border-radius:40px; background:#fff; box-shadow:0 1px 3px #0000001a,0 1px 2px -1px #0000001a; color:#15233a; }
-.badge { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:52px; height:52px; border:1px solid #b8d1ff; border-radius:30px; background:#ecf3ff; color:#246bfd; font-size:14px; font-weight:600; }
-.copy { flex:1; min-width:0; }
-.copy p { margin:0 0 2px; color:#246bfd; font-size:9px; font-weight:600; line-height:16px; }
-.copy h2 { margin:0; font-size:14px; line-height:19px; font-weight:600; }
-.keep { flex-shrink:0; margin-right:11px; padding:8px 0; border:0; background:none; color:#64748b; font-size:12px; font-weight:500; text-decoration:underline; cursor:pointer; }
-.complete { flex-shrink:0; min-width:152px; min-height:36px; padding:8px 16px; border:0; border-radius:20px; background:#246bfd; color:#fff; font-size:12px; font-weight:600; cursor:pointer; }
-.complete:disabled,.keep:disabled { opacity:.65; cursor:default; }
-.copy .error { color:#b91c1c; font-size:12px; font-weight:400; }
+﻿.bar { grid-column:3; grid-row:1; justify-self:end; position:relative; display:flex; align-items:center; gap:8px; padding:12px 8px; border-radius:8px; color:#5b616b; white-space:nowrap; }
+.bar img { display:block; flex-shrink:0; max-width:none; }
+.percent { font:600 13px/normal Inter,Arial,sans-serif; }
+.divider { width:1px; height:16px; background:#e2e5ea; }
+.complete { padding:0; border:0; background:transparent; color:#246bfc; font:600 14px/normal Inter,Arial,sans-serif; cursor:pointer; white-space:nowrap; }
+.complete:disabled { opacity:.65; cursor:default; }
+.completed { display:flex; align-items:center; gap:6px; color:#1e7a46; font:500 14px/normal Inter,Arial,sans-serif; }
+.error { position:absolute; z-index:1; right:0; top:100%; width:240px; margin:0; padding:8px; background:#fff; color:#b91c1c; font:400 12px/18px Inter,Arial,sans-serif; white-space:normal; }
 .bar button:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
-@media(max-width:700px) { .bar { flex-wrap:wrap; border-radius:24px; padding:12px; }.copy { flex-basis:calc(100% - 65px); }.keep { margin-left:auto; }.complete { min-width:138px; } }
+@media(max-width:700px) { .bar { grid-column:1 / -1; grid-row:auto; padding:4px 0; } }

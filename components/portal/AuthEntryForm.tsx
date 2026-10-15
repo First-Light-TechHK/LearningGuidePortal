@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { AuthProviders } from "@/components/portal/AuthProviders";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,13 +12,16 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting.current) return;
     setError("");
     const normalizedEmail = normaliseEmail(email);
     if (isEmailTooLong(normalizedEmail)) { setError(copy.emailTooLong); return; }
     if (!isBusinessEmail(normalizedEmail)) { setError(copy.emailInvalid); return; }
+    submitting.current = true;
     setBusy(true);
     try {
       const response = await fetch("/api/auth/check-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: normalizedEmail }) });
@@ -28,6 +31,7 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
       const query = new URLSearchParams({ email: normalizedEmail, returnTo }).toString();
       window.location.assign(`/${locale}/portal/${destination}${destination.includes("?") ? "&" : "?"}${query}`);
     } catch (requestError) {
+      submitting.current = false;
       setError(requestError instanceof Error ? requestError.message : copy.emailCheckFailed);
       setBusy(false);
     }

@@ -17,19 +17,18 @@ export function PreviewProgress({ courseId, lessonId, contentId, learningMode, s
   const [error, setError] = useState("");
   const openRequest = useRef<{ key: string; id: string } | null>(null);
   useEffect(() => {
-    const controller = new AbortController();
     const key = `${courseId}:${lessonId}:${learningMode || ""}:${contentId || ""}`;
     if (openRequest.current?.key !== key) openRequest.current = { key, id: learningMode ? `open_${Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join("_")}` : `open_${courseId}_${lessonId}` };
-    fetch(endpoint, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, ...(learningMode ? {contentId:contentId || null,learningMode} : {}), event: "open", seconds:0, clientEventId:openRequest.current.id }) })
+    fetch(endpoint, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, ...(learningMode ? {contentId:contentId || null,learningMode} : {}), event: "open", seconds:0, clientEventId:openRequest.current.id }) })
       .then(response => { if (!response.ok) setError(copy.saveError); else router.refresh(); })
       .catch(error => { if (error.name !== "AbortError") setError(copy.saveError); });
-    return () => controller.abort();
   }, [courseId, lessonId, contentId, learningMode, copy.saveError, endpoint]);
+
 
   async function complete() {
     setBusy(true); setError("");
     try {
-      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, event: "complete", seconds, clientEventId:`complete_${courseId}_${lessonId}` }) });
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, ...(learningMode ? {contentId:contentId || null,learningMode} : {}), event: "complete", seconds, clientEventId:`complete_${courseId}_${lessonId}_${contentId || "legacy"}` }) });
       if (!response.ok) throw new Error(copy.saveError);
       setCompleted(true); router.refresh();
     } catch { setError(copy.saveError); }

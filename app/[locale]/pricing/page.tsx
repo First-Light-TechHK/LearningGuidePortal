@@ -1,6 +1,6 @@
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { getPortalContent, getProductCourse, listPlans, listPublishedCourses } from "@/services/productStore";
+import { getPortalContent, getProductCourse, listPlansForPurchase, listPublishedCourses } from "@/services/productStore";
 import { PurchasePanel } from "@/components/portal/PurchasePanel";
 import { PricingPlans } from "@/components/portal/PricingPlans";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -12,12 +12,12 @@ export default async function PricingPage({ params, searchParams }: { params: Pr
   const locale = localeFrom((await params).locale);
   const { courseId, upgradeFrom, planId, device } = await searchParams;
   const content = await getPortalContent();
-  const plans = await listPlans();
+  const user = await currentProductUser();
+  const plans = await listPlansForPurchase(user?.id);
   const publishedCourses = await listPublishedCourses();
   const course = courseId ? await getProductCourse(courseId) : null;
   const messages = getMessages(locale);
   const copy = messages.pricingDesign;
-  const user = await currentProductUser();
   const directPlans = device === "mobile" ? plans.filter((plan) => plan.device === "mobile") : course?.status === "published" ? plans.filter((plan) => plan.scope === "course" && (plan.scopeId || plan.courseId) === course.id) : [];
   return <main className="portal-page pricing-design-page">
     <PortalHeader locale={locale} active="pricing" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />

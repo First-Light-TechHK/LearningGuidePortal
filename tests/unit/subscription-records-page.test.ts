@@ -18,7 +18,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
   await mkdir("test-results/subscription-records", { recursive: true });
   const products = ["Everything","Chinese Humanities","Science","European Humanities"];
   const images = ["everything","chinese_human","science","european_human"];
-  const initialSubscriptions = products.map((name,index) => ({id:`sub-${index}`,source:"purchase",state:["active","cancel_at_period_end","grace","expired"][index],validFrom:"2026-08-01",validTo:"2027-01-31",graceEndsAt:"2026-09-03",stripeSubscriptionId:`stripe-${index}`,plan:{id:`plan-${index}`,name}}));
+  const initialSubscriptions = products.map((name,index) => ({id:`sub-${index}`,source:"purchase",state:["active","cancel_at_period_end","grace","expired"][index],validFrom:"2026-08-01",validTo:"2027-01-31",graceEndsAt:"2026-09-03",stripeSubscriptionId:`stripe-${index}`,stripeCustomerId:`customer-${index}`,plan:{id:`plan-${index}`,name}}));
   const initialOrders = products.flatMap((name,index) => [0,1].map(renewal => ({id:`order-${index}-${renewal}`,stripeSubscriptionId:`stripe-${index}`,status:index === 2 && renewal === 0 ? "failed" : "paid",amountMinor:9900,currency:"USD",paymentMode:"stripe",stripeInvoiceId:renewal === 1 ? null : `invoice-${index}`,createdAt:renewal ? "2026-02-01" : "2026-08-01",servicePeriodStart:"2026-08-01",servicePeriodEnd:"2027-01-31",plan:{id:`plan-${index}`,name},presentation:{name,image:`/portal/subscriptions/${images[index]}.png`,termMonths:6}})));
   try {
     for (const locale of ["en-GB", "zh-CN"]) {
@@ -42,10 +42,14 @@ test("Subscription products start collapsed, expand independently, preserve bill
       const mount = (empty = false) => page.evaluate(props => (window as unknown as {mount:(props:unknown)=>void}).mount(props), {locale,key:empty ? "empty" : locale,initialSubscriptions:empty ? [] : initialSubscriptions,initialOrders:empty ? [] : initialOrders});
       await mount();
       const cards = page.locator('[data-subscription-id]'); await cards.first().waitFor();
+      await page.getByRole("button",{name:/\(1\)/}).click();
       assert.equal(await cards.count(),4);
+      assert.equal(await page.getByRole("button",{name:locale === "zh-CN" ? "\u6062\u590d" : "Resume",exact:true}).count(),0);
+      assert.equal(await page.getByRole("button",{name:locale === "zh-CN" ? "\u7ba1\u7406\u652f\u4ed8" : "Manage billing",exact:true}).count(),0);
       assert.equal(await page.getByRole("table").count(),0);
       assert.equal(await cards.locator('button[aria-expanded="false"]').count(),4);
-      assert.deepEqual(await cards.locator('img').evaluateAll(nodes => nodes.filter(node => !node.src.endsWith("svg")).map(node => new URL(node.src).pathname)),images.map(image => `/portal/subscriptions/${image}.png`));
+      assert.equal(await cards.locator('[data-product]').count(),4);
+      assert.deepEqual(await cards.first().locator('[data-product]').evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:120,height:120});
       await page.screenshot({path:`test-results/subscription-records/${locale}-collapsed.png`});
       await cards.nth(0).locator('button[aria-expanded]').click();
       await page.getByRole("table").waitFor();
@@ -62,17 +66,45 @@ test("Subscription products start collapsed, expand independently, preserve bill
       assert.equal(await page.getByRole("alert").first().textContent(),"Fixture billing failure");
       await cards.nth(0).getByRole("button",{name:locale === "zh-CN" ? "取消自动续订" : "Cancel auto-renewal",exact:true}).click();
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
+      for (const viewport of [{width:1440,height:900},{width:390,height:844},{width:390,height:500}]) {
+        await page.setViewportSize(viewport);
+        const input=dialog.getByRole("textbox");
+        await input.evaluate(e=>e.scrollIntoView({block:"center",behavior:"instant"}));
+        const layout=await input.evaluate(e=>{const t=e as HTMLTextAreaElement,r=e.getBoundingClientRect(),d=e.closest("dialog")!,dr=d.getBoundingClientRect(),style=getComputedStyle(e);return {height:r.height,left:r.left,right:r.right,top:r.top,bottom:r.bottom,dialogLeft:dr.left,dialogRight:dr.right,dialogTop:dr.top,dialogBottom:dr.bottom,overflow:d.scrollWidth>d.clientWidth,borders:[style.borderTopWidth,style.borderRightWidth,style.borderBottomWidth,style.borderLeftWidth]};});
+        assert.ok(layout.height>=84);
+        assert.equal(layout.overflow,false);
+        assert.ok(layout.dialogTop>=0 && layout.dialogBottom<=viewport.height);
+        assert.deepEqual(layout.borders,["1px","1px","1px","1px"]);
+        assert.ok(layout.left>=layout.dialogLeft && layout.right<=layout.dialogRight);
+        assert.ok(layout.top>=layout.dialogTop && layout.bottom<=layout.dialogBottom);
+        await input.fill("First line\nSecond line\nThird line");
+        assert.equal(await input.inputValue(),"First line\nSecond line\nThird line");
+        await page.screenshot({path:`test-results/subscription-records/${locale}-cancel-${viewport.height}.png`});
+      }
+      await dialog.getByRole("textbox").fill("");
+      await page.setViewportSize({width:1440,height:1333});
       const confirm = dialog.getByRole("button",{name:locale === "zh-CN" ? "确认取消" : "Confirm cancellation",exact:true});
       await confirm.click(); await dialog.getByRole("alert").waitFor();
       assert.equal(await dialog.isVisible(),true);
       reject=false;await confirm.click();await dialog.waitFor({state:"detached"});
       assert.equal(requests.length,2);
+      assert.equal(await page.getByRole("button",{name:locale === "zh-CN" ? "\u6062\u590d" : "Resume",exact:true}).count(),0);
       assert.equal(await cards.nth(0).getByRole("button",{name:locale === "zh-CN" ? "取消自动续订" : "Cancel auto-renewal",exact:true}).count(),0);
       await page.setViewportSize({width:390,height:844});
       await page.screenshot({path:`test-results/subscription-records/${locale}-mobile.png`,fullPage:true});
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false);
       await mount(true);await cards.first().waitFor({state:"detached"});
       assert.equal(await page.locator('a[href$="/pricing"]').count(),1);
+      await page.setViewportSize({width:1440,height:1333});
+      await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{locale,key:"upgraded",initialSubscriptions:[{...initialSubscriptions[0],scope:"everything"},{...initialSubscriptions[1],scope:"category",state:"expired"},{...initialSubscriptions[3],scope:"category"}],initialOrders:[{...initialOrders[0],kind:"upgrade",sourceSubscriptionId:"sub-1"},...initialOrders.filter(o=>["stripe-1","stripe-3"].includes(o.stripeSubscriptionId))]});
+      await page.getByRole("button",{name:/\(2\)/}).waitFor();
+      assert.equal(await page.locator('[data-past="true"]').first().isVisible(),false);
+      await page.getByRole("button",{name:/\(2\)/}).click();
+      assert.equal(await page.locator('[data-past="true"]').count(),2);
+      assert.equal(await page.locator('[data-subscription-id="sub-1"]').getByText(locale==="zh-CN"?"\u5df2\u5347\u7ea7":"Upgraded",{exact:true}).count(),1);
+      assert.equal(await page.locator('[data-past="true"] a[href*="pricing"]').count(),0,"Everything-covered historical categories do not offer duplicate purchases");
+      await page.locator('[data-subscription-id="sub-0"] button[aria-expanded]').click();
+      await page.screenshot({path:`test-results/subscription-records/${locale}-everything-upgraded.png`});
       await page.close();
     }
   } finally { await browser.close(); }

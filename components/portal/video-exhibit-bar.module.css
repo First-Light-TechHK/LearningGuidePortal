@@ -7,10 +7,28 @@
 .bar .dismiss { flex-shrink:0; margin:0 12px; padding:8px 0; border:0; background:transparent; color:rgba(0,0,0,.6); font:500 12px/16px Inter,Arial,sans-serif; text-decoration:underline; cursor:pointer; }
 .bar .view { display:flex; align-items:center; justify-content:center; gap:8px; flex-shrink:0; width:124px; min-height:40px; padding:8px 12px; border:0; border-radius:24px; background:#246bfc; color:#fff; font:600 12px/16px Inter,Arial,sans-serif; cursor:pointer; }
 .bar button:focus-visible { outline:2px solid #246bfc; outline-offset:3px; }
-.text { gap:17.5px; margin:24px 0; padding:8.9px 17.94px 8.9px 6.66px; }
-.text .thumbnail { width:58.207px; height:58.207px; }
-.text .view { width:116.698px; }
+.text { width:min(847px,100%); gap:16px; margin:24px 0; padding:12px 16px 12px 12px; border:1px solid #e2e5ea; border-radius:12px; background:#f6f8fb; }
+.text .thumbnail { width:104px; height:104px; border-radius:8px; }
+.text .kind { padding:3px 8px; background:#e8f1ff; font-size:11px; line-height:14px; }
+.text .view { width:auto; min-height:38px; padding:10px 16px; gap:4px; border:1px solid #a9c0ff; border-radius:20px; background:#fff; color:#246bfc; font-size:13px; }
 @media(max-width:600px) { .bar { flex-wrap:wrap; gap:8px; padding:12px; border-radius:24px; }.copy { flex-basis:calc(100% - 68px); }.bar .dismiss { margin-left:auto; }.bar .view { margin-left:4px; } }
 
 .bar .view:hover:not(:disabled) { background:#1d5ee0; color:#fff; }
-@media(max-width:600px) { .text .view { margin-left:auto; } }
+.text .view:hover:not(:disabled) { background:#e8f1ff; color:#246bfc; }
+.bubble { box-sizing:border-box; position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:8px; width:164px; height:335px; margin:22px 0 0 auto; padding:10px; border:1px solid #e2e5ea; border-radius:12px; background:#fff; box-shadow:0 8px 14px rgba(20,26,38,.16); font-family:Inter,Arial,sans-serif; }
+.bubbleHeader { display:flex; align-items:center; gap:8px; width:100%; height:38px; flex-shrink:0; }
+.bubbleKind { padding:3px 8px; border-radius:10px; background:#e8f1ff; color:#246bfc; font:600 11px/14px Inter,Arial,sans-serif; }
+.bubble .close { display:grid; place-items:center; flex-shrink:0; width:16px; height:16px; min-height:16px; margin:0 0 0 auto; padding:0; border:0; border-radius:0; background:transparent; cursor:pointer; }
+.bubble .close img { width:16px; height:16px; max-width:none; }
+.bubbleThumbnail { flex-shrink:0; width:140px; height:140px; border-radius:8px; object-fit:cover; }
+.bubble .bubbleTitle { display:block; flex:0 0 47px; width:100%; height:47px; margin:0; overflow:auto; overflow-wrap:anywhere; color:#142138; font:600 14px/18px Inter,Arial,sans-serif; }
+.bubbleActions { display:flex; flex-direction:column; gap:4px; width:100%; }
+.bubble .bubbleView { display:flex; align-items:center; justify-content:center; gap:4px; width:100%; height:18px; min-height:18px; padding:0 8px; border:0; border-radius:18px; background:#246bfc; color:#fff; font:600 12px/18px Inter,Arial,sans-serif; cursor:pointer; }
+.bubble .bubbleDismiss { display:flex; align-items:center; justify-content:center; width:100%; height:20px; min-height:20px; margin:0; padding:0 8px; border:0; border-radius:18px; background:transparent; color:#5b616b; font:500 12px/20px Inter,Arial,sans-serif; text-decoration:underline; cursor:pointer; }
+.bubble .bubbleView:hover { background:#1d5ee0; color:#fff; }
+.bubble .close:hover,.bubble .bubbleDismiss:hover { background:#e8f1ff; }
+.bubble button:focus-visible { outline:2px solid #246bfc; outline-offset:3px; }
+.pointer { position:absolute; top:-11px; left:45px; width:20px; height:10px; max-width:none; }
+.bubble[data-video-exhibit="fullscreen"] { margin:0; box-shadow:0 10px 15px rgba(0,0,0,.35); }
+@media(max-height:500px) { .bubble[data-video-exhibit="fullscreen"] { height:auto; max-height:calc(100dvh - 110px); gap:6px; overflow:auto; }.bubble[data-video-exhibit="fullscreen"] .bubbleHeader { height:24px; }.bubble[data-video-exhibit="fullscreen"] .bubbleThumbnail { width:80px; height:80px; align-self:center; }.bubble[data-video-exhibit="fullscreen"] .bubbleTitle { height:36px; flex-basis:36px; } }
+@media(max-width:600px) { .text { border-radius:12px; }.text .copy { flex-basis:calc(100% - 120px); }.text .view { margin-left:auto; } }

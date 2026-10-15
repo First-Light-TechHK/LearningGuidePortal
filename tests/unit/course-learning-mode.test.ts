@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { preferredLessonContentId, availableCourseLearningModes, modeLessonDestination } from "../../lib/courseLearningMode";
+import { preferredLessonContentId, availableCourseLearningModes, modeLessonDestination, resolveLessonPresentation } from "../../lib/courseLearningMode";
 import type { LessonContent } from "../../contracts/lesson-content";
 import type { ProductCourse } from "../../services/productStore";
 
@@ -31,4 +31,10 @@ test("preferred mode selects active media and falls back when a lesson has no ma
   assert.equal(preferredLessonContentId(contents, "video"), "video");
   assert.equal(preferredLessonContentId(contents.slice(0, 2), "text"), "video");
   assert.equal(preferredLessonContentId([]), "");
+  assert.deepEqual(resolveLessonPresentation(contents.slice(0, 2), "text", "hidden"), {contentId:"video",mode:"video"});
+  assert.deepEqual(resolveLessonPresentation(contents.slice(2), "video", "video"), {contentId:"text",mode:"text"});
+  assert.deepEqual(resolveLessonPresentation(contents, "text", "video"), {contentId:"text",mode:"text"});
+  assert.deepEqual(resolveLessonPresentation(contents, null, "text"), {contentId:"text",mode:"text"});
+  assert.deepEqual(resolveLessonPresentation(contents, "video", "other-lesson"), {contentId:"video",mode:"video"});
+  assert.deepEqual(resolveLessonPresentation([], "video"), {contentId:"",mode:"text"});
 });

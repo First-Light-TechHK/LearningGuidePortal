@@ -12,6 +12,9 @@ export type StripePriceSnapshot = {
 // One-time payment Price, separate from the Everything renewal Price.
 export type StripeUpgradePriceSnapshot = StripePriceSnapshot;
 
+// Server-derived, per-user purchase state; never a price or access grant.
+export type PlanPurchaseAvailability = { alreadySubscribed: boolean };
+
 export const subscriptionPrices = [
   { id: "everything-pc-6", env: "STRIPE_PRICE_EVERYTHING_SIX_MONTHS", scope: "everything", scopeId: "*", termMonths: 6 },
   { id: "everything-pc-12", env: "STRIPE_PRICE_EVERYTHING_YEAR", scope: "everything", scopeId: "*", termMonths: 12 },
@@ -24,7 +27,7 @@ export const subscriptionPrices = [
 ] as const;
 
 export class PaymentError extends Error {
-  constructor(public readonly code: "price_unavailable" | "quote_expired" | "payment_unavailable" | "invalid_request", public readonly status = 400) {
+  constructor(public readonly code: "price_unavailable" | "quote_expired" | "payment_unavailable" | "invalid_request" | "already_subscribed" | "origin_mismatch" | "consent_required", public readonly status = 400) {
     super(code);
   }
 }

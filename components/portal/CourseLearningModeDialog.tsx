@@ -9,8 +9,8 @@ import { getMessages } from "@/lib/i18n/messages";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./course-learning-mode.module.css";
 
-export function CourseLearningModeDialog({ courseId, locale, signedIn, pendingMode = null }: {
-  courseId: string; locale: Locale; signedIn: boolean; pendingMode?: CourseLearningMode | null;
+export function CourseLearningModeDialog({ courseId, locale, signedIn, pendingMode = null, destinationHref }: {
+  courseId: string; locale: Locale; signedIn: boolean; pendingMode?: CourseLearningMode | null; destinationHref?: string;
 }) {
   const copy = getMessages(locale).courseLearningMode;
   const router = useRouter(), pathname = usePathname(), titleId = useId(), descriptionId = useId(), groupName = useId();
@@ -18,8 +18,9 @@ export function CourseLearningModeDialog({ courseId, locale, signedIn, pendingMo
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   function removePendingMode() {
     const url = new URL(window.location.href);
-    if (url.searchParams.has("learningMode")) {
+    if (url.searchParams.has("learningMode") || url.searchParams.has("lessonEntry")) {
       url.searchParams.delete("learningMode");
+      url.searchParams.delete("lessonEntry");
       window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
     }
   }
@@ -40,7 +41,11 @@ export function CourseLearningModeDialog({ courseId, locale, signedIn, pendingMo
       if (!response.ok || !result.ok) throw new Error("save");
       removePendingMode();
       setOpen(false);
-      router.refresh();
+      if (destinationHref) {
+        const destination = new URL(destinationHref, window.location.origin);
+        destination.searchParams.set("viewMode", mode);
+        router.push(destination.pathname + destination.search);
+      } else router.refresh();
     } catch { setError(copy.saveError); } finally { setBusy(false); }
   }
   if (!open) return null;

@@ -9,7 +9,7 @@
   "videoUnmute": "Unmute",
   "videoFullscreen": "Toggle fullscreen",
   "videoSpeed": "Playback speed",
-  "videoNormalSpeed": "Normal (1×)",
+  "videoNormalSpeed": "1×",
   "videoPipActive": "This video is playing in picture-in-picture mode.",
   "videoPipEnter": "Enter picture-in-picture",
   "videoPipExit": "Exit picture-in-picture",

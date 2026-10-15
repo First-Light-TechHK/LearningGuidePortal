@@ -8,7 +8,7 @@ import { build } from "esbuild";
 test("subscribed learning renders the shared preview player after session and Entitlement checks", async () => {
   const course = { id:"course", slug:"course", title:"Actual Course", description:"Course description", category:"Science", status:"published", cover:"/cover.jpg", sections:[{lessons:[
     {id:"public",title:"First",body:"Public",isPublic:true,durationMinutes:1},
-    {id:"private",title:"Second",body:"Protected",isPublic:false,durationMinutes:2,contents:[
+    {id:"private",title:"Second",summary:"Current lesson summary",body:"Protected",isPublic:false,durationMinutes:2,contents:[
       {id:"point-one",title:"2.1",type:"video",url:"/point-one.mp4",nodes:[]},
       {id:"point-two",title:"2.2",type:"video",url:"/point-two.mp4",nodes:[]},
       {id:"text",title:"2.3",type:"text",html:"Protected content",nodes:[]},
@@ -36,11 +36,13 @@ test("subscribed learning renders the shared preview player after session and En
     const element=await invoke(locale);
     const props=element.props.children[1].props;
     assert.equal(props.lesson.id,"private");assert.equal(props.courseTitle,"Actual Course");assert.equal(props.entitled,true);
-    assert.equal(props.studyEndpoint,"/api/study/events");assert.equal(props.preferredMode,"text");assert.equal(props.initialCompleted,true);
+    assert.equal(props.description,"Current lesson summary");
+    assert.equal(props.studyEndpoint,"/api/study/events");assert.equal(props.preferredMode,"text");assert.equal(props.initialCompleted,true);assert.deepEqual(props.completedContentIds,[]);
     assert.equal(props.trialGate,undefined);assert.equal(props.poster,"/cover.jpg");
     assert.deepEqual(props.lesson.contents.map((content:{id:string})=>content.id),["point-one","point-two","text"],"lesson access includes every knowledge point without completion gates");
     assert.ok(props.outline.every((item:{href:string})=>item.href.startsWith(`/${locale}/account/learn/course?lessonId=`)));
     const first=(await invoke(locale,"public")).props.children[1].props;
+    assert.equal(first.description,"");
     assert.equal(first.nextHref,`/${locale}/account/learn/course?lessonId=private`);
     assert.equal((await invoke(locale,"private","video")).props.children[1].props.preferredMode,"video");
     assert.equal((await invoke(locale,"private","video","point-two")).props.children[1].props.initialContentId,"point-two");

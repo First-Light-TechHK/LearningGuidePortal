@@ -3,17 +3,28 @@ import { attachStripeCheckoutSession, completeDemoUpgradeOrder, createPendingDem
 import { createHostedCheckout, createHostedTrialCheckout, createHostedUpgradeCheckout, getStripe } from "./stripeClient";
 import { validateSubscriptionPrice, validateUpgradePrice } from "./stripePriceService";
 import { PaymentError } from "@/contracts/payment";
-import { isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
+import { appEnvironment, isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
 
 export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
+
+export function checkoutRequestOrigin(request: Request) {
+  const configured = publicAppOrigin(request);
+  const target = new URL(request.url);
+  // Local Next.js may run on another port or loopback alias. Only accept
+  // the actual request origin; never trust forwarded hosts or arbitrary Origin.
+  const local = appEnvironment() === "DEV" && target.protocol === "http:"
+    && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname);
+  const origin = local ? target.origin : configured;
+  if (request.headers.get("origin") !== origin) throw new PaymentError("origin_mismatch", 403);
+  return origin;
+}
 
 export async function startPayment(user: ProductUser, body: CheckoutRequest, request: Request, trial = false) {
   const mode = paymentMode();
   if (!["demo", "stripe"].includes(mode) || (isProductionEnvironment() && mode !== "stripe")) throw new PaymentError("payment_unavailable", 503);
   if (mode === "stripe" && !runtimeConfiguration().payment.configured) throw new PaymentError("payment_unavailable", 503);
-  const origin = publicAppOrigin(request);
-  if (request.headers.get("origin") !== origin) throw new PaymentError("invalid_request", 403);
-  if (!body.consents?.renewal || !body.consents.terms || !body.consents.refund) throw new PaymentError("invalid_request");
+  const origin = checkoutRequestOrigin(request);
+  if (body.consents?.renewal !== true || body.consents.terms !== true || body.consents.refund !== true) throw new PaymentError("consent_required");
   const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
   if (trial && !body.quoteId) {
     if (mode === "demo") {

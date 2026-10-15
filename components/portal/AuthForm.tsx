@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Check, Eye, EyeOff, Lock, Mail, User, X } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
@@ -31,6 +31,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
   const [existingNotice, setExistingNotice] = useState("");
   const [existingSeconds, setExistingSeconds] = useState(3);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -64,11 +65,13 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting.current) return;
     setError("");
     if (isEmailTooLong(email)) { setError(labels.emailTooLong); return; }
     if (!isBusinessEmail(email)) { setError(labels.emailInvalid); return; }
     if (!signIn && isNameTooLong(nickname)) { setError(labels.nameTooLong); return; }
     if (!signIn && !isValidName(nickname)) { setError(labels.nameInvalid); return; }
+    submitting.current = true;
     setBusy(true);
     try {
       const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe }) });
@@ -84,11 +87,14 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       if (data.data?.existingActiveEmail) {
         setExistingNotice(labels.existingEmailNotice);
         setExistingSeconds(3);
+        submitting.current = false;
+        setBusy(false);
         return;
       }
       if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
       window.location.assign(returnTo || `/${locale}/account/my-learning`);
     } catch (requestError) {
+      submitting.current = false;
       setError(requestError instanceof Error ? requestError.message : labels.requestFailed);
       setBusy(false);
     }

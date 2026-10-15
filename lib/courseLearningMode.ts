@@ -27,3 +27,12 @@ export function preferredLessonContentId(contents: LessonContent[], mode: Course
   const preferred = active.find(item => mode === "text" ? item.type === "text" || item.type === "pdf" : item.type === "video");
   return preferred?.id || active[0]?.id || "";
 }
+
+/** Validate resumed content against the requested mode and current lesson. */
+export function resolveLessonPresentation(contents: LessonContent[], preferredMode: CourseLearningMode | null, initialContentId?: string | null) {
+  const active = contents.filter(content => content.active !== false);
+  const initial = active.find(content => content.id === initialContentId && (preferredMode === null || (preferredMode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf")));
+  const contentId = initial?.id || preferredLessonContentId(active, preferredMode);
+  const selected = active.find(content => content.id === contentId);
+  return { contentId, mode: (selected?.type === "video" ? "video" : "text") as CourseLearningMode };
+}

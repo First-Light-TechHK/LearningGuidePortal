@@ -39,6 +39,7 @@ export type CoursePage = {
   totalLearningPoints: number;
   progress: number | null;
   nextPreviewLessonId: string | null;
+  actionLessonId: string | null;
 };
 
 type CourseLike = {
@@ -111,6 +112,7 @@ export function emptyFailedCoursePage(): CoursePage {
     totalLearningPoints: 0,
     progress: null,
     nextPreviewLessonId: null,
+    actionLessonId: null,
   };
 }
 
@@ -155,5 +157,6 @@ export function buildCoursePage(input: {
     totalLearningPoints: lessons.length,
     progress: computed.progress,
     nextPreviewLessonId: previewLessons.find((lesson) => !input.openedLessonIds.includes(lesson.id))?.id || null,
+    actionLessonId: pageState === "available" ? lessons[0]?.id || null : null,
   };
 }

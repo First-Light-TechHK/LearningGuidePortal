@@ -1,33 +1,154 @@
 {
-  "textExhibit": { "imageTitle": "图片细节观察", "videoTitle": "花朵动态观察", "modelTitle": "花瓶形态观察" },
-  "exhibitDialog": { "courseExhibit": "课程展示", "close": "关闭展示", "about": "关于此展示", "source": "来源", "collection": "课程展示资源", "returnHint": "关闭展示后将返回课时中的原位置，视频保持暂停。", "modelHint": "拖动旋转 · 滚动缩放", "imageHint": "拖动移动 · 滚动缩放", "videoHint": "播放视频 · 滚动缩放", "modelDescription": "近距离查看课时中介绍的物体，旋转和缩放以观察其形态和细节。", "imageDescription": "近距离查看课时中介绍的图片，拖动和缩放以观察其细节。", "videoDescription": "观看课时中介绍的视频，使用播放控件按自己的节奏探索。", "controls": "展示查看控件", "zoom": "缩放比例", "zoomIn": "放大", "zoomOut": "缩小", "reset": "重置", "loading": "正在加载展示…", "failed": "无法加载展示，关闭后重新打开以重试。" },
-  "videoExhibit": { "available": "可查看展示内容", "untitled": "展示内容", "notNow": "暂不查看", "view": "查看展示", "types": { "text": "文章", "video": "视频", "image": "图片", "audio": "音频", "model3d": "3D 模型", "exercise": "练习" } },
+  "textExhibit": {
+    "imageTitle": "图片细节观察",
+    "videoTitle": "花朵动态观察",
+    "modelTitle": "花瓶形态观察"
+  },
+  "exhibitDialog": {
+    "courseExhibit": "课程展示",
+    "close": "关闭展示",
+    "about": "关于此展示",
+    "source": "来源",
+    "collection": "课程展示资源",
+    "returnHint": "关闭展示后将返回课时中的原位置，视频保持暂停。",
+    "modelHint": "拖动旋转 · 滚动缩放",
+    "imageHint": "拖动移动 · 滚动缩放",
+    "videoHint": "播放视频 · 滚动缩放",
+    "modelDescription": "近距离查看课时中介绍的物体，旋转和缩放以观察其形态和细节。",
+    "imageDescription": "近距离查看课时中介绍的图片，拖动和缩放以观察其细节。",
+    "videoDescription": "观看课时中介绍的视频，使用播放控件按自己的节奏探索。",
+    "controls": "展示查看控件",
+    "zoom": "缩放比例",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "reset": "重置",
+    "loading": "正在加载展示…",
+    "failed": "无法加载展示，关闭后重新打开以重试。"
+  },
+  "videoExhibit": {
+    "available": "可查看展示内容",
+    "untitled": "展示内容",
+    "notNow": "暂不查看",
+    "view": "查看展示",
+    "types": {
+      "text": "文章",
+      "video": "视频",
+      "image": "图片",
+      "audio": "音频",
+      "model3d": "3D 模型",
+      "exercise": "练习"
+    }
+  },
   "exploration": {
-    "title":"探索", "description":"发现辅助资料，进一步探索相关想法。", "reading":"推荐阅读", "exhibits":"展示资源", "thisLesson":"当前课时", "wholeCourse":"整门课程", "scope":"探索范围", "close":"关闭探索", "book":"书籍", "article":"文章", "lesson":"课时 {number}", "future":"随着课程学习的推进，将有更多展示资源可用。", "locked":"后续课时的内容仍未开放。", "empty":"暂无辅助资料。"
+    "title": "探索",
+    "description": "发现辅助资料，进一步探索相关想法。",
+    "reading": "推荐阅读",
+    "exhibits": "展示资源",
+    "thisLesson": "当前课时",
+    "wholeCourse": "整门课程",
+    "scope": "探索范围",
+    "close": "关闭探索",
+    "book": "书籍",
+    "article": "文章",
+    "lesson": "课时 {number}",
+    "future": "随着课程学习的推进，将有更多展示资源可用。",
+    "locked": "后续课时的内容仍未开放。",
+    "moreReadings": "随着学习深入，将解锁更多阅读内容",
+    "moreExhibits": "随着学习深入，将解锁更多展示资源",
+    "empty": "暂无辅助资料。"
   },
   "understandingOverview": {
-    "title": "理解测试", "description": "查看本课程的测试状态和最新结果", "back": "返回课时",
-    "progress": "你的进度", "completedCount": "已完成 {completed} / {total}", "courseAssessment": "课程测试", "lessonAssessments": "课时测试",
-    "lessonAssessment": "课时 / 测试", "status": "状态", "latestResult": "最新结果", "action": "操作", "completed": "已完成", "current": "当前课时",
-    "evaluated": "已评估", "inProgress": "进行中", "available": "可开始", "locked": "完成课时后可开始", "answered": "已回答 3 / 20 题", "strong": "掌握良好",
-    "viewResult": "查看结果", "continue": "继续", "start": "开始"
+    "title": "理解测试",
+    "description": "查看本课程的测试状态和最新结果",
+    "back": "返回课时",
+    "progress": "你的进度",
+    "completedCount": "已完成 {completed} / {total}",
+    "courseAssessment": "课程测试",
+    "lessonAssessments": "课时测试",
+    "lessonAssessment": "课时 / 测试",
+    "status": "状态",
+    "latestResult": "最新结果",
+    "action": "操作",
+    "completed": "已完成",
+    "current": "当前课时",
+    "evaluated": "已评估",
+    "inProgress": "进行中",
+    "available": "可开始",
+    "locked": "完成课时后可开始",
+    "answered": "已回答 3 / 20 题",
+    "strong": "掌握良好",
+    "viewResult": "查看结果",
+    "continue": "继续",
+    "start": "开始"
   },
   "applicationTest": {
-    "title": "应用测试", "apply": "应用所学知识", "aiEvaluated": "AI 评估", "submit": "提交 AI 评估",
-    "back": "返回理解测试", "evaluating": "正在评估你的回答……", "evaluationNote": "评估状态替代提交按钮，题目和已保存的回答仍保留在页面中。",
-    "yourResponse": "你的回答", "overall": "总体评价", "strongResponse": "回答良好", "latest": "最近一次作答",
-    "strengths": "做得好的地方", "improvement": "可以改进的地方", "retryNote": "如果 AI 评估失败，已保存的回答仍可使用，无需重新输入即可重试。",
-    "expand": "放大弹窗", "restore": "恢复弹窗大小"
+    "title": "应用测试",
+    "apply": "应用所学知识",
+    "aiEvaluated": "AI 评估",
+    "submit": "提交给 AI Tutor",
+    "back": "返回理解测试",
+    "evaluating": "AI Tutor 正在评阅你的回答……",
+    "evaluationNote": "通常不到一分钟即可完成。你可以离开此页面。",
+    "aiTutor": "AI TUTOR",
+    "yourAnswer": "你的答案",
+    "placeholder": "用你自己的语言写下答案…",
+    "resultBack": "返回",
+    "feedback": "AI Tutor 的反馈",
+    "nextLesson": "下一课时",
+    "tryKnowledge": "尝试知识测试",
+    "retake": "重新测试",
+    "yourResponse": "你的回答",
+    "overall": "总体评价",
+    "strongResponse": "回答良好",
+    "latest": "最近一次作答",
+    "strengths": "做得好的地方",
+    "improvement": "可以改进的地方",
+    "retryNote": "如果 AI 评估失败，已保存的回答仍可使用，无需重新输入即可重试。",
+    "expand": "放大弹窗",
+    "restore": "恢复弹窗大小"
   },
   "knowledgeTest": {
-    "title": "知识测试", "result": "结果回顾", "flashcards": "知识卡片", "lesson": "课时 {number}",
-    "review": "回顾所学内容", "question": "问题", "yourAnswer": "你的答案", "placeholder": "用自己的话写下答案……",
-    "saved": "自动保存", "exit": "退出", "check": "核对答案", "reference": "参考答案", "emptyAnswer": "尚未填写答案",
-    "selfAssessment": "你答得怎么样？", "mark": "自我评价", "wrong": "我答错了", "right": "我答对了", "next": "下一题",
-    "strongUnderstanding": "掌握良好", "needsReview": "需要复习", "strong": "已掌握", "correct": "{correct}/{total} 张卡片标记为正确",
-    "basedOn": "根据你的自我评价", "reviewAll": "回顾所有卡片", "cards": "{count} 张卡片", "openCard": "打开已保存卡片", "done": "完成", "emptyList": "此列表暂无卡片"
+    "title": "知识测试",
+    "result": "结果回顾",
+    "flashcards": "知识卡片",
+    "lesson": "课时 {number}",
+    "review": "回顾所学内容",
+    "question": "问题",
+    "yourAnswer": "你的答案",
+    "placeholder": "记下你的想法（选填）",
+    "saved": "自动保存",
+    "exit": "退出",
+    "check": "显示答案",
+    "reference": "参考答案",
+    "emptyAnswer": "未填写笔记",
+    "selfAssessment": "你答得怎么样？",
+    "mark": "自我评价",
+    "wrong": "我答错了",
+    "right": "我答对了",
+    "next": "下一题",
+    "strongUnderstanding": "掌握良好",
+    "needsReview": "需要复习",
+    "strong": "已掌握",
+    "correct": "{total} 题中答对 {correct} 题",
+    "basedOn": "根据你的自我评价",
+    "reviewAll": "回顾所有卡片",
+    "cards": "{count} 张卡片",
+    "openCard": "打开已保存卡片",
+    "done": "完成",
+    "emptyList": "此列表暂无卡片",
+    "optionalNote": "你的笔记（选填）",
+    "yourNote": "你的笔记",
+    "close": "关闭知识测试",
+    "youMarked": "你的标记：",
+    "backToResults": "返回结果",
+    "nextLesson": "下一课时",
+    "tryApplication": "尝试应用测试"
   },
   "lessonCompleted": {
+    "cards": "20 张卡片",
+    "questionCount": "1 道题",
+    "nextLesson": "下一课时",
+    "close": "关闭",
     "title": "第 {number} 课时已完成",
     "description": "选择测试来检验您的理解，或继续学习",
     "knowledge": "知识测试",
@@ -43,6 +164,7 @@
     "unavailable": "本课时暂无可用测试。"
   },
   "videoCompletion": {
+    "markComplete": "标记完成",
     "label": "课时完成提示",
     "watched": "第 {number} 课时 · 已观看 {percent}%",
     "question": "您已完成本课时的学习吗？",
@@ -63,15 +185,28 @@
     "saveError": "无法保存你的偏好，请重试。"
   },
   "upgradePanel": {
-    "eyebrow": "升级订阅", "title": "升级到 PC Everything",
+    "eyebrow": "升级订阅",
+    "title": "升级到 PC Everything",
     "description": "按当前订阅期限支付一次性补差价，付款前可确认金额。保留原到期日，其他分类订阅不受影响。",
-    "calculate": "查看升级价格", "error": "升级价格计算失败。"
+    "calculate": "查看升级价格",
+    "error": "升级价格计算失败。"
   },
   "overviewV1": {
-    "learning": "你的学习", "description": "显示你已开始学习的所有课程", "lessons": "{count} 个课时",
-    "video": "视频模式", "text": "文本模式",
-    "categories": { "chinese": "中国人文", "science": "科学", "european": "欧洲人文" },
-    "actions": { "resume": "继续学习", "review": "回顾课程", "plans": "查看订阅方案" }
+    "learning": "你的学习",
+    "description": "显示你已开始学习的所有课程",
+    "lessons": "{count} 个课时",
+    "video": "视频模式",
+    "text": "文本模式",
+    "categories": {
+      "chinese": "中国人文",
+      "science": "科学",
+      "european": "欧洲人文"
+    },
+    "actions": {
+      "resume": "继续学习",
+      "review": "回顾课程",
+      "plans": "查看订阅方案"
+    }
   },
   "learningOverview": {
     "learning": "学习中的课程",
@@ -127,17 +262,38 @@
     "why": "为什么选择我们",
     "whyTitle": "让思考拥有终身的归属。\n不仅收获知识，\n更培养思考的习惯，拓宽看世界的视野。",
     "values": [
-      { "title": "不仅学习，更要思考", "text": "我们不以记住多少内容衡量进步，而关注你如何学会推理。每一节课都帮助你学会提问，而不只是接受知识。" },
-      { "title": "有引导，不孤单", "text": "真正的理解很少在孤立中发生。与 AI、同伴和导师一起分享、检验并磨练思考。" },
-      { "title": "深度胜于速度", "text": "我们不追逐完成率，而致力于让理解长久留存——多年以后，你依然能够解释并运用所学。" },
-      { "title": "更宽广的世界，而非更狭窄的道路", "text": "教育不应将好奇心缩减为一纸证书。我们为你打开通向新思想、新学科和新视角的大门。" }
+      {
+        "title": "不仅学习，更要思考",
+        "text": "我们不以记住多少内容衡量进步，而关注你如何学会推理。每一节课都帮助你学会提问，而不只是接受知识。"
+      },
+      {
+        "title": "有引导，不孤单",
+        "text": "真正的理解很少在孤立中发生。与 AI、同伴和导师一起分享、检验并磨练思考。"
+      },
+      {
+        "title": "深度胜于速度",
+        "text": "我们不追逐完成率，而致力于让理解长久留存——多年以后，你依然能够解释并运用所学。"
+      },
+      {
+        "title": "更宽广的世界，而非更狭窄的道路",
+        "text": "教育不应将好奇心缩减为一纸证书。我们为你打开通向新思想、新学科和新视角的大门。"
+      }
     ],
     "guide": "快速指南",
     "guideImage": "在户外抱着书本的学生",
     "steps": [
-      { "title": "AI 导师", "text": "随时提问。AI 导师拆解复杂主题、实时答疑，并适应最适合你的学习方式。" },
-      { "title": "小组学习", "text": "一键创建或加入学习房间，实时讨论课程主题、分享笔记，并相互督促。" },
-      { "title": "与我们一起学习", "text": "设定适合自己的节奏，跟踪进度，从上次停下的地方继续，养成持久的学习习惯。" }
+      {
+        "title": "AI 导师",
+        "text": "随时提问。AI 导师拆解复杂主题、实时答疑，并适应最适合你的学习方式。"
+      },
+      {
+        "title": "小组学习",
+        "text": "一键创建或加入学习房间，实时讨论课程主题、分享笔记，并相互督促。"
+      },
+      {
+        "title": "与我们一起学习",
+        "text": "设定适合自己的节奏，跟踪进度，从上次停下的地方继续，养成持久的学习习惯。"
+      }
     ]
   },
   "courseDetailDesign": {
@@ -402,6 +558,7 @@
     "noCourses": "你还没有开始课程。",
     "noPreviewCourses": "暂无已进入试看范围的课程。",
     "continue": "继续学习",
+    "nextLesson": "下一课时",
     "review": "复习课程",
     "viewPlans": "查看计划",
     "inProgress": "学习中",
@@ -534,9 +691,121 @@
     "googleConnect": "绑定 Google",
     "googleConnectHint": "绑定 Google 账号后,无需密码即可登录。"
   },
-  "contactPage": { "title": "联系我们", "description": "我们很乐意倾听您的想法。请发送消息，我们会尽快回复。", "information": "联系信息", "email": "电子邮件", "emailAddresses": ["support@thedigitallearningguide.com", "info@thedigitallearningguide.com"], "hours": "服务时间", "hoursWeekday": "周一至周五：太平洋时间 9:00 - 18:00", "hoursWeekend": "周六：太平洋时间 10:00 - 16:00", "formTitle": "给我们留言", "firstName": "名字", "lastName": "姓氏", "emailAddress": "电子邮件地址", "phone": "电话号码", "subject": "主题", "message": "留言", "consent": "我同意接收 Learning Guide 的沟通信息，并接受隐私政策", "submit": "发送消息", "placeholders": { "firstName": "王", "lastName": "小明", "email": "name@example.com", "phone": "+86 138 0000 0000", "message": "请告诉我们如何帮助您…" } },
+  "contactPage": {
+    "title": "联系我们",
+    "description": "我们很乐意倾听您的想法。请发送消息，我们会尽快回复。",
+    "information": "联系信息",
+    "email": "电子邮件",
+    "emailAddresses": [
+      "support@thedigitallearningguide.com",
+      "info@thedigitallearningguide.com"
+    ],
+    "hours": "服务时间",
+    "hoursWeekday": "周一至周五：太平洋时间 9:00 - 18:00",
+    "hoursWeekend": "周六：太平洋时间 10:00 - 16:00",
+    "formTitle": "给我们留言",
+    "firstName": "名字",
+    "lastName": "姓氏",
+    "emailAddress": "电子邮件地址",
+    "phone": "电话号码",
+    "subject": "主题",
+    "message": "留言",
+    "consent": "我同意接收 Learning Guide 的沟通信息，并接受隐私政策",
+    "submit": "发送消息",
+    "placeholders": {
+      "firstName": "王",
+      "lastName": "小明",
+      "email": "name@example.com",
+      "phone": "+86 138 0000 0000",
+      "message": "请告诉我们如何帮助您…"
+    }
+  },
   "helpPage": {
-    "design": { "heroTitle": "我们如何帮助您？", "heroDescription": "搜索知识库或浏览下方分类", "searchPlaceholder": "搜索文章…", "browseTitle": "按分类浏览", "popularTitle": "热门文章", "faqTitle": "常见问题", "supportTitle": "仍需要帮助？", "supportDescription": "我们的支持团队随时为您提供协助。联系我们后，我们会尽快回复。", "contactSupport": "联系支持团队", "categories": [{ "title": "快速入门", "description": "了解 Learning Guide 的基础使用方法", "icon": "/portal/help/asset-1.svg", "items": [] }, { "title": "账单与支付", "description": "管理您的订阅和支付", "icon": "/portal/help/asset-3.svg", "items": [] }, { "title": "学习小组", "description": "创建和加入学习小组", "icon": "/portal/help/asset-6.svg", "items": [] }, { "title": "账户设置", "description": "管理个人资料和偏好设置", "icon": "/portal/help/asset-5.svg", "items": [] }], "popularArticles": [{ "question": "如何报名课程？", "answer": "选择课程和计划，然后完成安全结账流程。" }, { "question": "如何继续学习课程？", "answer": "打开 My Learning，选择要继续学习的课程内容。" }, { "question": "支持哪些支付方式？", "answer": "可用支付方式将在安全结账页显示。" }], "faqItems": [{ "question": "如何报名课程？", "answer": "选择课程和计划，然后完成安全结账流程。" }, { "question": "可以在移动设备上学习吗？", "answer": "您可以通过受支持的移动浏览器访问 Learning Guide。" }, { "question": "支持哪些支付方式？", "answer": "可用支付方式将在安全结账页显示。" }, { "question": "学习小组如何运作？", "answer": "学习小组让学习者围绕共同的课程兴趣协作学习。" }, { "question": "如果不满意可以退款吗？", "answer": "请提供订单信息联系支持团队，运营人员会审核您的请求。" }, { "question": "课程有证书吗？", "answer": "如有提供，课程完成信息会显示在 My Learning 中。" }, { "question": "课程访问权限持续多久？", "answer": "有效订阅或权益决定您的课程访问期限。" }, { "question": "可以下载课程材料吗？", "answer": "仅当课程提供下载时才能下载材料。" }] },
+    "design": {
+      "heroTitle": "我们如何帮助您？",
+      "heroDescription": "搜索知识库或浏览下方分类",
+      "searchPlaceholder": "搜索文章…",
+      "browseTitle": "按分类浏览",
+      "popularTitle": "热门文章",
+      "faqTitle": "常见问题",
+      "supportTitle": "仍需要帮助？",
+      "supportDescription": "我们的支持团队随时为您提供协助。联系我们后，我们会尽快回复。",
+      "contactSupport": "联系支持团队",
+      "categories": [
+        {
+          "title": "快速入门",
+          "description": "了解 Learning Guide 的基础使用方法",
+          "icon": "/portal/help/asset-1.svg",
+          "items": []
+        },
+        {
+          "title": "账单与支付",
+          "description": "管理您的订阅和支付",
+          "icon": "/portal/help/asset-3.svg",
+          "items": []
+        },
+        {
+          "title": "学习小组",
+          "description": "创建和加入学习小组",
+          "icon": "/portal/help/asset-6.svg",
+          "items": []
+        },
+        {
+          "title": "账户设置",
+          "description": "管理个人资料和偏好设置",
+          "icon": "/portal/help/asset-5.svg",
+          "items": []
+        }
+      ],
+      "popularArticles": [
+        {
+          "question": "如何报名课程？",
+          "answer": "选择课程和计划，然后完成安全结账流程。"
+        },
+        {
+          "question": "如何继续学习课程？",
+          "answer": "打开 My Learning，选择要继续学习的课程内容。"
+        },
+        {
+          "question": "支持哪些支付方式？",
+          "answer": "可用支付方式将在安全结账页显示。"
+        }
+      ],
+      "faqItems": [
+        {
+          "question": "如何报名课程？",
+          "answer": "选择课程和计划，然后完成安全结账流程。"
+        },
+        {
+          "question": "可以在移动设备上学习吗？",
+          "answer": "您可以通过受支持的移动浏览器访问 Learning Guide。"
+        },
+        {
+          "question": "支持哪些支付方式？",
+          "answer": "可用支付方式将在安全结账页显示。"
+        },
+        {
+          "question": "学习小组如何运作？",
+          "answer": "学习小组让学习者围绕共同的课程兴趣协作学习。"
+        },
+        {
+          "question": "如果不满意可以退款吗？",
+          "answer": "请提供订单信息联系支持团队，运营人员会审核您的请求。"
+        },
+        {
+          "question": "课程有证书吗？",
+          "answer": "如有提供，课程完成信息会显示在 My Learning 中。"
+        },
+        {
+          "question": "课程访问权限持续多久？",
+          "answer": "有效订阅或权益决定您的课程访问期限。"
+        },
+        {
+          "question": "可以下载课程材料吗？",
+          "answer": "仅当课程提供下载时才能下载材料。"
+        }
+      ]
+    },
     "title": "帮助中心 / 常见问题",
     "contact": "如需账号或支付支持，请联系 Learning Guide 运营人员。",
     "categories": [
@@ -766,8 +1035,35 @@
     "saved": "Cookie 偏好已保存。"
   },
   "authoring": {
-    "heading": "编辑课程大纲", "title": "课程名称", "description": "课程简介", "section": "章节名称", "lesson": "课时名称", "summary": "课时简介", "body": "课时内容", "duration": "时长（分钟）", "videoDuration": "视频时长（秒）", "publicLesson": "公开首课", "moveTo": "移动到章节", "newLesson": "新课时", "newSection": "新章节", "addLesson": "添加课时", "addSection": "添加章节", "up": "上移", "down": "下移", "close": "关闭编辑器", "save": "保存草稿", "saving": "保存中…", "discard": "放弃未保存的修改？",
-    "errors": { "invalid": "请检查必填内容和时长。已有课时可能关联学习记录，不能删除。", "conflict": "课程已被修改。请关闭编辑器并刷新页面后重新编辑。", "published": "请先取消发布课程，再编辑内容。", "restricted": "需要课程管理员或运营人员权限。", "notFound": "未找到课程。", "failed": "草稿保存失败，请重试。" }
+    "heading": "编辑课程大纲",
+    "title": "课程名称",
+    "description": "课程简介",
+    "section": "章节名称",
+    "lesson": "课时名称",
+    "summary": "课时简介",
+    "body": "课时内容",
+    "duration": "时长（分钟）",
+    "videoDuration": "视频时长（秒）",
+    "publicLesson": "公开首课",
+    "moveTo": "移动到章节",
+    "newLesson": "新课时",
+    "newSection": "新章节",
+    "addLesson": "添加课时",
+    "addSection": "添加章节",
+    "up": "上移",
+    "down": "下移",
+    "close": "关闭编辑器",
+    "save": "保存草稿",
+    "saving": "保存中…",
+    "discard": "放弃未保存的修改？",
+    "errors": {
+      "invalid": "请检查必填内容和时长。已有课时可能关联学习记录，不能删除。",
+      "conflict": "课程已被修改。请关闭编辑器并刷新页面后重新编辑。",
+      "published": "请先取消发布课程，再编辑内容。",
+      "restricted": "需要课程管理员或运营人员权限。",
+      "notFound": "未找到课程。",
+      "failed": "草稿保存失败，请重试。"
+    }
   },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",
@@ -898,6 +1194,7 @@
     "devices": "支持 1 台电脑和 1 台移动设备",
     "points": "AI Tutor 积分",
     "unavailable": "此方案暂不可用。",
+    "alreadySubscribed": "已订阅",
     "perCategory": "分类",
     "information": "重要信息",
     "renewal": "除非您在续订日期前取消，否则订阅将自动续订。",
@@ -943,7 +1240,23 @@
     "imageUnavailable": "暂无产品图片",
     "updateFailed": "订阅更新失败。",
     "billingFailed": "无法打开账单管理。",
-    "statusUnavailable": "暂时无法获取订阅状态"
+    "statusUnavailable": "暂时无法获取订阅状态",
+    "currentSubscriptions": "当前订阅",
+    "pastSubscriptions": "历史订阅",
+    "upgraded": "已升级",
+    "upgradedOn": "升级日期",
+    "includedEverything": "已包含在你的 Everything 套餐中",
+    "nowEverything": "现已升级为 Everything 套餐",
+    "endingSoon": "即将到期",
+    "daysLeft": "剩余 {days} 天",
+    "paymentType": "类型",
+    "purchaseType": "首次购买",
+    "renewalType": "续订",
+    "upgradeType": "升级",
+    "months": "{months} 个月",
+    "points": "AI 导师积分",
+    "pointsUnavailable": "积分余额暂未开放。",
+    "pointsNote": "积分在所属订阅有效期间可用，并于付款当日发放。"
   },
   "cancelDesign": {
     "accessUntil": "您可以继续访问至 {date}。",
@@ -1046,10 +1359,13 @@
     "allCourses": "已显示您开始学习的所有课程"
   },
   "paymentErrors": {
+    "already_subscribed": "你已有覆盖此方案的有效订阅，到期后可再次订阅。",
     "price_unavailable": "此套餐暂时无法购买，请稍后重试。",
     "quote_expired": "报价或支付会话已过期，请重新选择套餐。",
     "payment_unavailable": "支付暂时不可用，请稍后重试。",
-    "invalid_request": "请检查购买确认选项，并从本站重新发起支付。",
+    "invalid_request": "无法继续此次购买，请重新选择订阅方案。",
+    "origin_mismatch": "当前支付来源地址与网站配置不一致，请使用配置的网站地址访问或联系支持。",
+    "consent_required": "请勾选全部购买确认选项后继续。",
     "checkAgain": "重新查询支付状态"
   }
 }

@@ -29,19 +29,40 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     await mount();const original=page.locator("video").first();await original.evaluate(async(video:HTMLVideoElement)=>{video.loop=true;await video.play();});await original.evaluate(video=>{(window as unknown as {lessonVideo:HTMLVideoElement}).lessonVideo=video as HTMLVideoElement;});
     const explore=page.getByRole("button",{name:new RegExp(copy.previewVideoDesign.explore)});await explore.click();const dialog=page.getByRole("dialog");await dialog.waitFor();assert.equal(await original.evaluate((v:HTMLVideoElement)=>v.paused),true);
     assert.equal(await dialog.getByRole("tab",{name:labels.reading,exact:true}).getAttribute("aria-selected"),"true");assert.equal(await dialog.locator("article").count(),4);
+    assert.equal(await dialog.getByRole("heading",{name:/01\s*Looking closely/}).count(),1);
+    assert.deepEqual(await dialog.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:1000,height:822});
+    assert.equal(await dialog.locator("article").first().getByRole("button").count(),0,"reading is display only");
     await page.screenshot({path:`test-results/exploration/${locale}-reading.png`});
     await dialog.getByRole("tab",{name:labels.reading,exact:true}).focus();await page.keyboard.press("ArrowRight");
-    assert.equal(await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).getAttribute("aria-selected"),"true");assert.equal(await dialog.locator("article").count(),3,"switching tabs retains the lesson filter");
+    assert.equal(await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).getAttribute("aria-selected"),"true");assert.equal(await dialog.locator("article").count(),5,"switching tabs retains the lesson filter");
     const lessonScope=dialog.getByRole("button",{name:labels.thisLesson,exact:true}),courseScope=dialog.getByRole("button",{name:labels.wholeCourse,exact:true});
     assert.equal(await lessonScope.getAttribute("aria-pressed"),"true");
-    await dialog.getByRole("tab",{name:labels.reading,exact:true}).click();await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();assert.equal(await lessonScope.getAttribute("aria-pressed"),"true");assert.equal(await dialog.locator("article").count(),3);
+    await dialog.getByRole("tab",{name:labels.reading,exact:true}).click();await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();assert.equal(await lessonScope.getAttribute("aria-pressed"),"true");assert.equal(await dialog.locator("article").count(),5);
+    await page.screenshot({path:`test-results/exploration/${locale}-lesson-exhibits.png`});
+    const row=dialog.locator("[data-exhibit-id]").first();
+    assert.deepEqual(await row.locator("img").first().evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,radius:getComputedStyle(e).borderRadius})),{width:56,height:56,radius:"8px"});
     await courseScope.click();assert.equal(await dialog.locator("article").count(),5);
+    const verifyLocked=async(tab:"reading"|"exhibits")=>{
+      const locked=dialog.locator(`[data-exploration-locked="${tab}"]`);
+      assert.equal(await locked.count(),1);
+      assert.equal(await locked.getAttribute("aria-label"),tab==="reading"?labels.moreReadings:labels.moreExhibits);
+      const ghost=locked.locator("[data-exploration-ghost]");
+      assert.equal(await ghost.getAttribute("aria-hidden"),"true");
+      assert.deepEqual(await ghost.evaluate(e=>({blur:getComputedStyle(e).filter,opacity:getComputedStyle(e).opacity,rows:e.children.length})),{blur:"blur(3px)",opacity:"0.55",rows:3});
+      assert.equal(await locked.evaluate(e=>e.getBoundingClientRect().height),150);
+      assert.equal(await locked.locator("button,a,[tabindex]").count(),0,"locked preview contains no action or keyboard destination");
+      assert.deepEqual(await locked.locator("img").evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,filter:getComputedStyle(e.parentElement!).filter})),{width:16,height:16,filter:"none"});
+      await locked.click();assert.equal(await dialog.getByRole("heading",{name:labels.title,exact:true}).count(),1);
+    };
+    await verifyLocked("exhibits");
+    await dialog.getByRole("tab",{name:labels.reading,exact:true}).click();await verifyLocked("reading");
+    await page.screenshot({path:`test-results/exploration/${locale}-reading-locked.png`});
     await dialog.getByRole("tab",{name:labels.reading,exact:true}).focus();await page.keyboard.press("End");assert.equal(await courseScope.getAttribute("aria-pressed"),"true");assert.equal(await dialog.locator("article").count(),5,"keyboard switching also retains the course filter");
     await dialog.locator("img").evaluateAll(images=>Promise.all(images.map(image=>(image as HTMLImageElement).decode())));
     assert.equal(await dialog.locator("img").evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete&&(image as HTMLImageElement).naturalWidth>0)),true);
     await page.screenshot({path:`test-results/exploration/${locale}-exhibits.png`});
     for(let index=0;index<3;index++){
-      await dialog.getByRole("button",{name:`${copy.videoExhibit.view} →`,exact:true}).nth(index).click();
+      await dialog.locator("[data-exhibit-id]").nth(index).click();
       await dialog.getByRole("heading",{name:copy.exhibitDialog.about,exact:true}).waitFor();
       await page.waitForFunction(()=>!document.querySelector('dialog [role="group"] button')?.hasAttribute("disabled"));
       if(index===0)assert.equal(await dialog.locator('img[alt]:not([alt=""])').count(),1);
@@ -52,8 +73,10 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     }
     await page.setViewportSize({width:390,height:650});await dialog.getByRole("tab",{name:labels.reading,exact:true}).click();await page.screenshot({path:`test-results/exploration/${locale}-mobile-reading.png`});assert.equal(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollHeight>e.clientHeight),true);
     await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop=e.scrollHeight);assert.ok(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop)>0);
+    await verifyLocked("reading");await page.screenshot({path:`test-results/exploration/${locale}-mobile-reading-locked.png`});
     await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();await page.screenshot({path:`test-results/exploration/${locale}-mobile-exhibits.png`});assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false);
-    await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop=100);await dialog.getByRole("button",{name:`${copy.videoExhibit.view} →`,exact:true}).nth(1).click();await page.keyboard.press("Escape");await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).waitFor();assert.ok(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop)>=90);
+    await verifyLocked("exhibits");await page.screenshot({path:`test-results/exploration/${locale}-mobile-exhibits-locked.png`});
+    await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop=100);await dialog.locator("[data-exhibit-id]").nth(1).click();await page.keyboard.press("Escape");await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).waitFor();assert.ok(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop)>=90);
     await dialog.getByRole("button",{name:labels.close,exact:true}).click();assert.equal(await dialog.count(),0);assert.equal(await original.evaluate((v:HTMLVideoElement)=>v.paused),true);
     await mount(true);await explore.click();await dialog.getByRole("tab",{name:labels.reading,exact:true}).waitFor();await page.keyboard.press("Escape");assert.equal(await dialog.count(),0);
     await mount(false,false);assert.equal(await explore.isDisabled(),true);await page.close();
