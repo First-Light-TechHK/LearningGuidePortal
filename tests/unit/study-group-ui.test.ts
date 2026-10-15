@@ -712,6 +712,19 @@ test("signed-out visitors see only Discover Study Groups, without the My Study G
   assert.equal(app.includes("<h2 className={styles.sectionHead}>{copy.discover}</h2>"), true);
 });
 
+test("an empty Create Study Group submit reports through the app's own validation slot", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // BUG-0125 (SIT, 小智双核浏览器): submitting the empty create form surfaced the
+  // browser's own bubble in the browser's UI language ("请填写此字段。" on an EN page)
+  // instead of the module's localised copy. The submit button now gates the click on
+  // form.checkValidity() (no native UI) and routes the failure into the existing
+  // single error slot as "validation" - the same surface server rejections already use.
+  assert.match(app, /<button className=\{styles\.primary\} type="submit" disabled=\{creating\} onClick=\{\(event\) => \{ const form = event\.currentTarget\.form; if \(form && !form\.checkValidity\(\)\) \{ event\.preventDefault\(\); setErrorCode\("validation"\); \} \}\}>\{copy\.create\}<\/button>/);
+  assert.equal(en.studyGroupsPage.errors.validation, "Check the required fields and try again.");
+  assert.equal(zh.studyGroupsPage.errors.validation, "请检查必填项后重试。");
+  assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "create", hasSelected: false, hasError: studyGroupHasError("validation") }), "create");
+});
+
 test("Cancel Group confirms in the module's own dialog with cancel/confirm buttons and a busy state", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
