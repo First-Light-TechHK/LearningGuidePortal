@@ -35,3 +35,59 @@ export function sessionControls(input: { role: "host" | "member" | null; state: 
   if (input.state === "scheduled") actions.push("plan");
   return actions;
 }
+
+export type StudyGroupDialogKind = "create" | "edit" | "edit-session" | "schedule" | "waiting" | "attendees" | "cancel-group" | null;
+
+/**
+ * BUG-0100: exactly one error surface may render a given errorCode at a time.
+ * The failing list pane owns the screen; otherwise the open dialog that the
+ * mutation came from (create form or the edit/schedule modal) shows it; the
+ * group sheet is the fallback so the sheet alert never doubles a dialog alert.
+ */
+export function studyGroupErrorPlace(input: { status: PaneStatus; dialog: StudyGroupDialogKind; hasSelected: boolean; hasError: boolean }): "pane" | "create" | "dialog" | "sheet" | "none" {
+  if (!input.hasError) return "none";
+  if (input.status === "error") return "pane";
+  if (input.dialog === "create") return "create";
+  if (input.dialog === "edit" || input.dialog === "edit-session" || input.dialog === "schedule") return "dialog";
+  if (input.hasSelected) return "sheet";
+  return "none";
+}
+
+/**
+ * F-2 (dev audit 2026-10-14): "error" was doing double duty as both the server's
+ * generic 500 code (http.ts) and the client's "no error" sentinel, so a real 500
+ * landed in the errorCode slot but rendered nowhere - the click appeared to do
+ * nothing. The slot now idles under its own sentinel; every other code, "error"
+ * included, is a real failure the one error slot must show.
+ */
+export function studyGroupHasError(errorCode: string) {
+  return errorCode !== "idle";
+}
+
+export type StudyGroupMutationAction = "plan" | "cancel-attendance" | "cancel-session" | "leave";
+
+/**
+ * M3: Plan / Cancel Attendance / Cancel Session / Leave Group advance the UI only
+ * after the server confirms the mutation. A failure reports its code through the
+ * single errorCode slot and the sheet stays as it was; only a successful Leave
+ * Group clears the selected panel, so a failed cancel can never look like a fake
+ * success that the 3s poll then undoes.
+ */
+export function studyGroupMutation(input: { action: StudyGroupMutationAction; result: { ok: boolean; code: string } }): { ok: true; clearSelection: boolean } | { ok: false; errorCode: string } {
+  if (!input.result.ok) return { ok: false, errorCode: input.result.code };
+  return { ok: true, clearSelection: input.action === "leave" };
+}
+
+/**
+ * BUG-0100: the reminder strip rendered the same notification body twice when the
+ * server list carried two identical entries. Collapse repeated bodies to one row
+ * (keeping the first/newest); distinct bodies are untouched.
+ */
+export function uniqueReminderBodies<T extends { body: string }>(reminders: T[]): T[] {
+  const seen = new Set<string>();
+  return reminders.filter((item) => {
+    if (seen.has(item.body)) return false;
+    seen.add(item.body);
+    return true;
+  });
+}

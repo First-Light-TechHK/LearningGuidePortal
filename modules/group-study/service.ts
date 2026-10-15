@@ -20,7 +20,7 @@ import type { LiveKitProjectRef, LiveKitProjectRegistry } from "./liveKitProject
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, retrieveCourseKnowledge } from "./tutorAnswer";
+import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
 
 export type CourseSummary = { id: string; title: string; slug: string };
 export type UserProfile = { id: string; displayName: string; email: string | null; locale: "en-GB" | "zh-CN" };
@@ -33,8 +33,13 @@ export type StudyGroupDeps = {
   courseLessons?: (courseId: string) => Promise<Array<{ id: string; title: string }>>;
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
-  notify: (input: { userId: string; title: string; body: string }) => Promise<void>;
+  notify: (input: { userId: string; title: string; body: string; sessionId?: string }) => Promise<void>;
   listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string }>>;
+  // Withdraws the pending reminder rows a cancelling action invalidates
+  // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
+  // Scoped to the given Live Sessions, optionally to one user. Optional so
+  // existing wiring keeps its shape; the runtime always provides it.
+  withdrawReminders?: (input: { sessionIds: string[]; userId?: string }) => Promise<void>;
   sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN" }) => Promise<void>;
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
@@ -45,7 +50,7 @@ export type StudyGroupDeps = {
   // it injected from Secrets Manager; DEV resolves it on first real issuance).
   tokenLogKey: () => Buffer | null;
   courseKnowledge?: (courseId: string) => Promise<string>;
-  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string }) => Promise<void>;
+  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
   tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
   // Injectable scheduler for the failing context's own re-drain (test seam):
@@ -68,6 +73,11 @@ export type StudyGroupWebhookOutcome = Readonly<{ status: "processed" | "ignored
 // the extra safety margin): a user mid-join or mid-re-join must never be raced
 // by the repair path.
 const RECONCILE_GRACE_SECONDS = 120;
+
+// The room AI Tutor question shares the learning-page message cap (4000):
+// without it, every extra character of a room question became model input
+// (hunt M5). Enforced at enqueue, before anything is stored.
+const TUTOR_REQUEST_MAX_LENGTH = 4000;
 
 function presenceAgeMs(presence: { enteredAt: string | null; requestedAt: string }): number {
   // The enter path reuses one row per user/session and refreshes BOTH
@@ -199,7 +209,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
     const leaseOwner = randomUUID();
     try {
-      let last: { text: string } | null = null;
+      let last: { text: string; mode: string } | null = null;
       for (;;) {
         // Claim before any provider work: at most one in-flight item per
         // session, lease-bounded, receipt-ordered across all instances.
@@ -219,43 +229,39 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           continue;
         }
         // Grounding and the model call run outside every transaction and
-        // lock; the claim lease, not the process, guards the window.
+        // lock; the claim lease, not the process, guards the window. The whole
+        // course material goes to the model verbatim (owner decision): the
+        // model itself fuzzy-matches a question against it, across languages,
+        // so no server-side retrieval or threshold may short-circuit the call.
         const group = snapshot.groups.find((entry) => entry.id === session.groupId);
         const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
-        const context = retrieveCourseKnowledge(corpus, item.text);
-        let reply: string | null = null;
-        if (!context) {
-          reply = COURSE_MATERIAL_ABSENT;
-        } else {
-          const terms = courseQuestionTerms(item.text);
-          const missing = terms.filter((term) => !context.toLowerCase().includes(term.toLowerCase()));
-          if (terms.length > 0 && missing.length * 2 > terms.length) {
-            reply = COURSE_MATERIAL_ABSENT;
-          } else {
-            const keys = deps.tutorKeys?.() ?? [];
-            if (!deps.tutorCall || keys.length === 0) {
-              reply = null;
-            } else {
-              const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
-              reply = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? null : result.body.trim();
-            }
+        const context = corpus.trim();
+        const keys = deps.tutorKeys?.() ?? [];
+        let reply: { text: string; mode: "course" | "general" | "unavailable" } = { text: "", mode: "unavailable" };
+        if (deps.tutorCall && keys.length > 0) {
+          const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
+          const body = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? "" : result.body.trim();
+          if (body) {
+            const parsed = parseTutorReply(body);
+            const text = clampTutorReply(parsed.text);
+            // Without course material in context, a "course" tag cannot be
+            // honoured: the reply must stay general.
+            if (text) reply = { text, mode: context ? parsed.mode : "general" };
           }
         }
-        if (reply === null) {
-          // Terminal without a reply: the item settles so it cannot stall
-          // later questions, and nothing is published.
-          await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "answered", terminalReason: "model_failed" } });
-          continue;
-        }
         // Settle with the outbox row in one transaction; the publish below is
-        // at-least-once and retried on a later drain if it fails.
+        // at-least-once and retried on a later drain if it fails. Every item
+        // settles as answered and produces exactly one room message — an
+        // unavailable one (empty text, mode "unavailable") when no usable
+        // tutor key or call produced a reply, so the client can show its own
+        // "temporarily unavailable" copy instead of nothing.
         await deps.repository.settleTutorRequest({
           id: item.id,
           leaseOwner,
-          outcome: { status: "answered", terminalReason: reply === COURSE_MATERIAL_ABSENT ? "course_material_absent" : "answered" },
-          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply, messageId: item.id }
+          outcome: { status: "answered", terminalReason: reply.mode === "unavailable" ? "model_failed" : "answered" },
+          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply.text, messageId: item.id, mode: reply.mode }
         });
-        if (!deps.publishRoomChat) last = { text: reply };
+        if (!deps.publishRoomChat) last = { text: reply.text, mode: reply.mode };
       }
       const publish = deps.publishRoomChat;
       if (publish) {
@@ -263,14 +269,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           const message = await deps.repository.claimNextOutboxMessage({ sessionId, leaseOwner, leaseSeconds: 60 });
           if (!message) break;
           try {
+            // Legacy outbox rows predate the mode field; the client contract
+            // reads a missing mode as "course".
+            const mode = message.payload.mode || "course";
             await publish({
               room: message.payload.room,
               text: message.payload.text,
               projectId: message.payload.projectId || null,
-              messageId: message.payload.messageId
+              messageId: message.payload.messageId,
+              mode
             });
             await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
-            last = { text: message.payload.text };
+            last = { text: message.payload.text, mode };
           } catch (error) {
             // A failed publish never blocks the queue: the request is already
             // settled, and the failing context schedules its own re-drain with
@@ -350,7 +360,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   async function sessionView(store: StudyGroupStore, session: LiveSessionRow, actorUserId: string) {
     const state = effectiveSessionState(session, deps.now());
     if (state === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
-    const showActual = state === "starting_soon" || state === "live" || state === "completed";
+    // PRD 6.6: View attendees shows the PLANNED attendees for an unstarted
+    // Session and actual attendees once the Session is live or completed.
+    // Starting Soon is still unstarted; entered waiting users count towards
+    // occupancy (BR-033) but do not replace the planned list yet.
+    const showActual = state === "live" || state === "completed";
     const people = showActual
       ? store.presences.filter((item) => item.sessionId === session.id && item.enteredAt && (state === "completed" || !item.leftAt))
       : store.intents.filter((item) => item.sessionId === session.id && !item.cancelledAt);
@@ -405,7 +419,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
       if (state !== "starting_soon" && state !== "live") throw new StudyGroupError("session_not_open", "The Live Session is not open yet.");
       const existing = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
-      if (existing && !existing.leftAt) return { occupancy: occupancy(store, session.id) };
+      if (existing && !existing.leftAt) {
+        // Entering while already seated (a reload re-runs /enter): renew the
+        // row's timestamps so the presence age read by the grace window and
+        // the webhook's stale-seat guard is the CURRENT entry, never the
+        // original one. Mirrors the reopen path below. The recorded LiveKit
+        // connection id belongs to the previous entry generation and is
+        // cleared (audit F-5): the new connection's participant_joined
+        // webhook records its own sid, and until then the seat reports
+        // "connection unknown" (timestamp semantics).
+        existing.requestedAt = input.requestedAt;
+        existing.enteredAt = deps.now().toISOString();
+        existing.liveKitParticipantSid = null;
+        return { occupancy: occupancy(store, session.id) };
+      }
       if (missedUnstarted(session, deps.now(), occupancy(store, session.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
       if (occupancy(store, session.id) >= session.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
       const enteredAt = deps.now().toISOString();
@@ -414,6 +441,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         existing.requestedAt = input.requestedAt;
         existing.enteredAt = enteredAt;
         existing.phase = state === "live" ? "live" : "waiting";
+        existing.liveKitParticipantSid = null;
       } else {
         store.presences.push({
           id: randomUUID(),
@@ -422,7 +450,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           requestedAt: input.requestedAt,
           enteredAt,
           leftAt: null,
-          phase: state === "live" ? "live" : "waiting"
+          phase: state === "live" ? "live" : "waiting",
+          liveKitParticipantSid: null
         });
       }
       return { occupancy: occupancy(store, session.id) };
@@ -476,6 +505,67 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
   }
 
+  async function dispatchDueReminders() {
+    const now = deps.now();
+    const dueJobs = (store: StudyGroupStore, record: boolean) => {
+      const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string }> = [];
+      for (const session of store.sessions) {
+        if (session.status !== "scheduled") continue;
+        const startsAt = new Date(session.startsAt).getTime();
+        if (now.getTime() < startsAt - STARTING_SOON_MS || now.getTime() >= startsAt) continue;
+        const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
+        if (!group) continue;
+        const audience = new Set<string>([group.hostUserId]);
+        for (const intent of store.intents) {
+          if (intent.sessionId === session.id && !intent.cancelledAt) audience.add(intent.userId);
+        }
+        for (const userId of audience) {
+          if (!activeMembership(store, group.id, userId)) continue;
+          if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
+          if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
+          jobs.push({ userId, sessionId: session.id, sessionTitle: session.title });
+        }
+      }
+      return jobs;
+    };
+    if (dueJobs(await deps.repository.read(), false).length === 0) return;
+    const due = await deps.repository.update((store) => dueJobs(store, true));
+    for (const job of due) {
+      const profile = await deps.userProfile(job.userId);
+      // The row title is localised at write time and doubles as the reminders
+      // view's marker (hunt L1): the en-GB title must stay exactly this
+      // string — the view filters on the known per-locale titles — and the
+      // zh-CN title is its Chinese counterpart. Both match the email subject.
+      const copy = profile?.locale === "zh-CN"
+        ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
+        : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
+      await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
+      if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+    }
+  }
+
+  // The portal's view routes call this on every poll. A sweep reads the whole
+  // store, so polling must not turn into a per-request scan (hunt L5): at most
+  // one sweep per window, never two sweeps in flight, and a request inside
+  // the window is skipped without touching the store at all. The unthrottled
+  // dispatchDueReminders stays the runtime timer's, the worker's and the
+  // tests' entry point, so reminder delivery never depends on this path.
+  const REQUEST_DISPATCH_INTERVAL_MS = 30_000;
+  let requestDispatchAt = Number.NEGATIVE_INFINITY;
+  let requestDispatchRunning = false;
+  async function dispatchDueRemindersOnRequest() {
+    if (requestDispatchRunning) return;
+    const timestamp = deps.now().getTime();
+    if (timestamp - requestDispatchAt < REQUEST_DISPATCH_INTERVAL_MS) return;
+    requestDispatchRunning = true;
+    requestDispatchAt = timestamp;
+    try {
+      await dispatchDueReminders();
+    } finally {
+      requestDispatchRunning = false;
+    }
+  }
+
   return {
     async createGroup(input: { actorUserId: string; title: string; courseId: string; about: string }) {
       const title = requireText(input.title, "Study Group Title", 50);
@@ -516,12 +606,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     async listMine(actorUserId: string) {
       const store = await deps.repository.read();
       const views: GroupView[] = [];
+      const joinedAt = new Map<string, string>();
       for (const membership of store.memberships.filter((item) => item.userId === actorUserId && !item.leftAt)) {
         const group = store.groups.find((item) => item.id === membership.groupId && item.status === "active");
         if (!group) continue;
         const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;
+        joinedAt.set(group.id, membership.joinedAt);
         views.push(await toView(group, store, memberCount, membership.role));
       }
+      // BUG-0120 (SIT): the sidebar used to render in membership insertion order (oldest
+      // first), so a just-created Study Group appeared at the very bottom of the list.
+      // Newest group first, falling back to the newer membership on equal creation stamps.
+      views.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || (joinedAt.get(b.id) || "").localeCompare(joinedAt.get(a.id) || ""));
       return views;
     },
 
@@ -574,7 +670,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!membership) throw new StudyGroupError("forbidden", "Join the Study Group first.");
       if (membership.role === "host") throw new StudyGroupError("forbidden", "The Host cancels the Study Group instead of leaving it.");
       const now = deps.now().toISOString();
-      await deps.repository.update((current) => {
+      const sessionIds = await deps.repository.update((current) => {
         const row = current.memberships.find((item) => item.groupId === input.groupId && item.userId === input.actorUserId && !item.leftAt);
         if (row) row.leftAt = now;
         const sessionIds = new Set(current.sessions.filter((item) => item.groupId === input.groupId && item.status === "scheduled").map((item) => item.id));
@@ -594,7 +690,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             if (meeting && !meeting.endedAt) meeting.endedAt = now;
           }
         }
+        return current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id);
       });
+      // Leaving drops the member's pending Plan-to-Attend reminders (BR-023):
+      // withdraw their reminder rows for this group's Sessions only.
+      await deps.withdrawReminders?.({ sessionIds, userId: input.actorUserId });
     },
 
     async listDiscover(input: { actorUserId: string | null; courseId?: string; query?: string }) {
@@ -636,7 +736,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async cancelGroup(input: { actorUserId: string; groupId: string }) {
       const now = deps.now().toISOString();
-      const notified = await deps.repository.update((store) => {
+      const { notified, sessionIds } = await deps.repository.update((store) => {
         const row = store.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (!row) throw new StudyGroupError("not_found", "Study Group was not found.");
         if (activeMembership(store, row.id, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can cancel the Study Group.");
@@ -659,17 +759,30 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             }
           }
         }
-        return store.memberships.filter((item) => item.groupId === row.id && !item.leftAt).map((item) => item.userId);
+        return {
+          notified: store.memberships.filter((item) => item.groupId === row.id && !item.leftAt).map((item) => item.userId),
+          sessionIds: store.sessions.filter((item) => item.groupId === row.id).map((item) => item.id)
+        };
       });
+      // The cancelled group's pending reminders die with it (storage honesty);
+      // the members' in-site cancellation notices below are kept.
+      await deps.withdrawReminders?.({ sessionIds });
       await Promise.all(notified.map(async (userId) => {
         const profile = await deps.userProfile(userId);
-        const body = profile?.locale === "zh-CN" ? "这个学习小组已经不再可用。" : "This Study Group is no longer available.";
-        await deps.notify({ userId, title: "Study Group cancelled", body });
+        // Title and body share the recipient's locale (hunt L1): the body was
+        // already localised while the title stayed hard-coded English, so a
+        // zh-CN member got a mixed-language card.
+        const copy = profile?.locale === "zh-CN"
+          ? { title: "学习小组已取消", body: "这个学习小组已经不再可用。" }
+          : { title: "Study Group cancelled", body: "This Study Group is no longer available." };
+        await deps.notify({ userId, title: copy.title, body: copy.body });
       }));
     },
 
     async scheduleSession(input: { actorUserId: string; groupId: string; title: string; startsAt: string; durationSeconds: number; maxParticipants: number; relatedLessonId?: string | null; focus?: string | null; aiTutorEnabled?: boolean }) {
-      const title = requireText(input.title, "Session Title", 20);
+      // Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters (the Study
+      // Group Title / Session Focus limit), mirrored by SESSION_TITLE_MAX in the client.
+      const title = requireText(input.title, "Session Title", 50);
       const startsAt = new Date(input.startsAt);
       if (Number.isNaN(startsAt.getTime())) throw new StudyGroupError("validation", "Start Time is required.");
       if (startsAt.getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
@@ -704,7 +817,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async editSession(input: { actorUserId: string; groupId: string; sessionId: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }) {
-      if (input.title !== undefined) requireText(input.title, "Session Title", 20);
+      if (input.title !== undefined) requireText(input.title, "Session Title", 50);
       if (input.startsAt !== undefined && Number.isNaN(new Date(input.startsAt).getTime())) throw new StudyGroupError("validation", "Start Time is required.");
       if (input.startsAt !== undefined && new Date(input.startsAt).getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
       if (input.durationSeconds !== undefined && !SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
@@ -722,7 +835,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can edit a Live Session.");
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Edit Session is available only before the Session starts.");
         if (input.maxParticipants !== undefined && input.maxParticipants < occupancy(store, current.id)) throw new StudyGroupError("conflict", "Maximum Participants is below the number already in the session.");
-        if (input.title !== undefined) current.title = requireText(input.title, "Session Title", 20);
+        if (input.title !== undefined) current.title = requireText(input.title, "Session Title", 50);
         if (input.relatedLessonId !== undefined) current.relatedLessonId = clean(input.relatedLessonId || "") || null;
         if (input.startsAt !== undefined) current.startsAt = new Date(input.startsAt).toISOString();
         if (input.durationSeconds !== undefined) current.durationSeconds = input.durationSeconds;
@@ -748,6 +861,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           if (presence.sessionId === current.id && presence.enteredAt && !presence.leftAt) presence.leftAt = now;
         }
       });
+      // The cancelled Session can start no more, so its pending reminders are
+      // withdrawn for every audience member (BUG-0109 storage honesty).
+      await deps.withdrawReminders?.({ sessionIds: [input.sessionId] });
     },
 
     async getSession(input: { actorUserId: string; sessionId: string }) {
@@ -779,11 +895,17 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async cancelAttendance(input: { actorUserId: string; sessionId: string }) {
       const now = deps.now().toISOString();
-      await deps.repository.update((store) => {
+      const cancelled = await deps.repository.update((store) => {
         requireOpenSession(store, input.sessionId, input.actorUserId);
         const existing = store.intents.find((item) => item.sessionId === input.sessionId && item.userId === input.actorUserId && !item.cancelledAt);
         if (existing) existing.cancelledAt = now;
+        return Boolean(existing);
       });
+      // Cancelling attendance removes the member's reminder (BR-019): withdraw
+      // the pending row the member's Plan to Attend produced. Only an actual
+      // cancellation withdraws — a no-op cancel must not touch a reminder that
+      // belongs to another audience reason (e.g. the Host's).
+      if (cancelled) await deps.withdrawReminders?.({ sessionIds: [input.sessionId], userId: input.actorUserId });
     },
 
     orderEntry<T>(requestedAt: string, run: () => Promise<T>) {
@@ -845,11 +967,27 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return operation;
     },
 
-    async leaveSession(input: { actorUserId: string; sessionId: string }) {
+    async leaveSession(input: { actorUserId: string; sessionId: string; reason?: "unload" }) {
       const now = deps.now().toISOString();
       await deps.repository.update((store) => {
         const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && !item.leftAt);
+        if (input.reason === "unload") {
+          // Unload-class leave (pagehide: refresh, tab close, navigating away):
+          // the same browser can re-enter seconds later, so this must NEVER
+          // complete the session. With others still seated the seat is
+          // released like a leave; as the last open presence the seat is HELD
+          // and only its age renews, so the 120 s grace window plus the
+          // provider-verified reconcile (or the signed participant_left)
+          // decide the completion — the session stays discoverable to both
+          // repair paths and can never hang live with nobody in it.
+          if (presence) {
+            if (occupancy(store, session.id) > 1) presence.leftAt = now;
+            else presence.enteredAt = now;
+          }
+          completeLiveSessionIfEmpty(store, session, now);
+          return;
+        }
         if (presence) presence.leftAt = now;
         completeLiveSessionIfEmpty(store, session, now);
       });
@@ -942,7 +1080,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async enqueueTutor(input: { actorUserId: string; sessionId: string; text: string; clientEventId: string }) {
-      const text = requiredValue(input.text, "AI Tutor request");
+      const text = requireText(input.text, "AI Tutor request", TUTOR_REQUEST_MAX_LENGTH);
       const clientEventId = requiredValue(input.clientEventId, "Client event id");
       const receivedAt = deps.now().toISOString();
       return deps.repository.update((store) => {
@@ -986,40 +1124,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return { sessions: sessions.length };
     },
 
-    async dispatchDueReminders() {
-      const now = deps.now();
-      const dueJobs = (store: StudyGroupStore, record: boolean) => {
-        const jobs: Array<{ userId: string; sessionTitle: string }> = [];
-        for (const session of store.sessions) {
-          if (session.status !== "scheduled") continue;
-          const startsAt = new Date(session.startsAt).getTime();
-          if (now.getTime() < startsAt - STARTING_SOON_MS || now.getTime() >= startsAt) continue;
-          const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
-          if (!group) continue;
-          const audience = new Set<string>([group.hostUserId]);
-          for (const intent of store.intents) {
-            if (intent.sessionId === session.id && !intent.cancelledAt) audience.add(intent.userId);
-          }
-          for (const userId of audience) {
-            if (!activeMembership(store, group.id, userId)) continue;
-            if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
-            if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
-            jobs.push({ userId, sessionTitle: session.title });
-          }
-        }
-        return jobs;
-      };
-      if (dueJobs(await deps.repository.read(), false).length === 0) return;
-      const due = await deps.repository.update((store) => dueJobs(store, true));
-      for (const job of due) {
-        const profile = await deps.userProfile(job.userId);
-        const copy = profile?.locale === "zh-CN"
-          ? { subject: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
-          : { subject: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
-        await deps.notify({ userId: job.userId, title: "Live Session reminder", body: copy.body });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.subject, text: copy.body, locale: profile.locale });
-      }
-    },
+    dispatchDueReminders,
+    dispatchDueRemindersOnRequest,
 
     async handleLiveKitWebhook(input: { rawBody: string; authHeader: string | null }): Promise<StudyGroupWebhookOutcome> {
       // Receipt-first ordering (slice-2 design §3): verify → insert receipt →
@@ -1063,20 +1169,54 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         }
       }
       let result: "processed" | "ignored" = "ignored";
-      if (event.eventType === "participant_left" && event.room && event.participantIdentity) {
+      if (event.eventType === "participant_joined" && event.room && event.participantIdentity && event.participantSid) {
         const room = event.room;
         const identity = event.participantIdentity;
-        // The only mapping action: close that identity's open presence row
-        // inside the serialized mutate. It also completes the session and ends
-        // its meeting when this was the last open presence of a live session —
-        // the same reducing rule as an explicit leave — and can never grant
-        // membership, role, token, or access.
+        const sid = event.participantSid;
+        // Record which connection the seat's current holder is (audit F-5):
+        // the participant_left mapping below may then refuse to close a seat
+        // whose recorded connection differs. The same seat-generation rule
+        // gates the write: a join event that predates the seat's enteredAt
+        // reports an older generation (a delayed retry of the previous
+        // connection's join) and must not overwrite the current id. The
+        // mapping still only reduces nothing and grants nothing.
         result = await deps.repository.update((store) => {
           const session = store.sessions.find((item) => item.id === room);
           if (!session) return "ignored" as const;
+          const at = event.createdAt ?? deps.now().toISOString();
           const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
-          if (presence) presence.leftAt = event.createdAt ?? deps.now().toISOString();
-          completeLiveSessionIfEmpty(store, session, event.createdAt ?? deps.now().toISOString());
+          const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) > Date.parse(at) : false;
+          if (presence && !seatIsNewer) presence.liveKitParticipantSid = sid;
+          return "processed" as const;
+        });
+      } else if (event.eventType === "participant_left" && event.room && event.participantIdentity) {
+        const room = event.room;
+        const identity = event.participantIdentity;
+        // The close action: close that identity's open presence row inside
+        // the serialized mutate — unless the seat was (re)established
+        // at or after the event's own time, in which case the event reports a
+        // connection generation that no longer exists (a refresh re-entered
+        // before a delayed participant_left arrived) and the fresh seat must
+        // stay open. Audit F-5: a creation time alone cannot tell a late
+        // delivery from a late creation — a zombie connection's
+        // participant_left may postdate the re-entry the provider has not yet
+        // observed — so when the seat and the event both name their LiveKit
+        // connection and the ids differ, the event reports a replaced
+        // connection and must not close the fresh seat either. Absence of
+        // either id (legacy rows, sid-less events) keeps the timestamp
+        // semantics above. Closing the last open presence of a live session
+        // also completes the session and ends its meeting — the same reducing
+        // rule as an explicit leave — and can never grant membership, role,
+        // token, or access.
+        result = await deps.repository.update((store) => {
+          const session = store.sessions.find((item) => item.id === room);
+          if (!session) return "ignored" as const;
+          const at = event.createdAt ?? deps.now().toISOString();
+          const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
+          const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) >= Date.parse(at) : false;
+          const connectionMismatch = Boolean(presence?.liveKitParticipantSid && event.participantSid && presence.liveKitParticipantSid !== event.participantSid);
+          if (presence && !seatIsNewer && !connectionMismatch) presence.leftAt = at;
+          completeLiveSessionIfEmpty(store, session, at);
           return "processed" as const;
         });
       }

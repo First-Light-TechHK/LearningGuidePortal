@@ -38,8 +38,8 @@ export function CourseModelPreview({ url, title = '', locale, exhibit = false, c
     async function start() {
       try {
         if (!(/^\/(?!\/)/.test(url) || /^https:\/\//.test(url)) || /[\u0000-\u0020\\]/.test(url)) throw new Error('url');
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.setClearColor(exhibit ? 0x000000 : 0xf3f6f5); renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: exhibit });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.setClearColor(0xf3f6f5, exhibit ? 0 : 1); renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.domElement.setAttribute('aria-label', title || t.model3d); renderer.domElement.tabIndex = 0;
         container.appendChild(renderer.domElement);
         const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);

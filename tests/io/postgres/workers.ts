@@ -10,7 +10,8 @@ import type { StudyGroupRepository } from "../../../modules/group-study/reposito
 import { createStudyGroupService } from "../../../modules/group-study/service";
 import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "../../../modules/group-study/liveKitGateway";
 import { parseLiveKitProjects } from "../../../modules/group-study/liveKitProjectRegistry";
-import { getPool } from "../../../services/persistence/db";
+import { getPool, ensureSchema } from "../../../services/persistence/db";
+import { STUDY_GROUP_TABLES } from "./harness";
 
 const MODE = process.env.LG_IO_MODE || "";
 const ROLE = process.env.LG_IO_ROLE || "A";
@@ -128,6 +129,20 @@ async function main(): Promise<Record<string, unknown>> {
   await waitForGo();
 
   switch (MODE) {
+    case "ensure-schema": {
+      // Schema-bootstrap worker: a fresh process, so ensureSchema's per-process
+      // memo cannot mask the race — several of these running behind one barrier
+      // are the cold-start of several instances at once.
+      await ensureSchema();
+      const tables = await getPool().query<{ table_name: string }>(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = ANY (current_schemas(false)) AND table_name = ANY($1)",
+        [STUDY_GROUP_TABLES]
+      );
+      const column = await getPool().query(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema = ANY (current_schemas(false)) AND table_name = 'study_group_presences' AND column_name = 'livekit_participant_sid'"
+      );
+      return { role: ROLE, ready: true, studyGroupTables: tables.rowCount, presenceColumn: column.rowCount === 1 };
+    }
     case "claim-tutor": {
       const claimed = await repository.claimNextTutorRequest({
         sessionId: required("LG_IO_SESSION"),

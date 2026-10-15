@@ -1,10 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
 import { sendStudyGroupReminderEmail } from "@/services/emailService";
-import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification } from "@/services/productStore";
+import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification, withdrawStudyGroupReminders } from "@/services/productStore";
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
+import { STARTING_SOON_MS, type StudyGroupStore } from "./domain";
 import { createStudyGroupRepository } from "./repository";
 import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
@@ -15,19 +16,123 @@ import { createAwsLiveKitCredentialResolver, createLiveKitCredentialResolver } f
 import { openRouterTutorCall, readTutorKeys } from "./tutorAnswer";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
 
+// Tutor model settings live here, in one place, so a later backoffice
+// knowledge base can become their source without touching call sites.
+// STUDY_GROUP_TUTOR_MAX_TOKENS is a runaway guard (see tutorAnswer.ts), and
+// STUDY_GROUP_TUTOR_REASONING pins an explicit reasoning effort; when unset,
+// the shared OpenRouter layer keeps its CoT default (off, auto-stripped on 400).
+function tutorMaxTokensFromEnv() {
+  const raw = Number.parseInt(process.env.STUDY_GROUP_TUTOR_MAX_TOKENS?.trim() || "", 10);
+  return Number.isFinite(raw) && raw >= 64 && raw <= 4096 ? raw : 700;
+}
+
+function tutorReasoningFromEnv(): { effort: string } | undefined {
+  const raw = process.env.STUDY_GROUP_TUTOR_REASONING?.trim().toLowerCase();
+  return raw === "none" || raw === "minimal" || raw === "low" || raw === "medium" || raw === "high" ? { effort: raw } : undefined;
+}
+
 async function readStoredCourseKnowledge(courseId: string) {
   const course = await getProductCourse(courseId);
   const lessons = (course?.sections ?? []).flatMap((section) => section.lessons).map((lesson) => `${lesson.title}\n${lesson.body}`.trim()).filter(Boolean);
   const root = path.join(process.cwd(), "knowledge", course?.slug || courseId);
   const parts = [...lessons];
-  for (const file of ["knowledge-pack.json", "canon-excerpts.md", "sources.md"]) {
+  // The whole Course Knowledge directory goes to the tutor verbatim (owner
+  // decision): every file, sorted by name, each headed by its filename so the
+  // model can tell the sources apart. No whitelist and no pre-filtering — the
+  // model itself fuzzy-matches a question against the raw material.
+  let names: string[] = [];
+  try {
+    names = (await readdir(root, { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    // This course has no Course Knowledge directory: lessons only.
+  }
+  for (const name of names) {
     try {
-      parts.push(await readFile(path.join(root, file), "utf8"));
+      parts.push(`# ${name}\n${await readFile(path.join(root, name), "utf8")}`);
     } catch {
-      // This course has no file in the existing Course Knowledge directory.
+      // An unreadable file is skipped like a missing one.
     }
   }
   return parts.join("\n\n");
+}
+
+// BUG-0109: a T-10 reminder row is a pending prompt only while the situation
+// that produced it still holds — the Live Session is still scheduled and
+// inside its Starting Soon window (never started, never past its start), the
+// Study Group is still active, the viewer is still an active member, and a
+// non-host viewer still has a live Plan to Attend. The reminders view applies
+// this as its read-side backstop; the cancelling actions withdraw the rows
+// they invalidate first (storage honesty). Exported for the unit test that
+// pins the view's validity contract.
+export function studyGroupReminderStillValid(store: StudyGroupStore, userId: string, sessionId: string, nowMs: number = Date.now()) {
+  const session = store.sessions.find((item) => item.id === sessionId);
+  if (!session || session.status !== "scheduled") return false;
+  const startsAt = Date.parse(session.startsAt);
+  if (!Number.isFinite(startsAt)) return false;
+  if (nowMs >= startsAt || nowMs < startsAt - STARTING_SOON_MS) return false;
+  const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
+  if (!group) return false;
+  if (!store.memberships.some((item) => item.groupId === group.id && item.userId === userId && !item.leftAt)) return false;
+  if (group.hostUserId === userId) return true;
+  return store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt);
+}
+
+// Reminder notifications recorded before the sessionId linkage existed (the
+// pre-BUG-0109 rows already in production) carry the Session title inside
+// their body: "<title> starts in 10 minutes." / "<title> 将在 10 分钟后开始。"
+// (the exact copy dispatchDueReminders writes). Recover the title so those
+// rows can be resolved back to their Live Session through the viewer's own
+// recorded reminder rows and judged by the same validity rule — otherwise a
+// currently valid pre-deploy reminder would be withheld alongside the stale
+// ones it sits next to. The suffixes mirror the dispatch copy in service.ts.
+const REMINDER_BODY_SUFFIXES = [" starts in 10 minutes.", " 将在 10 分钟后开始。"];
+
+function reminderBodyTitle(body: string): string | null {
+  for (const suffix of REMINDER_BODY_SUFFIXES) {
+    if (body.endsWith(suffix)) return body.slice(0, -suffix.length);
+  }
+  return null;
+}
+
+// The reminders view's per-notification predicate: session-linked rows are
+// judged directly; a pre-linkage row shows only while at least one Live
+// Session with its title, already recorded as reminded for this viewer, is
+// still a pending Session (its reminder row is kept as the dispatch record).
+export function studyGroupReminderNotificationStillValid(
+  store: StudyGroupStore,
+  userId: string,
+  item: { body: string; sessionId?: string },
+  nowMs: number = Date.now()
+) {
+  if (item.sessionId) return studyGroupReminderStillValid(store, userId, item.sessionId, nowMs);
+  const title = reminderBodyTitle(item.body);
+  if (!title) return false;
+  return store.reminders.some((row) => {
+    if (row.userId !== userId) return false;
+    const session = store.sessions.find((itemSession) => itemSession.id === row.sessionId);
+    return Boolean(session && session.title === title && studyGroupReminderStillValid(store, userId, session.id, nowMs));
+  });
+}
+
+// The reminders view's reader (audit F-6): the strip is polled every 3 s by
+// every signed-in client, and the validity predicate needs the full Study
+// Group store only when the viewer actually has a candidate reminder row —
+// then exactly one snapshot per call, shared by every row, with no cache
+// across calls (each call judges against that request's own state, so a
+// rescheduled or started Session is filtered on the very next poll). A
+// viewer without pending rows never touches the store; the cancelling
+// actions keep withdrawing their rows from storage, so a cancelled reminder
+// disappears immediately, without any read. Exported for the unit test that
+// pins the read behaviour.
+export function createReminderListReader(repository: { read(): Promise<StudyGroupStore> }) {
+  return async (userId: string) => {
+    let snapshot: Promise<StudyGroupStore> | null = null;
+    return listStudyGroupReminders(userId, (item) =>
+      (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
+  };
 }
 
 const services = new Map<string, StudyGroupService>();
@@ -154,8 +259,9 @@ export function studyGroupService() {
   // never an address or a message) and drained into one redacted line on the
   // metrics cadence below, mirroring the webhook-rejection counter.
   let reminderMailFailures = 0;
+  const repository = backend === "postgres" ? createPostgresStudyGroupRepository() : createStudyGroupRepository(directory);
   const service = createStudyGroupService({
-    repository: backend === "postgres" ? createPostgresStudyGroupRepository() : createStudyGroupRepository(directory),
+    repository,
     now: () => new Date(),
     hasCourseAccess: async (userId, courseId) => (await checkEntitlement(userId, courseId)).allowed,
     courseSummary: async (courseId) => {
@@ -183,9 +289,18 @@ export function studyGroupService() {
       return { id: user.id, displayName: user.nickname || user.id, email: user.email, locale: user.locale === "zh-CN" ? "zh-CN" : "en-GB" };
     },
     notify: async (input) => {
-      await recordUserNotification(input.userId, input.title, input.body);
+      await recordUserNotification(input.userId, input.title, input.body, input.sessionId);
     },
-    listReminders: (userId) => listStudyGroupReminders(userId),
+    // The reminders view reads the pending "Live Session reminder" rows and
+    // re-checks each one against the current store through the module's own
+    // validity rule: the read-side backstop behind the cancelling actions'
+    // withdrawals (BUG-0109), taken lazily (audit F-6) so a viewer with no
+    // candidate rows — the common case under the 3 s poll — performs no
+    // Study Group store read at all.
+    listReminders: createReminderListReader(repository),
+    withdrawReminders: async (input) => {
+      await withdrawStudyGroupReminders(input);
+    },
     sendMail: async (input) => {
       try {
         await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text });
@@ -211,12 +326,14 @@ export function studyGroupService() {
       system: STUDY_GROUP_TUTOR_SYSTEM_PROMPT,
       context: input.context,
       text: input.text,
+      maxTokens: tutorMaxTokensFromEnv(),
+      reasoning: tutorReasoningFromEnv(),
       url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined
     }),
-    publishRoomChat: async ({ room, text, projectId, messageId }) => {
+    publishRoomChat: async ({ room, text, projectId, messageId, mode }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode });
     }
   });
   services.set(key, service);

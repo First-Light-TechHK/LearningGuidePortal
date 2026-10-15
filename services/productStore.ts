@@ -1,4 +1,4 @@
-import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent } from "@/contracts/payment";
+import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent, type PlanPurchaseAvailability } from "@/contracts/payment";
 import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice, resolveUpgradePrice } from "./stripePriceService";
@@ -221,6 +221,13 @@ export type ProductNotification = {
   body: string;
   readAt: string | null;
   createdAt: string;
+  // Set on T-10 reminder rows so the reminders view can be checked against
+  // the Live Session's current state (BUG-0109). Rows written before this
+  // linkage existed carry no sessionId and are never shown as pending
+  // reminders: their validity cannot be verified. The title is localised at
+  // write time (hunt L1): "Live Session reminder" for en-GB, "直播课提醒"
+  // for zh-CN.
+  sessionId?: string;
 };
 export type ProductSession = { id: string; tokenHash: string; userId: string; expiresAt: string; createdAt: string };
 export type ProductToken = { id: string; userId: string; tokenHash: string; expiresAt: string; usedAt: string | null; createdAt: string };
@@ -423,6 +430,30 @@ function sameScope(left: { courseId: string; scope?: ProductEntitlement["scope"]
 
 function entitlementMatchesSubscription(entitlement: ProductEntitlement, subscription: ProductSubscription) {
   return entitlement.userId === subscription.userId && entitlement.source === subscription.source && sameScope(entitlement, subscription);
+}
+
+function alreadySubscribedToPlan(data: ProductData, userId: string, plan: ProductPlan) {
+  const target = planScope(plan);
+  return data.subscriptions.some(subscription => {
+    if (subscription.userId !== userId || subscription.source !== "purchase" || !["active", "cancel_at_period_end", "grace"].includes(subscription.state)) return false;
+    const validTo = subscription.state === "grace" ? subscription.graceEndsAt || subscription.validTo : subscription.validTo;
+    if (!(new Date(validTo).getTime() > Date.now())) return false;
+    const originalPlan = data.plans.find(item => item.id === subscription.planId);
+    const owned = subscription.scope ? scopedValue(subscription) : originalPlan ? planScope(originalPlan) : scopedValue(subscription);
+    // Everything owners cannot buy Category access, regardless of device or term.
+    if (owned.scope === "everything" && target.scope === "category") return true;
+    if ((subscription.device || originalPlan?.device || "pc") !== plan.device) return false;
+    if (owned.scope === "everything") return true;
+    if (owned.scope === target.scope && owned.scopeId === target.scopeId) return true;
+    if (owned.scope === "category" && target.scope === "course") {
+      return data.courses.some(course => course.id === target.scopeId && course.category === owned.scopeId);
+    }
+    return false;
+  });
+}
+
+function assertPlanPurchaseAllowed(data: ProductData, userId: string, plan: ProductPlan) {
+  if (alreadySubscribedToPlan(data, userId, plan)) throw new PaymentError("already_subscribed");
 }
 
 async function saveData(data: ProductData) {
@@ -1060,11 +1091,15 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = data.studyRecords.find(item => item.userId === userId && item.courseId === course.id);
+    const lessons = course.sections.flatMap(section => section.lessons);
+    const currentLessonId = lessons.find(lesson => lesson.id === record?.currentLessonId)?.id || lessons[0]?.id || null;
+    const actionLessonId = page.pageState !== "available" ? null : record?.completedAt
+      ? lessons.at(-1)?.id || null : currentLessonId;
     if (record?.knowledgePositions && record.currentMode) {
       const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, progress:position.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
+      return { ...page, actionLessonId: page.pageState !== "available" ? null : record.completedAt || position.progress === 100 ? lessons.at(-1)?.id || null : position.lessonId || actionLessonId, progress:position.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
     }
-    return page;
+    return { ...page, actionLessonId: page.pageState === "available" && page.progress === 100 ? lessons.at(-1)?.id || null : actionLessonId };
   });
 }
 
@@ -1088,6 +1123,12 @@ export async function listPlans(courseId?: string) {
       return { ...plan, amountMinor: price.amountMinor, currency: price.currency, price, available: true };
     } catch { return { ...plan, available: false }; }
   }));
+}
+
+export async function listPlansForPurchase(userId?: string, courseId?: string): Promise<(ProductPlan & PlanPurchaseAvailability)[]> {
+  const plans = await listPlans(courseId);
+  const data = userId ? await ensureProductData() : null;
+  return plans.map(plan => ({ ...plan, alreadySubscribed: Boolean(data && userId && alreadySubscribedToPlan(data, userId, plan)) }));
 }
 
 export async function syncSandboxStripePlans(plans: ProductPlan[]) {
@@ -1162,7 +1203,7 @@ function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) 
     const entitlement = data.entitlements.find((item) => item.userId === userId && item.source === "trial" && item.validTo === currentTrial.validTo) || null;
     return { subscription: currentTrial, entitlement };
   }
-  if (existing && !currentTrial) throw new Error("This plan already has active access.");
+  if (existing && !currentTrial) throw new PaymentError("already_subscribed");
   const previousTrial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial");
   if (previousTrial) {
     if (previousTrial.state === "trial_canceled") throw new Error("This trial payment attempt cannot be completed.");
@@ -1197,6 +1238,9 @@ export async function activateTrial(userId: string, courseId: string) {
 }
 
 export async function createQuote(userId: string, planId: string, kind: "purchase" | "trial" = "purchase") {
+  const current = await ensureProductData();
+  const candidate = current.plans.find(item => item.id === planId);
+  if (candidate) assertPlanPurchaseAllowed(current, userId, candidate);
   const price = paymentMode() === "stripe" ? await resolveSubscriptionPrice(planId) : undefined;
   return editData((data) => {
     const plan = data.plans.find((item) => item.id === planId);
@@ -1205,9 +1249,7 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const createdAt = now();
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
-    if (kind === "purchase" && data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) {
-      throw new Error("This plan already has active access.");
-    }
+    assertPlanPurchaseAllowed(data, userId, plan);
     const quote: ProductQuote = { price, planSnapshot: { ...plan }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
     return { quote, plan };
@@ -1302,6 +1344,7 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
       if (subscription && entitlement) return { order, subscription, entitlement };
     }
     if (!["pending", "paid"].includes(order.status)) throw new Error("This payment attempt cannot be completed.");
+    assertPlanPurchaseAllowed(data, userId, plan);
     order.status = "paid";
     order.failureReason = null;
     const validFrom = now();
@@ -1359,6 +1402,7 @@ export async function createPendingDemoOrder(userId: string, quoteId: string) {
     const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "demo" && item.kind === "purchase" && ["pending", "paid"].includes(item.status));
+    if (existing?.status !== "paid") assertPlanPurchaseAllowed(data, userId, plan);
     if (existing) return { order: existing, plan };
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "demo", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
@@ -1410,7 +1454,7 @@ function pendingTrialOrder(data: ProductData, userId: string, plan: ProductPlan,
   if (!course) throw new Error("Course is not available.");
   const existing = data.orders.find((item) => item.userId === userId && item.planId === plan.id && item.paymentMode === paymentMode && item.kind === "trial_activation" && ["pending", "paid"].includes(item.status));
   if (existing) return { order: existing, plan };
-  if (data.courses.some((item) => item.status === "published" && planCoversCourse(plan, item) && activeEntitlement(data, userId, item.id))) throw new Error("This plan already has active access.");
+  if (data.courses.some((item) => item.status === "published" && planCoversCourse(plan, item) && activeEntitlement(data, userId, item.id))) throw new PaymentError("already_subscribed");
   if (data.subscriptions.some((item) => item.userId === userId && item.planId === plan.id && item.source === "trial")) throw new Error("The three-day trial has already been used for this plan.");
   const createdAt = now();
   const quote = suppliedQuote || { id: id("trial_quote"), userId, planId: plan.id, amountMinor: 0, currency: plan.currency, kind: "trial" as const, expiresAt: new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString(), createdAt };
@@ -1474,9 +1518,9 @@ export async function createPendingStripeOrder(userId: string, quoteId: string) 
     const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe");
+    if (existing?.status !== "paid") assertPlanPurchaseAllowed(data, userId, plan);
     if (existing) return { order: existing, plan };
     if (!quote.price) throw new PaymentError("quote_expired");
-    if (data.subscriptions.some(item => item.userId === userId && sameScope(item, { ...plan, scope: plan.scope }) && item.device === plan.device && ["active", "cancel_at_period_end", "grace"].includes(item.state) && new Date(item.validTo) > new Date())) throw new PaymentError("invalid_request");
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "purchase", price: quote.price, planSnapshot: quote.planSnapshot, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
@@ -1640,6 +1684,11 @@ export async function prepareStripeCheckout(userId: string, orderId: string, ori
     const order = data.orders.find(item => item.id === orderId && item.userId === userId);
     if (!order || !["pending", "paid"].includes(order.status)) throw new PaymentError("quote_expired");
     if (!order.price) throw new PaymentError("quote_expired");
+    if (order.status === "pending" && (order.kind || "purchase") === "purchase") {
+      const plan = order.planSnapshot || data.plans.find(item => item.id === order.planId);
+      if (!plan) throw new PaymentError("invalid_request");
+      assertPlanPurchaseAllowed(data, userId, plan);
+    }
     order.checkoutOrigin ||= origin;
     order.checkoutLocale ||= locale;
     return order;
@@ -1835,6 +1884,7 @@ export async function getLearningOverview(userId: string) {
         progressFailed: computed.progressFailed,
         completedAt: computed.completed ? record?.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
+        completedContentIds: [...new Set(courseEvents.filter(event => event.event === "complete" && event.contentId).map(event => event.contentId!))],
         nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,
         courseTitle: course?.title || courseId,
@@ -2004,7 +2054,7 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
       data.studyRecords.unshift(record);
     }
     record.currentLessonId = input.lessonId;
-    if (input.learningMode && input.event === "open") {
+    if (input.learningMode) {
       record.currentMode = input.learningMode;
       record.knowledgePositions = { ...record.knowledgePositions, [input.learningMode]: { lessonId: lesson.id, contentId: input.contentId || null } };
     }
@@ -2017,7 +2067,7 @@ export async function recordStudyEvent(input: { userId: string; courseId: string
       : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
     // D2.1 stored progress follows unique LPs; seconds stay on the record for study telemetry only.
     record.progress = computed.progress ?? 0;
-    record.completedAt = computed.completed ? record.completedAt || now() : null;
+    record.completedAt = record.completedAt || (computed.completed ? now() : null);
     record.updatedAt = now();
     return record;
   });
@@ -2042,17 +2092,62 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
-export async function listStudyGroupReminders(userId: string) {
+// The portal reminders strip (GET /api/study-groups?view=reminders): only
+// currently valid T-10 reminders are pending prompts (BUG-0109). The
+// cancellation notice ("Study Group cancelled" / "学习小组已取消") is a
+// notification-center fact, not a reminder, so a cancelled Study Group
+// contributes nothing here.
+// Validity is decided by the caller's predicate over each row (the Study
+// Group module's rule over its own Session, Group, membership and
+// Plan-to-Attend state; it also resolves pre-linkage rows written before the
+// sessionId field existed) — the read-side backstop for reminder rows the
+// cancelling actions could not withdraw.
+// The reminder title is localised at write time (hunt L1), so the marker
+// check accepts the known per-locale titles; the en-GB one is the exact
+// string earlier environments already carry.
+const STUDY_GROUP_REMINDER_TITLES = new Set(["Live Session reminder", "直播课提醒"]);
+
+export async function listStudyGroupReminders(
+  userId: string,
+  isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string }) => boolean | Promise<boolean>
+) {
   const data = await readProductAggregate();
-  return data.notifications
-    .filter((item) => item.userId === userId && (item.title === "Live Session reminder" || item.title === "Study Group cancelled"))
-    .slice(0, 5)
-    .map((item) => ({ body: item.body, createdAt: item.createdAt }));
+  const reminders: Array<{ body: string; createdAt: string }> = [];
+  const seenSessionIds = new Set<string>();
+  for (const item of data.notifications) {
+    if (reminders.length >= 5) break;
+    if (item.userId !== userId || !STUDY_GROUP_REMINDER_TITLES.has(item.title)) continue;
+    if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
+    if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId })) continue;
+    if (item.sessionId) seenSessionIds.add(item.sessionId);
+    reminders.push({ body: item.body, createdAt: item.createdAt });
+  }
+  return reminders;
 }
 
-export async function recordUserNotification(userId: string, title: string, body: string) {
+// The write-side counterpart (BUG-0109): cancelling a Study Group, cancelling
+// a Live Session, cancelling attendance or leaving the group withdraws the
+// pending reminder rows those actions invalidate, so storage matches the
+// reminders view without waiting for the read-side filter. Only session-linked
+// reminder rows are touched; other notifications are left untouched.
+export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyArray<string>; userId?: string }) {
+  const sessionIds = new Set(input.sessionIds.filter(Boolean));
+  if (!sessionIds.size) return 0;
   return editData((data) => {
-    const notification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now() };
+    const remaining = data.notifications.filter((item) => {
+      if (!item.sessionId || !sessionIds.has(item.sessionId)) return true;
+      if (input.userId && item.userId !== input.userId) return true;
+      return false;
+    });
+    const withdrawn = data.notifications.length - remaining.length;
+    data.notifications = remaining;
+    return withdrawn;
+  });
+}
+
+export async function recordUserNotification(userId: string, title: string, body: string, sessionId?: string) {
+  return editData((data) => {
+    const notification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now(), ...(sessionId ? { sessionId } : {}) };
     data.notifications.unshift(notification);
     return notification;
   });

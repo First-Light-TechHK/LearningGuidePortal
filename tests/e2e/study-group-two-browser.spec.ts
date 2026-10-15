@@ -9,8 +9,9 @@ const PLAN_ID = "epicureanism-pc-6";
 const COURSE_ID = "epicureanism";
 const CONSENTS = { renewal: true, terms: true, refund: true };
 const TUTOR_QUESTION = "What does the course teach about pleasure?";
+// The mock model answers "COURSE\nMock tutor reply: ..."; the tutor pipeline
+// strips the mode-tag line, so the chat shows the remaining text.
 const MOCK_TUTOR_REPLY = "Mock tutor reply: the course text explains this topic.";
-const ABSENT_REPLY = "The course material does not contain the answer.";
 
 function freshEmail(side: string) {
   return `e2e-sg-${side}-${Date.now()}@example.com`;
@@ -137,7 +138,9 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
 
     await expect(tutorLine(pageB)).toBeVisible();
     const tutorTextB = ((await tutorLine(pageB).textContent()) || "").trim();
-    expect([MOCK_TUTOR_REPLY, ABSENT_REPLY], "tutor reply text").toContain(tutorTextB);
+    // The tutor never refuses any more; the mock's fixed answer (minus the
+    // stripped mode-tag line) is the only reply this environment can produce.
+    expect(tutorTextB, "tutor reply text").toBe(MOCK_TUTOR_REPLY);
     await expect(tutorLine(pageA)).toBeVisible();
     const tutorTextA = ((await tutorLine(pageA).textContent()) || "").trim();
     expect(tutorTextA, "both browsers see the same tutor reply").toBe(tutorTextB);
@@ -153,8 +156,22 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
       console.log(`[study-group-e2e] ${reason}`);
     }
 
-    // 10. Host leaves, member leaves, the session completes.
+    // 10. Host leaves; the member remains and the session stays live.
     await pageA.getByRole("button", { name: "Leave Session" }).click();
+    await expect(pageB.locator('[data-participants="1"]')).toBeVisible();
+
+    // 11. BUG-0108 regression: the LAST participant refreshes the browser. A
+    // reload is an unload, not a Leave Session — the member must land back
+    // inside the same live session (not an ended one) and the session must
+    // still be live afterwards.
+    await pageB.reload();
+    await expect(pageB.getByRole("button", { name: "Share" })).toBeEnabled();
+    await expect(pageB.locator('[data-participants="1"]')).toBeVisible();
+    const afterReload = await contextB.request.get(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
+    expect(afterReload.status(), "session view after reload").toBe(200);
+    expect((await afterReload.json()).data.state, "a refresh must not end the session").toBe("live");
+
+    // 12. The member leaves explicitly; with nobody left the session completes.
     await pageB.getByRole("button", { name: "Leave Session" }).click();
     await expect
       .poll(async () => {

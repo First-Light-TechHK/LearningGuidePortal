@@ -51,7 +51,7 @@ export type StudyGroupRepository = {
   settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string };
+    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
   }): Promise<void>;
 
   // durable room-message outbox (at-least-once publish, bounded)
@@ -223,7 +223,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
   async function settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string };
+    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
   }) {
     await update((store) => {
       const row = store.tutorRequests.find((item) => item.id === input.id);

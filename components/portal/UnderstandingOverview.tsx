@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { ApplicationTestAttempt } from "@/contracts/application-test";
 import type { UnderstandingOverviewDisplay } from "@/contracts/understanding-overview";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
@@ -16,6 +17,8 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
   const messages=getMessages(locale), copy=messages.understandingOverview, tests=messages.lessonCompleted;
   const [expanded,setExpanded]=useState(["01","02"]);
   const [modal,setModal]=useState<{kind:"knowledge"|"application";lesson:string;result:boolean}|null>(null);
+  const applicationAttempts = useRef<Record<string, ApplicationTestAttempt>>({});
+  const [knowledgeCompleted, setKnowledgeCompleted] = useState<string[]>([]);
   const close=()=>setModal(null);
   const courseHref=`/${locale}/portal/courses/${encodeURIComponent(courseId)}`;
   return <div className={styles.page} data-course-id={courseId}>
@@ -39,7 +42,7 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
         </section>
       </article>
     </div>
-    {modal?.kind==="knowledge" && <KnowledgeTestDialog key={`knowledge-${modal.lesson}`} locale={locale} lessonNumber={modal.lesson} initialView={modal.result?"result":"question"} onExit={close}/>}
-    {modal?.kind==="application" && <ApplicationTestDialog key={`application-${modal.lesson}`} locale={locale} lessonNumber={modal.lesson} initialView={modal.result?"result":"answer"} initialAnswer={modal.result?getApplicationTestSample(locale).paragraphs.at(-1):""} onBack={close} onDone={close}/>}
+    {modal?.kind==="knowledge" && <KnowledgeTestDialog key={`knowledge-${modal.lesson}`} locale={locale} lessonNumber={modal.lesson} lessonTitle={data.lessons.find(lesson => lesson.number === modal.lesson)?.title} onComplete={() => setKnowledgeCompleted(current => current.includes(modal.lesson) ? current : [...current, modal.lesson])} onApplicationTest={() => { setKnowledgeCompleted(current => current.includes(modal.lesson) ? current : [...current, modal.lesson]); setModal({kind:"application",lesson:modal.lesson,result:false}); }} initialView={modal.result?"result":"question"} onExit={close}/>}
+    {modal?.kind==="application" && <ApplicationTestDialog key={`application-${modal.lesson}`} locale={locale} entrySource="overview" lessonNumber={modal.lesson} lessonTitle={data.lessons.find(lesson => lesson.number === modal.lesson)?.title} initialAttempt={applicationAttempts.current[modal.lesson]} onAttemptChange={attempt => { applicationAttempts.current[modal.lesson] = attempt; }} knowledgeCompleted={knowledgeCompleted.includes(modal.lesson) || data.lessons.find(lesson => lesson.number === modal.lesson)?.state === "completed"} onKnowledgeTest={() => setModal({kind:"knowledge",lesson:modal.lesson,result:false})} initialView={modal.result?"result":"answer"} initialAnswer={modal.result?getApplicationTestSample(locale).sampleAnswer:""} onBack={close} onDone={close}/>}
   </div>;
 }

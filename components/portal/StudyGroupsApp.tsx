@@ -5,9 +5,10 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { sessionStateLabel, studyGroupPane } from "@/modules/group-study/uiState";
+import { sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
+import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
-import { DURATION_MINUTE_CHOICES, fill, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { DURATION_MINUTE_CHOICES, clampGroupAbout, fill, GROUP_ABOUT_MAX, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 type CourseOption = { id: string; title: string; slug: string };
 
@@ -77,10 +78,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<StudyGroupDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
-  const [errorCode, setErrorCode] = useState("error");
-  const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | null>(null);
+  const [errorCode, setErrorCode] = useState("idle");
+  const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | "cancel-group" | null>(null);
   const [createdGroup, setCreatedGroup] = useState<{ id: string; title: string; courseTitle: string } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [mutating, setMutating] = useState<string | null>(null);
   const [editingSession, setEditingSession] = useState<StudySession | null>(null);
   const [waitingSession, setWaitingSession] = useState<StudySession | null>(null);
   const [attendees, setAttendees] = useState<StudySession["attendees"]>([]);
@@ -95,6 +98,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [sessionLesson, setSessionLesson] = useState("");
   const [createTitle, setCreateTitle] = useState("");
   const [createAbout, setCreateAbout] = useState("");
+  const [editAbout, setEditAbout] = useState("");
   const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string }>>([]);
   const listGeneration = useRef(0);
   const openGroupId = useRef<string | null>(null);
@@ -103,48 +107,64 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
 
   async function loadLists() {
     const generation = ++listGeneration.current;
-    const [myResult, discoverResult, courseResult, reminderResult] = await Promise.all([
-      signedIn ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
-      studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
-      signedIn ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as CourseOption[] }),
-      signedIn ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Array<{ body: string; createdAt: string }> })
-    ]);
-    if (generation !== listGeneration.current) return;
-    if (!myResult.ok || !discoverResult.ok) {
+    try {
+      const [myResult, discoverResult, courseResult, reminderResult] = await Promise.all([
+        signedIn ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
+        studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
+        signedIn ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as CourseOption[] }),
+        signedIn ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Array<{ body: string; createdAt: string }> })
+      ]);
+      if (generation !== listGeneration.current) return;
+      if (!myResult.ok || !discoverResult.ok) {
+        setStatus("error");
+        setErrorCode(myResult.ok ? discoverResult.code : myResult.code);
+        return;
+      }
+      setMine(myResult.data);
+      setDiscover(discoverResult.data);
+      if (courseResult.ok) setCourses(courseResult.data);
+      if (reminderResult.ok) setReminders(uniqueReminderBodies(reminderResult.data));
+      const incoming = [
+        ...(courseResult.ok ? courseResult.data : []),
+        ...myResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle })),
+        ...discoverResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle }))
+      ];
+      setCourseOptions((current) => {
+        const next = new Map(current.map((item) => [item.id, item.title]));
+        for (const item of incoming) if (item.id && item.title) next.set(item.id, item.title);
+        return Array.from(next, ([id, title]) => ({ id, title }));
+      });
+      setStatus("ready");
+    } catch {
+      // M6: a rejected fetch (offline, a non-JSON gateway page) must land the screen
+      // on the pane error with its Retry button instead of staying on "loading"
+      // forever - the anonymous visitor has no 3s poll to self-heal.
+      if (generation !== listGeneration.current) return;
       setStatus("error");
-      setErrorCode(myResult.ok ? discoverResult.code : myResult.code);
-      return;
+      setErrorCode("error");
     }
-    setMine(myResult.data);
-    setDiscover(discoverResult.data);
-    if (courseResult.ok) setCourses(courseResult.data);
-    if (reminderResult.ok) setReminders(reminderResult.data);
-    const incoming = [
-      ...(courseResult.ok ? courseResult.data : []),
-      ...myResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle })),
-      ...discoverResult.data.map((group) => ({ id: group.courseId, title: group.courseTitle }))
-    ];
-    setCourseOptions((current) => {
-      const next = new Map(current.map((item) => [item.id, item.title]));
-      for (const item of incoming) if (item.id && item.title) next.set(item.id, item.title);
-      return Array.from(next, ([id, title]) => ({ id, title }));
-    });
-    setStatus("ready");
   }
 
   async function openGroup(id: string) {
     openGroupId.current = id;
     setSelectedId(id);
-    const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);
-    if (openGroupId.current !== id) return;
-    if (!result.ok) {
-      setErrorCode(result.code);
+    setCreatedGroup(null);
+    try {
+      const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);
+      if (openGroupId.current !== id) return;
+      if (!result.ok) {
+        setErrorCode(result.code);
+        setStatus("error");
+        return;
+      }
+      setSelected(result.data);
+      setMine((current) => current.map((group) => group.id === result.data.id ? { ...group, live: result.data.live, memberCount: result.data.memberCount } : group));
+      setStatus("ready");
+    } catch {
+      if (openGroupId.current !== id) return;
+      setErrorCode("error");
       setStatus("error");
-      return;
     }
-    setSelected(result.data);
-    setMine((current) => current.map((group) => group.id === result.data.id ? { ...group, live: result.data.live, memberCount: result.data.memberCount } : group));
-    setStatus("ready");
   }
 
   async function refreshOpenGroup(id: string) {
@@ -204,7 +224,10 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       const sessionId = waitingHoldRef.current;
       if (!sessionId) return;
       waitingHoldRef.current = null;
-      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
+      // F-8b (dev audit 2026-10-14): the unload beacon is best-effort - the page is
+      // going away, so a rejection has nowhere to render; swallow it silently instead
+      // of leaving an unhandled rejection in the console.
+      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true }).catch(() => undefined);
     };
     window.addEventListener("pagehide", release);
     return () => {
@@ -223,7 +246,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     const held = waitingHoldRef.current;
     if (!held) return;
     waitingHoldRef.current = null;
-    void fetch(`/api/study-groups/sessions/${held}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
+    void fetch(`/api/study-groups/sessions/${held}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true }).catch(() => undefined);
   }, [dialog, waitingSession?.id]);
 
   useEffect(() => {
@@ -268,6 +291,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const pane = studyGroupPane({ status, selected: selected ? { role: selected.role, sessions: selected.sessions ?? null } : null });
   const visibleMine = mine.filter((group) => mineFilter === "all" || group.role === "host");
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
+  const errorPlace = studyGroupErrorPlace({ status, dialog, hasSelected: Boolean(selected), hasError: studyGroupHasError(errorCode) });
 
   async function submitCreate(form: FormData) {
     if (creating) return;
@@ -282,14 +306,93 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         return;
       }
       setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
+      setDialog(null);
+      setErrorCode("idle");
+      setCreateTitle("");
+      setCreateAbout("");
       await loadLists();
     } finally {
       setCreating(false);
     }
   }
 
+  async function submitCancelGroup() {
+    if (!selected || cancelling) return;
+    setCancelling(true);
+    try {
+      const result = await studyGroupRequest(`/api/study-groups/${selected.id}/cancel`, { method: "POST", body: "{}" });
+      setDialog(null);
+      if (!result.ok) {
+        setErrorCode(result.code);
+        return;
+      }
+      setErrorCode("idle");
+      setSelected(null);
+      setSelectedId(null);
+      await loadLists();
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  async function runSessionMutation(action: "plan" | "cancel-attendance" | "cancel-session", session: StudySession) {
+    if (!selected || mutating) return;
+    const groupId = selected.id;
+    setMutating(`${action}:${session.id}`);
+    try {
+      const result = await studyGroupRequest(`/api/study-groups/sessions/${session.id}/${action}`, { method: "POST", body: "{}" });
+      const outcome = studyGroupMutation({ action, result });
+      if (!outcome.ok) {
+        setErrorCode(outcome.errorCode);
+        return;
+      }
+      setErrorCode("idle");
+      await openGroup(groupId);
+    } finally {
+      setMutating(null);
+    }
+  }
+
+  async function runLeaveGroup() {
+    if (!selected || mutating) return;
+    setMutating("leave");
+    try {
+      const result = await studyGroupRequest(`/api/study-groups/${selected.id}/leave`, { method: "POST", body: "{}" });
+      const outcome = studyGroupMutation({ action: "leave", result });
+      if (!outcome.ok) {
+        setErrorCode(outcome.errorCode);
+        return;
+      }
+      setErrorCode("idle");
+      if (outcome.clearSelection) {
+        setSelected(null);
+        setSelectedId(null);
+      }
+      await loadLists();
+    } finally {
+      setMutating(null);
+    }
+  }
+
+  function closeDialog() {
+    setErrorCode("idle");
+    setDialog(null);
+  }
+
+  function closeWaiting() {
+    setErrorCode("idle");
+    setDialog(null);
+    setWaitingSession(null);
+  }
+
+  function openEditGroup() {
+    setErrorCode("idle");
+    setEditAbout(clampGroupAbout(selected?.about || ""));
+    setDialog("edit");
+  }
+
   function openSchedule() {
-    setErrorCode("ok");
+    setErrorCode("idle");
     setSessionTitle("");
     setSessionFocus("");
     setSessionDate("");
@@ -302,7 +405,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   }
 
   function openEditSession(session: StudySession) {
-    setErrorCode("ok");
+    setErrorCode("idle");
     const local = localDateTime(session.startsAt);
     setEditingSession(session);
     setSessionTitle(session.title.slice(0, SESSION_TITLE_MAX));
@@ -326,6 +429,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
+    setErrorCode("idle");
     setDialog(null);
     await openGroup(selected.id);
     await loadLists();
@@ -350,6 +454,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
+    setErrorCode("idle");
     setDialog(null);
     await openGroup(selected.id);
   }
@@ -376,6 +481,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode(result.code);
       return;
     }
+    setErrorCode("idle");
     setDialog(null);
     setEditingSession(null);
     await openGroup(selected.id);
@@ -419,14 +525,16 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       <aside className={styles.sidebar} aria-label={copy.title}>
         <h1 className={styles.title}>{copy.title}</h1>
         {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}</li>)}</ul> : null}
-        <div className={styles.sectionHead}>
+        {/* BUG-0130: a signed-out visitor has no "My" Study Groups — the heading, Create
+            button and All / Hosted by Me tabs render only for signed-in users. */}
+        {signedIn ? <div className={styles.sectionHead}>
           <h2>{copy.myGroups}</h2>
-          {signedIn ? <button className={styles.create} type="button" onClick={() => { setCreateTitle(""); setCreateAbout(""); setDialog("create"); }}>+ {copy.create}</button> : null}
-        </div>
-        <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
+          <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("idle"); setDialog("create"); }}>+ {copy.create}</button>
+        </div> : null}
+        {signedIn ? <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
           <button type="button" aria-pressed={mineFilter === "all"} onClick={() => setMineFilter("all")}>{copy.all}</button>
           <button type="button" aria-pressed={mineFilter === "host"} onClick={() => setMineFilter("host")}>{copy.hostedByMe}</button>
-        </div>
+        </div> : null}
         {signedIn && visibleMine.length === 0 ? <p className={styles.noMine}>{copy.noMine}</p> : null}
         {visibleMine.map((group) => (
           <button className={styles.card} type="button" key={group.id} aria-current={selectedId === group.id} onClick={() => void openGroup(group.id)}>
@@ -462,24 +570,28 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       </aside>
       <section className={styles.main} aria-live="polite">
         {pane.kind === "loading" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
-        {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => void loadLists()}>{copy.retry}</button></div> : null}
+        {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p><button className={styles.primary} type="button" onClick={() => { setErrorCode("idle"); void loadLists(); }}>{copy.retry}</button></div> : null}
         {pane.kind === "empty" && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
-        {createdGroup ? <div className={styles.createdToast} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setDialog(null); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
-        {dialog === "create" ? <form className={styles.panel} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
-          <h2>{copy.create}</h2>
-          <p className={styles.lead}>{copy.createLead}</p>
-          <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
-          <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
-          <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={200} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(event.target.value.slice(0, 200))} /><span className={styles.counter}>{createAbout.length}/200</span></span></label>
-          <div className={styles.actions}><button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
-          {errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
-        </form> : null}
+        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("idle"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
+        {dialog === "create" ? (
+          <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={creating}>
+            <form className={styles.createForm} onSubmit={(event) => { event.preventDefault(); void submitCreate(new FormData(event.currentTarget)); }}>
+              <h2 id="study-group-dialog-title">{copy.create}</h2>
+              <p className={styles.lead}>{copy.createLead}</p>
+              <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
+              <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+              <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{createAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
+              <div className={styles.actions}><button className={styles.ghost} type="button" onClick={closeDialog}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating} onClick={(event) => { const form = event.currentTarget.form; if (form && !form.checkValidity()) { event.preventDefault(); setErrorCode("validation"); } }}>{copy.create}</button></div>
+              {errorPlace === "create" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
+            </form>
+          </PortalDialog>
+        ) : null}
         {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" && !createdGroup ? (
           <div className={styles.sheet}>
             <article>
               <h2 className={styles.groupTitle}>{selected.title}</h2>
               {selected.role === "host" ? <span className={styles.hostChip}>{copy.hosting}</span> : null}
-              {selected.role === "member" ? <span className={styles.hostChip}>{copy.joined}</span> : null}
+              {selected.role === "member" ? <span className={`${styles.hostChip} ${styles.joinedChip}`}>{copy.joined}</span> : null}
               <div className={styles.facts}>
                 <div><h3>{copy.relatedCourse}</h3><p>{selected.courseTitle}</p></div>
                 <div><h3 className={styles.aboutLabel}>{copy.about}</h3><p className={styles.aboutBody}>{selected.about}</p></div>
@@ -515,29 +627,29 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <div className={styles.row}>
                     {selected.role === "host" && session.state === "starting_soon" && !sessionNotStarted(session) ? <button className={styles.primary} type="button" onClick={() => void startSession(session)}>{copy.start}</button> : null}
                     {!sessionNotStarted(session) && (session.state === "live" || (session.state === "starting_soon" && selected.role !== "host")) ? <button className={styles.primary} type="button" disabled={session.occupancy >= session.maxParticipants} onClick={() => void enter(session)}>{session.occupancy >= session.maxParticipants ? copy.sessionFull : copy.joinNow}</button> : null}
-                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && selected.role === "member" && !session.viewerPlanned ? <><button className={styles.primary} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/plan`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.plan}</button><p className={styles.planNote}>{copy.planNote}</p></> : null}
-                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel-attendance`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelAttendance}</button> : null}
+                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && selected.role === "member" && !session.viewerPlanned ? <><button className={styles.primary} type="button" disabled={mutating !== null} onClick={() => void runSessionMutation("plan", session)}>{copy.plan}</button><p className={styles.planNote}>{copy.planNote}</p></> : null}
+                    {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <button className={styles.danger} type="button" disabled={mutating !== null} onClick={() => void runSessionMutation("cancel-attendance", session)}>{copy.cancelAttendance}</button> : null}
                     {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.ghost} type="button" onClick={() => openEditSession(session)}>{copy.editSession}</button> : null}
-                    {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.danger} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/sessions/${session.id}/cancel`, { method: "POST", body: "{}" }); await openGroup(selected.id); }}>{copy.cancelSession}</button> : null}
+                    {selected.role === "host" && (session.state === "scheduled" || session.state === "starting_soon") ? <button className={styles.danger} type="button" disabled={mutating !== null} onClick={() => void runSessionMutation("cancel-session", session)}>{copy.cancelSession}</button> : null}
                     <button className={styles.textButton} type="button" onClick={() => { setAttendeeSessionId(session.id); setAttendees(session.attendees); setDialog("attendees"); }}>{copy.viewAttendees}<span aria-hidden="true"> ›</span></button>
                   </div>
                 </article>
               )) : null}
-              {errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
+              {errorPlace === "sheet" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
             </article>
             <aside className={styles.memberCol} aria-label={copy.members}>
               <h3>{copy.members} <span className={styles.countBadge}>{selected.memberCount}</span></h3>
               <ul className={styles.memberList}>
                 {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{member.displayName.slice(0, 1)}</span><span>{member.displayName}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
-              {selected.role === "host" ? <div className={styles.hostFoot}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={() => setDialog("edit")}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={async () => { if (!window.confirm(copy.confirmCancelGroup)) return; await studyGroupRequest(`/api/study-groups/${selected.id}/cancel`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.cancelGroup}</button></div> : null}
-              {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" onClick={async () => { await studyGroupRequest(`/api/study-groups/${selected.id}/leave`, { method: "POST", body: "{}" }); setSelected(null); setSelectedId(null); await loadLists(); }}>{copy.leaveGroup}</button></div> : null}
+              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={openEditGroup}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
+              {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" disabled={mutating !== null} onClick={() => void runLeaveGroup()}>{copy.leaveGroup}</button></div> : null}
             </aside>
           </div>
         ) : null}
       </section>
       {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" || dialog === "waiting" || dialog === "attendees" ? (
-        <dialog open className={styles.modal} aria-modal="true" aria-labelledby="study-group-dialog-title">
+        <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={dialog === "waiting" ? closeWaiting : closeDialog}>
           <form method="dialog" onSubmit={(event) => { event.preventDefault(); const formElement = event.currentTarget; if (!formElement.reportValidity()) return; const form = new FormData(formElement); if (dialog === "edit") void submitEdit(form); if (dialog === "edit-session") void submitEditSession(form); if (dialog === "schedule") void submitSchedule(form); }}>
             {dialog !== "waiting" ? <h2 id="study-group-dialog-title">{dialog === "schedule" ? copy.schedule : dialog === "attendees" ? copy.viewAttendees : dialog === "edit-session" ? copy.editSession : dialog === "edit" ? copy.editGroup : copy.create}</h2> : null}
             {dialog === "waiting" && waitingSession ? (
@@ -556,7 +668,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <>
                 <label>{copy.groupTitle}<input name="title" required maxLength={50} defaultValue={selected?.title} /></label>
                 <p>{selected?.courseTitle}</p>
-                <label>{copy.about}<textarea name="about" required maxLength={200} defaultValue={selected?.about} /></label>
+                <label>{copy.about}<span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} value={editAbout} onChange={(event) => setEditAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{editAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
               </>
             ) : null}
             {dialog === "schedule" || dialog === "edit-session" ? (
@@ -575,15 +687,30 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 <label className={styles.switch}><span>{copy.aiTutorLabel}</span><span className={styles.switchText}>{copy.enableAiTutor}</span><input name="aiTutor" type="checkbox" checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} /></label>
               </>
             ) : null}
-            {dialog !== "waiting" && dialog !== "attendees" && errorCode !== "error" && errorCode !== "ok" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
+            {errorPlace === "dialog" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
             {dialog !== "waiting" ? (
               <div className={styles.dialogActions}>
-                <button className={styles.ghost} type="button" onClick={() => setDialog(null)}>{copy.cancel}</button>
+                <button className={styles.ghost} type="button" onClick={closeDialog}>{copy.cancel}</button>
                 {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" ? <button className={styles.primary} type="submit">{dialog === "schedule" ? copy.scheduleAction : copy.save}</button> : null}
               </div>
-            ) : null}
+            ) : (
+              <div className={styles.dialogActions}>
+                <button className={styles.ghost} type="button" onClick={closeWaiting}>{copy.close}</button>
+              </div>
+            )}
           </form>
-        </dialog>
+        </PortalDialog>
+      ) : null}
+      {dialog === "cancel-group" ? (
+        <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={cancelling}>
+          <form method="dialog" onSubmit={(event) => { event.preventDefault(); void submitCancelGroup(); }}>
+            <h2 id="study-group-dialog-title">{copy.cancelGroupConfirmTitle}</h2>
+            <p className={styles.confirmBody}>{copy.confirmCancelGroup}</p>
+            <div className={styles.dialogActions}>
+              <button className={styles.ghost} type="button" onClick={closeDialog} disabled={cancelling}>{copy.cancel}</button><button className={styles.danger} type="submit" disabled={cancelling}>{copy.cancelGroup}</button>
+            </div>
+          </form>
+        </PortalDialog>
       ) : null}
     </div>
   );

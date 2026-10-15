@@ -49,7 +49,8 @@ test.beforeAll(async () => {
   stripe.prices.list = (async (input: { lookup_keys: string[] }) => ({ data: input.lookup_keys.map(key => catalog.get(key)).filter(Boolean) })) as typeof stripe.prices.list;
   stripe.prices.retrieve = (async (id: string) => [...catalog.values()].find(item => item.id === id)) as typeof stripe.prices.retrieve;
   stripe.checkout.sessions.create = (async (input: Stripe.Checkout.SessionCreateParams, options?: Stripe.RequestOptions) => {
-    expect(input.success_url).toBe(`https://payment.example.test/en-GB/account/my-learning/subscription?orderId=${encodeURIComponent(String(input.metadata?.orderId))}`);
+    const checkoutOrigin = test.info().title.startsWith("DEV checkout") ? "http://127.0.0.1:3011" : "https://payment.example.test";
+    expect(input.success_url).toBe(`${checkoutOrigin}/en-GB/account/my-learning/subscription?orderId=${encodeURIComponent(String(input.metadata?.orderId))}`);
     requests.push({ input, options });
     const id = "cs_" + options?.idempotencyKey;
     if (!sessions.has(id)) sessions.set(id, { id, url: "https://checkout.stripe.test/" + id, status: "open", payment_status: "unpaid", mode: input.mode, metadata: input.metadata, currency: "usd" } as Stripe.Checkout.Session);
@@ -83,7 +84,9 @@ async function checkout(planId = "everything-pc-6", trial = false) {
 }
 function paidSession(order: Awaited<ReturnType<typeof checkout>>["order"], trial = false) {
   const start = Math.floor(Date.now() / 1000);
-  const end = start + (trial ? 3 : 180) * 86400;
+  const termEnd = new Date(start * 1000);
+  termEnd.setUTCMonth(termEnd.getUTCMonth() + order.price!.termMonths);
+  const end = trial ? start + 3 * 86400 : Math.floor(termEnd.getTime() / 1000);
   const subscription = { id: "sub_" + order.id, metadata: { app: "learning_guide", orderId: order.id }, customer: "cus_" + order.userId, status: trial ? "trialing" : "active", cancel_at_period_end: false, trial_end: trial ? end : null,
     items: { data: [{ id: "si_" + order.id, current_period_start: start, current_period_end: end, price: [...catalog.values()].find(item => item.id === order.price!.stripePriceId) }] } } as unknown as Stripe.Subscription;
   subscriptions.set(subscription.id, subscription);
@@ -108,6 +111,15 @@ test("all eight lookup keys produce the correct subscription period and server p
     expect(call.input.customer_email).toBeUndefined();
     expect(call.input.managed_payments).toEqual({ enabled: false });
     expect(call.options?.idempotencyKey).toContain(result.order.id);
+    const { session, start, end } = paidSession(result.order);
+    expect((await send("checkout.session.completed", `evt_term_${mapping.id}`, session.id)).status).toBe(200);
+    const overview = await store.getLearningOverview(result.buyer.id);
+    const subscription = overview.subscriptions.find(item => item.plan?.id === mapping.id)!;
+    expect(subscription.validFrom).toBe(new Date(start * 1000).toISOString());
+    expect(subscription.validTo).toBe(new Date(end * 1000).toISOString());
+    const expectedEnd = new Date(start * 1000);
+    expectedEnd.setUTCMonth(expectedEnd.getUTCMonth() + mapping.termMonths);
+    expect(subscription.validTo).toBe(expectedEnd.toISOString());
   }
 });
 
@@ -148,8 +160,19 @@ test("duplicate clicks reuse one Checkout and quotes cannot be used by another a
   expect(repeated.order.id).toBe(result.order.id);
   expect(repeated.checkoutUrl).toBe(result.checkoutUrl);
   await expect(payment.startPayment(await user(), { quoteId: result.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
-  await expect(payment.startPayment(result.buyer, { quoteId: result.quote.id }, request())).rejects.toMatchObject({ code: "invalid_request" });
-  await expect(payment.startPayment(result.buyer, { quoteId: result.quote.id, consents: consent }, new Request("https://payment.example.test"))).rejects.toMatchObject({ code: "invalid_request" });
+  await expect(payment.startPayment(result.buyer, { quoteId: result.quote.id }, request())).rejects.toMatchObject({ code: "consent_required" });
+  await expect(payment.startPayment(result.buyer, { quoteId: result.quote.id, consents: consent }, new Request("https://payment.example.test"))).rejects.toMatchObject({ code: "origin_mismatch" });
+});
+
+test("DEV checkout accepts the actual loopback origin with a different configured address", async () => {
+  const buyer = await user();
+  const { quote } = await store.createQuote(buyer.id, "science-pc-6");
+  const local = new Request("http://127.0.0.1:3011/api/purchase/checkout", { method: "POST", headers: { origin: "http://127.0.0.1:3011" } });
+  const result = await payment.startPayment(buyer, { quoteId: quote.id, consents: consent }, local);
+  expect(result.order.checkoutOrigin).toBe("http://127.0.0.1:3011");
+  expect(result.checkoutUrl).toContain("https://checkout.stripe.test/");
+  const foreign = new Request(local.url, { method: "POST", headers: { origin: "https://attacker.invalid" } });
+  await expect(payment.startPayment(buyer, { quoteId: quote.id, consents: consent }, foreign)).rejects.toMatchObject({ code: "origin_mismatch", status: 403 });
 });
 
 test("quote pins price ID even after lookup key transfer and expires safely", async () => {
@@ -162,6 +185,26 @@ test("quote pins price ID even after lookup key transfer and expires safely", as
   data.quotes.find((item: { id: string }) => item.id === result.quote.id).expiresAt = "2000-01-01T00:00:00Z";
   await writeFile(file, JSON.stringify(data));
   await expect(payment.startPayment(result.buyer, { quoteId: result.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
+});
+
+test("paid scope blocks both terms and stale Checkout retries, while a different category and paid retry remain valid", async () => {
+  const result = await checkout("science-pc-6");
+  const stale = await store.createQuote(result.buyer.id, "science-pc-12");
+  const pending = await payment.startPayment(result.buyer, { quoteId: stale.quote.id, consents: consent }, request());
+  const { session } = paidSession(result.order);
+  expect((await send("checkout.session.completed", "evt_duplicate_scope", session.id)).status).toBe(200);
+  const count = requests.length;
+  for (const term of [6, 12]) await expect(store.createQuote(result.buyer.id, `science-pc-${term}`)).rejects.toMatchObject({ code: "already_subscribed" });
+  await expect(payment.startPayment(result.buyer, { quoteId: stale.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "already_subscribed" });
+  await expect(store.prepareStripeCheckout(result.buyer.id, pending.order.id, "https://payment.example.test", "en-GB")).rejects.toMatchObject({ code: "already_subscribed" });
+  expect(requests).toHaveLength(count);
+  const repeated = await payment.startPayment(result.buyer, { quoteId: result.quote.id, consents: consent }, request());
+  expect(repeated.order.id).toBe(result.order.id);
+  expect(repeated.checkoutUrl).toContain("/account/my-learning/subscription");
+  const different = await store.createQuote(result.buyer.id, "chinese-humanities-pc-12");
+  await payment.startPayment(result.buyer, { quoteId: different.quote.id, consents: consent }, request());
+  expect(requests).toHaveLength(count + 1);
+  expect((await store.getLearningOverview(result.buyer.id)).subscriptions).toHaveLength(1);
 });
 
 test("webhook signature and unpaid sessions never grant access", async () => {

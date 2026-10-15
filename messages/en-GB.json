@@ -1,35 +1,156 @@
 {
-  "textExhibit": { "imageTitle": "Image detail study", "videoTitle": "Flowers in motion", "modelTitle": "Vase form study" },
-  "exhibitDialog": { "courseExhibit": "Course exhibit", "close": "Close exhibit", "about": "About this exhibit", "source": "Source", "collection": "Course exhibit collection", "returnHint": "Close the exhibit to return to the same point in the lesson. Playback will remain paused.", "modelHint": "Drag to rotate · Scroll to zoom", "imageHint": "Drag to move · Scroll to zoom", "videoHint": "Play video · Scroll to zoom", "modelDescription": "This exhibit provides a closer view of the object introduced during the lesson. Rotate and zoom to inspect its form and details.", "imageDescription": "This exhibit provides a closer view of the image introduced during the lesson. Drag and zoom to inspect its details.", "videoDescription": "Watch the video introduced during the lesson. Use the playback controls to explore it at your own pace.", "controls": "Exhibit viewer controls", "zoom": "Zoom level", "zoomIn": "Zoom in", "zoomOut": "Zoom out", "reset": "Reset", "loading": "Loading exhibit…", "failed": "The exhibit could not be loaded. Close and reopen it to retry." },
-  "videoExhibit": { "available": "Exhibit Available", "untitled": "Exhibit", "notNow": "Not Now", "view": "View exhibit", "types": { "text": "Article", "video": "Video", "image": "Image", "audio": "Audio", "model3d": "3D Model", "exercise": "Exercise" } },
+  "textExhibit": {
+    "imageTitle": "Image detail study",
+    "videoTitle": "Flowers in motion",
+    "modelTitle": "Vase form study"
+  },
+  "exhibitDialog": {
+    "courseExhibit": "Course exhibit",
+    "close": "Close exhibit",
+    "about": "About this exhibit",
+    "source": "Source",
+    "collection": "Course exhibit collection",
+    "returnHint": "Close the exhibit to return to the same point in the lesson. Playback will remain paused.",
+    "modelHint": "Drag to rotate · Scroll to zoom",
+    "imageHint": "Drag to move · Scroll to zoom",
+    "videoHint": "Play video · Scroll to zoom",
+    "modelDescription": "This exhibit provides a closer view of the object introduced during the lesson. Rotate and zoom to inspect its form and details.",
+    "imageDescription": "This exhibit provides a closer view of the image introduced during the lesson. Drag and zoom to inspect its details.",
+    "videoDescription": "Watch the video introduced during the lesson. Use the playback controls to explore it at your own pace.",
+    "controls": "Exhibit viewer controls",
+    "zoom": "Zoom level",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "reset": "Reset",
+    "loading": "Loading exhibit…",
+    "failed": "The exhibit could not be loaded. Close and reopen it to retry."
+  },
+  "videoExhibit": {
+    "available": "Exhibit Available",
+    "untitled": "Exhibit",
+    "notNow": "Not Now",
+    "view": "View exhibit",
+    "types": {
+      "text": "Article",
+      "video": "Video",
+      "image": "Image",
+      "audio": "Audio",
+      "model3d": "3D Model",
+      "exercise": "Exercise"
+    }
+  },
   "exploration": {
-    "title":"Exploration", "description":"Discover supporting materials and explore ideas further.", "reading":"Recommended Reading", "exhibits":"Exhibits", "thisLesson":"This lesson", "wholeCourse":"Whole course", "scope":"Exploration scope", "close":"Close Exploration", "book":"BOOK", "article":"ARTICLE", "lesson":"Lesson {number}", "future":"More exhibits will become available as you progress through the course.", "locked":"Future Lesson content remains locked.", "empty":"No supporting materials available."
+    "title": "Exploration",
+    "description": "Discover supporting materials and explore ideas further.",
+    "reading": "Recommended Reading",
+    "exhibits": "Exhibits",
+    "thisLesson": "This lesson",
+    "wholeCourse": "Whole course",
+    "scope": "Exploration scope",
+    "close": "Close Exploration",
+    "book": "BOOK",
+    "article": "ARTICLE",
+    "lesson": "Lesson {number}",
+    "future": "More exhibits will become available as you progress through the course.",
+    "locked": "Future Lesson content remains locked.",
+    "moreReadings": "More readings coming as you learn",
+    "moreExhibits": "More exhibits coming as you learn",
+    "empty": "No supporting materials available."
   },
   "understandingOverview": {
-    "title": "Understanding", "description": "Review assessment status and your latest result across the course", "back": "Back to lesson",
-    "progress": "Your Progress", "completedCount": "{completed} of {total} completed", "courseAssessment": "Course Assessment", "lessonAssessments": "Lesson Assessments",
-    "lessonAssessment": "Lesson / Assessment", "status": "Status", "latestResult": "Latest Result", "action": "Action", "completed": "Completed", "current": "Current lesson",
-    "evaluated": "Evaluated", "inProgress": "In progress", "available": "Available", "locked": "Available after lesson completion", "answered": "3 of 20 answered", "strong": "Strong",
-    "viewResult": "View result", "continue": "Continue", "start": "Start"
+    "title": "Understanding",
+    "description": "Review assessment status and your latest result across the course",
+    "back": "Back to lesson",
+    "progress": "Your Progress",
+    "completedCount": "{completed} of {total} completed",
+    "courseAssessment": "Course Assessment",
+    "lessonAssessments": "Lesson Assessments",
+    "lessonAssessment": "Lesson / Assessment",
+    "status": "Status",
+    "latestResult": "Latest Result",
+    "action": "Action",
+    "completed": "Completed",
+    "current": "Current lesson",
+    "evaluated": "Evaluated",
+    "inProgress": "In progress",
+    "available": "Available",
+    "locked": "Available after lesson completion",
+    "answered": "3 of 20 answered",
+    "strong": "Strong",
+    "viewResult": "View result",
+    "continue": "Continue",
+    "start": "Start"
   },
   "applicationTest": {
-    "title": "Application Test", "apply": "Apply Your Knowledge", "aiEvaluated": "AI EVALUATED", "submit": "Submit for AI evaluation",
-    "back": "Back to Understanding", "evaluating": "Evaluating your response...", "evaluationNote": "The evaluation status replaces the submit action; the prompt and saved response remain in context.",
-    "yourResponse": "Your Response", "overall": "Overall Assessment", "strongResponse": "Strong Response", "latest": "Latest Attempt",
-    "strengths": "What you did well", "improvement": "Area to improve", "retryNote": "If AI evaluation fails, the saved response remains available and can be retried without retyping.",
-    "expand": "Expand dialog", "restore": "Restore dialog size"
+    "title": "Application Test",
+    "apply": "Apply Your Knowledge",
+    "aiEvaluated": "AI EVALUATED",
+    "submit": "Submit to AI Tutor",
+    "back": "Back to Understanding",
+    "evaluating": "AI Tutor is reviewing your answer…",
+    "evaluationNote": "This usually takes less than a minute. You can leave this page.",
+    "aiTutor": "AI TUTOR",
+    "yourAnswer": "Your answer",
+    "placeholder": "Write your answer in your own words…",
+    "resultBack": "Back",
+    "feedback": "Feedback from AI Tutor",
+    "nextLesson": "Next lesson",
+    "tryKnowledge": "Try Knowledge Test",
+    "retake": "Retake test",
+    "yourResponse": "Your Response",
+    "overall": "Overall Assessment",
+    "strongResponse": "Strong response",
+    "latest": "Latest Attempt",
+    "strengths": "What you did well",
+    "improvement": "Area to improve",
+    "retryNote": "If AI evaluation fails, the saved response remains available and can be retried without retyping.",
+    "expand": "Expand dialog",
+    "restore": "Restore dialog size"
   },
   "knowledgeTest": {
-    "title": "Knowledge Test", "result": "Result Review", "flashcards": "Knowledge Flashcards", "lesson": "Lesson {number}",
-    "review": "Review what you learned", "question": "Question", "yourAnswer": "Your Answer", "placeholder": "Write your answer in your own words...",
-    "saved": "Saved automatically", "exit": "Exit", "check": "Check answer", "reference": "Reference Answer", "emptyAnswer": "No answer entered",
-    "selfAssessment": "How Did You Do?", "mark": "Mark yourself", "wrong": "I got it wrong", "right": "I got it right", "next": "Next",
-    "strongUnderstanding": "Strong Understanding", "needsReview": "Needs Review", "strong": "Strong", "correct": "{correct}/{total} cards marked correct",
-    "basedOn": "Based on your self-assessment", "reviewAll": "Review All Cards", "cards": "{count} cards", "openCard": "Open Saved Card", "done": "Done", "emptyList": "No cards in this list"
+    "title": "Knowledge Test",
+    "result": "Result Review",
+    "flashcards": "Knowledge Flashcards",
+    "lesson": "Lesson {number}",
+    "review": "Review what you learned",
+    "question": "Question",
+    "yourAnswer": "Your Answer",
+    "placeholder": "Jot down your thoughts (optional)",
+    "saved": "Saved automatically",
+    "exit": "Exit",
+    "check": "Show answer",
+    "reference": "Reference answer",
+    "emptyAnswer": "No note entered",
+    "selfAssessment": "How did you do?",
+    "mark": "Mark yourself",
+    "wrong": "I got it wrong",
+    "right": "I got it right",
+    "next": "Next",
+    "strongUnderstanding": "Strong Understanding",
+    "needsReview": "Needs review",
+    "strong": "Strong",
+    "correct": "{correct} of {total} right",
+    "basedOn": "Based on your self-assessment",
+    "reviewAll": "Review All Cards",
+    "cards": "{count} cards",
+    "openCard": "Open Saved Card",
+    "done": "Done",
+    "emptyList": "No cards in this list",
+    "optionalNote": "Your note (optional)",
+    "yourNote": "Your note",
+    "close": "Close Knowledge Test",
+    "youMarked": "You marked:",
+    "backToResults": "Back to results",
+    "nextLesson": "Next lesson",
+    "tryApplication": "Try Application Test"
   },
   "lessonCompleted": {
+    "cards": "20 cards",
+    "questionCount": "1 question",
+    "nextLesson": "Next lesson",
+    "close": "Close",
     "title": "Lesson {number} completed",
-    "description": "Choose a test to check your understanding, or continue learning",
+    "description": "Check your understanding, or continue to next lesson.",
     "knowledge": "Knowledge Test",
     "application": "Application Test",
     "fluency": "Fluency Test",
@@ -43,6 +164,7 @@
     "unavailable": "This lesson does not have a test available yet."
   },
   "videoCompletion": {
+    "markComplete": "Mark complete",
     "label": "Lesson completion",
     "watched": "Lesson {number} · {percent}% Watched",
     "question": "Have you completed this lesson?",
@@ -63,15 +185,28 @@
     "saveError": "Your preference could not be saved. Please try again."
   },
   "upgradePanel": {
-    "eyebrow": "Upgrade subscription", "title": "Upgrade to PC Everything",
+    "eyebrow": "Upgrade subscription",
+    "title": "Upgrade to PC Everything",
     "description": "Pay a one-time upgrade fee based on your subscription term. Review the amount before payment. Your existing expiry date is retained. Other Category subscriptions are unchanged.",
-    "calculate": "View upgrade price", "error": "Upgrade price calculation failed."
+    "calculate": "View upgrade price",
+    "error": "Upgrade price calculation failed."
   },
   "overviewV1": {
-    "learning": "Your learning", "description": "Showing all courses you have started", "lessons": "{count} lessons",
-    "video": "Video Mode", "text": "Text Mode",
-    "categories": { "chinese": "Chinese Humanities", "science": "Science", "european": "European Humanities" },
-    "actions": { "resume": "Resume Learning", "review": "Review Course", "plans": "View plans" }
+    "learning": "Your learning",
+    "description": "Showing all courses you have started",
+    "lessons": "{count} lessons",
+    "video": "Video Mode",
+    "text": "Text Mode",
+    "categories": {
+      "chinese": "Chinese Humanities",
+      "science": "Science",
+      "european": "European Humanities"
+    },
+    "actions": {
+      "resume": "Resume Learning",
+      "review": "Review Course",
+      "plans": "View plans"
+    }
   },
   "learningOverview": {
     "learning": "Learning courses",
@@ -127,17 +262,38 @@
     "why": "WHY US",
     "whyTitle": "A Lifelong Home For Thinking.\nNot just knowledge,\nthe habit of thought, and a wider view of the world.",
     "values": [
-      { "title": "Thinking, Not Just Learning", "text": "We don't measure progress by what you've memorised, but by how you've learned to reason. Every lesson is designed to build a mind that questions, not just absorbs." },
-      { "title": "Guided, Not Alone", "text": "Real understanding rarely happens in isolation. We build spaces — with AI, with peers, with mentors — where thinking is shared, tested, and sharpened together." },
-      { "title": "Depth Over Speed", "text": "We're not chasing completion rates. We're built for the kind of understanding that stays with you — the kind you can still explain, still use, years later." },
-      { "title": "A Wider World, Not A Narrower Path", "text": "Education shouldn't shrink your curiosity down to a credential. We exist to open doors you didn't know were there — to ideas, disciplines, and ways of seeing." }
+      {
+        "title": "Thinking, Not Just Learning",
+        "text": "We don't measure progress by what you've memorised, but by how you've learned to reason. Every lesson is designed to build a mind that questions, not just absorbs."
+      },
+      {
+        "title": "Guided, Not Alone",
+        "text": "Real understanding rarely happens in isolation. We build spaces — with AI, with peers, with mentors — where thinking is shared, tested, and sharpened together."
+      },
+      {
+        "title": "Depth Over Speed",
+        "text": "We're not chasing completion rates. We're built for the kind of understanding that stays with you — the kind you can still explain, still use, years later."
+      },
+      {
+        "title": "A Wider World, Not A Narrower Path",
+        "text": "Education shouldn't shrink your curiosity down to a credential. We exist to open doors you didn't know were there — to ideas, disciplines, and ways of seeing."
+      }
     ],
     "guide": "Quickly Guide",
     "guideImage": "A student holding books outdoors",
     "steps": [
-      { "title": "AI Tutor", "text": "Ask anything, anytime. Your AI Tutor breaks down complex topics, answers questions in real time, and adapts to how you learn best." },
-      { "title": "Group Study", "text": "Start or join a study room in one click. Discuss course topics, share notes, and keep each other accountable — together, in real time." },
-      { "title": "Study With Us", "text": "Set a pace that fits your life. Track your progress, pick up where you left off, and build a learning habit that actually sticks." }
+      {
+        "title": "AI Tutor",
+        "text": "Ask anything, anytime. Your AI Tutor breaks down complex topics, answers questions in real time, and adapts to how you learn best."
+      },
+      {
+        "title": "Group Study",
+        "text": "Start or join a study room in one click. Discuss course topics, share notes, and keep each other accountable — together, in real time."
+      },
+      {
+        "title": "Study With Us",
+        "text": "Set a pace that fits your life. Track your progress, pick up where you left off, and build a learning habit that actually sticks."
+      }
     ]
   },
   "courseDetailDesign": {
@@ -402,6 +558,7 @@
     "noCourses": "You have not started a course yet.",
     "noPreviewCourses": "You have not entered a preview course yet.",
     "continue": "Continue learning",
+    "nextLesson": "Next lesson",
     "review": "Review course",
     "viewPlans": "View plans",
     "inProgress": "In progress",
@@ -534,13 +691,120 @@
     "googleConnect": "Connect Google",
     "googleConnectHint": "Link your Google account so you can sign in without a password."
   },
-  "contactPage": { "title": "Get in Touch", "description": "We'd love to hear from you. Send us a message and we'll respond as soon as possible.", "information": "Contact Information", "email": "Email", "emailAddresses": ["support@thedigitallearningguide.com", "info@thedigitallearningguide.com"], "hours": "Business Hours", "hoursWeekday": "Monday - Friday: 9am - 6pm PST", "hoursWeekend": "Saturday: 10am - 4pm PST", "formTitle": "Send us a Message", "firstName": "First Name", "lastName": "Last Name", "emailAddress": "Email Address", "phone": "Phone Number", "subject": "Subject", "message": "Message", "consent": "I agree to receive communications from Learning Guide and accept the Privacy Policy", "submit": "Send Message", "placeholders": { "firstName": "John", "lastName": "Doe", "email": "john.doe@example.com", "phone": "+1 (555) 123-4567", "message": "Tell us how we can help you..." } },
+  "contactPage": {
+    "title": "Get in Touch",
+    "description": "We'd love to hear from you. Send us a message and we'll respond as soon as possible.",
+    "information": "Contact Information",
+    "email": "Email",
+    "emailAddresses": [
+      "support@thedigitallearningguide.com",
+      "info@thedigitallearningguide.com"
+    ],
+    "hours": "Business Hours",
+    "hoursWeekday": "Monday - Friday: 9am - 6pm PST",
+    "hoursWeekend": "Saturday: 10am - 4pm PST",
+    "formTitle": "Send us a Message",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "emailAddress": "Email Address",
+    "phone": "Phone Number",
+    "subject": "Subject",
+    "message": "Message",
+    "consent": "I agree to receive communications from Learning Guide and accept the Privacy Policy",
+    "submit": "Send Message",
+    "placeholders": {
+      "firstName": "John",
+      "lastName": "Doe",
+      "email": "john.doe@example.com",
+      "phone": "+1 (555) 123-4567",
+      "message": "Tell us how we can help you..."
+    }
+  },
   "helpPage": {
     "design": {
-      "heroTitle": "How can we help you?", "heroDescription": "Search our knowledge base or browse categories below", "searchPlaceholder": "Search for articles...", "browseTitle": "Browse by Category", "popularTitle": "Popular Articles", "faqTitle": "Frequently Asked Questions", "supportTitle": "Still need help?", "supportDescription": "Our support team is here to assist you. Reach out and we'll get back to you as soon as possible.", "contactSupport": "Contact Support",
-      "categories": [{ "title": "Getting Started", "description": "Learn the basics of using Learning Guide", "icon": "/portal/help/asset-1.svg", "items": [] }, { "title": "Billing & Payments", "description": "Manage your subscription and payments", "icon": "/portal/help/asset-3.svg", "items": [] }, { "title": "Study Groups", "description": "Create and join study groups", "icon": "/portal/help/asset-6.svg", "items": [] }, { "title": "Account Settings", "description": "Manage your profile and preferences", "icon": "/portal/help/asset-5.svg", "items": [] }],
-      "popularArticles": [{ "question": "How do I enroll in a course?", "answer": "Choose a course, select a plan and complete the secure checkout process." }, { "question": "How do I continue a course?", "answer": "Open My Learning and select the lesson you want to continue." }, { "question": "What payment methods do you accept?", "answer": "Available payment methods are shown in secure checkout." }],
-      "faqItems": [{ "question": "How do I enroll in a course?", "answer": "Choose a course, select a plan and complete the secure checkout process." }, { "question": "Can I access courses on mobile devices?", "answer": "You can access Learning Guide on a supported mobile browser." }, { "question": "What payment methods do you accept?", "answer": "Available payment methods are shown in secure checkout." }, { "question": "How do study groups work?", "answer": "Study groups let learners collaborate around their shared course interests." }, { "question": "Can I get a refund if I'm not satisfied?", "answer": "Contact support with your order details so the operator can review your request." }, { "question": "Do courses have certificates?", "answer": "Course completion information is shown in My Learning where available." }, { "question": "How long do I have access to a course?", "answer": "Your active subscription or entitlement determines your course access period." }, { "question": "Can I download course materials?", "answer": "Downloads are available only when a course provides them." }]
+      "heroTitle": "How can we help you?",
+      "heroDescription": "Search our knowledge base or browse categories below",
+      "searchPlaceholder": "Search for articles...",
+      "browseTitle": "Browse by Category",
+      "popularTitle": "Popular Articles",
+      "faqTitle": "Frequently Asked Questions",
+      "supportTitle": "Still need help?",
+      "supportDescription": "Our support team is here to assist you. Reach out and we'll get back to you as soon as possible.",
+      "contactSupport": "Contact Support",
+      "categories": [
+        {
+          "title": "Getting Started",
+          "description": "Learn the basics of using Learning Guide",
+          "icon": "/portal/help/asset-1.svg",
+          "items": []
+        },
+        {
+          "title": "Billing & Payments",
+          "description": "Manage your subscription and payments",
+          "icon": "/portal/help/asset-3.svg",
+          "items": []
+        },
+        {
+          "title": "Study Groups",
+          "description": "Create and join study groups",
+          "icon": "/portal/help/asset-6.svg",
+          "items": []
+        },
+        {
+          "title": "Account Settings",
+          "description": "Manage your profile and preferences",
+          "icon": "/portal/help/asset-5.svg",
+          "items": []
+        }
+      ],
+      "popularArticles": [
+        {
+          "question": "How do I enroll in a course?",
+          "answer": "Choose a course, select a plan and complete the secure checkout process."
+        },
+        {
+          "question": "How do I continue a course?",
+          "answer": "Open My Learning and select the lesson you want to continue."
+        },
+        {
+          "question": "What payment methods do you accept?",
+          "answer": "Available payment methods are shown in secure checkout."
+        }
+      ],
+      "faqItems": [
+        {
+          "question": "How do I enroll in a course?",
+          "answer": "Choose a course, select a plan and complete the secure checkout process."
+        },
+        {
+          "question": "Can I access courses on mobile devices?",
+          "answer": "You can access Learning Guide on a supported mobile browser."
+        },
+        {
+          "question": "What payment methods do you accept?",
+          "answer": "Available payment methods are shown in secure checkout."
+        },
+        {
+          "question": "How do study groups work?",
+          "answer": "Study groups let learners collaborate around their shared course interests."
+        },
+        {
+          "question": "Can I get a refund if I'm not satisfied?",
+          "answer": "Contact support with your order details so the operator can review your request."
+        },
+        {
+          "question": "Do courses have certificates?",
+          "answer": "Course completion information is shown in My Learning where available."
+        },
+        {
+          "question": "How long do I have access to a course?",
+          "answer": "Your active subscription or entitlement determines your course access period."
+        },
+        {
+          "question": "Can I download course materials?",
+          "answer": "Downloads are available only when a course provides them."
+        }
+      ]
     },
     "title": "Help Center / FAQ",
     "contact": "For account or payment support, contact the Learning Guide operator.",
@@ -658,7 +922,8 @@
     "retry": "Try again",
     "cancel": "Cancel",
     "save": "Save",
-    "confirmCancelGroup": "Cancel this Study Group? Upcoming Live Sessions will be removed, a Live Session that is already open will end, and members will be notified.",
+    "cancelGroupConfirmTitle": "Cancel this Study Group?",
+    "confirmCancelGroup": "Upcoming Live Sessions will be removed, a Live Session that is already open will end, and members will be notified.",
     "sessionTitle": "Session Title",
     "date": "Date",
     "startTime": "Start Time",
@@ -702,6 +967,12 @@
       "chat": "Chat",
       "aiTutor": "@AI Tutor",
       "tutorName": "AI Tutor",
+      "tutorGeneral": "Not covered in the course material — a general answer:",
+      "tutorUnavailable": "AI Tutor is temporarily unavailable. Please try again.",
+      "mentionList": "Mention AI Tutor or a participant",
+      "mediaBlockedCamera": "Chrome is blocking camera access for this site. Click the camera icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Camera.",
+      "mediaBlockedMic": "Chrome is blocking microphone access for this site. Click the microphone icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Microphone.",
+      "mediaDeviceBlocked": "No camera or microphone was found, or the device is in use by another application. Close the other app and try again.",
       "you": "You",
       "mic": "Mic",
       "muted": "Muted",
@@ -712,7 +983,7 @@
       "raiseHand": "Raise Hand",
       "leave": "Leave Session",
       "host": "Host",
-      "chatPlaceholder": "Type your message...",
+      "chatPlaceholder": "Type your message or @AI Tutor...",
       "send": "Send",
       "chatUnavailable": "Chat is available only while this browser is connected to the Live Session.",
       "notConnected": "The Live Session could not connect. Check the connection and try again.",
@@ -764,8 +1035,35 @@
     "saved": "Cookie preference saved."
   },
   "authoring": {
-    "heading": "Edit course outline", "title": "Course title", "description": "Description", "section": "Section title", "lesson": "Lesson title", "summary": "Lesson summary", "body": "Lesson content", "duration": "Duration (minutes)", "videoDuration": "Video duration (seconds)", "publicLesson": "Public first lesson", "moveTo": "Move to section", "newLesson": "New lesson", "newSection": "New section", "addLesson": "Add lesson", "addSection": "Add section", "up": "Move up", "down": "Move down", "close": "Close editor", "save": "Save draft", "saving": "Saving…", "discard": "Discard your unsaved changes?",
-    "errors": { "invalid": "Check the required fields and durations. Existing lessons cannot be removed; they may be linked to learning records.", "conflict": "This course has changed since you opened it. Close the editor and reload before editing again.", "published": "Unpublish the course before editing its content.", "restricted": "Course Manager/Operator access is required.", "notFound": "Course not found.", "failed": "The draft could not be saved. Please retry." }
+    "heading": "Edit course outline",
+    "title": "Course title",
+    "description": "Description",
+    "section": "Section title",
+    "lesson": "Lesson title",
+    "summary": "Lesson summary",
+    "body": "Lesson content",
+    "duration": "Duration (minutes)",
+    "videoDuration": "Video duration (seconds)",
+    "publicLesson": "Public first lesson",
+    "moveTo": "Move to section",
+    "newLesson": "New lesson",
+    "newSection": "New section",
+    "addLesson": "Add lesson",
+    "addSection": "Add section",
+    "up": "Move up",
+    "down": "Move down",
+    "close": "Close editor",
+    "save": "Save draft",
+    "saving": "Saving…",
+    "discard": "Discard your unsaved changes?",
+    "errors": {
+      "invalid": "Check the required fields and durations. Existing lessons cannot be removed; they may be linked to learning records.",
+      "conflict": "This course has changed since you opened it. Close the editor and reload before editing again.",
+      "published": "Unpublish the course before editing its content.",
+      "restricted": "Course Manager/Operator access is required.",
+      "notFound": "Course not found.",
+      "failed": "The draft could not be saved. Please retry."
+    }
   },
   "backoffice": {
     "title": "Learning Guide Backoffice Portal",
@@ -896,6 +1194,7 @@
     "devices": "Study on 1 PC and 1 mobile device",
     "points": "AI Tutor points",
     "unavailable": "This plan is not currently available.",
+    "alreadySubscribed": "Already subscribed",
     "perCategory": "category",
     "information": "Important information",
     "renewal": "Your subscription renews automatically unless you cancel before the renewal date.",
@@ -941,7 +1240,23 @@
     "imageUnavailable": "Product image unavailable",
     "updateFailed": "Subscription update failed.",
     "billingFailed": "Billing could not be opened.",
-    "statusUnavailable": "Subscription status unavailable"
+    "statusUnavailable": "Subscription status unavailable",
+    "currentSubscriptions": "Current subscriptions",
+    "pastSubscriptions": "Past subscriptions",
+    "upgraded": "Upgraded",
+    "upgradedOn": "Upgraded on",
+    "includedEverything": "Included in your Everything plan",
+    "nowEverything": "Now part of your Everything plan",
+    "endingSoon": "Ending soon",
+    "daysLeft": "{days} days left",
+    "paymentType": "Type",
+    "purchaseType": "New purchase",
+    "renewalType": "Renewal",
+    "upgradeType": "Upgrade",
+    "months": "{months} months",
+    "points": "AI Tutor points",
+    "pointsUnavailable": "Points balance is not available yet.",
+    "pointsNote": "Points stay valid while the subscription they came with is active, and are added on the day you pay."
   },
   "cancelDesign": {
     "accessUntil": "Your access remains active until {date}.",
@@ -1044,10 +1359,13 @@
     "allCourses": "Showing all courses you have started"
   },
   "paymentErrors": {
+    "already_subscribed": "You already have an active subscription covering this plan. You can subscribe again after it expires.",
     "price_unavailable": "This plan is temporarily unavailable. Please try again later.",
     "quote_expired": "This quote or checkout has expired. Please select your plan again.",
     "payment_unavailable": "Payment is temporarily unavailable. Please try again later.",
-    "invalid_request": "Please confirm all purchase terms and start checkout from this website.",
+    "invalid_request": "Unable to continue this purchase. Please select your plan again.",
+    "origin_mismatch": "The checkout address does not match this website's configuration. Please use the configured website address or contact support.",
+    "consent_required": "Please select all purchase confirmation options before continuing.",
     "checkAgain": "Check payment status"
   }
 }

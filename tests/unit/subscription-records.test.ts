@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { groupSubscriptionRecords } from "../../services/subscriptionRecords";
+import { groupSubscriptionRecords, subscriptionListRecords, subscriptionPaymentType } from "../../services/subscriptionRecords";
 import type { SubscriptionRecordOrder as Order, SubscriptionRecordSubscription as Subscription } from "../../contracts/subscription-records";
 
 const subscription = (id: string, stripeSubscriptionId: string | null = null): Subscription => ({ id, stripeSubscriptionId, state:"active", source:"purchase", validFrom:"2026-08-01", validTo:"2027-02-01", plan:{id:"plan",name:"Everything"} });
@@ -36,4 +36,23 @@ test("repeat local purchases of the same product retain their own period history
   const current = subscription("current");
   const grouped = groupSubscriptionRecords([current,previous],[{...order("old"),createdAt:"2026-02-01",servicePeriodStart:"2026-02-01"},{...order("new"),servicePeriodStart:"2026-08-01"}]);
   assert.deepEqual(grouped.map(item => item.orders.map(payment => payment.id)),[["new"],["old"]]);
+});
+
+test("new list sections use actual states, upgrade links and expiration dates",()=>{
+ const source={...subscription("category"),scope:"category" as const,state:"expired" as const};
+ const active={...subscription("all"),scope:"everything" as const,validTo:"2026-10-31"};
+ const upgrade={...order("upgrade"),kind:"upgrade" as const,sourceSubscriptionId:"category"};
+ const records=subscriptionListRecords([source,active],[upgrade],new Date("2026-10-15T00:00:00Z"));
+ assert.equal(records[0].past,true);assert.equal(records[0].upgradedAt,upgrade.createdAt);assert.equal(records[0].includedInEverything,true);
+ assert.equal(records[1].past,false);assert.equal(records[1].daysLeft,16);
+ assert.equal(subscriptionPaymentType(upgrade,[upgrade]),"upgrade");
+ assert.equal(subscriptionPaymentType(order("new"),[order("old"),order("new")]),"renewal");
+ assert.equal(subscriptionPaymentType(order("old"),[order("old"),order("new")]),"purchase");
+});
+
+test("upgrade histories sharing a Stripe subscription keep each plan's payments",()=>{
+ const source={...subscription("source","stripe"),plan:{id:"category",name:"Science"},state:"expired" as const};
+ const target={...subscription("target","stripe"),plan:{id:"everything",name:"Everything"}};
+ const rows=groupSubscriptionRecords([source,target],[{...order("old","paid","stripe"),plan:source.plan},{...order("new","paid","stripe"),kind:"upgrade",sourceSubscriptionId:source.id,plan:target.plan}]);
+ assert.deepEqual(rows.map(r=>r.orders.map(o=>o.id)),[["old"],["new"]]);
 });

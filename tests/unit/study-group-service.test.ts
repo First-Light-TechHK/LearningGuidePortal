@@ -6,11 +6,14 @@ import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 import { LiveKitGatewayError } from "../../modules/group-study/liveKitGateway";
-import { COURSE_MATERIAL_ABSENT, courseQuestionTerms, openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
+import { openRouterTutorCall, publishLiveKitData, readTutorKeys } from "../../modules/group-study/tutorAnswer";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
+import { emptyStore, type StudyGroupStore } from "../../modules/group-study/domain";
+import { createReminderListReader } from "../../modules/group-study/runtime";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
 import { parseLiveKitProjects } from "../../modules/group-study/liveKitProjectRegistry";
+import { recordUserNotification, withdrawStudyGroupReminders } from "../../services/productStore";
 
 const NOW = "2026-09-19T02:00:00.000Z";
 let directory: string;
@@ -65,6 +68,18 @@ test("a learner with course access creates a discoverable group and becomes Host
   assert.equal(mine.some((item) => item.id === group.id && item.role === "host"), true);
   assert.equal(discovered.some((item) => item.id === group.id), true);
   assert.equal((await service.listDiscover({ actorUserId: "host" })).some((item) => item.id === group.id), false);
+});
+
+test("My Study Groups lists the newest group first", async () => {
+  // BUG-0120 (SIT): a freshly created Study Group landed at the bottom of the sidebar
+  // (membership insertion order), so it was only visible after scrolling the column.
+  let clock = new Date(NOW).getTime();
+  const ticking = serviceWith({ now: () => new Date(clock) });
+  const first = await ticking.createGroup({ actorUserId: "host", title: "First created", courseId: "course-1", about: "Older group." });
+  clock += 60_000;
+  const second = await ticking.createGroup({ actorUserId: "host", title: "Newest group", courseId: "course-1", about: "Newer group." });
+  const mine = await ticking.listMine("host");
+  assert.deepEqual(mine.map((item) => item.id), [second.id, first.id]);
 });
 
 test("join is immediate for course access, duplicate join does not add a member, and leave returns the group to discover", async () => {
@@ -148,6 +163,23 @@ test("create rejects missing fields and a learner without course access", async 
   await assert.rejects(() => service.createGroup({ actorUserId: "host", title: "x".repeat(51), courseId: "course-1", about: "About" }), (error: unknown) => (error as { code: string }).code === "validation");
 });
 
+test("create and edits reject an About beyond the 200 character limit without touching the stored row", async () => {
+  // BUG-0116 (SIT): the edit dialog must not accept About copy beyond the create
+  // limit; the server is the boundary of record either way.
+  await assert.rejects(
+    () => service.createGroup({ actorUserId: "host", title: "Limit", courseId: "course-1", about: "x".repeat(201) }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const group = await service.createGroup({ actorUserId: "host", title: "Limit", courseId: "course-1", about: "y".repeat(200) });
+  assert.equal(group.about, "y".repeat(200));
+  await assert.rejects(
+    () => service.editGroup({ actorUserId: "host", groupId: group.id, title: "Limit", about: "x".repeat(201) }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const kept = (await repository.read()).groups.find((item) => item.id === group.id);
+  assert.equal(kept?.about, "y".repeat(200));
+});
+
 test("host edits title and about, cannot change the course, and cancel keeps completed history out of the lists", async () => {
   access.add("member:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Original", courseId: "course-1", about: "Original about." });
@@ -195,10 +227,10 @@ test("cancelling a group ends a live session and closes its one meeting", async 
   assert.equal(view.state, "completed");
 });
 
-test("a waiting entrant is listed without a plan, and a scheduled list stays with planners", async () => {
+test("View attendees shows planners until the Session is live, then the actual entrants (PRD 6.6)", async () => {
   access.add("walker:course-1");
   access.add("planner-only:course-1");
-  const group = await service.createGroup({ actorUserId: "host", title: "Who is waiting", courseId: "course-1", about: "Attendees follow the seat." });
+  const group = await service.createGroup({ actorUserId: "host", title: "Who is waiting", courseId: "course-1", about: "Attendees follow the Session state." });
   await service.joinGroup({ actorUserId: "walker", groupId: group.id });
   await service.joinGroup({ actorUserId: "planner-only", groupId: group.id });
   const soon = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon list", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
@@ -206,7 +238,14 @@ test("a waiting entrant is listed without a plan, and a scheduled list stays wit
   await service.planToAttend({ actorUserId: "planner-only", sessionId: soon.id });
   const waiting = await service.getSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal(waiting.state, "starting_soon");
-  assert.deepEqual(waiting.attendees.map((item) => item.userId), ["walker"]);
+  // Unstarted (including Starting Soon): the planned list, not the waiting entrants.
+  assert.deepEqual(waiting.attendees.map((item) => item.userId), ["planner-only"]);
+  assert.equal(waiting.occupancy, 1);
+  await service.startSession({ actorUserId: "host", sessionId: soon.id });
+  const live = await service.getSession({ actorUserId: "host", sessionId: soon.id });
+  assert.equal(live.state, "live");
+  // Live: the actual entrants; a planner who never entered is not an attendee.
+  assert.deepEqual(live.attendees.map((item) => item.userId), ["walker"]);
   const later = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Later list", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await service.planToAttend({ actorUserId: "planner-only", sessionId: later.id });
   const upcoming = await service.getSession({ actorUserId: "host", sessionId: later.id });
@@ -233,9 +272,12 @@ test("a live attendee list hides people who left and the completed list keeps th
   assert.deepEqual(done.attendees.map((item) => item.userId).sort(), ["attendee", "host"]);
 });
 
-test("session title stops at 20 characters and duration is one of four minute lengths stored as seconds", async () => {
+test("session title stops at 50 characters and duration is one of four minute lengths stored as seconds", async () => {
+  // Owner ruling 2026-10-15 (BUG-0128): Session Title now allows 50 characters, the same
+  // limit as the Study Group Title and Session Focus, so a real sample like
+  // "Classical Poetry Reading Session" (32 characters) fits; 51 still rejects.
   const group = await service.createGroup({ actorUserId: "host", title: "Duration group", courseId: "course-1", about: "Duration about." });
-  const title = "12345678901234567890";
+  const title = "1234567890".repeat(5);
   const storedSeconds = [1800, 2700, 3600, 5400];
   const scheduled = await service.scheduleSession({
     actorUserId: "host",
@@ -274,6 +316,20 @@ test("session title stops at 20 characters and duration is one of four minute le
   );
   await assert.rejects(
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: `${title}x` }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+});
+
+test("a real-world Session Title fits the 50 character limit on schedule and edit (owner ruling 2026-10-15, BUG-0128)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Title limit", courseId: "course-1", about: "About the title limit." });
+  const sample = "Classical Poetry Reading Session";
+  assert.equal(sample.length, 32);
+  const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: sample, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 4 });
+  assert.equal(scheduled.title, sample);
+  const edited = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: "1234567890".repeat(5) });
+  assert.equal(edited.title.length, 50);
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: `${"1234567890".repeat(5)}x` }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
 });
@@ -873,8 +929,8 @@ test("an AI Tutor request is queued for the live session without a model, a seat
     }
     assert.equal(logAfter, logBefore);
     const promptBefore = STUDY_GROUP_TUTOR_SYSTEM_PROMPT;
-    assert.match(promptBefore, /course context supplied on that call/i);
-    assert.match(promptBefore, /does not contain the answer/i);
+    assert.match(promptBefore, /supplies the course material of the Related Course inside <course_material>/i);
+    assert.match(promptBefore, /Never refuse and never reply that you cannot answer/i);
     const injected = await service.enqueueTutor({
       actorUserId: "host",
       sessionId: session.id,
@@ -888,6 +944,30 @@ test("an AI Tutor request is queued for the live session without a model, a seat
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("an AI Tutor request beyond the learning-page limit is refused before anything is stored", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Long question", courseId: "course-1", about: "About the limit." });
+  const session = await service.scheduleSession({
+    actorUserId: "host",
+    groupId: group.id,
+    title: "Limit session",
+    startsAt: "2026-09-19T02:06:00.000Z",
+    durationSeconds: 1800,
+    maxParticipants: 4,
+    aiTutorEnabled: true
+  });
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  // The limit matches the learning-page AI Tutor message cap (4000).
+  await assert.rejects(
+    () => service.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "x".repeat(4001), clientEventId: "evt-too-long" }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const accepted = await service.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "x".repeat(4000), clientEventId: "evt-at-limit" });
+  assert.equal(accepted.text.length, 4000);
+  const stored = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.deepEqual(stored.map((item) => item.clientEventId), ["evt-at-limit"]);
 });
 
 test("tutor requests stay one asker per item and follow server receipt order", async () => {
@@ -982,6 +1062,8 @@ test("reminders go to the host and plan-to-attend members only, once", async () 
   await service.dispatchDueReminders();
   const reminded = notes.filter((item) => item.body.includes("Reminder session")).map((item) => item.userId).sort();
   assert.deepEqual(reminded, ["host", "planner"]);
+  // The en-GB title stays the exact row marker the reminders view filters on.
+  assert.equal(notes.filter((item) => item.body.includes("Reminder session")).every((item) => item.title === "Live Session reminder"), true);
   assert.deepEqual(mails.filter((item) => item.text.includes("Reminder session")).map((item) => item.to).sort(), ["host@example.test", "planner@example.test"]);
   notes.length = 0;
   mails.length = 0;
@@ -1005,8 +1087,85 @@ test("reminders go to the host and plan-to-attend members only, once", async () 
   assert.equal(past.title, "Already due");
 });
 
+test("leaving the group cancels the member's future reminder end-to-end", async () => {
+  access.add("leaver:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Leave reminders", courseId: "course-1", about: "Leave about." });
+  await service.joinGroup({ actorUserId: "leaver", groupId: group.id });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Leave session", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "leaver", sessionId: session.id });
+  await service.leaveGroup({ actorUserId: "leaver", groupId: group.id });
+  notes.length = 0;
+  mails.length = 0;
+  await service.dispatchDueReminders();
+  assert.deepEqual(notes.filter((item) => item.body.includes("Leave session")).map((item) => item.userId).sort(), ["host"]);
+  assert.deepEqual(mails.filter((item) => item.text.includes("Leave session")).map((item) => item.to), ["host@example.test"]);
+});
+
+test("request-triggered reminder dispatch is single-flight and throttled to one sweep per window", async () => {
+  let clock = Date.parse(NOW);
+  let reads = 0;
+  const counting: StudyGroupRepository = { ...repository, read: async () => { reads += 1; return repository.read(); } };
+  const localNotes: Array<{ userId: string; body: string }> = [];
+  const local = serviceWith({
+    repository: counting,
+    now: () => new Date(clock),
+    notify: async (input) => { localNotes.push(input); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Throttle group", courseId: "course-1", about: "About the throttle." });
+  await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Throttle one", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+
+  // The first request sweeps immediately: due reminders are delivered on the
+  // spot, not deferred to the runtime timer.
+  const readsBeforeFirst = reads;
+  await local.dispatchDueRemindersOnRequest();
+  assert.equal(localNotes.filter((item) => item.body.includes("Throttle one")).length, 1);
+  assert.equal(reads > readsBeforeFirst, true);
+
+  // A request inside the window is skipped without touching the store at all,
+  // even though a new reminder became due meanwhile.
+  await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Throttle two", startsAt: "2026-09-19T02:10:25.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  clock += 25_000;
+  const readsAfterFirst = reads;
+  await local.dispatchDueRemindersOnRequest();
+  assert.equal(localNotes.some((item) => item.body.includes("Throttle two")), false);
+  assert.equal(reads, readsAfterFirst, "a throttled request performs no store read");
+
+  // Once the window has elapsed, the next request performs a full sweep.
+  clock += 5_000;
+  await local.dispatchDueRemindersOnRequest();
+  assert.equal(localNotes.some((item) => item.body.includes("Throttle two")), true);
+
+  // Two concurrent requests outside any window share one sweep (single
+  // flight): exactly one store read for the pair when nothing is due.
+  clock += 30_000;
+  const readsBeforeConcurrent = reads;
+  await Promise.all([local.dispatchDueRemindersOnRequest(), local.dispatchDueRemindersOnRequest()]);
+  assert.equal(reads - readsBeforeConcurrent, 1);
+
+  // The unthrottled sweep (the runtime timer's entry point) is never governed
+  // by the request window: it runs even right after a request-triggered sweep.
+  await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Throttle three", startsAt: "2026-09-19T02:11:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const readsBeforeTimer = reads;
+  await local.dispatchDueReminders();
+  assert.equal(localNotes.some((item) => item.body.includes("Throttle three")), true);
+  assert.equal(reads > readsBeforeTimer, true);
+});
+
+test("a Group card shows Live only while a child Session is live (BR-006)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Badge", courseId: "course-1", about: "Badge about." });
+  const mine = async () => (await service.listMine("host")).find((item) => item.id === group.id)!;
+  assert.equal((await mine()).live, false);
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Badge session", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
+  assert.equal((await mine()).live, false);
+  await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await mine()).live, true);
+  await service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await mine()).live, false);
+});
+
 test("a zh-CN reminder uses the Chinese sentence", async () => {
-  const localNotes: Array<{ body: string }> = [];
+  const localNotes: Array<{ title: string; body: string }> = [];
   const localMails: Array<{ subject: string; text: string }> = [];
   access.add("host-zh:course-1");
   const zh = serviceWith({
@@ -1018,11 +1177,14 @@ test("a zh-CN reminder uses the Chinese sentence", async () => {
   await zh.scheduleSession({ actorUserId: "host-zh", groupId: group.id, title: "中文课", startsAt: "2026-09-19T02:08:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await zh.dispatchDueReminders();
   assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.body, "中文课 将在 10 分钟后开始。");
+  // The notification title follows the recipient's locale too (hunt L1): the
+  // body was already Chinese while the title stayed hard-coded English.
+  assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.title, "直播课提醒");
   assert.equal(localMails.find((item) => item.text.includes("中文课"))?.subject, "直播课提醒");
 });
 
 test("a zh-CN member is told in Chinese that the Study Group was cancelled", async () => {
-  const localNotes: Array<{ userId: string; body: string }> = [];
+  const localNotes: Array<{ userId: string; title: string; body: string }> = [];
   access.add("host-zh-cancel:course-1");
   access.add("member-zh-cancel:course-1");
   const zh = serviceWith({
@@ -1033,6 +1195,9 @@ test("a zh-CN member is told in Chinese that the Study Group was cancelled", asy
   await zh.joinGroup({ actorUserId: "member-zh-cancel", groupId: group.id });
   await zh.cancelGroup({ actorUserId: "host-zh-cancel", groupId: group.id });
   assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.body, "这个学习小组已经不再可用。");
+  // The title is localised the same way (hunt L1): no English/Chinese mix on
+  // one notification card.
+  assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.title, "学习小组已取消");
 });
 
 test("a live participant queues their own text and the response has no tutor answer", async () => {
@@ -1076,6 +1241,65 @@ test("the reminders view is served through the service port", async () => {
   assert.deepEqual(await withReminders.listReminders("host"), [{ body: "host reminder", createdAt: "2026-09-19T02:00:00.000Z" }]);
 });
 
+// Audit F-6: the reminders strip is polled every 3 s by every signed-in
+// client, and the reader took an unconditional full Study Group store read
+// per request. The reader now takes its snapshot lazily — only when the
+// viewer actually has a candidate reminder row — and once per call shared
+// by every row, with no cache across calls. Assertions count repository
+// reads.
+test("audit F-6: the reminders reader only touches the Study Group store when a candidate row exists", async () => {
+  const cwdBefore = process.cwd();
+  const env = { ...process.env };
+  const directory = await mkdtemp(path.join(tmpdir(), "lg-study-group-reminder-reads-"));
+  process.chdir(directory);
+  process.env.APP_ENV = "DEV";
+  process.env.STORAGE_BACKEND = "local";
+  delete process.env.DATABASE_URL;
+  delete process.env.STUDY_GROUP_STORE;
+  try {
+    const startsAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    const store: StudyGroupStore = emptyStore();
+    store.groups.push({ id: "g1", title: "Reads group", courseId: "course-1", about: "About the reads.", hostUserId: "viewer", status: "active", createdAt: startsAt, updatedAt: startsAt });
+    store.memberships.push({ id: "m1", groupId: "g1", userId: "viewer", role: "host", joinedAt: startsAt, leftAt: null });
+    for (const id of ["s1", "s2"]) {
+      store.sessions.push({ id, groupId: "g1", title: `Session ${id}`, relatedLessonId: null, startsAt, durationSeconds: 1800, maxParticipants: 4, focus: null, aiTutorEnabled: false, liveKitProjectId: null, status: "scheduled", startedAt: null, completedAt: null, createdAt: startsAt, updatedAt: startsAt });
+    }
+    let reads = 0;
+    const reader = createReminderListReader({ read: async () => { reads += 1; return store; } });
+
+    await recordUserNotification("viewer", "Live Session reminder", "Session s1 starts in 10 minutes.", "s1");
+    await recordUserNotification("viewer", "Live Session reminder", "Session s2 starts in 10 minutes.", "s2");
+    await recordUserNotification("quiet", "Order receipt", "Not a reminder.");
+
+    // A viewer with no candidate reminder rows never takes the store read —
+    // the common case under the 3 s poll.
+    assert.deepEqual(await reader("quiet"), []);
+    assert.equal(reads, 0, "no candidate rows means no store read");
+
+    // Candidate rows are judged against one shared snapshot per call, even
+    // with several rows in play.
+    const shown = await reader("viewer");
+    assert.equal(shown.length, 2);
+    assert.equal(reads, 1, "one read serves every candidate row of a call");
+
+    // No cache across calls: moving the Sessions out of the window hides
+    // them on the very next call, still through exactly one fresh read.
+    for (const session of store.sessions) session.startsAt = new Date(Date.now() + 6 * 60 * 60_000).toISOString();
+    assert.deepEqual(await reader("viewer"), []);
+    assert.equal(reads, 2);
+
+    // Withdrawing the rows (what the cancelling actions write) empties the
+    // view without any further store read — cancellation stays immediate.
+    await withdrawStudyGroupReminders({ sessionIds: ["s1", "s2"], userId: "viewer" });
+    assert.deepEqual(await reader("viewer"), []);
+    assert.equal(reads, 2, "withdrawn rows are gone before the store is needed");
+  } finally {
+    process.chdir(cwdBefore);
+    process.env = env;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("a full session refuses the Host when six people are already in", async () => {
   for (const userId of ["m1", "m2", "m3", "m4", "m5", "m6"]) access.add(`${userId}:course-1`);
   const group = await service.createGroup({ actorUserId: "host", title: "Full", courseId: "course-1", about: "About the full group." });
@@ -1093,14 +1317,18 @@ test("a full session refuses the Host when six people are already in", async () 
   assert.equal(seated.some((item) => item.userId === "host"), false);
 });
 
-test("empty course knowledge refuses without a model call", async () => {
+test("empty course knowledge still answers: the model is called and the reply is forced to general", async () => {
   const calls: string[] = [];
-  const published: string[] = [];
+  const contexts: string[] = [];
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
     courseKnowledge: async () => "",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
-    tutorCall: async () => { calls.push("called"); return { outcome: "ok", latencyMs: 1, body: "invented fact" }; }
+    // The model tries to claim course grounding; with an empty context the
+    // service must downgrade the reply to general rather than present it as
+    // course content.
+    tutorCall: async ({ text, context }) => { calls.push(text); contexts.push(context); return { outcome: "ok", latencyMs: 1, body: "COURSE\nPleasure is the absence of pain." }; }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Empty knowledge", courseId: "course-1", about: "About the group." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Empty", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 2700, maxParticipants: 4, aiTutorEnabled: true });
@@ -1108,20 +1336,20 @@ test("empty course knowledge refuses without a model call", async () => {
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-empty" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ["What ended in 1933?"]);
+  assert.deepEqual(contexts, [""]);
+  assert.deepEqual(delivered, { text: "Pleasure is the absence of pain.", mode: "general" });
+  assert.deepEqual(published, [{ text: "Pleasure is the absence of pain.", mode: "general" }]);
   const stored = JSON.stringify(await repository.read());
-  assert.equal(stored.includes("invented fact"), false);
   assert.equal(stored.includes("fake-key-healthy"), false);
 });
 
-test("a question with no usable tutor key does not block the material-absent reply", async () => {
+test("a question with no usable tutor key publishes an unavailable message instead of blocking", async () => {
   const calls: string[] = [];
-  const published: string[] = [];
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
     courseKnowledge: async () => "The Weimar republic ended in 1933.",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [],
     tutorCall: async () => { calls.push("called"); return { outcome: "ok", latencyMs: 1, body: "invented" }; }
   });
@@ -1132,9 +1360,81 @@ test("a question with no usable tutor key does not block the material-absent rep
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-matched" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-absent" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
   assert.deepEqual(calls, []);
+  assert.deepEqual(delivered, { text: "", mode: "unavailable" });
+  assert.deepEqual(published, [
+    { text: "", mode: "unavailable" },
+    { text: "", mode: "unavailable" }
+  ]);
+  const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
+  assert.equal(items.every((item) => item.answeredAt && !item.inFlight && item.terminalReason === "model_failed"), true);
+  assert.equal(JSON.stringify(items).includes("invented"), false);
+});
+
+test("the whole course material reaches the model verbatim", async () => {
+  const corpus = ["The Weimar republic ended in 1933.", "Detail paragraph. ".repeat(4_000)].join("\n\n").trim();
+  const contexts: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => corpus,
+    publishRoomChat: async () => undefined,
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ context }) => { contexts.push(context); return { outcome: "ok", latencyMs: 1, body: "COURSE\nThe republic ended in 1933." }; }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Verbatim", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Verbatim", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-verbatim" });
+  await local.deliverTutorAnswer({ sessionId: session.id });
+  // Owner decision: no server-side retrieval or truncation — the model gets
+  // the entire stored course material, however large.
+  assert.equal(corpus.length > 14_000, true);
+  assert.deepEqual(contexts, [corpus]);
+});
+
+test("a COURSE-tagged reply keeps the course mode and a cleaned structured text", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "Epicurus: pleasure is the absence of pain; friendship is central.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({
+      outcome: "ok",
+      latencyMs: 1,
+      body: "COURSE\n**Epicurus** taught that pleasure is the absence of pain.\n- Friendship is central to happiness.\n- The good life is tranquil."
+    })
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Tagged", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Tagged", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What did Epicurus teach?", clientEventId: "evt-tagged" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(delivered, {
+    text: "Epicurus taught that pleasure is the absence of pain.\n• Friendship is central to happiness.\n• The good life is tranquil.",
+    mode: "course"
+  });
+  assert.deepEqual(published, [delivered]);
+});
+
+test("a reply that clamps away to nothing becomes an unavailable message", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({ outcome: "ok", latencyMs: 1, body: "COURSE\n---" })
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Empty clamp", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Empty clamp", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-clamp-empty" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(delivered, { text: "", mode: "unavailable" });
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
+  const item = (await repository.read()).tutorRequests.find((entry) => entry.clientEventId === "evt-clamp-empty");
+  assert.equal(item?.terminalReason, "model_failed");
 });
 
 test("a rate-limited tutor key fails over to the next healthy key", async () => {
@@ -1211,9 +1511,11 @@ test("one delivery answers every waiting question in receipt order", async () =>
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 again?", clientEventId: "evt-drain-2" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-drain-3" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(calls, ["What ended in 1933?", "What ended in 1933 again?"]);
-  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: What ended in 1933 again?", COURSE_MATERIAL_ABSENT]);
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  // Every question reaches the model now, including the one the material does
+  // not cover; an untagged fake reply defaults to the general mode.
+  assert.deepEqual(calls, ["What ended in 1933?", "What ended in 1933 again?", "qqqqzzzz"]);
+  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: What ended in 1933 again?", "Answer: qqqqzzzz"]);
+  assert.deepEqual(delivered, { text: "Answer: qqqqzzzz", mode: "general" });
   const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
 });
@@ -1277,9 +1579,9 @@ test("a transient publish failure schedules its own retry and delivers in the sa
 });
 
 test("recoverTutorWork drains stranded tutor work without an inbound ask", async () => {
-  const published: string[] = [];
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
-    publishRoomChat: async ({ text }) => { published.push(text); }
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Stranded work", courseId: "course-1", about: "About the stranded work." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Stranded", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
@@ -1288,27 +1590,30 @@ test("recoverTutorWork drains stranded tutor work without an inbound ask", async
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What happened in 1928?", clientEventId: "evt-stranded" });
 
   // No deliverTutorAnswer and no inbound HTTP path: only the recovery sweep.
+  // Without a tutor key the stranded item still gets its (unavailable) message.
   const recovered = await local.recoverTutorWork();
 
   assert.equal(recovered.sessions, 1);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
   const store = await repository.read();
   const request = store.tutorRequests.find((item) => item.clientEventId === "evt-stranded");
   assert.equal(request?.status, "answered");
+  assert.equal(request?.terminalReason, "model_failed");
   assert.equal(store.outbox.length, 1);
+  assert.equal(store.outbox[0].payload.mode, "unavailable");
   assert.equal(store.outbox.every((row) => row.status === "delivered"), true);
 
   // The work is settled: a second sweep finds nothing and republishes nothing.
   const again = await local.recoverTutorWork();
   assert.equal(again.sessions, 0);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
 });
 
-test("a failed tutor call does not leave the next question waiting", async () => {
-  const published: string[] = [];
+test("a failed tutor call publishes an unavailable message and does not leave the next question waiting", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
   const local = serviceWith({
     courseKnowledge: async () => "The Weimar republic ended in 1933.",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
     tutorCall: async ({ text }) => text.includes("fail")
       ? { outcome: "failed", latencyMs: 1 }
@@ -1321,11 +1626,18 @@ test("a failed tutor call does not leave the next question waiting", async () =>
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 fail", clientEventId: "evt-fail" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-after-fail" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(published, ["The republic ended in 1933."]);
-  assert.equal(delivered?.text, "The republic ended in 1933.");
+  // The failed call still produces a message — an unavailable one — so the
+  // asker is never left with silence; the next question then answers normally.
+  assert.deepEqual(published, [
+    { text: "", mode: "unavailable" },
+    { text: "The republic ended in 1933.", mode: "general" }
+  ]);
+  assert.deepEqual(delivered, { text: "The republic ended in 1933.", mode: "general" });
   const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
-  assert.equal(JSON.stringify(items).includes("The course material does not contain the answer."), false);
+  assert.equal(items.find((item) => item.clientEventId === "evt-fail")?.terminalReason, "model_failed");
+  assert.equal(items.find((item) => item.clientEventId === "evt-after-fail")?.terminalReason, "answered");
+  assert.equal(JSON.stringify(items).includes("does not contain the answer"), false);
 });
 
 test("a failed shared-room publish settles that item and lets the next tutor request proceed", async () => {
@@ -1419,20 +1731,19 @@ test("a model reply is published as written", async () => {
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
   assert.deepEqual(calls, ["called"]);
   assert.deepEqual(published, [body]);
-  assert.equal(delivered?.text, body);
-  assert.deepEqual(courseQuestionTerms("How does friendship relate to happiness?"), ["friendship", "happiness"]);
+  assert.deepEqual(delivered, { text: body, mode: "general" });
 });
 
-test("a question whose content words are mostly absent does not call the model", async () => {
-  const published: string[] = [];
+test("a question the course material does not cover is still answered, in the general mode", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
   const calls: string[] = [];
   const local = serviceWith({
     courseKnowledge: async () => "Epicurus writes about pleasure, desire, and friendship.",
-    publishRoomChat: async ({ text }) => { published.push(text); },
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
     tutorCall: async () => {
       calls.push("called");
-      return { outcome: "ok", latencyMs: 1, body: "The formula is C8H10N4O2, isolated in 1819." };
+      return { outcome: "ok", latencyMs: 1, body: "GENERAL\nThe formula is C8H10N4O2, isolated in 1819.\n• Caffeine is a stimulant." };
     }
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Formula", courseId: "course-1", about: "About the group." });
@@ -1441,9 +1752,17 @@ test("a question whose content words are mostly absent does not call the model",
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What is the chemical formula of caffeine, and in which year did Epicurus publish that formula?", clientEventId: "evt-formula" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(calls, []);
-  assert.deepEqual(published, [COURSE_MATERIAL_ABSENT]);
-  assert.equal(delivered?.text, COURSE_MATERIAL_ABSENT);
+  // The old pre-model refusal is gone: the model answers, the GENERAL tag is
+  // parsed off, and the reply carries the general mode for client labelling.
+  assert.deepEqual(calls, ["called"]);
+  assert.deepEqual(delivered, {
+    text: "The formula is C8H10N4O2, isolated in 1819.\n• Caffeine is a stimulant.",
+    mode: "general"
+  });
+  assert.deepEqual(published, [{
+    text: "The formula is C8H10N4O2, isolated in 1819.\n• Caffeine is a stimulant.",
+    mode: "general"
+  }]);
 });
 
 test("a blank related lesson still schedules and a chosen lesson id is stored", async () => {
@@ -1476,7 +1795,8 @@ test("shared LiveKit publish has no private destination and no secret", async ()
       apiKey: "lk-key",
       apiSecret: "lk-secret-at-least-32-characters",
       room: "room-1",
-      text: COURSE_MATERIAL_ABSENT,
+      text: "The republic ended in 1933.",
+      mode: "course",
       now: new Date(NOW)
     });
   } finally {
@@ -1487,9 +1807,54 @@ test("shared LiveKit publish has no private destination and no secret", async ()
   const body = JSON.parse(calls[0].body) as { room: string; data: string; destination_identities?: string[] };
   assert.equal(body.room, "room-1");
   assert.equal(body.destination_identities, undefined);
-  const decoded = JSON.parse(Buffer.from(body.data, "base64").toString("utf8")) as { type: string; text: string };
+  const decoded = JSON.parse(Buffer.from(body.data, "base64").toString("utf8")) as { type: string; text: string; mode: string };
   assert.equal(decoded.type, "tutor");
-  assert.equal(decoded.text, COURSE_MATERIAL_ABSENT);
+  assert.equal(decoded.text, "The republic ended in 1933.");
+  assert.equal(decoded.mode, "course");
   assert.equal(calls[0].body.includes("lk-secret-at-least-32-characters"), false);
   assert.equal(calls[0].authorization.includes("lk-secret-at-least-32-characters"), false);
+});
+
+test("a legacy outbox row without a mode publishes as course", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Legacy row", courseId: "course-1", about: "About the legacy row." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Legacy", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-legacy" });
+  // Rows settled before the mode field existed carry no mode in their payload.
+  const claimed = await repository.claimNextTutorRequest({ sessionId: session.id, leaseOwner: "legacy-owner", leaseSeconds: 60, maxAttempts: 5 });
+  assert.ok(claimed);
+  await repository.settleTutorRequest({
+    id: claimed.id,
+    leaseOwner: "legacy-owner",
+    outcome: { status: "answered", terminalReason: "answered" },
+    outbox: { room: session.id, projectId: "", text: "Legacy answer.", messageId: claimed.id }
+  });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.equal(delivered?.mode, "course");
+  assert.deepEqual(published, [{ text: "Legacy answer.", mode: "course" }]);
+});
+
+test("a reply that contains a tutor key secret is never published", async () => {
+  const published: Array<{ text: string; mode: string }> = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async () => ({ outcome: "ok", latencyMs: 1, body: "COURSE\nThe key is fake-key-healthy, do not share it." })
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Leak", courseId: "course-1", about: "About the leak." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Leak", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-leak" });
+  const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.equal(delivered?.mode, "unavailable");
+  assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
+  const stored = JSON.stringify(await repository.read());
+  assert.equal(stored.includes("fake-key-healthy"), false);
 });

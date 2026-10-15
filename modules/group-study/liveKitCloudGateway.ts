@@ -156,6 +156,9 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
         eventType,
         room: event.room?.name.trim() ? event.room.name : null,
         participantIdentity: event.participant?.identity.trim() ? event.participant.identity : null,
+        // The connection-level id (audit F-5), read from the same participant
+        // object as the identity; a participant_* event always carries both.
+        participantSid: event.participant?.sid?.trim() ? event.participant.sid : null,
         createdAt: createdAtIso(event.createdAt),
         projectId: project.id
       };
@@ -216,8 +219,8 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
       const credentials = await verifiedCurrentCredentials(project);
       return participantToken(credentials, { project, room, identity, name, ttlSeconds });
     },
-    async publishTutorMessage({ project, room, messageId, text }) {
-      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text }));
+    async publishTutorMessage({ project, room, messageId, text, mode }) {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text, mode }));
       let service: LiveKitRoomService;
       try {
         service = await roomService(project);

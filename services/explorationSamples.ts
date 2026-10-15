@@ -15,6 +15,6 @@ export function explorationSamples(locale:Locale, courseId:string, lessonNumber=
   const urls=["/portal/exh2.jpg","/portal/text-exhibits/flowers.webm","/portal/text-exhibits/vase.obj","/portal/exh.jpg","/portal/exh2.jpg"];
   return {
     readings:readings.map(([kind,title,author,description],index)=>({id:`${courseId}-reading-${index}`,kind:kind as "book"|"article",title,author,description,lessonNumber})),
-    exhibits:titles.map((title,index)=>({node:{id:`${courseId}-exhibit-${index}`,title,type:types[index],url:urls[index],triggerTime:0},lessonNumber:index<3?lessonNumber:String((Number(lessonNumber)||1)+1).padStart(2,"0"),thumbnail:"/portal/exploration/thumbnail.png"}))
+    exhibits:titles.map((title,index)=>({node:{id:`${courseId}-exhibit-${index}`,title,type:types[index],url:urls[index],triggerTime:0},lessonNumber,thumbnail:"/portal/exploration/thumbnail-v2.png"}))
   };
 }

@@ -90,6 +90,20 @@ async function postOpenRouter(apiKey: string, payload: unknown, signal: AbortSig
   });
 }
 
+// Reads the body while the timeout is still armed and returns a detached
+// response built from the received bytes. The caller's response must survive
+// the `finally` abort (which exists to interrupt requests still in flight):
+// aborting a controller whose body has merely arrived — but not been read —
+// destroys the body stream, so every caller read failed with AbortError.
+async function bufferResponse(response: Response) {
+  const bytes = await response.arrayBuffer();
+  return new Response(response.body === null ? null : bytes, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers
+  });
+}
+
 async function fetchOnce(apiKey: string, body: unknown, timeoutMs: number) {
   const { payload, injectedReasoning } = withOpenRouterDefaults(body);
   const controller = new AbortController();
@@ -107,11 +121,12 @@ async function fetchOnce(apiKey: string, body: unknown, timeoutMs: number) {
       const text = await response.text();
       if (/reasoning/i.test(text)) {
         const { reasoning: _ignored, ...withoutReasoning } = payload as Record<string, unknown>;
-        return postOpenRouter(apiKey, withoutReasoning, controller.signal);
+        response = await postOpenRouter(apiKey, withoutReasoning, controller.signal);
+      } else {
+        response = new Response(text, { status: 400, headers: response.headers });
       }
-      return new Response(text, { status: 400, headers: response.headers });
     }
-    return response;
+    return bufferResponse(response);
   })();
   try {
     return await Promise.race([request, deadline]);

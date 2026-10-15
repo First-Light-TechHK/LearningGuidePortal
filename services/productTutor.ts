@@ -56,19 +56,35 @@ async function buildPrompt(input: TutorInput, conversation: ProductConversation)
 }
 
 function fallbackAnswer(input: TutorInput) {
+  // L4: the fallback is what the learner sees when there is no OPENROUTER_API_KEY or the
+  // provider fails, so it must answer in the conversation's locale, like the system prompt
+  // promises ("Answer in <locale>"), not in a fixed per-mode language.
+  const zh = input.locale === "zh-CN";
   if (isEpicureanism(input.course) && /pleasure|享乐|快乐|欲望/i.test(input.message)) {
     return input.mode === "socratic"
-      ? "先区分两件事：一种快乐是强烈而短暂的刺激，另一种是没有痛苦和不安的稳定状态。你认为 Epicurus 为什么会更重视后者？"
-      : "Epicurus does not equate pleasure with luxury or constant stimulation. He treats stable freedom from bodily pain and mental disturbance as the practical aim. That is why a simple meal or friendship may be more valuable than an intense experience that creates anxiety later. The key test is what a choice does to future freedom from pain and fear.";
+      ? zh
+        ? "先区分两件事：一种快乐是强烈而短暂的刺激，另一种是没有痛苦和不安的稳定状态。你认为 Epicurus 为什么会更重视后者？"
+        : "Start by separating two things: one kind of pleasure is intense and short-lived stimulation, the other is a stable state without pain and disturbance. Why do you think Epicurus valued the latter more?"
+      : zh
+        ? "Epicurus 并不把快乐等同于奢侈或不断的刺激。他把身体无痛、心灵安宁的稳定状态当作实际目标，因此一顿简单的饭或一段友谊，可能比之后带来焦虑的强烈体验更有价值。关键检验是：这个选择会如何影响你未来免于痛苦和恐惧的自由。"
+        : "Epicurus does not equate pleasure with luxury or constant stimulation. He treats stable freedom from bodily pain and mental disturbance as the practical aim. That is why a simple meal or friendship may be more valuable than an intense experience that creates anxiety later. The key test is what a choice does to future freedom from pain and fear.";
   }
   if (isEpicureanism(input.course)) {
     return input.mode === "socratic"
-      ? "先把问题放回本课的区分中：你是在问 Epicurus 的原始论证，还是后来对它的批评？你会先选择哪一个？"
-      : "Start with the distinction used in this lesson, then apply it to the question. The tutor will keep the discussion within the course material and will separate Epicurus' own argument from later objections.";
+      ? zh
+        ? "先把问题放回本课的区分中：你是在问 Epicurus 的原始论证，还是后来对它的批评？你会先选择哪一个？"
+        : "Put the question back into this lesson's distinction first: are you asking about Epicurus' own argument, or a later objection to it? Which one would you start with?"
+      : zh
+        ? "先把本课用到的区分拿出来，再把它应用到这个问题上。讨论会保持在本课材料范围内，并把 Epicurus 本人的论证与后来的批评区分开。"
+        : "Start with the distinction used in this lesson, then apply it to the question. The tutor will keep the discussion within the course material and will separate Epicurus' own argument from later objections.";
   }
   return input.mode === "socratic"
-    ? `先把问题放回本课（${input.course.title} / ${input.lesson.title}）的区分中：你会先抓住哪一个要点？`
-    : `Start with the distinction used in this lesson (${input.lesson.title}), then apply it to the question. Stay inside ${input.course.title}.`;
+    ? zh
+      ? `先把问题放回本课（${input.course.title} / ${input.lesson.title}）的区分中：你会先抓住哪一个要点？`
+      : `Put the question back into this lesson's distinction (${input.lesson.title}): which point would you take first? Stay inside ${input.course.title}.`
+    : zh
+      ? `先找出本课（${input.lesson.title}）用到的区分，再把它应用到这个问题上。请把讨论保持在这门课程（${input.course.title}）的范围内。`
+      : `Start with the distinction used in this lesson (${input.lesson.title}), then apply it to the question. Stay inside ${input.course.title}.`;
 }
 
 function streamText(text: string) {

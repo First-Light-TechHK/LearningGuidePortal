@@ -35,11 +35,32 @@ export type StudyGroupDetail = {
 export type StudyGroupResponse<T> = { ok: boolean; code: string; message: string; data: T };
 
 export async function studyGroupRequest<T>(url: string, init?: RequestInit): Promise<StudyGroupResponse<T>> {
-  const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
-  return response.json() as Promise<StudyGroupResponse<T>>;
+  try {
+    const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
+    return await response.json() as StudyGroupResponse<T>;
+  } catch {
+    // F-1 (dev audit 2026-10-14): a rejected fetch (offline, DNS failure) or a non-JSON
+    // body (a gateway error page) used to reject at the await, skip every caller's !ok
+    // branch and surface as an unhandled rejection with no UI feedback. Resolve a
+    // synthetic failure instead so the existing single error slot renders it; callers
+    // that still carry a catch keep it as belt-and-braces only.
+    return { ok: false, code: "network", message: "", data: null as T };
+  }
 }
 
-export const SESSION_TITLE_MAX = 20;
+// Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters like the Study
+// Group Title / Session Focus (a 32 character sample like "Classical Poetry Reading
+// Session" must fit). The server enforces the same 50 in modules/group-study/service.ts.
+export const SESSION_TITLE_MAX = 50;
+
+// BUG-0116 (SIT): the create form capped About at 200 but the edit dialog rendered the
+// stored value uncontrolled, so text beyond the limit could still be shown and saved.
+// The boundary lives here once, shared by both fields (the server enforces the same 200).
+export const GROUP_ABOUT_MAX = 200;
+
+export function clampGroupAbout(value: string) {
+  return value.slice(0, GROUP_ABOUT_MAX);
+}
 
 export const DURATION_MINUTE_CHOICES = [30, 45, 60, 90] as const;
 

@@ -473,7 +473,9 @@ test("interleaving enqueue+deliver: receipt order holds at one millisecond, one 
   releaseFirst();
   await delivery;
   assert.deepEqual(calls, ["What ended in 1933? first", "What ended in 1933? second", "What ended in 1933? fail"]);
-  assert.deepEqual(f.published, ["Answer: What ended in 1933? first", "Answer: What ended in 1933? second"]);
+  // The failed call still publishes a message — the empty-text unavailable one
+  // the client renders as "temporarily unavailable" — instead of silence.
+  assert.deepEqual(f.published, ["Answer: What ended in 1933? first", "Answer: What ended in 1933? second", ""]);
   // Terminal failure settles the item and advances; nothing stays in flight.
   const items = (await f.repository.read()).tutorRequests.filter((row) => row.sessionId === soon.id);
   assert.equal(items.every((row) => row.answeredAt && !row.inFlight), true);

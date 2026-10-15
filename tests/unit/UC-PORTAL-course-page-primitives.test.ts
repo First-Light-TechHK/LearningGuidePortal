@@ -39,7 +39,11 @@ function assertCurriculumActions(page: CoursePage) {
       const href = !lesson.openable ? null : lesson.access === "entitled"
         ? `/${locale}/account/learn/${COURSE_ID}?lessonId=${lesson.lessonId}`
         : `/${locale}/portal/courses/${COURSE_ID}/public-lesson?lessonId=${lesson.lessonId}`;
-      const html = renderToStaticMarkup(createElement(Action, { lesson, href, copy, className: "preview", cta: page.cta }));
+      const html = renderToStaticMarkup(createElement(Action, { lesson, href, copy, className: "preview", cta: page.cta, actionLessonId: page.actionLessonId }));
+      if (lesson.lessonId !== page.actionLessonId) {
+        assert.equal(html, "");
+        continue;
+      }
       assert.ok(html.includes(`>${lesson.access === "entitled" ? copy.start : copy.preview}</`), html);
       if (href) {
         assert.ok(html.includes(`href="${href}"`), html);
@@ -99,6 +103,7 @@ test("UC-PORTAL-1: visitor syllabus is previewable vs locked", async () => {
   assert.equal(page.cta, "start_preview");
   assert.equal(page.secondaryCta, "view_plans");
   assert.equal(page.accessState, "none");
+  assert.equal(page.actionLessonId, PREVIEW_LP);
   assertCurriculumActions(page);
 });
 
@@ -169,11 +174,24 @@ test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learni
   assert.equal(page.accessState, "active");
   assert.equal(page.cta, "continue_learning");
   assert.equal(page.secondaryCta, null);
+  assert.equal(page.actionLessonId, PRIVATE_LP);
   assert.ok(page.syllabus.every((item) => item.access === "entitled" && item.openable));
   assertCurriculumActions(page);
 });
 
-test("Everything subscription grants Start actions for every published course and lesson", async () => {
+test("completed course keeps its sole action on the final lesson when revisiting an earlier lesson", async () => {
+  const user = await verifiedUser(store, "course-page-completed@example.test");
+  await purchaseCourse(store, user.id);
+  await openLearningPoint(store, user.id, PREVIEW_LP, "completed-course-first");
+  await openLearningPoint(store, user.id, PRIVATE_LP, "completed-course-last");
+  await openLearningPoint(store, user.id, PREVIEW_LP, "completed-course-revisit");
+  const page = await store.getCoursePage(COURSE_ID, user.id);
+  assert.equal(page.progress, 100);
+  assert.equal(page.actionLessonId, PRIVATE_LP);
+  assertCurriculumActions(page);
+});
+
+test("Everything subscription grants one Start action for every published course", async () => {
   const user = await verifiedUser(store, "uc-portal-everything@example.test");
   const { quote } = await store.createQuote(user.id, "everything-pc-6");
   const { order } = await store.createPendingDemoOrder(user.id, quote.id);

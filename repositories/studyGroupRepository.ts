@@ -80,6 +80,7 @@ type PresenceDbRow = {
   entered_at: Date | null;
   left_at: Date | null;
   phase: PresenceRow["phase"];
+  livekit_participant_sid: string | null;
 };
 
 type MeetingDbRow = {
@@ -220,7 +221,10 @@ function mapPresence(row: PresenceDbRow): PresenceRow {
     requestedAt: row.requested_at,
     enteredAt: iso(row.entered_at),
     leftAt: iso(row.left_at),
-    phase: row.phase
+    phase: row.phase,
+    // NULL (including every row written before the column existed) reads as
+    // "connection unknown"; the webhook's timestamp guard decides for it.
+    liveKitParticipantSid: row.livekit_participant_sid ?? null
   };
 }
 
@@ -426,11 +430,12 @@ async function persistDiff(client: PoolClient, before: StudyGroupStore, after: S
     if (!changed(beforePresences, row)) continue;
     occupancySessions.add(row.sessionId);
     await client.query(
-      `INSERT INTO study_group_presences (id, session_id, user_id, requested_at, entered_at, left_at, phase)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO study_group_presences (id, session_id, user_id, requested_at, entered_at, left_at, phase, livekit_participant_sid)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (id) DO UPDATE SET session_id = EXCLUDED.session_id, user_id = EXCLUDED.user_id,
-         requested_at = EXCLUDED.requested_at, entered_at = EXCLUDED.entered_at, left_at = EXCLUDED.left_at, phase = EXCLUDED.phase`,
-      [row.id, row.sessionId, row.userId, row.requestedAt, row.enteredAt, row.leftAt, row.phase]
+         requested_at = EXCLUDED.requested_at, entered_at = EXCLUDED.entered_at, left_at = EXCLUDED.left_at,
+         phase = EXCLUDED.phase, livekit_participant_sid = EXCLUDED.livekit_participant_sid`,
+      [row.id, row.sessionId, row.userId, row.requestedAt, row.enteredAt, row.leftAt, row.phase, row.liveKitParticipantSid ?? null]
     );
   }
   for (const row of after.sessions) {
@@ -579,7 +584,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
   async function settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string };
+    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
   }) {
     await ensureSchema();
     const client = await getPool().connect();

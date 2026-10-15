@@ -8,7 +8,10 @@ export async function GET(request: Request) {
     const service = studyGroupService();
     if (view === "mine") {
       if (!user) return unauthenticated();
-      await service.dispatchDueReminders();
+      // The portal polls this view every few seconds from every client; the
+      // request-triggered sweep is single-flight and throttled per process
+      // (hunt L5), while the first request still dispatches immediately.
+      await service.dispatchDueRemindersOnRequest();
       return studyGroupData(await service.listMine(user.id));
     }
     if (view === "courses") {
@@ -17,6 +20,10 @@ export async function GET(request: Request) {
     }
     if (view === "reminders") {
       if (!user) return unauthenticated();
+      // A viewer opening the reminders strip first still gets a due reminder
+      // delivered on that very request; later polls inside the window are
+      // skipped like any other request-triggered sweep (hunt L5).
+      await service.dispatchDueRemindersOnRequest();
       return studyGroupData(await service.listReminders(user.id));
     }
     return studyGroupData(await service.listDiscover({

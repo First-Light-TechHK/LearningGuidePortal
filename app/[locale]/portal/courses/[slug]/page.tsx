@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { formatPlanPrice } from "@/lib/planPricing";
 import { getCoursePage, getProductCourse, getCourseLearningMode, listPlans } from "@/services/productStore";
 import { CourseLearningModeDialog } from "@/components/portal/CourseLearningModeDialog";
-import { isCourseLearningMode } from "@/contracts/course-learning-mode";
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { CourseCurriculumAction } from "@/components/portal/CourseCurriculumAction";
@@ -20,14 +21,21 @@ const asset = (name: string) => `/portal/course-detail/${name}.svg`;
 
 export default async function CourseDetailPage({ params, searchParams }: {
   params: Promise<{ locale: string; slug: string }>;
-  searchParams?: Promise<{ learningMode?: string }>;
+  searchParams?: Promise<{ lessonEntry?: string }>;
 }) {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const user = await currentProductUser();
   const [page, course] = await Promise.all([getCoursePage(slug, user?.id), getProductCourse(slug)]);
   const savedMode = user && course ? await getCourseLearningMode(user.id, course.id) : null;
-  const requestedMode = (await searchParams)?.learningMode;
+  const entryLessonId = (await searchParams)?.lessonEntry;
+  const entryLesson = page.pageState === "available" ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable) : null;
+  const needsMode = !savedMode && Boolean(course && availableCourseLearningModes(course).length > 1);
+  const entryDestination = course && entryLesson ? entryLesson.access === "entitled"
+    ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(entryLesson.lessonId)}`
+    : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(entryLesson.lessonId)}` : null;
+  if (entryDestination && !user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(entryLesson!.lessonId)}`)}`);
+  if (entryDestination && user && !needsMode) redirect(entryDestination);
   const messages = getMessages(locale);
   const copy = messages.portal;
   const detail = messages.courseDetailDesign;
@@ -36,10 +44,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const plans = page.pageState === "available" ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
   const pricingHref = `/${locale}/pricing?courseId=${encodeURIComponent(course?.id || slug)}${plan ? `&planId=${encodeURIComponent(plan.id)}` : ""}`;
-  const price = plan ? new Intl.NumberFormat(locale, {
-    style: "currency", currency: plan.currency, currencyDisplay: "narrowSymbol",
-    maximumFractionDigits: plan.amountMinor % 100 ? 2 : 0,
-  }).format(plan.amountMinor / 100) : null;
+  const price = plan ? formatPlanPrice(locale, plan) : null;
   const signedCover = await signCourseMediaUrl(course?.cover || course?.thumbnailPath || "");
   const durationParts = courseDurationParts(identity?.totalMinutes || 0);
   const durationNumber = new Intl.NumberFormat(locale);
@@ -110,10 +115,10 @@ export default async function CourseDetailPage({ params, searchParams }: {
                       const metadata = lessonMetadata.get(lesson.lessonId);
                       return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
-                          <h3><span>{detail.lesson} {index + 1}</span>{lessonHref ? <Link href={lessonHref}>{lesson.title}</Link> : lesson.title}</h3>
+                          <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
-                        <CourseCurriculumAction lesson={lesson} href={lessonHref} className={styles.preview} copy={detail} cta={page.cta} />
+                        <CourseCurriculumAction lesson={lesson} href={lessonHref && (!user || needsMode) ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
                       </article>;
                     })}
                   </div>
@@ -135,7 +140,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
         )}
       </>}
       <PortalFooter locale={locale} />
-      {page.pageState === "available" && course && !savedMode && availableCourseLearningModes(course).length > 1 ? <CourseLearningModeDialog key={`${user?.id || "visitor"}:${course.id}`} courseId={course.id} locale={locale} signedIn={Boolean(user)} pendingMode={user && isCourseLearningMode(requestedMode) ? requestedMode : null}/> : null}
+      {course && user && needsMode && entryDestination ? <CourseLearningModeDialog key={`${user.id}:${course.id}:${entryLessonId}`} courseId={course.id} locale={locale} signedIn destinationHref={entryDestination}/> : null}
       </StreamedContent>
     </main>
   );

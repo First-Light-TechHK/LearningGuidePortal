@@ -39,7 +39,7 @@ export default async function LearningPage({ params, searchParams }: { params: P
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={course.subtitle || course.description}
+    <PreviewLessonView completedContentIds={study?.completedContentIds || []} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""}
       lesson={lesson} outline={previewLessonOutline(course, locale, true)} poster={poster} preferredMode={preferredMode} initialContentId={contentId || (study?.currentLessonId === lesson.id ? study.currentContentId : null)} entitled
       studyEndpoint="/api/study/events" initialCompleted={study?.completedLessonIds.includes(lesson.id) || false} nextHref={nextLessonHref(locale, course.id, lessons, lesson.id)} />
   </main>;

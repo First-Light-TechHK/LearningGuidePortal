@@ -46,7 +46,7 @@ const COURSE_MEDIA_HOST = "aitutor-data-851987565851.s3.ap-southeast-1.amazonaws
 const COURSE_MEDIA_PREFIX = "/learning-guide/dev/documents/mvp/";
 
 /** Convert an approved migrated course-media URL into a short-lived private URL. */
-export async function signCourseMediaUrl(value: string, expiresIn = 300) {
+export async function signCourseMediaUrl(value: string, expiresIn?: number) {
   let parsed: URL;
   try { parsed = new URL(value); } catch { return value; }
   if (parsed.protocol !== "https:" || parsed.host !== COURSE_MEDIA_HOST || !parsed.pathname.startsWith(COURSE_MEDIA_PREFIX)) return value;
@@ -55,7 +55,8 @@ export async function signCourseMediaUrl(value: string, expiresIn = 300) {
   let key: string;
   try { key = decodeURIComponent(parsed.pathname.slice(1)); } catch { return value; }
   const bucket = COURSE_MEDIA_HOST.split(".")[0];
-  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: courseMediaVersion(bucket, key) }), { expiresIn });
+  const lifetime = expiresIn ?? (/\.(mp4|webm|mov)$/i.test(key) ? 30 * 60 : 300);
+  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: courseMediaVersion(bucket, key) }), { expiresIn: lifetime });
 }
 
 export async function s3Delete(s3Key: string) {

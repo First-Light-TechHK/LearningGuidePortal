@@ -31,10 +31,92 @@ export function getPool() {
 
 export async function ensureSchema() {
   if (!schemaReady) {
-    schemaReady = (async () => {
-      const client = getPool();
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS app_files (
+    schemaReady = bootstrapSchema().catch((error) => {
+      schemaReady = null;
+      throw error;
+    });
+  }
+  await schemaReady;
+}
+
+// Distinct advisory-lock pair for the schema bootstrap (719301 is the payment
+// aggregate's lock, 719302 the Study Group write lock): concurrent bootstraps
+// — several instances cold-starting together, or a worker race in tests —
+// serialize their DDL here instead of colliding in the catalog or deadlocking
+// with each other and with live business transactions (the audit F-5 ALTER
+// widened the batch's lock footprint, review 2026-10-14).
+const SCHEMA_BOOTSTRAP_LOCK = 719303;
+// The batch's DDL (ACCESS EXCLUSIVE on an existing table) must never wait
+// indefinitely behind a business transaction: every lock wait in the
+// attempt's transaction is bounded, and retryable lock failures
+// (deadlock_detected 40P01, lock_not_available 55P03) are retried a bounded
+// number of times. A process that still fails resets the memo above, so the
+// next request re-runs the whole bootstrap.
+const SCHEMA_BATCH_ATTEMPTS = 3;
+const SCHEMA_LOCK_TIMEOUT_MS = 8000;
+
+// Conservative freshness probe (fast path): every table the batch creates,
+// plus the batch's newest additive column. When the batch grows, extend this
+// probe in the same commit. A probe that under-promises only costs a batch
+// re-run; one that over-promises would skip needed DDL — so err on the side
+// of listing more. to_regclass and current_schemas() resolve through the
+// same search_path the unqualified CREATEs use.
+const SCHEMA_PROBE = `
+  SELECT (
+    to_regclass('app_files') IS NOT NULL
+    AND to_regclass('data_migrations') IS NOT NULL
+    AND to_regclass('orm_rows') IS NOT NULL
+    AND to_regclass('wechat_login_tickets') IS NOT NULL
+    AND to_regclass('study_groups') IS NOT NULL
+    AND to_regclass('study_group_memberships') IS NOT NULL
+    AND to_regclass('live_sessions') IS NOT NULL
+    AND to_regclass('study_group_attendance_intents') IS NOT NULL
+    AND to_regclass('study_group_presences') IS NOT NULL
+    AND to_regclass('study_group_meetings') IS NOT NULL
+    AND to_regclass('study_group_reminders') IS NOT NULL
+    AND to_regclass('study_group_tutor_requests') IS NOT NULL
+    AND to_regclass('study_group_outbox') IS NOT NULL
+    AND to_regclass('study_group_token_log') IS NOT NULL
+    AND to_regclass('study_group_webhook_receipts') IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'study_group_presences'
+        AND column_name = 'livekit_participant_sid'
+        AND table_schema = ANY (current_schemas(false))
+    )
+  ) AS ready
+`;
+
+async function schemaIsCurrent(): Promise<boolean> {
+  const result = await getPool().query<{ ready: boolean }>(SCHEMA_PROBE);
+  return result.rows[0]?.ready === true;
+}
+
+function isRetryableSchemaLockError(error: unknown) {
+  const code = (error as { code?: string }).code;
+  return code === "40P01" || code === "55P03";
+}
+
+// One bootstrap attempt, one transaction: serialize behind the advisory lock,
+// re-check the probe under the lock (a sibling instance may have finished
+// while this attempt waited), then run the batch. Holding the lock for
+// exactly the DDL's lifetime and releasing it on COMMIT/ROLLBACK keeps the
+// serialization window as short as the DDL itself.
+async function runSchemaBatchOnce(): Promise<void> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    // SET LOCAL before the advisory lock so every lock wait in this
+    // transaction — including the bootstrap serialization itself — is bounded.
+    await client.query(`SET LOCAL lock_timeout = '${SCHEMA_LOCK_TIMEOUT_MS}ms'`);
+    await client.query("SELECT pg_advisory_xact_lock($1, 1)", [SCHEMA_BOOTSTRAP_LOCK]);
+    const current = await client.query<{ ready: boolean }>(SCHEMA_PROBE);
+    if (current.rows[0]?.ready === true) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,
           storage TEXT NOT NULL CHECK (storage IN ('db', 's3')),
           content TEXT,
@@ -124,10 +206,16 @@ export async function ensureSchema() {
           entered_at TIMESTAMPTZ,
           left_at TIMESTAMPTZ,
           phase TEXT NOT NULL CHECK (phase IN ('waiting', 'live')),
+          livekit_participant_sid TEXT,           -- seat's current LiveKit connection id (audit F-5); NULL = unknown
           UNIQUE (session_id, user_id)            -- one row per user+session; re-entry flips left_at
         );
         CREATE INDEX IF NOT EXISTS study_group_presences_seated_idx
           ON study_group_presences (session_id) WHERE entered_at IS NOT NULL AND left_at IS NULL;
+        -- Audit F-5: add the seat's current LiveKit connection id to databases
+        -- whose study_group_presences predates the column (the CREATE above
+        -- only fires on a fresh table); idempotent boot self-heal mirroring
+        -- db/migrations/013_study_group_presence_connection_sid.sql.
+        ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS livekit_participant_sid TEXT;
         CREATE TABLE IF NOT EXISTS study_group_meetings (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES live_sessions(id),
@@ -155,7 +243,7 @@ export async function ensureSchema() {
           lease_expires_at TIMESTAMPTZ,           -- claim lease (60 s)
           next_attempt_at TIMESTAMPTZ,            -- retry schedule / claimable-at; NULL = claimable now
           attempts INTEGER NOT NULL DEFAULT 0,
-          terminal_reason TEXT,                   -- 'answered' | 'course_material_absent' | 'model_failed' | 'attempts_exhausted'
+          terminal_reason TEXT,                   -- 'answered' | 'model_failed' | 'attempts_exhausted' (legacy rows may carry 'course_material_absent')
           outbox_message_id TEXT,                 -- set when an answer was handed to the outbox
           answered_at TIMESTAMPTZ,
           UNIQUE (session_id, user_id, client_event_id)   -- enqueue idempotency (external id)
@@ -169,7 +257,7 @@ export async function ensureSchema() {
           kind TEXT NOT NULL CHECK (kind IN ('room_message')),  -- later slices extend the CHECK
           dedupe_key TEXT NOT NULL UNIQUE,        -- tutor request id == LiveKit messageId
           session_id TEXT NOT NULL REFERENCES live_sessions(id),
-          payload JSONB NOT NULL,                 -- { room, projectId, text, messageId }
+          payload JSONB NOT NULL,                 -- { room, projectId, text, messageId, mode } ('mode' optional on legacy rows)
           status TEXT NOT NULL CHECK (status IN ('queued', 'sending', 'delivered', 'failed', 'dead')),
           attempts INTEGER NOT NULL DEFAULT 0,
           lease_owner TEXT,
@@ -200,12 +288,29 @@ export async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS study_group_webhook_receipts_received_idx
           ON study_group_webhook_receipts (received_at);
       `);
-    })().catch((error) => {
-      schemaReady = null;
-      throw error;
-    });
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-  await schemaReady;
+}
+
+async function bootstrapSchema(): Promise<void> {
+  // Fast path: a current schema is answered by one cheap probe query, with no
+  // DDL, no advisory lock, and therefore no lock interaction with live traffic
+  // on every process start.
+  if (await schemaIsCurrent()) return;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await runSchemaBatchOnce();
+      return;
+    } catch (error) {
+      if (!isRetryableSchemaLockError(error) || attempt >= SCHEMA_BATCH_ATTEMPTS) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+    }
+  }
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]) {

@@ -44,7 +44,23 @@ test('settings uploads only the chosen crop; cancel and failed uploads preserve 
       assert.equal(attempts, 0);
       await choose();
       const horizontal = dialog.getByRole('slider', { name: locale === 'zh-CN' ? '水平位置' : 'Horizontal position' });
-      await horizontal.focus(); await horizontal.press('End');
+      // Drive the slider through its native value setter: keyboard events can
+      // race the dialog's own showModal() focus and land on another control.
+      await page.waitForFunction(() => {
+        const ranges = Array.from(document.querySelectorAll('dialog.avatar-crop-dialog input[type=range]')) as HTMLInputElement[];
+        const horizontalRange = ranges[1];
+        return Boolean(horizontalRange && !horizontalRange.disabled && horizontalRange.value === '50');
+      });
+      await horizontal.evaluate((element: HTMLInputElement) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(element, '100');
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      // The preview must sit exactly at the right edge (left: -100%) before
+      // saving, so the click cannot race a slider the input never moved.
+      await page.waitForFunction(() => {
+        const preview = document.querySelector('.avatar-crop-stage img') as HTMLImageElement | null;
+        return Boolean(preview) && preview!.style.left === '-100%';
+      });
       const save = dialog.getByRole('button', { name: locale === 'zh-CN' ? '保存头像' : 'Save avatar', exact: true });
       await save.click();
       await dialog.getByRole('alert').waitFor();

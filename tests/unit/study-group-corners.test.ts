@@ -73,34 +73,36 @@ afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-test("a session title of 20 characters is kept and a longer title is rejected", async () => {
+test("a session title of 50 characters is kept and a longer title is rejected", async () => {
+  // Owner ruling 2026-10-15 (BUG-0128): the Session Title boundary moved from 20 to 50
+  // characters (Study Group Title / Session Focus parity); the probes moved with it.
   const group = await service.createGroup({ actorUserId: "host", title: "Title length", courseId: "course-1", about: "About the group." });
   const kept = await service.scheduleSession({
     actorUserId: "host",
     groupId: group.id,
-    title: "x".repeat(20),
+    title: "x".repeat(50),
     startsAt: "2026-09-19T12:00:00.000Z",
     durationSeconds: STORED_DURATION_SECONDS,
     maxParticipants: 2
   });
-  assert.equal(kept.title, "x".repeat(20));
+  assert.equal(kept.title, "x".repeat(50));
   const problems: string[] = [];
   try {
     await service.scheduleSession({
       actorUserId: "host",
       groupId: group.id,
-      title: "x".repeat(21),
+      title: "x".repeat(51),
       startsAt: "2026-09-19T12:00:00.000Z",
       durationSeconds: STORED_DURATION_SECONDS,
       maxParticipants: 2
     });
-    problems.push("schedule accepted 21 characters");
+    problems.push("schedule accepted 51 characters");
   } catch (error) {
     assert.equal(codeOf(error), "validation");
   }
   try {
-    await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: kept.id, title: "y".repeat(21) });
-    problems.push("edit accepted 21 characters");
+    await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: kept.id, title: "y".repeat(51) });
+    problems.push("edit accepted 51 characters");
   } catch (error) {
     assert.equal(codeOf(error), "validation");
   }
