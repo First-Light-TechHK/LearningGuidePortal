@@ -38,6 +38,16 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("contentId=video-0"));
     await page.screenshot({path:`test-results/overview-v1/${locale}-desktop.png`,fullPage:true});
     for(const width of [2560,1920,1440,1200,768,390,320]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);if(width>1300){assert.equal((await page.locator(".account-nav").boundingBox())!.x,Math.max(40,(width-1440)/2),"sidebar and content share the centred Personal Settings frame");const cardBox=(await cards.first().boundingBox())!;assert.equal(cardBox.width,946);assert.ok(Math.abs((cardBox.x-280)-(width-cardBox.x-cardBox.width))<1,"wide-screen content is centred beside the sidebar");}if(width===390)await page.screenshot({path:`test-results/overview-v1/${locale}-mobile.png`,fullPage:true});}
+    const preview=displayFixture(name,locale);preview.courses=[{...preview.courses[0],title:"Chinese Humanities preview",lessonCount:4,progress:0,currentLesson:1,action:"preview",href:`/${locale}/portal/courses/chinese/public-lesson?viewMode=video&contentId=preview-point`}];
+    await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:preview});
+    const previewMessages=getMessages(locale as "en-GB"|"zh-CN");
+    await cards.first().getByText(previewMessages.overviewDesign.previewing,{exact:false}).waitFor();
+    assert.equal(await page.getByRole("progressbar").getAttribute("aria-valuenow"),"0");
+    assert.equal(await cards.first().getByText(previewMessages.learning.completed,{exact:false}).count(),0);
+    assert.equal(await cards.count(),1);assert.ok((await cards.first().textContent())?.includes(previewMessages.overviewV1.lessons.replace("{count}","4")));
+    assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("public-lesson"));
+    await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:`test-results/overview-v1/${locale}-partial-preview.png`,fullPage:true});
+    await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/overview-v1/${locale}-partial-preview-mobile.png`,fullPage:true});
     const unavailable=displayFixture(name,locale);unavailable.courses=[{...unavailable.courses[0],progress:null,action:"detail",href:`/${locale}/portal/courses/actual-0`}];
     await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:unavailable});
     await page.getByRole("status").waitFor();assert.equal(await page.getByRole("progressbar").count(),0);

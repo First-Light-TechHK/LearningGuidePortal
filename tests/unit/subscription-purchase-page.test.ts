@@ -41,7 +41,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
         assert.equal(await categoryButtons.nth(2).isDisabled(), true);
         assert.equal(await categoryButtons.nth(0).isDisabled(), false);
         assert.equal(await categoryButtons.nth(0).getAttribute("aria-pressed"), "true");
-        assert.equal(await categoryCard.getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).isDisabled(), false);
+        assert.equal(await categoryCard.locator(".purchase-actions button").isDisabled(), false);
       }
       await page.screenshot({ path: `test-results/purchase-eligibility/${locale}-desktop.png`, fullPage: true });
       await page.setViewportSize({ width: 390, height: 844 });
@@ -49,7 +49,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       await page.screenshot({ path: `test-results/purchase-eligibility/${locale}-mobile.png`, fullPage: true });
       await page.evaluate(p => (window as unknown as { mount: (p: unknown) => void }).mount(p), { ...props, key: "all-owned", plans: plans.map(plan => ({ ...plan, alreadySubscribed: true })) });
       assert.equal(await categoryCard.locator('button[aria-pressed="true"]').count(), 0);
-      assert.equal(await page.getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).isDisabled(), true);
+      assert.equal(await page.locator(".pricing-design-card").first().locator(".purchase-actions button").isDisabled(), true);
       assert.equal(await page.getByRole("status").count(), 2);
 
       const directPlans = [6, 12].map(term => ({ id: `course-${term}`, name: `Owned course ${term}`, device: "pc", termMonths: term, currency: "usd", amountMinor: 4900, alreadySubscribed: true }));
@@ -84,7 +84,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       for (const term of [6, 12, 6, 12]) {
         await page.evaluate(p => (window as unknown as { mount: (p: unknown) => void }).mount(p), { ...props, key: "term-pricing", plans: [...plans.filter(plan => plan.scope === "category"), ...termPlans.map(plan => ({ ...plan, scope:"everything", scopeId:"*", alreadySubscribed:false }))] });
         await page.getByRole("button", { name: term === 6 ? getMessages(locale).pricingDesign.sixMonths : new RegExp(getMessages(locale).pricingDesign.year) }).click();
-        await page.locator(".pricing-design-card").first().getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).click();
+        await page.locator(".pricing-design-card").first().locator(".purchase-actions button").click();
         await page.getByRole("alert").waitFor();
         assert.equal(quotedPlans.at(-1), `everything-pc-${term}`);
       }

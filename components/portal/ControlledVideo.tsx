@@ -8,6 +8,7 @@ import { playbackDuration } from '@/lib/videoLessonCompletion';
 // Fullscreen the container so the browser never substitutes its native video toolbar.
 export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement> & { locale: LessonLocale; fullscreenOverlay?: ReactNode; onFullscreenChange?: (active:boolean)=>void; exitFullscreenRequested?:boolean }>(function ControlledVideo({ locale, fullscreenOverlay, onFullscreenChange, exitFullscreenRequested, onPlay, onPause, onEnded, onTimeUpdate, onLoadedMetadata, onDurationChange, onVolumeChange, onRateChange, ...props }, ref) {
   const media = useRef<HTMLVideoElement>(null), container = useRef<HTMLDivElement>(null);
+  const scrubbing = useRef(false);
   useImperativeHandle(ref, () => media.current!);
   const t = lessonMessages(locale);
   const [playing, setPlaying] = useState(false), [time, setTime] = useState(0), [duration, setDuration] = useState(0), [muted, setMuted] = useState(false), [error, setError] = useState('');
@@ -64,7 +65,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       onPlay={event => { setPlaying(true); onPlay?.(event); }}
       onPause={event => { setPlaying(false); onPause?.(event); }}
       onEnded={event => { setPlaying(false); onEnded?.(event); }}
-      onTimeUpdate={event => { setTime(event.currentTarget.currentTime); updateDuration(event.currentTarget); onTimeUpdate?.(event); }}
+      onTimeUpdate={event => { if (!scrubbing.current) setTime(event.currentTarget.currentTime); updateDuration(event.currentTarget); onTimeUpdate?.(event); }}
       onLoadedMetadata={event => { updateDuration(event.currentTarget); onLoadedMetadata?.(event); }}
       onDurationChange={event => { updateDuration(event.currentTarget); onDurationChange?.(event); }}
       onVolumeChange={event => { setMuted(event.currentTarget.muted); onVolumeChange?.(event); }}
@@ -73,7 +74,10 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
-      <input type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration} onChange={event => { if (media.current) media.current.currentTime = Number(event.target.value); }}/>
+      <input type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
+        onPointerDown={event => { scrubbing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }}
+        onPointerUp={() => { scrubbing.current = false; }} onPointerCancel={() => { scrubbing.current = false; }} onBlur={() => { scrubbing.current = false; }}
+        onChange={event => { const nextTime = Number(event.target.value); setTime(nextTime); if (media.current) media.current.currentTime = nextTime; }}/>
       <span>{clock(time)} / {clock(duration)}</span>
       <button type="button" aria-label={muted ? t.videoUnmute : t.videoMute} onClick={() => { if (media.current) media.current.muted = !media.current.muted; }}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
       <select aria-label={t.videoSpeed} title={t.videoSpeed} value={rate} onChange={event => { if (media.current) { media.current.playbackRate = Number(event.target.value); setRate(media.current.playbackRate); } }}>

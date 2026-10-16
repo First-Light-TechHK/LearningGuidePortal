@@ -1,4 +1,5 @@
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent, type PlanPurchaseAvailability } from "@/contracts/payment";
+import { ProfileError } from "@/contracts/profile";
 import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice, resolveUpgradePrice } from "./stripePriceService";
@@ -911,8 +912,8 @@ export async function updateUserProfile(input: { userId: string; nickname: strin
     user.education = input.education?.trim() || null;
     user.areasOfInterest = [...new Set((input.areasOfInterest || []).map((item) => item.trim()).filter(Boolean))].slice(0, 5);
     if (input.newPassword !== undefined && input.newPassword !== "") {
-      if (input.newPassword.length < 8) throw new Error("New password must contain at least 8 characters.");
-      if (!input.currentPassword || !(await passwordMatches(input.currentPassword, user.passwordHash))) throw new Error("Current password is incorrect.");
+      if (input.newPassword.length < 8) throw new ProfileError("NEW_PASSWORD_TOO_SHORT", "New password must contain at least 8 characters.");
+      if (!input.currentPassword || !(await passwordMatches(input.currentPassword, user.passwordHash))) throw new ProfileError("CURRENT_PASSWORD_INCORRECT", "Current password is incorrect.");
       user.passwordHash = await passwordHash(input.newPassword);
       data.sessions = data.sessions.filter((session) => session.userId !== user.id);
     }
@@ -1884,6 +1885,7 @@ export async function getLearningOverview(userId: string) {
         progressFailed: computed.progressFailed,
         completedAt: computed.completed ? record?.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
+        legacyCompletedLessonIds: [...new Set(courseEvents.filter(event => event.event === "complete" && !event.contentId).map(event => event.lessonId))],
         completedContentIds: [...new Set(courseEvents.filter(event => event.event === "complete" && event.contentId).map(event => event.contentId!))],
         nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,

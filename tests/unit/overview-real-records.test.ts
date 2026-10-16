@@ -34,12 +34,18 @@ test("Overview follows the current user's actual video points, metadata, access 
   const display=await getOverviewDisplay(user.id,user.nickname,"en-GB"), card=display.courses[0];
   assert.equal(display.name,"Alice");assert.equal(display.courses.length,1);
   assert.equal(card.title,"Real video course");assert.equal(card.cover,"/portal/course-book.jpg");
-  assert.equal(card.progress,67);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
+  assert.equal(card.progress,0);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
   assert.equal(card.contentId,"v2");assert.equal(card.action,"resume");
   assert.equal(card.href,`/en-GB/account/learn/${COURSE_ID}?viewMode=video&lessonId=${PREVIEW_LP}&contentId=v2`);
   assert.deepEqual((await readProductData()).studyRecords,before,"rendering Overview never rewrites study progress");
   assert.deepEqual((await getOverviewDisplay(other.id,other.nickname,"zh-CN")).courses,[],"another user cannot see the first user's records");
   await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,learningMode:"video",contentId:"v3",event:"open",seconds:0,clientEventId:"last-point"});
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,0,"opening the last point cannot complete the course");
+  for(const [lessonId,contentId] of [[PREVIEW_LP,"v1"],[PREVIEW_LP,"v2"],[PRIVATE_LP,"v3"]]){
+    await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId,learningMode:"video",contentId,event:"complete",seconds:0,clientEventId:`complete-${contentId}`});
+    const expected=({v1:33,v2:67,v3:100} as Record<string,number>)[contentId];
+    assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,expected);
+  }
   const completed=(await getOverviewDisplay(user.id,user.nickname,"zh-CN")).courses[0];
   assert.equal(completed.progress,100);assert.equal(completed.action,"review");assert.equal(completed.currentLesson,2);assert.ok(completed.href.includes("contentId=v3"));
   const expired=await readProductData();expired.entitlements.filter((e:{userId:string})=>e.userId===user.id).forEach((e:{validTo:string})=>e.validTo="2020-01-01T00:00:00Z");await writeProductData(expired);
@@ -54,7 +60,7 @@ test("preview history resumes only the public point and never grants protected a
   const visitor=await verifiedUser(store,"preview-overview@example.test","Visitor");
   await store.recordStudyEvent({userId:visitor.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,learningMode:"video",contentId:"v1",event:"open",seconds:0,clientEventId:"preview-point"},"preview");
   const card=(await getOverviewDisplay(visitor.id,visitor.nickname,"zh-CN")).courses[0];
-  assert.equal(card.action,"preview");assert.equal(card.progress,33);
+  assert.equal(card.action,"preview");assert.equal(card.progress,0);
   assert.ok(card.href.includes("/public-lesson?viewMode=video&contentId=v1"));
   assert.equal((await store.checkEntitlement(visitor.id,COURSE_ID)).allowed,false);
 });
@@ -74,6 +80,24 @@ test("Overview route derives record ownership from session and redirects before 
   assert.deepEqual(state.calls,["session-owner","session-owner"]);
   state.user=null;state.calls=[];await assert.rejects(invoke(),/redirect:.*sign-in\?returnTo=/);assert.deepEqual(state.calls,[]);
   state.user={id:"session-owner",nickname:"Current User"};state.fail=true;await assert.rejects(invoke(),/record-store-unavailable/,"a data failure must not become a fabricated empty history");
+});
+
+test("a partial preview of one Chinese Humanities course cannot complete four lessons or other courses",async()=>{
+  const user=await verifiedUser(store,"chinese-preview@example.test","Preview User");
+  const data=await readProductData();const template=data.courses.find((course:ProductCourse)=>course.id===COURSE_ID);
+  const courses=[0,1,2,3].map(index=>({...structuredClone(template),id:`chinese-preview-${index}`,slug:`chinese-preview-${index}`,title:`Chinese Humanities ${index}`,category:"Chinese Humanities",sections:[{id:"chinese-section",title:"Section",lessons:[0,1,2,3].map(number=>({id:`chinese-lesson-${number}`,title:`Lesson ${number}`,isPublic:number===0,durationMinutes:10,body:"",contents:[{id:`chinese-point-${number}`,title:"Point",type:number===0?"video":"text",mode:"lecture",url:number===0?"/video.mp4":undefined,html:number===0?undefined:"Reading",nodes:[]}]}))}]}));
+  data.courses.push(...courses);await writeProductData(data);
+  await store.recordStudyEvent({userId:user.id,courseId:courses[0].id,lessonId:"chinese-lesson-0",contentId:"chinese-point-0",learningMode:"video",event:"open",seconds:0,clientEventId:"chinese-preview-open"},"preview");
+  await store.recordStudyEvent({userId:user.id,courseId:courses[0].id,lessonId:"chinese-lesson-0",contentId:"chinese-point-0",learningMode:"video",event:"video_progress",seconds:10,clientEventId:"chinese-preview-partial"},"preview");
+  // Existing cursor-based 100%/completedAt records must not contaminate Overview.
+  const dirty=await readProductData();const record=dirty.studyRecords.find((item:{userId:string})=>item.userId===user.id);record.progress=100;record.completedAt=new Date().toISOString();await writeProductData(dirty);
+  const saved=(await readProductData()).studyRecords;
+  for(const locale of ["en-GB","zh-CN"] as const){
+    const display=await getOverviewDisplay(user.id,user.nickname,locale);assert.equal(display.courses.length,1);
+    const card=display.courses[0];assert.equal(card.courseId,courses[0].id);assert.equal(card.lessonCount,4);assert.equal(card.progress,0);assert.equal(card.action,"preview");assert.equal(card.currentLesson,1);assert.equal(card.contentId,"chinese-point-0");
+  }
+  assert.deepEqual((await readProductData()).studyRecords,saved,"Overview corrects the display without deleting history or changing the resume cursor");
+  await assert.rejects(()=>store.recordStudyEvent({userId:user.id,courseId:courses[0].id,lessonId:"chinese-lesson-0",contentId:"chinese-point-0",learningMode:"video",event:"complete",seconds:600,clientEventId:"chinese-preview-cannot-complete"},"preview"),/cannot be completed/);
 });
 
 test("missing course learning points render unavailable progress and course detail instead of invented completion",async()=>{

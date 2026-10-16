@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRef, useState } from "react";
 import type { ApplicationTestAttempt } from "@/contracts/application-test";
 import type { UnderstandingOverviewDisplay } from "@/contracts/understanding-overview";
@@ -34,7 +35,7 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
             const rows=[{kind:"knowledge" as const,title:tests.knowledge,status:completed?copy.completed:copy.inProgress,result:completed?"80%":copy.answered,action:completed?copy.viewResult:copy.continue},{kind:"application" as const,title:tests.application,status:completed?copy.evaluated:copy.available,result:completed?copy.strong:"—",action:completed?copy.viewResult:copy.start}];
             return <section className={`${styles.lesson} ${completed?styles.completedLesson:""}`} key={lesson.number}>
               {locked ? <div className={styles.locked}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><p>{copy.locked}</p></div> : <>
-                <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(number=>number!==lesson.number):[...current,lesson.number])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><span className={`${styles.badge} ${completed?styles.completeBadge:""}`}>{completed?copy.completed:copy.current}</span><span aria-hidden="true" className={styles.chevron}>⌃</span></button>
+                <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(number=>number!==lesson.number):[...current,lesson.number])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><span className={`${styles.badge} ${completed?styles.completeBadge:""}`}>{completed?copy.completed:copy.current}</span><span aria-hidden="true" className={styles.chevron}><Image src="/portal/understanding/lesson-chevron-up.png" alt="" width={11} height={7}/></span></button>
                 {open && <div id={`assessment-${lesson.number}`}>{rows.map(row=><div className={`${styles.columns} ${styles.row}`} key={row.kind}><strong>{row.title}</strong><span className={`${styles.status} ${completed && row.kind==="knowledge"?styles.green:row.kind==="application"&&!completed?styles.available:""}`}>{!(row.kind==="application"&&!completed)&&<span aria-hidden="true">● </span>}{row.status}</span><b>{row.result}</b><button type="button" onClick={()=>setModal({kind:row.kind,lesson:lesson.number,result:completed})}>{row.action}</button></div>)}</div>}
               </>}
             </section>;

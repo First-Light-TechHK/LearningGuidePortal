@@ -1,7 +1,7 @@
 import { getMessages } from "@/lib/i18n/messages";
 import { currentProductUser } from "@/services/productAuth";
 import { getOrderForUser } from "@/services/productStore";
-import { getStripe } from "@/services/stripeClient";
+import { stripeOrderReceiptUrl } from "@/services/paymentService";
 
 export const runtime = "nodejs";
 
@@ -15,9 +15,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ord
   const order = await getOrderForUser(user.id, (await params).orderId);
   if (!order || order.status !== "paid" || order.kind === "trial_activation") return new Response("Receipt is not available for this order.", { status: 404 });
 
-  if (order.paymentMode === "stripe" && order.stripeInvoiceId) {
-    const invoice = await getStripe().invoices.retrieve(order.stripeInvoiceId);
-    if (invoice.hosted_invoice_url) return Response.redirect(invoice.hosted_invoice_url, 302);
+  if (order.paymentMode === "stripe") {
+    try {
+      const url = await stripeOrderReceiptUrl(order);
+      if (url) return Response.redirect(url, 302);
+    } catch {
+      return new Response("The Stripe receipt could not be loaded. Please retry.", { status: 503 });
+    }
     return new Response("The Stripe receipt is not available yet.", { status: 404 });
   }
 

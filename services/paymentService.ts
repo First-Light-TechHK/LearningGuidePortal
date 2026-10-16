@@ -7,6 +7,21 @@ import { appEnvironment, isProductionEnvironment, paymentMode, publicAppOrigin, 
 
 export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
 
+// Resolve only identities recorded on the authenticated user's paid Order.
+export async function stripeOrderReceiptUrl(order: { status: string; kind?: string; paymentMode: string; stripeInvoiceId?: string | null; stripePaymentIntentId?: string | null }) {
+  if (order.status !== "paid" || order.kind === "trial_activation" || order.paymentMode !== "stripe") return null;
+  const stripe = getStripe();
+  if (order.stripeInvoiceId) {
+    const invoice = await stripe.invoices.retrieve(order.stripeInvoiceId);
+    if (invoice.hosted_invoice_url) return invoice.hosted_invoice_url;
+  }
+  if (!order.stripePaymentIntentId) return null;
+  const payment = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId, { expand: ["latest_charge"] });
+  if (payment.status !== "succeeded" || !payment.latest_charge) return null;
+  const charge = typeof payment.latest_charge === "string" ? await stripe.charges.retrieve(payment.latest_charge) : payment.latest_charge;
+  return charge.paid ? charge.receipt_url : null;
+}
+
 export function checkoutRequestOrigin(request: Request) {
   const configured = publicAppOrigin(request);
   const target = new URL(request.url);

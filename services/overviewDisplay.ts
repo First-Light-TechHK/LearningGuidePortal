@@ -19,7 +19,12 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
       || points.find(point => point.lessonId === record.currentLessonId) || points[0];
     const lessonId = position?.lessonId || lessons.find(lesson => lesson.id === record.currentLessonId)?.id || lessons[0]?.id || null;
     const contentId = position?.contentId || null;
-    const progress = record.progressFailed || record.progress === null ? null : Math.max(0, Math.min(100, record.progress));
+    // Opening the last point is a resume position, never proof of completion.
+    // A point-aware completion cannot complete its sibling points implicitly.
+    const completedContents = new Set(record.completedContentIds);
+    const legacyCompletedLessons = new Set(record.legacyCompletedLessonIds);
+    const completedPoints = points.filter(point => point.contentId ? completedContents.has(point.contentId) : legacyCompletedLessons.has(point.lessonId)).length;
+    const progress = !points.length ? null : completedPoints === points.length ? 100 : Math.min(99, Math.round(completedPoints / points.length * 100));
     const category = portal.categories.find(item => item.id === course.categoryId || item.id === course.category || Object.values(item.labels).includes(course.category || ""));
     const query = new URLSearchParams({ viewMode:mode });
     if (lessonId) query.set("lessonId", lessonId);

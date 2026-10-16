@@ -339,7 +339,7 @@
     "navigation": {
       "courses": "Courses",
       "studyGroups": "Study Groups",
-      "pricing": "Pricing",
+      "pricing": "Subscription",
       "language": "EN",
       "getStarted": "Get Started"
     },
@@ -348,7 +348,7 @@
     "myLearning": "My Learning",
     "notifications": "Notifications",
     "faq": "FAQ",
-    "pricingEyebrow": "Pricing",
+    "pricingEyebrow": "Subscription",
     "pricingTitle": "Choose a learning plan",
     "pricingDescription": "Select the course access and term that suits you. Payment is completed on Stripe's hosted checkout page.",
     "subscriptionConfirmation": {
@@ -368,8 +368,8 @@
       "consentTerms": "I understand renewal prices may change as new courses are added. I will be notified by email at least 3 days in advance.",
       "consentRefund": "I understand that subscription payments are non-refundable, except where required by law.",
       "continue": "Continue",
-      "back": "Back to pricing",
-      "expired": "This quote has expired. Return to Pricing and calculate it again.",
+      "back": "Back to Subscription",
+      "expired": "This quote has expired. Return to Subscription and calculate it again.",
       "processing": "Preparing checkout...",
       "cancel": "Cancel",
       "close": "Close",
@@ -712,6 +712,11 @@
     "message": "Message",
     "consent": "I agree to receive communications from Learning Guide and accept the Privacy Policy",
     "submit": "Send Message",
+    "submitting": "Sending…",
+    "success": "Your message has been submitted. Thank you for contacting us.",
+    "invalid": "Check the required fields and their lengths, enter a valid email and accept the consent checkbox.",
+    "failed": "Your message could not be submitted. Please try again.",
+    "conflict": "This submission has changed. Please submit it again.",
     "placeholders": {
       "firstName": "John",
       "lastName": "Doe",
@@ -1181,11 +1186,11 @@
     "preview": "Preview"
   },
   "pricingDesign": {
-    "heading": "Choose the plan that suits your learning",
+    "heading": "Choose your plan",
     "everything": "Everything",
     "category": "Category",
     "sixMonths": "6 Months",
-    "year": "1 Year",
+    "year": "12 Months",
     "term": "Subscription term",
     "subscribe": "Subscribe",
     "allCourses": "Full access to every Learning Guide course",
@@ -1196,22 +1201,35 @@
     "unavailable": "This plan is not currently available.",
     "alreadySubscribed": "Already subscribed",
     "perCategory": "category",
-    "information": "Important information",
+    "information": "Good to know",
     "renewal": "Your subscription renews automatically unless you cancel before the renewal date.",
     "rules": [
       {
-        "title": "Changing plans",
-        "text": "Upgrade one Category to Everything using the amount you actually paid as credit. Your original expiry date is retained; other Category subscriptions are unchanged."
+        "title": "Auto-renewal",
+        "text": "Your subscription renews automatically unless you cancel before the renewal date."
+      },
+      {
+        "title": "No refunds",
+        "text": "Purchases can’t be refunded. Please check the plan and access dates before you pay."
       },
       {
         "title": "Device access",
-        "text": "Your subscription includes access on one PC and one mobile device."
-      },
-      {
-        "title": "Renewal pricing",
-        "text": "Renewal prices may change as new courses are added. We will email you at least 3 days in advance."
+        "text": "Study on 1 PC and 1 mobile device"
       }
-    ]
+    ],
+    "recommended": "RECOMMENDED",
+    "save": "Save {amount}",
+    "everythingDescription": "All categories, plus anything new added during your plan",
+    "categoryDescription": "Any one category of your choice",
+    "includesAll": "Includes all categories",
+    "chooseCategory": "Choose a category",
+    "courseSummary": "{courses} courses across {categories} categories",
+    "categorySummary": "{count} courses: {titles}",
+    "viewAll": "View all →",
+    "newEverything": "New courses and categories are included automatically.",
+    "newCategory": "New courses in this category are included automatically.",
+    "priceTerm": "{currency} / {months} months",
+    "getPlan": "Get {plan} · {price}"
   },
   "subscriptionDesign": {
     "allAttempts": "All payment attempts",
@@ -1294,6 +1312,8 @@
     "imageUploadError": "Image upload failed.",
     "imageRemoveError": "Image removal failed.",
     "passwordMismatch": "New passwords do not match.",
+    "currentPasswordIncorrect": "Current password is incorrect.",
+    "newPasswordTooShort": "New password must contain at least 8 characters.",
     "countryRequired": "Country is required.",
     "saveError": "Settings update failed.",
     "intro": "Manage your profile and personal preferences.",
@@ -1341,6 +1361,7 @@
     "otherCategories": "Any other active Categories keep their current validity, auto-renewal and paid amount unless you cancel their auto-renewal separately."
   },
   "overviewDesign": {
+    "previewing": "Previewing",
     "continuePreview": "Continue preview",
     "previewAvailable": "Preview available",
     "previewLimit": "Preview limit reached",

@@ -12,10 +12,11 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const copy=getMessages(locale).knowledgeTest;
     const page = await browser.newPage({viewport:{width:1440,height:1024}});
-    await page.route("http://knowledge.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/") ? route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:"image/svg+xml"}) : route.fulfill({contentType:"text/html",body:'<div id="root"></div>'});});
+    await page.route("http://knowledge.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/") ? route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:"image/svg+xml"}) : route.fulfill({contentType:"text/html",body:'<div id="root" class="la"></div>'});});
     await page.goto("http://knowledge.test/");
     await page.addStyleTag({content:await readFile("app/styles.css","utf8")});
     await page.addStyleTag({content:await readFile("app/portal-design.css","utf8")});
+    await page.addStyleTag({content:await readFile("components/portal/lesson-authoring.css","utf8")});
     await page.addStyleTag({content:bundle.outputFiles.find(f=>f.path.endsWith("css"))!.text});
     for(const weight of [400,500,600,700]) { const font=(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64");await page.addStyleTag({content:`@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font});font-weight:${weight}}`}); }
     await page.addScriptTag({content:bundle.outputFiles.find(f=>f.path.endsWith("js"))!.text});
@@ -27,6 +28,17 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     await closeIcon.evaluate(async e=>{await (e as HTMLImageElement).decode();});
     assert.deepEqual(await closeIcon.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:18,height:18});
     assert.deepEqual(await page.getByRole("textbox").evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:902,height:148});
+    const textbox=page.getByRole("textbox");
+    const inputStyle=()=>textbox.evaluate(e=>{const s=getComputedStyle(e),outer=getComputedStyle(e.parentElement!);return {border:s.borderTopWidth,outline:s.outlineStyle,shadow:s.boxShadow,radius:s.borderRadius,resize:s.resize,padding:s.padding,outerBorder:outer.borderTopWidth,outerRadius:outer.borderRadius,outerColor:outer.borderTopColor,height:e.parentElement!.getBoundingClientRect().height};});
+    await dialog.getByRole("heading",{level:2}).focus();
+    assert.deepEqual(await inputStyle(),{border:"0px",outline:"none",shadow:"none",radius:"0px",resize:"none",padding:"14px 18px",outerBorder:"1px",outerRadius:"10px",outerColor:"rgb(214, 222, 232)",height:150});
+    await textbox.focus();
+    assert.deepEqual(await inputStyle(),{border:"0px",outline:"none",shadow:"none",radius:"0px",resize:"none",padding:"14px 18px",outerBorder:"1px",outerRadius:"10px",outerColor:"rgb(29, 107, 255)",height:150});
+    await page.screenshot({path:`test-results/knowledge-test/${locale}-input-focused.png`});
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await textbox.evaluate(e=>e.getBoundingClientRect().right>innerWidth),false);
+    await page.screenshot({path:`test-results/knowledge-test/${locale}-input-mobile.png`});
+    await page.setViewportSize({width:1440,height:1024});
     const savedIcon=dialog.locator('img[src$="saved-v2.svg"]');
     await savedIcon.evaluate(async e=>{await (e as HTMLImageElement).decode();});
     assert.deepEqual(await savedIcon.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:6,height:6});

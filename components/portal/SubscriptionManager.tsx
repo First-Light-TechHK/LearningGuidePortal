@@ -9,6 +9,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
 
 import type { SubscriptionRecordSubscription as Subscription, SubscriptionRecordOrder as Order } from "@/contracts/subscription-records";
+import { canViewSubscriptionReceipt } from "@/contracts/subscription-records";
 import { subscriptionListRecords, subscriptionPaymentType } from "@/services/subscriptionRecords";
 import { localSubscriptionProductImage } from "@/lib/subscriptionProductImages";
 import styles from "./subscription-records.module.css";
@@ -112,7 +113,7 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
         </div>
         {expanded[record.id] ? <div className={styles.history} id={`payments-${record.id}`}>
           {record.orders.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{view.paymentDate}</th><th>{view.paymentType}</th><th>{copy.amount}</th><th>{copy.validPeriod}</th><th>{copy.receipt}</th></tr></thead><tbody>{record.orders.map(payment => {
-            const receipt = payment.status === "paid" && payment.kind !== "trial_activation" && (payment.paymentMode === "demo" || Boolean(payment.stripeInvoiceId));
+            const receipt = canViewSubscriptionReceipt(payment);
             return <tr key={payment.id}><td>{new Date(payment.createdAt).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}</td><td>{payment.status!=="paid"?orderStatusLabel(payment):subscriptionPaymentType(payment,record.orders)==="trial"?copy.trialActivation:subscriptionPaymentType(payment,record.orders)==="upgrade"?view.upgradeType:subscriptionPaymentType(payment,record.orders)==="renewal"?view.renewalType:view.purchaseType}{payment.status==="paid"&&payment.kind!=="trial_activation"&&payment.presentation?.termMonths?` \u00b7 ${view.months.replace("{months}",String(payment.presentation.termMonths))}`:""}</td><td>{new Intl.NumberFormat(locale,{style:"currency",currency:payment.currency,currencyDisplay:"narrowSymbol"}).format(payment.amountMinor/100)} {payment.currency.toUpperCase()}</td><td>{payment.servicePeriodStart && payment.servicePeriodEnd ? `${new Date(payment.servicePeriodStart).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})} \u2013 ${new Date(payment.servicePeriodEnd).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}` : view.periodUnavailable}</td><td>{receipt ? <a href={`/api/my-learning/orders/${encodeURIComponent(payment.id)}/receipt`} target="_blank" rel="noreferrer">{view.viewReceipt}</a> : <span>{copy.noReceipt}</span>}</td></tr>;
           })}</tbody></table></div> : <p>{view.noHistory}</p>}
         </div> : null}

@@ -1,5 +1,7 @@
 # Phase 1：数据设计
 
+Overview completion display correction: no entity/schema changes. Study record progress/knowledgePositions remain navigation-position facts. Overview's progress/Completed label is a read-side calculation over explicit complete events matching active content identities; legacy whole-Lesson completion counts only for body-only points. An open or playback event cannot complete a point, and stale positional completedAt is ignored by this display calculation. No bulk history reset or data migration is performed.
+
 This file is the **standard data model**. Entities are tables with fields and constraints, not a JSON document and not a GitHub `/blob/` page. Cite it as `docs/phase1/domain-model.md`.
 
 Live DEV/SIT persist those entities as PostgreSQL `orm_rows` (one JSONB payload per row) plus `app_files` / S3 for files. `learning_guide/product.json` is a snapshot, not the model. Dedicated column tables remain the `001`–`008` migrations below.
@@ -31,6 +33,8 @@ erDiagram
 ```
 
 ## 2. 表和关键字段
+
+`contact_requests` (migration `014_contact_requests.sql`) stores `id` UUID primary key, unique `client_event_id`, server-computed `payload_hash`, optional server-derived `user_id`, first/last name, email, optional phone, subject, message, consent, locale, status (`new`/`closed`) and created timestamp. It is independent of the product aggregate and survives product snapshot updates. `(status, created_at DESC)` supports support-queue queries. The unique client key and payload comparison make uncertain retries safe; no user FK targets the legacy users table because live Users use `orm_rows`. Explicit local development uses one atomic file per client event under `contact_requests`; production fails closed without configured PostgreSQL persistence. Apply with `npm run contact:migrate -- --apply` using the intended environment's configuration; default is a dry run. Schema bootstrap includes the same additive DDL. Rollback retains contact history; do not drop records to roll back application code.
 
 | 表 | 必要字段 | 约束 |
 |---|---|---|

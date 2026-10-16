@@ -339,7 +339,7 @@
     "navigation": {
       "courses": "课程",
       "studyGroups": "学习小组",
-      "pricing": "价格",
+      "pricing": "订阅",
       "language": "中",
       "getStarted": "开始学习"
     },
@@ -348,7 +348,7 @@
     "myLearning": "My Learning",
     "notifications": "通知中心",
     "faq": "常见问题",
-    "pricingEyebrow": "Pricing",
+    "pricingEyebrow": "订阅",
     "pricingTitle": "选择学习计划",
     "pricingDescription": "选择适合你的课程权限和周期。支付会在 Stripe 托管页面完成。",
     "subscriptionConfirmation": {
@@ -368,8 +368,8 @@
       "consentTerms": "我接受 Learning Guide 使用条款和适用的支付条款。",
       "consentRefund": "我了解本计划显示的试用、取消和退款条件。",
       "continue": "继续",
-      "back": "返回价格页",
-      "expired": "此报价已过期，请返回价格页重新计算。",
+      "back": "返回订阅页",
+      "expired": "此报价已过期，请返回订阅页重新计算。",
       "processing": "正在准备支付...",
       "cancel": "取消",
       "close": "关闭",
@@ -712,6 +712,11 @@
     "message": "留言",
     "consent": "我同意接收 Learning Guide 的沟通信息，并接受隐私政策",
     "submit": "发送消息",
+    "submitting": "正在提交…",
+    "success": "您的留言已提交，感谢联系我们。",
+    "invalid": "请检查必填项及内容长度，填写有效邮箱，并勾选同意选项。",
+    "failed": "留言提交失败，请重试。",
+    "conflict": "本次提交内容已变更，请重新提交。",
     "placeholders": {
       "firstName": "王",
       "lastName": "小明",
@@ -1181,11 +1186,11 @@
     "preview": "预览"
   },
   "pricingDesign": {
-    "heading": "选择适合您的学习方案",
+    "heading": "选择订阅计划",
     "everything": "全部课程",
     "category": "分类课程",
     "sixMonths": "6 个月",
-    "year": "1 年",
+    "year": "12 个月",
     "term": "订阅周期",
     "subscribe": "订阅",
     "allCourses": "完整访问 Learning Guide 的所有课程",
@@ -1196,22 +1201,35 @@
     "unavailable": "此方案暂不可用。",
     "alreadySubscribed": "已订阅",
     "perCategory": "分类",
-    "information": "重要信息",
+    "information": "订阅须知",
     "renewal": "除非您在续订日期前取消，否则订阅将自动续订。",
     "rules": [
       {
-        "title": "更改方案",
-        "text": "每次升级选择一个分类订阅，以实际支付金额抵扣，保留原到期日。其他分类订阅不受影响。"
+        "title": "自动续订",
+        "text": "除非您在续订日期前取消，否则订阅将自动续订。"
+      },
+      {
+        "title": "不支持退款",
+        "text": "购买后不支持退款。请在付款前确认订阅计划和有效日期。"
       },
       {
         "title": "设备访问",
-        "text": "订阅包含一台电脑和一台移动设备的访问权限。"
-      },
-      {
-        "title": "续订价格",
-        "text": "随着新课程的增加，续订价格可能调整。我们将至少提前三天通过邮件通知您。"
+        "text": "支持 1 台电脑和 1 台移动设备"
       }
-    ]
+    ],
+    "recommended": "推荐",
+    "save": "节省 {amount}",
+    "everythingDescription": "畅享所有分类，以及订阅期间新增的内容",
+    "categoryDescription": "任选一个感兴趣的分类",
+    "includesAll": "包含所有分类",
+    "chooseCategory": "选择分类",
+    "courseSummary": "{categories} 个分类，共 {courses} 门课程",
+    "categorySummary": "{count} 门课程：{titles}",
+    "viewAll": "查看全部 →",
+    "newEverything": "自动包含新增课程和分类。",
+    "newCategory": "自动包含该分类的新增课程。",
+    "priceTerm": "{currency} / {months} 个月",
+    "getPlan": "订阅{plan} · {price}"
   },
   "subscriptionDesign": {
     "allAttempts": "所有付款记录",
@@ -1294,6 +1312,8 @@
     "imageUploadError": "图片上传失败。",
     "imageRemoveError": "图片删除失败。",
     "passwordMismatch": "两次输入的新密码不一致。",
+    "currentPasswordIncorrect": "当前密码不正确。",
+    "newPasswordTooShort": "新密码至少需要 8 个字符。",
     "countryRequired": "请选择国家或地区。",
     "saveError": "设置保存失败。",
     "intro": "管理个人资料和偏好设置。",
@@ -1341,6 +1361,7 @@
     "otherCategories": "其他有效分类订阅的有效期、自动续费状态和已付金额保持不变；如需停止其自动续费，请分别取消。"
   },
   "overviewDesign": {
+    "previewing": "试看中",
     "continuePreview": "继续预览",
     "previewAvailable": "可预览",
     "previewLimit": "已完成预览内容",

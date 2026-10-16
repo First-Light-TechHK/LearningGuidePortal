@@ -104,6 +104,10 @@ test("Subscription products start collapsed, expand independently, preserve bill
       assert.equal(await page.locator('[data-subscription-id="sub-1"]').getByText(locale==="zh-CN"?"\u5df2\u5347\u7ea7":"Upgraded",{exact:true}).count(),1);
       assert.equal(await page.locator('[data-past="true"] a[href*="pricing"]').count(),0,"Everything-covered historical categories do not offer duplicate purchases");
       await page.locator('[data-subscription-id="sub-0"] button[aria-expanded]').click();
+      await page.evaluate(props=>(window as any).mount(props),{locale,key:"upgrade-receipt",initialSubscriptions:[{...initialSubscriptions[0],scope:"everything"}],initialOrders:[{...initialOrders[0],kind:"upgrade",stripeInvoiceId:null,stripePaymentIntentId:"pi_upgrade"}]});
+      await page.locator('[data-subscription-id="sub-0"] button[aria-expanded]').click();
+      await page.locator('a[href*="/receipt"]').waitFor();
+      assert.equal(await page.locator('a[href*="/receipt"]').count(),1,"one-time upgrade payments expose their Charge receipt without an Invoice");
       await page.screenshot({path:`test-results/subscription-records/${locale}-everything-upgraded.png`});
       await page.close();
     }

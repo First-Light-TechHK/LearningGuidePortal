@@ -121,7 +121,7 @@
 .la-controlled-video .la-video-controls { z-index:2; }
 .la-video-controls { display:flex; align-items:center; gap:8px; padding:8px; background:#101820; }
 .la .la-video-controls button { flex:0 0 36px; min-height:36px; padding:6px; background:transparent; color:white; border:0; }
-.la-video-controls input[type=range] { flex:1; min-width:20px; width:0; accent-color:#2563eb; }
+.la-video-controls input[type=range] { flex:1; min-width:20px; width:0; accent-color:#2563eb; touch-action:none; }
 .la-video-controls span { white-space:nowrap; font-size:12px; font-variant-numeric:tabular-nums; }
 .la-video-controls select { width:auto; max-width:110px; min-height:36px; padding:4px; border:1px solid #64748b; border-radius:4px; background:#101820; color:white; font-size:12px; }
 .la-video-controls button:disabled { opacity:.45; cursor:not-allowed; }
