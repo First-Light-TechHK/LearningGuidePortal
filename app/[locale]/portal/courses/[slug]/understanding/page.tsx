@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { localeFrom } from "@/lib/i18n/config";
 import { currentProductUser } from "@/services/productAuth";
 import { checkEntitlement, getProductCourse } from "@/services/productStore";
-import { sampleUnderstandingOverview } from "@/services/understandingOverview";
+import { getUnderstandingOverview } from "@/services/understandingOverview";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { UnderstandingOverview } from "@/components/portal/UnderstandingOverview";
 
@@ -23,6 +23,6 @@ export default async function UnderstandingPage({ params, searchParams }: {
   const backHref = query.from === "preview" ? `/${locale}/portal/courses/${encodeURIComponent(course.id)}/public-lesson?lessonId=${encodeURIComponent(lesson.id)}` : `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${encodeURIComponent(lesson.id)}`;
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined}/>
-    <UnderstandingOverview locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} backHref={backHref} data={sampleUnderstandingOverview(locale)}/>
+    <UnderstandingOverview locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} backHref={backHref} data={await getUnderstandingOverview(user.id, course.id)}/>
   </main>;
 }

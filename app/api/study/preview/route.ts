@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const user = await currentProductUser();
   if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
   try {
-    const body = await request.json() as { courseId?: string; lessonId?: string; contentId?: string | null; learningMode?: CourseLearningMode; clientEventId?: string; event?: string; seconds?: number };
+    const body = await request.json() as { courseId?: string; lessonId?: string; contentId?: string | null; learningMode?: CourseLearningMode; clientEventId?: string; event?: string; seconds?: number; completeLesson?: boolean };
     if (typeof body.courseId !== "string" || typeof body.lessonId !== "string" || !["open", "complete"].includes(body.event || "")) {
       return NextResponse.json({ error: "A course, lesson and preview event are required." }, { status: 400 });
     }
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     if (body.learningMode !== undefined && (typeof body.clientEventId !== "string" || !body.clientEventId.trim())) return NextResponse.json({ error: "A client event id is required." }, { status: 400 });
     const access = await checkEntitlement(user.id, body.courseId);
     const record = await recordStudyEvent({ userId: user.id, courseId: body.courseId, lessonId: body.lessonId, event,
-      contentId: body.contentId, learningMode: body.learningMode,
+      contentId: body.contentId, learningMode: body.learningMode, completeLesson: body.completeLesson,
       seconds: event === "complete" && Number.isFinite(body.seconds) ? Math.max(0, body.seconds!) : 0,
       clientEventId: body.learningMode ? body.clientEventId! : `${event}_${body.courseId}_${body.lessonId}`,
     }, access.allowed ? "paid" : "preview");

@@ -369,6 +369,47 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-information-grid h3 { margin:0 0 12px; padding-bottom:12px; border-bottom:1px solid #e5e7eb; color:#155dfc; font-size:15px; line-height:20px; font-weight:600; }
 .pricing-information-grid p { margin:0; color:#64728b; font-size:13px; line-height:20px; }
 .pricing-direct { margin-top:40px; }
+.pricing-owned-notice { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:32px; padding:10px 20px; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; }
+.pricing-owned-notice > img,.pricing-owned-status > img,.pricing-upgrade-note > img { display:block; flex:none; }
+.pricing-owned-notice p { margin:0; color:#64728b; font-size:14px; line-height:20px; }
+.pricing-owned-notice > a { margin-left:auto; }
+.pricing-owned-notice a,.pricing-owned-status > a { color:#155dfc; text-decoration:none; font-size:14px; line-height:20px; font-weight:600; }
+.pricing-owned-chips { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
+.pricing-owned-chip { display:inline-flex; align-items:center; gap:8px; max-width:100%; padding:9px 10px 9px 14px; border-radius:8px; background:#f3f5f7; color:#64728b; font-size:14px; font-weight:500; line-height:20px; }
+.pricing-owned-chip small { flex:none; padding:2px 6px; border-radius:4px; background:#e8faed; color:#168c52; font-size:11px; line-height:14px; font-weight:600; }
+.pricing-included-chip { display:inline-flex; align-items:center; padding:8px 13px; border:2px solid #246bfd; border-radius:8px; color:#155dfc; background:#eef3ff; font-size:14px; line-height:20px; font-weight:600; }
+.pricing-selection-price { min-height:92px; display:flex; flex-direction:column; gap:8px; }
+.pricing-selection-price > small { color:#64728b; font-size:13px; line-height:20px; }
+.pricing-selection-price-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.pricing-selection-price-row .pricing-term-switch { margin-left:auto; }
+.pricing-selection--one_category .pricing-design-card { min-height:757px; }
+.pricing-upgrade-card { padding:32px; }
+.pricing-upgrade-action { margin-top:auto; padding-top:70px; }
+.pricing-upgrade-action button { display:block; width:100%; padding:13px 24px; border:0; border-radius:8px; background:#246bfd; color:#fff; font:600 15px/20px Inter,Arial,sans-serif; cursor:pointer; }
+.pricing-upgrade-action button:disabled { background:#98a2b3; cursor:not-allowed; }
+.pricing-upgrade-action p { font-size:13px; line-height:20px; }
+.pricing-upgrade-note { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:26px; }
+.pricing-upgrade-note p { margin:0; color:#64728b; font-size:13px; line-height:20px; }
+.pricing-selection--one_category .pricing-design-card .purchase-panel { margin-top:0; padding-top:0; }
+.pricing-comparison--last { display:flex; justify-content:center; }
+.pricing-last-category { width:640px; max-width:100%; min-height:608px; border:2px solid #246bfd; padding:32px; }
+.pricing-last-category .pricing-selection-price { min-height:64px; }
+.pricing-last-category .purchase-actions button { background:#246bfd; color:#fff !important; border:0; }
+.pricing-ownership-summary { display:flex; flex-direction:column; gap:32px; }
+.pricing-owned-status { display:flex; align-items:center; gap:20px; padding:28px 32px; border:1px solid #e5e7eb; border-radius:16px; }
+.pricing-owned-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; }
+.pricing-owned-copy--categories { gap:12px; }
+.pricing-owned-copy h1 { margin:0; color:#15233a; font-size:24px; line-height:32px; font-weight:600; }
+.pricing-owned-copy p { margin:0; color:#64728b; font-size:15px; line-height:22px; }
+.pricing-owned-status > a { flex:none; }
+.pricing-owned-benefits { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.pricing-owned-benefits section { display:flex; flex-direction:column; gap:8px; padding:24px; border:1px solid #e5e7eb; border-radius:12px; }
+.pricing-owned-benefits p { margin:0; color:#64728b; font-size:13px; line-height:18px; }
+.pricing-owned-benefits strong { color:#15233a; font-size:22px; line-height:30px; font-weight:600; }
+.pricing-owned-benefits a { color:inherit; text-decoration:none; white-space:nowrap; }
+.pricing-design-page a:focus-visible,.pricing-design-page button:focus-visible { outline:2px solid #155dfc; outline-offset:3px; }
+@media(max-width:1100px) { .pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
+@media(max-width:800px) { .pricing-selection--one_category .pricing-design-card { min-height:0; }.pricing-upgrade-action { padding-top:30px; }.pricing-owned-notice { padding:12px; }.pricing-owned-notice > a { flex-basis:100%; margin-left:0; }.pricing-owned-status { flex-wrap:wrap; padding:24px; }.pricing-owned-status > a { flex-basis:100%; }.pricing-owned-copy { flex-basis:calc(100% - 68px); }.pricing-owned-chips { width:100%; }.pricing-owned-benefits { grid-template-columns:1fr; }.pricing-owned-chip { overflow-wrap:anywhere; }.pricing-selection-price { min-height:0; }.pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
 @media(max-width:800px) { .pricing-design-main { width:calc(100% - 40px); padding:32px 0 48px; }.pricing-title-row { flex-wrap:wrap; }.pricing-comparison { grid-template-columns:minmax(0,1fr); gap:24px; }.pricing-design-card { padding:24px; }.pricing-design-card--everything { padding:23px; }.pricing-card-price strong { font-size:48px; }.pricing-design-information { padding:40px 20px; }.pricing-information-grid { grid-template-columns:1fr; gap:24px; } }
 dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); max-height:calc(100dvh - 96px); margin:72px auto 24px; padding:34px 84px 26px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
 dialog.subscription-confirmation::backdrop { background:rgb(15 23 42 / 45%); }

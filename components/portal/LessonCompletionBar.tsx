@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import styles from "./lesson-completion.module.css";
+import { completeLessonOutline } from "@/lib/completeLessonOutline";
+import { createClientEventId } from "@/lib/clientEventId";
 
 export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, lessonTitle, percentage, seconds, initialCompleted, visible = true, contentId, endedRequest = 0, nextHref = null, endpoint = "/api/study/events" }: {
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle?: string; percentage: number; seconds: number; initialCompleted: boolean;
@@ -18,6 +20,19 @@ export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, 
   const [completed, setCompleted] = useState(initialCompleted), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const inFlight = useRef(false), saved = useRef(initialCompleted), handledEnd = useRef(0);
+  const continueRequest = useRef<string | null>(null), continueLock = useRef(false);
+  const [continuationFailed, setContinuationFailed] = useState(false);
+  async function continueLesson() {
+    if (continueLock.current) return;
+    continueLock.current = true; setBusy(true); setError(""); setContinuationFailed(false);
+    continueRequest.current ||= createClientEventId();
+    try {
+      await completeLessonOutline(endpoint, courseId, lessonId, "video", continueRequest.current);
+      setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`);
+    } catch {
+      continueLock.current = false; setDialogOpen(false); setContinuationFailed(true); setError(messages.overviewDesign.previewSaveError);
+    } finally { setBusy(false); }
+  }
   useEffect(() => {
     if (visible && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
   }, [visible]);
@@ -44,6 +59,6 @@ export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, 
       <span className={styles.percent}>{percent}%</span><span className={styles.divider} aria-hidden="true"/>
       <button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button>
     </>}
-    {error && <p className={styles.error} role="alert">{error}</p>}
-  </section>}{!showBar && error && <div role="alert"><p>{error}</p><button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button></div>}{dialogOpen && <LessonCompletedDialog lessonTitle={lessonTitle} locale={locale} lessonNumber={lessonNumber} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}</>;
+    {error && <p className={styles.error} role="alert">{error}{continuationFailed && <button type="button" disabled={busy} onClick={() => void continueLesson()}>{messages.assessmentRecords.retry}</button>}</p>}
+  </section>}{!showBar && error && <div role="alert"><p>{error}</p><button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button></div>}{dialogOpen && <LessonCompletedDialog courseId={courseId} lessonId={lessonId} lessonTitle={lessonTitle} locale={locale} lessonNumber={lessonNumber} onClose={() => setDialogOpen(false)} onContinue={() => void continueLesson()}/>}</>;
 }

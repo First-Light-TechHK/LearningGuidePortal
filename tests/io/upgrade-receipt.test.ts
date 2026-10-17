@@ -12,7 +12,7 @@ test("paid upgrade receipts use Stripe Charge receipts with ownership/status gat
     const user=await verifiedUser(store,"receipt@example.test");
     const session=await store.createSession(user.id);setCookie(SESSION_COOKIE,session.token);
     const data=await readProductData();
-    const order={id:"upgrade-paid",userId:user.id,planId:"everything-pc-6",quoteId:"quote-receipt",kind:"upgrade",paymentMode:"stripe",status:"paid",amountMinor:6000,currency:"usd",stripePaymentIntentId:"pi_upgrade",stripeInvoiceId:null,createdAt:new Date().toISOString()};
+    const order={id:"upgrade-paid",userId:user.id,planId:"everything-pc-6",quoteId:"quote-receipt",kind:"upgrade" as const,paymentMode:"stripe" as const,status:"paid" as const,amountMinor:6000,currency:"usd",stripePaymentIntentId:"pi_upgrade",stripeInvoiceId:null,createdAt:new Date().toISOString()};
     data.orders.push(order);await writeProductData(data);
     const {getStripe}=await import("../../services/stripeClient");const stripe=getStripe();
     const {stripeOrderReceiptUrl}=await import("../../services/paymentService");
@@ -38,4 +38,40 @@ test("paid upgrade receipts use Stripe Charge receipts with ownership/status gat
     assert.equal(canViewSubscriptionReceipt({...order,kind:"trial_activation"}),false);
     assert.equal(canViewSubscriptionReceipt({...order,stripePaymentIntentId:null}),false);
   }finally{if(previousSecret===undefined)delete process.env.STRIPE_SECRET_KEY;else process.env.STRIPE_SECRET_KEY=previousSecret;await restore();}
+});
+
+test("legacy subscription receipts resolve the original paid Checkout invoice without rewriting local orders", async () => {
+  const { restore } = await isolate("lg-checkout-receipt-");
+  process.env.STRIPE_SECRET_KEY = "sk_test_receipt_fixture";
+  try {
+    const store = await import("../../services/productStore");
+    const user = await verifiedUser(store, "checkout-receipt@example.test");
+    const token = (await store.createSession(user.id)).token;
+    setCookie(SESSION_COOKIE, token);
+    const order = { id: "legacy-everything", userId: user.id, planId: "everything-pc-6", quoteId: "legacy-quote", kind: "purchase" as const, paymentMode: "stripe" as const, status: "paid" as const, amountMinor: 9900, currency: "usd", stripeCheckoutSessionId: "cs_original", stripeSubscriptionId: "sub_original", createdAt: "2026-10-11T03:50:09.346Z" };
+    const data = await readProductData(); data.orders.push(order); await writeProductData(data);
+    const stripe = (await import("../../services/stripeClient")).getStripe();
+    const { stripeOrderReceiptUrl } = await import("../../services/paymentService");
+    const session = { id: "cs_original", status: "complete", payment_status: "paid", amount_total: 9900, currency: "usd", subscription: "sub_original", invoice: "in_original", payment_intent: null, metadata: { orderId: order.id, userId: user.id } };
+    const invoice = { id: "in_original", status: "paid", amount_paid: 9900, currency: "usd", hosted_invoice_url: "https://invoice.stripe.com/original" };
+    let calls = 0;
+    stripe.checkout.sessions.retrieve = (async id => { calls++; assert.equal(id, "cs_original"); return session; }) as typeof stripe.checkout.sessions.retrieve;
+    stripe.invoices.retrieve = (async id => { assert.equal(id, "in_original"); return invoice; }) as typeof stripe.invoices.retrieve;
+    assert.equal(canViewSubscriptionReceipt(order), true);
+    assert.equal(await stripeOrderReceiptUrl(order), invoice.hosted_invoice_url);
+    const route = await import("../../app/api/my-learning/orders/[orderId]/receipt/route");
+    const request = () => route.GET(new Request("http://localhost/receipt"), { params: Promise.resolve({ orderId: order.id }) });
+    assert.equal((await request()).headers.get("location"), invoice.hosted_invoice_url);
+    for (const invalid of [{ status: "open" }, { payment_status: "unpaid" }, { amount_total: 3900 }, { currency: "eur" }, { subscription: "sub_other" }, { metadata: { orderId: "other", userId: user.id } }, { metadata: { orderId: order.id, userId: "other" } }]) {
+      const original = { ...session }; Object.assign(session, invalid);
+      assert.equal((await request()).status, 404); Object.assign(session, original);
+    }
+    invoice.status = "open"; assert.equal((await request()).status, 404); invoice.status = "paid";
+    invoice.amount_paid = 1; assert.equal((await request()).status, 404); invoice.amount_paid = 9900;
+    clearCookies(); const before = calls; assert.equal((await request()).status, 401); assert.equal(calls, before);
+    setCookie(SESSION_COOKIE, token);
+    stripe.checkout.sessions.retrieve = (async () => { throw new Error("unavailable"); }) as typeof stripe.checkout.sessions.retrieve;
+    assert.equal((await request()).status, 503);
+    assert.deepEqual((await readProductData()).orders.find((item: any) => item.id === order.id), order);
+  } finally { await restore(); }
 });

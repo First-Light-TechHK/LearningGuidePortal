@@ -25,13 +25,48 @@ export function groupSubscriptionRecords(subscriptions: Subscription[], orders: 
 
 /** Display-only sections; does not grant access or change the recorded subscription state. */
 export function subscriptionListRecords(subscriptions: Subscription[], orders: Order[], now = new Date()): import("@/contracts/subscription-records").SubscriptionListRecord[] {
-  const everything = subscriptions.some(s => (s.scope || s.plan?.scope) === "everything" && ["active","cancel_at_period_end","grace"].includes(s.state));
-  return groupSubscriptionRecords(subscriptions, orders).map(record => {
-    const s = record.subscription;
-    const upgrade = s && orders.find(o => o.kind === "upgrade" && o.status === "paid" && o.sourceSubscriptionId === s.id);
-    const past = !s || ["expired","trial_canceled"].includes(s.state);
-    const days = s ? Math.ceil((Date.parse(s.validTo)-now.getTime())/86400000) : NaN;
-    return {...record,past,upgradedAt:upgrade?.createdAt || null,includedInEverything:past && everything && (s?.scope || s?.plan?.scope) === "category",daysLeft:!past && Number.isFinite(days) && days>=0 && days<=30 ? days : null};
+  const at = now.getTime();
+  const stateOf = (s: Subscription | null) => !s ? "unavailable" as const : ["active", "cancel_at_period_end", "grace"].includes(s.state)
+    && Date.parse(s.state === "grace" ? s.graceEndsAt || s.validTo : s.validTo) <= at ? "expired" as const : s.state;
+  const records = groupSubscriptionRecords(subscriptions, orders);
+  const merged = new Set<string>();
+  // An upgrade is the continuation of the original product's billing history.
+  // Keep the original Category payment in Everything, without a duplicate past card.
+  for (const target of records) {
+    if ((target.subscription?.scope || target.subscription?.plan?.scope) !== "everything") continue;
+    for (const upgrade of [...target.orders]) {
+      if (upgrade.kind !== "upgrade" || upgrade.status !== "paid" || !upgrade.sourceSubscriptionId) continue;
+      const source = records.find(row => row.subscription?.id === upgrade.sourceSubscriptionId);
+      if (!source || source === target) continue;
+      target.orders.push(...source.orders.filter(order => !target.orders.some(existing => existing.id === order.id)));
+      merged.add(source.id);
+    }
+  }
+  // Re-purchasing the same product adds history to its newest live subscription.
+  // Term changes do not create a second product card.
+  const products = new Map<string, SubscriptionProductRecord>();
+  for (const row of records.filter(row => !merged.has(row.id))) {
+    const s = row.subscription, scope = s?.scope || s?.plan?.scope;
+    const scopeId = s?.scopeId || s?.plan?.scopeId || s?.plan?.category;
+    const key = s && scope && (scope === "everything" || scopeId) ? `${s.source}:${s.device || "pc"}:${scope}:${scope === "everything" ? "*" : scopeId}` : row.id;
+    const existing = products.get(key);
+    if (!existing) { products.set(key, { ...row, orders: [...row.orders] }); continue; }
+    const isLive = (item: SubscriptionProductRecord) => ["active", "cancel_at_period_end", "grace"].includes(stateOf(item.subscription));
+    // Legacy overlapping billing contracts must each keep a management action.
+    if (isLive(row) && isLive(existing) && s?.stripeSubscriptionId && existing.subscription?.stripeSubscriptionId
+      && s.stripeSubscriptionId !== existing.subscription.stripeSubscriptionId) {
+      products.set(`${key}:${row.id}`, { ...row, orders: [...row.orders] }); continue;
+    }
+    const newest = isLive(row) && !isLive(existing) || isLive(row) === isLive(existing)
+      && Date.parse(s!.validTo) > Date.parse(existing.subscription!.validTo);
+    products.set(key, { ...(newest ? row : existing), orders: [...existing.orders, ...row.orders] });
+  }
+  return [...products.values()].map(record => {
+    const s = record.subscription, displayState = stateOf(s);
+    const past = !["active", "cancel_at_period_end", "grace"].includes(displayState);
+    const days = s ? Math.ceil((Date.parse(s.validTo) - at) / 86400000) : NaN;
+    return { ...record, orders: record.orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), displayState, past,
+      upgradedAt: null, includedInEverything: false, daysLeft: !past && Number.isFinite(days) && days >= 0 && days <= 30 ? days : null };
   });
 }
 

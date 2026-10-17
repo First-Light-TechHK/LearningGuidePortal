@@ -6,7 +6,7 @@ import { getMessages } from "../../lib/i18n/messages";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 test("completion Knowledge Test supports six questions, optional notes, rating gate, read-only detail, result actions and return in both locales", async () => {
-  const bundle = await build({ stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';window.mount=locale=>createRoot(document.getElementById('root')).render(<LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>window.continued=true} onClose={()=>window.closed=true}/>);`,resolveDir:process.cwd(),loader:"tsx"}, bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next-image",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}] });
+  const bundle = await build({ stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';import previewStyles from './components/portal/preview-lesson.module.css';window.mount=locale=>createRoot(document.getElementById('root')).render(<header className={previewStyles.heading}><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>window.continued=true} onClose={()=>window.closed=true}/></header>);`,resolveDir:process.cwd(),loader:"tsx"}, bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next-image",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}] });
   const browser = await chromium.launch({channel:"msedge"});
   await mkdir("test-results/knowledge-test",{recursive:true});
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
@@ -22,6 +22,15 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     await page.addScriptTag({content:bundle.outputFiles.find(f=>f.path.endsWith("js"))!.text});
     await page.evaluate(locale=>(window as unknown as {mount:(locale:string)=>void}).mount(locale),locale);
     const dialog=page.getByRole("dialog"); await dialog.waitFor();await dialog.getByRole("button",{name:/Knowledge Test|\u77e5\u8bc6\u6d4b\u8bd5/}).click();
+    const assertCleanDialog = async () => {
+      assert.equal(await dialog.evaluate(e => e.scrollHeight > e.clientHeight), false, "desktop dialog must fit without scrolling");
+      for (const paragraph of await dialog.locator("p").all()) {
+        const style=await paragraph.evaluate(e=>{const s=getComputedStyle(e);return {background:s.backgroundColor,padding:s.padding};});
+        assert.equal(style.background,"rgba(0, 0, 0, 0)");
+        assert.equal(style.padding,"0px");
+      }
+    };
+    await assertCleanDialog();
     const geometry=()=>dialog.evaluate(element=>{const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};});
     assert.deepEqual(await geometry(),{x:220,y:120,width:1000,height:660});
     const closeIcon=dialog.locator('img[src$="close-v2.svg"]');
@@ -42,7 +51,7 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     const savedIcon=dialog.locator('img[src$="saved-v2.svg"]');
     await savedIcon.evaluate(async e=>{await (e as HTMLImageElement).decode();});
     assert.deepEqual(await savedIcon.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:6,height:6});
-    const next=page.getByRole("button",{name:locale==="en-GB" ? "Next" : "下一题",exact:true});
+    let next=page.getByRole("button",{name:copy.next,exact:true});
     for(let i=0;i<6;i++) {
       const check=page.getByRole("button",{name:copy.check,exact:true});
       assert.equal(await check.isEnabled(),true);
@@ -53,12 +62,21 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
       assert.equal(await dialog.getByText(`${String(i+1).padStart(2,"0")}/06`,{exact:true}).count(),1);
       if(i===0){await dialog.getByRole("heading",{level:2}).focus();await page.screenshot({path:`test-results/knowledge-test/${locale}-question.png`});}
       await page.getByRole("button",{name:copy.check,exact:true}).click();
+      next=page.getByRole("button",{name:i===5 ? copy.seeResults : copy.next,exact:true});
       assert.equal(await next.isDisabled(),true);
+      await assertCleanDialog();
       assert.deepEqual(await geometry(),{x:220,y:100,width:1000,height:700});
       assert.equal(await dialog.getByText(i===0 ? copy.emptyAnswer : `Answer ${i+1}`,{exact:true}).count(),1);
 
       await page.getByRole("radio",{name:locale==="en-GB" ? (i===0 || i>=4 ? "I got it right" : "I got it wrong") : (i===0 || i>=4 ? "我答对了" : "我答错了")}).check();
-      assert.equal(await next.isEnabled(),true);if(i===0){await dialog.getByRole("heading",{level:2}).focus();await page.screenshot({path:`test-results/knowledge-test/${locale}-answer.png`});}await next.click();
+      assert.equal(await next.isEnabled(),true);if(i===0){await dialog.getByRole("heading",{level:2}).focus();await page.screenshot({path:`test-results/knowledge-test/${locale}-answer.png`});}if(i===5) {
+        await page.screenshot({path:`test-results/knowledge-test/${locale}-last-answer.png`});
+        await page.setViewportSize({width:390,height:844});
+        await next.scrollIntoViewIfNeeded();
+        await page.screenshot({path:`test-results/knowledge-test/${locale}-answer-mobile.png`});
+        assert.equal(await next.isVisible(),true);
+        await page.setViewportSize({width:1440,height:1024});
+      }await next.click();
     }
     await dialog.getByRole("heading",{name:locale==="en-GB" ? "Result Review" : "结果回顾"}).waitFor();
     assert.equal(await dialog.getByText("50%",{exact:true}).count(),1);
@@ -69,6 +87,7 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
       await icon.evaluate(async e=>{await (e as HTMLImageElement).decode();});
       assert.deepEqual(await icon.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:16,height:16});
     }
+    await assertCleanDialog();
     await page.screenshot({path:`test-results/knowledge-test/${locale}-result.png`});
     await dialog.getByRole("button",{name:copy.nextLesson,exact:true}).click();
     assert.equal(await page.evaluate(()=>(window as unknown as {continued:boolean}).continued),true);
@@ -79,7 +98,12 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     assert.equal(await dialog.getByRole("radio").count(),2);
     for(const radio of await dialog.getByRole("radio").all()) assert.equal(await radio.isDisabled(),true);
     assert.deepEqual(await geometry(),{x:220,y:100,width:1000,height:700});
+    await assertCleanDialog();
     await page.screenshot({path:`test-results/knowledge-test/${locale}-detail.png`});
+    await page.setViewportSize({width:390,height:844});
+    await dialog.getByRole("button",{name:copy.backToResults,exact:true}).scrollIntoViewIfNeeded();
+    await page.screenshot({path:`test-results/knowledge-test/${locale}-detail-mobile.png`});
+    await page.setViewportSize({width:1440,height:1024});
     await dialog.getByRole("button",{name:copy.backToResults,exact:true}).click();
     assert.equal(await openCard.evaluate(e=>e===document.activeElement),true);
     assert.equal(await dialog.getByText("50%",{exact:true}).count(),1);
@@ -90,6 +114,8 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     await dialog.getByRole("heading",{name:copy.result,exact:true}).waitFor();
     assert.equal(await dialog.getByText("50%",{exact:true}).count(),1);
     await page.setViewportSize({width:390,height:844});
+    const mobileLists=await sections.evaluateAll(elements=>elements.map(e=>({top:e.getBoundingClientRect().top,bottom:e.getBoundingClientRect().bottom})));
+    assert.ok(mobileLists[1].top >= mobileLists[0].bottom,"result groups never overlap on mobile");
     await page.screenshot({path:`test-results/knowledge-test/${locale}-mobile.png`});
     assert.equal(await dialog.evaluate(element=>element.scrollWidth>element.clientWidth || element.getBoundingClientRect().right>innerWidth),false);
     await dialog.getByRole("button",{name:copy.tryApplication+" \u2192",exact:true}).click();

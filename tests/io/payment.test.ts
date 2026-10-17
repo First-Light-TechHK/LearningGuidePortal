@@ -367,7 +367,7 @@ test("PAY-07 functional: cancelling a paid purchase keeps access until the perio
   assert.equal((await entitlementAllowed()).allowed, true);
 });
 
-test("PAY-07 negative: a paid purchase cannot be resumed", async () => {
+test("PAY-07 functional: paid auto-renewal can be restored before expiry without extending access", async () => {
   await signIn("pay07-resume");
   await purchase(COURSE_PLAN);
   const listed = await callRoute(subscription.GET, jsonRequest("GET", "http://localhost/api/subscription"));
@@ -381,8 +381,12 @@ test("PAY-07 negative: a paid purchase cannot be resumed", async () => {
     subscriptionId: current.id,
     action: "resume"
   }));
-  assert.equal(resumed.status, 400);
-  assert.match((await resumed.json()).error, /cannot be restored|cannot be resumed/i);
+  assert.equal(resumed.status, 200);
+  const restored = (await resumed.json()).subscription;
+  assert.equal(restored.state, "active");
+  assert.equal(restored.cancelAtPeriodEnd, false);
+  assert.equal(restored.validTo, current.validTo);
+  assert.equal((await entitlementAllowed()).allowed, true);
 });
 
 test("PAY-07 edge: resume without a subscription id is 400", async () => {
@@ -430,7 +434,7 @@ test("PAY-09 negative: the same plan cannot be quoted again while access is acti
   await purchase(PLAN_ID);
   const quoted = await quotePlan(PLAN_ID);
   assert.equal(quoted.response.status, 400);
-  assert.match(quoted.body.error, /already has active access/i);
+  assert.equal(quoted.body.code, "already_subscribed");
 });
 
 test("PAY-09 edge: a signed-in user without purchase is not entitled", async () => {

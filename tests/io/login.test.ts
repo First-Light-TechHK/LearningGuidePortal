@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import path from "node:path";
 import nodemailer from "nodemailer";
+import { stop } from "esbuild";
 import { atomicWriteJson, systemRoot } from "../../services/fileStore";
 import {
   PASSWORD,
@@ -52,6 +53,7 @@ before(async () => {
 });
 
 after(async () => {
+  stop();
   await restore();
 });
 

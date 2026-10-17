@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useLayoutEffect, useImperativeHandle, useRef, useState, type ReactNode, type VideoHTMLAttributes } from 'react';
-import { Play, Pause, Volume2, VolumeX, Maximize, PictureInPicture2 } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, PictureInPicture2, ChevronDown } from 'lucide-react';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
 import { playbackDuration } from '@/lib/videoLessonCompletion';
 
@@ -80,9 +80,12 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
         onChange={event => { const nextTime = Number(event.target.value); setTime(nextTime); if (media.current) media.current.currentTime = nextTime; }}/>
       <span>{clock(time)} / {clock(duration)}</span>
       <button type="button" aria-label={muted ? t.videoUnmute : t.videoMute} onClick={() => { if (media.current) media.current.muted = !media.current.muted; }}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
-      <select aria-label={t.videoSpeed} title={t.videoSpeed} value={rate} onChange={event => { if (media.current) { media.current.playbackRate = Number(event.target.value); setRate(media.current.playbackRate); } }}>
-        {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => <option key={speed} value={speed}>{speed === 1 ? t.videoNormalSpeed : `${speed}×`}</option>)}
-      </select>
+      <span className="la-video-speed">
+        <span aria-hidden="true">{rate === 1 ? t.videoNormalSpeed : `${rate}×`}</span><ChevronDown size={12} aria-hidden="true" />
+        <select aria-label={t.videoSpeed} title={t.videoSpeed} value={rate} onChange={event => { if (media.current) { media.current.playbackRate = Number(event.target.value); setRate(media.current.playbackRate); } }}>
+          {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => <option key={speed} value={speed}>{speed === 1 ? t.videoNormalSpeed : `${speed}×`}</option>)}
+        </select>
+      </span>
       <button type="button" aria-label={pipActive ? t.videoPipExit : t.videoPipEnter} title={!pipSupported ? t.videoPipUnsupported : pipActive ? t.videoPipExit : t.videoPipEnter} aria-pressed={pipActive} disabled={!pipSupported || !duration} onClick={() => void pictureInPicture()}><PictureInPicture2 size={18}/></button>
       <button type="button" aria-label={t.videoFullscreen} onClick={() => void fullscreen()}><Maximize size={18}/></button>
     </div>

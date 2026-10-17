@@ -64,6 +64,7 @@ const SCHEMA_LOCK_TIMEOUT_MS = 8000;
 const SCHEMA_PROBE = `
   SELECT (
     to_regclass('contact_requests') IS NOT NULL
+    AND to_regclass('lesson_assessments') IS NOT NULL
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
     AND to_regclass('orm_rows') IS NOT NULL
@@ -120,6 +121,19 @@ async function runSchemaBatchOnce(): Promise<void> {
       -- Mirrors db/migrations/014_contact_requests.sql.
 -- Additive and repeatable. Roll back application code first; retain this table
 -- for support history. Drop only after an approved export/retention decision.
+-- User-owned assessment participation, independent of Study/Entitlement.
+CREATE TABLE IF NOT EXISTS lesson_assessments (
+  user_id TEXT NOT NULL,
+  course_id TEXT NOT NULL,
+  lesson_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('knowledge', 'application')),
+  version INTEGER NOT NULL CHECK (version > 0),
+  last_event_id UUID NOT NULL UNIQUE,
+  payload_hash CHAR(64) NOT NULL,
+  record JSONB NOT NULL,
+  PRIMARY KEY (user_id, course_id, lesson_id, kind)
+);
+
 CREATE TABLE IF NOT EXISTS contact_requests (
   id UUID PRIMARY KEY,
   client_event_id UUID NOT NULL UNIQUE,

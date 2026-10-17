@@ -57,6 +57,24 @@
     "moreExhibits": "随着学习深入，将解锁更多展示资源",
     "empty": "暂无辅助资料。"
   },
+  "assessmentRecords": {
+    "loading": "正在加载测试记录…",
+    "saving": "正在保存…",
+    "saved": "已自动保存",
+    "saveError": "保存失败，请重试。",
+    "loadError": "测试记录加载失败。",
+    "conflict": "其他页面已更新此测试，请保留答案并刷新页面。",
+    "retry": "重试",
+    "submitted": "已提交",
+    "pendingEvaluation": "答案已保存，AI 评估尚未接通。",
+    "submit": "提交答案",
+    "notStarted": "未开始",
+    "progressResult": "进度 / 结果",
+    "answered": "已答 {answered} / {total} 题",
+    "selfAssessment": "自评：{score}%",
+    "empty": "该课程暂无可用课时。",
+    "refreshError": "测试进度刷新失败，请重试。"
+  },
   "understandingOverview": {
     "title": "理解测试",
     "description": "查看本课程的测试状态和最新结果",
@@ -140,6 +158,7 @@
     "yourNote": "你的笔记",
     "close": "关闭知识测试",
     "youMarked": "你的标记：",
+    "seeResults": "查看结果",
     "backToResults": "返回结果",
     "nextLesson": "下一课时",
     "tryApplication": "尝试应用测试"
@@ -345,7 +364,7 @@
     },
     "viewCourses": "查看课程",
     "signIn": "登录",
-    "myLearning": "My Learning",
+    "myLearning": "我的学习",
     "notifications": "通知中心",
     "faq": "常见问题",
     "pricingEyebrow": "订阅",
@@ -1185,6 +1204,46 @@
     "chinese": "简体中文",
     "preview": "预览"
   },
+  "subscriptionSelection": {
+    "expand": "拓展你的学习范围",
+    "lastHeading": "解锁最后一个分类",
+    "alreadyHave": "你已拥有",
+    "details": "查看订阅详情 →",
+    "owned": "已拥有",
+    "upgrade": "升级至 Everything",
+    "upgradeDescription": "解锁另外 {count} 个分类，原到期日 {date} 保持不变。",
+    "extraCategories": "+{count} 个分类",
+    "estimate": "Stripe 根据剩余 {days} 天计算升级费用，订阅周期保持不变。",
+    "upgradeAction": "升级 · {price}",
+    "upgradeUnavailable": "此订阅当前无法升级，请前往订阅详情管理方案。",
+    "allIncluded": "你将获得全部分类",
+    "addCategory": "加购一个分类",
+    "addDescription": "新增分类拥有独立的到期日",
+    "lastDescription": "补全你的分类，解锁所有课程",
+    "lastCategory": "你的最后一个分类",
+    "addTitle": "加购{category}",
+    "addAction": "加购{category} · {price}",
+    "upgradeNote": "想探索更多内容？仅拥有一个分类订阅时可以升级至 Everything。",
+    "allOwned": "你已解锁所有分类",
+    "separateRenewals": "每个分类按各自的日期自动续订。",
+    "separateDates": "各分类保留独立的有效期，请前往订阅详情查看续订安排。",
+    "loading": "正在加载订阅方案…",
+    "loadError": "订阅方案暂时无法加载。",
+    "retry": "重试",
+    "everythingOwned": "你已拥有 Everything",
+    "coverage": "全部 {count} 个分类及所有课程",
+    "nextPayment": "下次付款日期：{date}（当前价格 {price}）",
+    "accessUntil": "可访问至 {date}",
+    "paymentPending": "付款需要处理，请前往订阅详情查看。",
+    "manage": "管理订阅 →",
+    "categories": "分类",
+    "courses": "课程",
+    "courseCount": "{count} 门课程",
+    "newCourses": "新课程将自动加入",
+    "quoteLoading": "正在计算升级费用…",
+    "quoteError": "暂时无法获取升级费用，请重试。",
+    "quoteRetry": "重新获取升级费用"
+  },
   "pricingDesign": {
     "heading": "选择订阅计划",
     "everything": "全部课程",
@@ -1232,6 +1291,10 @@
     "getPlan": "订阅{plan} · {price}"
   },
   "subscriptionDesign": {
+    "loading": "正在加载您的订阅…",
+    "loadError": "暂时无法加载订阅，请重试。",
+    "failed": "失败",
+    "turnOnRenewal": "开启自动续费",
     "allAttempts": "所有付款记录",
     "intro": "在此查看您的订阅产品和付款记录。",
     "records": "订阅记录",
@@ -1273,10 +1336,24 @@
     "upgradeType": "升级",
     "months": "{months} 个月",
     "points": "AI 导师积分",
+    "proratedUpgrade": "升级（按剩余周期计费）",
+    "noCurrent": "您目前没有有效订阅。",
     "pointsUnavailable": "积分余额暂未开放。",
     "pointsNote": "积分在所属订阅有效期间可用，并于付款当日发放。"
   },
   "cancelDesign": {
+    "category": "分类",
+    "question": "您为什么取消自动续费？",
+    "lowUsage": "使用频率低",
+    "tooExpensive": "价格太高",
+    "title": "取消自动续费？",
+    "keep": "保留自动续费",
+    "confirm": "取消自动续费",
+    "feedback": "选填，您的反馈有助于我们改进。",
+    "content": "不喜欢课程内容",
+    "website": "网站使用不便",
+    "more": "请告诉我们更多原因（选填）",
+    "paidAccessUntil": "您仍可使用至 {date}。已支付的费用不予退还。",
     "accessUntil": "您可以继续访问至 {date}。",
     "optionalReason": "选填。您可以提供原因，也可以跳过并继续。",
     "skip": "跳过"
@@ -1356,9 +1433,12 @@
     "validUntil": "有效期至 {date}，保留原到期日。",
     "price": "升级费用",
     "targetPrice": "全站订阅当前价格",
-    "credit": "原订阅实际支付金额",
+    "credit": "Category 剩余时间抵扣",
     "payToday": "本次升级应付金额",
-    "otherCategories": "其他有效分类订阅的有效期、自动续费状态和已付金额保持不变；如需停止其自动续费，请分别取消。"
+    "otherCategories": "订阅周期和续订日期保持不变。付款成功后即可使用 Everything。",
+    "remainingPrice": "Everything 剩余周期费用",
+    "adjustments": "税费、折扣及账户余额调整",
+    "renewal": "在原续订日期续费"
   },
   "overviewDesign": {
     "previewing": "试看中",
@@ -1379,7 +1459,16 @@
     "continue": "继续学习",
     "allCourses": "已显示您开始学习的所有课程"
   },
+  "subscriptionErrors": {
+    "invalid": "请检查订阅和取消原因是否填写正确。",
+    "not_found": "未找到此订阅。",
+    "expired": "此订阅已过期，请刷新页面。",
+    "resume_unavailable": "仅未到期且已关闭自动续费的订阅可以恢复自动续费。",
+    "change_pending": "订阅变更正在处理中，请重试相同操作。",
+    "provider_unavailable": "暂时无法确认订阅变更结果，请重试。"
+  },
   "paymentErrors": {
+    "upgrade_unavailable": "仅拥有一个 Category 订阅时可以升级至 Everything。",
     "already_subscribed": "你已有覆盖此方案的有效订阅，到期后可再次订阅。",
     "price_unavailable": "此套餐暂时无法购买，请稍后重试。",
     "quote_expired": "报价或支付会话已过期，请重新选择套餐。",
@@ -1387,6 +1476,7 @@
     "invalid_request": "无法继续此次购买，请重新选择订阅方案。",
     "origin_mismatch": "当前支付来源地址与网站配置不一致，请使用配置的网站地址访问或联系支持。",
     "consent_required": "请勾选全部购买确认选项后继续。",
-    "checkAgain": "重新查询支付状态"
+    "checkAgain": "重新查询支付状态",
+    "upgrade_in_progress": "升级付款正在处理中，请先完成或处理该付款，再更改订阅。"
   }
 }

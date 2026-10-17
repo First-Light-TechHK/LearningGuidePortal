@@ -43,7 +43,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     }));
   for (const recommendation of recommendations) recommendation.image = await signCourseMediaUrl(recommendation.image || "");
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {
-    pricingHref: `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`,
+    pricingHref: `/${locale}/subscription?courseId=${encodeURIComponent(course.id)}`,
     recommendations,
     videoLimitSeconds: 60
   };

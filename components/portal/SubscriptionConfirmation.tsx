@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { X, ArrowRight } from "lucide-react";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
 import { getMessages } from "@/lib/i18n/messages";
+import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 
-type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number; sourceSubscriptionId?: string | null };
+type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number; sourceSubscriptionId?: string | null; upgradeProration?: StripeUpgradeProration };
 type Plan = { id: string; name: string; termMonths: number; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
 
 type Copy = {
@@ -25,6 +26,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
   const [terms, setTerms] = useState(false);
   const [refund, setRefund] = useState(false);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState("");
   const isTrial = quote.kind === "trial";
   const isUpgrade = quote.kind === "upgrade" && Boolean(upgradeSource);
@@ -37,7 +39,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
     const format = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" });
     return `${format.format(start)} – ${format.format(end)}`;
   };
-  const dismiss = () => router.replace(isUpgrade ? `/${locale}/pricing?upgradeFrom=${encodeURIComponent(quote.sourceSubscriptionId || "")}` : `/${locale}/pricing?planId=${encodeURIComponent(plan.id)}`);
+  const dismiss = () => router.replace(isUpgrade ? `/${locale}/subscription?upgradeFrom=${encodeURIComponent(quote.sourceSubscriptionId || "")}` : `/${locale}/subscription?planId=${encodeURIComponent(plan.id)}`);
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
@@ -50,13 +52,14 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
   useEffect(() => {
     // Browser back can restore this page from the back-forward cache with the
     // checkout request's busy state still set.
-    const restore = () => setBusy(false);
+    const restore = () => { submitting.current = false; setBusy(false); };
     window.addEventListener("pageshow", restore);
     return () => window.removeEventListener("pageshow", restore);
   }, []);
 
   async function submit() {
-    if (!renewal || !terms || !refund) return;
+    if (!renewal || !terms || !refund || submitting.current) return;
+    submitting.current = true;
     setBusy(true); setError("");
     try {
       const endpoint = isTrial ? "/api/trial" : "/api/purchase/checkout";
@@ -71,6 +74,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
       window.location.assign(data.checkoutUrl);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : details.checkoutError);
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -84,12 +88,14 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
       <section className="upgrade-summary" aria-label={copy.selectedPlan}><dl>
         <div><dt>{upgrade.source}</dt><dd>{upgradeSource.name}</dd></div>
         <div><dt>{upgrade.target}</dt><dd>{planHeading}</dd></div>
-        <div><dt>{copy.term}</dt><dd className="upgrade-validity">{upgrade.validUntil.replace("{date}", new Date(upgradeSource.validTo).toLocaleDateString(locale))}</dd></div>
+        <div><dt>{copy.term}</dt><dd className="upgrade-validity">{plan.termMonths} {copy.months} · {upgrade.validUntil.replace("{date}", new Date(upgradeSource.validTo).toLocaleDateString(locale, { timeZone: "UTC" }))}</dd></div>
       </dl><span className="upgrade-art" aria-hidden="true" /></section>
       <section className="upgrade-price" aria-labelledby="upgrade-price-heading"><h2 id="upgrade-price-heading">{upgrade.price}</h2><dl>
-        <div><dt>{upgrade.targetPrice}</dt><dd>{money(plan.amountMinor)}</dd></div>
+        <div><dt>{quote.upgradeProration ? upgrade.remainingPrice : upgrade.targetPrice}</dt><dd>{money(quote.upgradeProration?.debitMinor ?? plan.amountMinor)}</dd></div>
         <div><dt>{upgrade.credit}</dt><dd>{money(quote.creditMinor ?? 0)}</dd></div>
+        {Boolean(quote.upgradeProration?.adjustmentsMinor) && <div><dt>{upgrade.adjustments}</dt><dd>{money(quote.upgradeProration!.adjustmentsMinor)}</dd></div>}
         <div><dt>{upgrade.payToday}</dt><dd>{money(quote.amountMinor)}</dd></div>
+        {quote.upgradeProration && <div><dt>{upgrade.renewal}</dt><dd>{money(plan.amountMinor)} / {plan.termMonths} {copy.months}</dd></div>}
       </dl></section>
       <p className="upgrade-other-categories">{upgrade.otherCategories}</p>
     </> : <><p className="confirmation-label">{copy.selectedPlan}</p><section className="confirmation-plan" aria-label={copy.selectedPlan}>

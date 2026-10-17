@@ -11,7 +11,7 @@ const displayFixture = (name:string,locale:string): OverviewDisplay => ({name,co
   id:`record-${index}`,courseId:`actual-${index}`,title:["Actual video course","Completed course","Expired course"][index],category:"Science",
   cover:["/portal/overview-v1/art.png","/portal/overview-v1/history.png","/portal/overview-v1/nature.png"][index],
   lessonCount:3,currentLesson:index+1,lessonId:`lesson-${index}`,contentId:`video-${index}`,progress,mode:"video",
-  action:index===0?"resume":index===1?"review":"plans",href:index===2?`/${locale}/pricing?courseId=actual-2`:`/${locale}/account/learn/actual-${index}?lessonId=lesson-${index}&contentId=video-${index}&viewMode=video`
+  action:index===0?"resume":index===1?"review":"plans",href:index===2?`/${locale}/subscription?courseId=actual-2`:`/${locale}/account/learn/actual-${index}?lessonId=lesson-${index}&contentId=video-${index}&viewMode=video`
 }))});
 
 test("Overview matches horizontal Figma cards in both locales and adapts to mobile",async()=>{
@@ -34,7 +34,7 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     assert.equal((await page.locator('.account-nav').boundingBox())!.x,40,"sidebar uses the same centred account frame as Personal Settings");
     assert.deepEqual(await page.getByRole("progressbar").evaluateAll(nodes=>nodes.map(node=>node.getAttribute("aria-valuenow"))),["33","100","67"]);
     for(const image of await cards.locator("img").all()){await image.evaluate(image=>(image as HTMLImageElement).decode());const parent=(await image.locator("..").boundingBox())!;assert.equal(parent.width,280);assert.equal(parent.height,130);assert.equal(await image.evaluate(image=>(image as HTMLImageElement).naturalWidth>0),true);}
-    assert.equal(await cards.last().getByRole("link").getAttribute("href"),`/${locale}/pricing?courseId=actual-2`);
+    assert.equal(await cards.last().getByRole("link").getAttribute("href"),`/${locale}/subscription?courseId=actual-2`);
     assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("contentId=video-0"));
     await page.screenshot({path:`test-results/overview-v1/${locale}-desktop.png`,fullPage:true});
     for(const width of [2560,1920,1440,1200,768,390,320]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);if(width>1300){assert.equal((await page.locator(".account-nav").boundingBox())!.x,Math.max(40,(width-1440)/2),"sidebar and content share the centred Personal Settings frame");const cardBox=(await cards.first().boundingBox())!;assert.equal(cardBox.width,946);assert.ok(Math.abs((cardBox.x-280)-(width-cardBox.x-cardBox.width))<1,"wide-screen content is centred beside the sidebar");}if(width===390)await page.screenshot({path:`test-results/overview-v1/${locale}-mobile.png`,fullPage:true});}

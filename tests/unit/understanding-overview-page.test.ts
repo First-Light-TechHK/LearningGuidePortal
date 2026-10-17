@@ -1,62 +1,152 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import { readFile, mkdir } from "node:fs/promises";
-import path from "node:path";
-import { build } from "esbuild";
-import { chromium } from "playwright";
-import { getMessages } from "../../lib/i18n/messages";
-test("Understanding overview renders course navigation, lesson accordions and reused tests in both locales", async()=>{
-  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {UnderstandingOverview} from './components/portal/UnderstandingOverview';import {sampleUnderstandingOverview} from './services/understandingOverview';window.mount=locale=>createRoot(document.getElementById('root')).render(<UnderstandingOverview locale={locale} courseId="course" courseTitle="The Art of Seeing" category="Art" backHref={'/'+locale+'/account/learn/course?lessonId=original'} data={sampleUnderstandingOverview(locale)}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"overview.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/(image|link)$/},args=>({path:args.path,namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},args=>({contents:args.path.endsWith("image")?"import React from 'react';export default function Image(props){return <img {...props}/>}":"import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}]});
-  const browser=await chromium.launch({channel:"msedge"});await mkdir("test-results/understanding",{recursive:true});
-  try {for(const locale of ["en-GB","zh-CN"] as const){
-    const copy=getMessages(locale), labels=copy.understandingOverview;
-    const page=await browser.newPage({viewport:{width:1440,height:1600}});
-    await page.route("http://understanding.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/")?route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:url.pathname.endsWith(".png")?"image/png":"image/svg+xml"}):route.fulfill({contentType:"text/html",body:'<div style="height:68px;background:white"></div><div id="root"></div>'});});
-    await page.goto("http://understanding.test/");await page.addStyleTag({content:"body{margin:0}*{box-sizing:border-box}"});await page.addStyleTag({content:bundle.outputFiles.find(f=>f.path.endsWith("css"))!.text});
-    for(const weight of [400,500,600,700]){const font=(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64");await page.addStyleTag({content:`@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font});font-weight:${weight}}`});}
-    await page.addScriptTag({content:bundle.outputFiles.find(f=>f.path.endsWith("js"))!.text});await page.evaluate(locale=>(window as unknown as {mount:(locale:string)=>void}).mount(locale),locale);
-    await page.getByRole("heading",{name:labels.title,exact:true}).waitFor();assert.equal(await page.getByRole("progressbar").getAttribute("aria-valuenow"),"2");
-    assert.equal(await page.getByRole("link",{name:`← ${labels.back}`}).getAttribute("href"),`/${locale}/account/learn/course?lessonId=original`);
-    assert.equal(await page.getByRole("button",{name:copy.lessonCompleted.comingSoon,exact:true}).isDisabled(),true);
-    const accordion=page.locator('button[aria-expanded]');assert.equal(await accordion.count(),2);
-    const arrow=accordion.first().locator('[aria-hidden="true"]');
-    const arrowStyle=()=>arrow.evaluate(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),parent=e.parentElement!.getBoundingClientRect();return {text:e.textContent,width:r.width,height:r.height,inset:parent.right-r.right,centerDelta:(r.top+r.height/2)-(parent.top+parent.height/2),transform:s.transform};});
-    await arrow.locator("img").evaluate(e=>(e as HTMLImageElement).decode());
-    assert.deepEqual(await arrowStyle(),{text:"",width:15,height:22,inset:120,centerDelta:0,transform:"none"});
-    assert.deepEqual(await arrow.locator("img").evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,naturalWidth:(e as HTMLImageElement).naturalWidth,naturalHeight:(e as HTMLImageElement).naturalHeight})),{width:11,height:7,naturalWidth:11,naturalHeight:7});
-    await page.screenshot({path:`test-results/understanding/${locale}-desktop.png`,fullPage:true});
-    await accordion.first().click();assert.equal(await page.getByRole("button",{name:labels.viewResult,exact:true}).count(),0);assert.equal((await arrowStyle()).transform,"matrix(-1, 0, 0, -1, 0, 0)");await page.screenshot({path:`test-results/understanding/${locale}-collapsed.png`,fullPage:true});await accordion.first().click();assert.equal((await arrowStyle()).transform,"none");
-    await page.getByRole("button",{name:labels.viewResult,exact:true}).first().click();await page.getByRole("dialog").getByRole("heading",{name:copy.knowledgeTest.result,exact:true}).waitFor();await page.keyboard.press("Escape");
-    await page.getByRole("button",{name:labels.viewResult,exact:true}).nth(1).click();
-    const application=page.getByRole("dialog"), app=copy.applicationTest;
-    await application.getByRole("heading",{name:app.feedback,exact:true}).waitFor();
-    const back=application.getByRole("button",{name:app.back,exact:true}), retake=application.getByRole("button",{name:app.retake,exact:true});
-    assert.equal(await back.isVisible(),true);assert.equal(await retake.isVisible(),true);
-    assert.equal(await application.getByRole("button").count(),2,"overview result offers only Back to Understanding and Retake test");
-    await page.setViewportSize({width:1440,height:1024});
-    assert.deepEqual(await application.evaluate(d=>{const q=d.querySelector('section[aria-labelledby="application-question-title"]')!.getBoundingClientRect();return [d.clientWidth,d.clientHeight,q.x,q.y,q.width,q.height]}),[1440,1024,120,104,480,888]);
-    const resultPanel=application.locator('div[aria-label]').filter({has:page.getByRole("heading",{name:app.feedback,exact:true})});
-    assert.equal(await resultPanel.evaluate(e=>e.scrollHeight>e.clientHeight),true);
-    assert.equal(await application.getByRole("heading",{name:copy.knowledgeTest.reference,exact:true}).count(),1);
-    assert.deepEqual(await back.locator("img").evaluate(e=>({loaded:(e as HTMLImageElement).naturalWidth>0,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{loaded:true,width:18,height:18});
-    await page.screenshot({path:`test-results/understanding/${locale}-application-result.png`});
-    await page.setViewportSize({width:320,height:640});await retake.scrollIntoViewIfNeeded();
-    assert.equal(await application.evaluate(e=>e.scrollWidth>e.clientWidth || e.getBoundingClientRect().right>innerWidth),false);
-    await page.screenshot({path:`test-results/understanding/${locale}-application-result-mobile.png`});
-    await retake.click();
-    assert.equal(await application.getByRole("textbox").inputValue(),"");
-    assert.equal(await application.getByRole("button",{name:app.submit,exact:true}).isDisabled(),true);
-    await application.getByRole("textbox").fill("My second attempt");
-    await page.clock.install();await page.clock.pauseAt(new Date(Date.now()+1000));
-    await application.getByRole("button",{name:app.submit,exact:true}).click();
-    await application.getByRole("progressbar").waitFor();await page.clock.runFor(3030);
-    await application.getByRole("heading",{name:app.feedback,exact:true}).waitFor();
-    assert.equal(await application.getByText("My second attempt",{exact:true}).count(),1);
-    assert.equal(await retake.isVisible(),true);
-    await back.click();assert.equal(await application.count(),0);
-    await page.setViewportSize({width:1440,height:1600});
-    await page.getByRole("button",{name:labels.continue,exact:true}).click();await page.getByRole("dialog").getByRole("textbox").waitFor();await page.keyboard.press("Escape");
-    await page.getByRole("button",{name:labels.start,exact:true}).click();await page.getByRole("dialog").getByRole("heading",{name:copy.applicationTest.title,exact:true}).waitFor();await page.keyboard.press("Escape");
-    await page.setViewportSize({width:390,height:844});assert.equal((await arrowStyle()).width,15);assert.equal((await arrowStyle()).inset,16);assert.equal((await arrowStyle()).centerDelta,0);await page.screenshot({path:`test-results/understanding/${locale}-mobile.png`,fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.close();
-  }}finally{await browser.close();}
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { readFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { createServer } from 'node:http';
+import { build } from 'esbuild';
+import { chromium } from 'playwright';
+import { getMessages } from '../../lib/i18n/messages';
+import { isolate } from '../io/harness';
+import { verifiedUser, COURSE_ID, PREVIEW_LP, PRIVATE_LP } from './helpers/my-learning';
+
+test('Understanding reads real API records, saves/resumes both tests, retries failures and isolates users in both locales', {timeout:120000}, async()=>{
+  const originalCwd=process.cwd();
+  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {UnderstandingOverview} from './components/portal/UnderstandingOverview';const root=createRoot(document.getElementById('root'));window.mount=(locale,data)=>root.render(<main className="portal-page portal-public-lesson-page"><UnderstandingOverview locale={locale} courseId="${COURSE_ID}" courseTitle="Actual Course" category="Science" backHref={'/'+locale+'/account/learn/${COURSE_ID}'} data={data}/></main>);`,resolveDir:originalCwd,loader:'tsx'},bundle:true,write:false,outfile:'overview.js',platform:'browser',external:['/portal/*'],jsx:'automatic',loader:{'.css':'local-css'},plugins:[{name:'next',setup(b){b.onResolve({filter:/^next\/(image|link)$/},args=>({path:args.path,namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path.endsWith('image')?"import React from 'react';export default function Image(props){return <img {...props}/>}":"import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}",loader:'tsx',resolveDir:originalCwd}));}}]});
+  await mkdir(path.join(originalCwd,'test-results/understanding-real'),{recursive:true});
+  const {restore}=await isolate('lg-understanding-browser-');
+  const store=await import('../../services/productStore');
+  const routes=await import('../../app/api/courses/[courseId]/lessons/[lessonId]/assessments/[kind]/route');
+  const overview=await import('../../app/api/courses/[courseId]/understanding/route');
+  let failNextWrite=false, failNextRead=false, holdNextRead=false;let releaseRead:()=>void=()=>{};
+  const server=createServer(async(req,res)=>{
+    try{
+      const url=new URL(req.url!,'http://localhost');let response:Response;
+      if(url.pathname.startsWith('/api/')){
+        const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
+        const request=new Request(url,{method:req.method,headers:new Headers(req.headers as Record<string,string>),...(req.method==='PUT'?{body:Buffer.concat(chunks).toString()}: {})});
+        const match=url.pathname.match(/^\/api\/courses\/([^/]+)\/lessons\/([^/]+)\/assessments\/([^/]+)$/);
+        if(match){
+          if(req.method==='GET'&&holdNextRead){holdNextRead=false;await new Promise<void>(resolve=>{releaseRead=resolve;});}
+          if(req.method==='GET'&&failNextRead){failNextRead=false;response=Response.json({ok:false},{status:503});}
+          else if(req.method==='PUT'&&failNextWrite){failNextWrite=false;response=Response.json({ok:false},{status:503});}
+          else response=await routes[req.method==='PUT'?'PUT':'GET'](request,{params:Promise.resolve({courseId:decodeURIComponent(match[1]),lessonId:decodeURIComponent(match[2]),kind:match[3]})});
+        }else response=await overview.GET(request,{params:Promise.resolve({courseId:COURSE_ID})});
+        res.writeHead(response.status,Object.fromEntries(response.headers));res.end(await response.text());return;
+      }
+      if(url.pathname==='/bundle.js'){res.setHeader('content-type','text/javascript');res.end(bundle.outputFiles.find(f=>f.path.endsWith('js'))!.text);return;}
+      const font=url.pathname.match(/^\/font-(400|500|600|700)\.woff2$/);
+      if(font){res.setHeader('content-type','font/woff2');res.end(await readFile(path.join(originalCwd,`node_modules/@fontsource/inter/files/inter-latin-${font[1]}-normal.woff2`)));return;}
+      if(url.pathname==='/shared.css'){res.setHeader('content-type','text/css');res.end((await Promise.all(['app/styles.css','app/portal-design.css','components/portal/lesson-authoring.css'].map(file=>readFile(path.join(originalCwd,file),'utf8')))).join('\n'));return;}
+      if(url.pathname==='/bundle.css'){res.setHeader('content-type','text/css');res.end(bundle.outputFiles.find(f=>f.path.endsWith('css'))!.text);return;}
+      if(url.pathname.startsWith('/portal/')){res.setHeader('content-type',url.pathname.endsWith('.png')?'image/png':'image/svg+xml');res.end(await readFile(path.join(originalCwd,'public',url.pathname)));return;}
+      const locale=url.pathname.includes('zh-CN')?'zh-CN':'en-GB';
+      res.setHeader('content-type','text/html');res.end(`<!doctype html><html><head><meta charset="utf-8"><style>${[400,500,600,700].map(weight=>`@font-face{font-family:Inter;src:url('/font-${weight}.woff2');font-weight:${weight}}`).join('')}body{margin:0}*{box-sizing:border-box}</style><link rel="stylesheet" href="/shared.css"><link rel="stylesheet" href="/bundle.css"></head><body><div style="height:68px;background:white"></div><div id="root"></div><script src="/bundle.js"></script><script>fetch('/api/courses/${COURSE_ID}/understanding').then(r=>r.json()).then(r=>window.mount('${locale}',r.data));</script></body></html>`);
+    }catch{res.statusCode=500;res.end('Test server failure');}
+  });
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
+  const browser=await chromium.launch({channel:'msedge'});
+  try{for(const locale of ['en-GB','zh-CN'] as const){
+    const labels=getMessages(locale).understandingOverview, copy=getMessages(locale).knowledgeTest, records=getMessages(locale).assessmentRecords;
+    const user=await verifiedUser(store,`browser-${locale.toLowerCase()}@example.test`,'Actual Learner');
+    const {quote}=await store.createQuote(user.id,'everything-pc-6');await store.completeDemoCheckout(user.id,quote.id);
+    await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,event:'complete',seconds:0,clientEventId:`complete-${locale}`});
+    const session=await store.createSession(user.id), context=await browser.newContext({viewport:{width:1440,height:1200}});
+    await context.addCookies([{name:'learning_guide_session',value:session.token,url:base}]);
+    const page=await context.newPage();await page.goto(base+'/'+locale);
+    const lesson=page.locator(`section[data-lesson-id="${PREVIEW_LP}"]`), knowledge=lesson.locator('[data-assessment-kind="knowledge"]'), application=lesson.locator('[data-assessment-kind="application"]');
+    await knowledge.waitFor();assert.equal(await knowledge.getByText(records.notStarted,{exact:true}).count(),1);
+    for(const width of [1440,1920,2560]){
+      await page.setViewportSize({width,height:1200});
+      assert.equal((await page.locator('nav a').first().boundingBox())?.x,Math.max(40,(width-1360)/2));
+    }
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-wide.png`),fullPage:true});
+    await page.setViewportSize({width:1440,height:1200});
+    const arrow=lesson.locator('button[aria-expanded] [aria-hidden="true"]');await arrow.locator('img').evaluate(e=>(e as HTMLImageElement).decode());
+    assert.deepEqual(await arrow.locator('img').evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width:11,height:7});
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-initial.png`),fullPage:true});
+    holdNextRead=true;failNextRead=true;
+    await knowledge.getByRole('button',{name:labels.start,exact:true}).click();
+    const dialog=page.getByRole('dialog');await dialog.getByRole('heading',{name:records.loading,exact:true}).waitFor();
+    assert.equal(await dialog.evaluate(e=>e.parentElement===document.body),true);
+    assert.equal((await dialog.boundingBox())?.width,420);
+    assert.equal((await dialog.boundingBox())?.x,510);
+    assert.equal(await dialog.locator('.portal-dialog-spinner').evaluate(e=>(e as HTMLElement).offsetWidth),28);
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-loading.png`)});
+    await page.setViewportSize({width:390,height:844});
+    assert.equal((await dialog.boundingBox())?.width,358);
+    assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false);
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-loading-mobile.png`)});
+    releaseRead();await dialog.getByRole('alert').waitFor();
+    assert.equal(await dialog.getByRole('alert').textContent(),records.loadError);
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-loading-error.png`)});
+    await dialog.getByRole('button',{name:records.retry,exact:true}).click();await dialog.getByRole('textbox').waitFor();
+    await page.setViewportSize({width:1440,height:1200});
+    failNextWrite=true;await dialog.getByRole('textbox').fill('My persisted note');
+    await dialog.getByRole('button',{name:copy.close,exact:true}).click();
+    await dialog.getByRole('alert').waitFor();assert.equal(await dialog.getByRole('textbox').inputValue(),'My persisted note');
+    await dialog.getByRole('button',{name:records.retry,exact:true}).click();
+    await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});
+    await knowledge.getByRole('button',{name:labels.continue,exact:true}).click();await dialog.getByRole('textbox').waitFor();assert.equal(await dialog.getByRole('textbox').inputValue(),'My persisted note');
+    for(let i=0;i<6;i++){
+      await dialog.getByRole('button',{name:copy.check,exact:true}).click();
+      await dialog.getByRole('radio',{name:i%2?copy.wrong:copy.right,exact:true}).check();
+      await dialog.getByRole('button',{name:i===5?copy.seeResults:copy.next,exact:true}).click();
+      if(i===0){await dialog.getByRole('textbox').waitFor();await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});await page.reload();await knowledge.getByRole('button',{name:labels.continue,exact:true}).click();await dialog.getByText('02/06',{exact:true}).waitFor();}
+    }
+    await dialog.getByRole('heading',{name:copy.result,exact:true}).waitFor();await dialog.getByText('50%',{exact:true}).waitFor();
+    await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});
+    await knowledge.getByRole('button',{name:labels.viewResult,exact:true}).waitFor();assert.equal(await knowledge.getByText('100%',{exact:true}).count(),1);
+    await application.getByRole('button',{name:labels.start,exact:true}).click();await dialog.getByRole('textbox').fill('Actual application draft');
+    await dialog.getByRole('button',{name:copy.exit,exact:true}).click();await dialog.waitFor({state:'detached'});
+    await application.getByRole('button',{name:labels.continue,exact:true}).click();await dialog.getByRole('textbox').waitFor();assert.equal(await dialog.getByRole('textbox').inputValue(),'Actual application draft');
+    const app=getMessages(locale).applicationTest;
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-application-answer.png`)});
+    failNextWrite=true;
+    await dialog.getByRole('button',{name:app.submit,exact:true}).click();await dialog.getByRole('alert').waitFor();
+    assert.equal(await dialog.getByRole('progressbar').count(),0);
+    assert.equal(await dialog.getByRole('textbox').inputValue(),'Actual application draft');
+    await dialog.getByRole('button',{name:app.submit,exact:true}).click();
+    await dialog.getByRole('progressbar').waitFor();
+    assert.equal(await dialog.getByRole('textbox').getAttribute('readonly'),'');
+    const reviewing=await (await context.request.get(base+`/api/courses/${COURSE_ID}/understanding`)).json();
+    assert.equal(reviewing.data.lessons[0].application.percent,0);
+    assert.equal(reviewing.data.completed,0);
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-application-reviewing.png`)});
+    await dialog.getByRole('button',{name:copy.exit,exact:true}).click();await dialog.waitFor({state:'detached'});
+    await page.reload();await application.getByRole('button',{name:labels.continue,exact:true}).click();
+    await dialog.getByRole('heading',{name:app.feedback,exact:true}).waitFor();
+    assert.equal(await dialog.getByText(app.strongResponse,{exact:true}).count(),1);
+    assert.equal(await dialog.getByRole('button',{name:app.tryKnowledge+' →',exact:true}).count(),0);
+    assert.equal(await dialog.getByRole('button',{name:app.nextLesson+' →',exact:true}).count(),1);
+    const completedView=await (await context.request.get(base+`/api/courses/${COURSE_ID}/understanding`)).json();
+    assert.equal(completedView.data.lessons[0].application.percent,100);assert.equal(completedView.data.completed,1);
+    await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-application-result.png`)});
+    await dialog.getByRole('button',{name:getMessages(locale).applicationTest.back,exact:true}).click();await dialog.waitFor({state:'detached'});
+    await application.getByText(labels.completed,{exact:true}).waitFor();await page.reload();await application.getByRole('button',{name:labels.viewResult,exact:true}).waitFor();
+    assert.equal(await lesson.getByText(labels.completed,{exact:true}).count(),3);
+    await application.getByRole('button',{name:labels.viewResult,exact:true}).click();
+    await dialog.getByRole('button',{name:app.nextLesson+' →',exact:true}).click();
+    await page.waitForURL(url=>url.pathname===`/${locale}/account/learn/${COURSE_ID}`&&url.searchParams.get('lessonId')===PRIVATE_LP);
+    await page.goto(base+'/'+locale);await lesson.waitFor();
+    const locked=page.locator(`section[data-lesson-id="${PRIVATE_LP}"]`);await locked.getByRole('button',{expanded:false}).click();assert.equal(await locked.locator('button:disabled').count(),2);
+    await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-mobile.png`),fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await context.close();
+    const other=await verifiedUser(store,`different-${locale.toLowerCase()}@example.test`,'Other Learner');const otherQuote=await store.createQuote(other.id,'everything-pc-6');await store.completeDemoCheckout(other.id,otherQuote.quote.id);await store.recordStudyEvent({userId:other.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,event:'complete',seconds:0,clientEventId:`other-${locale}`});
+    const otherSession=await store.createSession(other.id), otherContext=await browser.newContext();await otherContext.addCookies([{name:'learning_guide_session',value:otherSession.token,url:base}]);const otherPage=await otherContext.newPage();await otherPage.goto(base+'/'+locale);await otherPage.locator('[data-assessment-kind="knowledge"]').getByRole('button',{name:labels.start,exact:true}).waitFor();assert.equal(await otherPage.getByRole('button',{name:labels.viewResult,exact:true}).count(),0);
+    await otherPage.locator('[data-assessment-kind="application"]').first().getByRole('button',{name:labels.start,exact:true}).click();
+    const otherDialog=otherPage.getByRole('dialog');await otherDialog.getByRole('textbox').fill('A separate answer for this learner');
+    await otherDialog.getByRole('button',{name:app.submit,exact:true}).click();await otherDialog.getByRole('progressbar').waitFor();
+    // If the final save fails, retain the review and retry the same operation.
+    failNextWrite=true;await otherDialog.getByRole('alert').waitFor();
+    assert.equal(await otherDialog.getByRole('heading',{name:app.feedback,exact:true}).count(),0);
+    await otherDialog.getByRole('button',{name:records.retry,exact:true}).click();await otherDialog.getByRole('heading',{name:app.feedback,exact:true}).waitFor();
+    assert.equal(await otherDialog.getByRole('button',{name:app.nextLesson,exact:true}).count(),1);
+    assert.equal(await otherDialog.getByRole('button',{name:app.tryKnowledge+' →',exact:true}).count(),1);
+    const independent=await (await otherContext.request.get(base+`/api/courses/${COURSE_ID}/understanding`)).json();
+    assert.equal(independent.data.lessons[0].application.percent,100);assert.equal(independent.data.lessons[0].knowledge.answered,0);assert.equal(independent.data.completed,0);
+    await otherDialog.getByRole('button',{name:app.tryKnowledge+' →',exact:true}).click();
+    await otherDialog.getByText('01/06',{exact:true}).waitFor();assert.equal(await otherDialog.getByRole('textbox').inputValue(),'');
+    await otherContext.close();
+  }}finally{releaseRead();await browser.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await restore();}
 });

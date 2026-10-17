@@ -20,7 +20,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
       let quoteRequests = 0;
       const quotedPlans: string[] = [];
-      await page.route("http://pricing.test/**", route => {
+      await page.route("http://subscription.test/**", route => {
         if (new URL(route.request().url()).pathname === "/api/subscription/quote") {
           quoteRequests++;
           quotedPlans.push(route.request().postDataJSON().planId);
@@ -28,7 +28,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
         }
         return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
       });
-      await page.goto("http://pricing.test/?planId=Science-12");
+      await page.goto("http://subscription.test/?planId=Science-12");
       for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       const props = { locale, key: "pricing", plans, selectedPlanId: "Science-12", categories: defaultPortalContent.categories, courseTitles: [] };
@@ -67,7 +67,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       await page.getByRole("alert").waitFor();
       assert.equal(await page.getByRole("alert").textContent(), getMessages(locale).paymentErrors.already_subscribed);
       assert.equal(quoteRequests, 1);
-      assert.ok(page.url().startsWith("http://pricing.test/"));
+      assert.ok(page.url().startsWith("http://subscription.test/"));
       assert.equal(await page.getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).isDisabled(), false);
       // A server refresh supplies new plan objects on the same mounted panel.
       // An old login-return planId must not overwrite the user's annual choice.

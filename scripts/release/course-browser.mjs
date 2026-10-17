@@ -54,7 +54,7 @@ export function lessonIdentityMatches(actual, course, lesson) {
 export function trialGateStateMatches({ visible, paused, currentTime, upgradeHref }) {
   return visible === true && paused === true && Number.isFinite(currentTime) &&
     currentTime >= 59.8 && currentTime <= 60.05 && typeof upgradeHref === 'string' &&
-    /^\/(en-GB|zh-CN)\/pricing\?/.test(upgradeHref);
+    /^\/(en-GB|zh-CN)\/subscription\?/.test(upgradeHref);
 }
 
 export function mediaCoverageFailures(expected, observed, origin) {
@@ -579,7 +579,7 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
               requireCheck(!await page.locator('[data-course-id][data-lesson-id], .learning-room, .lesson-content, video, audio').count(), 'locked_lesson_content_leaked');
               requireCheck(normaliseText(await page.locator('h1[data-course-title]').innerText()) === normaliseText(course.title), 'locked_upsell_course_identity_mismatch');
               const pricing = page.locator('a[data-course-secondary-cta], a[data-course-cta-link="view_plans"]');
-              requireCheck(await pricing.count() > 0 && (await pricing.first().getAttribute('href'))?.startsWith(`/${locale}/pricing?`), 'locked_upsell_missing');
+              requireCheck(await pricing.count() > 0 && (await pricing.first().getAttribute('href'))?.startsWith(`/${locale}/subscription?`), 'locked_upsell_missing');
               return { denied: true, upsell: true };
             });
           } else fail(`${lessonScope}/locked`, 'not_run_locked_fixture_unavailable');

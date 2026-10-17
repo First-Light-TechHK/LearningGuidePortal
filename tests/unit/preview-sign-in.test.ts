@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("Preview login returns an authenticated visitor to the lesson entry without another form", async () => {
+test("Preview login returns an authenticated visitor to the original course detail without another form", async () => {
   const state = { user: null as null | { email: string | null; emailVerifiedAt: string | null } };
   (globalThis as any).previewSignInState = state;
   const bundle = await build({
@@ -29,7 +29,7 @@ test("Preview login returns an authenticated visitor to the lesson entry without
   const page = createRequire(import.meta.url)(filename).default;
   try {
     for (const locale of ["en-GB", "zh-CN"] as const) {
-      const returnTo = `/${locale}/portal/courses/course?lessonEntry=lesson`;
+      const returnTo = `/${locale}/portal/courses/course`;
       const render = (target = returnTo, step?: string) => page({ params: Promise.resolve({ locale }), searchParams: Promise.resolve({ returnTo: target, step }) });
       state.user = null;
       assert.ok(await render(), "guests still see the email step");
