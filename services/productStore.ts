@@ -1110,9 +1110,9 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       ? lessons.at(-1)?.id || null : currentLessonId;
     if (record?.knowledgePositions && record.currentMode) {
       const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, actionLessonId: page.pageState !== "available" ? null : record.completedAt || record.progress === 100 ? lessons.at(-1)?.id || null : position.lessonId || actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
+      return { ...page, actionLessonId: !entitlement ? page.actionLessonId : page.pageState !== "available" ? null : record.completedAt || record.progress === 100 ? lessons.at(-1)?.id || null : position.lessonId || actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
     }
-    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId: page.pageState === "available" && (record?.progress === 100 || page.progress === 100) ? lessons.at(-1)?.id || null : actionLessonId };
+    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId: !entitlement ? page.actionLessonId : page.pageState === "available" && (record?.progress === 100 || page.progress === 100) ? lessons.at(-1)?.id || null : actionLessonId };
   });
 }
 
