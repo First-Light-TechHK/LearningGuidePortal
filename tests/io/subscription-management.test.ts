@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { stop } from "esbuild";
 import { isolate, setCookie, clearCookies, SESSION_COOKIE, jsonRequest } from "./harness";
 import { verifiedUser, readProductData, writeProductData } from "../unit/helpers/my-learning";
 import { getMessages } from "../../lib/i18n/messages";
@@ -53,7 +54,7 @@ test("Stripe cancellation retains access/end date and recovers a lost response w
     data = await readProductData(); data.subscriptions.find((s: { id: string }) => s.id === source.id).state = "expired"; await writeProductData(data);
     assert.equal((await route.POST(jsonRequest("POST", "http://localhost/api/subscription", input))).status, 400); assert.equal(calls.length, 3);
     assert.equal((await route.POST(jsonRequest("POST", "http://localhost/api/subscription", { subscriptionId: source.id, action: "resume" }))).status, 400); assert.equal(calls.length, 3);
-  } finally { await restore(); }
+  } finally { await stop(); await restore(); }
 });
 
 test("wrong Stripe customer cannot be cancelled and the API localises failure without changing local access", async () => {
@@ -76,5 +77,5 @@ test("wrong Stripe customer cannot be cancelled and the API localises failure wi
     const response = await route.POST(jsonRequest("POST", "http://localhost/api/subscription", { subscriptionId: purchased.subscription.id, action: "cancel" }));
     assert.equal(response.status, 503); assert.equal((await response.json()).error, getMessages("zh-CN").subscriptionErrors.provider_unavailable); assert.equal(calls, 0);
     assert.equal((await store.getLearningOverview(buyer.id)).subscriptions[0].state, "active");
-  } finally { await restore(); }
+  } finally { await stop(); await restore(); }
 });

@@ -123,7 +123,7 @@ function paidSession(order: Awaited<ReturnType<typeof checkout>>["order"], trial
     items: { data: [{ id: "si_" + order.id, quantity: 1, current_period_start: start, current_period_end: end, price: [...catalog.values()].find(item => item.id === order.price!.stripePriceId) }] } } as unknown as Stripe.Subscription;
   subscriptions.set(subscription.id, subscription);
   const session = sessions.get(order.stripeCheckoutSessionId!)!;
-  Object.assign(session, { status: "complete", payment_status: trial ? "no_payment_required" : "paid", amount_total: order.amountMinor, subscription,
+  Object.assign(session, { status: "complete", payment_status: trial ? "no_payment_required" : "paid", amount_total: order.amountMinor, subscription, customer: subscription.customer,
     line_items: { has_more: false, data: [{ quantity: 1, price: { id: order.price!.stripePriceId } }] } });
   return { session, subscription, start, end };
 }
@@ -416,6 +416,24 @@ test("a Category with historical renewal orders still previews against its verif
   expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).order.status).toBe("paid");
 });
 
+test("a legacy paid Stripe Category without any local Price snapshot upgrades using its verified original Checkout", async () => {
+  const result = await upgradeSource();
+  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
+  const data = JSON.parse(await readFile(file, "utf8"));
+  delete data.orders.find((item: { id: string }) => item.id === result.order.id).price;
+  await writeFile(file, JSON.stringify(data));
+  const original = JSON.parse(await readFile(file, "utf8"));
+  const count = updates.length;
+  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
+  expect(quote.upgradeProration).toMatchObject({ sourcePriceId: result.order.price!.stripePriceId, periodEnd: result.end, amountDueMinor: 3586 });
+  expect(updates).toHaveLength(count);
+  const afterQuote = JSON.parse(await readFile(file, "utf8"));
+  expect(afterQuote.orders).toEqual(original.orders);
+  expect(afterQuote.subscriptions).toEqual(original.subscriptions);
+  expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).order.status).toBe("paid");
+  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.scope === "everything")?.validTo).toBe(result.source.validTo);
+});
+
 test("cancelled renewal during a pending upgrade is preserved after payment, with the original end date", async () => {
   const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
   upgradePaymentPending = true;
@@ -522,15 +540,21 @@ test("quote API returns Stripe's amount for the session owner and ignores client
       b.onResolve({ filter: /services\/(productStore|productAuth|paymentHttp)$/ }, args => ({ path: args.path, namespace: "mock" }));
       b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeApi.paymentFailure(...args)" : "export const createQuote=(...args)=>globalThis.stripeUpgradeApi.store.createQuote(...args),createUpgradeQuote=(...args)=>globalThis.stripeUpgradeApi.store.createUpgradeQuote(...args),getQuoteForUser=(...args)=>globalThis.stripeUpgradeApi.store.getQuoteForUser(...args)" }));
     } }] });
-    const module = { exports: {} as { POST: (request: Request) => Promise<Response>; GET: (request: Request) => Promise<Response> } };
-    new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), module, module.exports);
-    const invoke = () => module.exports.POST(new Request("https://payment.example.test/api/subscription/quote", { method: "POST", body: JSON.stringify({ kind: "upgrade", subscriptionId: result.source.id, amountMinor: 1, priceId: "untrusted", termMonths: 6, userId: "forged" }) }));
+    const routeModule = { exports: {} as { POST: (request: Request) => Promise<Response>; GET: (request: Request) => Promise<Response> } };
+    new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), routeModule, routeModule.exports);
+    const invoke = () => routeModule.exports.POST(new Request("https://payment.example.test/api/subscription/quote", { method: "POST", body: JSON.stringify({ kind: "upgrade", subscriptionId: result.source.id, amountMinor: 1, priceId: "untrusted", termMonths: 6, userId: "forged" }) }));
     const response = await invoke(); expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.quote).toMatchObject({ userId: result.buyer.id, amountMinor: 3586, creditMinor: 1200, price: { termMonths: 12, stripePriceId: "price_everything-pc-12" }, upgradeProration: { subscriptionId: result.subscription.id, periodEnd: result.end } });
     expect(body.plan.amountMinor).toBe(19800);
+    const file = path.join(directory, "data/knowledge_system/learning_guide/product.json"), data = JSON.parse(await readFile(file, "utf8"));
+    delete data.orders.find((item: { id: string }) => item.id === result.order.id).price;
+    await writeFile(file, JSON.stringify(data));
+    const legacy = await invoke();
+    expect(legacy.status).toBe(200);
+    expect((await legacy.json()).quote.upgradeProration).toMatchObject({ sourcePriceId: result.order.price!.stripePriceId, periodEnd: result.end, amountDueMinor: 3586 });
     state.user = await user();
-    expect((await module.exports.GET(new Request(`https://payment.example.test/api/subscription/quote?quoteId=${body.quote.id}`))).status).toBe(404);
+    expect((await routeModule.exports.GET(new Request(`https://payment.example.test/api/subscription/quote?quoteId=${body.quote.id}`))).status).toBe(404);
     state.user = null; expect((await invoke()).status).toBe(401);
   } finally { delete (globalThis as any).stripeUpgradeApi; }
 });

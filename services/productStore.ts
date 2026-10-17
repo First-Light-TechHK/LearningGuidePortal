@@ -4,6 +4,7 @@ import { SubscriptionManagementError, type SubscriptionChange, type Subscription
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
+import { resolveLegacyUpgradeSourcePrice } from "./stripeUpgradeSource";
 import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice } from "./stripePriceService";
@@ -1299,19 +1300,32 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
   // Older renewal orders do not contain a Price snapshot. The original paid
   // order still pins the source Price, which must match Stripe's current item.
   const sourcePrice = paidOrders.find(item => item.price)?.price;
-  return { source, sourcePlan, target, paidOrder, sourcePrice, creditMinor, amountMinor };
+  const sourceCheckoutOrder = paidOrders.find(item => item.paymentMode === "stripe" && item.stripeCheckoutSessionId);
+  return { source, sourcePlan, target, paidOrder, sourcePrice, sourceCheckoutOrder, creditMinor, amountMinor };
 }
 
 export async function createUpgradeQuote(userId: string, subscriptionId: string) {
   const preliminary = upgradeCalculation(await ensureProductData(), userId, subscriptionId);
-  if (paymentMode() !== "stripe" || !preliminary.source.stripeSubscriptionId || !preliminary.source.stripeCustomerId || !preliminary.sourcePrice) throw new PaymentError("payment_unavailable", 503);
+  if (paymentMode() !== "stripe") throw new PaymentError("payment_unavailable", 503, "upgrade_stripe_mode_required");
+  if (!preliminary.source.stripeSubscriptionId) throw new PaymentError("payment_unavailable", 503, "upgrade_subscription_missing");
+  if (!preliminary.source.stripeCustomerId) throw new PaymentError("payment_unavailable", 503, "upgrade_customer_missing");
+  const checkout = preliminary.sourceCheckoutOrder;
+  if (!preliminary.sourcePrice && !checkout?.stripeCheckoutSessionId) throw new PaymentError("payment_unavailable", 503, "upgrade_checkout_missing");
+  const sourcePriceId = preliminary.sourcePrice?.stripePriceId || await resolveLegacyUpgradeSourcePrice({
+    checkoutSessionId: checkout!.stripeCheckoutSessionId!, orderId: checkout!.id, userId, planId: preliminary.source.planId,
+    subscriptionId: preliminary.source.stripeSubscriptionId, customerId: preliminary.source.stripeCustomerId,
+    amountMinor: checkout!.amountMinor, currency: checkout!.currency,
+  });
   const price = await resolveSubscriptionPrice(preliminary.target.id);
   const upgradeProration = await previewStripeUpgrade({ subscriptionId: preliminary.source.stripeSubscriptionId, customerId: preliminary.source.stripeCustomerId,
-    sourcePriceId: preliminary.sourcePrice.stripePriceId, sourceValidTo: preliminary.source.validTo, price });
+    sourcePriceId, sourceValidTo: preliminary.source.validTo, price });
   return editData((data) => {
     const calculation = upgradeCalculation(data, userId, subscriptionId);
     if (calculation.target.id !== preliminary.target.id || calculation.source.stripeSubscriptionId !== upgradeProration.subscriptionId || calculation.source.stripeCustomerId !== upgradeProration.customerId
-      || Math.floor(Date.parse(calculation.source.validTo) / 1000) !== upgradeProration.periodEnd) throw new PaymentError("quote_expired");
+      || Math.floor(Date.parse(calculation.source.validTo) / 1000) !== upgradeProration.periodEnd
+      || (calculation.sourcePrice ? calculation.sourcePrice.stripePriceId !== sourcePriceId
+        : calculation.sourceCheckoutOrder?.id !== checkout?.id || calculation.sourceCheckoutOrder?.stripeCheckoutSessionId !== checkout?.stripeCheckoutSessionId
+          || calculation.sourceCheckoutOrder?.amountMinor !== checkout?.amountMinor || calculation.sourceCheckoutOrder?.currency !== checkout?.currency)) throw new PaymentError("quote_expired");
     const createdAt = now();
     const quote: ProductQuote = {
       price, upgradeProration, planSnapshot: { ...calculation.target, amountMinor: price.amountMinor, currency: price.currency },

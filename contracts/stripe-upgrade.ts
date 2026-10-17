@@ -19,3 +19,9 @@ export type UpgradeQuoteDisplay = {
   id: string; amountMinor: number; currency: string; expiresAt: string;
   upgradeProration: StripeUpgradeProration;
 };
+
+// All identities come from the caller-owned, paid local Order/Subscription.
+export type LegacyStripeUpgradeSource = {
+  checkoutSessionId: string; orderId: string; userId: string; planId: string;
+  subscriptionId: string; customerId: string; amountMinor: number; currency: string;
+};
