@@ -41,16 +41,25 @@ export async function stripeOrderReceiptUrl(order: Pick<ProductOrder, "id" | "us
   return charge.paid ? charge.receipt_url : null;
 }
 
+// Both HTTPS hosts serve the DEV Portal (see dev-deploy.yml). Keep this
+// allowlist specific to that deployment, rather than trusting proxy headers
+// or treating arbitrary www/apex names as interchangeable.
+const devCheckoutOrigins = ["https://www.ilovelearningguide.com", "https://ilovelearningguide.com"];
+
 export function checkoutRequestOrigin(request: Request) {
   const configured = publicAppOrigin(request);
+  const supplied = request.headers.get("origin");
+  // Resolve public origins before loopback: a container's internal request URL
+  // may be localhost even when the browser is on the configured HTTPS site.
+  if (supplied === configured) return configured;
+  if (appEnvironment() === "DEV" && devCheckoutOrigins.includes(configured) && supplied && devCheckoutOrigins.includes(supplied)) return supplied;
   const target = new URL(request.url);
   // Local Next.js may run on another port or loopback alias. Only accept
   // the actual request origin; never trust forwarded hosts or arbitrary Origin.
   const local = appEnvironment() === "DEV" && target.protocol === "http:"
     && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname);
-  const origin = local ? target.origin : configured;
-  if (request.headers.get("origin") !== origin) throw new PaymentError("origin_mismatch", 403);
-  return origin;
+  if (local && supplied === target.origin) return target.origin;
+  throw new PaymentError("origin_mismatch", 403);
 }
 
 export async function startPayment(user: ProductUser, body: CheckoutRequest, request: Request, trial = false) {

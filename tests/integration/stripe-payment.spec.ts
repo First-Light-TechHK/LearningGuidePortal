@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { createRequire } from "node:module";
-import { build } from "esbuild";
+import { build, stop } from "esbuild";
 import { paymentFailure } from "../../services/paymentHttp";
 import { subscriptionPrices } from "../../contracts/payment";
 import * as productStore from "../../services/productStore";
@@ -101,6 +101,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  stop();
   process.chdir(cwd); process.env = environment;
   if (directory && path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true });
 });
@@ -315,6 +316,52 @@ async function upgradeSource(months: 6 | 12 = 6) {
   const source = (await store.getLearningOverview(result.buyer.id)).subscriptions[0];
   return { ...result, ...remote, source };
 }
+
+test("upgrade Continue API accepts both DEV website hosts behind a proxy without changing the billing period", async () => {
+  const state = { user: null as Awaited<ReturnType<typeof user>> | null, payment, paymentFailure };
+  (globalThis as any).stripeUpgradeCheckoutApi = state;
+  const configured = process.env.NEXT_PUBLIC_APP_URL;
+  try {
+    const bundle = await build({ entryPoints: [path.join(cwd, "app/api/purchase/checkout/route.ts")], bundle: true, write: false, platform: "node", format: "cjs", external: ["next/server"], plugins: [{ name: "checkout-session", setup(b) {
+      b.onResolve({ filter: /services\/(productAuth|paymentService|paymentHttp)$/ }, args => ({ path: args.path, namespace: "mock-checkout" }));
+      b.onLoad({ filter: /.*/, namespace: "mock-checkout" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeCheckoutApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeCheckoutApi.paymentFailure(...args)" : "export const startPayment=(...args)=>globalThis.stripeUpgradeCheckoutApi.payment.startPayment(...args)" }));
+    } }] });
+    const routeModule = { exports: {} as { POST: (request: Request) => Promise<Response> } };
+    new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), routeModule, routeModule.exports);
+    for (const [browserOrigin, serverOrigin] of [["https://ilovelearningguide.com", "https://www.ilovelearningguide.com"], ["https://www.ilovelearningguide.com", "https://ilovelearningguide.com"]]) {
+      process.env.NEXT_PUBLIC_APP_URL = configured;
+      const source = await upgradeSource();
+      const { quote } = await store.createUpgradeQuote(source.buyer.id, source.source.id);
+      state.user = source.buyer;
+      process.env.NEXT_PUBLIC_APP_URL = serverOrigin;
+      const invoke = (origin: string) => routeModule.exports.POST(new Request("http://localhost:8080/api/purchase/checkout", { method: "POST",
+        headers: { "content-type": "application/json", origin, "x-forwarded-host": new URL(origin).host, "x-forwarded-proto": "https" },
+        body: JSON.stringify({ quoteId: quote.id, consents: consent }) }));
+      const count = updates.length;
+      const rejected = await invoke("https://attacker.invalid");
+      expect(rejected.status).toBe(403);
+      expect(await rejected.json()).toMatchObject({ ok: false, code: "origin_mismatch" });
+      expect(updates).toHaveLength(count);
+      expect((await store.getLearningOverview(source.buyer.id)).orders).toHaveLength(1);
+      const response = await invoke(browserOrigin);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toMatchObject({ ok: true, order: { status: "paid", checkoutOrigin: browserOrigin, amountMinor: quote.amountMinor } });
+      expect(body.checkoutUrl).toMatch(/^\/en-GB\/account\/my-learning\/subscription\?orderId=/);
+      expect(updates).toHaveLength(count + 1);
+      expect(updates.at(-1)?.input.billing_cycle_anchor).toBe("unchanged");
+      expect(source.subscription.billing_cycle_anchor).toBe(source.start);
+      expect(source.subscription.items.data[0].current_period_end).toBe(source.end);
+      expect((await invoke(browserOrigin)).status).toBe(200);
+      expect(updates).toHaveLength(count + 1);
+      state.user = null;
+      expect((await invoke(browserOrigin)).status).toBe(401);
+    }
+  } finally {
+    process.env.NEXT_PUBLIC_APP_URL = configured;
+    delete (globalThis as any).stripeUpgradeCheckoutApi;
+  }
+});
 
 for (const months of [6, 12] as const) test(`Stripe previews and upgrades the original ${months}-month subscription without moving its period`, async () => {
   const result = await upgradeSource(months), checkoutCount = requests.length;
