@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { isDeepStrictEqual } from "node:util";
 import { PaymentError } from "@/contracts/payment";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { getStripe } from "./stripeClient";
@@ -66,7 +67,9 @@ export async function startStripeUpgradePayment(userId: string, quoted: NonNulla
     if (Date.parse(quoted.quote.expiresAt) <= Date.now()) throw new PaymentError("quote_expired");
     const preview = await previewStripeUpgrade({ subscriptionId: snapshot.subscriptionId, customerId: snapshot.customerId, sourcePriceId: snapshot.sourcePriceId,
       sourceValidTo: source.validTo, price, prorationDate: snapshot.prorationDate, verifiedLegacyCheckout: snapshot.sourceRecordedValidTo !== undefined });
-    if (JSON.stringify(preview) !== JSON.stringify(snapshot)) throw new PaymentError("quote_expired");
+    // Persisted Quotes are hydrated from PostgreSQL JSONB, which can reorder
+    // object keys. Compare every value strictly without depending on key order.
+    if (!isDeepStrictEqual(preview, snapshot)) throw new PaymentError("quote_expired");
   }
   const pending = await createPendingStripeUpgradeOrderFromQuote(userId, quoted.quote.id);
   const order = await prepareStripeCheckout(userId, pending.order.id, origin, locale);

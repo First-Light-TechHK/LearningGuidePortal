@@ -1,4 +1,5 @@
 import { loadEnvConfig } from "@next/env";
+import { isDeepStrictEqual } from "node:util";
 import { subscriptionPrices } from "../contracts/payment";
 import { getStripe } from "../services/stripeClient";
 import { resolveSubscriptionPrice } from "../services/stripePriceService";
@@ -28,11 +29,15 @@ async function main() {
   // Exercise legacy callback-time drift while keeping Stripe's actual bounds.
   const preview = await previewStripeUpgrade({ subscriptionId: source.id, customerId: stripeIdentity(source.customer)!, sourcePriceId,
     sourceValidTo: new Date((item.current_period_end + 4) * 1000).toISOString(), price, verifiedLegacyCheckout: true });
+  const persisted = Object.fromEntries(Object.entries(preview).sort(([a], [b]) => a.length - b.length || a.localeCompare(b)));
+  const repeated = await previewStripeUpgrade({ subscriptionId: source.id, customerId: stripeIdentity(source.customer)!, sourcePriceId,
+    sourceValidTo: new Date((item.current_period_end + 4) * 1000).toISOString(), price, verifiedLegacyCheckout: true, prorationDate: preview.prorationDate });
+  if (!isDeepStrictEqual(repeated, persisted)) throw new Error("Pinned Stripe re-preview differs from the persisted quote values.");
   const after = await stripe.subscriptions.retrieve(source.id);
   if (after.items.data[0].price.id !== item.price.id || after.items.data[0].current_period_end !== item.current_period_end || after.billing_cycle_anchor !== source.billing_cycle_anchor) throw new Error("Read-only preview unexpectedly changed the subscription.");
   console.log(JSON.stringify({ ok: true, sandbox: true, sourceCategory: mapping.scopeId, termMonths: mapping.termMonths, legacyAppMarkerAbsent: !meta.app,
     amountDueMinor: preview.amountDueMinor, currency: price.currency, debitMinor: preview.debitMinor, creditMinor: preview.creditMinor, adjustmentsMinor: preview.adjustmentsMinor,
-    originalPeriodRetained: true, charged: false }));
+    repreviewMatchesPersistedQuote: true, originalPeriodRetained: true, charged: false }));
   const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
   console.log(JSON.stringify({ webhookChecks: endpoints.data.filter(endpoint => new URL(endpoint.url).hostname.endsWith("ilovelearningguide.com")).map(endpoint => ({
     url: endpoint.url, status: endpoint.status, missingEvents: endpoint.enabled_events.includes("*") ? [] : ["invoice.paid", "invoice.payment_failed", "invoice.voided", "customer.subscription.updated", "customer.subscription.deleted"].filter(event => !endpoint.enabled_events.includes(event as typeof endpoint.enabled_events[number])),

@@ -13,6 +13,7 @@ import * as paymentService from "../../services/paymentService";
 import * as stripePriceService from "../../services/stripePriceService";
 import { getStripe } from "../../services/stripeClient";
 import { presentSubscriptionOrders } from "../../services/subscriptionPresentationService";
+import { hydrateOrmFromSql } from "../../services/ormRuntime";
 import * as paymentWebhook from "../../app/api/payment/webhook/route";
 
 test.describe.configure({ mode: "serial" });
@@ -317,6 +318,45 @@ async function upgradeSource(months: 6 | 12 = 6) {
   return { ...result, ...remote, source };
 }
 
+async function hydrateQuoteWithJsonbKeyOrder(quoteId: string) {
+  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
+  const data = JSON.parse(await readFile(file, "utf8"));
+  const original = data.quotes.find((quote: { id: string }) => quote.id === quoteId);
+  const payload = structuredClone(original);
+  // JSONB does not retain insertion order. Exercise the same ORM hydration
+  // used by the deployed store with the provider snapshot's keys reordered.
+  payload.upgradeProration = Object.fromEntries(Object.entries(payload.upgradeProration).sort(([a], [b]) => a.length - b.length || a.localeCompare(b)));
+  expect(payload.upgradeProration).toEqual(original.upgradeProration);
+  expect(JSON.stringify(payload.upgradeProration)).not.toBe(JSON.stringify(original.upgradeProration));
+  await hydrateOrmFromSql(data, { query: async sql => ({ rows: sql === "SELECT table_name, id, payload FROM orm_rows" ? [{ table_name: "quotes", id: quoteId, payload }] : [] }) });
+  await writeFile(file, JSON.stringify(data));
+}
+
+test("fresh upgrade quotes remain payable after JSONB field reordering while changed values remain rejected", async () => {
+  const source = await upgradeSource();
+  const { quote } = await store.createUpgradeQuote(source.buyer.id, source.source.id);
+  await hydrateQuoteWithJsonbKeyOrder(quote.id);
+  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
+  const persisted = JSON.parse(await readFile(file, "utf8"));
+  const count = updates.length;
+  for (const field of ["itemId", "periodStart", "periodEnd", "billingCycleAnchor", "debitMinor", "creditMinor", "adjustmentsMinor", "invoiceTotalMinor", "amountDueMinor"]) {
+    const changed = structuredClone(persisted);
+    const snapshot = changed.quotes.find((item: { id: string }) => item.id === quote.id).upgradeProration;
+    snapshot[field] = typeof snapshot[field] === "number" ? snapshot[field] + 1 : snapshot[field] + "_changed";
+    await writeFile(file, JSON.stringify(changed));
+    await expect(payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
+    expect(updates).toHaveLength(count);
+    expect((await store.getLearningOverview(source.buyer.id)).orders).toHaveLength(1);
+  }
+  await writeFile(file, JSON.stringify(persisted));
+  const result = await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request());
+  expect(result.order).toMatchObject({ status: "paid", amountMinor: quote.amountMinor });
+  expect((await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request())).order.id).toBe(result.order.id);
+  expect(updates).toHaveLength(count + 1);
+  expect(source.subscription.billing_cycle_anchor).toBe(source.start);
+  expect(source.subscription.items.data[0].current_period_end).toBe(source.end);
+});
+
 test("upgrade Continue API accepts both DEV website hosts behind a proxy without changing the billing period", async () => {
   const state = { user: null as Awaited<ReturnType<typeof user>> | null, payment, paymentFailure };
   (globalThis as any).stripeUpgradeCheckoutApi = state;
@@ -332,6 +372,7 @@ test("upgrade Continue API accepts both DEV website hosts behind a proxy without
       process.env.NEXT_PUBLIC_APP_URL = configured;
       const source = await upgradeSource();
       const { quote } = await store.createUpgradeQuote(source.buyer.id, source.source.id);
+      await hydrateQuoteWithJsonbKeyOrder(quote.id);
       state.user = source.buyer;
       process.env.NEXT_PUBLIC_APP_URL = serverOrigin;
       const invoke = (origin: string) => routeModule.exports.POST(new Request("http://localhost:8080/api/purchase/checkout", { method: "POST",
@@ -480,6 +521,7 @@ test("a legacy paid Stripe Category without a Price snapshot or app marker upgra
   const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
   expect(quote.upgradeProration).toMatchObject({ sourcePriceId: result.order.price!.stripePriceId, periodEnd: result.end, amountDueMinor: 3586 });
   expect(updates).toHaveLength(count);
+  await hydrateQuoteWithJsonbKeyOrder(quote.id);
   const afterQuote = JSON.parse(await readFile(file, "utf8"));
   expect(afterQuote.orders).toEqual(original.orders);
   expect(afterQuote.subscriptions).toEqual(original.subscriptions);
