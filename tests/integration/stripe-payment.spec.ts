@@ -416,11 +416,17 @@ test("a Category with historical renewal orders still previews against its verif
   expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).order.status).toBe("paid");
 });
 
-test("a legacy paid Stripe Category without any local Price snapshot upgrades using its verified original Checkout", async () => {
+test("a legacy paid Stripe Category without a Price snapshot or app marker upgrades using its verified original Checkout", async () => {
   const result = await upgradeSource();
+  delete result.session.metadata!.app;
+  delete result.subscription.metadata.app;
   const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
   const data = JSON.parse(await readFile(file, "utf8"));
   delete data.orders.find((item: { id: string }) => item.id === result.order.id).price;
+  // Legacy fulfilment used local callback time instead of Stripe period bounds.
+  const oldSource = data.subscriptions.find((item: { id: string }) => item.id === result.source.id);
+  oldSource.validFrom = new Date((result.start + 4) * 1000).toISOString();
+  oldSource.validTo = new Date((result.end + 4) * 1000).toISOString();
   await writeFile(file, JSON.stringify(data));
   const original = JSON.parse(await readFile(file, "utf8"));
   const count = updates.length;
@@ -430,8 +436,23 @@ test("a legacy paid Stripe Category without any local Price snapshot upgrades us
   const afterQuote = JSON.parse(await readFile(file, "utf8"));
   expect(afterQuote.orders).toEqual(original.orders);
   expect(afterQuote.subscriptions).toEqual(original.subscriptions);
-  expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).order.status).toBe("paid");
-  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.scope === "everything")?.validTo).toBe(result.source.validTo);
+  const changed = structuredClone(afterQuote);
+  changed.subscriptions.find((item: { id: string }) => item.id === result.source.id).validTo = new Date((result.end + 5) * 1000).toISOString();
+  await writeFile(file, JSON.stringify(changed));
+  await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
+  expect(updates).toHaveLength(count);
+  await writeFile(file, JSON.stringify(afterQuote));
+  let upgrade: Awaited<ReturnType<typeof payment.startPayment>>;
+  upgradePaymentPending = true;
+  try { upgrade = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); }
+  finally { upgradePaymentPending = false; }
+  const invoice = invoices.get(upgrade.order.stripeInvoiceId!)!;
+  invoice.status = "paid"; invoice.amount_paid = invoice.amount_due;
+  result.subscription.pending_update = null;
+  result.subscription.items.data[0].price = catalog.get("everything-pc-6")!;
+  expect((await send("invoice.paid", "evt_legacy_native_upgrade", invoice.id)).status).toBe(200);
+  expect((await send("invoice.paid", "evt_legacy_native_upgrade", invoice.id)).status).toBe(200);
+  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.scope === "everything")?.validTo).toBe(new Date(result.end * 1000).toISOString());
 });
 
 test("cancelled renewal during a pending upgrade is preserved after payment, with the original end date", async () => {
@@ -550,6 +571,8 @@ test("quote API returns Stripe's amount for the session owner and ignores client
     const file = path.join(directory, "data/knowledge_system/learning_guide/product.json"), data = JSON.parse(await readFile(file, "utf8"));
     delete data.orders.find((item: { id: string }) => item.id === result.order.id).price;
     await writeFile(file, JSON.stringify(data));
+    delete result.session.metadata!.app;
+    delete result.subscription.metadata.app;
     const legacy = await invoke();
     expect(legacy.status).toBe(200);
     expect((await legacy.json()).quote.upgradeProration).toMatchObject({ sourcePriceId: result.order.price!.stripePriceId, periodEnd: result.end, amountDueMinor: 3586 });

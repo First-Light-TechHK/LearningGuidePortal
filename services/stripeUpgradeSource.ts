@@ -14,7 +14,10 @@ export async function resolveLegacyUpgradeSourcePrice(input: LegacyStripeUpgrade
     if (session.id !== input.checkoutSessionId || session.mode !== "subscription" || session.status !== "complete" || session.payment_status !== "paid"
       || stripeIdentity(session.subscription) !== input.subscriptionId || stripeIdentity(session.customer) !== input.customerId
       || session.amount_total !== input.amountMinor || session.currency !== input.currency
-      || metadata?.app !== "learning_guide" || metadata.userId !== input.userId || metadata.planId !== input.planId || metadata.orderId !== input.orderId
+      // Before Price snapshots, our Checkout metadata had no app marker.
+      // The exact pinned Checkout and all ownership/payment checks still apply.
+      || !metadata || metadata.app !== undefined && metadata.app !== "learning_guide"
+      || metadata.userId !== input.userId || metadata.planId !== input.planId || metadata.orderId !== input.orderId
       || !lines || lines.has_more || lines.data.length !== 1 || lines.data[0].quantity !== 1 || !price?.id) {
       throw new PaymentError("payment_unavailable", 503, "upgrade_checkout_mismatch");
     }

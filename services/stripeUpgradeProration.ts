@@ -15,7 +15,7 @@ export function validateUpgradePeriod(subscription: Stripe.Subscription, snapsho
     || subscription.billing_cycle_anchor !== snapshot.billingCycleAnchor) throw new PaymentError("quote_expired");
 }
 
-export async function previewStripeUpgrade(input: { subscriptionId: string; customerId: string; sourcePriceId: string; sourceValidTo: string; price: StripePriceSnapshot; prorationDate?: number }) {
+export async function previewStripeUpgrade(input: { subscriptionId: string; customerId: string; sourcePriceId: string; sourceValidTo: string; price: StripePriceSnapshot; prorationDate?: number; verifiedLegacyCheckout?: boolean }) {
   try {
     const stripe = getStripe();
     const target = await stripe.prices.retrieve(input.price.stripePriceId);
@@ -29,7 +29,7 @@ export async function previewStripeUpgrade(input: { subscriptionId: string; cust
       || subscription.collection_method !== "charge_automatically" || subscription.items.data.length !== 1 || !item || item.quantity !== 1
       || item.price.id !== input.sourcePriceId || item.price.currency !== target.currency || item.price.recurring?.interval !== target.recurring?.interval
       || item.price.recurring?.interval_count !== target.recurring?.interval_count || latest?.status !== "paid"
-      || Math.floor(Date.parse(input.sourceValidTo) / 1000) !== item.current_period_end) throw new PaymentError("upgrade_unavailable");
+      || !input.verifiedLegacyCheckout && Math.floor(Date.parse(input.sourceValidTo) / 1000) !== item.current_period_end) throw new PaymentError("upgrade_unavailable");
     const prorationDate = input.prorationDate ?? Math.floor(Date.now() / 1000);
     if (prorationDate < item.current_period_start || prorationDate >= item.current_period_end) throw new PaymentError("quote_expired");
     const invoice = await stripe.invoices.createPreview({ customer: input.customerId, subscription: subscription.id,
@@ -42,6 +42,7 @@ export async function previewStripeUpgrade(input: { subscriptionId: string; cust
     const result: StripeUpgradeProration = { subscriptionId: subscription.id, customerId: input.customerId, itemId: item.id, sourcePriceId: item.price.id,
       prorationDate, periodStart: item.current_period_start, periodEnd: item.current_period_end, billingCycleAnchor: subscription.billing_cycle_anchor,
       debitMinor, creditMinor, adjustmentsMinor: invoice.amount_due - (debitMinor - creditMinor), invoiceTotalMinor: invoice.total, amountDueMinor: invoice.amount_due };
+    if (input.verifiedLegacyCheckout) result.sourceRecordedValidTo = input.sourceValidTo;
     return result;
   } catch (error) {
     if (error instanceof PaymentError) throw error;

@@ -1318,11 +1318,12 @@ export async function createUpgradeQuote(userId: string, subscriptionId: string)
   });
   const price = await resolveSubscriptionPrice(preliminary.target.id);
   const upgradeProration = await previewStripeUpgrade({ subscriptionId: preliminary.source.stripeSubscriptionId, customerId: preliminary.source.stripeCustomerId,
-    sourcePriceId, sourceValidTo: preliminary.source.validTo, price });
+    sourcePriceId, sourceValidTo: preliminary.source.validTo, price, verifiedLegacyCheckout: !preliminary.sourcePrice });
   return editData((data) => {
     const calculation = upgradeCalculation(data, userId, subscriptionId);
     if (calculation.target.id !== preliminary.target.id || calculation.source.stripeSubscriptionId !== upgradeProration.subscriptionId || calculation.source.stripeCustomerId !== upgradeProration.customerId
-      || Math.floor(Date.parse(calculation.source.validTo) / 1000) !== upgradeProration.periodEnd
+      || (upgradeProration.sourceRecordedValidTo !== undefined ? calculation.source.validTo !== upgradeProration.sourceRecordedValidTo
+        : Math.floor(Date.parse(calculation.source.validTo) / 1000) !== upgradeProration.periodEnd)
       || (calculation.sourcePrice ? calculation.sourcePrice.stripePriceId !== sourcePriceId
         : calculation.sourceCheckoutOrder?.id !== checkout?.id || calculation.sourceCheckoutOrder?.stripeCheckoutSessionId !== checkout?.stripeCheckoutSessionId
           || calculation.sourceCheckoutOrder?.amountMinor !== checkout?.amountMinor || calculation.sourceCheckoutOrder?.currency !== checkout?.currency)) throw new PaymentError("quote_expired");

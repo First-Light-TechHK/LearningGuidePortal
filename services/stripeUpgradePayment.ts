@@ -45,6 +45,7 @@ export async function reconcileStripeUpgradeInvoice(event: { id: string; type: s
 export async function startStripeUpgradePayment(userId: string, quoted: NonNullable<Awaited<ReturnType<typeof getQuoteForUser>>>, origin: string, locale: "en-GB" | "zh-CN") {
   const snapshot = quoted.quote.upgradeProration, price = quoted.quote.price, source = quoted.sourceSubscription;
   if (!snapshot || !price || !source || snapshot.subscriptionId !== source.stripeSubscriptionId || snapshot.customerId !== source.stripeCustomerId) throw new PaymentError("quote_expired");
+  if (snapshot.sourceRecordedValidTo !== undefined && snapshot.sourceRecordedValidTo !== source.validTo) throw new PaymentError("quote_expired");
   const stripe = getStripe();
   const returnUrl = (orderId: string) => `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(orderId)}`;
   if (quoted.upgradeOrder?.status === "paid") return { order: quoted.upgradeOrder, checkoutUrl: returnUrl(quoted.upgradeOrder.id) };
@@ -64,7 +65,7 @@ export async function startStripeUpgradePayment(userId: string, quoted: NonNulla
   if (!invoice) {
     if (Date.parse(quoted.quote.expiresAt) <= Date.now()) throw new PaymentError("quote_expired");
     const preview = await previewStripeUpgrade({ subscriptionId: snapshot.subscriptionId, customerId: snapshot.customerId, sourcePriceId: snapshot.sourcePriceId,
-      sourceValidTo: source.validTo, price, prorationDate: snapshot.prorationDate });
+      sourceValidTo: source.validTo, price, prorationDate: snapshot.prorationDate, verifiedLegacyCheckout: snapshot.sourceRecordedValidTo !== undefined });
     if (JSON.stringify(preview) !== JSON.stringify(snapshot)) throw new PaymentError("quote_expired");
   }
   const pending = await createPendingStripeUpgradeOrderFromQuote(userId, quoted.quote.id);

@@ -13,6 +13,9 @@ export type StripeUpgradeProration = {
   adjustmentsMinor: number;
   invoiceTotalMinor: number;
   amountDueMinor: number;
+  // Legacy app dates were based on callback time. Pin the unchanged local
+  // value for concurrency, while periodStart/End stay authoritative Stripe dates.
+  sourceRecordedValidTo?: string;
 };
 
 export type UpgradeQuoteDisplay = {

@@ -22,6 +22,9 @@ test("legacy upgrade Prices require the original paid Checkout, ownership, amoun
   }) as typeof stripe.checkout.sessions.retrieve;
   try {
     assert.equal(await resolveLegacyUpgradeSourcePrice(input), "price_original_archived");
+    session = structuredClone(baseline);
+    delete session.metadata.app;
+    assert.equal(await resolveLegacyUpgradeSourcePrice(input), "price_original_archived");
     session = { ...structuredClone(baseline), customer: { id: input.customerId }, subscription: { id: input.subscriptionId } };
     assert.equal(await resolveLegacyUpgradeSourcePrice(input), "price_original_archived");
     const invalid = [

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { stop } from "esbuild";
 import { isolate, setCookie, clearCookies, SESSION_COOKIE } from "./harness";
 import { readProductData, writeProductData, verifiedUser } from "../unit/helpers/my-learning";
 import { canViewSubscriptionReceipt } from "../../contracts/subscription-records";
@@ -37,7 +38,7 @@ test("paid upgrade receipts use Stripe Charge receipts with ownership/status gat
     assert.equal(calls,callsBefore,"denied orders must never request Stripe receipts");
     assert.equal(canViewSubscriptionReceipt({...order,kind:"trial_activation"}),false);
     assert.equal(canViewSubscriptionReceipt({...order,stripePaymentIntentId:null}),false);
-  }finally{if(previousSecret===undefined)delete process.env.STRIPE_SECRET_KEY;else process.env.STRIPE_SECRET_KEY=previousSecret;await restore();}
+  }finally{if(previousSecret===undefined)delete process.env.STRIPE_SECRET_KEY;else process.env.STRIPE_SECRET_KEY=previousSecret;await stop();await restore();}
 });
 
 test("legacy subscription receipts resolve the original paid Checkout invoice without rewriting local orders", async () => {
@@ -73,5 +74,5 @@ test("legacy subscription receipts resolve the original paid Checkout invoice wi
     stripe.checkout.sessions.retrieve = (async () => { throw new Error("unavailable"); }) as typeof stripe.checkout.sessions.retrieve;
     assert.equal((await request()).status, 503);
     assert.deepEqual((await readProductData()).orders.find((item: any) => item.id === order.id), order);
-  } finally { await restore(); }
+  } finally { await stop(); await restore(); }
 });
