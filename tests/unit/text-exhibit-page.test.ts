@@ -26,8 +26,8 @@ test("text lesson interleaves three resource types and opens shared working exhi
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),viewProps);
     await bars.nth(2).waitFor();
     const scroller=page.locator('[tabindex="0"]').filter({has:bars});
-    const next=page.getByRole('link',{name:locale==='en-GB'?'Next lesson \u2192':'\u4e0b\u4e00\u8bfe\u65f6 \u2192',exact:true});
-    assert.equal(await next.getAttribute('href'),viewProps.nextHref);
+    const next=page.getByRole('button',{name:locale==='en-GB'?'Next lesson \u2192':'\u4e0b\u4e00\u8bfe\u65f6 \u2192',exact:true});
+    assert.equal(await next.count(),1);await next.click();assert.equal(await page.evaluate(()=>(window as unknown as {destination?:string}).destination),viewProps.nextHref);
     const geometry=await scroller.evaluate(element=>({height:element.getBoundingClientRect().height,client:element.clientHeight,scroll:element.scrollHeight,overflow:getComputedStyle(element).overflowY,bottom:element.getBoundingClientRect().bottom}));
     assert.equal(geometry.height,704);assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
     assert.ok((await next.boundingBox())!.y>=geometry.bottom,'next lesson remains outside the scroll area');

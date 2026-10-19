@@ -302,6 +302,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-design-main { width:min(1184px,calc(100% - 80px)); margin:0 auto; padding:48px 0 80px; }
 .pricing-title-row { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:32px; }
 .pricing-title-row h1 { margin:0; color:#15233a; font-size:28px; font-weight:600; line-height:36px; }
+.pricing-term-year-label { position:relative; display:inline-block; white-space:nowrap; transform:translateY(6px); }
 .pricing-term-switch { display:flex; gap:4px; padding:4px; border:1px solid #e5e7eb; border-radius:22px; background:#fff; flex:none; }
 .pricing-term-switch button { padding:8px 20px; border:0; border-radius:18px; font-size:13px; line-height:18px; font-weight:600; background:transparent; color:#155dfc; cursor:pointer; }
 .pricing-term-switch button[aria-pressed=true] { background:#155dfc; color:#fff; }

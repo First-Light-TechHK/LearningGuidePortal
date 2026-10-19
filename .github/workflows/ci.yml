@@ -74,10 +74,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright Chromium and Edge
-        run: |
-          npx playwright install --with-deps chromium
-          npx playwright install msedge
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Build
         run: npm run build
