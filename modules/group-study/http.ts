@@ -8,6 +8,7 @@ const statusFor: Record<string, number> = {
   start_in_past: 400,
   course_access_required: 403,
   forbidden: 403,
+  session_time_only: 403,
   not_found: 404,
   conflict: 409,
   session_full: 409,

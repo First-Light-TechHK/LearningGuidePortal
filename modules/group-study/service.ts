@@ -834,14 +834,17 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (!current || current.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can edit a Live Session.");
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Edit Session is available only before the Session starts.");
-        if (input.maxParticipants !== undefined && input.maxParticipants < occupancy(store, current.id)) throw new StudyGroupError("conflict", "Maximum Participants is below the number already in the session.");
-        if (input.title !== undefined) current.title = requireText(input.title, "Session Title", 50);
-        if (input.relatedLessonId !== undefined) current.relatedLessonId = clean(input.relatedLessonId || "") || null;
+        // An upcoming Session keeps everything people planned around; only its
+        // Start Time can move (BUG-0157). Resending an unchanged value is fine.
+        const changesOtherThanTime =
+          (input.title !== undefined && requireText(input.title, "Session Title", 50) !== current.title) ||
+          (input.relatedLessonId !== undefined && (clean(input.relatedLessonId || "") || null) !== (current.relatedLessonId || null)) ||
+          (input.durationSeconds !== undefined && input.durationSeconds !== current.durationSeconds) ||
+          (input.maxParticipants !== undefined && input.maxParticipants !== current.maxParticipants) ||
+          (focus !== undefined && focus !== (current.focus || null)) ||
+          (input.aiTutorEnabled !== undefined && input.aiTutorEnabled !== current.aiTutorEnabled);
+        if (changesOtherThanTime) throw new StudyGroupError("session_time_only", "Only the Start Time of an upcoming Live Session can be changed.");
         if (input.startsAt !== undefined) current.startsAt = new Date(input.startsAt).toISOString();
-        if (input.durationSeconds !== undefined) current.durationSeconds = input.durationSeconds;
-        if (input.maxParticipants !== undefined) current.maxParticipants = input.maxParticipants;
-        if (focus !== undefined) current.focus = focus;
-        if (input.aiTutorEnabled !== undefined) current.aiTutorEnabled = input.aiTutorEnabled;
         current.updatedAt = now;
         return current;
       });

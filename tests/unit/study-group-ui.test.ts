@@ -81,7 +81,7 @@ test("session title counter matches the 50 character limit (owner ruling 2026-10
   assert.equal(sessionTitleCount("x".repeat(50)), "50/50");
   assert.equal(sessionTitleCount("x".repeat(51)), "50/50");
   // The dialog input follows the constant for both its maxLength and its slice.
-  assert.match(app, /<input name="title" required maxLength=\{SESSION_TITLE_MAX\} value=\{sessionTitle\} onChange=\{\(event\) => setSessionTitle\(event\.target\.value\.slice\(0, SESSION_TITLE_MAX\)\)\} \/><span className=\{styles\.counter\}>\{sessionTitleCount\(sessionTitle\)\}<\/span>/);
+  assert.match(app, /<input name="title" required disabled=\{timeOnly\} maxLength=\{SESSION_TITLE_MAX\} value=\{sessionTitle\} onChange=\{\(event\) => setSessionTitle\(event\.target\.value\.slice\(0, SESSION_TITLE_MAX\)\)\} \/><span className=\{styles\.counter\}>\{sessionTitleCount\(sessionTitle\)\}<\/span>/);
 });
 
 test("study group pane shows empty, error, and a selected group without inventing sessions for a visitor", () => {
