@@ -1,7 +1,8 @@
 import { processLegacyStripeEvent } from "./stripeLegacyWebhookService";
 import type Stripe from "stripe";
-import { applyVerifiedStripeEvent, stripeOrderContext, isLegacyStripeSubscription, isSnapshotStripeCheckout } from "./productStore";
+import { applyVerifiedStripeEvent, stripeOrderContext, assertStripeUpgradeAllowed, isLegacyStripeSubscription, isSnapshotStripeCheckout } from "./productStore";
 import { getStripe } from "./stripeClient";
+import { reconcileStripeUpgradeInvoice } from "./stripeUpgradePayment";
 
 const identifier = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id;
 const iso = (value: number | null | undefined) => value ? new Date(value * 1000).toISOString() : undefined;
@@ -27,6 +28,7 @@ async function checkoutEvent(event: { id: string; type: string }, sessionId: str
   if (upgrade) {
     if (order.upgradePrice && (lines.data[0].price?.id !== order.upgradePrice.stripePriceId || order.amountMinor !== order.upgradePrice.amountMinor)) throw new Error("Upgrade price mismatch.");
     if (session.mode !== "payment" || session.payment_status !== "paid" || !context.source?.stripeSubscriptionId) throw new Error("Invalid upgrade payment.");
+    await assertStripeUpgradeAllowed(order.id);
     subscription = await stripe.subscriptions.retrieve(context.source.stripeSubscriptionId);
     if (identifier(subscription.customer) !== context.source.stripeCustomerId || subscription.items.data.length !== 1) throw new Error("Upgrade subscription mismatch.");
     // Keep the existing renewal anchor; Checkout collects only the price difference.
@@ -66,7 +68,7 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   const object = event.data.object as unknown as { metadata?: Record<string, string> };
   if (event.type.startsWith("checkout.session.") && object.metadata?.app !== "learning_guide" && !await isSnapshotStripeCheckout((event.data.object as Stripe.Checkout.Session).id)) return processLegacyStripeEvent(event);
   if (["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type)) return checkoutEvent(event, (event.data.object as Stripe.Checkout.Session).id);
-  if (["invoice.paid", "invoice.payment_failed"].includes(event.type)) {
+  if (["invoice.paid", "invoice.payment_failed", "invoice.voided"].includes(event.type)) {
     const incoming = event.data.object as Stripe.Invoice;
     const incomingSubscription = identifier(incoming.parent?.subscription_details?.subscription) || identifier((incoming as unknown as { subscription?: string }).subscription);
     if (incomingSubscription && await isLegacyStripeSubscription(incomingSubscription)) return processLegacyStripeEvent(event);
@@ -77,6 +79,9 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
       if (event.type === "invoice.payment_failed") return { ignored: true };
       throw new Error("Invoice is not available yet.");
     }
+    const upgraded = await reconcileStripeUpgradeInvoice(event, invoice);
+    if (upgraded) return upgraded;
+    if (event.type === "invoice.voided") return { ignored: true };
     const legacy = invoice as unknown as { subscription?: string | { id: string }; payment_intent?: string | { id: string } };
     const subscriptionId = identifier(invoice.parent?.subscription_details?.subscription) || identifier(legacy.subscription);
     if (!subscriptionId) return { ignored: true };

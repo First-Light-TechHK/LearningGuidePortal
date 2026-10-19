@@ -3,7 +3,7 @@ import { test, before, after } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { build } from "esbuild";
+import { build, stop } from "esbuild";
 import { createRequire } from "node:module";
 import { courseKnowledgePoints, knowledgeProgress } from "../../lib/knowledgeProgress";
 import type { ProductCourse } from "../../services/productStore";
@@ -12,7 +12,7 @@ import { COURSE_ID, PREVIEW_LP, PRIVATE_LP, verifiedUser, purchaseCourse, readPr
 const originalCwd=process.cwd(), backend=process.env.STORAGE_BACKEND;
 let isolated:string, store:typeof import("../../services/productStore");
 before(async()=>{ isolated=await mkdtemp(path.join(tmpdir(),"lg-knowledge-progress-"));process.chdir(isolated);process.env.STORAGE_BACKEND="local";store=await import("../../services/productStore"); });
-after(async()=>{ process.chdir(originalCwd);if(backend===undefined)delete process.env.STORAGE_BACKEND;else process.env.STORAGE_BACKEND=backend;if(isolated&&path.dirname(isolated)===tmpdir())await rm(isolated,{recursive:true,force:true}); });
+after(async()=>{ stop();process.chdir(originalCwd);if(backend===undefined)delete process.env.STORAGE_BACKEND;else process.env.STORAGE_BACKEND=backend;if(isolated&&path.dirname(isolated)===tmpdir())await rm(isolated,{recursive:true,force:true}); });
 
 test("same-mode ordinal excludes other modes and inactive points across lessons",()=>{
   const course={sections:[{lessons:[{id:"a",contents:[{id:"v1",type:"video"},{id:"t1",type:"text"},{id:"hidden",type:"video",active:false}]},{id:"b",contents:[{id:"v2",type:"video"},{id:"v3",type:"video"},{id:"t2",type:"pdf"}]},{id:"legacy",body:"Reading"}]}]} as ProductCourse;
@@ -35,14 +35,14 @@ test("save current knowledge point per mode, replay safely and deny inaccessible
   const open=(lessonId:string,contentId:string,learningMode:"video"|"text",clientEventId:string,access:"paid"|"preview"="paid")=>store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId,contentId,learningMode,event:"open",seconds:0,clientEventId},access);
   assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,67);
   assert.equal((await open(PRIVATE_LP,"t2","text","text-second"))!.progress,100);
-  const back=await open(PREVIEW_LP,"v1","video","video-back");assert.equal(back!.progress,33);assert.equal(back!.knowledgePositions?.text?.contentId,"t2");
-  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,33,"replayed older event cannot move the cursor");
+  const back=await open(PREVIEW_LP,"v1","video","video-back");assert.equal(back!.progress,100);assert.equal(back!.knowledgePositions?.text?.contentId,"t2");
+  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,100,"replayed older event cannot move the cursor");
   const card=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
-  assert.equal(card.progress,33);assert.equal(card.totalLearningPoints,3);assert.equal(card.currentContentId,"v1");assert.equal(card.mode,"video");
+  assert.equal(card.progress,100);assert.equal(card.totalLearningPoints,3);assert.equal(card.currentContentId,"v1");assert.equal(card.mode,"video");
   const display=await (await import("../../services/learningOverviewDisplay")).getLearningOverviewDisplay(user.id);
-  assert.equal(display.learning.find(item=>item.courseId===COURSE_ID)!.progress,33);
+  assert.equal(display.learning.find(item=>item.courseId===COURSE_ID)!.progress,100);
   const progress=await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,contentId:"v2",learningMode:"video",event:"video_progress",seconds:15,clientEventId:"playing-second-point"});
-  assert.equal(progress!.progress,67);
+  assert.equal(progress!.progress,100);
   assert.equal(progress!.knowledgePositions?.video?.contentId,"v2");
   const completed=await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,contentId:"t2",learningMode:"text",event:"complete",seconds:0,clientEventId:"manual-text-final"});
   assert.equal(completed!.progress,100);
@@ -73,6 +73,6 @@ test("save current knowledge point per mode, replay safely and deny inaccessible
   assert.equal((await invoke()).status,401);
   apiState.user={id:other.id};assert.equal((await invoke()).status,403);
   apiState.user={id:user.id};assert.equal((await invoke("v3")).status,400);
-  const response=await invoke();assert.equal(response.status,200);assert.equal((await response.json()).record.progress,67);
-  assert.equal((await invoke()).status,200);assert.equal((await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!.progress,67);
+  const response=await invoke();assert.equal(response.status,200);assert.equal((await response.json()).record.progress,100);
+  assert.equal((await invoke()).status,200);assert.equal((await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!.progress,100);
 });

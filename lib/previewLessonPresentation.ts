@@ -1,7 +1,7 @@
 import type { ProductCourse } from "@/services/productStore";
 import type { CourseLearningMode } from "@/contracts/course-learning-mode";
 
-export function lessonLearningModes(lesson: ProductCourse["sections"][number]["lessons"][number]): CourseLearningMode[] {
+export function lessonLearningModes(lesson: Pick<ProductCourse["sections"][number]["lessons"][number], "contents" | "body">): CourseLearningMode[] {
   const active = (lesson.contents || []).filter(content => content.active !== false);
   const modes: CourseLearningMode[] = [];
   if (active.some(content => content.type === "video")) modes.push("video");

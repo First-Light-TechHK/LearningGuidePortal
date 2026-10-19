@@ -16,7 +16,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     const page = await context.newPage();
     const errors = []; page.on("pageerror", error => errors.push(error.message));
     for (const locale of ["en-GB", "zh-CN"]) {
-      const destination = `/${locale}/pricing?planId=european-humanities-pc-6`;
+      const destination = `/${locale}/subscription?planId=european-humanities-pc-6`;
       await page.goto(`${base}/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`, { waitUntil: "networkidle" });
       await page.locator('input[type="email"]').fill(email);
       await page.locator(".auth-entry-form > button").click();

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AvatarCropper } from './AvatarCropper';
+import { isNameTooLong, isValidName, normaliseName, normalisePastedName } from "@/lib/nameValidation";
 
 type Copy = {
   avatar: string; uploadAvatar: string; removeAvatar: string; nickname: string; email: string; language: string; english: string; chinese: string;
@@ -18,6 +19,7 @@ const interestOptions = ["Humanities", "Science", "History", "Philosophy", "Math
 
 export function SettingsForm({ countries, uiLocale, initialNickname, initialEmail, initialLocale, initialCountry, initialAgeRange, initialEducation, initialAreasOfInterest, hasAvatar, copy }: { countries: string[]; uiLocale: "en-GB" | "zh-CN"; initialNickname: string; initialEmail: string; initialLocale: "en-GB" | "zh-CN"; initialCountry?: string | null; initialAgeRange?: string | null; initialEducation?: string | null; initialAreasOfInterest?: string[]; hasAvatar: boolean; copy: Copy }) {
   const design = getMessages(uiLocale).settingsDesign;
+  const nameCopy = getMessages(uiLocale).auth;
   const [nickname, setNickname] = useState(initialNickname);
   const [locale, setLocale] = useState(initialLocale);
   const [country, setCountry] = useState(initialCountry || "");
@@ -73,16 +75,17 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setMessage(""); setError("");
+    if (!isValidName(nickname)) { setError(isNameTooLong(nickname) ? nameCopy.nameTooLong : nameCopy.nameInvalid); return; }
     if (newPassword !== confirmPassword) { setError(design.passwordMismatch); return; }
     if (!country) { setError(design.countryRequired); return; }
     setBusy(true);
     try {
-      const response = await fetch("/api/me/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname, locale, country, ageRange, education, areasOfInterest, currentPassword, newPassword }) });
-      const data = await response.json() as { ok?: boolean; error?: string };
-      if (!response.ok || !data.ok) throw new Error(data.error || design.saveError);
+      const response = await fetch("/api/me/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname: normaliseName(nickname), locale, country, ageRange, education, areasOfInterest, currentPassword, newPassword }) });
+      const data = await response.json() as { ok?: boolean; code?: string };
+      if (!response.ok || !data.ok) throw new Error(data.code === "CURRENT_PASSWORD_INCORRECT" ? design.currentPasswordIncorrect : data.code === "NEW_PASSWORD_TOO_SHORT" ? design.newPasswordTooShort : design.saveError);
       setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setMessage(copy.saved);
       if (locale !== initialLocale) window.location.assign(`/${locale}/account/my-learning/settings`);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : design.saveError); }
+    } catch (requestError) { setError(requestError instanceof Error && [design.currentPasswordIncorrect, design.newPasswordTooShort, design.saveError].includes(requestError.message) ? requestError.message : design.saveError); }
     finally { setBusy(false); }
   }
 
@@ -98,7 +101,13 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
           <div><div className="backoffice-row-actions"><label className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p className="settings-hint">{design.avatarRules}</p></div>
         </div>
         <div className="settings-profile-fields">
-          <label>{copy.nickname}<input value={nickname} onChange={(event) => setNickname(event.target.value)} minLength={2} maxLength={30} pattern="[A-Za-z0-9 ]{2,30}" required /></label>
+          <label>{copy.nickname}<input value={nickname} autoComplete="name" onChange={event => { event.currentTarget.setCustomValidity(""); setNickname(event.target.value); }} onInvalid={event => event.currentTarget.setCustomValidity(nameCopy.nameInvalid)} onPaste={event => {
+            const pasted = normalisePastedName(event.clipboardData.getData("text"));
+            event.preventDefault();
+            const input = event.currentTarget;
+            input.setCustomValidity("");
+            setNickname(input.value.slice(0, input.selectionStart ?? 0) + pasted + input.value.slice(input.selectionEnd ?? input.value.length));
+          }} required /></label>
           <label>{copy.email}<input value={initialEmail} readOnly disabled /></label>
         </div>
       </div>

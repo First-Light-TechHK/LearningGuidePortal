@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
 import Link from "next/link";
 import Image from "next/image";
-import { X } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
-
 import type { SubscriptionRecordSubscription as Subscription, SubscriptionRecordOrder as Order } from "@/contracts/subscription-records";
-import { subscriptionListRecords, subscriptionPaymentType } from "@/services/subscriptionRecords";
+import type { SubscriptionCancelReason } from "@/contracts/subscription-management";
+import { canViewSubscriptionReceipt } from "@/contracts/subscription-records";
+import { subscriptionListRecords } from "@/services/subscriptionRecords";
 import { localSubscriptionProductImage } from "@/lib/subscriptionProductImages";
+import { subscriptionCategoryLabel } from "@/lib/subscriptionCategoryLabel";
 import styles from "./subscription-records.module.css";
 
 type Copy = {
@@ -18,107 +18,129 @@ type Copy = {
   cancelTitle: string; cancelDescription: string; cancelReason: string; reasonLowUsage: string; reasonTooExpensive: string; reasonContent: string; reasonWebsite: string; reasonOther: string; reasonOtherPlaceholder: string; characters: string; confirmCancel: string; close: string; updatePaymentMethod: string; payNow: string; plan: string; validPeriod: string; upgrade: string;
 };
 
-type Reason = "low_usage" | "too_expensive" | "content" | "website" | "other";
-
 export function SubscriptionManager({ initialSubscriptions, initialOrders, locale, copy }: { initialSubscriptions: Subscription[]; initialOrders: Order[]; locale: "en-GB" | "zh-CN"; copy: Copy }) {
   const [subscriptions, setSubscriptions] = useState(initialSubscriptions);
   useEffect(() => { setSubscriptions(initialSubscriptions); }, [initialSubscriptions]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [pastOpen, setPastOpen] = useState(false);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const actionInFlight = useRef(false);
   const [cancelTarget, setCancelTarget] = useState<Subscription | null>(null);
-  const [reason, setReason] = useState<Reason | undefined>();
+  const [reason, setReason] = useState<SubscriptionCancelReason>();
   const [reasonText, setReasonText] = useState("");
   const cancelDialog = useRef<HTMLDialogElement>(null);
-  const design = getMessages(locale).cancelDesign;
-  const view = getMessages(locale).subscriptionDesign;
+  const messages = getMessages(locale), design = messages.cancelDesign, view = messages.subscriptionDesign;
   const records = subscriptionListRecords(subscriptions, initialOrders);
-  const [pastOpen,setPastOpen]=useState(false);
+  const current = records.filter(record => !record.past), past = records.filter(record => record.past);
+  const livePaid = current.flatMap(record => record.subscription?.source === "purchase" ? [record.subscription] : []);
+  const allowCategoryUpgrade = !livePaid.some(item => (item.scope || item.plan?.scope) === "everything") && new Set(livePaid.filter(item => (item.scope || item.plan?.scope) === "category").map(item => item.scopeId || item.plan?.scopeId || item.plan?.category).filter(Boolean)).size === 1;
+  const date = (value: string) => new Date(value).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const nameOf = (subscription: Subscription | null, order?: Order) => {
+    const scope = subscription?.scope || subscription?.plan?.scope;
+    const name = subscription?.scopeId || subscription?.plan?.scopeId || subscription?.plan?.category || order?.presentation?.name || subscription?.plan?.name || copy.plan;
+    return scope === "everything" ? messages.pricingDesign.everything : scope === "category" ? `${messages.pricingDesign.category} – ${name}` : order?.presentation?.name || subscription?.plan?.name || copy.plan;
+  };
+  const requireSignIn = (response: Response) => {
+    if (response.status !== 401) return false;
+    window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/account/my-learning/subscription`)}`);
+    return true;
+  };
   useEffect(() => {
     const element = cancelDialog.current;
     if (!cancelTarget || !element) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const overflow = document.body.style.overflow;
-    element.showModal();
-    document.body.style.overflow = "hidden";
-    return () => { element.close(); document.body.style.overflow = overflow; previousFocus?.focus(); };
+    element.showModal(); document.body.style.overflow = "hidden";
+    return () => { element.close(); document.body.style.overflow = overflow; if (previousFocus?.isConnected) previousFocus.focus(); };
   }, [cancelTarget]);
 
-  async function updateSubscription(subscription: Subscription, action: "cancel", reasonCode?: Reason, reasonText?: string) {
-    setBusyId(subscription.id); setError("");
+  async function confirmCancel() {
+    if (!cancelTarget || actionInFlight.current) return;
+    actionInFlight.current = true; setBusyId(cancelTarget.id); setError("");
     try {
-      const response = await fetch("/api/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscriptionId: subscription.id, action, reasonCode, reasonText }) });
-      const data = await response.json() as { subscription?: Subscription; error?: string };
-      if (!response.ok || !data.subscription) throw new Error(data.error || view.updateFailed);
-      setSubscriptions((current) => current.map((item) => item.id === data.subscription?.id ? { ...item, ...data.subscription } : item));
-      return true;
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : view.updateFailed); return false; }
-    finally { setBusyId(""); }
+      const response = await fetch("/api/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscriptionId: cancelTarget.id, action: "cancel", reasonCode: reason, reasonText: reason === "other" ? reasonText : undefined }) });
+      if (requireSignIn(response)) return;
+      const data = await response.json() as { subscription?: Subscription; error?: string; code?: keyof typeof messages.subscriptionErrors };
+      if (!response.ok || !data.subscription) throw new Error(data.code && messages.subscriptionErrors[data.code] || data.error || view.updateFailed);
+      if (data.subscription.id !== cancelTarget.id) { window.location.reload(); return; }
+      setSubscriptions(items => items.map(item => item.id === data.subscription!.id ? { ...item, ...data.subscription } : item));
+      setCancelTarget(null); setReason(undefined); setReasonText("");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : view.updateFailed); }
+    finally { actionInFlight.current = false; setBusyId(""); }
   }
 
-  async function confirmCancel(skipReason = false) {
-    if (!cancelTarget) return;
-    setBusyId(cancelTarget.id); setError("");
-    const updated = await updateSubscription(cancelTarget, "cancel", skipReason ? undefined : reason, skipReason || reason !== "other" ? undefined : reasonText);
-    if (updated) { setCancelTarget(null); setReasonText(""); }
-    setBusyId("");
-  }
-
-  async function manage(subscriptionId?: string, action: "manage" | "pay" = "manage") {
-    setError("");
+  async function pay(subscriptionId: string) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true; setBusyId(subscriptionId); setError("");
     try {
-      const response = await fetch("/api/subscription/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale, subscriptionId, action }) });
+      const response = await fetch("/api/subscription/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale, subscriptionId, action: "pay" }) });
+      if (requireSignIn(response)) return;
       const data = await response.json() as { url?: string; error?: string };
       if (!response.ok || !data.url) throw new Error(data.error || view.billingFailed);
       window.location.assign(data.url);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : view.billingFailed); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : view.billingFailed); }
+    finally { actionInFlight.current = false; setBusyId(""); }
   }
 
-  function orderStatusLabel(order: Order) {
-    if (order.kind === "trial_activation") return copy.trialActivation;
-    if (order.status === "paid") return copy.paid;
-    if (order.status === "pending") return copy.pending;
-    if (order.status === "failed") return copy.failed;
-    if (order.status === "canceled") return copy.canceledPayment;
-    return copy.refunded;
+  async function resume(subscription: Subscription) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true; setBusyId(subscription.id); setError("");
+    try {
+      const response = await fetch("/api/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscriptionId: subscription.id, action: "resume" }) });
+      if (requireSignIn(response)) return;
+      const data = await response.json() as { subscription?: Subscription; error?: string; code?: keyof typeof messages.subscriptionErrors };
+      if (!response.ok || !data.subscription) throw new Error(data.code && messages.subscriptionErrors[data.code] || data.error || view.updateFailed);
+      setSubscriptions(items => items.map(item => item.id === data.subscription!.id ? { ...item, ...data.subscription } : item));
+    } catch (failure) { setError(failure instanceof Error ? failure.message : view.updateFailed); }
+    finally { actionInFlight.current = false; setBusyId(""); }
   }
 
-  const reasonOptions: Array<[Reason, string]> = [["low_usage", copy.reasonLowUsage], ["too_expensive", copy.reasonTooExpensive], ["content", copy.reasonContent], ["website", copy.reasonWebsite], ["other", copy.reasonOther]];
+  const paymentStatus = (order: Order) => order.kind === "trial_activation" && order.status === "paid" ? copy.trialActivation : order.status === "paid" ? copy.paid : order.status === "pending" ? copy.pending : order.status === "failed" ? view.failed : order.status === "canceled" ? copy.canceledPayment : copy.refunded;
+  const reasons: Array<[SubscriptionCancelReason, string]> = [["low_usage", design.lowUsage], ["too_expensive", design.tooExpensive], ["content", design.content], ["website", design.website], ["other", copy.reasonOther]];
+
+  const card = (record: typeof records[number]) => {
+    const subscription = record.subscription, state = record.displayState;
+    const order = record.orders.find(item => item.status === "paid") || record.orders[0];
+    const name = nameOf(subscription, order);
+    const fallbackImage = localSubscriptionProductImage(subscription?.plan);
+    const image = order?.presentation?.image && order.presentation.image !== fallbackImage && !["/portal/subscriptions/everything.png", "/portal/subscriptions/science.png", "/portal/subscriptions/chinese_human.png", "/portal/subscriptions/european_human.png"].includes(order.presentation.image) ? order.presentation.image : null;
+    const coverLabel = (subscription?.scope === "everything" || subscription?.plan?.scope === "everything" ? "Everything" : subscription?.scopeId || subscription?.plan?.scopeId || subscription?.plan?.category || order?.presentation?.name || subscription?.plan?.name || copy.plan).toUpperCase();
+    const colour = /CHINESE/.test(coverLabel) ? "chinese" : /EUROPEAN/.test(coverLabel) ? "european" : /SCIENCE/.test(coverLabel) ? "science" : /EVERYTHING/.test(coverLabel) ? "everything" : "other";
+    const until = state === "grace" ? subscription?.graceEndsAt || subscription?.validTo : subscription?.validTo || order?.servicePeriodEnd;
+    const status = state === "active" ? subscription?.source === "trial" ? copy.trial : view.active : state === "cancel_at_period_end" ? view.renewalCanceled : state === "grace" ? view.paymentFailed : state === "trial_canceled" ? copy.canceled : state === "expired" ? view.expired : view.statusUnavailable;
+    const pendingUpgrade = record.orders.find(item => item.kind === "upgrade" && item.status === "pending" && item.upgradeProration && item.quoteId);
+    return <article className={styles.card} key={record.id} data-subscription-id={record.id} data-past={record.past}>
+      <div className={styles.summary}>
+        <div className={styles.product}><h2>{name}</h2>{image ? <Image className={styles.cover} src={image} alt={name} width={120} height={120} unoptimized/> : <div className={styles.coverArtwork} data-colour={colour} aria-hidden="true"><span>{coverLabel}</span><small>Learning Guide</small></div>}</div>
+        <div className={styles.state} data-state={state}><strong aria-live="polite">{status}</strong><div className={styles.actions}>
+          {subscription && state === "active" ? <button type="button" disabled={Boolean(busyId)} onClick={() => { setReason(undefined); setReasonText(""); setError(""); setCancelTarget(subscription); }}>{subscription.source === "trial" ? copy.cancel : view.cancelRenewal}</button> : null}
+          {subscription && state === "grace" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void pay(subscription.id)}>{copy.payNow} →</button> : null}
+          {subscription && state === "cancel_at_period_end" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void resume(subscription)}>{view.turnOnRenewal} →</button> : null}
+          {pendingUpgrade ? <Link href={`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(pendingUpgrade.quoteId!)}`}>{copy.payNow}</Link> : subscription && allowCategoryUpgrade && state === "active" && subscription.scope === "category" && subscription.device !== "mobile" && subscription.stripeSubscriptionId ? <Link href={`/${locale}/subscription?upgradeFrom=${encodeURIComponent(subscription.id)}`}>{copy.upgrade}</Link> : null}
+        </div></div>
+        <div className={styles.time} data-state={state}><strong>{state === "grace" ? view.gracePeriod : record.past ? state === "unavailable" ? copy.validPeriod : view.expiredOn : copy.validUntil}</strong><span>{until ? date(until) : view.periodUnavailable}</span></div>
+        <button className={styles.historyToggle} type="button" aria-expanded={Boolean(expanded[record.id])} aria-controls={`payments-${record.id}`} onClick={() => setExpanded(items => ({ ...items, [record.id]: !items[record.id] }))}>{view.paymentHistory}<Image src={`/portal/subscriptions/design/chevron-${expanded[record.id] ? "up" : "down"}.svg`} width={16} height={16} alt=""/></button>
+      </div>
+      {expanded[record.id] ? <div className={styles.history} id={`payments-${record.id}`}>
+        {record.orders.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{view.paymentDate}</th><th>{copy.amount}</th><th>{view.status}</th><th>{copy.validPeriod}</th><th>{copy.receipt}</th></tr></thead><tbody>{record.orders.map(payment => {
+          const note = payment.kind === "upgrade" ? payment.upgradeProration ? view.proratedUpgrade : view.upgradeType : payment.plan?.id !== subscription?.plan?.id ? payment.presentation?.name || payment.plan?.name : null;
+          return <tr key={payment.id}><td>{date(payment.createdAt)}</td><td>{new Intl.NumberFormat(locale, { style: "currency", currency: payment.currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(payment.amountMinor / 100)} {payment.currency.toUpperCase()}{note && <small>{note}</small>}</td><td data-status={payment.status}>{paymentStatus(payment)}</td><td>{payment.servicePeriodStart && payment.servicePeriodEnd ? `${date(payment.servicePeriodStart)} – ${date(payment.servicePeriodEnd)}` : "—"}</td><td>{canViewSubscriptionReceipt(payment) ? <a href={`/api/my-learning/orders/${encodeURIComponent(payment.id)}/receipt`} target="_blank" rel="noreferrer">{view.viewReceipt}</a> : "—"}</td></tr>;
+        })}</tbody></table></div> : <p>{view.noHistory}</p>}
+      </div> : null}
+    </article>;
+  };
+
   return <section className={styles.records}>
-    <div className={styles.points}><span>{view.points}</span><strong>{view.pointsUnavailable}</strong><div className={styles.pointsTrack}/><p>{view.pointsNote}</p></div>
-    {records.length ? <div className={styles.list}>{[false,true].map(past=><section key={String(past)} className={styles.section}>
-      {past?<button className={styles.pastToggle} type="button" aria-expanded={pastOpen} aria-controls="past-subscriptions" onClick={()=>setPastOpen(value=>!value)}>{view.pastSubscriptions} ({records.filter(r=>r.past).length})<Image src={`/portal/subscriptions/design/chevron-${pastOpen?"up":"down"}.svg`} width={16} height={16} alt=""/></button>:<h2 className={styles.sectionTitle}>{view.currentSubscriptions}</h2>}
-      <div className={styles.list} id={past?"past-subscriptions":undefined} hidden={past&&!pastOpen}>
-      {records.filter(r=>r.past===past).map(record => {
-      const subscription = record.subscription;
-      const order = record.orders.find(item => item.status === "paid") || record.orders[0];
-      const name = order?.presentation?.name || subscription?.plan?.name || copy.plan;
-      const image = order?.presentation?.image || localSubscriptionProductImage(subscription?.plan);
-      const state = subscription?.state || "unavailable";
-      const until = subscription?.state === "grace" ? subscription.graceEndsAt || subscription.validTo : subscription?.validTo || order?.servicePeriodEnd;
-      const timeLabel = record.upgradedAt ? view.upgradedOn : state === "grace" ? view.gracePeriod : state === "cancel_at_period_end" ? view.accessUntil : state === "expired" || state === "trial_canceled" ? view.expiredOn : state === "unavailable" ? copy.validPeriod : copy.validUntil;
-      const status = record.upgradedAt ? view.upgraded : record.daysLeft!==null && state==="active" ? view.endingSoon : state === "active" ? subscription?.source === "trial" ? copy.trial : view.active : state === "cancel_at_period_end" ? view.renewalCanceled : state === "grace" ? view.paymentFailed : state === "trial_canceled" ? copy.canceled : state === "expired" ? view.expired : view.statusUnavailable;
-      return <article className={styles.card} key={record.id} data-subscription-id={record.id} data-past={record.past}>
-        <div className={styles.summary}>
-          <div className={styles.product}><h2>{name}</h2>{image ? <Image className={styles.cover} src={image} alt={name} width={120} height={120} unoptimized/> : <div className={styles.missingCover}>{view.imageUnavailable}</div>}</div>
-          <div className={styles.state} data-state={state}><strong>{status}</strong><div className={styles.actions}>
-            {subscription && state === "active" ? <button type="button" disabled={busyId === subscription.id} onClick={() => {setReason(undefined);setReasonText("");setError("");setCancelTarget(subscription);}}>{subscription.source === "trial" ? copy.cancel : view.cancelRenewal}</button> : null}
-            {subscription && state === "grace" ? <><button type="button" onClick={() => void manage(subscription.id,"pay")}>{copy.payNow} →</button><button type="button" onClick={() => void manage(subscription.id)}>{copy.updatePaymentMethod}</button></> : null}
-            {subscription && state === "active" && subscription.scope === "category" ? <Link href={`/${locale}/pricing?upgradeFrom=${encodeURIComponent(subscription.id)}`}>{copy.upgrade}</Link> : null}
-            {(state === "expired" || state === "trial_canceled") && !record.includedInEverything && !record.upgradedAt ? <Link href={`/${locale}/pricing${subscription?.plan?.id ? `?planId=${encodeURIComponent(subscription.plan.id)}` : ""}`}>{view.subscribeAgain} →</Link> : null}
-          </div></div>
-          <div className={styles.time}><strong>{timeLabel}</strong><span>{until ? new Date(record.upgradedAt || until).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"}) : view.periodUnavailable}</span>{record.daysLeft!==null?<small className={styles.ending}>{view.daysLeft.replace("{days}",String(record.daysLeft))}</small>:null}{record.includedInEverything?<small>{record.upgradedAt?view.nowEverything:view.includedEverything}</small>:null}</div>
-          <button className={styles.historyToggle} type="button" aria-expanded={Boolean(expanded[record.id])} aria-controls={`payments-${record.id}`} onClick={() => setExpanded(current => ({...current,[record.id]:!current[record.id]}))}>{view.paymentHistory}<Image src={`/portal/subscriptions/design/chevron-${expanded[record.id] ? "up" : "down"}.svg`} width={16} height={16} alt=""/></button>
-        </div>
-        {expanded[record.id] ? <div className={styles.history} id={`payments-${record.id}`}>
-          {record.orders.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{view.paymentDate}</th><th>{view.paymentType}</th><th>{copy.amount}</th><th>{copy.validPeriod}</th><th>{copy.receipt}</th></tr></thead><tbody>{record.orders.map(payment => {
-            const receipt = payment.status === "paid" && payment.kind !== "trial_activation" && (payment.paymentMode === "demo" || Boolean(payment.stripeInvoiceId));
-            return <tr key={payment.id}><td>{new Date(payment.createdAt).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}</td><td>{payment.status!=="paid"?orderStatusLabel(payment):subscriptionPaymentType(payment,record.orders)==="trial"?copy.trialActivation:subscriptionPaymentType(payment,record.orders)==="upgrade"?view.upgradeType:subscriptionPaymentType(payment,record.orders)==="renewal"?view.renewalType:view.purchaseType}{payment.status==="paid"&&payment.kind!=="trial_activation"&&payment.presentation?.termMonths?` \u00b7 ${view.months.replace("{months}",String(payment.presentation.termMonths))}`:""}</td><td>{new Intl.NumberFormat(locale,{style:"currency",currency:payment.currency,currencyDisplay:"narrowSymbol"}).format(payment.amountMinor/100)} {payment.currency.toUpperCase()}</td><td>{payment.servicePeriodStart && payment.servicePeriodEnd ? `${new Date(payment.servicePeriodStart).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})} \u2013 ${new Date(payment.servicePeriodEnd).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}` : view.periodUnavailable}</td><td>{receipt ? <a href={`/api/my-learning/orders/${encodeURIComponent(payment.id)}/receipt`} target="_blank" rel="noreferrer">{view.viewReceipt}</a> : <span>{copy.noReceipt}</span>}</td></tr>;
-          })}</tbody></table></div> : <p>{view.noHistory}</p>}
-        </div> : null}
-      </article>;
-    })}</div></section>)}</div> : <div className={styles.empty}><p>{view.noSubscriptions}</p><Link className="portal-button portal-button-primary" href={`/${locale}/pricing`}>{view.viewPlans}</Link></div>}
-    {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-    {cancelTarget ? <dialog ref={cancelDialog} className="subscription-modal cancellation-dialog" aria-labelledby="cancel-title" onKeyDown={keepFocusInDialog} onCancel={(event) => { event.preventDefault(); if (busyId !== cancelTarget.id) setCancelTarget(null); }}><button className="subscription-modal-close" type="button" onClick={() => setCancelTarget(null)} disabled={busyId === cancelTarget.id} aria-label={copy.close}><X size={24} aria-hidden="true" /></button><h2 id="cancel-title">{copy.cancelTitle}</h2><p className="cancel-access-note">{cancelTarget.source === "trial" ? copy.cancelDescription : design.accessUntil.replace("{date}", new Date(cancelTarget.validTo).toLocaleDateString(locale))}</p><div className="cancel-plan-name"><strong>{cancelTarget.scope === "everything" ? "Everything" : "Category"}</strong>{cancelTarget.scope !== "everything" ? <span>{cancelTarget.plan?.name}</span> : null}</div><fieldset><legend>{copy.cancelReason}<span className="cancel-reason-help">{design.optionalReason}</span></legend>{reasonOptions.map(([value, label]) => <label key={value}><input type="radio" name="cancel-reason" checked={reason === value} onChange={() => setReason(value)} />{label}</label>)}</fieldset><label className="cancel-other-input"><textarea maxLength={500} value={reasonText} onChange={(event) => setReasonText(event.target.value)} placeholder={copy.reasonOtherPlaceholder} /><span className="character-count">{reasonText.length}/500 {copy.characters}</span></label>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}<div className="subscription-modal-actions"><button className="portal-text-button cancel-skip" type="button" disabled={busyId === cancelTarget.id} onClick={() => void confirmCancel(true)}>{design.skip}</button><button className="portal-button portal-button-secondary" type="button" disabled={busyId === cancelTarget.id} onClick={() => setCancelTarget(null)}>{copy.close}</button><button className="portal-button portal-button-primary" type="button" disabled={busyId === cancelTarget.id} onClick={() => void confirmCancel()}>{copy.confirmCancel}</button></div></dialog> : null}
+    {records.length ? <div className={styles.sections}><section className={styles.section}><h2 className={styles.sectionTitle}>{view.currentSubscriptions}</h2><div className={styles.list}>{current.length ? current.map(card) : <p className={styles.noCurrent}>{view.noCurrent}</p>}</div></section>
+      {past.length > 0 && <section className={styles.section}><button className={styles.pastToggle} type="button" aria-expanded={pastOpen} aria-controls="past-subscriptions" onClick={() => setPastOpen(value => !value)}>{view.pastSubscriptions} ({past.length})<Image src={`/portal/subscriptions/design/section-chevron-${pastOpen ? "up" : "down"}.svg`} width={16} height={16} alt=""/></button><div className={styles.list} id="past-subscriptions" hidden={!pastOpen}>{past.map(card)}</div></section>}</div> : <div className={styles.empty}><p>{view.noSubscriptions}</p><Link className="portal-button portal-button-primary" href={`/${locale}/subscription`}>{view.viewPlans}</Link></div>}
+    {error && !cancelTarget ? <p className="portal-form-error" role="alert">{error}</p> : null}
+    {cancelTarget ? <dialog ref={cancelDialog} className={styles.cancelDialog} aria-labelledby="cancel-title" aria-describedby="cancel-access-note" onKeyDown={keepFocusInDialog} onCancel={event => { event.preventDefault(); if (!actionInFlight.current) setCancelTarget(null); }}>
+      <header className={styles.cancelHeader}><h2 id="cancel-title">{cancelTarget.source === "trial" ? copy.cancelTitle : design.title}</h2><button type="button" onClick={() => { if (!actionInFlight.current) setCancelTarget(null); }} disabled={Boolean(busyId)} aria-label={copy.close}><Image src="/portal/subscriptions/design/close.svg" width={24} height={24} alt=""/></button></header>
+      <div className={styles.cancelPlan}><strong>{(cancelTarget.scope || cancelTarget.plan?.scope) === "category" ? `${design.category} • ${subscriptionCategoryLabel(cancelTarget.scopeId || cancelTarget.plan?.scopeId || cancelTarget.plan?.category || cancelTarget.plan?.name || copy.plan, locale)}` : nameOf(cancelTarget)}</strong><p id="cancel-access-note">{cancelTarget.source === "trial" ? copy.cancelDescription : design.paidAccessUntil.replace("{date}", date(cancelTarget.validTo))}</p></div>
+      <fieldset className={styles.questionnaire}><legend>{design.question}</legend><p>{design.feedback}</p><div className={styles.reasons}>{reasons.map(([value, label]) => <label key={value}><span className={styles.radio}><input type="radio" name="cancel-reason" checked={reason === value} onChange={() => setReason(value)} disabled={Boolean(busyId)}/><Image src="/portal/subscriptions/design/radio.svg" width={20} height={20} alt=""/></span><span>{label}</span></label>)}</div><textarea className={styles.otherReason} rows={1} maxLength={500} value={reasonText} onChange={event => { setReasonText(event.target.value); if (event.target.value) setReason("other"); }} placeholder={design.more} aria-label={design.more} disabled={Boolean(busyId)}/></fieldset>
+      {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+      <div className={styles.cancelActions}><button type="button" className={styles.cancelConfirm} disabled={Boolean(busyId)} onClick={() => void confirmCancel()}>{busyId ? messages.learning.processing : cancelTarget.source === "trial" ? copy.confirmCancel : design.confirm}</button><button type="button" className={styles.cancelKeep} disabled={Boolean(busyId)} onClick={() => { if (!actionInFlight.current) setCancelTarget(null); }}>{cancelTarget.source === "trial" ? copy.close : design.keep}</button></div>
+    </dialog> : null}
   </section>;
 }

@@ -22,14 +22,14 @@ test("DEV reset sends mail, preserves destination, throttles and consumes tokens
     const confirm = confirmPasswordReset;
     const user = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "reset-test", email: "reset@example.test", locale: "zh-CN" });
     const session = await store.createSession(user.id);
-    const request = (email: string, returnTo = "/zh-CN/pricing?term=12#plans") => POST(new Request("http://localhost:3027/api/auth/password-reset/request", { method: "POST", headers: { origin: "http://localhost:3027" }, body: JSON.stringify({ email, locale: "zh-CN", returnTo }) }));
+    const request = (email: string, returnTo = "/zh-CN/subscription?term=12#plans") => POST(new Request("http://localhost:3027/api/auth/password-reset/request", { method: "POST", headers: { origin: "http://localhost:3027" }, body: JSON.stringify({ email, locale: "zh-CN", returnTo }) }));
     const response = await request(user.email!);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, accepted: true, retryAfter: 60 });
     expect(mails).toHaveLength(1);
     expect(mails[0].subject).toContain("重置");
     const link = new URL(mails[0].text.match(/http[^\s]+/)![0]);
-    expect(link.searchParams.get("returnTo")).toBe("/zh-CN/pricing?term=12#plans");
+    expect(link.searchParams.get("returnTo")).toBe("/zh-CN/subscription?term=12#plans");
     await request(user.email!);
     await request("absent@example.test");
     expect(mails).toHaveLength(1);

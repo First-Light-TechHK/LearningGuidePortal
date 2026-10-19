@@ -9,5 +9,5 @@ export default async function ContactPage({ params }: { params: Promise<{ locale
   const locale = localeFrom((await params).locale);
   const messages = getMessages(locale);
   const user = await currentProductUser();
-  return <main className="portal-page contact-design-page"><PortalHeader locale={locale} signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} /><ContactForm copy={messages.contactPage} /><PortalFooter locale={locale} /></main>;
+  return <main className="portal-page contact-design-page"><PortalHeader locale={locale} signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} /><ContactForm copy={messages.contactPage} locale={locale} /><PortalFooter locale={locale} /></main>;
 }

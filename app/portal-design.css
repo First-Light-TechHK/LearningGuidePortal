@@ -278,6 +278,9 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .settings-details-grid { display:grid; grid-template-columns:minmax(0,405px) minmax(0,405px); justify-content:space-between; gap:32px 30px; margin-top:22px; }
 .settings-interest-menu { position:relative; min-width:0; }
 .settings-interest-menu summary { cursor:pointer; border:1px solid #cbd5e1; border-radius:6px; padding:8px 15px; min-height:38px; font-size:14px; line-height:20px; overflow-wrap:anywhere; }
+.settings-design-form select,.settings-interest-menu summary { appearance:none; background:#fff url('/portal/subscriptions/design/chevron-down.svg') no-repeat right 12px center / 16px 16px; padding-right:40px; }
+.settings-interest-menu summary { display:block; list-style:none; box-sizing:border-box; }
+.settings-interest-menu summary::-webkit-details-marker { display:none; }
 .settings-interest-menu fieldset { position:absolute; z-index:5; top:100%; left:0; right:0; margin:4px 0 0; padding:12px; background:white; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 4px 12px #15233a18; }
 .settings-interest-menu fieldset label { display:flex; align-items:center; gap:10px; padding:6px; }
 .settings-interest-menu input[type=checkbox] { width:16px; height:16px; min-height:0; margin:0; }
@@ -309,7 +312,6 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .overview-list-caption { margin:26px 0 0; font-size:13px; line-height:20px; color:#64748b; }
 @media(max-width:1320px) { .portal-account-page.overview-design-page > .account-dashboard { padding-right:40px; } .portal-account-page .account-learning-card.overview-course { grid-template-columns:130px minmax(0,1fr); gap:20px; } .overview-course .account-learning-action { grid-column:2; margin-top:0; } .overview-heading { flex-wrap:wrap; padding-bottom:32px; } }
 @media(max-width:720px) { .portal-account-page.overview-design-page > .account-dashboard { padding:28px 20px 48px; min-height:600px; } .overview-heading { min-height:0; margin-bottom:32px; } .overview-course .account-learning-action { width:100%; margin-top:20px; } .overview-progress-labels { flex-wrap:wrap; gap:4px 16px; } }
-.pricing-design-hero { min-height:200px; display:grid; place-content:center; gap:18px; box-sizing:border-box; background:#155dfc; color:#fff; text-align:center; }
 /* The 4352x1112 PNG contains 3840x600 artwork inside a 256px transparent border.
    Stretch the visible artwork to the full banner width and 300px height. */
 .courses-design-hero { width:100%; max-width:none; height:300px; min-height:300px; box-sizing:border-box; padding:55px max(20px,calc((100% - 1240px)/2)) 60px; background: url("/portal/course-banner.png") center / 113.333333% 185.333333% no-repeat; color:#fff; }
@@ -324,54 +326,91 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .portal-course-detail-body { width:min(1440px,100%); grid-template-columns:minmax(0,2.1fr) minmax(300px,1fr); gap:12px; margin:0 auto; padding:14px 2px 52px; box-sizing:border-box; }.portal-detail-intro,.course-lesson-index,.course-access-card,.course-provides-card { padding:22px; }.course-provides-card { min-height:232px; }.course-provides-card ul { gap:14px; margin:24px 0 0; font-size:12px; }.course-provides-card li::before { content:"◉"; margin-right:10px; }.course-detail-aside { gap:14px; }.course-access-card { min-height:102px; border-color:#c7d6ff; }.course-access-card strong { display:block; font-size:28px; }
 .course-access-card { min-height:262px; padding:26px 32px; border-radius:16px; background:#eff6ff; }.course-access-card .portal-eyebrow { margin:0; color:#2463c7; font-size:16px; line-height:24px; font-weight:600; }.course-access-card .course-access-price { margin:18px 0 28px; color:#15233a; font-size:54px; line-height:60px; }.course-access-card .course-access-price span { font-size:46px; }.course-access-card .course-access-price small { font-size:18px; font-weight:500; }.course-access-card .portal-button-secondary { width:100%; min-height:60px; border:2px solid #246bfd; border-radius:10px; background:#c7dfff; color:#155dfc; font-size:18px; }
 .portal-course-detail-page { background:#f9fafb; }.course-detail-hero { min-height:517px; position:relative; display:grid; grid-template-columns:1fr; overflow:hidden; background:#17233a; color:#fff; }.course-detail-hero-image { position:absolute; inset:0; opacity:.62; }.course-detail-hero-image img,.course-detail-hero-image > * { width:100%; height:100%; object-fit:cover; }.course-detail-hero-copy { position:relative; z-index:1; width:min(1240px,calc(100% - 40px)); margin:auto; align-self:center; }.course-detail-hero-copy h1 { margin:18px 0; color:#fff; font-size:40px; }.course-detail-hero-copy > p { max-width:620px; color:#e6edf9; }.course-detail-stats { display:flex; gap:28px; color:#e6edf9; font-size:13px; }.portal-course-tag { display:inline-flex; padding:4px 18px; border-radius:4px; background:#155dfc; font-size:12px; }.portal-course-detail-body { width:min(1240px,calc(100% - 40px)); display:grid; grid-template-columns:minmax(0,2.1fr) minmax(280px,1fr); gap:20px; margin:18px auto 52px; }.portal-detail-intro,.course-lesson-index,.course-access-card,.course-provides-card { border:1px solid #e5e7eb; border-radius:10px; background:#fff; padding:20px; }.portal-detail-intro h2,.course-lesson-index h2,.course-provides-card h2 { margin:0 0 14px; font-size:20px; }.portal-detail-intro > p:last-child { color:#64728b; font-size:13px; line-height:18px; }.course-lesson-index { margin-top:12px; }.course-lesson-row { min-height:50px; margin-top:8px; padding:12px; border:1px solid #e5e7eb; border-radius:6px; background:#fff; }.course-detail-aside { display:grid; align-content:start; gap:12px; }.course-provides-card ul { display:grid; gap:12px; margin:0; padding:0; list-style:none; color:#15233a; font-size:13px; }.course-provides-card li::before { content:"○"; margin-right:8px; color:#155dfc; }.course-access-card { background:#e8f1ff; }.course-access-card .portal-button { width:100%; margin-top:12px; }
-.pricing-design-hero h1 { margin:0; color:#fff; font-size:36px; line-height:38px; font-weight:600; }
-.pricing-design-hero p { margin:0; font-size:20px; line-height:28px; }
-.pricing-design-main { max-width:1184px; margin:auto; padding:40px 0 52px; }
-.pricing-comparison-wrap { position:relative; padding-top:82px; }
-.pricing-term-switch-global { position:absolute; top:0; left:50%; transform:translateX(-50%); border-radius:22px; padding:3px; }
-.pricing-term-switch-global button { position:relative; height:36px; border-radius:20px; }
-.pricing-term-year-label { position:relative; display:inline-block; white-space:nowrap; transform:translateY(6px); }
-.pricing-better-value { position:absolute; top:-13px; left:60%; min-width:56px; padding:1px 4px; border-radius:6px; background:#155dfc; color:#fff; font-size:8px; line-height:11px; font-weight:600; white-space:nowrap; }
-.pricing-comparison { position:relative; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:96px; }
-.pricing-comparison::after { content:""; position:absolute; top:204px; left:0; width:100%; height:1px; background:#e5e7eb; }
-.pricing-design-card { padding:0; min-width:0; min-height:620px; box-sizing:border-box; display:flex; flex-direction:column; color:#15233a; background:white; }
-.pricing-card-heading { display:flex; justify-content:center; gap:12px; align-items:flex-start; min-height:51px; text-align:center; }
-.pricing-card-heading h2 { font-size:27px; line-height:38px; margin:0; font-weight:600; color:#155dfc; }
-.pricing-term-switch { padding:3px; background:#fff; border:1px solid #dbe3f0; border-radius:999px; display:flex; flex:none; }
-.pricing-term-switch button { flex:0 0 auto; width:96px; height:36px; padding:0 8px; border:0; border-radius:999px; font-size:13px; background:transparent; color:#155dfc; cursor:pointer; }
-.pricing-term-switch button.pricing-term-year { width:auto; min-width:96px; padding-left:24px; padding-right:48px; }
-.pricing-term-switch button[aria-pressed=true] { background:#2968ff; color:#fff; font-weight:600; }
-.pricing-card-price { min-height:80px; margin-top:16px; display:flex; justify-content:center; gap:12px; align-items:baseline; align-items:last baseline; text-align:center; }
-.pricing-card-price strong { font-size:54px; line-height:64px; font-weight:600; }
-.pricing-card-price strong::first-letter { font-size:30px; }
-.pricing-card-price span { font-size:16px; line-height:30px; }
-.pricing-card-scope,.pricing-category-switch { min-height:0; margin:10px 0 0; font-size:18px; line-height:27px; }
-.pricing-card-categories { min-height:84px; margin-top:68px; border-bottom:1px solid #e5e7eb; }
-.pricing-card-categories > p { margin:0; font-size:16px; line-height:19px; }
-.pricing-card-course-list { min-height:122px; padding:22px 0; border-bottom:1px solid #e5e7eb; }
-.pricing-card-course-list p { margin:0 0 10px; font-size:16px; line-height:19px; }
-.pricing-card-course-list > div { display:flex; flex-wrap:wrap; gap:8px; }
-.pricing-card-course-list span { padding:4px 8px; border:1px solid #e5e7eb; border-radius:14px; color:#15233a; font-size:14px; line-height:19px; opacity:.8; }
-.pricing-category-switch { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.pricing-category-switch button { padding:4px 12px; min-height:30px; background:#fff; border:1px solid #dbe3f0; border-radius:8px; color:#475569; font-size:13px; cursor:pointer; }
-.pricing-category-switch button[aria-pressed=true] { color:#fff; background:#2968ff; border-color:#2968ff; }
-.pricing-category-switch--all button[aria-pressed=true] { color:#155dfc; background:#c7d6ff; border-color:#246bfd; }
-.pricing-card-benefits { margin:16px 0; padding:0; min-height:214px; list-style:none; font-size:16px; line-height:19px; }
-.pricing-card-benefits li { min-height:67px; display:flex; align-items:center; margin:0; padding:0; border-bottom:1px solid #e5e7eb; }
-.pricing-design-card .purchase-panel { min-width:0; grid-template-columns:minmax(0,1fr); margin-top:auto; border:0; padding:0; }
-.pricing-design-card .purchase-actions { display:block; margin:0; text-align:right; }
-.pricing-design-card .purchase-actions button { width:360px; max-width:100%; min-height:46px; border-radius:8px; }
-.pricing-design-information { background:#f9fafb; padding:44px 0 58px; min-height:262px; box-sizing:border-box; text-align:center; }
-.pricing-design-information > div { max-width:1240px; margin:auto; }
-.pricing-design-information h2 { font-size:24px; line-height:32px; margin:0 0 12px; }
-.pricing-design-information > div > p { color:#64728b; font-size:14px; line-height:22px; margin:0; }
-.pricing-information-grid { margin-top:32px; display:grid; grid-template-columns:repeat(3,minmax(0,360px)); justify-content:space-between; gap:80px; text-align:left; }
-.pricing-information-grid > div { padding:0; min-height:0; border:0; background:transparent; box-sizing:border-box; }
-.pricing-information-grid h3 { color:#155dfc; font-size:15px; margin:0 0 12px; padding-bottom:12px; border-bottom:1px solid #dbe3f0; }
-.pricing-information-grid p { color:#64728b; font-size:12px; line-height:16px; }
+/* Subscription, Figma study 393:11182. */
+.pricing-design-page { background:#fff; }
+.pricing-design-main { width:min(1184px,calc(100% - 80px)); margin:0 auto; padding:48px 0 80px; }
+.pricing-title-row { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:32px; }
+.pricing-title-row h1 { margin:0; color:#15233a; font-size:28px; font-weight:600; line-height:36px; }
+.pricing-term-switch { display:flex; gap:4px; padding:4px; border:1px solid #e5e7eb; border-radius:22px; background:#fff; flex:none; }
+.pricing-term-switch button { padding:8px 20px; border:0; border-radius:18px; font-size:13px; line-height:18px; font-weight:600; background:transparent; color:#155dfc; cursor:pointer; }
+.pricing-term-switch button[aria-pressed=true] { background:#155dfc; color:#fff; }
+.pricing-comparison { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; align-items:stretch; }
+.pricing-design-card { min-width:0; padding:32px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; color:#15233a; display:flex; flex-direction:column; gap:28px; }
+.pricing-design-card--everything { border:2px solid #246bfd; padding:31px; }
+.pricing-card-tags { display:flex; align-items:center; gap:8px; min-height:24px; }
+.pricing-card-tags span { padding:5px 10px; border-radius:13px; background:#246bfd; color:#fff; font-size:10px; font-weight:600; line-height:14px; }
+.pricing-card-tags .pricing-saving { background:#e8faed; color:#168c52; font-size:11px; }
+.pricing-card-heading h2 { margin:0 0 8px; font-size:28px; line-height:36px; font-weight:600; }
+.pricing-card-heading p { margin:0; font-size:15px; line-height:22px; color:#64728b; }
+.pricing-card-price { display:flex; flex-wrap:wrap; gap:10px; align-items:baseline; min-height:64px; }
+.pricing-card-price strong { font-size:56px; line-height:64px; font-weight:700; }
+.pricing-card-price del { font-size:22px; line-height:28px; font-weight:500; color:#64728b; }
+.pricing-card-price span { font-size:16px; line-height:22px; font-weight:600; color:#64728b; }
+.pricing-card-includes { border-top:1px solid #e5e7eb; padding-top:28px; display:flex; flex-direction:column; gap:16px; }
+.pricing-card-includes > p { margin:0; color:#64728b; font-size:14px; line-height:20px; }
+.pricing-category-switch { display:flex; flex-wrap:wrap; gap:8px; }
+.pricing-category-switch button { padding:9px 14px; min-height:40px; border:1px solid #ccd2dc; border-radius:8px; color:#15233a; background:#fff; font-size:14px; line-height:20px; font-weight:500; cursor:pointer; }
+.pricing-category-switch button[aria-pressed=true] { border:2px solid #246bfd; padding:8px 13px; color:#155dfc; background:#eef3ff; font-weight:600; }
+.pricing-category-switch button:disabled { opacity:.5; cursor:not-allowed; }
+.pricing-card-course-list p { margin:0 0 4px; font-size:15px; line-height:22px; font-weight:500; }
+.pricing-card-course-list a { color:#155dfc; text-decoration:none; font-weight:600; }
+.pricing-card-course-list small { display:block; color:#64728b; font-size:13px; line-height:20px; }
+.pricing-card-benefits { margin:0; padding:0; list-style:none; }
+.pricing-card-benefits li { display:flex; justify-content:space-between; gap:16px; border-block:1px solid #e5e7eb; padding:16px 0; font-size:14px; line-height:20px; color:#64728b; }
+.pricing-card-benefits strong { color:#15233a; font-size:15px; font-weight:500; }
+.pricing-design-card .purchase-panel { min-width:0; display:block; margin-top:auto; border:0; padding:30px 0 0; background:transparent; box-shadow:none; }
+.pricing-design-card .purchase-actions { display:block; margin:0; }
+.pricing-design-card .purchase-actions button { width:100%; min-height:46px; padding:12px 20px; border-radius:8px; background:#246bfd; font-size:15px; font-weight:600; line-height:20px; }
+.pricing-design-card--category .purchase-actions button { border:1.5px solid #246bfd; background:#fff; color:#155dfc !important; }
+.pricing-design-information { background:#f8fafc; padding:56px 40px 64px; }
+.pricing-design-information > div { max-width:1184px; margin:auto; }
+.pricing-design-information h2 { margin:0 0 32px; color:#15233a; font-size:24px; font-weight:600; line-height:32px; text-align:center; }
+.pricing-information-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:48px; }
+.pricing-information-grid h3 { margin:0 0 12px; padding-bottom:12px; border-bottom:1px solid #e5e7eb; color:#155dfc; font-size:15px; line-height:20px; font-weight:600; }
+.pricing-information-grid p { margin:0; color:#64728b; font-size:13px; line-height:20px; }
 .pricing-direct { margin-top:40px; }
-@media(max-width:1320px) { .pricing-design-main,.pricing-design-information > div { margin-left:40px; margin-right:40px; } .pricing-card-heading { flex-wrap:wrap; } }
-@media(max-width:800px) { .pricing-comparison { grid-template-columns:minmax(0,1fr); } .pricing-information-grid { grid-template-columns:1fr; gap:24px; } .pricing-design-main,.pricing-design-information > div { margin-left:20px; margin-right:20px; } .pricing-design-card { min-height:552px; padding:24px; } }
+.pricing-owned-notice { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:32px; padding:10px 20px; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; }
+.pricing-owned-notice > img,.pricing-owned-status > img,.pricing-upgrade-note > img { display:block; flex:none; }
+.pricing-owned-notice p { margin:0; color:#64728b; font-size:14px; line-height:20px; }
+.pricing-owned-notice > a { margin-left:auto; }
+.pricing-owned-notice a,.pricing-owned-status > a { color:#155dfc; text-decoration:none; font-size:14px; line-height:20px; font-weight:600; }
+.pricing-owned-chips { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
+.pricing-owned-chip { display:inline-flex; align-items:center; gap:8px; max-width:100%; padding:9px 10px 9px 14px; border-radius:8px; background:#f3f5f7; color:#64728b; font-size:14px; font-weight:500; line-height:20px; }
+.pricing-owned-chip small { flex:none; padding:2px 6px; border-radius:4px; background:#e8faed; color:#168c52; font-size:11px; line-height:14px; font-weight:600; }
+.pricing-included-chip { display:inline-flex; align-items:center; padding:8px 13px; border:2px solid #246bfd; border-radius:8px; color:#155dfc; background:#eef3ff; font-size:14px; line-height:20px; font-weight:600; }
+.pricing-selection-price { min-height:92px; display:flex; flex-direction:column; gap:8px; }
+.pricing-selection-price > small { color:#64728b; font-size:13px; line-height:20px; }
+.pricing-selection-price-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.pricing-selection-price-row .pricing-term-switch { margin-left:auto; }
+.pricing-selection--one_category .pricing-design-card { min-height:757px; }
+.pricing-upgrade-card { padding:32px; }
+.pricing-upgrade-action { margin-top:auto; padding-top:70px; }
+.pricing-upgrade-action button { display:block; width:100%; padding:13px 24px; border:0; border-radius:8px; background:#246bfd; color:#fff; font:600 15px/20px Inter,Arial,sans-serif; cursor:pointer; }
+.pricing-upgrade-action button:disabled { background:#98a2b3; cursor:not-allowed; }
+.pricing-upgrade-action p { font-size:13px; line-height:20px; }
+.pricing-upgrade-note { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:26px; }
+.pricing-upgrade-note p { margin:0; color:#64728b; font-size:13px; line-height:20px; }
+.pricing-selection--one_category .pricing-design-card .purchase-panel { margin-top:0; padding-top:0; }
+.pricing-comparison--last { display:flex; justify-content:center; }
+.pricing-last-category { width:640px; max-width:100%; min-height:608px; border:2px solid #246bfd; padding:32px; }
+.pricing-last-category .pricing-selection-price { min-height:64px; }
+.pricing-last-category .purchase-actions button { background:#246bfd; color:#fff !important; border:0; }
+.pricing-ownership-summary { display:flex; flex-direction:column; gap:32px; }
+.pricing-owned-status { display:flex; align-items:center; gap:20px; padding:28px 32px; border:1px solid #e5e7eb; border-radius:16px; }
+.pricing-owned-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; }
+.pricing-owned-copy--categories { gap:12px; }
+.pricing-owned-copy h1 { margin:0; color:#15233a; font-size:24px; line-height:32px; font-weight:600; }
+.pricing-owned-copy p { margin:0; color:#64728b; font-size:15px; line-height:22px; }
+.pricing-owned-status > a { flex:none; }
+.pricing-owned-benefits { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.pricing-owned-benefits section { display:flex; flex-direction:column; gap:8px; padding:24px; border:1px solid #e5e7eb; border-radius:12px; }
+.pricing-owned-benefits p { margin:0; color:#64728b; font-size:13px; line-height:18px; }
+.pricing-owned-benefits strong { color:#15233a; font-size:22px; line-height:30px; font-weight:600; }
+.pricing-owned-benefits a { color:inherit; text-decoration:none; white-space:nowrap; }
+.pricing-design-page a:focus-visible,.pricing-design-page button:focus-visible { outline:2px solid #155dfc; outline-offset:3px; }
+@media(max-width:1100px) { .pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
+@media(max-width:800px) { .pricing-selection--one_category .pricing-design-card { min-height:0; }.pricing-upgrade-action { padding-top:30px; }.pricing-owned-notice { padding:12px; }.pricing-owned-notice > a { flex-basis:100%; margin-left:0; }.pricing-owned-status { flex-wrap:wrap; padding:24px; }.pricing-owned-status > a { flex-basis:100%; }.pricing-owned-copy { flex-basis:calc(100% - 68px); }.pricing-owned-chips { width:100%; }.pricing-owned-benefits { grid-template-columns:1fr; }.pricing-owned-chip { overflow-wrap:anywhere; }.pricing-selection-price { min-height:0; }.pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
+@media(max-width:800px) { .pricing-design-main { width:calc(100% - 40px); padding:32px 0 48px; }.pricing-title-row { flex-wrap:wrap; }.pricing-comparison { grid-template-columns:minmax(0,1fr); gap:24px; }.pricing-design-card { padding:24px; }.pricing-design-card--everything { padding:23px; }.pricing-card-price strong { font-size:48px; }.pricing-design-information { padding:40px 20px; }.pricing-information-grid { grid-template-columns:1fr; gap:24px; } }
 dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); max-height:calc(100dvh - 96px); margin:72px auto 24px; padding:34px 84px 26px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
 dialog.subscription-confirmation::backdrop { background:rgb(15 23 42 / 45%); }
 .confirmation-heading { display:block; min-height:58px; margin-bottom:14px; text-align:center; }
@@ -483,15 +522,14 @@ dialog.subscription-confirmation .subscription-consents input { width:14px; heig
 .portal-account-page .account-learning-card-content { min-width:0; padding:0; }
 .portal-account-page .account-learning-card h3 { font-size:21px; font-weight:600; }
 .portal-account-page .settings-form { width:100%; max-width:none; border:1px solid #dbe3f0; box-shadow:none; padding:24px; }
-.portal-page .portal-footer { background:#14387d; padding:54px 40px 50px; box-sizing:border-box; }
-.pricing-design-page .portal-footer { background:#12337d; }
+.portal-page .portal-footer { background:#155dfc; padding:54px 40px 29px; box-sizing:border-box; }
 .portal-footer-grid { width:100%; max-width:1240px; margin:0 auto; grid-template-columns:420px 195px 195px minmax(0,1fr); gap:40px; }
 .portal-footer h2 { font-size:14px; line-height:20px; font-weight:600; margin:0 0 14px; }
 .portal-footer-grid > div:first-child h2 { font-size:20px; line-height:28px; font-weight:700; margin-bottom:6px; }
 .portal-footer p,.portal-footer a { font-size:13px; line-height:18px; color:#c7d6ff; font-weight:400; }
 .portal-footer-grid > div > a { display:block; margin:0 0 13px; }
 .portal-footer-grid > div > a:last-child { margin-bottom:0; }
-.portal-footer-grid > div:first-child p { width:270px; max-width:100%; font-size:14px; line-height:22px; margin:0; }
+.portal-footer-grid > div:first-child p { width:270px; max-width:100%; font-size:14px; line-height:20px; margin:0; }
 .portal-footer .portal-footer-copyright { border:0; padding:0; margin:0; width:auto; text-align:left; }
 .portal-footer-bottom { width:100%; max-width:1240px; margin:48px auto 0; border-top:1px solid #ffffff33; padding-top:21px; }
 .portal-footer .portal-footer-social { display:flex; flex-wrap:wrap; gap:10px; color:#fff; font-weight:600; margin:0; }
@@ -529,7 +567,7 @@ dialog.subscription-confirmation .subscription-consents input { width:14px; heig
 .contact-information-grid { width:836px; max-width:100%; grid-template-columns:repeat(2,400px); gap:36px; }.contact-information-grid article { width:400px; min-height:126px; box-sizing:border-box; }
 @media(max-width:860px) { .contact-information-grid { width:min(400px,100%); grid-template-columns:1fr; }.contact-information-grid article { width:100%; } }
 .contact-form { width:836px; max-width:100%; }
-.portal-footer .portal-footer-social { gap:12px; }.portal-footer-social span { width:40px; height:40px; display:block; }
+.portal-footer .portal-footer-social { gap:20px; }.portal-footer-social span { width:40px; height:40px; display:block; }
 .help-popular-grid { width:min(873px,100%); grid-template-columns:1fr; gap:0; border-top:1px solid #e5e7eb; }.help-popular-card { min-height:104px; display:flex; align-items:center; justify-content:space-between; gap:24px; padding:20px 0; border:0; border-bottom:1px solid #e5e7eb; border-radius:0; background:transparent; }.help-popular-card h3 { font-size:18px; line-height:26px; }.help-popular-card p { margin:6px 0 0; }.help-popular-card > img,.help-faq-list summary img { flex:0 0 auto; }
 /* Course authoring shares the existing Backoffice shell. */
 .authoring-editor fieldset { border: 0; padding: 0; min-width: 0; display: grid; gap: 20px; }

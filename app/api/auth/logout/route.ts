@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const cookieStore = await cookies();
   await deleteSession(cookieStore.get(SESSION_COOKIE)?.value);
   await deleteSession(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   response.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: 0 });
   response.cookies.set(ADMIN_SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: 0 });
   return response;
