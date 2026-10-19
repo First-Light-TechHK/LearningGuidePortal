@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { ProfileError } from "@/contracts/profile";
 import { currentProductUser } from "@/services/productAuth";
 import { publicUser, updateUserProfile } from "@/services/productStore";
 
@@ -27,6 +26,6 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({ ok: true, user: publicUser(updated) });
   } catch (error) {
-    return NextResponse.json({ ok: false, code: error instanceof ProfileError ? error.code : "PROFILE_UPDATE_FAILED", error: error instanceof Error ? error.message : "Profile update failed." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Profile update failed." }, { status: 400 });
   }
 }

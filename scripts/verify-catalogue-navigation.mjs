@@ -28,7 +28,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await page.screenshot({ path: `/tmp/lg-catalogue-${name}.png`, fullPage: true });
     for (let index = 0; index < 3; index++) {
       await page.goto(`${base}/en-GB/portal`);
-      await page.goto(`${base}/en-GB/subscription`);
+      await page.goto(`${base}/en-GB/pricing`);
     }
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: name, passed: true, categoryAndLocalePreserved: true, rapidNavigation: true }));

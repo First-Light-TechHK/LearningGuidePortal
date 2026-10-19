@@ -27,7 +27,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await page.waitForURL("**/en-GB/account/my-learning");
   for (const locale of ["en-GB", "zh-CN"]) {
-   for (const route of ["subscription", "portal/courses", "account/my-learning", "account/my-learning/settings", "account/my-learning/notifications", "account/my-learning/subscription"]) {
+   for (const route of ["pricing", "portal/courses", "account/my-learning", "account/my-learning/settings", "account/my-learning/notifications", "account/my-learning/subscription"]) {
     console.log(`${name}: ${locale}/${route}`);
     await page.goto(base + "/" + locale + "/" + route);
     await page.locator(".account-menu-trigger").waitFor();

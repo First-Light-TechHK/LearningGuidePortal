@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { SubscriptionConfirmation } from "@/components/portal/SubscriptionConfirmation";
-import SubscriptionPage from "@/app/[locale]/subscription/page";
+import PricingPage from "@/app/[locale]/pricing/page";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { currentProductUser } from "@/services/productAuth";
@@ -12,7 +12,7 @@ export default async function SubscriptionConfirmationPage({ params, searchParam
   const quoteId = (await searchParams).quoteId || "";
   if (!user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteId)}`)}`);
   const result = await getQuoteForUser(user.id, quoteId);
-  if (!result) redirect(`/${locale}/subscription`);
+  if (!result) redirect(`/${locale}/pricing`);
   const copy = getMessages(locale);
   const content = await getPortalContent();
   const scope = result.plan.scope || (result.plan.courseId === "*" ? "everything" : "course");
@@ -22,5 +22,5 @@ export default async function SubscriptionConfirmationPage({ params, searchParam
   const scopeDescription = scope === "everything" ? copy.pricingDesign.allCourses : scope === "category" ? copy.pricingDesign.categoryCourses : copy.confirmationDetails.courseAccess;
   const sourceCategory = content.categories.find(item => item.id === (result.sourcePlan?.category || result.sourcePlan?.scopeId));
   const upgradeSource = result.sourceSubscription && result.sourcePlan ? { name: `${copy.pricingDesign.category} · ${sourceCategory?.labels[locale] || result.sourcePlan.name}`, validTo: result.sourceSubscription.validTo } : undefined;
-  return <><SubscriptionPage params={Promise.resolve({ locale })} searchParams={Promise.resolve({ planId: result.plan.id })} /><SubscriptionConfirmation upgradeSource={upgradeSource} planHeading={planHeading} planSubtitle={planSubtitle} scopeDescription={scopeDescription} locale={locale} quote={result.quote} plan={result.plan} copy={copy.portal.subscriptionConfirmation} /></>;
+  return <><PricingPage params={Promise.resolve({ locale })} searchParams={Promise.resolve({ planId: result.plan.id })} /><SubscriptionConfirmation upgradeSource={upgradeSource} planHeading={planHeading} planSubtitle={planSubtitle} scopeDescription={scopeDescription} locale={locale} quote={result.quote} plan={result.plan} copy={copy.portal.subscriptionConfirmation} /></>;
 }

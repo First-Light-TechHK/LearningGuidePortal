@@ -17,6 +17,6 @@ export function knowledgeProgress(course: Pick<ProductCourse, "sections">, mode:
   const points = courseKnowledgePoints(course, mode);
   const index = position ? points.findIndex(point => point.lessonId === position.lessonId && point.contentId === position.contentId) : -1;
   const current = index + 1;
-  return { mode, current, total: points.length, progress: points.length ? current === points.length ? 100 : Math.min(99, Math.round(current / points.length * 100)) : 0,
+  return { mode, current, total: points.length, progress: points.length ? Math.round(current / points.length * 100) : 0,
     lessonId: index >= 0 ? points[index].lessonId : null, contentId: index >= 0 ? points[index].contentId : null };
 }

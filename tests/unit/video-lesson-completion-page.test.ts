@@ -23,19 +23,11 @@ test("video pages gate unlock and completion, reset on content changes, save exp
   try {
     for (const locale of ["en-GB","zh-CN"] as const) {
       const page = await browser.newPage({viewport:{width:1440,height:1024}});
-      let fail = false; const completions: unknown[] = [], outlineCompletions: unknown[] = [];
-      const assessments = new Map<string, unknown>();
+      let fail = false; const completions: unknown[] = [];
       await page.route("http://completion.test/**",async route=>{
         const url = new URL(route.request().url());
-        if(url.pathname.includes("/assessments/")) {
-          if(route.request().method()==="PUT") {
-            const body=route.request().postDataJSON();
-            assessments.set(url.pathname,{version:body.expectedVersion+1,attempt:body.attempt,completedAt:null});
-          }
-          return route.fulfill({json:{ok:true,data:assessments.get(url.pathname)||null}});
-        }
         if(url.pathname.startsWith("/api/study/")) {
-          const body=route.request().postDataJSON();if(body.event === "complete")(body.completeLesson ? outlineCompletions : completions).push(body);
+          const body=route.request().postDataJSON();if(body.event === "complete")completions.push(body);
           return route.fulfill({status:body.event === "complete" && fail ? 403 : 200,contentType:"application/json",body:'{"record":{}}'});
         }
         if(url.pathname.startsWith("/portal/"))return route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:url.pathname.endsWith(".svg") ? "image/svg+xml" : "image/jpeg"});
@@ -47,12 +39,12 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await page.addStyleTag({content:bundle.outputFiles.find(file=>file.path.endsWith("css"))!.text});
       for(const weight of [400,500,600,700]){const font=(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64");await page.addStyleTag({content:`@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font});font-weight:${weight}}`});}
       await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith("js"))!.text});
-      const mount=(key:string,entitled=true,room=false,initialCompleted=false,nextHref:string|null=null,completedContentIds?:string[])=>page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{locale,key,room,lesson,initialCompleted,completedContentIds,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe with attention, curiosity and confidence.",poster:"/portal/course-study.jpg",outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson"}],nextHref,entitled,trialGate:entitled ? undefined : {pricingHref:"/subscription",recommendations:[],videoLimitSeconds:60}});
+      const mount=(key:string,entitled=true,room=false,initialCompleted=false,nextHref:string|null=null,completedContentIds?:string[])=>page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{locale,key,room,lesson,initialCompleted,completedContentIds,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe with attention, curiosity and confidence.",poster:"/portal/course-study.jpg",outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson"}],nextHref,entitled,trialGate:entitled ? undefined : {pricingHref:"/pricing",recommendations:[],videoLimitSeconds:60}});
       const progress=async (time:number,duration=100)=>{await page.locator("video").waitFor();await page.locator("video").evaluate((element,{time,duration})=>{Object.defineProperty(element,"duration",{configurable:true,value:duration});Object.defineProperty(element,"currentTime",{configurable:true,writable:true,value:time});element.dispatchEvent(new Event("timeupdate",{bubbles:true}));},{time,duration});};
       const bar=page.getByRole("region",{name:locale === "zh-CN" ? "课时完成提示" : "Lesson completion"});
       await mount("entitled");await progress(97.99);assert.equal(await bar.count(),0);
       assert.equal(await page.locator('a[href*="/understanding?"]').getAttribute("href"),`/${locale}/portal/courses/course/understanding?lessonId=lesson&from=preview`);
-      assert.equal(await page.locator('a[href="/en-GB/subscription?courseId=course"],a[href="/zh-CN/subscription?courseId=course"]').count(),0);
+      assert.equal(await page.locator('a[href="/en-GB/pricing?courseId=course"],a[href="/zh-CN/pricing?courseId=course"]').count(),0);
       await page.evaluate(`(()=>{let fullscreen=document.body;Object.defineProperty(document,"fullscreenElement",{configurable:true,get:()=>fullscreen});document.exitFullscreen=async()=>{fullscreen=null;window.fullscreenExited=true;};})()`);
       await progress(98);await bar.waitFor();await page.waitForFunction(()=> (window as unknown as {fullscreenExited:boolean}).fullscreenExited===true);assert.equal(completions.length,0,"threshold must not save completion automatically");
       const box=(await bar.boundingBox())!;assert.ok(box.height < 60);
@@ -84,20 +76,13 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       }
       await page.screenshot({path:`test-results/video-completion/${locale}-completed-dialog.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").locator("img").evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0)),true);
-      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click(); await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click();
       await page.setViewportSize({width:390,height:844}); await page.screenshot({path:`test-results/video-completion/${locale}-completed-mobile.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").evaluate(element=>element.scrollWidth>element.clientWidth || element.getBoundingClientRect().right>innerWidth),false);
-      fail=true;
       await page.getByRole("dialog").getByRole("button").last().click();
-      await bar.getByRole("alert").waitFor();
-      assert.equal(await page.getByRole("dialog").count(),0,"a failed continuation returns to the video with a retry action");
-      fail=false;await bar.getByRole("button",{name:getMessages(locale).assessmentRecords.retry,exact:true}).click();
-      await page.waitForFunction(expected=>(window as unknown as {navigated:string}).navigated===expected,`/${locale}/account/learn/course?lessonId=next`);
       await page.setViewportSize({width:1440,height:1024});
       assert.equal(await page.evaluate(()=>(window as unknown as {navigated:string}).navigated),`/${locale}/account/learn/course?lessonId=next`);
       assert.equal(completions.length,2);assert.equal((completions[0] as {clientEventId:string}).clientEventId,(completions[1] as {clientEventId:string}).clientEventId);
-      assert.equal((outlineCompletions.at(-1) as {learningMode:string}).learningMode,"video");
-      assert.deepEqual(outlineCompletions.at(-1),outlineCompletions.at(-2),"video continuation retries the same whole-lesson operation");
       await mount("ended-retry"); await progress(98); await bar.waitFor();
       fail=true;
       await page.locator("video").evaluate(element=>element.dispatchEvent(new Event("ended")));
@@ -109,7 +94,7 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await progress(98);await bar.waitFor();await page.setViewportSize({width:390,height:844});
       await page.screenshot({path:`test-results/video-completion/${locale}-mobile.png`,fullPage:true});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-      await mount("preview",false);await page.locator('a[href="/subscription"]').waitFor();await progress(58,59);assert.equal(await bar.count(),0);
+      await mount("preview",false);await page.locator('a[href="/pricing"]').waitFor();await progress(58,59);assert.equal(await bar.count(),0);
       await page.locator("video").evaluate(element=>element.dispatchEvent(new Event("ended"))); assert.equal(await page.getByRole("dialog").count(),0,"unentitled previews never show completion dialog");
       const savedCount=completions.length;
       await mount("completed",true,false,true);await progress(36.749,37.5);assert.equal(await bar.count(),1);await progress(36.75,37.5);await bar.waitFor();
@@ -136,13 +121,13 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       }
       await page.screenshot({path:`test-results/video-completion/${locale}-room-completed-dialog.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").locator("img").evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0)),true);
-      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click(); await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click();
       await page.setViewportSize({width:390,height:844}); await page.screenshot({path:`test-results/video-completion/${locale}-room-completed-mobile.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").evaluate(element=>element.scrollWidth>element.clientWidth || element.getBoundingClientRect().right>innerWidth),false);
       await page.getByRole("dialog").getByRole("button").last().click();
       await page.setViewportSize({width:1440,height:1024});
       assert.equal(await page.evaluate(()=>(window as unknown as {navigated:string}).navigated),`/${locale}/account/learn/course?lessonId=next`);
-      await mount("last"); await progress(98); await bar.waitFor(); await bar.getByRole("button").last().click(); await page.getByRole("dialog").waitFor(); await page.getByRole("dialog").getByRole("button").last().click(); await page.waitForFunction(expected=>(window as unknown as {navigated:string}).navigated===expected,`/${locale}/account/my-learning`);
+      await mount("last"); await progress(98); await bar.waitFor(); await bar.getByRole("button").last().click(); await page.getByRole("dialog").waitFor(); await page.getByRole("dialog").getByRole("button").last().click(); assert.equal(await page.evaluate(()=>(window as unknown as {navigated:string}).navigated),`/${locale}/account/my-learning`);
       await page.close();
     }
   } finally {await browser.close();}

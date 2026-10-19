@@ -5,7 +5,7 @@ const base = process.env.BASE_URL || "http://127.0.0.1:3011";
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1471 } });
-  await page.goto(`${base}/en-GB/subscription`);
+  await page.goto(`${base}/en-GB/pricing`);
   await page.getByRole("button", { name: "Use essential cookies only" }).click();
   await page.evaluate(() => document.fonts.ready);
   const measured = await page.locator(".portal-footer").evaluate((footer) => {

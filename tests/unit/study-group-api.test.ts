@@ -233,7 +233,7 @@ test("study group API requires a session, hides sessions until join, and does no
   }
 });
 
-test("enter uses server receipt time and an upcoming Session keeps its maximum and its people (BUG-0157)", async () => {
+test("enter uses server receipt time and edit keeps people when the maximum would drop below them", async () => {
   const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Race", courseId: "api-course", about: "About the race." }, token);
   const groupId = (await created.json()).data.id as string;
   await call(postJoin, `http://localhost/api/study-groups/${groupId}/join`, {}, memberToken, { groupId });
@@ -275,8 +275,7 @@ test("enter uses server receipt time and an upcoming Session keeps its maximum a
     groupId,
     maxParticipants: 2
   }, token, { sessionId: wideId }, "PATCH");
-  assert.equal(shrunk.status, 403);
-  assert.equal((await shrunk.json()).code, "session_time_only");
+  assert.equal(shrunk.status, 409);
   const after = JSON.parse(await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8")) as { presences: Array<{ sessionId: string; leftAt: string | null }>; sessions: Array<{ id: string; maxParticipants: number }> };
   assert.equal(after.presences.filter((item) => item.sessionId === wideId && !item.leftAt).length, 3);
   assert.equal(after.sessions.find((item) => item.id === wideId)?.maxParticipants, 6);

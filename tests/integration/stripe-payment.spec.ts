@@ -4,16 +4,12 @@ import type Stripe from "stripe";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { createRequire } from "node:module";
-import { build, stop } from "esbuild";
-import { paymentFailure } from "../../services/paymentHttp";
 import { subscriptionPrices } from "../../contracts/payment";
 import * as productStore from "../../services/productStore";
 import * as paymentService from "../../services/paymentService";
 import * as stripePriceService from "../../services/stripePriceService";
 import { getStripe } from "../../services/stripeClient";
 import { presentSubscriptionOrders } from "../../services/subscriptionPresentationService";
-import { hydrateOrmFromSql } from "../../services/ormRuntime";
 import * as paymentWebhook from "../../app/api/payment/webhook/route";
 
 test.describe.configure({ mode: "serial" });
@@ -30,11 +26,6 @@ const sessions = new Map<string, Stripe.Checkout.Session>();
 const subscriptions = new Map<string, Stripe.Subscription>();
 const invoices = new Map<string, Stripe.Invoice>();
 const requests: Array<{ input: Stripe.Checkout.SessionCreateParams; options?: Stripe.RequestOptions }> = [];
-const previews: Stripe.InvoiceCreatePreviewParams[] = [];
-const updates: Array<{ input: Stripe.SubscriptionUpdateParams; options?: Stripe.RequestOptions }> = [];
-const updateInvoices = new Map<string, Stripe.Invoice>();
-let upgradePaymentPending = false, upgradePreviewAmount = 3586, loseUpgradeResponse = false;
-let webhookBeforeUpgradeResponse = false;
 const secret = "whsec_fake_payment_test_only";
 
 test.beforeAll(async () => {
@@ -68,32 +59,8 @@ test.beforeAll(async () => {
   stripe.checkout.sessions.retrieve = (async (id: string) => sessions.get(id)) as typeof stripe.checkout.sessions.retrieve;
   stripe.checkout.sessions.list = (async (input: { subscription: string }) => ({ data: [...sessions.values()].filter(item => (typeof item.subscription === "string" ? item.subscription : item.subscription?.id) === input.subscription).slice(0, 1) })) as typeof stripe.checkout.sessions.list;
   stripe.subscriptions.retrieve = (async (id: string) => subscriptions.get(id)) as typeof stripe.subscriptions.retrieve;
-  stripe.invoices.createPreview = (async (input: Stripe.InvoiceCreatePreviewParams) => {
-    previews.push(input);
-    const sub = subscriptions.get(input.subscription!)!, item = sub.items.data[0], start = input.subscription_details!.proration_date!;
-    return { id: "upcoming", currency: "usd", amount_due: upgradePreviewAmount, total: upgradePreviewAmount, lines: { has_more: false, data: [-1200, upgradePreviewAmount + 1200].map(amount => ({ amount, parent: { subscription_item_details: { proration: true, subscription_item: item.id } }, period: { start, end: item.current_period_end } })) } };
-  }) as typeof stripe.invoices.createPreview;
-  stripe.subscriptions.update = (async (id: string, input: Stripe.SubscriptionUpdateParams, options?: Stripe.RequestOptions) => {
+  stripe.subscriptions.update = (async (id: string, input: Stripe.SubscriptionUpdateParams) => {
     const subscription = subscriptions.get(id)!;
-    if (input.payment_behavior === "pending_if_incomplete") {
-      updates.push({ input, options });
-      const key = options!.idempotencyKey!;
-      let invoice = updateInvoices.get(key);
-      if (!invoice) {
-        const preview = await stripe.invoices.createPreview({ subscription: id, subscription_details: { proration_date: input.proration_date } });
-        invoice = { ...preview, id: "in_upgrade_" + key, customer: subscription.customer, parent: { subscription_details: { subscription: id } }, created: Math.floor(Date.now() / 1000), status: upgradePaymentPending ? "open" : "paid", billing_reason: "subscription_update", amount_paid: upgradePaymentPending ? 0 : upgradePreviewAmount, hosted_invoice_url: "https://invoice.stripe.test/" + key } as unknown as Stripe.Invoice;
-        invoices.set(invoice.id, invoice); updateInvoices.set(key, invoice);
-        subscription.pending_update = upgradePaymentPending ? { expires_at: Math.floor(Date.now() / 1000) + 86400 } as Stripe.Subscription.PendingUpdate : null;
-        if (!upgradePaymentPending) subscription.items.data[0].price = [...catalog.values()].find(item => item.id === input.items?.[0].price)!;
-        subscription.latest_invoice = invoice;
-      }
-      if (webhookBeforeUpgradeResponse) {
-        webhookBeforeUpgradeResponse = false;
-        expect((await send("invoice.paid", "evt_before_response_" + invoice.id, invoice.id)).status).toBe(200);
-      }
-      if (loseUpgradeResponse) { loseUpgradeResponse = false; throw new Error("Stripe response lost after update"); }
-      return subscription;
-    }
     subscription.items.data[0].price = [...catalog.values()].find(item => item.id === input.items?.[0].price)!;
     return subscription;
   }) as typeof stripe.subscriptions.update;
@@ -102,7 +69,6 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  stop();
   process.chdir(cwd); process.env = environment;
   if (directory && path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true });
 });
@@ -121,11 +87,11 @@ function paidSession(order: Awaited<ReturnType<typeof checkout>>["order"], trial
   const termEnd = new Date(start * 1000);
   termEnd.setUTCMonth(termEnd.getUTCMonth() + order.price!.termMonths);
   const end = trial ? start + 3 * 86400 : Math.floor(termEnd.getTime() / 1000);
-  const subscription = { id: "sub_" + order.id, metadata: { app: "learning_guide", orderId: order.id }, customer: "cus_" + order.userId, status: trial ? "trialing" : "active", cancel_at_period_end: false, trial_end: trial ? end : null, billing_cycle_anchor: start, collection_method: "charge_automatically", latest_invoice: { id: "in_source_" + order.id, status: "paid" },
-    items: { data: [{ id: "si_" + order.id, quantity: 1, current_period_start: start, current_period_end: end, price: [...catalog.values()].find(item => item.id === order.price!.stripePriceId) }] } } as unknown as Stripe.Subscription;
+  const subscription = { id: "sub_" + order.id, metadata: { app: "learning_guide", orderId: order.id }, customer: "cus_" + order.userId, status: trial ? "trialing" : "active", cancel_at_period_end: false, trial_end: trial ? end : null,
+    items: { data: [{ id: "si_" + order.id, current_period_start: start, current_period_end: end, price: [...catalog.values()].find(item => item.id === order.price!.stripePriceId) }] } } as unknown as Stripe.Subscription;
   subscriptions.set(subscription.id, subscription);
   const session = sessions.get(order.stripeCheckoutSessionId!)!;
-  Object.assign(session, { status: "complete", payment_status: trial ? "no_payment_required" : "paid", amount_total: order.amountMinor, subscription, customer: subscription.customer,
+  Object.assign(session, { status: "complete", payment_status: trial ? "no_payment_required" : "paid", amount_total: order.amountMinor, subscription,
     line_items: { has_more: false, data: [{ quantity: 1, price: { id: order.price!.stripePriceId } }] } });
   return { session, subscription, start, end };
 }
@@ -310,381 +276,31 @@ test("failed invoice grace is stable and recovery restores expired access", asyn
   expect(start).toBeLessThan(end);
 });
 
-async function upgradeSource(months: 6 | 12 = 6) {
+for (const months of [6,12] as const) test(`upgrade collects the configured ${months}-month one-time Price and changes the existing recurring subscription`, async () => {
+  const amount=months===6?6000:12000,upgradeId=months===6?"price_lg_upgrade_60":"price_lg_upgrade_120";
   const result = await checkout(`european-humanities-pc-${months}`);
-  const remote = paidSession(result.order);
-  expect((await send("checkout.session.completed", "evt_source_" + result.order.id, remote.session.id)).status).toBe(200);
+  const { session, subscription, end } = paidSession(result.order);
+  expect((await send("checkout.session.completed", `evt_upgrade_source_${months}`, session.id)).status).toBe(200);
   const source = (await store.getLearningOverview(result.buyer.id)).subscriptions[0];
-  return { ...result, ...remote, source };
-}
-
-async function hydrateQuoteWithJsonbKeyOrder(quoteId: string) {
-  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
-  const data = JSON.parse(await readFile(file, "utf8"));
-  const original = data.quotes.find((quote: { id: string }) => quote.id === quoteId);
-  const payload = structuredClone(original);
-  // JSONB does not retain insertion order. Exercise the same ORM hydration
-  // used by the deployed store with the provider snapshot's keys reordered.
-  payload.upgradeProration = Object.fromEntries(Object.entries(payload.upgradeProration).sort(([a], [b]) => a.length - b.length || a.localeCompare(b)));
-  expect(payload.upgradeProration).toEqual(original.upgradeProration);
-  expect(JSON.stringify(payload.upgradeProration)).not.toBe(JSON.stringify(original.upgradeProration));
-  await hydrateOrmFromSql(data, { query: async sql => ({ rows: sql === "SELECT table_name, id, payload FROM orm_rows" ? [{ table_name: "quotes", id: quoteId, payload }] : [] }) });
-  await writeFile(file, JSON.stringify(data));
-}
-
-test("fresh upgrade quotes remain payable after JSONB field reordering while changed values remain rejected", async () => {
-  const source = await upgradeSource();
-  const { quote } = await store.createUpgradeQuote(source.buyer.id, source.source.id);
-  await hydrateQuoteWithJsonbKeyOrder(quote.id);
-  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
-  const persisted = JSON.parse(await readFile(file, "utf8"));
-  const count = updates.length;
-  for (const field of ["itemId", "periodStart", "periodEnd", "billingCycleAnchor", "debitMinor", "creditMinor", "adjustmentsMinor", "invoiceTotalMinor", "amountDueMinor"]) {
-    const changed = structuredClone(persisted);
-    const snapshot = changed.quotes.find((item: { id: string }) => item.id === quote.id).upgradeProration;
-    snapshot[field] = typeof snapshot[field] === "number" ? snapshot[field] + 1 : snapshot[field] + "_changed";
-    await writeFile(file, JSON.stringify(changed));
-    await expect(payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
-    expect(updates).toHaveLength(count);
-    expect((await store.getLearningOverview(source.buyer.id)).orders).toHaveLength(1);
-  }
-  await writeFile(file, JSON.stringify(persisted));
-  const result = await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request());
-  expect(result.order).toMatchObject({ status: "paid", amountMinor: quote.amountMinor });
-  expect((await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request())).order.id).toBe(result.order.id);
-  expect(updates).toHaveLength(count + 1);
-  expect(source.subscription.billing_cycle_anchor).toBe(source.start);
-  expect(source.subscription.items.data[0].current_period_end).toBe(source.end);
-});
-
-test("upgrade Continue API accepts both DEV website hosts behind a proxy without changing the billing period", async () => {
-  const state = { user: null as Awaited<ReturnType<typeof user>> | null, payment, paymentFailure };
-  (globalThis as any).stripeUpgradeCheckoutApi = state;
-  const configured = process.env.NEXT_PUBLIC_APP_URL;
-  try {
-    const bundle = await build({ entryPoints: [path.join(cwd, "app/api/purchase/checkout/route.ts")], bundle: true, write: false, platform: "node", format: "cjs", external: ["next/server"], plugins: [{ name: "checkout-session", setup(b) {
-      b.onResolve({ filter: /services\/(productAuth|paymentService|paymentHttp)$/ }, args => ({ path: args.path, namespace: "mock-checkout" }));
-      b.onLoad({ filter: /.*/, namespace: "mock-checkout" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeCheckoutApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeCheckoutApi.paymentFailure(...args)" : "export const startPayment=(...args)=>globalThis.stripeUpgradeCheckoutApi.payment.startPayment(...args)" }));
-    } }] });
-    const routeModule = { exports: {} as { POST: (request: Request) => Promise<Response> } };
-    new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), routeModule, routeModule.exports);
-    for (const [browserOrigin, serverOrigin] of [["https://ilovelearningguide.com", "https://www.ilovelearningguide.com"], ["https://www.ilovelearningguide.com", "https://ilovelearningguide.com"]]) {
-      process.env.NEXT_PUBLIC_APP_URL = configured;
-      const source = await upgradeSource();
-      const { quote } = await store.createUpgradeQuote(source.buyer.id, source.source.id);
-      await hydrateQuoteWithJsonbKeyOrder(quote.id);
-      state.user = source.buyer;
-      process.env.NEXT_PUBLIC_APP_URL = serverOrigin;
-      const invoke = (origin: string) => routeModule.exports.POST(new Request("http://localhost:8080/api/purchase/checkout", { method: "POST",
-        headers: { "content-type": "application/json", origin, "x-forwarded-host": new URL(origin).host, "x-forwarded-proto": "https" },
-        body: JSON.stringify({ quoteId: quote.id, consents: consent }) }));
-      const count = updates.length;
-      const rejected = await invoke("https://attacker.invalid");
-      expect(rejected.status).toBe(403);
-      expect(await rejected.json()).toMatchObject({ ok: false, code: "origin_mismatch" });
-      expect(updates).toHaveLength(count);
-      expect((await store.getLearningOverview(source.buyer.id)).orders).toHaveLength(1);
-      const response = await invoke(browserOrigin);
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body).toMatchObject({ ok: true, order: { status: "paid", checkoutOrigin: browserOrigin, amountMinor: quote.amountMinor } });
-      expect(body.checkoutUrl).toMatch(/^\/en-GB\/account\/my-learning\/subscription\?orderId=/);
-      expect(updates).toHaveLength(count + 1);
-      expect(updates.at(-1)?.input.billing_cycle_anchor).toBe("unchanged");
-      expect(source.subscription.billing_cycle_anchor).toBe(source.start);
-      expect(source.subscription.items.data[0].current_period_end).toBe(source.end);
-      expect((await invoke(browserOrigin)).status).toBe(200);
-      expect(updates).toHaveLength(count + 1);
-      state.user = null;
-      expect((await invoke(browserOrigin)).status).toBe(401);
-    }
-  } finally {
-    process.env.NEXT_PUBLIC_APP_URL = configured;
-    delete (globalThis as any).stripeUpgradeCheckoutApi;
-  }
-});
-
-for (const months of [6, 12] as const) test(`Stripe previews and upgrades the original ${months}-month subscription without moving its period`, async () => {
-  const result = await upgradeSource(months), checkoutCount = requests.length;
-  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  expect(quote.amountMinor).toBe(3586);
-  expect(quote.upgradePrice).toBeUndefined();
-  expect(quote.upgradeProration?.creditMinor).toBe(1200);
-  expect(previews.at(-1)?.subscription_details).toMatchObject({ billing_cycle_anchor: "unchanged", proration_behavior: "always_invoice", items: [{ id: result.subscription.items.data[0].id, price: `price_everything-pc-${months}`, quantity: 1 }] });
+  const { quote } = await store.createUpgradeQuote(result.buyer.id, source.id);
+  expect(quote.amountMinor).toBe(amount);
+  expect(quote.upgradePrice?.stripePriceId).toBe(upgradeId);
   const upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
-  expect(requests).toHaveLength(checkoutCount);
-  expect(upgraded.checkoutUrl).toContain("/account/my-learning/subscription?orderId=");
-  expect(upgraded.order.stripeInvoiceId).toBeTruthy();
-  expect(updates.at(-1)?.input).toMatchObject({ billing_cycle_anchor: "unchanged", payment_behavior: "pending_if_incomplete", proration_behavior: "always_invoice", proration_date: quote.upgradeProration?.prorationDate });
-  expect(result.subscription.items.data[0].price.id).toBe(`price_everything-pc-${months}`);
-  expect((await send("invoice.paid", `evt_upgrade_paid_${months}`, upgraded.order.stripeInvoiceId!)).status).toBe(200);
-  expect((await send("invoice.paid", `evt_upgrade_paid_${months}`, upgraded.order.stripeInvoiceId!)).status).toBe(200);
-  const overview = await store.getLearningOverview(result.buyer.id);
-  const active = overview.subscriptions.filter(item => item.state === "active");
+  const upgradeSession = sessions.get(upgraded.order.stripeCheckoutSessionId!)!;
+  expect(requests.at(-1)!.input.mode).toBe("payment");
+  expect(requests.at(-1)!.input.line_items).toEqual([{quantity:1,price:upgradeId}]);
+  Object.assign(upgradeSession, { status: "complete", payment_status: "paid", amount_total: amount, line_items: { has_more: false, data: [{ quantity: 1,price:{id:"wrong_price"} }] } });
+  expect((await send("checkout.session.completed", `evt_upgrade_paid_${months}`, upgradeSession.id)).status).toBe(400);
+  expect(subscription.items.data[0].price.id).toBe(`price_european-humanities-pc-${months}`);
+  upgradeSession.line_items!.data[0].price={id:upgradeId} as Stripe.Price;
+  expect((await send("checkout.session.completed", `evt_upgrade_paid_${months}`, upgradeSession.id)).status).toBe(200);
+  expect((await send("checkout.session.completed", `evt_upgrade_paid_${months}`, upgradeSession.id)).status).toBe(200);
+  expect(subscription.items.data[0].price.id).toBe(`price_everything-pc-${months}`);
+  const active = (await store.getLearningOverview(result.buyer.id)).subscriptions.filter(item => item.state === "active");
   expect(active).toHaveLength(1);
-  expect(active[0]).toMatchObject({ stripeSubscriptionId: result.subscription.id, stripeCustomerId: result.source.stripeCustomerId, validFrom: result.source.validFrom, validTo: result.source.validTo });
-  expect(overview.orders).toHaveLength(2);
-  expect(result.subscription.billing_cycle_anchor).toBe(result.start);
-  expect(result.subscription.items.data[0].current_period_end).toBe(result.end);
-  const before = updates.length;
-  expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).order.id).toBe(upgraded.order.id);
-  expect(updates).toHaveLength(before);
-  // A later recurring invoice renews Everything, rather than restoring Category.
-  const renewal = { id: "in_after_upgrade_" + months, parent: { subscription_details: { subscription: result.subscription.id } }, currency: "usd", amount_paid: months === 6 ? 9900 : 19800, status: "paid", billing_reason: "subscription_cycle", lines: { has_more: false, data: [{ period: { start: result.end, end: result.end + 180 * 86400 }, pricing: { price_details: { price: `price_everything-pc-${months}` } } }] } } as unknown as Stripe.Invoice;
-  invoices.set(renewal.id, renewal);
-  result.subscription.items.data[0].current_period_start = result.end;
-  result.subscription.items.data[0].current_period_end = result.end + 180 * 86400;
-  expect((await send("invoice.paid", "evt_renew_after_upgrade_" + months, renewal.id)).status).toBe(200);
-  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.state === "active")?.scope).toBe("everything");
-  expect((await send("invoice.paid", `evt_delayed_upgrade_${months}`, upgraded.order.stripeInvoiceId!)).status).toBe(200);
-  expect((await store.getLearningOverview(result.buyer.id)).orders).toHaveLength(3);
-});
-
-test("a second Category invalidates a previous upgrade preview before Stripe is changed", async () => {
-  const result = await upgradeSource();
-  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  const secondQuote = await store.createQuote(result.buyer.id, "science-pc-12");
-  const second = await payment.startPayment(result.buyer, { quoteId: secondQuote.quote.id, consents: consent }, request());
-  const secondPaid = paidSession(second.order);
-  expect((await send("checkout.session.completed", "evt_multi_second", secondPaid.session.id)).status).toBe(200);
-  const count = updates.length;
-  await expect(store.createUpgradeQuote(result.buyer.id, result.source.id)).rejects.toMatchObject({ code: "upgrade_unavailable" });
-  await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "upgrade_unavailable" });
-  expect(updates).toHaveLength(count);
-});
-
-test("declined or authentication-required upgrade keeps Category, reserves one invoice and fulfils once after payment", async () => {
-  const result = await upgradeSource();
-  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  upgradePaymentPending = true;
-  let upgraded: Awaited<ReturnType<typeof payment.startPayment>>;
-  try { upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); } finally { upgradePaymentPending = false; }
-  expect(upgraded.checkoutUrl).toContain("https://invoice.stripe.test/");
-  const invoice = invoices.get(upgraded.order.stripeInvoiceId!)!, count = updates.length;
-  await expect(store.createQuote(result.buyer.id, "science-pc-6")).rejects.toMatchObject({ code: "upgrade_in_progress" });
-  await expect(store.createUpgradeQuote(result.buyer.id, result.source.id)).rejects.toMatchObject({ code: "upgrade_in_progress" });
-  expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).checkoutUrl).toBe(upgraded.checkoutUrl);
-  expect(updates).toHaveLength(count);
-  expect((await send("invoice.payment_failed", "evt_upgrade_failed", invoice.id)).status).toBe(200);
-  const current = (await store.getLearningOverview(result.buyer.id)).subscriptions.filter(item => item.state === "active");
-  expect(current).toHaveLength(1); expect(current[0].scope).toBe("category");
-  result.subscription.pending_update = null;
-  result.subscription.items.data[0].price = catalog.get("everything-pc-6")!;
-  invoice.status = "paid"; invoice.amount_paid = invoice.amount_due;
-  expect((await send("invoice.paid", "evt_upgrade_recovered", invoice.id)).status).toBe(200);
-  expect((await send("invoice.paid", "evt_upgrade_recovered", invoice.id)).status).toBe(200);
-  const overview = await store.getLearningOverview(result.buyer.id);
-  expect(overview.orders.filter(item => item.kind === "upgrade")).toHaveLength(1);
-  expect(overview.subscriptions.filter(item => item.state === "active")[0].scope).toBe("everything");
-});
-
-test("voided pending upgrade releases its reservation without extending or removing Category", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  upgradePaymentPending = true;
-  let upgraded: Awaited<ReturnType<typeof payment.startPayment>>;
-  try { upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); } finally { upgradePaymentPending = false; }
-  const invoice = invoices.get(upgraded.order.stripeInvoiceId!)!;
-  invoice.status = "void"; result.subscription.pending_update = null;
-  expect((await send("invoice.voided", "evt_upgrade_void", invoice.id)).status).toBe(200);
-  const overview = await store.getLearningOverview(result.buyer.id);
-  expect(overview.orders.find(item => item.id === upgraded.order.id)?.status).toBe("canceled");
-  expect(overview.subscriptions[0]).toMatchObject({ scope: "category", state: "active", validTo: result.source.validTo });
-  await store.createQuote(result.buyer.id, "science-pc-6");
-});
-
-test("a Category with historical renewal orders still previews against its verified original recurring Price", async () => {
-  const result = await upgradeSource();
-  const renewal = { id: "in_category_before_upgrade", parent: { subscription_details: { subscription: result.subscription.id } }, currency: "usd", amount_paid: result.order.amountMinor, status: "paid", billing_reason: "subscription_cycle", lines: { has_more: false, data: [{ period: { start: result.start, end: result.end }, pricing: { price_details: { price: result.order.price!.stripePriceId } } }] } } as unknown as Stripe.Invoice;
-  invoices.set(renewal.id, renewal);
-  expect((await send("invoice.paid", "evt_category_before_upgrade", renewal.id)).status).toBe(200);
-  const latest = (await store.getLearningOverview(result.buyer.id)).orders[0];
-  expect(latest.price).toBeUndefined();
-  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  expect(quote.upgradeProration?.sourcePriceId).toBe(result.order.price!.stripePriceId);
-  expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).order.status).toBe("paid");
-});
-
-test("a legacy paid Stripe Category without a Price snapshot or app marker upgrades using its verified original Checkout", async () => {
-  const result = await upgradeSource();
-  delete result.session.metadata!.app;
-  delete result.subscription.metadata.app;
-  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
-  const data = JSON.parse(await readFile(file, "utf8"));
-  delete data.orders.find((item: { id: string }) => item.id === result.order.id).price;
-  // Legacy fulfilment used local callback time instead of Stripe period bounds.
-  const oldSource = data.subscriptions.find((item: { id: string }) => item.id === result.source.id);
-  oldSource.validFrom = new Date((result.start + 4) * 1000).toISOString();
-  oldSource.validTo = new Date((result.end + 4) * 1000).toISOString();
-  await writeFile(file, JSON.stringify(data));
-  const original = JSON.parse(await readFile(file, "utf8"));
-  const count = updates.length;
-  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  expect(quote.upgradeProration).toMatchObject({ sourcePriceId: result.order.price!.stripePriceId, periodEnd: result.end, amountDueMinor: 3586 });
-  expect(updates).toHaveLength(count);
-  await hydrateQuoteWithJsonbKeyOrder(quote.id);
-  const afterQuote = JSON.parse(await readFile(file, "utf8"));
-  expect(afterQuote.orders).toEqual(original.orders);
-  expect(afterQuote.subscriptions).toEqual(original.subscriptions);
-  const changed = structuredClone(afterQuote);
-  changed.subscriptions.find((item: { id: string }) => item.id === result.source.id).validTo = new Date((result.end + 5) * 1000).toISOString();
-  await writeFile(file, JSON.stringify(changed));
-  await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
-  expect(updates).toHaveLength(count);
-  await writeFile(file, JSON.stringify(afterQuote));
-  let upgrade: Awaited<ReturnType<typeof payment.startPayment>>;
-  upgradePaymentPending = true;
-  try { upgrade = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); }
-  finally { upgradePaymentPending = false; }
-  const invoice = invoices.get(upgrade.order.stripeInvoiceId!)!;
-  invoice.status = "paid"; invoice.amount_paid = invoice.amount_due;
-  result.subscription.pending_update = null;
-  result.subscription.items.data[0].price = catalog.get("everything-pc-6")!;
-  expect((await send("invoice.paid", "evt_legacy_native_upgrade", invoice.id)).status).toBe(200);
-  expect((await send("invoice.paid", "evt_legacy_native_upgrade", invoice.id)).status).toBe(200);
-  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.scope === "everything")?.validTo).toBe(new Date(result.end * 1000).toISOString());
-});
-
-test("cancelled renewal during a pending upgrade is preserved after payment, with the original end date", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  upgradePaymentPending = true;
-  let upgraded: Awaited<ReturnType<typeof payment.startPayment>>;
-  try { upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); } finally { upgradePaymentPending = false; }
-  result.subscription.cancel_at_period_end = true;
-  expect((await send("customer.subscription.updated", "evt_pending_cancel_renewal", result.subscription.id)).status).toBe(200);
-  expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).checkoutUrl).toBe(upgraded.checkoutUrl);
-  const invoice = invoices.get(upgraded.order.stripeInvoiceId!)!;
-  invoice.status = "paid"; invoice.amount_paid = invoice.amount_due;
-  result.subscription.pending_update = null; result.subscription.items.data[0].price = catalog.get("everything-pc-6")!;
-  expect((await send("invoice.paid", "evt_paid_after_renewal_cancel", invoice.id)).status).toBe(200);
-  const everything = (await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.scope === "everything");
-  expect(everything).toMatchObject({ state: "cancel_at_period_end", cancelAtPeriodEnd: true, validTo: result.source.validTo });
-});
-
-test("lost Stripe update response is recovered through its invoice without charging again", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  loseUpgradeResponse = true;
-  await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toThrow("response lost");
-  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json");
-  const data = JSON.parse(await readFile(file, "utf8"));
-  data.quotes.find((item: { id: string }) => item.id === quote.id).expiresAt = "2000-01-01T00:00:00Z";
-  await writeFile(file, JSON.stringify(data));
-  const count = updates.length;
-  const recovered = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
-  expect(recovered.order.status).toBe("paid"); expect(updates).toHaveLength(count);
-  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.filter(item => item.state === "active")[0].scope).toBe("everything");
-});
-
-test("a signed invoice arriving before the update response associates and fulfils the reserved order once", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  webhookBeforeUpgradeResponse = true;
-  const upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
-  const overview = await store.getLearningOverview(result.buyer.id);
-  expect(upgraded.order.status).toBe("paid");
-  expect(overview.orders.filter(item => item.kind === "upgrade")).toHaveLength(1);
-  expect(overview.subscriptions.filter(item => item.scope === "everything")).toHaveLength(1);
-});
-
-test("an invoice with a wrong amount or customer never grants Everything and can be retried after correction", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  upgradePaymentPending = true;
-  let upgraded: Awaited<ReturnType<typeof payment.startPayment>>;
-  try { upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); } finally { upgradePaymentPending = false; }
-  const invoice = invoices.get(upgraded.order.stripeInvoiceId!)!;
-  result.subscription.pending_update = null; result.subscription.items.data[0].price = catalog.get("everything-pc-6")!;
-  invoice.status = "paid"; invoice.amount_paid = invoice.amount_due; invoice.amount_due = 1;
-  expect((await send("invoice.paid", "evt_upgrade_mismatch", invoice.id)).status).toBe(400);
-  invoice.amount_due = quote.amountMinor; const customer = invoice.customer; invoice.customer = "cus_wrong";
-  expect((await send("invoice.paid", "evt_upgrade_mismatch", invoice.id)).status).toBe(400);
-  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.filter(item => item.scope === "everything")).toHaveLength(0);
-  invoice.customer = customer;
-  expect((await send("invoice.paid", "evt_upgrade_mismatch", invoice.id)).status).toBe(200);
-});
-
-test("Stripe preview failure and an expired quote cannot fall back to a fixed fee or create a charge", async () => {
-  const result = await upgradeSource(), before = updates.length;
-  const preview = stripe.invoices.createPreview;
-  stripe.invoices.createPreview = (async () => { throw new Error("Stripe unavailable"); }) as typeof preview;
-  try { await expect(store.createUpgradeQuote(result.buyer.id, result.source.id)).rejects.toMatchObject({ code: "price_unavailable" }); } finally { stripe.invoices.createPreview = preview; }
-  const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json"), data = JSON.parse(await readFile(file, "utf8"));
-  data.quotes.find((item: { id: string }) => item.id === quote.id).expiresAt = "2000-01-01T00:00:00Z";
-  await writeFile(file, JSON.stringify(data));
-  await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
-  expect(updates).toHaveLength(before);
-  expect((await store.getLearningOverview(result.buyer.id)).orders).toHaveLength(1);
-});
-
-test("changed Stripe amount, invalid source interval and another user's quote fail before update", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  const count = updates.length;
-  await expect(payment.startPayment(await user(), { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
-  upgradePreviewAmount = 1467;
-  try { await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" }); } finally { upgradePreviewAmount = 3586; }
-  const sourcePrice = result.subscription.items.data[0].price;
-  result.subscription.items.data[0].price = { ...sourcePrice, recurring: { ...sourcePrice.recurring!, interval_count: 1 } };
-  await expect(store.createUpgradeQuote(result.buyer.id, result.source.id)).rejects.toMatchObject({ code: "upgrade_unavailable" });
-  result.subscription.items.data[0].price = sourcePrice;
-  result.subscription.items.data[0].current_period_end += 86400;
-  await expect(store.createUpgradeQuote(result.buyer.id, result.source.id)).rejects.toMatchObject({ code: "upgrade_unavailable" });
-  expect(updates).toHaveLength(count);
-});
-
-test("zero Stripe amount is honoured and old fixed upgrade price configuration is unnecessary", async () => {
-  const result = await upgradeSource();
-  const saved = process.env.STRIPE_PRICE_UPGRADE_SIX_MONTHS;
-  delete process.env.STRIPE_PRICE_UPGRADE_SIX_MONTHS; upgradePreviewAmount = 0;
-  try {
-    const { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-    expect(quote.amountMinor).toBe(0);
-    const upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
-    expect(upgraded.order.status).toBe("paid");
-  } finally { process.env.STRIPE_PRICE_UPGRADE_SIX_MONTHS = saved; upgradePreviewAmount = 3586; }
-});
-
-test("quote API returns Stripe's amount for the session owner and ignores client amount, Price and term", async () => {
-  const result = await upgradeSource(12);
-  const state = { user: result.buyer as typeof result.buyer | null, store, paymentFailure };
-  (globalThis as any).stripeUpgradeApi = state;
-  try {
-    const bundle = await build({ entryPoints: [path.join(cwd, "app/api/subscription/quote/route.ts")], bundle: true, write: false, platform: "node", format: "cjs", external: ["next/server"], plugins: [{ name: "session", setup(b) {
-      b.onResolve({ filter: /services\/(productStore|productAuth|paymentHttp)$/ }, args => ({ path: args.path, namespace: "mock" }));
-      b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeApi.paymentFailure(...args)" : "export const createQuote=(...args)=>globalThis.stripeUpgradeApi.store.createQuote(...args),createUpgradeQuote=(...args)=>globalThis.stripeUpgradeApi.store.createUpgradeQuote(...args),getQuoteForUser=(...args)=>globalThis.stripeUpgradeApi.store.getQuoteForUser(...args)" }));
-    } }] });
-    const routeModule = { exports: {} as { POST: (request: Request) => Promise<Response>; GET: (request: Request) => Promise<Response> } };
-    new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), routeModule, routeModule.exports);
-    const invoke = () => routeModule.exports.POST(new Request("https://payment.example.test/api/subscription/quote", { method: "POST", body: JSON.stringify({ kind: "upgrade", subscriptionId: result.source.id, amountMinor: 1, priceId: "untrusted", termMonths: 6, userId: "forged" }) }));
-    const response = await invoke(); expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.quote).toMatchObject({ userId: result.buyer.id, amountMinor: 3586, creditMinor: 1200, price: { termMonths: 12, stripePriceId: "price_everything-pc-12" }, upgradeProration: { subscriptionId: result.subscription.id, periodEnd: result.end } });
-    expect(body.plan.amountMinor).toBe(19800);
-    const file = path.join(directory, "data/knowledge_system/learning_guide/product.json"), data = JSON.parse(await readFile(file, "utf8"));
-    delete data.orders.find((item: { id: string }) => item.id === result.order.id).price;
-    await writeFile(file, JSON.stringify(data));
-    delete result.session.metadata!.app;
-    delete result.subscription.metadata.app;
-    const legacy = await invoke();
-    expect(legacy.status).toBe(200);
-    expect((await legacy.json()).quote.upgradeProration).toMatchObject({ sourcePriceId: result.order.price!.stripePriceId, periodEnd: result.end, amountDueMinor: 3586 });
-    state.user = await user();
-    expect((await routeModule.exports.GET(new Request(`https://payment.example.test/api/subscription/quote?quoteId=${body.quote.id}`))).status).toBe(404);
-    state.user = null; expect((await invoke()).status).toBe(401);
-  } finally { delete (globalThis as any).stripeUpgradeApi; }
-});
-
-test("new fixed-fee checkouts are rejected while already-issued legacy Checkout callbacks still reconcile", async () => {
-  const result = await upgradeSource(), { quote } = await store.createUpgradeQuote(result.buyer.id, result.source.id);
-  const file = path.join(directory, "data/knowledge_system/learning_guide/product.json"), data = JSON.parse(await readFile(file, "utf8"));
-  const oldQuote = data.quotes.find((item: { id: string }) => item.id === quote.id);
-  delete oldQuote.upgradeProration;
-  Object.assign(oldQuote, { amountMinor: 6000, creditMinor: 3900, upgradePrice: { stripePriceId: "price_lg_upgrade_60", lookupKey: "lg_upgrade_60", amountMinor: 6000, currency: "usd", termMonths: 6 } });
-  await writeFile(file, JSON.stringify(data));
-  await expect(payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
-  const { order } = await store.createPendingStripeUpgradeOrderFromQuote(result.buyer.id, quote.id), sessionId = "cs_legacy_upgrade";
-  await store.attachStripeCheckoutSession(result.buyer.id, order.id, sessionId);
-  sessions.set(sessionId, { id: sessionId, mode: "payment", status: "complete", payment_status: "paid", currency: "usd", amount_total: 6000, metadata: { app: "learning_guide", orderId: order.id, userId: result.buyer.id, quoteId: quote.id, planId: "everything-pc-6" }, line_items: { has_more: false, data: [{ quantity: 1, price: { id: "price_lg_upgrade_60" } }] } } as unknown as Stripe.Checkout.Session);
-  expect((await send("checkout.session.completed", "evt_legacy_upgrade_paid", sessionId)).status).toBe(200);
-  expect((await send("checkout.session.completed", "evt_legacy_upgrade_paid", sessionId)).status).toBe(200);
-  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(item => item.scope === "everything")?.validTo).toBe(result.source.validTo);
+  expect(active[0].stripeSubscriptionId).toBe(subscription.id);
+  expect(active[0].validTo).toBe(new Date(end * 1000).toISOString());
+  expect(active[0].stripeCustomerId).toBe(source.stripeCustomerId);
 });
 
 test("upgrade Price rejects missing configuration, recurring products, wrong amounts and inactive Prices",async()=>{

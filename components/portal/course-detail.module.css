@@ -57,6 +57,9 @@ details[open] .toggle img { transform: none; }
 .page button.preview { border: 0; font-family: inherit; }
 .page .preview:disabled { opacity: .5; cursor: not-allowed; }
 /* Keep the shared components; scope this screen's Figma presentation. */
+.page :global(.portal-footer) { background: #155dfc; padding-bottom: 29px; }
+.page :global(.portal-footer-social) { gap: 20px; }
+.page :global(.portal-footer-grid > div:first-child p) { max-width: 270px; line-height: 20px; }
 @media (max-width: 1100px) {
   .body { width: calc(100% - 40px); grid-template-columns: minmax(0, 1fr) 320px; }
   .card { padding: 24px; }

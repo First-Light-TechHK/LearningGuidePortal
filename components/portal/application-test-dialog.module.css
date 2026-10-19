@@ -8,7 +8,7 @@
 .back img { display:block; flex:none; }
 .heading { display:flex; align-items:center; gap:10px; min-width:0; }
 .dialog .heading h2 { margin:0; font:600 16px/19px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space:nowrap; }
-.dialog .heading p { margin:0; color:#637594; font-size:14px; line-height:17px; font-weight:400; }
+.dialog .heading p { margin:0; color:#637594; font-size:14px; line-height:17px; }
 .body { flex:1; min-height:0; padding:32px 24px; overflow:hidden; }
 .columns { display:grid; grid-template-columns:480px minmax(0,1fr); gap:32px; max-width:1200px; height:100%; margin:0 auto; }
 .question { display:flex; flex-direction:column; align-items:flex-start; gap:18px; min-height:0; padding:32px; border:1px solid #dee4ec; border-radius:20px; background:#fff; overflow:hidden; }
@@ -56,8 +56,6 @@
 .dialog .reference p + p { margin-top:-10px; }
 .resultFooter { display:flex; flex:none; justify-content:flex-end; align-items:center; gap:12px; padding-top:12px; }
 .resultFooter > button:first-child:not(:last-child) { margin-right:auto; }
-.dialog .saveError { flex:none; margin:0; color:#b42318; background:transparent; font-size:14px; line-height:22px; }
-.saveError button { padding:2px 8px; border:0; background:transparent; color:#1d6bff; font:600 14px/22px Inter,ui-sans-serif,system-ui,sans-serif; cursor:pointer; }
 @media(max-width:1100px) { .columns { grid-template-columns:minmax(280px,2fr) minmax(0,3fr); gap:24px; }.question { padding:24px; }.heading { max-width:75%; } }
 @media(max-width:700px) { .dialog .header { padding:0 16px; gap:16px; min-height:72px; }.headerSide { flex:none; }.headerSide:last-child { display:none; }.heading { flex:1; flex-direction:column; align-items:flex-start; gap:4px; max-width:none; }.heading p { overflow-wrap:anywhere; }.body { padding:16px; overflow-y:auto; }.columns { display:flex; flex-direction:column; gap:20px; height:auto; min-height:100%; }.question { flex:none; padding:20px; gap:12px; max-height:330px; }.questionScroll { flex:auto; min-height:140px; }.right { flex:none; min-height:500px; }.inputBox { flex:none; min-height:260px; }.dialog .inputBox textarea { min-height:220px; }.resultScroll { flex:none; max-height:65dvh; min-height:300px; padding:24px; }.resultFooter { flex-wrap:wrap; padding-top:0; }.dialog .primary, .dialog .secondary { padding:14px 18px; }.meta { font-size:12px; } }
 @media(min-width:701px) and (max-height:600px) { .body { padding:16px 24px; }.question { padding:20px; gap:12px; }.right { gap:12px; }.evaluation { padding:12px 16px; gap:8px; }.resultScroll { padding:20px; } }

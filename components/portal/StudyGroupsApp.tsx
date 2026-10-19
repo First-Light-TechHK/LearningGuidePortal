@@ -291,7 +291,6 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const pane = studyGroupPane({ status, selected: selected ? { role: selected.role, sessions: selected.sessions ?? null } : null });
   const visibleMine = mine.filter((group) => mineFilter === "all" || group.role === "host");
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
-  const timeOnly = dialog === "edit-session";
   const errorPlace = studyGroupErrorPlace({ status, dialog, hasSelected: Boolean(selected), hasError: studyGroupHasError(errorCode) });
 
   async function submitCreate(form: FormData) {
@@ -465,8 +464,18 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     const startsAt = new Date(`${form.get("date")}T${form.get("time")}`).toISOString();
     const result = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${editingSession.id}`, {
       method: "PATCH",
-      // Only the Start Time of an upcoming Session can change (BUG-0157).
-      body: JSON.stringify({ groupId: selected.id, startsAt })
+      body: JSON.stringify({
+        groupId: selected.id,
+        ...scheduleSessionFields({
+          title: form.get("title"),
+          startsAt,
+          durationMinutes: Number(form.get("durationMinutes")),
+          maxParticipants: Number(form.get("maxParticipants")),
+          focus: form.get("focus"),
+          aiTutorEnabled: form.get("aiTutor") === "on",
+          relatedLessonId: form.get("lesson")
+        })
+      })
     });
     if (!result.ok) {
       setErrorCode(result.code);
@@ -664,18 +673,18 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
             ) : null}
             {dialog === "schedule" || dialog === "edit-session" ? (
               <>
-                <p className={styles.lead}>{dialog === "edit-session" ? copy.editSessionLead : copy.arrangeLead}</p>
+                <p className={styles.lead}>{copy.arrangeLead}</p>
                 <div className={styles.contextCard}><strong>{selected?.title}</strong><span>{selected?.about}</span></div>
-                <label className={styles.field}><span>{copy.sessionTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required disabled={timeOnly} maxLength={SESSION_TITLE_MAX} value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value.slice(0, SESSION_TITLE_MAX))} /><span className={styles.counter}>{sessionTitleCount(sessionTitle)}</span></span></label>
-                <label className={styles.field}><span>{copy.relatedLesson}</span><select name="lesson" disabled={timeOnly} value={sessionLesson} onChange={(event) => setSessionLesson(event.target.value)}><option value="">{copy.selectLesson}</option>{(selected?.lessons || []).map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title}</option>)}</select></label>
+                <label className={styles.field}><span>{copy.sessionTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={SESSION_TITLE_MAX} value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value.slice(0, SESSION_TITLE_MAX))} /><span className={styles.counter}>{sessionTitleCount(sessionTitle)}</span></span></label>
+                <label className={styles.field}><span>{copy.relatedLesson}</span><select name="lesson" value={sessionLesson} onChange={(event) => setSessionLesson(event.target.value)}><option value="">{copy.selectLesson}</option>{(selected?.lessons || []).map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title}</option>)}</select></label>
                 <div className={styles.pair}>
                   <label className={styles.field}><span>{copy.date} <span className={styles.req}>*</span></span><input name="date" type="date" required min={todayDate()} value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} /></label>
                   <label className={styles.field}><span>{copy.startTime} <span className={styles.req}>*</span></span><input name="time" type="time" required min={earliestTime(sessionDate) || undefined} value={sessionTime} onChange={(event) => setSessionTime(event.target.value)} /></label>
-                  <label className={styles.field}><span>{copy.duration} <span className={styles.req}>*</span></span><select name="durationMinutes" required disabled={timeOnly} value={sessionDuration} onChange={(event) => setSessionDuration(event.target.value)}><option value="">{copy.selectDuration}</option>{DURATION_MINUTE_CHOICES.map((minutes) => <option key={minutes} value={minutes}>{fill(copy.plannedDuration, { count: minutes })}</option>)}</select></label>
-                  <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required disabled={timeOnly} value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
+                  <label className={styles.field}><span>{copy.duration} <span className={styles.req}>*</span></span><select name="durationMinutes" required value={sessionDuration} onChange={(event) => setSessionDuration(event.target.value)}><option value="">{copy.selectDuration}</option>{DURATION_MINUTE_CHOICES.map((minutes) => <option key={minutes} value={minutes}>{fill(copy.plannedDuration, { count: minutes })}</option>)}</select></label>
+                  <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
                 </div>
-                <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={50} placeholder={copy.enterDescription} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, 50))} /><span className={styles.counter}>{sessionFocus.length}/50</span></span></label>
-                <label className={styles.switch}><span>{copy.aiTutorLabel}</span><span className={styles.switchText}>{copy.enableAiTutor}</span><input name="aiTutor" type="checkbox" disabled={timeOnly} checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} /></label>
+                <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" maxLength={50} placeholder={copy.enterDescription} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, 50))} /><span className={styles.counter}>{sessionFocus.length}/50</span></span></label>
+                <label className={styles.switch}><span>{copy.aiTutorLabel}</span><span className={styles.switchText}>{copy.enableAiTutor}</span><input name="aiTutor" type="checkbox" checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} /></label>
               </>
             ) : null}
             {errorPlace === "dialog" ? <p className={styles.alert} role="alert">{errorText}</p> : null}

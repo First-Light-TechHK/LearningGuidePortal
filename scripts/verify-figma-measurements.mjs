@@ -49,7 +49,7 @@ for (const [browserName, engine] of Object.entries({ chromium, firefox, webkit }
     await page.screenshot({ path: path.join(out, `${browserName}-sign-in.png`), fullPage: true });
     if (process.env.MEASURE_ONLY === "1") continue;
     for (const locale of ["en-GB", "zh-CN"]) {
-      for (const route of ["portal/sign-in", "portal/sign-in?step=password", "portal/sign-in?oauthError=state", "portal/sign-up", "portal", "portal/courses", "subscription"]) {
+      for (const route of ["portal/sign-in", "portal/sign-in?step=password", "portal/sign-in?oauthError=state", "portal/sign-up", "portal", "portal/courses", "pricing"]) {
         await page.goto(`${base}/${locale}/${route}`);
         await page.evaluate(() => document.fonts.ready);
         for (const width of [1440, 768, 390, 320]) {

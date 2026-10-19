@@ -219,8 +219,7 @@ export async function isolate(prefix: string) {
       }
       Object.assign(process.env, envSnapshot);
       clearCookies();
-      if (path.dirname(path.resolve(directory)) !== path.resolve(tmpdir())) throw new Error("Unexpected test directory.");
-      await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+      await rm(directory, { recursive: true, force: true });
     }
   };
 }

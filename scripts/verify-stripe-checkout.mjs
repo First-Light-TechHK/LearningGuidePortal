@@ -77,7 +77,7 @@ try {
   const output = path.join(repo, "test-results", "stripe-checkout");
   await fs.mkdir(output, { recursive: true });
   for (const locale of ["en-GB", "zh-CN"]) {
-    await page.goto(base + "/" + locale + "/subscription", { waitUntil: "networkidle" });
+    await page.goto(base + "/" + locale + "/pricing", { waitUntil: "networkidle" });
     await page.screenshot({ path: path.join(output, locale + "-pricing.png"), fullPage: true });
     assert(await page.locator(".pricing-design-card").count() === 2, "Pricing cards did not render.");
   }

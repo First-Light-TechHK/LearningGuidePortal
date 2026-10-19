@@ -1,17 +1,8 @@
 import type { UnderstandingOverviewDisplay } from "@/contracts/understanding-overview";
-import { listLessonAssessments } from "@/repositories/lessonAssessmentRepository";
-import { assessmentContext, summariseAssessment } from "./lessonAssessmentService";
+import type { Locale } from "@/lib/i18n/config";
 
-export async function getUnderstandingOverview(userId: string, courseId: string): Promise<UnderstandingOverviewDisplay> {
-  const { course, completedLessons } = await assessmentContext(userId, courseId);
-  const records = await listLessonAssessments(userId, course.id);
-  const lessons = course.sections.flatMap(section => section.lessons).map((lesson, index) => {
-    const knowledgeRecord = records.find(record => record.lessonId === lesson.id && record.kind === "knowledge");
-    const applicationRecord = records.find(record => record.lessonId === lesson.id && record.kind === "application");
-    const knowledge = summariseAssessment(knowledgeRecord, "knowledge"), application = summariseAssessment(applicationRecord, "application");
-    const state = knowledge.status === "completed" && application.status === "completed" ? "completed" : completedLessons.has(lesson.id) || knowledgeRecord || applicationRecord ? "current" : "locked";
-    return { id: lesson.id, number: String(index + 1).padStart(2, "0"), title: lesson.title, state, knowledge, application } as UnderstandingOverviewDisplay["lessons"][number];
-  });
-  const completed = lessons.filter(lesson => lesson.state === "completed").length;
-  return { lessons, completed, total: lessons.length, percent: lessons.length ? Math.floor(completed / lessons.length * 100) : 0 };
+/** Figma presentation samples only; never persisted as Study or assessment facts. */
+export function sampleUnderstandingOverview(locale: Locale): UnderstandingOverviewDisplay {
+  const titles = locale === "zh-CN" ? ["仔细观察", "阅读图像", "物品与记忆", "建立视觉词汇", "联系你的观察"] : ["Looking closely", "Reading images", "Objects and memory", "Building visual vocabulary", "Connecting your observations"];
+  return { completed:2, total:8, percent:25, lessons:titles.map((title,index) => ({ number:String(index+1).padStart(2,"0"), title, state:index === 0 ? "completed" : index === 1 ? "current" : "locked" })) };
 }

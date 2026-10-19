@@ -30,7 +30,7 @@ test.describe("live release e2e", () => {
     // Anonymous access is an auth boundary, not proof of successful lesson rendering.
     await expect(page).toHaveURL(/\/portal\/sign-in\?/);
     await expect(page.locator('input[type="email"]')).toBeVisible();
-    await page.goto("/en-GB/subscription");
+    await page.goto("/en-GB/pricing");
     await expect(page.locator("body")).not.toContainText(/Application error|Internal Server Error/i);
     await page.goto("/en-GB/account/my-learning");
     await expect(page.locator("#my-learning-heading")).toHaveCount(0);

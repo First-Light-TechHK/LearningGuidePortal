@@ -2070,7 +2070,7 @@ body { background: #fff; color: var(--lg-ink); }
 .portal-why-band > div { width: min(1180px, 100%); margin: 0 auto; }
 .portal-why-band .portal-eyebrow { color: #b9d0ff; }
 .portal-why-band h2 { color: #fff; }
-.portal-footer { padding: 52px max(32px, 6vw) 30px; background: #155dfc; color: #fff; }
+.portal-footer { padding: 52px max(32px, 6vw) 30px; background: var(--lg-slate); color: #fff; }
 .portal-footer-grid { width: min(1180px, 100%); margin: 0 auto; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 40px; }
 .portal-footer h2 { margin: 0 0 18px; color: #fff; font-size: 15px; }
 .portal-footer p, .portal-footer a { display: block; max-width: 250px; margin: 0 0 9px; color: #d0d5dd; font-size: 12px; line-height: 1.45; text-decoration: none; }

@@ -22,7 +22,7 @@ const email = `smoke-${stamp}@example.com`;
 const json = { "content-type": "application/json" };
 let result;
 
-for (const path of ["/api/health", "/api/health/config", "/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/faq", "/en-GB/help", "/zh-CN/help", "/en-GB/contact", "/zh-CN/contact", "/en-GB/subscription"]) {
+for (const path of ["/api/health", "/api/health/config", "/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/en-GB/portal/faq", "/en-GB/help", "/zh-CN/help", "/en-GB/contact", "/zh-CN/contact", "/en-GB/pricing"]) {
   assert((await request(path)).status === 200, `${path} did not return 200`);
 }
 result = await request("/api/health/config");

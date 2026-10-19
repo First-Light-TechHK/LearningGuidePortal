@@ -326,69 +326,71 @@ test("a real-world Session Title fits the 50 character limit on schedule and edi
   assert.equal(sample.length, 32);
   const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: sample, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 4 });
   assert.equal(scheduled.title, sample);
-  const fifty = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "1234567890".repeat(5), startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 4 });
-  assert.equal(fifty.title.length, 50);
+  const edited = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: "1234567890".repeat(5) });
+  assert.equal(edited.title.length, 50);
   await assert.rejects(
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: `${"1234567890".repeat(5)}x` }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
 });
 
-test("host can move only the Start Time of an upcoming Session; every other field stays as planned (BUG-0157)", async () => {
+test("host edits schedule fields before start and cannot shrink below the people already present", async () => {
   access.add("e1:course-1");
   access.add("e2:course-1");
   access.add("e3:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Edit group", courseId: "course-1", about: "Edit about." });
   for (const userId of ["e1", "e2", "e3"]) await service.joinGroup({ actorUserId: userId, groupId: group.id });
-  const planned = {
+  const session = await service.scheduleSession({
+    actorUserId: "host",
+    groupId: group.id,
     title: "Before",
     startsAt: "2026-09-19T02:09:00.000Z",
     durationSeconds: 1800,
     maxParticipants: 6,
     focus: "Old",
     aiTutorEnabled: true
-  };
-  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, ...planned });
-  const moved = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:08:00.000Z" });
-  assert.equal(moved.startsAt, "2026-09-19T02:08:00.000Z");
-  // Resending the unchanged fields alongside the new time is accepted.
-  const resent = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, ...planned, relatedLessonId: null, startsAt: "2026-09-19T02:07:00.000Z" });
-  assert.equal(resent.startsAt, "2026-09-19T02:07:00.000Z");
-  for (const change of [
-    { title: "After edit" },
-    { relatedLessonId: "lesson-1" },
-    { durationSeconds: 3600 },
-    { maxParticipants: 4 },
-    { focus: "New focus" },
-    { focus: null },
-    { aiTutorEnabled: false }
-  ]) {
-    await assert.rejects(
-      () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:06:00.000Z", ...change }),
-      (error: unknown) => (error as { code: string }).code === "session_time_only",
-      JSON.stringify(change)
-    );
-  }
-  const kept = await service.getSession({ actorUserId: "host", sessionId: session.id });
-  assert.equal(kept.title, "Before");
-  assert.equal(kept.relatedLessonId, null);
-  assert.equal(kept.startsAt, "2026-09-19T02:07:00.000Z");
-  assert.equal(kept.durationSeconds, 1800);
-  assert.equal(kept.maxParticipants, 6);
-  assert.equal(kept.focus, "Old");
-  assert.equal(kept.aiTutorEnabled, true);
+  });
+  const edited = await service.editSession({
+    actorUserId: "host",
+    groupId: group.id,
+    sessionId: session.id,
+    title: "After edit",
+    relatedLessonId: "lesson-1",
+    startsAt: "2026-09-19T02:08:00.000Z",
+    durationSeconds: 3600,
+    maxParticipants: 4,
+    focus: "New focus",
+    aiTutorEnabled: false
+  });
+  assert.equal(edited.title, "After edit");
+  assert.equal(edited.relatedLessonId, "lesson-1");
+  assert.equal(edited.startsAt, "2026-09-19T02:08:00.000Z");
+  assert.equal(edited.durationSeconds, 3600);
+  assert.equal(edited.maxParticipants, 4);
+  assert.equal(edited.focus, "New focus");
+  assert.equal(edited.aiTutorEnabled, false);
   for (const [index, userId] of ["e1", "e2", "e3"].entries()) {
     await service.enterSession({ actorUserId: userId, sessionId: session.id, requestedAt: `2026-09-19T02:00:0${index + 1}.000Z` });
   }
+  const occupied = await service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(occupied.occupancy, 3);
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, maxParticipants: 2 }),
+    (error: unknown) => (error as { code: string }).code === "conflict"
+  );
+  const kept = await service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(kept.maxParticipants, 4);
+  assert.equal(kept.occupancy, 3);
+  assert.equal(kept.title, "After edit");
   const present = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt);
   assert.equal(present.length, 3);
   await service.startSession({ actorUserId: "host", sessionId: session.id });
   await assert.rejects(
-    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:30:00.000Z" }),
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, title: "Too late" }),
     (error: unknown) => (error as { code: string }).code === "forbidden"
   );
   const started = await service.getSession({ actorUserId: "host", sessionId: session.id });
-  assert.equal(started.startsAt, "2026-09-19T02:07:00.000Z");
+  assert.equal(started.title, "After edit");
   assert.equal(started.startedAt, NOW);
 });
 

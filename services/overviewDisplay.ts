@@ -19,9 +19,7 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
       || points.find(point => point.lessonId === record.currentLessonId) || points[0];
     const lessonId = position?.lessonId || lessons.find(lesson => lesson.id === record.currentLessonId)?.id || lessons[0]?.id || null;
     const contentId = position?.contentId || null;
-    // The course percentage is the saved maximum; resume position and explicit
-    // assessment/lesson completion remain separate facts.
-    const progress = !points.length ? null : record.progress;
+    const progress = record.progressFailed || record.progress === null ? null : Math.max(0, Math.min(100, record.progress));
     const category = portal.categories.find(item => item.id === course.categoryId || item.id === course.category || Object.values(item.labels).includes(course.category || ""));
     const query = new URLSearchParams({ viewMode:mode });
     if (lessonId) query.set("lessonId", lessonId);
@@ -40,7 +38,7 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
       href = `/${locale}/portal/courses/${encodeURIComponent(course.slug)}/public-lesson?${previewQuery}`;
     } else if (progress !== null && record.cta === "view_plans") {
       action = "plans";
-      href = `/${locale}/subscription?courseId=${encodeURIComponent(course.id)}`;
+      href = `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`;
     }
     return { id:record.id, courseId:course.id, title:course.title, category:category?.labels[locale] || course.category || "",
       cover:await signCourseMediaUrl(course.cover || course.thumbnailPath || "/portal/course-study.jpg"),

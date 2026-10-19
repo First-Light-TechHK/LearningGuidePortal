@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { currentProductUser } from "@/services/productAuth";
-import { getLearningOverview } from "@/services/productStore";
-import { changeUserSubscription } from "@/services/subscriptionManagementService";
-import { parseSubscriptionChange, SubscriptionManagementError } from "@/contracts/subscription-management";
-import { getMessages } from "@/lib/i18n/messages";
+import { cancelSubscription, getLearningOverview, resumeSubscription } from "@/services/productStore";
+import { getStripe } from "@/services/stripeClient";
+import { paymentMode } from "@/services/runtimeConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +16,19 @@ export async function POST(request: Request) {
   const user = await currentProductUser();
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
   try {
-    const subscription = await changeUserSubscription(user.id, parseSubscriptionChange(await request.json()));
+    const body = await request.json() as { subscriptionId?: string; action?: "cancel" | "resume"; reasonCode?: "low_usage" | "too_expensive" | "content" | "website" | "other"; reasonText?: string };
+    if (!body.subscriptionId || !["cancel", "resume"].includes(body.action || "")) return NextResponse.json({ ok: false, error: "Subscription and a valid action are required." }, { status: 400 });
+    const current = (await getLearningOverview(user.id)).subscriptions.find((subscription) => subscription.id === body.subscriptionId);
+    if (!current) return NextResponse.json({ ok: false, error: "Subscription not found." }, { status: 404 });
+    if (body.action === "resume" && current.source === "purchase") return NextResponse.json({ ok: false, error: "Auto-renewal cannot be restored. You can purchase a new plan after the current period ends." }, { status: 400 });
+    if (current.stripeSubscriptionId && paymentMode() === "stripe") {
+      await getStripe().subscriptions.update(current.stripeSubscriptionId, { cancel_at_period_end: body.action === "cancel" });
+    }
+    const subscription = body.action === "cancel"
+      ? await cancelSubscription(user.id, body.subscriptionId, { code: body.reasonCode, text: body.reasonText })
+      : await resumeSubscription(user.id, body.subscriptionId);
     return NextResponse.json({ ok: true, subscription });
   } catch (error) {
-    const code = error instanceof SubscriptionManagementError ? error.code : error instanceof SyntaxError ? "invalid" : "provider_unavailable";
-    const message = getMessages(user.locale).subscriptionErrors[code];
-    return NextResponse.json({ ok: false, code, error: message, message }, { status: error instanceof SubscriptionManagementError ? error.status : code === "invalid" ? 400 : 503 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Subscription update failed." }, { status: 400 });
   }
 }

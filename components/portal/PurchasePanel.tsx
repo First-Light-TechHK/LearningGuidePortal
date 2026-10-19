@@ -3,9 +3,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
 
-type Plan = { alreadySubscribed?: boolean; upgradeUnavailable?: boolean; available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
+type Plan = { alreadySubscribed?: boolean; available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
 
-function isSelectable(plan: Plan) { return !plan.alreadySubscribed && !plan.upgradeUnavailable && plan.available !== false; }
+function isSelectable(plan: Plan) { return !plan.alreadySubscribed && plan.available !== false; }
 
 export function PurchasePanel({ locale, courseId, plans, allowTrial = true, compact = false, copy }: { locale: "en-GB" | "zh-CN"; courseId: string; plans: Plan[]; allowTrial?: boolean; compact?: boolean; copy: { startTrial: string; buy: string; choosePlan: string } }) {
   const groupId = useId();
@@ -39,7 +39,7 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
       const response = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "trial" }) });
       const data = await response.json() as { error?: string; quote?: { id: string }; code?: string };
       if (response.status === 401) { signInForPlan(); return; }
-      if (!response.ok) throw new Error(data.code === "already_subscribed" || data.code === "upgrade_unavailable" ? messages.paymentErrors[data.code] : data.error || "Trial activation failed.");
+      if (!response.ok) throw new Error(data.code === "already_subscribed" ? messages.paymentErrors.already_subscribed : data.error || "Trial activation failed.");
       if (!data.quote) throw new Error("Trial quote was not created.");
       window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(data.quote.id)}`);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Trial activation failed."); setBusy(false); }
@@ -52,7 +52,7 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
       const quoteResponse = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "purchase" }) });
       const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string; code?: string };
       if (quoteResponse.status === 401) { signInForPlan(); return; }
-      if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.code === "already_subscribed" || quoteData.code === "upgrade_unavailable" ? messages.paymentErrors[quoteData.code] : quoteData.error || "Price calculation failed.");
+      if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.code === "already_subscribed" ? messages.paymentErrors.already_subscribed : quoteData.error || "Price calculation failed.");
       window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Checkout failed."); setBusy(false); }
   }

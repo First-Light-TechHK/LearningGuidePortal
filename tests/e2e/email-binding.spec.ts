@@ -2,7 +2,7 @@ import { expect, test } from "playwright/test";
 
 for (const locale of ["en-GB", "zh-CN"]) {
   test(`binding link handles cross-device success and invalid links in ${locale}`, async ({ page }) => {
-    const returnTo = `/${locale}/subscription?term=6`;
+    const returnTo = `/${locale}/pricing?term=6`;
     await page.route("**/api/auth/email-binding/confirm", async route => {
       expect(route.request().postDataJSON()).toMatchObject({ token: "test-binding", returnTo });
       await route.fulfill({ json: { ok: true, sameUser: false, continueUrl: `/api/auth/wechat?${new URLSearchParams({ locale, returnTo })}` } });

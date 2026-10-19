@@ -8,7 +8,6 @@
 .modeControl { position:relative; width:96px; margin-top:0; }
 .modeControl > img { position:absolute; right:4px; top:calc(50% - 4.5px); transform:scaleY(-1); pointer-events:none; }
 .modeSwitch { appearance:none; box-sizing:border-box; display:block; width:100%; height:18px; margin:0; padding:0 18px 0 6px; border:0; border-radius:0; background:transparent; color:#1768f2; font:400 12px/18px Inter,Arial,sans-serif; cursor:pointer; box-shadow:none; }
-.fixedMode { color:#94a3b8; padding-right:6px; cursor:default; }
 .modeSwitch option { background:#fff; color:#15233a; }
 .emptyOutline { margin:0; padding:12px; color:#64748b; font-size:13px; line-height:20px; }
 .modeSwitch:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
@@ -24,7 +23,7 @@
 .contentLinks button[aria-current] { color:#246bfd; }
 .main { min-width:0; padding:20px 196px 40px 0; }
 .heading { position:relative; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; column-gap:8px; row-gap:4px; min-height:96px; margin:0; padding:20px 20px 14px; border-radius:12px 12px 0 0; background:#fff; }
-.heading > p { margin:0; padding:4px 12px; border-radius:8px; background:#e8f1ff; color:#155dfc; font-size:14px; line-height:19px; font-weight:600; }
+.heading p { margin:0; padding:4px 12px; border-radius:8px; background:#e8f1ff; color:#155dfc; font-size:14px; line-height:19px; font-weight:600; }
 .heading h1 { margin:0; font-size:28px; line-height:38px; font-weight:600; overflow-wrap:anywhere; }
 .heading > div { grid-column:1 / -1; font-size:15px; line-height:20px; color:rgba(0,0,0,.4); }
 .headingDivider { position:absolute; left:0; bottom:0; max-width:none; }
@@ -37,10 +36,6 @@
 .nextLessonRow { display:flex; justify-content:flex-end; padding-top:10px; }
 .nextLesson { color:#246bfc; font-size:18px; line-height:26px; font-weight:600; text-decoration:none; }
 .nextLesson:hover { text-decoration:underline; }
-.nextLessonRow { flex-wrap:wrap; gap:8px; }
-button.nextLesson { padding:0; border:0; background:transparent; font-family:inherit; cursor:pointer; }
-.nextLesson:disabled { color:#94a3b8; cursor:wait; }
-.nextLessonRow p { flex-basis:100%; margin:0; text-align:right; color:#b42318; font-size:14px; }
 .textPlayer :global(.la-player) { margin:0; }
 .player :global(.la-content-player) { padding:0; border:0; }
 .player :global(.la-content-player) > h3 { display:none; }

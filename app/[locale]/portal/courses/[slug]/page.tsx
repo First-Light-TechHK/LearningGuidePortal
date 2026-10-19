@@ -28,17 +28,13 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const user = await currentProductUser();
   const [page, course] = await Promise.all([getCoursePage(slug, user?.id), getProductCourse(slug)]);
   const savedMode = user && course ? await getCourseLearningMode(user.id, course.id) : null;
-  // A visitor signs in to return to the course detail, not to replay the
-  // unauthenticated lesson-entry redirect. Preview remains an explicit action.
-  const courseDetailHref = `/${locale}/portal/courses/${encodeURIComponent(slug)}`;
-  const signInHref = `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(courseDetailHref)}`;
   const entryLessonId = (await searchParams)?.lessonEntry;
   const entryLesson = page.pageState === "available" ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable) : null;
   const needsMode = !savedMode && Boolean(course && availableCourseLearningModes(course).length > 1);
   const entryDestination = course && entryLesson ? entryLesson.access === "entitled"
     ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(entryLesson.lessonId)}`
     : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(entryLesson.lessonId)}` : null;
-  if (entryDestination && !user) redirect(signInHref);
+  if (entryDestination && !user) redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(entryLesson!.lessonId)}`)}`);
   if (entryDestination && user && !needsMode) redirect(entryDestination);
   const messages = getMessages(locale);
   const copy = messages.portal;
@@ -47,7 +43,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const catalogHref = `/${locale}/portal/courses`;
   const plans = page.pageState === "available" ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
-  const pricingHref = `/${locale}/subscription?courseId=${encodeURIComponent(course?.id || slug)}${plan ? `&planId=${encodeURIComponent(plan.id)}` : ""}`;
+  const pricingHref = `/${locale}/pricing?courseId=${encodeURIComponent(course?.id || slug)}${plan ? `&planId=${encodeURIComponent(plan.id)}` : ""}`;
   const price = plan ? formatPlanPrice(locale, plan) : null;
   const signedCover = await signCourseMediaUrl(course?.cover || course?.thumbnailPath || "");
   const durationParts = courseDurationParts(identity?.totalMinutes || 0);
@@ -122,7 +118,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                           <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
-                        <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
+                        <CourseCurriculumAction lesson={lesson} href={lessonHref && (!user || needsMode) ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
                       </article>;
                     })}
                   </div>

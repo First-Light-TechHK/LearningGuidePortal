@@ -8,7 +8,6 @@ const CLIENT_PAYMENT = /already has active access|already been used|Plan not fou
 export function paymentFailure(error: unknown, locale: "en-GB" | "zh-CN" = "en-GB") {
   const requestId = randomUUID();
   if (error instanceof PaymentError) {
-    if (error.status >= 500) console.error(JSON.stringify({ event: "payment_failure", requestId, code: error.code, status: error.status, reason: error.diagnosticReason || error.code }));
     const message = getMessages(locale).paymentErrors[error.code];
     return NextResponse.json({ ok: false, code: error.code, error: message, message, requestId }, { status: error.status });
   }
@@ -17,6 +16,5 @@ export function paymentFailure(error: unknown, locale: "en-GB" | "zh-CN" = "en-G
     return NextResponse.json({ ok: false, code: "invalid_request", error: detail, message: detail, requestId }, { status: 400 });
   }
   const message = getMessages(locale).paymentErrors.payment_unavailable;
-  console.error(JSON.stringify({ event: "payment_failure", requestId, code: "payment_unavailable", status: 502, reason: "unexpected_payment_error" }));
   return NextResponse.json({ ok: false, code: "payment_unavailable", error: message, message, requestId }, { status: 502 });
 }

@@ -3,7 +3,6 @@ import { after, before, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { stop } from "esbuild";
 import {
   COURSE_ID,
   PREVIEW_LP,
@@ -30,7 +29,6 @@ before(async () => {
 });
 
 after(async () => {
-  stop();
   process.chdir(originalCwd);
   if (originalStorageBackend === undefined) delete process.env.STORAGE_BACKEND;
   else process.env.STORAGE_BACKEND = originalStorageBackend;

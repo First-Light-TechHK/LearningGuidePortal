@@ -8,7 +8,7 @@ import { getMessages } from "../../lib/i18n/messages";
 import { getApplicationTestSample } from "../../services/applicationTestSample";
 
 test("Application Test matches the four page states and retains attempts across both Knowledge completion flows", async () => {
-  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';import previewStyles from './components/portal/preview-lesson.module.css';function Demo({locale}){const [open,setOpen]=React.useState(true);return open ? <div className="la"><header className={previewStyles.heading}><p>01</p><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>{window.continued=true;setOpen(false)}} onClose={()=>setOpen(false)}/></header></div> : <button onClick={()=>setOpen(true)}>Reopen</button>};window.mount=locale=>createRoot(document.getElementById('root')).render(<Demo locale={locale}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}]});
+  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';function Demo({locale}){const [open,setOpen]=React.useState(true);return open ? <div className="la"><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>{window.continued=true;setOpen(false)}} onClose={()=>setOpen(false)}/></div> : <button onClick={()=>setOpen(true)}>Reopen</button>};window.mount=locale=>createRoot(document.getElementById('root')).render(<Demo locale={locale}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}]});
   const browser=await chromium.launch({channel:"msedge"});
   await mkdir("test-results/application-test",{recursive:true});
   try { for(const locale of ["en-GB","zh-CN"] as const) {
@@ -25,13 +25,6 @@ test("Application Test matches the four page states and retains attempts across 
     const openApplication=()=>dialog.getByRole("button",{name:new RegExp(copy.lessonCompleted.application)}).click();
     await openApplication();
     await dialog.getByRole("heading",{name:app.title,exact:true}).waitFor();
-    const assertPlainText = async () => {
-      const backgrounds=await dialog.locator("p, h3").evaluateAll(elements=>elements.map(e=>{const s=getComputedStyle(e);return {background:s.backgroundColor,padding:s.padding,radius:s.borderRadius};}));
-      for(const style of backgrounds) assert.deepEqual(style,{background:"rgba(0, 0, 0, 0)",padding:"0px",radius:"0px"},"Application text must not inherit the playback lesson badge");
-      assert.deepEqual(await dialog.locator("header p").evaluate(e=>{const s=getComputedStyle(e);return {size:s.fontSize,weight:s.fontWeight,color:s.color,font:s.fontFamily.split(",")[0]};}),{size:"14px",weight:"400",color:"rgb(99, 117, 148)",font:"Inter"});
-      assert.equal(await page.locator("#root > .la > header > p").evaluate(e=>getComputedStyle(e).backgroundColor),"rgb(232, 241, 255)","the playback lesson number retains its badge");
-    };
-    await assertPlainText();
     const input=dialog.getByRole("textbox");
     const submit=dialog.getByRole("button",{name:app.submit,exact:true});
     assert.equal(await submit.isDisabled(),true);
@@ -59,7 +52,6 @@ test("Application Test matches the four page states and retains attempts across 
     assert.equal(await dialog.getByRole("heading",{name:app.feedback,exact:true}).count(),0,"finishing in background never reopens the test");
     await openApplication();
     await dialog.getByRole("heading",{name:app.feedback,exact:true}).waitFor();
-    await assertPlainText();
     assert.equal(await dialog.getByText(answer,{exact:true}).count(),1);
     const result=dialog.locator('div[aria-label]').filter({has:page.getByRole("heading",{name:app.feedback,exact:true})});
     const next=dialog.getByRole("button",{name:app.nextLesson,exact:true});
@@ -73,10 +65,9 @@ test("Application Test matches the four page states and retains attempts across 
     assert.equal(await result.evaluate(e=>e.scrollTop>0),true);
     await knowledge.click();
     for(let i=0;i<6;i++) {
-      await dialog.getByRole("textbox").fill(`Answer ${i+1}`);
       await dialog.getByRole("button",{name:common.check,exact:true}).click();
       await dialog.getByRole("radio",{name:common.right,exact:true}).check();
-      await dialog.getByRole("button",{name:i===5?common.seeResults:common.next,exact:true}).click();
+      await dialog.getByRole("button",{name:common.next,exact:true}).click();
     }
     await dialog.getByRole("button",{name:common.tryApplication+" →",exact:true}).click();
     await dialog.getByRole("heading",{name:app.feedback,exact:true}).waitFor();

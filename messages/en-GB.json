@@ -57,24 +57,6 @@
     "moreExhibits": "More exhibits coming as you learn",
     "empty": "No supporting materials available."
   },
-  "assessmentRecords": {
-    "loading": "Loading assessment...",
-    "saving": "Saving...",
-    "saved": "Saved automatically",
-    "saveError": "Your changes could not be saved. Please retry.",
-    "loadError": "Assessment records could not be loaded.",
-    "conflict": "This assessment changed in another tab. Keep your answer and reload before continuing.",
-    "retry": "Retry",
-    "submitted": "Submitted",
-    "pendingEvaluation": "Your answer has been saved. AI evaluation is not connected yet.",
-    "submit": "Submit answer",
-    "notStarted": "Not started",
-    "progressResult": "Progress / Result",
-    "answered": "{answered} of {total} answered",
-    "selfAssessment": "Self-assessment: {score}%",
-    "empty": "No lessons are available for this course.",
-    "refreshError": "Assessment progress could not be refreshed. Please retry."
-  },
   "understandingOverview": {
     "title": "Understanding",
     "description": "Review assessment status and your latest result across the course",
@@ -158,7 +140,6 @@
     "yourNote": "Your note",
     "close": "Close Knowledge Test",
     "youMarked": "You marked:",
-    "seeResults": "See results",
     "backToResults": "Back to results",
     "nextLesson": "Next lesson",
     "tryApplication": "Try Application Test"
@@ -358,7 +339,7 @@
     "navigation": {
       "courses": "Courses",
       "studyGroups": "Study Groups",
-      "pricing": "Subscription",
+      "pricing": "Pricing",
       "language": "EN",
       "getStarted": "Get Started"
     },
@@ -367,7 +348,7 @@
     "myLearning": "My Learning",
     "notifications": "Notifications",
     "faq": "FAQ",
-    "pricingEyebrow": "Subscription",
+    "pricingEyebrow": "Pricing",
     "pricingTitle": "Choose a learning plan",
     "pricingDescription": "Select the course access and term that suits you. Payment is completed on Stripe's hosted checkout page.",
     "subscriptionConfirmation": {
@@ -387,8 +368,8 @@
       "consentTerms": "I understand renewal prices may change as new courses are added. I will be notified by email at least 3 days in advance.",
       "consentRefund": "I understand that subscription payments are non-refundable, except where required by law.",
       "continue": "Continue",
-      "back": "Back to Subscription",
-      "expired": "This quote has expired. Return to Subscription and calculate it again.",
+      "back": "Back to pricing",
+      "expired": "This quote has expired. Return to Pricing and calculate it again.",
       "processing": "Preparing checkout...",
       "cancel": "Cancel",
       "close": "Close",
@@ -731,11 +712,6 @@
     "message": "Message",
     "consent": "I agree to receive communications from Learning Guide and accept the Privacy Policy",
     "submit": "Send Message",
-    "submitting": "Sending…",
-    "success": "Your message has been submitted. Thank you for contacting us.",
-    "invalid": "Check the required fields and their lengths, enter a valid email and accept the consent checkbox.",
-    "failed": "Your message could not be submitted. Please try again.",
-    "conflict": "This submission has changed. Please submit it again.",
     "placeholders": {
       "firstName": "John",
       "lastName": "Doe",
@@ -900,7 +876,6 @@
     "openGroup": "Open Group",
     "openStudyGroup": "Open Study Group",
     "arrangeLead": "Arrange a live study session for this Study Group",
-    "editSessionLead": "Only the date and start time can be changed. Everything else stays as members planned for.",
     "selectLesson": "Select Lesson",
     "relatedLesson": "Related Lesson",
     "selectStartTime": "Select start time",
@@ -1025,7 +1000,6 @@
       "start_in_past": "Start Time must be in the future.",
       "course_access_required": "Valid Course access is required.",
       "forbidden": "You cannot do that.",
-      "session_time_only": "Only the date and start time of an upcoming Live Session can be changed.",
       "not_found": "That Study Group or Live Session was not found.",
       "conflict": "The Related Course cannot be changed.",
       "session_full": "Session full.",
@@ -1206,52 +1180,12 @@
     "chinese": "Simplified Chinese",
     "preview": "Preview"
   },
-  "subscriptionSelection": {
-    "expand": "Expand your access",
-    "lastHeading": "Unlock your last category",
-    "alreadyHave": "You already have",
-    "details": "View subscription details →",
-    "owned": "Owned",
-    "upgrade": "Upgrade to Everything",
-    "upgradeDescription": "Unlock {count} more categories. Your end date stays {date}.",
-    "extraCategories": "+{count} categories",
-    "estimate": "Stripe calculates this charge for the {days} days remaining. Your billing period stays the same.",
-    "upgradeAction": "Upgrade · {price}",
-    "upgradeUnavailable": "Upgrade is unavailable for this subscription. View subscription details to manage your plan.",
-    "allIncluded": "You’ll get all categories",
-    "addCategory": "Add a category",
-    "addDescription": "One more category, with its own end date",
-    "lastDescription": "Complete your collection and unlock every course",
-    "lastCategory": "Your last category",
-    "addTitle": "Add {category}",
-    "addAction": "Add {category} · {price}",
-    "upgradeNote": "Planning to explore more? Upgrading to Everything is only available while you have one category.",
-    "allOwned": "You’ve unlocked every category",
-    "separateRenewals": "Each category renews automatically on its own date.",
-    "separateDates": "Each category keeps its own access period. Manage your subscriptions for renewal details.",
-    "loading": "Loading subscription plans…",
-    "loadError": "Subscription plans could not be loaded.",
-    "retry": "Try again",
-    "everythingOwned": "You have Everything",
-    "coverage": "All {count} categories and every course",
-    "nextPayment": "Next payment on {date} (currently {price})",
-    "accessUntil": "Access until {date}",
-    "paymentPending": "Payment needs attention. Manage your subscription for details.",
-    "manage": "Manage subscription →",
-    "categories": "Categories",
-    "courses": "Courses",
-    "courseCount": "{count} courses",
-    "newCourses": "New courses are added automatically",
-    "quoteLoading": "Calculating your upgrade price…",
-    "quoteError": "Your upgrade price could not be loaded. Please try again.",
-    "quoteRetry": "Refresh upgrade price"
-  },
   "pricingDesign": {
-    "heading": "Choose your plan",
+    "heading": "Choose the plan that suits your learning",
     "everything": "Everything",
     "category": "Category",
     "sixMonths": "6 Months",
-    "year": "12 Months",
+    "year": "1 Year",
     "term": "Subscription term",
     "subscribe": "Subscribe",
     "allCourses": "Full access to every Learning Guide course",
@@ -1262,42 +1196,26 @@
     "unavailable": "This plan is not currently available.",
     "alreadySubscribed": "Already subscribed",
     "perCategory": "category",
-    "information": "Good to know",
+    "information": "Important information",
     "renewal": "Your subscription renews automatically unless you cancel before the renewal date.",
     "rules": [
       {
-        "title": "Auto-renewal",
-        "text": "Your subscription renews automatically unless you cancel before the renewal date."
-      },
-      {
-        "title": "No refunds",
-        "text": "Purchases can’t be refunded. Please check the plan and access dates before you pay."
+        "title": "Changing plans",
+        "text": "Upgrade one Category to Everything using the amount you actually paid as credit. Your original expiry date is retained; other Category subscriptions are unchanged."
       },
       {
         "title": "Device access",
-        "text": "Study on 1 PC and 1 mobile device"
+        "text": "Your subscription includes access on one PC and one mobile device."
+      },
+      {
+        "title": "Renewal pricing",
+        "text": "Renewal prices may change as new courses are added. We will email you at least 3 days in advance."
       }
-    ],
-    "recommended": "RECOMMENDED",
-    "save": "Save {amount}",
-    "everythingDescription": "All categories, plus anything new added during your plan",
-    "categoryDescription": "Any one category of your choice",
-    "includesAll": "Includes all categories",
-    "chooseCategory": "Choose a category",
-    "courseSummary": "{courses} courses across {categories} categories",
-    "categorySummary": "{count} courses: {titles}",
-    "viewAll": "View all →",
-    "newEverything": "New courses and categories are included automatically.",
-    "newCategory": "New courses in this category are included automatically.",
-    "priceTerm": "{currency} / {months} months",
-    "getPlan": "Get {plan} · {price}"
+    ]
   },
   "subscriptionDesign": {
-    "failed": "Failed",
-    "loading": "Loading your subscriptions…",
-    "loadError": "Your subscriptions could not be loaded.",
     "allAttempts": "All payment attempts",
-    "intro": "Your subscriptions and payment history.",
+    "intro": "View your subscription plans and payment history here.",
     "records": "Subscription records",
     "recordsIntro": "Your successful payments, valid periods and receipts.",
     "periodUnavailable": "Period not recorded",
@@ -1305,13 +1223,12 @@
     "noPayments": "You have no successful subscription payments yet.",
     "viewPlans": "View plans",
     "active": "Active",
-    "renewalCanceled": "Auto-renewal off",
-    "paymentFailed": "Payment failed",
-    "expired": "Expired",
+    "renewalCanceled": "Auto-Renewal Cancelled",
+    "paymentFailed": "Payment Failed",
+    "expired": "Subscription Expired",
     "cancelRenewal": "Cancel auto-renewal",
-    "turnOnRenewal": "Turn on auto-renewal",
     "accessUntil": "Access until",
-    "gracePeriod": "Grace period until",
+    "gracePeriod": "Grace period ends",
     "expiredOn": "Expired on",
     "subscribeAgain": "Subscribe again",
     "paymentHistory": "Payment history",
@@ -1338,24 +1255,10 @@
     "upgradeType": "Upgrade",
     "months": "{months} months",
     "points": "AI Tutor points",
-    "proratedUpgrade": "Upgrade (prorated)",
-    "noCurrent": "You have no current subscriptions.",
     "pointsUnavailable": "Points balance is not available yet.",
     "pointsNote": "Points stay valid while the subscription they came with is active, and are added on the day you pay."
   },
   "cancelDesign": {
-    "category": "Category",
-    "question": "Why are you canceling?",
-    "lowUsage": "Low usage",
-    "tooExpensive": "Too expensive",
-    "title": "Cancel auto-renewal?",
-    "keep": "Keep auto-renewal",
-    "confirm": "Cancel auto-renewal",
-    "feedback": "Optional — your feedback helps us improve.",
-    "content": "I don’t like the content",
-    "website": "The website is difficult to use",
-    "more": "Tell us more (optional)",
-    "paidAccessUntil": "Your access stays active until {date}. Payments already made are non-refundable.",
     "accessUntil": "Your access remains active until {date}.",
     "optionalReason": "Optional. Share a reason or skip and continue.",
     "skip": "Skip"
@@ -1391,8 +1294,6 @@
     "imageUploadError": "Image upload failed.",
     "imageRemoveError": "Image removal failed.",
     "passwordMismatch": "New passwords do not match.",
-    "currentPasswordIncorrect": "Current password is incorrect.",
-    "newPasswordTooShort": "New password must contain at least 8 characters.",
     "countryRequired": "Country is required.",
     "saveError": "Settings update failed.",
     "intro": "Manage your profile and personal preferences.",
@@ -1435,15 +1336,11 @@
     "validUntil": "Valid until {date}. Your existing end date is retained.",
     "price": "Upgrade price",
     "targetPrice": "Everything current price",
-    "credit": "Credit for unused Category time",
+    "credit": "Original actual amount paid",
     "payToday": "Upgrade charge today",
-    "otherCategories": "Your billing cycle and renewal date stay the same. Everything is activated after payment succeeds.",
-    "remainingPrice": "Everything for the remaining period",
-    "adjustments": "Tax, discounts and account balance",
-    "renewal": "Renewal at your existing billing date"
+    "otherCategories": "Any other active Categories keep their current validity, auto-renewal and paid amount unless you cancel their auto-renewal separately."
   },
   "overviewDesign": {
-    "previewing": "Previewing",
     "continuePreview": "Continue preview",
     "previewAvailable": "Preview available",
     "previewLimit": "Preview limit reached",
@@ -1461,16 +1358,7 @@
     "continue": "Continue learning",
     "allCourses": "Showing all courses you have started"
   },
-  "subscriptionErrors": {
-    "invalid": "Please check the subscription and cancellation details.",
-    "not_found": "Subscription not found.",
-    "expired": "This subscription has expired. Please refresh the page.",
-    "resume_unavailable": "Only an unexpired subscription with auto-renewal off can be resumed.",
-    "change_pending": "A subscription change is in progress. Please retry the same action.",
-    "provider_unavailable": "Your subscription change could not be confirmed. Please try again."
-  },
   "paymentErrors": {
-    "upgrade_unavailable": "Upgrading to Everything is only available while you have one Category subscription.",
     "already_subscribed": "You already have an active subscription covering this plan. You can subscribe again after it expires.",
     "price_unavailable": "This plan is temporarily unavailable. Please try again later.",
     "quote_expired": "This quote or checkout has expired. Please select your plan again.",
@@ -1478,7 +1366,6 @@
     "invalid_request": "Unable to continue this purchase. Please select your plan again.",
     "origin_mismatch": "The checkout address does not match this website's configuration. Please use the configured website address or contact support.",
     "consent_required": "Please select all purchase confirmation options before continuing.",
-    "checkAgain": "Check payment status",
-    "upgrade_in_progress": "An upgrade payment is in progress. Please complete or resolve it before changing subscriptions."
+    "checkAgain": "Check payment status"
   }
 }

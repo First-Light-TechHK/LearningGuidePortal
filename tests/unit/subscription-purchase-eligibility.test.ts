@@ -17,9 +17,8 @@ before(async () => {
   store = await import("../../services/productStore");
 });
 after(async () => {
-  await (await import("esbuild")).stop();
   process.chdir(cwd); process.env = environment;
-  if (directory && path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+  if (directory && path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true });
 });
 const duplicate = (error: unknown) => error instanceof PaymentError && error.code === "already_subscribed";
 async function buy(userId: string, planId: string) {
@@ -54,7 +53,7 @@ test("same course blocks both terms, different course is purchasable, stale orde
   assert.ok((await store.listPlansForPurchase()).every(plan => !plan.alreadySubscribed));
 });
 
-test("two owned categories are blocked across terms, third category stays available and Everything upgrade is rejected", async () => {
+test("two owned categories are blocked across terms while third category and explicit upgrade stay available", async () => {
   await buy("category-buyer", "european-humanities-pc-6");
   await buy("category-buyer", "science-pc-12");
   const plans = await store.listPlansForPurchase("category-buyer");
@@ -68,7 +67,7 @@ test("two owned categories are blocked across terms, third category stays availa
   await store.createQuote("category-buyer", "chinese-humanities-pc-12");
   const data = await store.ensureProductData();
   const source = data.subscriptions.find(item => item.userId === "category-buyer" && item.scopeId === "European Humanities")!;
-  await assert.rejects(() => store.createUpgradeQuote("category-buyer", source.id), error => error instanceof PaymentError && error.code === "upgrade_unavailable");
+  assert.equal((await store.createUpgradeQuote("category-buyer", source.id)).quote.kind, "upgrade");
 });
 
 test("Everything blocks covered plans; expiry, cancelled renewal, grace and user isolation use server state", async () => {

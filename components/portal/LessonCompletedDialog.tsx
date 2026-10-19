@@ -8,19 +8,14 @@ import { getMessages } from "@/lib/i18n/messages";
 import { PortalDialog } from "./PortalDialog";
 import { KnowledgeTestDialog } from "./KnowledgeTestDialog";
 import { ApplicationTestDialog } from "./ApplicationTestDialog";
-import { PersistedAssessmentDialog } from "./PersistedAssessmentDialog";
 import styles from "./lesson-completed-dialog.module.css";
 
-export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClose, onContinue = onClose, courseId, lessonId }: { locale: Locale; lessonNumber: string; lessonTitle?: string; onClose: () => void; onContinue?: () => void; courseId?: string; lessonId?: string }) {
+export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClose, onContinue = onClose }: { locale: Locale; lessonNumber: string; lessonTitle?: string; onClose: () => void; onContinue?: () => void }) {
   const copy = getMessages(locale).lessonCompleted;
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [applicationOpen, setApplicationOpen] = useState(false);
   const [knowledgeCompleted, setKnowledgeCompleted] = useState(false);
   const [applicationAttempt, setApplicationAttempt] = useState<ApplicationTestAttempt>();
-  if ((knowledgeOpen || applicationOpen) && courseId && lessonId) return <PersistedAssessmentDialog key={knowledgeOpen ? "knowledge" : "application"} kind={knowledgeOpen ? "knowledge" : "application"} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} knowledgeCompleted={knowledgeCompleted}
-    entrySource="lesson" onExit={() => { setKnowledgeOpen(false); setApplicationOpen(false); }} onNextLesson={onContinue}
-    onApplicationTest={() => { setKnowledgeCompleted(true); setKnowledgeOpen(false); setApplicationOpen(true); }}
-    onKnowledgeTest={() => { setApplicationOpen(false); setKnowledgeOpen(true); }}/>;
   if (knowledgeOpen) return <KnowledgeTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onComplete={() => setKnowledgeCompleted(true)} onNextLesson={onContinue} onApplicationTest={() => { setKnowledgeCompleted(true); setKnowledgeOpen(false); setApplicationOpen(true); }} onExit={() => setKnowledgeOpen(false)}/>;
   if (applicationOpen) return <ApplicationTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} initialAttempt={applicationAttempt} onAttemptChange={setApplicationAttempt} knowledgeCompleted={knowledgeCompleted} onKnowledgeTest={() => { setApplicationOpen(false); setKnowledgeOpen(true); }} onNextLesson={onContinue} onBack={() => setApplicationOpen(false)} onDone={onClose}/>;
   const tests = [{ title:copy.knowledge, description:copy.cards, icon:"knowledge-v2", size:26, action:() => setKnowledgeOpen(true) }, { title:copy.application, description:copy.questionCount, icon:"application-v2", size:24, action:() => setApplicationOpen(true) }];

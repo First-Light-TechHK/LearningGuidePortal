@@ -122,7 +122,7 @@ export async function runLiveSmoke(input, request) {
     fail(failures, "config.payment", String(config.body?.payment?.mode));
   }
 
-  for (const path of ["/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/zh-CN/portal/courses", "/en-GB/subscription", "/zh-CN/subscription", "/en-GB/portal/sign-in", "/zh-CN/portal/sign-in", "/en-GB/portal/sign-up", "/en-GB/portal/forgot-password"]) {
+  for (const path of ["/en-GB/portal", "/zh-CN/portal", "/en-GB/portal/courses", "/zh-CN/portal/courses", "/en-GB/pricing", "/zh-CN/pricing", "/en-GB/portal/sign-in", "/zh-CN/portal/sign-in", "/en-GB/portal/sign-up", "/en-GB/portal/forgot-password"]) {
     const page = await http(path);
     if (page.status !== 200) fail(failures, path, `HTTP ${page.status}`);
     else if (/Application error|Internal Server Error/i.test(page.text || "")) fail(failures, path, "rendered an application error");

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import path from "node:path";
 import nodemailer from "nodemailer";
-import { stop } from "esbuild";
 import { atomicWriteJson, systemRoot } from "../../services/fileStore";
 import {
   PASSWORD,
@@ -53,7 +52,6 @@ before(async () => {
 });
 
 after(async () => {
-  stop();
   await restore();
 });
 
@@ -593,36 +591,6 @@ test("AUTH-06 negative: changing password invalidates the previous session", asy
   assert.equal((await callRoute(me.GET, jsonRequest("GET", "http://localhost/api/auth/me")).then((item) => item.json())).user, null);
   const gated = await quote.POST(jsonRequest("POST", "http://localhost/api/purchase/quote", { planId: "everything-pc-6" }));
   assert.equal(gated.status, 401);
-});
-
-test("AUTH-06 incorrect current password has a stable code and leaves credentials/session unchanged", async () => {
-  const { email } = await registerAccount("auth06-wrong-current");
-  const token = getCookie(SESSION_COOKIE);
-  const store = await import("../../services/productStore");
-  const user = await store.authenticateUser(email, PASSWORD);
-  await assert.rejects(() => store.updateUserProfile({ userId: user.id, nickname: "IO Learner", locale: "zh-CN", currentPassword: "WrongPassword123", newPassword: "NewPassword123" }), { code: "CURRENT_PASSWORD_INCORRECT" });
-  for (const currentPassword of ["WrongPassword123", ""]) {
-    const response = await profile.PATCH(jsonRequest("PATCH", "http://localhost/api/me/profile", { nickname: "IO Learner", locale: "zh-CN", currentPassword, newPassword: "NewPassword123" }));
-    assert.equal(response.status, 400);
-    assert.equal((await response.json()).code, "CURRENT_PASSWORD_INCORRECT");
-  }
-  assert.equal((await store.authenticateUser(email, PASSWORD)).id, user.id);
-  assert.equal((await store.getUserBySessionToken(token))?.id, user.id);
-  await assert.rejects(() => store.authenticateUser(email, "NewPassword123"));
-});
-
-test("Personal Settings persists Unicode names through the shared profile service/API", async () => {
-  const { email } = await registerAccount("profile-unicode-name");
-  const store = await import("../../services/productStore");
-  const user = await store.authenticateUser(email, PASSWORD);
-  const updated = await store.updateUserProfile({ userId: user.id, nickname: "张伟", locale: "en-GB" });
-  assert.equal(updated.nickname, "张伟");
-  const response = await profile.PATCH(jsonRequest("PATCH", "http://localhost/api/me/profile", { nickname: "  Ada Lovelace  ", locale: "en-GB" }));
-  assert.equal(response.status, 200);
-  assert.equal((await response.json()).user.nickname, "Ada Lovelace");
-  const invalid = await profile.PATCH(jsonRequest("PATCH", "http://localhost/api/me/profile", { nickname: "Ada*Lovelace", locale: "en-GB" }));
-  assert.equal(invalid.status, 400);
-  assert.equal((await store.getUserById(user.id))?.nickname, "Ada Lovelace");
 });
 
 test("AUTH-06 edge: a forged session cookie does not restore a user", async () => {
