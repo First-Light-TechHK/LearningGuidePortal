@@ -18,7 +18,7 @@ test("Stripe cancellation retains access/end date and recovers a lost response w
     const remote = { id: "sub_cancel", customer: "cus_cancel", status: "active", cancel_at_period_end: false };
     let lost = true; const calls: { input: unknown; key?: string }[] = [];
     stripe.subscriptions.retrieve = (async () => remote) as unknown as typeof stripe.subscriptions.retrieve;
-    stripe.subscriptions.update = (async (_id, input, options) => {
+    stripe.subscriptions.update = (async (_id: string, input: { cancel_at_period_end?: boolean }, options?: { idempotencyKey?: string }) => {
       calls.push({ input, key: options?.idempotencyKey }); remote.cancel_at_period_end = Boolean(input?.cancel_at_period_end);
       if (lost) { lost = false; throw new Error("Provider response lost"); }
       return remote;
