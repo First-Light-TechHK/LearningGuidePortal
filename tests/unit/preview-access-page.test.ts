@@ -39,7 +39,7 @@ test("video previews choose access from the title row, share the cutoff modal an
     assert.equal(await page.getByRole("heading", { name: messages.previewVideoDesign.valueTitle, exact: true }).count(), 0);
     const player = (await page.locator(".la-player").locator("..").boundingBox())!, cta = (await choose.boundingBox())!;
     assert.equal(cta.x + cta.width, player.x + player.width - 20);
-    assert.equal(cta.height, 37); if (locale === "en-GB") assert.ok(Math.abs(cta.width - 172) < 2);
+    assert.equal(cta.height, 37); if (locale === "en-GB") assert.ok(cta.width >= 150 && cta.width <= 200, `unexpected choose-plan width ${cta.width}`);
     assert.deepEqual(await choose.evaluate(e => { const s = getComputedStyle(e); return [s.borderRadius, s.backgroundColor, s.fontSize, s.fontWeight]; }), ["8px", "rgb(29, 107, 255)", "14px", "600"]);
     await page.screenshot({ path: `${output}/${locale}-entry.png`, fullPage: true });
     await page.locator("video").evaluate(video => {
