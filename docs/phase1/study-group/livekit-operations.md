@@ -66,9 +66,9 @@ For retirement, mark the project `draining`; ensure no new session is assigned; 
 
 ## Incident response
 
-The webhook, reconciliation and durable tutor-delivery responses below are implemented for the PostgreSQL store (migrations 012): `app/api/livekit/webhook` verifies the provider signature and records a unique receipt before acting, the bounded reconciliation timer repairs missed webhooks and drifted presence, and tutor delivery runs on the durable claim/settle/outbox. The file store remains a single-process DEV adapter whose webhook path fails closed (503) and which is a release blocker in production (see the release-runbook gate).
+The webhook, reconciliation and durable tutor-delivery responses below are implemented for the PostgreSQL store (migrations 012): `app/api/livekit/webhook` verifies the provider signature and records a unique receipt (since 2026-10-19 every event is recorded and ignored: seats are the server's own lease, see `decisions.md` "Seats and the end of a Live Session"), the bounded reconciliation timer abandons stale receipts and runs the seat-lease sweep, and tutor delivery runs on the durable claim/settle/outbox. The file store remains a single-process DEV adapter whose webhook path fails closed (503) and which is a release blocker in production (see the release-runbook gate).
 
 - Invalid webhook signature: reject, do not write state, alert on sustained failures.
-- Missing webhook or browser crash: reconciliation checks the provider/session mapping after the configured grace period and records the reason for any seat release.
+- Missing webhook, browser crash, closed tab or lost network: the seat stops being renewed and is released 30 seconds after its last heartbeat; a live session with no seat for 60 seconds ends, dated to when it emptied. No provider read is needed.
 - Tutor publication failure: use the durable retry/lease policy. Terminal failure advances the queue and creates a redacted operational event; it never leaves a permanently in-flight request.
 - Quota, 5xx or credential failure: classify the fault, open the circuit for new sessions if necessary, preserve existing room assignment, and use the documented rollback/rotation path.

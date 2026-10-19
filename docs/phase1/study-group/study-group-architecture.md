@@ -61,13 +61,15 @@ A Group card Live badge means some child Session is Live. It is not a Group stat
 
 Each user operation that changes a seat, a meeting, a token, or the log is split below. The service orders the steps. The repository commits the row change. LiveKit is not in the seat or meeting write.
 
-**Enter.** The service checks the session, membership, Course access, and Starting Soon or Live. It orders concurrent enters by server receipt time. The repository grants one presence if occupancy is still under the Session maximum. A duplicate enter for someone already seated does not add a row. The seventh person when the maximum is 6 gets Session Full and no row.
+**Enter.** The service checks the session, membership, Course access, and Starting Soon or Live. It orders concurrent enters by server receipt time. The repository grants one presence if occupancy is still under the Session maximum; during Starting Soon a member is also refused when only the Host's kept seat is left and the Host is not in. A duplicate enter for someone already seated renews that seat and does not add a row. The seventh person when the maximum is 6 gets Session Full and no row. Occupancy counts held seats only: a seat is a lease of 30 seconds that the room page's heartbeat renews (`modules/group-study/presence.ts`).
 
 **Host Start.** The service checks the Host and Starting Soon. The repository sets the Session to Live, moves waiting presences to the live phase, and inserts one meeting row if that Session does not have one. Occupancy is unchanged. This step does not sign a token.
 
 **Token.** The service reads the seat. It signs a participant token with no Host label. If signing fails, the admission row is kept for retry — issuing a token is not a user leave — and no log line is written. If signing succeeds, the repository appends one encrypted line that contains neither the token nor the API secret, and the Route returns the token. The UI then connects to LiveKit.
 
-**Leave.** The repository sets `leftAt`. If the Session is Live and occupancy is then zero, the Session becomes Completed and the meeting row gets `endedAt`.
+**Heartbeat.** The service renews the caller's held seat and reports whether it is still held; a lapsed seat is not revived, the page enters again through the normal checks.
+
+**Leave.** The repository sets `leftAt`. If the Session is Live and occupancy is then zero, the Session becomes Completed and the meeting row gets `endedAt`. A seat whose lease runs out is released at its lease end without a Leave; a Live Session with no seat for 60 seconds becomes Completed, dated to when it emptied (the server sweep).
 
 **Tutor queue append.** The service records one item for that Session: user id, session id, text, client idempotency key and the time the server received it. A delivery drains a Session by atomically claiming the next eligible item (lease-bounded, receipt order across all instances), retrieves only existing course text, calls the model, and publishes a grounded answer as a shared LiveKit data message; an item that cannot be served is settled so the next item proceeds. The atomic lease, bounded retry policy, dead-letter settlement and the duplicate-safe publish outbox are implemented in the PostgreSQL repository (012); a republish after a crash window is deduplicated client-side by message id. This append/delivery is not part of enter, Host Start, token issuance, or leave. Occupancy and the token are unchanged.
 

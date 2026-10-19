@@ -60,7 +60,7 @@
 1. 读仓库坐标表（非密，`scripts/release/environments.mjs`）：每环境的 App Runner ARN、站点域名、密钥名、项目 id/网址。
 2. 校验该环境已开通。未开通：立即失败。
 3. 校验 `lg-<env>-studygroup-livekit` 与 `lg-<env>-studygroup-tutor-keys` 已存在于 Secrets Manager（平台各写入一次；值分别来自 LiveKit 控制台与 OpenRouter 控制台）。缺失：立即失败，并打印平台侧的一次性写入命令（值不经过 repo / 聊天 / GitHub）。
-4. 在 LiveKit 控制台把该项目的 **webhook 地址**设为 `https://<环境站点域名>/api/livekit/webhook`。不设置 = 回调腿静默失效（`participant_left` 永不到达，presence 修复退化为对账兜底，且 runbook 的签名回调门无法验证）。
+4. 在 LiveKit 控制台把该项目的 **webhook 地址**设为 `https://<环境站点域名>/api/livekit/webhook`。不设置 = 回调腿静默失效（签名回调永不到达，runbook 的签名回调门无法验证）。座位不依赖回调：座位由服务端租约决定。
 5. 令牌日志钥自动签发：不存在则以 `openssl rand -base64 32` 生成并写入 `lg-<env>-studygroup-token-log-key`；已存在则保持原值（不覆盖，旧日志行仍以旧钥版本解密）。
 6. 合并进 App Runner 服务：`LIVEKIT_PROJECTS_JSON` 进普通变量；`STUDY_GROUP_TOKEN_LOG_KEY` 与 `STUDY_GROUP_TUTOR_KEYS` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。代码读的是同名环境变量，自身零改动。
 7. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。同一响应里的三个自查字段（代码在健康面核实，无需 AWS 访问）：`studyGroup.tutorKeys` 应为 `configured`（AI Tutor 可用）、`credentialSource` 应为 `secrets-manager`（未被本地凭据遮蔽）、`simulated` 应为 `false`（未开假网关）。凭据级证据（密钥真能解析、被提供方接受）另见：backoffice `livekit-health` 的 `providerVerified:true`，或 CloudWatch 里 `study_group.livekit_health` 行的 `provider_api` 证据。
