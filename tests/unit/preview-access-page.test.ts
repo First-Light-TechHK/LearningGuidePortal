@@ -101,7 +101,7 @@ test("video previews choose access from the title row, share the cutoff modal an
     await dialog.getByText(copy.empty, { exact: true }).waitFor(); assert.equal(await dialog.getByRole("link", { name: copy.cta, exact: true }).getAttribute("href"), pricingHref);
     await page.keyboard.press("Escape");
     await mount("standalone", { standalone: true });
-    await page.locator("video").evaluate(video => { Object.defineProperty(video, "currentTime", { configurable: true, writable: true, value: 61 }); video.dispatchEvent(new Event("timeupdate")); });
+    await page.locator("video").evaluate(video => { const media = video as HTMLVideoElement; Object.defineProperty(media, "currentTime", { configurable: true, writable: true, value: 61 }); media.dispatchEvent(new Event("timeupdate")); });
     await dialog.getByRole("heading", { name: copy.heroTitle, exact: true }).waitFor();
     assert.deepEqual(errors, []); await page.close();
   } } finally { await browser.close(); }
