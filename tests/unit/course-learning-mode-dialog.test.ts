@@ -16,7 +16,7 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
   });
   const script = bundle.outputFiles.find(file => file.path.endsWith(".js"))!.text;
   const css = bundle.outputFiles.find(file => file.path.endsWith(".css"))!.text;
-  const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || "msedge" });
+  const browser = await chromium.launch();
   await mkdir("test-results/course-learning-mode", { recursive: true });
   try {
     for (const locale of ["en-GB", "zh-CN"]) {

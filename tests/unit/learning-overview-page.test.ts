@@ -14,7 +14,7 @@ test("Overview renders both catalogue lists, learning progress, protected links 
       builder.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ resolveDir: process.cwd(), contents: args.path === "next/navigation" ? `export function usePathname(){return location.pathname}` : args.path === "next/link" ? `import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/ >}` : `import React from 'react';export default function Image({unoptimized,...props}){return <img {...props}/ >}`, loader: "tsx" }));
     } }],
   });
-  const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || "msedge" });
+  const browser = await chromium.launch();
   await mkdir("test-results/learning-overview", { recursive: true });
   const identities = ["Horace: The Odes", "Quintus Horatius Flaccus", "A long course title covering science and its history"].map((title, index) => ({ courseId: `course-${index}`, slug: `slug-${index}`, title, category: "Science", cover: "/portal/course-book.jpg" }));
   const display = { learning: identities.map((course, index) => ({ ...course, kind: "learning", mode: index % 2 ? "text" : "video", progress: [46, 100, 0][index], currentLesson: index === 1 ? null : 4, currentLessonId: "lesson-4" })), previewed: identities.map(course => ({ ...course, kind: "preview" })) };

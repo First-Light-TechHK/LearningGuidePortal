@@ -45,7 +45,7 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
-  const browser=await chromium.launch({channel:'msedge'});
+  const browser=await chromium.launch();
   try{for(const locale of ['en-GB','zh-CN'] as const){
     const labels=getMessages(locale).understandingOverview, copy=getMessages(locale).knowledgeTest, records=getMessages(locale).assessmentRecords;
     const user=await verifiedUser(store,`browser-${locale.toLowerCase()}@example.test`,'Actual Learner');
