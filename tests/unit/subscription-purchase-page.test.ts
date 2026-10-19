@@ -13,7 +13,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
   });
   const plans = ["European Humanities", "Chinese Humanities", "Science"].flatMap(category => [6, 12].map(term => ({ id: `${category}-${term}`, name: `${category} ${term}`, courseId: "*", scope: "category", scopeId: category, device: "pc", termMonths: term, currency: "usd", amountMinor: term === 6 ? 3900 : 7800, alreadySubscribed: category !== "Chinese Humanities" })));
   plans.push(...[6, 12].map(term => ({ id: `everything-${term}`, name: `Everything ${term}`, courseId: "*", scope: "everything", scopeId: "*", device: "pc", termMonths: term, currency: "usd", amountMinor: 9900, alreadySubscribed: false })));
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   await mkdir("test-results/purchase-eligibility", { recursive: true });
   try {
     for (const locale of ["en-GB", "zh-CN"] as const) {

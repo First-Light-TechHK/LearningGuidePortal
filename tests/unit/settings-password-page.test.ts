@@ -7,7 +7,7 @@ import { readFile, mkdir } from "node:fs/promises";
 
 test("password failures use the current UI language and retain input for retry",async()=>{
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {SettingsForm} from './components/portal/SettingsForm';import {getMessages} from './lib/i18n/messages';window.mount=locale=>createRoot(document.getElementById('root')).render(<SettingsForm countries={['China']} uiLocale={locale} initialLocale="en-GB" initialCountry="China" initialNickname="Learner" initialEmail="learner@example.test" hasAvatar={false} copy={getMessages(locale).settingsPage}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,platform:"browser",jsx:"automatic",plugins:[{name:"cropper",setup(b){b.onResolve({filter:/AvatarCropper$/},()=>({path:"cropper",namespace:"stub"}));b.onLoad({filter:/.*/,namespace:"stub"},()=>({contents:"export const AvatarCropper=()=>null"}));}}]});
-  const browser=await chromium.launch({channel:"msedge"});
+  const browser=await chromium.launch();
   try{for(const locale of ["en-GB","zh-CN"] as const){
     const page=await browser.newPage();let code="CURRENT_PASSWORD_INCORRECT",success=true,networkFailure=false;const requests:any[]=[];
     await page.route("http://settings.test/**",async route=>route.fulfill({body:new URL(route.request().url()).pathname.endsWith('.svg')?await readFile('public/portal/subscriptions/design/chevron-down.svg'):'<div id="root"></div>',contentType:new URL(route.request().url()).pathname.endsWith('.svg')?'image/svg+xml':'text/html'}));

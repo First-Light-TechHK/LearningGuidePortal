@@ -18,7 +18,7 @@ test("Category, Everything and Upgrade confirmations match the design and retain
     } }],
   });
   const output = "test-results/subscription-confirmation"; await mkdir(output, { recursive: true });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } }), messages = getMessages(locale);
     const errors: string[] = [], requests: unknown[] = []; let responseStatus = 409, release: (() => void) | undefined;

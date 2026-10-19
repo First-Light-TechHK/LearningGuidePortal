@@ -22,7 +22,7 @@ test("lesson tools match the Figma column, describe enabled/disabled actions and
     } }],
   });
   await mkdir("test-results/lesson-tools", { recursive: true });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
     const errors: string[] = [];

@@ -17,7 +17,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path === "next/navigation" ? "export function useRouter(){return {refresh(){window.refreshed=true},push(href){window.modeDestination=href}}}" : args.path === "next/dynamic" ? "export default function dynamic(){return ()=>null}" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>;}" : "import React from 'react';export default function Image({unoptimized,...props}){return <img {...props}/>;}"}));
     }}],
   });
-  const browser = await chromium.launch({channel:"msedge"});
+  const browser = await chromium.launch();
   await mkdir("test-results/video-exhibit",{recursive:true});
   try {
     for(const locale of ["en-GB","zh-CN"] as const) {

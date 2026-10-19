@@ -28,7 +28,7 @@ test("five subscription designs retain bilingual responsive states, original ico
   const courseTitles = [{ category: "Chinese Humanities", title: "Chinese History" }, { category: "Chinese Humanities", title: "Chinese Literature" }, { category: "European Humanities", title: "The Art of Seeing" }, { category: "European Humanities", title: "Renaissance Thought" }, { category: "Science", title: "Physics" }, { category: "Science", title: "Chemistry" }];
   const subscription = (scopeId: string): ProductSubscription => ({ id: `sub-${scopeId}`, userId: "owner", planId: `${scopeId}-6`, courseId: "*", scope: scopeId === "everything" ? "everything" : "category", scopeId, device: "pc", stripeSubscriptionId: "sub_stripe", stripeCustomerId: "cus_owner", source: "purchase", state: "active", cancelAtPeriodEnd: false, validFrom: "2026-08-01T00:00:00Z", validTo: "2027-01-31T00:00:00Z" });
   const fixtures = [[], [subscription("Chinese Humanities")], [subscription("Chinese Humanities"), subscription("Science")], categories.map(c => subscription(c.id)), [subscription("everything")]];
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const copy = getMessages(locale), page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
     let mode = "success", amountMinor = 3586; const requests: any[] = [];

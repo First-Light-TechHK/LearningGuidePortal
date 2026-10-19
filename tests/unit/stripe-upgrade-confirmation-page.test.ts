@@ -11,7 +11,7 @@ test("Stripe upgrade confirmation shows proration, unchanged term and renewal, l
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader:"tsx",resolveDir:process.cwd(),contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
   } }] });
   await mkdir("test-results/stripe-upgrade-confirmation", { recursive: true });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const copy = getMessages(locale), page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
     let reject = true; const requests: any[] = [];

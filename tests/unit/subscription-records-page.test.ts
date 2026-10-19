@@ -18,7 +18,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
       builder.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ resolveDir: process.cwd(), contents: args.path === "next/navigation" ? `export function usePathname(){return location.pathname};export const useSearchParams=()=>new URLSearchParams(location.search);` : args.path === "next/link" ? `import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/ >}` : `import React from 'react';export default function Image({unoptimized,...props}){return <img {...props}/ >}`, loader: "tsx" }));
     } }],
   });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   const output = "test-results/subscription-records"; await mkdir(output, { recursive: true });
   (globalThis as any).subscriptionFooter = defaultPortalContent;
   const footerBundle = await build({ entryPoints: ["components/portal/PortalFooter.tsx"], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], plugins: [{ name: "footer", setup(b) {

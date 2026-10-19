@@ -15,7 +15,7 @@ test("text previews stop inline, blur withheld material and open access plans on
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path.endsWith("Preview") ? "export const CourseModelPreview=()=>null;export const CoursePdfPreview=()=>null" : args.path === "next/navigation" ? "export const useRouter=()=>({refresh(){},push(){}})" : args.path === "next/dynamic" ? "export default ()=>()=>null" : "import React from 'react';export default function Component({prefetch,unoptimized,...p}){return p.src?<img {...p}/>:<a {...p}/>}" }));
   } }] });
   const output = "test-results/text-preview"; await mkdir(output, { recursive: true });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } }), copy = getMessages(locale).previewAccess;
     const errors: string[] = [], study: { contentId: string; event: string }[] = [];

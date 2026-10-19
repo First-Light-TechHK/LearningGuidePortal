@@ -20,7 +20,7 @@ test("text entry/selection and video playback save points; Next Lesson saves the
           : "import React from 'react';export default function Component({prefetch,unoptimized,...props}){return props.src?<img {...props}/>:<a {...props}/>}" }));
     } }],
   });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
     const requests: any[] = []; let failNext = true, release: (() => void) | undefined;

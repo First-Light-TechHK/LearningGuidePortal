@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { chromium } from "playwright";
 test("completion Knowledge Test supports six questions, optional notes, rating gate, read-only detail, result actions and return in both locales", async () => {
   const bundle = await build({ stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';import previewStyles from './components/portal/preview-lesson.module.css';window.mount=locale=>createRoot(document.getElementById('root')).render(<header className={previewStyles.heading}><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>window.continued=true} onClose={()=>window.closed=true}/></header>);`,resolveDir:process.cwd(),loader:"tsx"}, bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next-image",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}] });
-  const browser = await chromium.launch({channel:"msedge"});
+  const browser = await chromium.launch();
   await mkdir("test-results/knowledge-test",{recursive:true});
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const copy=getMessages(locale).knowledgeTest;
