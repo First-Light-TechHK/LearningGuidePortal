@@ -2,6 +2,7 @@ import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type Verifi
 import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
+import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
 import { resolveLegacyUpgradeSourcePrice } from "./stripeUpgradeSource";
@@ -2144,6 +2145,7 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     if (input.contentId !== undefined && !input.learningMode) throw new Error("A learning mode is required for a knowledge point.");
     if (input.learningMode && !courseKnowledgePoints(course, input.learningMode).some(point => point.lessonId === lesson.id && point.contentId === (input.contentId || null))) throw new Error("Knowledge point not found.");
     if (access === "preview" && publicFirstLesson(course)?.id !== lesson.id) throw new Error("This lesson is outside the preview range.");
+    if (access === "preview" && input.learningMode === "text" && input.contentId && textLessonPreviewPolicy(lesson.contents || []).points[input.contentId] === "locked") throw new Error("This point is outside the preview range.");
     const existingClientEvent = data.studyEvents.some((event) => event.userId === input.userId && event.clientEventId === input.clientEventId);
     if (existingClientEvent) {
       return data.studyRecords.find((record) => record.userId === input.userId && record.courseId === input.courseId) || null;

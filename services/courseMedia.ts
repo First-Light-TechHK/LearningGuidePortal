@@ -8,6 +8,7 @@ import { isManagedEnvironment } from "@/services/runtimeConfig";
 import { canManageCourse } from "@/services/backofficeAccess";
 import { requestOriginMatches } from "@/services/adminHost";
 import { checkEntitlement, getProductCourse, publicFirstLesson, type ProductCourse, type ProductUser } from "@/services/productStore";
+import { buildTextLessonPreview } from "./textLessonPreview";
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
 
 export { COURSE_MEDIA_MAX_BYTES } from "@/contracts/lesson-content";
@@ -224,7 +225,11 @@ export async function canReadCourseMedia(user: ProductUser | null, course: Produ
     return (await readStoredAsset(course.id, assetId)).asset.fileType === "image";
   }
   const preview = publicFirstLesson(course);
-  if (preview && lessonContentAssetIds(contentsOf(preview), course.id).has(assetId)) return true;
+  if (preview) {
+    const projection = buildTextLessonPreview(preview, course.id, false);
+    const readable = projection.contents.filter(content => projection.textPreview?.points[content.id] !== "locked");
+    if (lessonContentAssetIds(readable, course.id).has(assetId)) return true;
+  }
   if (!user) return false;
   const referenced = course.sections.some(section => section.lessons.some(lesson => lessonContentAssetIds(contentsOf(lesson), course.id).has(assetId)));
   return referenced && (await checkEntitlement(user.id, course.id)).allowed;

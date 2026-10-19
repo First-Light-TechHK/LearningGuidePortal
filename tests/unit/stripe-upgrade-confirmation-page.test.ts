@@ -7,8 +7,8 @@ import { getMessages } from "../../lib/i18n/messages";
 
 test("Stripe upgrade confirmation shows proration, unchanged term and renewal, localised retry and one consented submission", async () => {
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {SubscriptionConfirmation} from './components/portal/SubscriptionConfirmation';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>root.render(<SubscriptionConfirmation key={props.locale} {...props} copy={getMessages(props.locale).portal.subscriptionConfirmation}/>);`, resolveDir: process.cwd(), loader: "tsx" }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "navigation", setup(b) {
-    b.onResolve({ filter: /^next\/navigation$/ }, args => ({ path: args.path, namespace: "mock" }));
-    b.onLoad({ filter: /.*/, namespace: "mock" }, () => ({ contents: "export const useRouter=()=>({replace(url){window.dismissed=url}})" }));
+    b.onResolve({ filter: /^next\/(navigation|image)$/ }, args => ({ path: args.path, namespace: "mock" }));
+    b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader:"tsx",resolveDir:process.cwd(),contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
   } }] });
   await mkdir("test-results/stripe-upgrade-confirmation", { recursive: true });
   const browser = await chromium.launch({ channel: "msedge" });
@@ -32,7 +32,7 @@ test("Stripe upgrade confirmation shows proration, unchanged term and renewal, l
     assert.match(await price.textContent() || "", /\$30\.00 USD/);
     assert.match(await price.textContent() || "", /\$5\.86 USD/);
     assert.match(await price.textContent() || "", /\$35\.86 USD/);
-    assert.match(await price.textContent() || "", /\$99\.00 USD \/ 6/);
+    assert.match(await page.locator(".upgrade-renewal-note").textContent() || "", /\$99\.00 USD \/ 6/);
     assert.ok((await page.locator(".upgrade-validity").textContent())?.includes("2027"));
     assert.ok((await price.textContent())?.includes(copy.upgradeConfirmation.remainingPrice));
     const submit = page.locator(".confirmation-actions button").last();

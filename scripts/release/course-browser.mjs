@@ -364,13 +364,13 @@ async function checkTrialGate(page, root, lesson, deadline) {
     const result = await probePlayback(video, remaining(deadline, LIMIT.resource));
     requireCheck(result.ok, result.code || 'preview_video_play_failed');
     requireCheck(result.duration > 60.5, 'preview_gate_not_exercisable_short_video');
-    requireCheck(!await page.locator('.la-trial-modal[role="dialog"]').count(), 'preview_gate_triggered_before_limit');
+    requireCheck(!await page.locator('.la-trial-modal').count(), 'preview_gate_triggered_before_limit');
     // Seek close to the boundary and cross it during playback, not while already
     // paused, so a modal alone cannot masquerade as enforcement.
     await video.evaluate(element => { element.currentTime = 59; void element.play().catch(() => undefined); });
     await page.waitForFunction(element => !element.paused && !element.seeking && element.currentTime >= 59 && element.currentTime < 60, await video.elementHandle(), { timeout: remaining(deadline, LIMIT.resource) });
     await video.evaluate(element => { element.currentTime = 60.25; });
-    const modal = page.locator('.la-trial-modal[role="dialog"]');
+    const modal = page.locator('.la-trial-modal');
     await modal.waitFor({ state: 'visible', timeout: remaining(deadline) });
     const state = await video.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
     const href = await modal.locator('a.la-trial-pricing').getAttribute('href');

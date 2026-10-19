@@ -154,35 +154,6 @@
 .portal-auth-password-page .auth-provider-signin .auth-provider-button { width:100%; height:44px; border:1px solid #d1d5db; border-radius:8px; color:#111827; }
 .portal-auth-password-page .auth-provider-signin .auth-provider-divider { gap:12px; color:#9ca3af; font-size:12px; line-height:17px; }
 @media(max-width:640px) { .portal-auth-password-page .portal-auth-stage { padding:32px 16px; } .portal-auth-password-page .portal-auth-card { padding:28px 24px; gap:20px; } }
-dialog.subscription-confirmation.upgrade-confirmation { width:700px; min-height:914px; margin-top:54px; padding:32px 40px 60px; }
-.upgrade-confirmation .confirmation-heading { min-height:62px; margin-bottom:24px; }
-.upgrade-confirmation .confirmation-heading h1 { font-size:24px; line-height:32px; }
-.upgrade-confirmation .confirmation-heading p { margin-top:10px; line-height:20px; }
-.upgrade-summary { position:relative; min-height:240px; border:1px solid #d6e6fc; border-radius:12px; padding:21px 23px; background:#f0f7ff; }
-.upgrade-art { position:absolute; right:32px; top:39px; width:263px; height:161px; background:url('/portal/figma-upgrade-art.png') center / contain no-repeat; }
-.upgrade-summary dl { position:relative; z-index:1; max-width:275px; }
-.upgrade-summary dl { margin:0; display:grid; gap:13px; }
-.upgrade-summary dt { font-size:11px; line-height:16px; text-transform:uppercase; margin:0 0 8px; }
-.upgrade-summary dd { margin:0; font-size:16px; line-height:22px; font-weight:600; }
-.upgrade-summary .upgrade-validity { font-size:12px; line-height:17px; font-weight:400; max-width:280px; }
-.upgrade-price { margin-top:15px; }
-.upgrade-price h2 { margin:0 0 6px; font-size:16px; line-height:22px; }
-.upgrade-price dl { margin:0; padding:21px 23px; border:1px solid #dbe3f0; border-radius:8px; min-height:144px; display:grid; gap:13px; }
-.upgrade-price dl > div { display:flex; justify-content:space-between; gap:16px; }
-.upgrade-price dt,.upgrade-price dd { margin:0; font-size:14px; line-height:20px; }
-.upgrade-price dd { flex-shrink:0; min-width:136px; }
-.upgrade-price dl > div:last-child dt { font-size:15px; font-weight:600; }
-.upgrade-price dl > div:last-child dd { font-size:18px; font-weight:600; }
-.upgrade-other-categories { margin:38px 0 25px; font-size:13px; line-height:18px; min-height:36px; }
-dialog.subscription-confirmation.upgrade-confirmation .subscription-consents { min-height:146px; margin:0 0 20px; gap:10px; }
-dialog.subscription-confirmation.upgrade-confirmation .subscription-consents legend { font-size:16px; line-height:20px; margin-bottom:16px; }
-dialog.subscription-confirmation.upgrade-confirmation .subscription-consents label { min-height:30px; font-size:12px; line-height:15px; }
-.upgrade-confirmation .confirmation-actions { gap:12px; }
-.upgrade-confirmation .confirmation-actions .portal-button { min-height:44px; min-width:118px; }
-.upgrade-confirmation .confirmation-actions .portal-button-primary { width:224px; }
-@media(max-height:1000px) { dialog.subscription-confirmation.upgrade-confirmation { margin-top:24px; min-height:0; } }
-@media(max-width:680px) { .upgrade-art { display:none; } .upgrade-summary dl { max-width:none; } }
-@media(max-width:540px) { dialog.subscription-confirmation.upgrade-confirmation { padding:24px 20px; min-height:0; } .upgrade-price dl { padding:16px; } .upgrade-price dl > div { flex-wrap:wrap; gap:6px; } .upgrade-price dd { min-width:0; } }
 .portal-section.portal-section-courses,.portal-section.portal-catalog-courses { width:min(1240px,calc(100% - 80px)); max-width:1240px; }
 .portal-catalog-courses.portal-section { padding-top:68px; }
 .portal-catalog-courses .portal-section-heading h2 { font-size:32px; line-height:43px; font-weight:600; }
@@ -411,38 +382,73 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 @media(max-width:1100px) { .pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
 @media(max-width:800px) { .pricing-selection--one_category .pricing-design-card { min-height:0; }.pricing-upgrade-action { padding-top:30px; }.pricing-owned-notice { padding:12px; }.pricing-owned-notice > a { flex-basis:100%; margin-left:0; }.pricing-owned-status { flex-wrap:wrap; padding:24px; }.pricing-owned-status > a { flex-basis:100%; }.pricing-owned-copy { flex-basis:calc(100% - 68px); }.pricing-owned-chips { width:100%; }.pricing-owned-benefits { grid-template-columns:1fr; }.pricing-owned-chip { overflow-wrap:anywhere; }.pricing-selection-price { min-height:0; }.pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
 @media(max-width:800px) { .pricing-design-main { width:calc(100% - 40px); padding:32px 0 48px; }.pricing-title-row { flex-wrap:wrap; }.pricing-comparison { grid-template-columns:minmax(0,1fr); gap:24px; }.pricing-design-card { padding:24px; }.pricing-design-card--everything { padding:23px; }.pricing-card-price strong { font-size:48px; }.pricing-design-information { padding:40px 20px; }.pricing-information-grid { grid-template-columns:1fr; gap:24px; } }
-dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); max-height:calc(100dvh - 96px); margin:72px auto 24px; padding:34px 84px 26px; border:0; border-radius:16px; color:#15233a; background:#fff; box-shadow:0 14px 36px rgb(0 0 0 / 18%); overflow:auto; }
-dialog.subscription-confirmation::backdrop { background:rgb(15 23 42 / 45%); }
-.confirmation-heading { display:block; min-height:58px; margin-bottom:14px; text-align:center; }
-.confirmation-heading h1 { margin:0; font-size:24px; line-height:32px; font-weight:600; }
-.confirmation-heading p { margin:5px 0 0; font-size:14px; line-height:20px; }
-.confirmation-close { position:absolute; top:14px; right:14px; display:grid; place-items:center; width:32px; height:32px; border:0; background:transparent; color:#8da0b8; cursor:pointer; }
-.confirmation-label { margin:0 0 10px; color:#155dfc; font-size:14px; line-height:20px; text-align:left; text-transform:none; font-weight:600; }
-.confirmation-plan { min-height:161px; box-sizing:border-box; padding:21px 20px 17px; border:1px solid #c7d6ff; border-radius:10px; background:#f8faff; margin-bottom:30px; text-align:center; }
-.confirmation-plan h2 { margin:0 0 10px; min-height:0; font-size:24px; line-height:28px; font-weight:600; color:#155dfc; }
-.confirmation-plan h2 span { display:table; width:fit-content; align-items:center; min-height:28px; margin:6px auto 0; padding:0 10px; border:1px solid #246bfd; border-radius:8px; background:#c7d6ff; color:#155dfc; font-size:13px; line-height:26px; }
-.confirmation-plan h2 span { display:block; }
-.confirmation-plan .confirmation-benefits p { margin:0; color:#64728b; font-size:12px; line-height:15px; }
-.confirmation-payment { margin:0 0 18px; }
-.confirmation-payment h2 { margin:0 0 14px; color:#155dfc; font-size:14px; line-height:20px; font-weight:600; }
-.confirmation-payment-grid,.confirmation-renewal-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px; margin:0; }
-.confirmation-payment-grid { min-height:72px; padding-bottom:14px; border-bottom:1px solid #dbe3f0; }
-.confirmation-payment-grid dt,.confirmation-renewal-grid dt { font-size:11px; line-height:16px; text-transform:uppercase; margin-bottom:4px; }
-.confirmation-payment-grid dd,.confirmation-renewal-grid dd { margin:0; font-size:16px; line-height:23px; font-weight:600; overflow-wrap:anywhere; }
-.confirmation-payment-grid p,.confirmation-renewal-grid p { margin:4px 0 0; font-size:12px; line-height:17px; color:#64748b; }
+dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); min-height:850px; max-height:calc(100dvh - 144px); margin:120px auto 24px; padding:40px 100px 32px; border:0; border-radius:20px; color:#15233a; background:#fff; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; font-family:Inter,Arial,sans-serif; }
+dialog.subscription-confirmation::backdrop { background:rgba(0,0,0,.4); }
+dialog.subscription-confirmation:focus { outline:0; }
+.subscription-confirmation .confirmation-heading { display:block; margin:0 0 20px; text-align:center; }
+.subscription-confirmation .confirmation-heading h1 { margin:0; font-size:26px; line-height:35px; font-weight:700; }
+.subscription-confirmation .confirmation-heading p { margin:8px 0 0; color:#5e7391; font-size:14px; line-height:18px; }
+.confirmation-intro-hidden { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.subscription-confirmation .confirmation-close { position:absolute; top:16px; right:18px; display:grid; place-items:center; width:20px; height:20px; margin:0; padding:0; border:0; background:transparent; cursor:pointer; }
+.subscription-confirmation img { display:block; max-width:none; flex-shrink:0; }
+.subscription-confirmation .confirmation-label { margin:0 0 12px; color:#155dfc; font-size:16px; line-height:19px; text-align:left; font-weight:600; }
+.confirmation-plan { box-sizing:border-box; min-height:193px; padding:23px 20px; border:1px solid #c7d6ff; border-radius:12px; background:#f9fafb; margin:0 0 40px; text-align:center; }
+.confirmation-plan h2 { margin:0; font-size:27px; line-height:36px; font-weight:600; color:#155dfc; }
+.confirmation-plan-chip { display:table; width:fit-content; margin:8px auto 16px; padding:7px 12px; border:1px solid #246bfd; border-radius:8px; background:#c7d6ff; color:#155dfc; font-size:13px; line-height:18px; font-weight:600; }
+.confirmation-plan .confirmation-benefits p { margin:0; color:#63738c; font-size:14px; line-height:17px; }
+.confirmation-payment { min-height:228px; margin:0 0 20px; }
+.confirmation-payment h2 { margin:0 0 14px; color:#155dfc; font-size:16px; line-height:19px; font-weight:600; }
+.confirmation-payment-grid,.confirmation-renewal-grid { display:grid; grid-template-columns:minmax(0,304px) minmax(0,304px); gap:28px; margin:0; }
+.confirmation-payment-grid { min-height:87px; padding-bottom:14px; border-bottom:1px solid #dbe5f2; }
+.confirmation-payment-grid dt,.confirmation-renewal-grid dt { color:#63738c; font-size:11px; line-height:16px; text-transform:uppercase; font-weight:500; margin-bottom:4px; }
+.confirmation-payment-grid dd,.confirmation-renewal-grid dd { margin:0; color:#14243b; font-size:16px; line-height:23px; font-weight:600; overflow-wrap:anywhere; }
+.confirmation-payment-grid p,.confirmation-renewal-grid p { margin:4px 0 0; font-size:12px; line-height:17px; color:#63738c; }
 .confirmation-renewal-grid { margin-top:14px; min-height:90px; }
-dialog.subscription-confirmation .subscription-consents { border:0; padding:0; margin:22px 0 18px; display:grid; gap:8px; min-height:0; }
-.subscription-confirmation .subscription-consents legend { color:#155dfc; font-size:14px; line-height:20px; font-weight:600; margin-bottom:4px; padding:0; }
-dialog.subscription-confirmation .subscription-consents label { display:flex; gap:8px; align-items:flex-start; min-height:18px; color:#64728b; font-size:12px; line-height:16px; }
-dialog.subscription-confirmation .subscription-consents input { width:14px; height:14px; flex:0 0 14px; margin:1px 0 0; accent-color:#155dfc; }
-.confirmation-actions { display:flex; justify-content:center; gap:16px; }
-.confirmation-actions .portal-button-secondary { display:none; }
-.confirmation-actions .portal-button { min-height:46px; min-width:130px; border-radius:8px; font-size:14px; }
-.confirmation-actions .portal-button-primary { width:168px; padding:10px 14px; }
-.confirmation-actions .portal-button-primary:disabled { opacity:1; background:#98a2b3; color:#fff; cursor:not-allowed; }
-@media(max-width:540px) { dialog.subscription-confirmation { padding:24px 20px; max-height:calc(100dvh - 24px); } .confirmation-heading h1 { font-size:22px; line-height:30px; } .confirmation-payment-grid { gap:16px; } .confirmation-actions { gap:12px; } .confirmation-actions .portal-button { min-width:0; flex:1; } }
-@media(max-width:420px) { .confirmation-payment-grid,.confirmation-renewal-grid { grid-template-columns:minmax(0,1fr); gap:16px; } .confirmation-actions .portal-button { padding:10px; } }
-@media(max-height:900px) { dialog.subscription-confirmation { margin:24px auto; max-height:calc(100vh - 48px); max-height:calc(100dvh - 48px); } }
+dialog.subscription-confirmation .subscription-consents { min-width:0; border:0; padding:0; margin:0; display:grid; gap:11px; }
+.subscription-confirmation .subscription-consents legend { color:#155dfc; font-size:16px; line-height:19px; font-weight:600; margin-bottom:12px; padding:0; }
+dialog.subscription-confirmation .subscription-consents label { display:flex; gap:8px; align-items:flex-start; min-height:20px; color:rgba(20,36,59,.6); font-size:13px; line-height:19px; }
+.confirmation-checkbox { position:relative; flex:0 0 20px; width:20px; height:20px; }
+dialog.subscription-confirmation .confirmation-checkbox input { position:absolute; inset:0; box-sizing:border-box; width:20px; height:20px; min-height:0; margin:0; padding:0; opacity:0; cursor:pointer; }
+.confirmation-checkbox:has(input:focus-visible) { outline:2px solid #155dfc; outline-offset:2px; border-radius:2px; }
+.confirmation-checkbox img { pointer-events:none; }
+.subscription-confirmation .confirmation-actions { display:flex; justify-content:center; margin-top:52px; }
+.subscription-confirmation .confirmation-actions .portal-button { box-sizing:border-box; width:200px; min-height:46px; padding:10px 14px; gap:4px; border-radius:8px; background:#155dfc; color:#fff; font:600 14px/20px Inter,Arial,sans-serif; }
+.subscription-confirmation .confirmation-actions .portal-button:disabled { opacity:1; background:#99a1af; color:#fff; cursor:not-allowed; }
+.subscription-confirmation .portal-form-error { margin:16px 0 0; font-size:13px; line-height:19px; }
+.subscription-confirmation:has(.portal-form-error) .confirmation-actions { margin-top:20px; }
+.subscription-confirmation button:focus-visible { outline:2px solid #155dfc; outline-offset:3px; }
+dialog.subscription-confirmation.upgrade-confirmation { min-height:870px; padding-bottom:25px; }
+.upgrade-confirmation .confirmation-heading { margin-bottom:24px; }
+.upgrade-summary { box-sizing:border-box; min-height:212px; margin-bottom:40px; padding:23px 31px; border:1px solid #c7d6ff; border-radius:12px; background:#f9fafb; }
+.upgrade-plan-columns { display:grid; grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr); gap:16px; align-items:start; }
+.upgrade-summary h2 { margin:0; color:#155dfc; font-size:14px; line-height:17px; font-weight:600; }
+.upgrade-source strong { display:block; margin-top:14px; color:#15233a; font-size:20px; line-height:24px; font-weight:600; }
+.upgrade-source > span { display:table; width:fit-content; max-width:100%; margin-top:4px; padding:4px 9px; border:1px solid #e5e7eb; border-radius:14px; background:#fff; color:#155dfc; font-size:13px; line-height:18px; font-weight:600; overflow-wrap:anywhere; }
+.upgrade-arrow { margin-top:37px; }
+.upgrade-target { padding-top:2px; text-align:center; }
+.upgrade-target strong { display:block; margin-top:21px; color:#155dfc; font-size:27px; line-height:36px; font-weight:600; }
+.upgrade-target p { margin:3px -20px 0; color:#64728b; font-size:12px; line-height:16px; }
+.upgrade-validity { margin-top:12px; text-align:center; }
+.upgrade-validity p { margin:2px 0 0; color:#5e7391; font-size:12px; line-height:15px; }
+.upgrade-validity p:first-of-type { opacity:.5; }
+.upgrade-validity p:last-child { margin-top:8px; }
+.upgrade-price { margin:0 0 22px; }
+.upgrade-price h2 { margin:0 0 13px; color:#155dfc; font-size:16px; line-height:19px; font-weight:600; }
+.upgrade-price dl { margin:0; }
+.upgrade-price dl > div { position:relative; display:flex; justify-content:space-between; align-items:center; min-height:50px; gap:16px; padding:10px 0; overflow:hidden; }
+.upgrade-price dt,.upgrade-price dd { margin:0; color:rgba(20,36,59,.6); font-size:14px; line-height:19px; }
+.upgrade-price dd { flex-shrink:0; text-align:right; font-weight:600; }
+.upgrade-price dl > div:first-child dd { font-size:12px; }
+.subscription-confirmation .upgrade-price-divider { position:absolute; left:0; bottom:0; }
+.upgrade-price dl > .upgrade-total { justify-content:flex-end; min-height:36px; padding:16px 0 0; gap:20px; }
+.upgrade-price .upgrade-total dt { color:#14243b; font-size:15px; line-height:20px; font-weight:600; }
+.upgrade-price .upgrade-total dd { color:#155dfc; font-size:12px; line-height:20px; font-weight:700; }
+dialog.upgrade-confirmation .subscription-consents label { color:rgba(51,71,99,.6); font-size:12px; line-height:19px; }
+.upgrade-renewal-note { box-sizing:border-box; margin:14px 0 0; padding:8px 16px; border-radius:8px; background:#eef3ff; color:#15233a; font-size:13px; line-height:16px; }
+.upgrade-confirmation .confirmation-actions { margin-top:26px; }
+@media(max-height:1000px) { dialog.subscription-confirmation { min-height:0; margin:24px auto; max-height:calc(100dvh - 48px); } dialog.subscription-confirmation.upgrade-confirmation { min-height:0; } }
+@media(max-width:900px) { dialog.subscription-confirmation { padding-inline:48px; } .confirmation-payment-grid,.confirmation-renewal-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+@media(max-width:600px) { dialog.subscription-confirmation { padding:40px 20px 24px; min-height:0; margin:16px auto; max-height:calc(100dvh - 32px); } .subscription-confirmation .confirmation-heading h1 { font-size:22px; line-height:30px; } .confirmation-plan { padding-inline:12px; } .confirmation-payment-grid,.confirmation-renewal-grid { grid-template-columns:minmax(0,1fr); gap:16px; } .subscription-confirmation .confirmation-actions { margin-top:28px; } .upgrade-summary { padding:20px 12px; } .upgrade-plan-columns { grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr); gap:8px; } .upgrade-source > span { font-size:11px; padding-inline:6px; } .upgrade-target strong { font-size:20px; line-height:28px; } .upgrade-target p { margin-inline:0; } .upgrade-price dt { font-size:12px; } .upgrade-price dd { font-size:12px; } }
 .portal-content-editor { padding:40px 0; display:grid; gap:24px; }
 .portal-content-editor label { display:grid; gap:8px; min-width:0; }
 .portal-content-editor input,.portal-content-editor textarea,.portal-content-editor select { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }

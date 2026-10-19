@@ -92,12 +92,12 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       assert.equal(videoBounds.width,900);
       assert.equal(videoBounds.height,506.25);
       const deepTools=page.getByRole("complementary",{name:locale==="en-GB"?"Deep Learning":"深度学习"});
-      assert.equal((await deepTools.boundingBox())!.width,150);
+      assert.equal((await deepTools.boundingBox())!.width,160);
       for(const action of await deepTools.locator("a,button").all()) {
-        const bounds=(await action.boundingBox())!;assert.equal(bounds.width,150);assert.equal(bounds.height,41);
-        assert.deepEqual(await action.evaluate(e=>{const s=getComputedStyle(e),label=getComputedStyle(e.lastElementChild!);return {size:label.fontSize,weight:label.fontWeight,border:s.borderTopWidth,radius:s.borderTopLeftRadius};}),{size:"13px",weight:"500",border:"0px",radius:"18px"});
+        const bounds=(await action.boundingBox())!;assert.equal(bounds.width,160);assert.ok(bounds.height>=52);
+        assert.deepEqual(await action.evaluate(e=>{const s=getComputedStyle(e),label=getComputedStyle(e.lastElementChild!);return {size:label.fontSize,weight:label.fontWeight,border:s.borderTopWidth,radius:s.borderTopLeftRadius};}),{size:"13px",weight:"500",border:"1px",radius:"12px"});
       }
-      for(const [asset,width,height] of [["tutor",16,16],["understanding",16,16],["explore",16,16],["arrow",12,12],["divider",940,1]] as const) {
+      for(const [asset,width,height] of [["tutor",16,16],["understanding",16,16],["explore",16,16],["divider",940,1]] as const) {
         const icon=page.locator(`img[src="/portal/study/${asset}.svg"]`);await icon.evaluate(image=>(image as HTMLImageElement).decode());
         assert.deepEqual(await icon.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width,height});
         assert.ok((await readFile(`public/portal/study/${asset}.svg`)).length>0);

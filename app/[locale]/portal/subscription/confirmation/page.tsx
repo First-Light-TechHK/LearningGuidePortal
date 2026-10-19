@@ -5,6 +5,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
 import { currentProductUser } from "@/services/productAuth";
 import { getQuoteForUser, getPortalContent } from "@/services/productStore";
+import { buildSubscriptionConfirmationDisplay } from "@/services/subscriptionConfirmationDisplay";
 
 export default async function SubscriptionConfirmationPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ quoteId?: string }> }) {
   const locale = localeFrom((await params).locale);
@@ -22,5 +23,6 @@ export default async function SubscriptionConfirmationPage({ params, searchParam
   const scopeDescription = scope === "everything" ? copy.pricingDesign.allCourses : scope === "category" ? copy.pricingDesign.categoryCourses : copy.confirmationDetails.courseAccess;
   const sourceCategory = content.categories.find(item => item.id === (result.sourcePlan?.category || result.sourcePlan?.scopeId));
   const upgradeSource = result.sourceSubscription && result.sourcePlan ? { name: `${copy.pricingDesign.category} · ${sourceCategory?.labels[locale] || result.sourcePlan.name}`, validTo: result.sourceSubscription.validTo } : undefined;
-  return <><SubscriptionPage params={Promise.resolve({ locale })} searchParams={Promise.resolve({ planId: result.plan.id })} /><SubscriptionConfirmation upgradeSource={upgradeSource} planHeading={planHeading} planSubtitle={planSubtitle} scopeDescription={scopeDescription} locale={locale} quote={result.quote} plan={result.plan} copy={copy.portal.subscriptionConfirmation} /></>;
+  const display = buildSubscriptionConfirmationDisplay({ quote: result.quote, plan: result.plan, categoryCount: content.categories.length, source: result.sourceSubscription, sourcePlan: result.sourcePlan, sourceCategory: sourceCategory?.labels[locale] });
+  return <><SubscriptionPage params={Promise.resolve({ locale })} searchParams={Promise.resolve({ planId: result.plan.id })} /><SubscriptionConfirmation display={display} upgradeSource={upgradeSource} planHeading={planHeading} planSubtitle={planSubtitle} scopeDescription={scopeDescription} locale={locale} quote={result.quote} plan={result.plan} copy={copy.portal.subscriptionConfirmation} /></>;
 }

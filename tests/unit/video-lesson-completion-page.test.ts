@@ -109,7 +109,7 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await progress(98);await bar.waitFor();await page.setViewportSize({width:390,height:844});
       await page.screenshot({path:`test-results/video-completion/${locale}-mobile.png`,fullPage:true});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-      await mount("preview",false);await page.locator('a[href="/subscription"]').waitFor();await progress(58,59);assert.equal(await bar.count(),0);
+      await mount("preview",false);await page.getByRole('button',{name:getMessages(locale).previewAccess.choosePlan,exact:true}).waitFor();await progress(58,59);assert.equal(await bar.count(),0);
       await page.locator("video").evaluate(element=>element.dispatchEvent(new Event("ended"))); assert.equal(await page.getByRole("dialog").count(),0,"unentitled previews never show completion dialog");
       const savedCount=completions.length;
       await mount("completed",true,false,true);await progress(36.749,37.5);assert.equal(await bar.count(),1);await progress(36.75,37.5);await bar.waitFor();

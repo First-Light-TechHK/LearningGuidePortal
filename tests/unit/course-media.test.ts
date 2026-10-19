@@ -27,7 +27,7 @@ const otherCourseId = "other-media-course";
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
 const obj = Buffer.from("# Triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
 const input = (bytes = png, name = "diagram.png", type = "image/png") => ({ bytes, name, type });
-const contents = (asset: CourseMediaAsset): LessonContent[] => [{ id: "content-1", title: "Media", type: "text", mode: "interactive", nodes: [{ id: "node-1", title: "Image", type: "image", triggerTime: 0, url: asset.url }] }];
+const contents = (asset: CourseMediaAsset): LessonContent[] => [{ id: "content-1", title: "Media", type: "text", mode: "interactive", html: '<p><span data-node-id="node-1">Image</span> is available in this public excerpt. The second half is protected lesson reading material.</p>', nodes: [{ id: "node-1", title: "Image", type: "image", triggerTime: 0, url: asset.url }] }];
 
 async function editFixture(edit: (data: Awaited<ReturnType<typeof store.ensureProductData>>) => void) {
   const data = await store.ensureProductData();
@@ -310,6 +310,34 @@ test("teacher learner cookie cannot bypass publication or entitlement through ad
   assert.equal((await fetchAsset(paid, teacherLearnerToken)).status, 404);
   assert.equal((await fetchAsset(preview, teacherLearnerToken)).status, 200);
   assert.equal((await fetchAdminAsset(orphan, teacherToken)).status, 200);
+});
+
+test("text preview media follows the third-point and half-text delivery boundary, including direct range and HEAD requests", async () => {
+  const id = "text-preview-media";
+  await editFixture(data => { data.courses.push({ id, slug: id, title: "Text preview", description: "Test", status: "published", authorIds: [teacher.id], sections: [{ id: "text-section", title: "Section", lessons: [{ id: "text-public", title: "Text", body: "", isPublic: true, durationMinutes: 5, contents: [] }] }], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); });
+  const visible = await media.uploadCourseMedia(teacher, id, input()), hidden = await media.uploadCourseMedia(teacher, id, input());
+  await editFixture(data => {
+    data.courses.find(course => course.id === id)!.sections[0].lessons[0].contents = [visible, visible, hidden].map((asset, index) => ({
+      ...contents(asset)[0], id: `point-${index}`, html: contents(asset)[0].html!.replaceAll("node-1", `node-${index}`), nodes: contents(asset)[0].nodes.map(node => ({ ...node, id: `node-${index}` })),
+    }));
+  });
+  assert.equal((await fetchAsset(visible)).status, 200);
+  for (const token of ["", studentToken]) {
+    assert.equal((await fetchAsset(hidden, token, { range: "bytes=0-3" })).status, 404);
+    assert.equal((await fetchAsset(hidden, token, {}, id, "HEAD")).status, 404);
+  }
+  assert.equal((await fetchAdminAsset(hidden, teacherToken)).status, 200);
+  await editFixture(data => { data.entitlements.push({ id: "text-media-entitlement", userId: student.id, courseId: id, scope: "course", scopeId: id, device: "pc", source: "purchase", state: "active", validTo: new Date(Date.now() + 3600_000).toISOString() }); });
+  assert.equal((await fetchAsset(hidden, studentToken)).status, 200);
+  await editFixture(data => {
+    data.entitlements.find(item => item.id === "text-media-entitlement")!.validTo = new Date(0).toISOString();
+    data.courses.find(course => course.id === id)!.sections[0].lessons[0].contents = [{ id: "single", title: "Half text", type: "text", mode: "lecture", html: `<p><span data-node-id="visible">Visible</span>${"Reading material. ".repeat(20)}<span data-node-id="hidden">Hidden</span></p>`, nodes: [
+      { id: "visible", title: "Visible", type: "image", triggerTime: 0, url: visible.url },
+      { id: "hidden", title: "Hidden", type: "image", triggerTime: 0, url: hidden.url },
+    ] }];
+  });
+  assert.equal((await fetchAsset(visible)).status, 200);
+  assert.equal((await fetchAsset(hidden, studentToken)).status, 404);
 });
 
 test("multipart streaming enforces the server cap even with no Content-Length and rejects duplicate fields", async () => {

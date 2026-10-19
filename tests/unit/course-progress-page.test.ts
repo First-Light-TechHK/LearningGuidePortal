@@ -47,6 +47,7 @@ test("text entry/selection and video playback save points; Next Lesson saves the
     const waitFor = (predicate: (body: any) => boolean) => page.waitForResponse(response => response.url().endsWith("/api/study/events") && predicate(response.request().postDataJSON()));
     await Promise.all([waitFor(body => body.contentId === "t1"), mount("text")]);
     assert.equal(requests[0].event, "open"); assert.equal(requests[0].learningMode, "text");
+    assert.equal(await page.getByRole("button", { name: getMessages(locale).learning.completeLesson, exact: true }).count(), 0, "text lessons do not offer manual completion");
     await Promise.all([waitFor(body => body.contentId === "t3"), page.getByRole("button", { name: "1.3 Reading 3", exact: true }).click()]);
     await Promise.all([waitFor(body => body.contentId === "t1"), page.getByRole("button", { name: "1.1 Reading 1", exact: true }).click()]);
     const next = page.getByRole("button", { name: getMessages(locale).learning.nextLesson + " →", exact: true });

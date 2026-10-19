@@ -50,7 +50,8 @@ export function PortalHeader({ locale, active, signedIn: initialSignedIn = false
         <nav className="portal-nav" aria-label="Primary navigation">
           <Link prefetch={false} className={active === "courses" ? "active" : ""} href={`/${locale}/portal/courses`}>{copy.navigation.courses}</Link>
           <Link prefetch={false} className={active === "study-groups" ? "active" : ""} href={`/${locale}/portal/study-groups`}>{copy.navigation.studyGroups}</Link>
-          <Link prefetch={false} className={active === "subscription" ? "active" : ""} href={`/${locale}/subscription`}>{copy.navigation.pricing}</Link>
+          {/* Resolve the current Session and subscription coverage on every entry, including same-page reentry. */}
+          <a className={active === "subscription" ? "active" : ""} href={`/${locale}/subscription`}>{copy.navigation.pricing}</a>
         </nav>
         <div className="portal-header-actions">
           <Suspense fallback={<span className="portal-language">{copy.navigation.language}</span>}><PortalLanguageLink locale={locale} label={copy.navigation.language} /></Suspense>
