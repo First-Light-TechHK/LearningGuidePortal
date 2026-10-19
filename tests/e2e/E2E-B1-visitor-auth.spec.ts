@@ -122,7 +122,7 @@ test.describe("E2E-B1-001", () => {
   });
 
   test("pricing selects the category of the source course", async ({ page }) => {
-    await page.goto("/en-GB/pricing?courseId=quintus-horatius-flaccus");
+    await page.goto("/en-GB/subscription?courseId=quintus-horatius-flaccus");
     await expect(page.locator('.pricing-design-card').last().locator('.pricing-category-switch button', { hasText: 'European Humanities' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
@@ -202,3 +202,41 @@ test.describe("E2E-B1-003", () => {
     }
   });
 });
+
+
+for (const locale of ["en-GB", "zh-CN"]) {
+  test(`Preview first login returns to the original course detail (${locale})`, async ({ page, request }) => {
+    test.skip(Boolean(process.env.CI), "Uses the local verified-account fixture without sending email.");
+    const email = `preview-return-${locale.toLowerCase()}-${Date.now()}@example.test`;
+    const registered = await request.post("/api/auth/register", { data: { email, password: PASSWORD, nickname: "Preview Learner", locale } });
+    expect(registered.ok()).toBe(true);
+    expect((await registered.json()).data.verificationRequired).not.toBe(true);
+    const destination = `/${locale}/portal/courses/epicureanism`;
+    let loginRequests = 0;
+    page.on("request", req => { if (new URL(req.url()).pathname === "/api/auth/login") loginRequests++; });
+    await page.goto(destination);
+    const preview = page.locator('[data-course-cta-link="start_preview"]');
+    await expect(preview).toHaveAttribute("href", `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`);
+    await preview.click();
+    await page.locator('.auth-entry-form input[type="email"]').fill(email);
+    await page.locator(".auth-entry-form button.portal-button").click();
+    await expect(page.locator('input[autocomplete="current-password"]')).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("returnTo")).toBe(destination);
+    await page.locator('input[autocomplete="current-password"]').fill("WrongPassword123!");
+    await page.locator("button.auth-submit").click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("step")).toBe("password");
+    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
+    await page.locator("button.auth-submit").click();
+    await page.waitForURL(url => url.pathname === destination && !url.search);
+    await expect(page.locator(".account-menu-trigger")).toBeVisible();
+    await expect(page.locator(".auth-entry-form, .auth-credential-form")).toHaveCount(0);
+    expect((await (await page.request.get("/api/auth/me")).json()).user.email).toBe(email);
+    expect(loginRequests).toBe(2); // One rejected attempt, then one successful login.
+    await page.reload();
+    await expect(page.locator(".account-menu-trigger")).toBeVisible();
+    await page.goto(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`);
+    await page.waitForURL(url => url.pathname === destination && !url.search);
+    await expect(page.locator(".account-menu-trigger")).toBeVisible();
+  });
+}

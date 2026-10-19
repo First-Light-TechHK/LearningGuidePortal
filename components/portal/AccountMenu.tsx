@@ -67,7 +67,6 @@ export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountM
             <span className="account-menu-identity-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : initial}</span>
             <div>
               <strong>{name}</strong>
-              <span>{labels.myLearning}</span>
             </div>
           </div>
           <div className="account-menu-links">

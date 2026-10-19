@@ -1,21 +1,38 @@
 "use client";
 
 import { Clock3, Mail, Send } from "lucide-react";
-import { FormEvent } from "react";
+import { FormEvent, useRef, useState } from "react";
+import type { getMessages } from "@/lib/i18n/messages";
 
-type ContactCopy = { title: string; description: string; information: string; email: string; emailAddresses: string[]; hours: string; hoursWeekday: string; hoursWeekend: string; formTitle: string; firstName: string; lastName: string; emailAddress: string; phone: string; subject: string; message: string; consent: string; submit: string; placeholders: { firstName: string; lastName: string; email: string; phone: string; message: string }; };
+type ContactCopy = ReturnType<typeof getMessages>["contactPage"];
 
-export function ContactForm({ copy }: { copy: ContactCopy }) {
-  function submit(event: FormEvent<HTMLFormElement>) {
+export function ContactForm({ copy, locale }: { copy: ContactCopy; locale: "en-GB" | "zh-CN" }) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [sent, setSent] = useState(false);
+  const submitting = useRef(false);
+  const pending = useRef<{ payload: string; id: string } | null>(null);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const subject = String(form.get("subject") || "Learning Guide support request");
-    const body = [`${copy.firstName}: ${form.get("firstName")}`, `${copy.lastName}: ${form.get("lastName")}`, `${copy.emailAddress}: ${form.get("email")}`, `${copy.phone}: ${form.get("phone") || "-"}`, "", String(form.get("message") || "")].join("\n");
-    window.location.assign(`mailto:${copy.emailAddresses[0]}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+    if (submitting.current) return;
+    const element = event.currentTarget;
+    const form = new FormData(element);
+    const input = { firstName: String(form.get("firstName") || ""), lastName: String(form.get("lastName") || ""), email: String(form.get("email") || ""), phone: String(form.get("phone") || ""), subject: String(form.get("subject") || ""), message: String(form.get("message") || ""), consent: form.get("consent") === "on", locale };
+    const payload = JSON.stringify(input);
+    if (!pending.current || pending.current.payload !== payload) pending.current = { payload, id: crypto.randomUUID() };
+    submitting.current = true; setBusy(true); setError(""); setSent(false);
+    try {
+      const response = await fetch("/api/contact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...input, clientEventId: pending.current.id }) });
+      const result = await response.json() as { ok?: boolean; code?: string; data?: { id?: string } };
+      if (!response.ok || !result.ok || !result.data?.id) {
+        if (result.code === "CONTACT_CONFLICT") pending.current = null;
+        throw new Error(result.code === "CONTACT_INVALID" ? copy.invalid : result.code === "CONTACT_CONFLICT" ? copy.conflict : copy.failed);
+      }
+      pending.current = null; element.reset(); setSent(true);
+    } catch (failure) { setError(failure instanceof Error && [copy.invalid, copy.conflict, copy.failed].includes(failure.message) ? failure.message : copy.failed); }
+    finally { submitting.current = false; setBusy(false); }
   }
   return <>
     <section className="contact-hero"><h1>{copy.title}</h1><p>{copy.description}</p></section>
     <section className="contact-information" aria-labelledby="contact-information-title"><h2 id="contact-information-title">{copy.information}</h2><div className="contact-information-grid"><article><span className="contact-info-icon"><Mail size={22} aria-hidden="true" /></span><div><h3>{copy.email}</h3>{copy.emailAddresses.map((address) => <a key={address} href={`mailto:${address}`}>{address}</a>)}</div></article><article><span className="contact-info-icon"><Clock3 size={22} aria-hidden="true" /></span><div><h3>{copy.hours}</h3><p>{copy.hoursWeekday}</p><p>{copy.hoursWeekend}</p></div></article></div></section>
-    <section className="contact-form-section"><form className="contact-form" onSubmit={submit}><h2>{copy.formTitle}</h2><div className="contact-name-fields"><label>{copy.firstName} *<input required name="firstName" placeholder={copy.placeholders.firstName} /></label><label>{copy.lastName} *<input required name="lastName" placeholder={copy.placeholders.lastName} /></label></div><label>{copy.emailAddress} *<input required type="email" name="email" placeholder={copy.placeholders.email} /></label><label>{copy.phone}<input name="phone" type="tel" placeholder={copy.placeholders.phone} /></label><label>{copy.subject} *<input required name="subject" /></label><label>{copy.message} *<textarea required name="message" placeholder={copy.placeholders.message} /></label><label className="contact-consent"><input required type="checkbox" /> <span>{copy.consent}</span></label><button className="contact-submit" type="submit"><Send size={15} aria-hidden="true" />{copy.submit}</button></form></section>
+    <section className="contact-form-section"><form className="contact-form" onSubmit={submit} onChange={() => setSent(false)} onInvalid={event => (event.target as HTMLInputElement).setCustomValidity(copy.invalid)} onInput={event => (event.target as HTMLInputElement).setCustomValidity("")}><fieldset disabled={busy} style={{display:"contents"}}><h2>{copy.formTitle}</h2><div className="contact-name-fields"><label>{copy.firstName} *<input required maxLength={50} name="firstName" placeholder={copy.placeholders.firstName} /></label><label>{copy.lastName} *<input required maxLength={50} name="lastName" placeholder={copy.placeholders.lastName} /></label></div><label>{copy.emailAddress} *<input required maxLength={254} type="email" name="email" placeholder={copy.placeholders.email} /></label><label>{copy.phone}<input name="phone" maxLength={40} type="tel" placeholder={copy.placeholders.phone} /></label><label>{copy.subject} *<input required maxLength={200} name="subject" /></label><label>{copy.message} *<textarea required maxLength={5000} name="message" placeholder={copy.placeholders.message} /></label><label className="contact-consent"><input required name="consent" type="checkbox" /> <span>{copy.consent}</span></label>{error ? <p role="alert" className="portal-form-error">{error}</p> : null}{sent ? <p role="status" className="portal-success">{copy.success}</p> : null}<button className="contact-submit" disabled={busy} type="submit"><Send size={15} aria-hidden="true" />{busy ? copy.submitting : copy.submit}</button></fieldset></form></section>
   </>;
 }

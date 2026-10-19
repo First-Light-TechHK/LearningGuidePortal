@@ -57,6 +57,19 @@ DEV (`learning-guide-portal`) publishes from the `dev` branch via GitHub **Deplo
 
 ## Run locally
 
+The combined launcher keeps the application and CLI on the same in-memory signing secret without changing `.env.local`:
+
+```sh
+npm run build
+npm run stripe:local
+# Isolated real forwarding probe: expires an unpaid Checkout; no card/charge.
+npm run stripe:local -- --smoke
+```
+
+Use `STRIPE_CLI_PATH` when the official Stripe CLI binary is not on PATH, and `STRIPE_LOCAL_PORT` to override 3014. Do not run the normal launcher and smoke probe on the same port simultaneously. The normal launcher uses existing local data; `--smoke` uses disposable data. The listener includes Checkout completion/async success/async failure/expiry, invoice.paid/payment_failed/voided, and customer.subscription.updated/deleted. CLI secrets differ from registered endpoint secrets. The original separate-process approach below requires matching the application's signing secret to the listener secret.
+
+Read-only real upgrade preview: `node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/verify-stripe-upgrade-sandbox.ts --created-at=<local subscription creation milliseconds>`. This requires one uniquely matching original Sandbox Category subscription/Checkout and verifies historical metadata without app, canonical Stripe period retention and current Everything Price. It does not charge, modify a subscription or establish that the cloud aggregate contains the same record.
+
 The port override below preserves any existing `.env.local` origin for another developer instance:
 
 ```sh

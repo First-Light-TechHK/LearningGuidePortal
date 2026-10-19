@@ -13,7 +13,7 @@ export type StripePriceSnapshot = {
 export type StripeUpgradePriceSnapshot = StripePriceSnapshot;
 
 // Server-derived, per-user purchase state; never a price or access grant.
-export type PlanPurchaseAvailability = { alreadySubscribed: boolean };
+export type PlanPurchaseAvailability = { alreadySubscribed: boolean; upgradeUnavailable?: boolean };
 
 export const subscriptionPrices = [
   { id: "everything-pc-6", env: "STRIPE_PRICE_EVERYTHING_SIX_MONTHS", scope: "everything", scopeId: "*", termMonths: 6 },
@@ -26,8 +26,11 @@ export const subscriptionPrices = [
   { id: "science-pc-12", env: "STRIPE_PRICE_CATE_SCIENCE_YEAR", scope: "category", scopeId: "Science", termMonths: 12 },
 ] as const;
 
+export type PaymentDiagnosticReason = "upgrade_stripe_mode_required" | "upgrade_subscription_missing" | "upgrade_customer_missing"
+  | "upgrade_checkout_missing" | "upgrade_checkout_mismatch" | "upgrade_checkout_unavailable";
+
 export class PaymentError extends Error {
-  constructor(public readonly code: "price_unavailable" | "quote_expired" | "payment_unavailable" | "invalid_request" | "already_subscribed" | "origin_mismatch" | "consent_required", public readonly status = 400) {
+  constructor(public readonly code: "price_unavailable" | "quote_expired" | "payment_unavailable" | "invalid_request" | "already_subscribed" | "upgrade_unavailable" | "upgrade_in_progress" | "origin_mismatch" | "consent_required", public readonly status = 400, public readonly diagnosticReason?: PaymentDiagnosticReason) {
     super(code);
   }
 }
@@ -35,7 +38,7 @@ export class PaymentError extends Error {
 export type VerifiedStripeEvent = {
   id: string;
   type: string;
-  action: "checkout" | "invoice" | "subscription" | "failed_checkout";
+  action: "checkout" | "invoice" | "subscription" | "failed_checkout" | "upgrade_invoice";
   orderId?: string;
   sessionId?: string;
   subscriptionId?: string;

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { createRequire } from "node:module";
-import { build } from "esbuild";
+import { build, stop } from "esbuild";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { getMessages } from "../../lib/i18n/messages";
@@ -68,6 +68,7 @@ before(async () => {
 });
 
 after(async () => {
+  await stop();
   process.chdir(originalCwd);
   if (originalStorageBackend === undefined) delete process.env.STORAGE_BACKEND;
   else process.env.STORAGE_BACKEND = originalStorageBackend;
@@ -202,6 +203,78 @@ test("Everything subscription grants one Start action for every published course
     assert.ok(page.syllabus.every(lesson => lesson.access === "entitled" && lesson.openable));
     assertCurriculumActions(page);
   }
+});
+
+test("Science plus a single-course subscription keeps a historical locked resume inside the public preview range", async () => {
+  const user = await verifiedUser(store, "mixed-course-access@example.test");
+  const buy = async (planId: string) => {
+    const { quote } = await store.createQuote(user.id, planId);
+    const pending = await store.createPendingDemoOrder(user.id, quote.id);
+    return store.completeDemoOrder(user.id, pending.order.id);
+  };
+  // A former paid subscription legitimately leaves progress on private content.
+  await buy("everything-pc-6");
+  const horace = await store.getProductCourse("quintus-horatius-flaccus");
+  assert.ok(horace);
+  const lessons = horace.sections.flatMap(section => section.lessons);
+  const second = lessons[1];
+  assert.ok(second);
+  await store.recordStudyEvent({ userId: user.id, courseId: horace.id, lessonId: second.id,
+    contentId: second.contents?.[0]?.id, learningMode: "text", event: "open", seconds: 0, clientEventId: "old-horace-second-point" });
+  const data = await readProductData();
+  for (const sub of data.subscriptions.filter((sub: { userId: string }) => sub.userId === user.id)) {
+    sub.state = "expired"; sub.validTo = "2020-01-01T00:00:00Z";
+  }
+  for (const entitlement of data.entitlements.filter((e: { userId: string }) => e.userId === user.id)) {
+    entitlement.state = "expired"; entitlement.validTo = "2020-01-01T00:00:00Z";
+  }
+  await writeProductData(data);
+  await buy("science-pc-6");
+  await buy("epicureanism-pc-12");
+  await openLearningPoint(store, user.id, PRIVATE_LP, "current-epicureanism-second");
+  const historyBefore = (await readProductData()).studyRecords.filter((record: { userId: string; courseId: string }) => record.userId === user.id && record.courseId === horace.id);
+  const stoicism = await store.getCoursePage("stoicism", user.id);
+  assert.equal(stoicism.actionLessonId, stoicism.syllabus[0].lessonId);
+  assert.equal(stoicism.syllabus[0].access, "previewable");
+  const epicureanism = await store.getCoursePage(COURSE_ID, user.id);
+  assert.equal(epicureanism.actionLessonId, PRIVATE_LP);
+  assert.ok(epicureanism.syllabus.every(lesson => lesson.access === "entitled"));
+  const page = await store.getCoursePage(horace.slug, user.id);
+  assert.equal(page.syllabus[1].access, "locked");
+  assert.equal(page.actionLessonId, page.syllabus[0].lessonId, "the only Preview action must remain on the accessible public lesson");
+  assertCurriculumActions(page);
+  assert.deepEqual((await readProductData()).studyRecords.filter((record: { userId: string; courseId: string }) => record.userId === user.id && record.courseId === horace.id), historyBefore);
+  for (const patch of [
+    { knowledgePositions: undefined, currentMode: undefined, completedAt: null, progress: 50 },
+    { knowledgePositions: undefined, currentMode: undefined, completedAt: "2026-01-01T00:00:00Z", progress: 100 },
+  ]) {
+    const snapshot = await readProductData();
+    const record = snapshot.studyRecords.find((record: { userId: string; courseId: string }) => record.userId === user.id && record.courseId === horace.id);
+    Object.assign(record, patch);
+    await writeProductData(snapshot);
+    const revised = await store.getCoursePage(horace.slug, user.id);
+    assert.equal(revised.actionLessonId, revised.syllabus[0].lessonId);
+    assert.equal(revised.progress, patch.progress);
+    assertCurriculumActions(revised);
+  }
+  const state = { user, store };
+  (globalThis as any).courseAccessApi = state;
+  try {
+    const bundle = await build({ entryPoints: [path.join(originalCwd, "app/api/portal/courses/[slug]/route.ts")], bundle: true, write: false, platform: "node", format: "cjs", external: ["next/server"], plugins: [{ name: "actual-service", setup(builder) {
+      builder.onResolve({ filter: /services\/(productStore|productAuth)$/ }, args => ({ path: args.path, namespace: "session" }));
+      builder.onLoad({ filter: /.*/, namespace: "session" }, args => ({ contents: args.path.endsWith("productAuth")
+        ? "export async function currentProductUser(){return globalThis.courseAccessApi.user}"
+        : "export const getCoursePage=(...args)=>globalThis.courseAccessApi.store.getCoursePage(...args)" }));
+    } }] });
+    const routeModule = { exports: {} as { GET: (request: Request, context: { params: Promise<{ slug: string }> }) => Promise<Response> } };
+    new Function("module", "exports", "require", bundle.outputFiles[0].text)(routeModule, routeModule.exports, createRequire(import.meta.url));
+    const response = await routeModule.exports.GET(new Request("http://localhost/api/portal/courses/" + horace.slug), { params: Promise.resolve({ slug: horace.slug }) });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.page.actionLessonId, lessons[0].id);
+    assert.equal(body.page.syllabus[0].openable, true);
+    assert.equal(body.page.syllabus[1].openable, false);
+  } finally { delete (globalThis as any).courseAccessApi; }
 });
 
 test("an expired earlier entitlement must not hide valid Everything access", async () => {

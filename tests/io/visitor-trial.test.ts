@@ -241,9 +241,9 @@ test("TRIAL-02 negative: trial after a paid purchase does not grant a second ent
   assert.equal(paid.status, 200);
   assert.equal((await entitlementAllowed()).source, "purchase");
 
-  const trialled = await startTrial();
-  assert.equal(trialled.pending.status, 400);
-  assert.match(String(trialled.body.error || trialled.body.message || ""), /already have an active subscription covering this plan|already has active access|already been used/i);
+  const trialled = await callRoute(quote.POST, jsonRequest("POST", "http://localhost/api/purchase/quote", { planId: COURSE_PLAN, kind: "trial" }));
+  assert.equal(trialled.status, 400);
+  assert.equal((await trialled.json()).code, "already_subscribed");
   const access = await entitlementAllowed();
   assert.equal(access.allowed, true);
   assert.equal(access.source, "purchase");

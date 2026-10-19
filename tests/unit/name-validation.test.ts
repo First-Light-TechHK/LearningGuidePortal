@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isNameTooLong, isValidName, validateName } from "../../lib/nameValidation";
+import { isNameTooLong, isValidName, validateName, normalisePastedName } from "../../lib/nameValidation";
 
 test("name validation accepts Unicode letters and common name separators", () => {
   for (const name of ["Ada Lovelace", "Jean-Luc", "O'Connor", "张·伟", "Élodie", "Алексей Иванов"]) {
@@ -22,4 +22,11 @@ test("name length is measured in Unicode characters", () => {
 
 test("name validation accepts full stops in English names", () => {
   assert.equal(isValidName("J.R.R. Tolkien"), true);
+});
+
+test("pasted names remove surrounding bold Markdown without accepting embedded symbols", () => {
+  assert.equal(normalisePastedName("  **Ada Lovelace**  "), "Ada Lovelace");
+  assert.equal(normalisePastedName("**张伟**"), "张伟");
+  assert.equal(isValidName(normalisePastedName("**Ada*Lovelace**")), false);
+  assert.equal(normalisePastedName("Ada Lovelace"), "Ada Lovelace");
 });

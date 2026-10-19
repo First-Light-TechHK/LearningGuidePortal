@@ -54,7 +54,7 @@ export function lessonIdentityMatches(actual, course, lesson) {
 export function trialGateStateMatches({ visible, paused, currentTime, upgradeHref }) {
   return visible === true && paused === true && Number.isFinite(currentTime) &&
     currentTime >= 59.8 && currentTime <= 60.05 && typeof upgradeHref === 'string' &&
-    /^\/(en-GB|zh-CN)\/pricing\?/.test(upgradeHref);
+    /^\/(en-GB|zh-CN)\/subscription\?/.test(upgradeHref);
 }
 
 export function mediaCoverageFailures(expected, observed, origin) {
@@ -364,13 +364,13 @@ async function checkTrialGate(page, root, lesson, deadline) {
     const result = await probePlayback(video, remaining(deadline, LIMIT.resource));
     requireCheck(result.ok, result.code || 'preview_video_play_failed');
     requireCheck(result.duration > 60.5, 'preview_gate_not_exercisable_short_video');
-    requireCheck(!await page.locator('.la-trial-modal[role="dialog"]').count(), 'preview_gate_triggered_before_limit');
+    requireCheck(!await page.locator('.la-trial-modal').count(), 'preview_gate_triggered_before_limit');
     // Seek close to the boundary and cross it during playback, not while already
     // paused, so a modal alone cannot masquerade as enforcement.
     await video.evaluate(element => { element.currentTime = 59; void element.play().catch(() => undefined); });
     await page.waitForFunction(element => !element.paused && !element.seeking && element.currentTime >= 59 && element.currentTime < 60, await video.elementHandle(), { timeout: remaining(deadline, LIMIT.resource) });
     await video.evaluate(element => { element.currentTime = 60.25; });
-    const modal = page.locator('.la-trial-modal[role="dialog"]');
+    const modal = page.locator('.la-trial-modal');
     await modal.waitFor({ state: 'visible', timeout: remaining(deadline) });
     const state = await video.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
     const href = await modal.locator('a.la-trial-pricing').getAttribute('href');
@@ -579,7 +579,7 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
               requireCheck(!await page.locator('[data-course-id][data-lesson-id], .learning-room, .lesson-content, video, audio').count(), 'locked_lesson_content_leaked');
               requireCheck(normaliseText(await page.locator('h1[data-course-title]').innerText()) === normaliseText(course.title), 'locked_upsell_course_identity_mismatch');
               const pricing = page.locator('a[data-course-secondary-cta], a[data-course-cta-link="view_plans"]');
-              requireCheck(await pricing.count() > 0 && (await pricing.first().getAttribute('href'))?.startsWith(`/${locale}/pricing?`), 'locked_upsell_missing');
+              requireCheck(await pricing.count() > 0 && (await pricing.first().getAttribute('href'))?.startsWith(`/${locale}/subscription?`), 'locked_upsell_missing');
               return { denied: true, upsell: true };
             });
           } else fail(`${lessonScope}/locked`, 'not_run_locked_fixture_unavailable');

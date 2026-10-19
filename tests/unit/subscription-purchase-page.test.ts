@@ -20,7 +20,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
       let quoteRequests = 0;
       const quotedPlans: string[] = [];
-      await page.route("http://pricing.test/**", route => {
+      await page.route("http://subscription.test/**", route => {
         if (new URL(route.request().url()).pathname === "/api/subscription/quote") {
           quoteRequests++;
           quotedPlans.push(route.request().postDataJSON().planId);
@@ -28,7 +28,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
         }
         return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
       });
-      await page.goto("http://pricing.test/?planId=Science-12");
+      await page.goto("http://subscription.test/?planId=Science-12");
       for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       const props = { locale, key: "pricing", plans, selectedPlanId: "Science-12", categories: defaultPortalContent.categories, courseTitles: [] };
@@ -41,7 +41,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
         assert.equal(await categoryButtons.nth(2).isDisabled(), true);
         assert.equal(await categoryButtons.nth(0).isDisabled(), false);
         assert.equal(await categoryButtons.nth(0).getAttribute("aria-pressed"), "true");
-        assert.equal(await categoryCard.getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).isDisabled(), false);
+        assert.equal(await categoryCard.locator(".purchase-actions button").isDisabled(), false);
       }
       await page.screenshot({ path: `test-results/purchase-eligibility/${locale}-desktop.png`, fullPage: true });
       await page.setViewportSize({ width: 390, height: 844 });
@@ -49,7 +49,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       await page.screenshot({ path: `test-results/purchase-eligibility/${locale}-mobile.png`, fullPage: true });
       await page.evaluate(p => (window as unknown as { mount: (p: unknown) => void }).mount(p), { ...props, key: "all-owned", plans: plans.map(plan => ({ ...plan, alreadySubscribed: true })) });
       assert.equal(await categoryCard.locator('button[aria-pressed="true"]').count(), 0);
-      assert.equal(await page.getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).isDisabled(), true);
+      assert.equal(await page.locator(".pricing-design-card").first().locator(".purchase-actions button").isDisabled(), true);
       assert.equal(await page.getByRole("status").count(), 2);
 
       const directPlans = [6, 12].map(term => ({ id: `course-${term}`, name: `Owned course ${term}`, device: "pc", termMonths: term, currency: "usd", amountMinor: 4900, alreadySubscribed: true }));
@@ -67,7 +67,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       await page.getByRole("alert").waitFor();
       assert.equal(await page.getByRole("alert").textContent(), getMessages(locale).paymentErrors.already_subscribed);
       assert.equal(quoteRequests, 1);
-      assert.ok(page.url().startsWith("http://pricing.test/"));
+      assert.ok(page.url().startsWith("http://subscription.test/"));
       assert.equal(await page.getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).isDisabled(), false);
       // A server refresh supplies new plan objects on the same mounted panel.
       // An old login-return planId must not overwrite the user's annual choice.
@@ -84,7 +84,7 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       for (const term of [6, 12, 6, 12]) {
         await page.evaluate(p => (window as unknown as { mount: (p: unknown) => void }).mount(p), { ...props, key: "term-pricing", plans: [...plans.filter(plan => plan.scope === "category"), ...termPlans.map(plan => ({ ...plan, scope:"everything", scopeId:"*", alreadySubscribed:false }))] });
         await page.getByRole("button", { name: term === 6 ? getMessages(locale).pricingDesign.sixMonths : new RegExp(getMessages(locale).pricingDesign.year) }).click();
-        await page.locator(".pricing-design-card").first().getByRole("button", { name: getMessages(locale).pricingDesign.subscribe, exact: true }).click();
+        await page.locator(".pricing-design-card").first().locator(".purchase-actions button").click();
         await page.getByRole("alert").waitFor();
         assert.equal(quotedPlans.at(-1), `everything-pc-${term}`);
       }

@@ -8,6 +8,11 @@ export function normaliseName(value: string) {
   return value.trim().normalize("NFC");
 }
 
+export function normalisePastedName(value: string) {
+  const text = normaliseName(value);
+  return text.startsWith("**") && text.endsWith("**") && text.length > 4 ? normaliseName(text.slice(2, -2)) : text;
+}
+
 export function isNameTooLong(value: string) {
   return Array.from(normaliseName(value)).length > 50;
 }

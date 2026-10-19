@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import type { CourseLearningMode } from "@/contracts/course-learning-mode";
 import { useRouter } from "next/navigation";
 
-export function PreviewProgress({ courseId, lessonId, contentId, learningMode, seconds, initialCompleted, copy, canComplete = true, endpoint = "/api/study/preview" }: {
+export function PreviewProgress({ courseId, lessonId, contentId, learningMode, seconds, initialCompleted, copy, canComplete = true, enabled = true, endpoint = "/api/study/preview" }: {
   courseId: string; lessonId: string; seconds: number; initialCompleted: boolean;
   contentId?: string | null; learningMode?: CourseLearningMode;
   copy: { completeLesson: string; completed: string; saveError: string };
   canComplete?: boolean;
+  enabled?: boolean;
   endpoint?: "/api/study/preview" | "/api/study/events";
 }) {
   const router = useRouter();
@@ -17,12 +18,13 @@ export function PreviewProgress({ courseId, lessonId, contentId, learningMode, s
   const [error, setError] = useState("");
   const openRequest = useRef<{ key: string; id: string } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const key = `${courseId}:${lessonId}:${learningMode || ""}:${contentId || ""}`;
     if (openRequest.current?.key !== key) openRequest.current = { key, id: learningMode ? `open_${Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join("_")}` : `open_${courseId}_${lessonId}` };
     fetch(endpoint, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, ...(learningMode ? {contentId:contentId || null,learningMode} : {}), event: "open", seconds:0, clientEventId:openRequest.current.id }) })
       .then(response => { if (!response.ok) setError(copy.saveError); })
       .catch(error => { if (error.name !== "AbortError") setError(copy.saveError); });
-  }, [courseId, lessonId, contentId, learningMode, copy.saveError, endpoint]);
+  }, [courseId, lessonId, contentId, learningMode, copy.saveError, endpoint, enabled]);
 
 
   async function complete() {

@@ -218,20 +218,7 @@ test("paid, trial and upgrade Checkout omit absent email and retain user identit
       planName: "Plan", amountMinor: 100, currency: "usd", termMonths: 6 };
     await stripe.createHostedCheckout(input);
     await stripe.createHostedTrialCheckout(input);
-    await stripe.createHostedUpgradeCheckout({
-      upgradePriceId: "price_upgrade",
-      origin: input.origin,
-      locale: input.locale,
-      userEmail: input.userEmail,
-      orderId: input.orderId,
-      userId: input.userId,
-      quoteId: input.quoteId,
-      planId: input.planId,
-      sourceSubscriptionId: "source-subscription",
-      planName: input.planName,
-      amountMinor: input.amountMinor,
-      currency: input.currency,
-    });
+    await stripe.createHostedUpgradeCheckout({ ...input, sourceSubscriptionId: "source-subscription", upgradePriceId: "price_upgrade_test" });
     for (const params of captured) {
       expect(params.customer_email).toBeUndefined();
       expect(params.metadata).toMatchObject({ userId: "wechat-user" });

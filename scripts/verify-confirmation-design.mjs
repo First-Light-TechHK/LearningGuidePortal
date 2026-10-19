@@ -54,7 +54,7 @@ for(const [name,engine] of Object.entries({chromium,firefox,webkit})) {
         assert.ok(action.y>=0 && action.y+action.height<=740);
       }
       await page.keyboard.press("Escape");
-      await page.waitForURL(`**/${locale}/pricing?planId=${encodeURIComponent(plan.id)}`);
+      await page.waitForURL(`**/${locale}/subscription?planId=${encodeURIComponent(plan.id)}`);
       console.log(JSON.stringify({browser:name,locale,passed:true,box,sections}));
     }
   } finally {await browser.close();}

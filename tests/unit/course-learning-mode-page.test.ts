@@ -19,7 +19,7 @@ test("first course entry skips the chooser for single-mode courses in both local
           export async function getProductCourse(){return {id:'course',sections:[{lessons:globalThis.modePageState.lessons}]}};
           export async function getCourseLearningMode(){return globalThis.modePageState.savedMode};
           export async function listPlans(){return []};
-          export async function getCoursePage(){return {pageState:globalThis.modePageState.pageState,identity:{title:'Course',track:'Art',lessonCount:1,totalMinutes:1},syllabus:[{lessonId:'lesson',title:'Lesson',openable:true,access:'previewable'}],cta:'start_preview',accessState:'none'}};
+          export async function getCoursePage(){return {pageState:globalThis.modePageState.pageState,identity:{title:'Course',track:'Art',lessonCount:1,totalMinutes:1},syllabus:[{lessonId:'lesson',title:'Lesson',openable:true,access:'previewable'}],cta:'start_preview',accessState:'none',actionLessonId:'lesson'}};
         ` : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.modePageState.user}"
         : args.path.endsWith("/s3") ? "export async function signCourseMediaUrl(){return ''}"
         : args.path === "next/navigation" ? "export function redirect(url){throw new Error('redirect:'+url)}"
@@ -38,6 +38,12 @@ test("first course entry skips the chooser for single-mode courses in both local
     const element = node as { type?: unknown; props?: { children?: unknown } };
     return element.type === "mode-dialog" || hasChooser(element.props?.children);
   }
+  function curriculumAction(node: any): any {
+    if (!node || typeof node !== "object") return null;
+    if (Array.isArray(node)) return node.map(curriculumAction).find(Boolean);
+    if (node.props?.actionLessonId) return node;
+    return curriculumAction(node.props?.children);
+  }
   function assertPlainLessonTitles(node: any): void {
     if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) { node.forEach(assertPlainLessonTitles); return; }
@@ -52,10 +58,20 @@ test("first course entry skips the chooser for single-mode courses in both local
     for (const lessons of [
       [{ contents: [{ type: "video" }, { type: "text", active: false }] }],
       [{ contents: [{ type: "pdf" }] }], [{ body: "Legacy reading" }], [],
-    ]) { state.lessons = lessons; assert.equal(hasChooser(await render()), false); }
+    ]) {
+      state.lessons = lessons;
+      assert.equal(hasChooser(await render()), false);
+      if (user) await assert.rejects(() => render("lesson"), /redirect:.*public-lesson.*lessonId=lesson/);
+    }
     state.lessons = [{ contents: [{ type: "video" }] }, { contents: [{ type: "text" }] }];
     assert.equal(hasChooser(await render()), false);
-    assertPlainLessonTitles(await render());
+    const detail = await render();
+    assertPlainLessonTitles(detail);
+    const action = curriculumAction(detail);
+    assert.ok(action);
+    assert.equal(action.props.href, user
+      ? `/${locale}/portal/courses/course?lessonEntry=lesson`
+      : `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/course`)}`);
     assert.equal(hasChooser(await render("invalid")), false);
     if (user) {
       assert.equal(hasChooser(await render("lesson")), true);
@@ -66,7 +82,7 @@ test("first course entry skips the chooser for single-mode courses in both local
       await assert.rejects(()=>render("lesson"), error=> {
         const url=new URL((error as Error).message.replace("redirect:",""),"https://example.test");
         assert.equal(url.pathname,`/${locale}/portal/sign-in`);
-        assert.equal(url.searchParams.get("returnTo"),`/${locale}/portal/courses/course?lessonEntry=lesson`);
+        assert.equal(url.searchParams.get("returnTo"),`/${locale}/portal/courses/course`);
         return true;
       });
     }

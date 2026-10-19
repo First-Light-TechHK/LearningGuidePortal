@@ -8,7 +8,7 @@ import { type TrialGate } from "@/components/portal/LessonContentPlayer";
 import { PreviewLessonView } from "@/components/portal/PreviewLessonView";
 import { previewLessonOutline } from "@/lib/previewLessonPresentation";
 import { courseImageFor } from "@/components/portal/CourseThumbnail";
-import { sanitiseLessonContents } from "@/services/lessonContent";
+import { buildTextLessonPreview } from "@/services/textLessonPreview";
 import { signCourseMediaReferences } from "@/services/courseMediaSigning";
 import { signCourseMediaUrl } from "@/services/persistence/s3";
 import { isCourseLearningMode } from "@/contracts/course-learning-mode";
@@ -43,14 +43,15 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     }));
   for (const recommendation of recommendations) recommendation.image = await signCourseMediaUrl(recommendation.image || "");
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {
-    pricingHref: `/${locale}/pricing?courseId=${encodeURIComponent(course.id)}`,
+    pricingHref: `/${locale}/subscription?courseId=${encodeURIComponent(course.id)}`,
     recommendations,
     videoLimitSeconds: 60
   };
-  const contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
+  const preview = buildTextLessonPreview(lesson, course.id, access.allowed);
+  const contents = preview.contents.length ? await signCourseMediaReferences(preview.contents) : undefined;
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }

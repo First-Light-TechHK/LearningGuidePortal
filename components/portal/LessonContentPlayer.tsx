@@ -15,6 +15,8 @@ import { TextExhibitContent } from './TextExhibitContent';
 import { dueVideoNodes } from '@/lib/videoExhibitPrompt';
 import { videoExhibitNodes } from '@/lib/videoExhibitSamples';
 import { playbackDuration } from '@/lib/videoLessonCompletion';
+import { getMessages } from '@/lib/i18n/messages';
+import { PortalDialog } from './PortalDialog';
 
 const LEGACY_MEDIA_BASE = 'https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp';
 
@@ -39,41 +41,26 @@ function exhibitUrl(value: string, type: Exhibit['type']) {
   return safeMediaUrl(value);
 }
 
-function TrialLimitModal({ gate, locale, onClose }: { gate: TrialGate; locale: LessonLocale; onClose: () => void }) {
-  const copy = {
-    title: 'Preview limit reached',
-    body: 'Subscribe to continue the full course and unlock more courses in this category.',
-    pricing: 'View pricing',
-    other: 'Related courses',
-    close: 'Close',
-    empty: 'No related courses yet',
-    heroTitle: 'Enjoying the course so far?',
-    heroBody: 'Build on what you’ve discovered with more ways to explore, reflect, and connect.',
-    bullets: ['Continue this lesson and unlock the full course', 'Deepen your understanding with AI Tutor', 'Discover more exhibits, ideas, and perspectives'],
-    cta: 'Ready for learning futhur',
-    categoryTitle: 'More in this category',
-    categoryBody: 'Other courses to explore',
-    relatedBody: 'Explore another perspective in this category.',
-    viewCourse: 'View course'
-  };
-  return <div className="la-trial-backdrop" role="presentation">
-    <section className="la-trial-modal" role="dialog" aria-modal="true" aria-labelledby="la-trial-title">
+export function TrialLimitModal({ gate, locale, onClose }: { gate: TrialGate; locale: LessonLocale; onClose: () => void }) {
+  const copy = getMessages(locale).previewAccess;
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => { setTarget(document.body); }, []);
+  return target ? createPortal(<PortalDialog className="la-trial-modal" labelledBy="la-trial-title" describedBy="la-trial-description" onClose={onClose}>
       <button type="button" className="la-trial-close" aria-label={copy.close} onClick={onClose}><X size={24} aria-hidden="true" /></button>
       <div className="la-trial-upgrade">
         <h3 id="la-trial-title">{copy.heroTitle}</h3>
-        <p>{copy.heroBody}</p>
+        <p id="la-trial-description">{copy.heroBody}</p>
         <ul>{copy.bullets.map(item => <li key={item}><CheckCircle2 size={16} aria-hidden="true" />{item}</li>)}</ul>
       </div>
       <div className="la-trial-related">
         <strong>{copy.other}</strong>
         <div className="la-trial-course-list">{gate.recommendations.length ? gate.recommendations.slice(0, 2).map((course, index) => <a className="la-trial-course" href={course.href} key={course.href}>
-          {course.image ? <img src={course.image} alt=""/> : <span className={`la-trial-course-placeholder la-trial-course-placeholder-${index + 1}`} aria-hidden="true">IMAGE</span>}
+          {course.image ? <img src={course.image} alt=""/> : <span className={`la-trial-course-placeholder la-trial-course-placeholder-${index + 1}`} aria-hidden="true"/>}
           <span><b>{course.title}</b><small>{copy.relatedBody}</small><em>{copy.viewCourse}<ArrowRight size={15} aria-hidden="true" /></em></span>
         </a>) : <p className="la-trial-empty">{copy.empty}</p>}</div>
       </div>
       <a className="la-trial-pricing" href={gate.pricingHref}>{copy.cta}</a>
-    </section>
-  </div>;
+  </PortalDialog>, target) : null;
 }
 
 function TextContentPlayer({ html, nodes, locale, fallbackImageUrl, onNode }: { html: string; nodes: LessonNode[]; locale: LessonLocale; fallbackImageUrl?: string | null; onNode: (node: LessonNode) => void }) {
@@ -160,7 +147,7 @@ function Exercise({ node, locale }: { node: LessonNode; locale: LessonLocale }) 
 
 type VideoPresentation = { poster?: string; badge?: string; playLabel: string };
 
-function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, exhibitContainer }: { content: LessonContent; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; exhibitContainer?: HTMLElement | null }) {
+function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { content: LessonContent; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
   const t = lessonMessages(locale), video = useRef<HTMLVideoElement>(null), seen = useRef(new Set<string>()), lastTime = useRef(-0.01), resume = useRef(false), seeking = useRef(false);
   const [active, setActive] = useState<LessonNode | null>(null), activeRef = useRef<LessonNode | null>(null), [notice, setNotice] = useState('');
   const [trialOpen, setTrialOpen] = useState(false);
@@ -175,7 +162,12 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
     if (node) open(node);
     // Each explicit request opens once, including repeated requests for the same node.
   }, [nodeRequest, contentTrialGate]);
-  function showTrial() { if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); video.current?.pause(); setTrialOpen(true); }
+  function showTrial() {
+    video.current?.pause();
+    if (onPreviewAccess) { onPreviewAccess(); return; }
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    setTrialOpen(true);
+  }
   function enforceVideoTrial() {
     if (!contentTrialGate) return false;
     const media = video.current, limit = contentTrialGate.videoLimitSeconds ?? 60;
@@ -209,7 +201,7 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
   return <section className="la-content-player"><h3>{content.title}</h3>
     {content.type === 'text' && <TextContentPlayer html={content.html || ''} nodes={nodes} locale={locale} fallbackImageUrl={fallbackImageUrl} onNode={open}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
-    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} exitFullscreenRequested={!!active} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload="metadata" onLoadedMetadata={reportProgress} onDurationChange={reportProgress} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else tick(); }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
+    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} exitFullscreenRequested={!!active} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload="metadata" onLoadedMetadata={reportProgress} onDurationChange={reportProgress} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else { onVideoStart?.(content.id); reportProgress(); tick(); } }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
       if (enforceVideoTrial()) { seeking.current = false; return; }
       // A forward seek skips earlier instances; seeking backwards rearms later ones.
@@ -227,11 +219,11 @@ function ContentPlayer({ content, locale, fallbackImageUrl, trialGate, videoPres
   </section>;
 }
 
-export function LessonContentPlayer({ contents, locale, fallbackImageUrl = null, trialGate, selectedContentId, initialContentId, onContentChange, hideNavigation = false, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, exhibitContainer }: { contents: LessonContent[]; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; selectedContentId?: string; initialContentId?: string; onContentChange?: (id: string) => void; hideNavigation?: boolean; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; exhibitContainer?: HTMLElement | null }) {
+export function LessonContentPlayer({ contents, locale, fallbackImageUrl = null, trialGate, selectedContentId, initialContentId, onContentChange, hideNavigation = false, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { contents: LessonContent[]; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; selectedContentId?: string; initialContentId?: string; onContentChange?: (id: string) => void; hideNavigation?: boolean; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
   contents = contents.filter(content => content.active !== false);
   const [selectedId, setSelectedId] = useState(initialContentId || contents[0]?.id || '');
   const selected = contents.find(content => content.id === (selectedContentId ?? selectedId)) || contents[0];
-  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest} onVideoProgress={onVideoProgress} onVideoEnded={onVideoEnded} exhibitContainer={exhibitContainer}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
+  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} fallbackImageUrl={fallbackImageUrl} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest} onVideoProgress={onVideoProgress} onVideoEnded={onVideoEnded} onVideoStart={onVideoStart} exhibitContainer={exhibitContainer} onPreviewAccess={onPreviewAccess}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
 }
 
 export function LegacyLessonBody({ body, locale }: { body: string; locale: LessonLocale }) {

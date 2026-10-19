@@ -20,7 +20,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
   const browser = await chromium.launch({channel:"msedge"});
   await mkdir("test-results/video-exhibit",{recursive:true});
   try {
-    for(const locale of ["en-GB","zh-CN"]) {
+    for(const locale of ["en-GB","zh-CN"] as const) {
       const page = await browser.newPage({viewport:{width:1440,height:1024}});
       const studyEvents: {path:string; body:{event:string;clientEventId?:string;contentId?:string;learningMode?:string}}[]=[];
       await page.route("http://exhibit.test/**",async route=>{
@@ -36,12 +36,26 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       for(const weight of [400,500,600,700]){const font=(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64");await page.addStyleTag({content:`@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font});font-weight:${weight}}`});}
       await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith("js"))!.text});
       const lesson={id:"lesson",title:"Looking closely",body:"",durationMinutes:2,contents:[{id:"video",title:"Observe composition",type:"video",mode:"lecture",url:"/fixture.mp4",nodes:[{id:"first",title:"Garden composition study",type:"model3d",url:"/garden.glb",triggerTime:10},{id:"second",title:"Second exhibit",type:"text",html:"<p>Configured exhibit content.</p>",triggerTime:20},{id:"picture",title:"Image exhibit",type:"image",url:"/portal/exh.jpg",triggerTime:25},{id:"inactive",title:"Hidden exhibit",type:"image",url:"/portal/exhibit-prompt/thumbnail.png",triggerTime:5,active:false}]}]};
-      const mount=(key:string,entitled=true)=>page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,key,lesson,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe with attention.",poster:"/portal/course-study.jpg",outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson"}],nextHref:null,initialCompleted:false,entitled,trialGate:entitled?undefined:{pricingHref:"/pricing",recommendations:[],videoLimitSeconds:15}});
+      const mount=(key:string,entitled=true)=>page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,key,lesson,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe with attention.",poster:"/portal/course-study.jpg",outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson"}],nextHref:null,initialCompleted:false,entitled,trialGate:entitled?undefined:{pricingHref:"/subscription",recommendations:[],videoLimitSeconds:15}});
       lesson.contents.push({id:"text",title:"Read visual cues",type:"text",mode:"lecture",html:"<p>Mode switch reading content.</p>",nodes:[]} as unknown as typeof lesson.contents[number]);
       const entryProps={locale,key:"entry-mismatch",lesson:{...lesson,contents:lesson.contents.slice(0,1)},courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe with attention.",poster:"/portal/course-study.jpg",outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson",modes:["video"]}],nextHref:null,initialCompleted:false,entitled:true,preferredMode:"text"};
       await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),entryProps);
-      assert.equal(await page.locator('select:has(option[value="text"])').inputValue(),"video");
-      assert.equal(await page.locator('option[value="text"]').isDisabled(),true);
+      assert.equal(await page.locator('select:has(option[value="text"])').count(),0);
+      const fixedMode = page.locator('[data-learning-mode]');
+      assert.equal(await fixedMode.textContent(), getMessages(locale).previewVideoDesign.videoMode);
+      assert.equal(await fixedMode.evaluate(e => getComputedStyle(e).color), "rgb(148, 163, 184)");
+      assert.equal(await fixedMode.locator('..').locator('img, select, button').count(), 0);
+      await page.screenshot({path:`test-results/video-exhibit/${locale}-single-video-mode.png`,fullPage:true});
+      for (const contents of [lesson.contents.filter(item=>item.type==="text"), []]) {
+        await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props), {...entryProps,lesson:{...lesson,body:contents.length ? "" : "Legacy reading",contents},outline:entryProps.outline.map(item=>({...item,modes:["text"]}))});
+        assert.equal(await fixedMode.textContent(), getMessages(locale).previewVideoDesign.textMode);
+        assert.equal(await page.locator('select:has(option[value="text"])').count(),0);
+        assert.equal(await fixedMode.evaluate(e => e.matches('a,button,input,select,[tabindex]')),false);
+        await page.setViewportSize({width:390,height:844});
+        await page.screenshot({path:`test-results/video-exhibit/${locale}-single-text-mode-${contents.length}.png`,fullPage:true});
+      }
+      await page.setViewportSize({width:1440,height:1024});
+      await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),entryProps);
       await page.locator("video.la-lesson-video").waitFor();
       await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{...entryProps,lesson,outline:[{...entryProps.outline[0],modes:["video","text"]}],preferredMode:"text",initialContentId:"video"});
       await page.getByText("Mode switch reading content.",{exact:true}).waitFor();
@@ -57,6 +71,8 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       assert.equal(await modeSwitch.evaluate(e=>e.getBoundingClientRect().width===e.parentElement!.getBoundingClientRect().width),true);
       await page.waitForLoadState("networkidle");
       assert.notEqual(await page.evaluate(()=>(window as unknown as {refreshed?:boolean}).refreshed),true,"background open saves must not refresh and interrupt the mode dropdown");
+      assert.equal(studyEvents.some(event=>event.path==="/api/study/events" && event.body.contentId==="video"),false,"selecting a video does not save course progress before playback");
+      await Promise.all([page.waitForResponse(response=>response.url().endsWith('/api/study/events')&&response.request().postDataJSON()?.contentId==='video'),page.locator('video').evaluate(video=>video.dispatchEvent(new Event('play')))]);
       assert.ok(studyEvents.some(event=>event.path==="/api/study/events" && event.body.event==="open" && event.body.contentId==="video" && event.body.learningMode==="video" && event.body.clientEventId?.startsWith("open_")));
       assert.equal(await modeSwitch.inputValue(),"video");
       const textSaved=page.waitForRequest(request=>request.url().endsWith("/api/study/events")&&request.postDataJSON()?.contentId==="text");
@@ -76,12 +92,12 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       assert.equal(videoBounds.width,900);
       assert.equal(videoBounds.height,506.25);
       const deepTools=page.getByRole("complementary",{name:locale==="en-GB"?"Deep Learning":"深度学习"});
-      assert.equal((await deepTools.boundingBox())!.width,150);
+      assert.equal((await deepTools.boundingBox())!.width,160);
       for(const action of await deepTools.locator("a,button").all()) {
-        const bounds=(await action.boundingBox())!;assert.equal(bounds.width,150);assert.equal(bounds.height,41);
-        assert.deepEqual(await action.evaluate(e=>{const s=getComputedStyle(e),label=getComputedStyle(e.lastElementChild!);return {size:label.fontSize,weight:label.fontWeight,border:s.borderTopWidth,radius:s.borderTopLeftRadius};}),{size:"13px",weight:"500",border:"0px",radius:"18px"});
+        const bounds=(await action.boundingBox())!;assert.equal(bounds.width,160);assert.ok(bounds.height>=52);
+        assert.deepEqual(await action.evaluate(e=>{const s=getComputedStyle(e),label=getComputedStyle(e.lastElementChild!);return {size:label.fontSize,weight:label.fontWeight,border:s.borderTopWidth,radius:s.borderTopLeftRadius};}),{size:"13px",weight:"500",border:"1px",radius:"12px"});
       }
-      for(const [asset,width,height] of [["tutor",16,16],["understanding",16,16],["explore",16,16],["arrow",12,12],["divider",940,1]] as const) {
+      for(const [asset,width,height] of [["tutor",16,16],["understanding",16,16],["explore",16,16],["divider",940,1]] as const) {
         const icon=page.locator(`img[src="/portal/study/${asset}.svg"]`);await icon.evaluate(image=>(image as HTMLImageElement).decode());
         assert.deepEqual(await icon.evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),{width,height});
         assert.ok((await readFile(`public/portal/study/${asset}.svg`)).length>0);
@@ -127,7 +143,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       const time=async(seconds:number,event="timeupdate")=>{await page.locator("video").waitFor();await page.locator("video").evaluate((element,{seconds,event})=>{Object.defineProperty(element,"duration",{configurable:true,value:120});Object.defineProperty(element,"currentTime",{configurable:true,writable:true,value:seconds});element.dispatchEvent(new Event(event));},{seconds,event});};
       const bar=page.getByRole("region",{name:locale==="en-GB"?"Exhibit Available":"\u53ef\u67e5\u770b\u5c55\u793a\u5185\u5bb9"});
       await mount("normal");await time(9.99);assert.equal(await bar.count(),0);
-      assert.equal(await modeSwitch.locator('option[value="text"]').isDisabled(),true,"a mode without an accessible matching destination is disabled");
+      assert.equal(await modeSwitch.count(),0,"a single-mode course has no dropdown");
       await time(10);await bar.waitFor();assert.equal(await page.getByRole("dialog").count(),0,"time point offers an exhibit without opening a modal");
       assert.equal((await bar.boundingBox())!.height,335);assert.equal((await bar.boundingBox())!.width,164);const thumbnail=bar.locator('img[width="140"]');await thumbnail.evaluate(image=>(image as HTMLImageElement).decode());assert.deepEqual(await thumbnail.evaluate(image=>({width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),{width:140,height:140});
       const pointer=bar.locator('[data-exhibit-pointer]');await pointer.evaluate(image=>(image as HTMLImageElement).decode());

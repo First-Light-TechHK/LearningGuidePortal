@@ -63,7 +63,9 @@ const SCHEMA_LOCK_TIMEOUT_MS = 8000;
 // same search_path the unqualified CREATEs use.
 const SCHEMA_PROBE = `
   SELECT (
-    to_regclass('app_files') IS NOT NULL
+    to_regclass('contact_requests') IS NOT NULL
+    AND to_regclass('lesson_assessments') IS NOT NULL
+    AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
     AND to_regclass('orm_rows') IS NOT NULL
     AND to_regclass('wechat_login_tickets') IS NOT NULL
@@ -116,6 +118,40 @@ async function runSchemaBatchOnce(): Promise<void> {
       return;
     }
     await client.query(`
+      -- Mirrors db/migrations/014_contact_requests.sql.
+-- Additive and repeatable. Roll back application code first; retain this table
+-- for support history. Drop only after an approved export/retention decision.
+-- User-owned assessment participation, independent of Study/Entitlement.
+CREATE TABLE IF NOT EXISTS lesson_assessments (
+  user_id TEXT NOT NULL,
+  course_id TEXT NOT NULL,
+  lesson_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('knowledge', 'application')),
+  version INTEGER NOT NULL CHECK (version > 0),
+  last_event_id UUID NOT NULL UNIQUE,
+  payload_hash CHAR(64) NOT NULL,
+  record JSONB NOT NULL,
+  PRIMARY KEY (user_id, course_id, lesson_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS contact_requests (
+  id UUID PRIMARY KEY,
+  client_event_id UUID NOT NULL UNIQUE,
+  payload_hash CHAR(64) NOT NULL,
+  user_id TEXT,
+  first_name TEXT NOT NULL CHECK (char_length(first_name) BETWEEN 1 AND 50),
+  last_name TEXT NOT NULL CHECK (char_length(last_name) BETWEEN 1 AND 50),
+  email TEXT NOT NULL CHECK (char_length(email) BETWEEN 1 AND 254),
+  phone TEXT NOT NULL DEFAULT '' CHECK (char_length(phone) <= 40),
+  subject TEXT NOT NULL CHECK (char_length(subject) BETWEEN 1 AND 200),
+  message TEXT NOT NULL CHECK (char_length(message) BETWEEN 1 AND 5000),
+  consent BOOLEAN NOT NULL CHECK (consent = TRUE),
+  locale TEXT NOT NULL CHECK (locale IN ('en-GB', 'zh-CN')),
+  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'closed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS contact_requests_status_created_idx ON contact_requests (status, created_at DESC);
+
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,
           storage TEXT NOT NULL CHECK (storage IN ('db', 's3')),

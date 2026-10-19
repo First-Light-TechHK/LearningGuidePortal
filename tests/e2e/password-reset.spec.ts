@@ -2,7 +2,7 @@ import { expect, test } from "playwright/test";
 
 for (const locale of ["en-GB", "zh-CN"]) {
   test(`password reset request and success preserve the source in ${locale}`, async ({ page }) => {
-    const returnTo = `/${locale}/pricing?term=12#plans`;
+    const returnTo = `/${locale}/subscription?term=12#plans`;
     await page.route("**/api/auth/password-reset/request", async route => {
       expect(route.request().postDataJSON()).toMatchObject({ email: "reset@example.test", returnTo, locale });
       await route.fulfill({ json: { ok: true, retryAfter: 60, resetUrl: null } });
