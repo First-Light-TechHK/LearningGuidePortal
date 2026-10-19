@@ -11,13 +11,15 @@ import {
   type GroupRole,
   type LiveSessionRow,
   type StudyGroupRow,
-  type StudyGroupStore
+  type StudyGroupStore,
+  type TutorReplyTo
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
 import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
-import type { LiveKitProjectRef, LiveKitProjectRegistry } from "./liveKitProjectRegistry";
+import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
+import { closeLapsedSeats, completeSession, endLiveSessionIfEmpty, seatCount, seatHeld, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
 import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
@@ -50,7 +52,7 @@ export type StudyGroupDeps = {
   // it injected from Secrets Manager; DEV resolves it on first real issuance).
   tokenLogKey: () => Buffer | null;
   courseKnowledge?: (courseId: string) => Promise<string>;
-  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string }) => Promise<void>;
+  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
   tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
   // Injectable scheduler for the failing context's own re-drain (test seam):
@@ -69,22 +71,23 @@ export type GroupView = StudyGroupRow & {
 
 export type StudyGroupWebhookOutcome = Readonly<{ status: "processed" | "ignored" | "duplicate" }>;
 
-// Sweep B never closes a presence younger than this (slice-2 design §4, with
-// the extra safety margin): a user mid-join or mid-re-join must never be raced
-// by the repair path.
-const RECONCILE_GRACE_SECONDS = 120;
-
 // The room AI Tutor question shares the learning-page message cap (4000):
 // without it, every extra character of a room question became model input
 // (hunt M5). Enforced at enqueue, before anything is stored.
 const TUTOR_REQUEST_MAX_LENGTH = 4000;
 
-function presenceAgeMs(presence: { enteredAt: string | null; requestedAt: string }): number {
-  // The enter path reuses one row per user/session and refreshes BOTH
-  // enteredAt and requestedAt on re-entry (`seat()`), so enteredAt is the
-  // honest presence age; a waiting row has no enteredAt yet and `requestedAt`
-  // is the "<ISO>#<seq>" receipt string, so only its ISO prefix is parsed.
-  return Date.parse(presence.enteredAt ?? presence.requestedAt.split("#", 1)[0]);
+// AI Tutor fairness (QA 2026-10-19 N5): the room's questions are answered one
+// at a time, so one member must not be able to queue dozens of model calls
+// ahead of everyone else. Each member may have this many questions waiting
+// for an answer, and may ask this many per minute.
+export const TUTOR_PENDING_PER_USER = 2;
+export const TUTOR_REQUESTS_PER_MINUTE = 5;
+// The answer carries a short excerpt of the question it replies to.
+const TUTOR_REPLY_QUOTE_MAX = 80;
+
+function tutorRequestPending(row: { status?: string; answeredAt?: string | null; inFlight: boolean }) {
+  const status = row.status ?? (row.answeredAt ? "answered" : row.inFlight ? "in_flight" : "queued");
+  return status === "queued" || status === "in_flight";
 }
 
 // Typed failure of the slice-2 webhook path (design §3 HTTP mapping): the
@@ -121,20 +124,14 @@ function activeMembership(store: StudyGroupStore, groupId: string, userId: strin
   return store.memberships.find((item) => item.groupId === groupId && item.userId === userId && !item.leftAt) || null;
 }
 
-function occupancy(store: StudyGroupStore, sessionId: string) {
-  return store.presences.filter((item) => item.sessionId === sessionId && item.enteredAt && !item.leftAt).length;
-}
+// Create actions are idempotent over a short window (QA 2026-10-19 N8 and
+// BUG-0110): the same request submitted twice — a double click, a retry after
+// a slow response, two tabs — returns the row the first one created instead
+// of making a second one.
+const DUPLICATE_SUBMIT_WINDOW_MS = 10_000;
 
-// Shared completion rule (leave, webhook repair, reconciliation): a live
-// session whose last open presence closes is completed and its meeting ended.
-// The rule only ever reduces state — it can never grant anything.
-function completeLiveSessionIfEmpty(store: StudyGroupStore, session: StudyGroupStore["sessions"][number], now: string) {
-  if (session.status !== "live" || occupancy(store, session.id) !== 0) return;
-  session.status = "completed";
-  session.completedAt = now;
-  session.updatedAt = now;
-  const meeting = store.meetings.find((item) => item.sessionId === session.id);
-  if (meeting && !meeting.endedAt) meeting.endedAt = now;
+function sameSubmitWindow(createdAt: string, now: string) {
+  return Date.parse(now) - Date.parse(createdAt) < DUPLICATE_SUBMIT_WINDOW_MS;
 }
 
 function plannedCount(store: StudyGroupStore, sessionId: string) {
@@ -228,6 +225,15 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_removed" } });
           continue;
         }
+        if (session.status !== "live") {
+          // The session ended while the question waited: nobody is left in
+          // the room to read an answer, so no model call is spent on it.
+          await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_ended" } });
+          continue;
+        }
+        const asker = await deps.userProfile(item.userId);
+        const question = item.text.length > TUTOR_REPLY_QUOTE_MAX ? `${item.text.slice(0, TUTOR_REPLY_QUOTE_MAX - 1)}…` : item.text;
+        const replyTo: TutorReplyTo = { name: asker?.displayName || "", question };
         // Grounding and the model call run outside every transaction and
         // lock; the claim lease, not the process, guards the window. The whole
         // course material goes to the model verbatim (owner decision): the
@@ -259,7 +265,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           id: item.id,
           leaseOwner,
           outcome: { status: "answered", terminalReason: reply.mode === "unavailable" ? "model_failed" : "answered" },
-          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply.text, messageId: item.id, mode: reply.mode }
+          outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply.text, messageId: item.id, mode: reply.mode, replyTo }
         });
         if (!deps.publishRoomChat) last = { text: reply.text, mode: reply.mode };
       }
@@ -277,7 +283,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
               text: message.payload.text,
               projectId: message.payload.projectId || null,
               messageId: message.payload.messageId,
-              mode
+              mode,
+              ...(message.payload.replyTo ? { replyTo: message.payload.replyTo } : {})
             });
             await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
             last = { text: message.payload.text, mode };
@@ -366,7 +373,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     // occupancy (BR-033) but do not replace the planned list yet.
     const showActual = state === "live" || state === "completed";
     const people = showActual
-      ? store.presences.filter((item) => item.sessionId === session.id && item.enteredAt && (state === "completed" || !item.leftAt))
+      ? store.presences.filter((item) => item.sessionId === session.id && item.enteredAt && (state === "completed" || seatHeld(item, deps.now())))
       : store.intents.filter((item) => item.sessionId === session.id && !item.cancelledAt);
     const attendees = [];
     for (const person of people) {
@@ -385,7 +392,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       aiTutorEnabled: session.aiTutorEnabled,
       startedAt: session.startedAt,
       state: state as EffectiveSessionState,
-      occupancy: occupancy(store, session.id),
+      occupancy: seatCount(store, session.id, deps.now()),
       plannedCount: plannedCount(store, session.id),
       viewerPlanned: store.intents.some((item) => item.sessionId === session.id && item.userId === actorUserId && !item.cancelledAt),
       attendees
@@ -414,32 +421,38 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       throw new StudyGroupError("course_access_required", "Valid Course access is required.");
     }
     return deps.repository.update((store) => {
-      const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
-      const state = effectiveSessionState(session, deps.now());
+      const now = deps.now();
+      const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
+      const state = effectiveSessionState(session, now);
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
       if (state !== "starting_soon" && state !== "live") throw new StudyGroupError("session_not_open", "The Live Session is not open yet.");
+      // Seats are leases (presence.ts): write down the lapsed ones first so
+      // every count below, and the stored occupancy, is the real one.
+      closeLapsedSeats(store, now, session.id);
+      const seats = seatCount(store, session.id, now);
       const existing = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
-      if (existing && !existing.leftAt) {
-        // Entering while already seated (a reload re-runs /enter): renew the
-        // row's timestamps so the presence age read by the grace window and
-        // the webhook's stale-seat guard is the CURRENT entry, never the
-        // original one. Mirrors the reopen path below. The recorded LiveKit
-        // connection id belongs to the previous entry generation and is
-        // cleared (audit F-5): the new connection's participant_joined
-        // webhook records its own sid, and until then the seat reports
-        // "connection unknown" (timestamp semantics).
+      if (existing && seatHeld(existing, now)) {
+        // Entering while already seated (a reload, a second tab): the same
+        // seat, its lease renewed.
         existing.requestedAt = input.requestedAt;
-        existing.enteredAt = deps.now().toISOString();
-        existing.liveKitParticipantSid = null;
-        return { occupancy: occupancy(store, session.id) };
+        existing.lastSeenAt = now.toISOString();
+        return { occupancy: seats };
       }
-      if (missedUnstarted(session, deps.now(), occupancy(store, session.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
-      if (occupancy(store, session.id) >= session.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
-      const enteredAt = deps.now().toISOString();
+      if (missedUnstarted(session, now, seats)) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+      if (seats >= session.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
+      // Before the start the Host's seat is reserved: members waiting may fill
+      // every other seat, never the Host's, so the Host can always open their
+      // own session (QA 2026-10-19 N7, owner decision).
+      const hostSeated = store.presences.some((item) => item.sessionId === session.id && item.userId === group.hostUserId && seatHeld(item, now));
+      if (state === "starting_soon" && input.actorUserId !== group.hostUserId && !hostSeated && seats >= session.maxParticipants - 1) {
+        throw new StudyGroupError("session_full", "Session Full.");
+      }
+      const enteredAt = now.toISOString();
       if (existing) {
         existing.leftAt = null;
         existing.requestedAt = input.requestedAt;
         existing.enteredAt = enteredAt;
+        existing.lastSeenAt = enteredAt;
         existing.phase = state === "live" ? "live" : "waiting";
         existing.liveKitParticipantSid = null;
       } else {
@@ -449,12 +462,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           userId: input.actorUserId,
           requestedAt: input.requestedAt,
           enteredAt,
+          lastSeenAt: enteredAt,
           leftAt: null,
           phase: state === "live" ? "live" : "waiting",
           liveKitParticipantSid: null
         });
       }
-      return { occupancy: occupancy(store, session.id) };
+      return { occupancy: seats + 1 };
     });
   }
 
@@ -505,7 +519,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
   }
 
-  async function dispatchDueReminders() {
+  async function dispatchDueReminders(snapshot?: StudyGroupStore) {
     const now = deps.now();
     const dueJobs = (store: StudyGroupStore, record: boolean) => {
       const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string }> = [];
@@ -521,27 +535,73 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         }
         for (const userId of audience) {
           if (!activeMembership(store, group.id, userId)) continue;
-          if (store.reminders.some((item) => item.sessionId === session.id && item.userId === userId)) continue;
-          if (record) store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
+          // One reminder per Start Time, not per Session (QA 2026-10-19 N9):
+          // a reminder sent before the current reminder window belongs to a
+          // Start Time the Host has since moved, so the new time gets its
+          // own. The row is reused (one row per user and session, UNIQUE in
+          // PostgreSQL), its sentAt moved to this send.
+          const existing = store.reminders.find((item) => item.sessionId === session.id && item.userId === userId);
+          if (existing && Date.parse(existing.sentAt) >= startsAt - STARTING_SOON_MS) continue;
+          if (record) {
+            if (existing) existing.sentAt = now.toISOString();
+            else store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
+          }
           jobs.push({ userId, sessionId: session.id, sessionTitle: session.title });
         }
       }
       return jobs;
     };
-    if (dueJobs(await deps.repository.read(), false).length === 0) return;
+    if (dueJobs(snapshot ?? await deps.repository.read(), false).length === 0) return;
     const due = await deps.repository.update((store) => dueJobs(store, true));
     for (const job of due) {
-      const profile = await deps.userProfile(job.userId);
-      // The row title is localised at write time and doubles as the reminders
-      // view's marker (hunt L1): the en-GB title must stay exactly this
-      // string — the view filters on the known per-locale titles — and the
-      // zh-CN title is its Chinese counterpart. Both match the email subject.
-      const copy = profile?.locale === "zh-CN"
-        ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
-        : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
-      await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
-      if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+      // One recipient's failure must not cost the rest their reminder, nor
+      // fail the page poll that triggered the dispatch (QA M11).
+      try {
+        const profile = await deps.userProfile(job.userId);
+        // The row title is localised at write time and doubles as the reminders
+        // view's marker (hunt L1): the en-GB title must stay exactly this
+        // string — the view filters on the known per-locale titles — and the
+        // zh-CN title is its Chinese counterpart. Both match the email subject.
+        const copy = profile?.locale === "zh-CN"
+          ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
+          : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
+        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+      } catch {
+        // Best-effort per recipient; the reminder row is already written.
+      }
     }
+  }
+
+  // A moved Start Time (QA 2026-10-19 N9): the reminder for the old time is
+  // withdrawn (the dispatch sends a fresh one for the new time, see
+  // dispatchDueReminders), and every member who planned to attend is told.
+  // Best-effort per recipient: the move itself has already been saved.
+  async function announceReschedule(session: { id: string; title: string; planned: string[] }) {
+    await deps.withdrawReminders?.({ sessionIds: [session.id] })?.catch(() => undefined);
+    for (const userId of session.planned) {
+      try {
+        const profile = await deps.userProfile(userId);
+        const copy = profile?.locale === "zh-CN"
+          ? { title: "直播课时间已更改", body: `${session.title} 的开始时间已更改，请到学习小组查看新的时间。` }
+          : { title: "Live Session rescheduled", body: `The Start Time of ${session.title} has changed. Open the Study Group to see the new time.` };
+        await deps.notify({ userId, title: copy.title, body: copy.body });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+      } catch {
+        // One recipient's failure never blocks the others.
+      }
+    }
+  }
+
+  // The server sweep (runtime timer and the throttled request path): writes
+  // down lapsed seats and ends live sessions nobody has held a seat in for
+  // the grace period. Reads first so an idle tick never takes the write lock.
+  async function sweepPresence(snapshot?: StudyGroupStore) {
+    const now = deps.now();
+    const pending = (store: StudyGroupStore) => store.presences.some((item) => item.enteredAt && !item.leftAt && !seatHeld(item, now))
+      || store.sessions.some((session) => session.status === "live" && seatCount(store, session.id, now) === 0);
+    if (!pending(snapshot ?? await deps.repository.read())) return { seatsClosed: 0, sessionsEnded: 0 };
+    return deps.repository.update((store) => sweepSeats(store, deps.now()));
   }
 
   // The portal's view routes call this on every poll. A sweep reads the whole
@@ -560,10 +620,33 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     requestDispatchRunning = true;
     requestDispatchAt = timestamp;
     try {
-      await dispatchDueReminders();
+      // The poll that reads the lists also keeps seats and live sessions
+      // honest on an instance whose timers are not running. Both checks run
+      // on one snapshot, so an idle request still costs a single store read.
+      const snapshot = await deps.repository.read();
+      await sweepPresence(snapshot).catch(() => undefined);
+      await dispatchDueReminders(snapshot);
     } finally {
       requestDispatchRunning = false;
     }
+  }
+
+  // The group's Live Sessions in a fixed order (QA 2026-10-19 N11): live
+  // first, then the ones still to come soonest first, then the ended and the
+  // never-started ones latest first.
+  function sortSessions<T extends { id: string; state: EffectiveSessionState; startsAt: string; occupancy: number; durationSeconds: number }>(sessions: T[]) {
+    const now = deps.now();
+    const rank = (session: T) => {
+      if (session.state === "live") return 0;
+      if (session.state === "completed" || missedUnstarted({ status: "scheduled", startsAt: session.startsAt, durationSeconds: session.durationSeconds }, now, session.occupancy)) return 2;
+      return 1;
+    };
+    return [...sessions].sort((a, b) => {
+      const byRank = rank(a) - rank(b);
+      if (byRank) return byRank;
+      const byTime = rank(a) === 2 ? b.startsAt.localeCompare(a.startsAt) : a.startsAt.localeCompare(b.startsAt);
+      return byTime || a.id.localeCompare(b.id);
+    });
   }
 
   return {
@@ -579,6 +662,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!course) throw new StudyGroupError("validation", "Related Course is required.");
       const now = deps.now().toISOString();
       const group = await deps.repository.update((store) => {
+        const duplicate = store.groups.find((item) => item.status === "active" && item.hostUserId === input.actorUserId && item.title === title && item.courseId === courseId && item.about === about && sameSubmitWindow(item.createdAt, now));
+        if (duplicate) return duplicate;
         const row: StudyGroupRow = {
           id: randomUUID(),
           title,
@@ -633,7 +718,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         members.push({ userId: membership.userId, displayName: profile?.displayName || membership.userId, role: membership.role });
       }
       const view = await toView(group, store, active.length, mine?.role || null);
-      const sessions = mine ? await Promise.all(store.sessions.filter((item) => item.groupId === group.id && item.status !== "removed").map((item) => sessionView(store, item, input.actorUserId || ""))) : null;
+      const sessions = mine ? sortSessions(await Promise.all(store.sessions.filter((item) => item.groupId === group.id && item.status !== "removed").map((item) => sessionView(store, item, input.actorUserId || "")))) : null;
       const canJoin = !mine && Boolean(input.actorUserId) && await deps.hasCourseAccess(input.actorUserId || "", group.courseId);
       const lessons = deps.courseLessons ? await deps.courseLessons(group.courseId) : [];
       return { ...view, members, sessions, canJoin, lessons };
@@ -677,18 +762,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         for (const intent of current.intents) {
           if (intent.userId === input.actorUserId && sessionIds.has(intent.sessionId) && !intent.cancelledAt) intent.cancelledAt = now;
         }
+        // Leaving the Study Group releases the member's seats like an explicit
+        // Leave Session: a live session whose last seat this was ends now.
+        const at = new Date(now);
+        closeLapsedSeats(current, at);
         for (const presence of current.presences) {
           if (presence.userId !== input.actorUserId || presence.leftAt || !presence.enteredAt) continue;
           const session = current.sessions.find((item) => item.id === presence.sessionId && item.groupId === input.groupId);
           if (!session || session.status === "completed" || session.status === "removed") continue;
           presence.leftAt = now;
-          if (session.status === "live" && occupancy(current, session.id) === 0) {
-            session.status = "completed";
-            session.completedAt = now;
-            session.updatedAt = now;
-            const meeting = current.meetings.find((item) => item.sessionId === session.id);
-            if (meeting && !meeting.endedAt) meeting.endedAt = now;
-          }
+          endLiveSessionIfEmpty(current, session, at);
         }
         return current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id);
       });
@@ -711,6 +794,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;
         views.push(await toView(group, store, memberCount, null));
       }
+      // Newest first, like the My list (QA 2026-10-19 N11): the store's row
+      // order is not an order (PostgreSQL returns rows in any order).
+      views.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
       return views;
     },
 
@@ -736,7 +822,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async cancelGroup(input: { actorUserId: string; groupId: string }) {
       const now = deps.now().toISOString();
-      const { notified, sessionIds } = await deps.repository.update((store) => {
+      const { title, notified, sessionIds } = await deps.repository.update((store) => {
         const row = store.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (!row) throw new StudyGroupError("not_found", "Study Group was not found.");
         if (activeMembership(store, row.id, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can cancel the Study Group.");
@@ -749,33 +835,37 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             session.updatedAt = now;
           }
           if (session.status === "live") {
-            session.status = "completed";
-            session.completedAt = now;
-            session.updatedAt = now;
-            const meeting = store.meetings.find((item) => item.sessionId === session.id);
-            if (meeting && !meeting.endedAt) meeting.endedAt = now;
+            completeSession(store, session, now);
             for (const presence of store.presences) {
               if (presence.sessionId === session.id && presence.enteredAt && !presence.leftAt) presence.leftAt = now;
             }
           }
         }
         return {
-          notified: store.memberships.filter((item) => item.groupId === row.id && !item.leftAt).map((item) => item.userId),
+          title: row.title,
+          // PRD: the members are told; the Host who cancelled is not.
+          notified: store.memberships.filter((item) => item.groupId === row.id && !item.leftAt && item.userId !== row.hostUserId).map((item) => item.userId),
           sessionIds: store.sessions.filter((item) => item.groupId === row.id).map((item) => item.id)
         };
       });
       // The cancelled group's pending reminders die with it (storage honesty);
       // the members' in-site cancellation notices below are kept.
       await deps.withdrawReminders?.({ sessionIds });
+      // Best-effort per member (QA M11): the group is already cancelled, so a
+      // failed notice must not report the cancel itself as failed.
       await Promise.all(notified.map(async (userId) => {
-        const profile = await deps.userProfile(userId);
-        // Title and body share the recipient's locale (hunt L1): the body was
-        // already localised while the title stayed hard-coded English, so a
-        // zh-CN member got a mixed-language card.
-        const copy = profile?.locale === "zh-CN"
-          ? { title: "学习小组已取消", body: "这个学习小组已经不再可用。" }
-          : { title: "Study Group cancelled", body: "This Study Group is no longer available." };
-        await deps.notify({ userId, title: copy.title, body: copy.body });
+        try {
+          const profile = await deps.userProfile(userId);
+          // Title and body share the recipient's locale (hunt L1): the body was
+          // already localised while the title stayed hard-coded English, so a
+          // zh-CN member got a mixed-language card.
+          const copy = profile?.locale === "zh-CN"
+            ? { title: "学习小组已取消", body: `学习小组“${title}”已被取消。` }
+            : { title: "Study Group cancelled", body: `The Study Group "${title}" has been cancelled.` };
+          await deps.notify({ userId, title: copy.title, body: copy.body });
+        } catch {
+          // One member's failed notice never blocks the others.
+        }
       }));
     },
 
@@ -793,6 +883,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (!group) throw new StudyGroupError("not_found", "Study Group was not found.");
         if (activeMembership(store, group.id, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can schedule a Live Session.");
+        const duplicate = store.sessions.find((item) => item.groupId === group.id && item.status === "scheduled" && item.title === title && item.startsAt === startsAt.toISOString() && item.durationSeconds === input.durationSeconds && item.maxParticipants === input.maxParticipants && sameSubmitWindow(item.createdAt, now));
+        if (duplicate) return duplicate;
         const row: LiveSessionRow = {
           id: randomUUID(),
           groupId: group.id,
@@ -844,10 +936,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           (focus !== undefined && focus !== (current.focus || null)) ||
           (input.aiTutorEnabled !== undefined && input.aiTutorEnabled !== current.aiTutorEnabled);
         if (changesOtherThanTime) throw new StudyGroupError("session_time_only", "Only the Start Time of an upcoming Live Session can be changed.");
+        const previousStartsAt = current.startsAt;
         if (input.startsAt !== undefined) current.startsAt = new Date(input.startsAt).toISOString();
         current.updatedAt = now;
-        return current;
+        const group = store.groups.find((item) => item.id === current.groupId);
+        const planned = store.intents.filter((item) => item.sessionId === current.id && !item.cancelledAt && item.userId !== group?.hostUserId).map((item) => item.userId);
+        return { ...current, moved: current.startsAt !== previousStartsAt, planned };
       });
+      if (session.moved) await announceReschedule(session);
       return sessionView(await deps.repository.read(), session, input.actorUserId);
     },
 
@@ -939,7 +1035,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const state = effectiveSessionState(current, deps.now());
         if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
-        if (missedUnstarted(current, deps.now(), occupancy(pending, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+        if (missedUnstarted(current, deps.now(), seatCount(pending, current.id, deps.now()))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
         assignedProjectId = await provisionProject(current, deps.liveKitProjects, deps.liveKitGateway);
       }
       const now = deps.now().toISOString();
@@ -949,7 +1045,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const state = effectiveSessionState(current, deps.now());
         if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (state === "scheduled") throw new StudyGroupError("session_not_open", "Start is available from 10 minutes before the scheduled time.");
-        if (missedUnstarted(current, deps.now(), occupancy(store, current.id))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+        closeLapsedSeats(store, deps.now(), current.id);
+        if (missedUnstarted(current, deps.now(), seatCount(store, current.id, deps.now()))) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+        // The Host opens the room only with a seat to enter it: starting a
+        // session that waiting members have filled would put them in a room
+        // the Host cannot join (QA 2026-10-19 N7). The reservation in seat()
+        // keeps this from happening; this is the backstop.
+        if (current.status !== "live") {
+          const hostSeated = store.presences.some((item) => item.sessionId === current.id && item.userId === input.actorUserId && seatHeld(item, deps.now()));
+          if (!hostSeated && seatCount(store, current.id, deps.now()) >= current.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
+        }
         if (current.status !== "live") {
           if (assignedProjectId) current.liveKitProjectId = assignedProjectId;
           current.status = "live";
@@ -971,30 +1076,37 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async leaveSession(input: { actorUserId: string; sessionId: string; reason?: "unload" }) {
-      const now = deps.now().toISOString();
+      // An unload signal (sent by clients built before the seat lease) is not
+      // a Leave: the seat simply stops being renewed and lapses one lease
+      // later, which is exactly what a refresh, a closed tab or a lost
+      // network must do. Only an explicit Leave releases the seat now.
+      if (input.reason === "unload") return;
       await deps.repository.update((store) => {
+        const now = deps.now();
         const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
+        closeLapsedSeats(store, now, session.id);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && !item.leftAt);
-        if (input.reason === "unload") {
-          // Unload-class leave (pagehide: refresh, tab close, navigating away):
-          // the same browser can re-enter seconds later, so this must NEVER
-          // complete the session. With others still seated the seat is
-          // released like a leave; as the last open presence the seat is HELD
-          // and only its age renews, so the 120 s grace window plus the
-          // provider-verified reconcile (or the signed participant_left)
-          // decide the completion — the session stays discoverable to both
-          // repair paths and can never hang live with nobody in it.
-          if (presence) {
-            if (occupancy(store, session.id) > 1) presence.leftAt = now;
-            else presence.enteredAt = now;
-          }
-          completeLiveSessionIfEmpty(store, session, now);
-          return;
-        }
-        if (presence) presence.leftAt = now;
-        completeLiveSessionIfEmpty(store, session, now);
+        if (presence) presence.leftAt = now.toISOString();
+        endLiveSessionIfEmpty(store, session, now);
       });
     },
+
+    // The seat holder's heartbeat: renews the lease of the caller's own seat.
+    // `seated: false` tells the client its seat is gone (lapsed while the
+    // device slept or was offline, or released elsewhere) and it must enter
+    // again, which re-runs every admission rule.
+    async heartbeat(input: { actorUserId: string; sessionId: string }) {
+      return deps.repository.update((store) => {
+        const now = deps.now();
+        const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
+        closeLapsedSeats(store, now, session.id);
+        const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && seatHeld(item, now));
+        if (presence) presence.lastSeenAt = now.toISOString();
+        return { seated: Boolean(presence), occupancy: seatCount(store, session.id, now), state: effectiveSessionState(session, now) };
+      });
+    },
+
+    sweepPresence: () => sweepPresence(),
 
     async issueToken(input: { actorUserId: string; sessionId: string; recovery?: boolean }) {
       const store = await deps.repository.read();
@@ -1002,7 +1114,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const state = effectiveSessionState(session, deps.now());
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
       if (state !== "live") throw new StudyGroupError("session_not_open", "LiveKit tokens are available only after the Host starts the Live Session.");
-      const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
+      const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && seatHeld(item, deps.now()));
       if (!presence) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting a token.");
       let assignedProjectId = session.liveKitProjectId;
       try {
@@ -1094,8 +1206,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (session.status === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (session.status !== "live") throw new StudyGroupError("session_not_open", "AI Tutor is available only while the Live Session is live.");
         if (!session.aiTutorEnabled) throw new StudyGroupError("forbidden", "AI Tutor is not enabled for this Live Session.");
-        const seated = store.presences.some((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
+        const seated = store.presences.some((item) => item.sessionId === session.id && item.userId === input.actorUserId && seatHeld(item, deps.now()));
         if (!seated) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting AI Tutor.");
+        const mine = store.tutorRequests.filter((item) => item.sessionId === session.id && item.userId === input.actorUserId);
+        if (mine.filter(tutorRequestPending).length >= TUTOR_PENDING_PER_USER) throw new StudyGroupError("tutor_busy", "Wait for the AI Tutor to answer your earlier questions.");
+        const minuteAgo = deps.now().getTime() - 60_000;
+        if (mine.filter((item) => Date.parse(item.receivedAt) > minuteAgo).length >= TUTOR_REQUESTS_PER_MINUTE) throw new StudyGroupError("tutor_rate_limited", "Too many AI Tutor questions in a minute.");
         // No enqueue-time in-flight marking (design §3.3c): the durable claim
         // owns the single-flight marker, so a new item simply waits as queued.
         const row = {
@@ -1127,7 +1243,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return { sessions: sessions.length };
     },
 
-    dispatchDueReminders,
+    dispatchDueReminders: () => dispatchDueReminders(),
     dispatchDueRemindersOnRequest,
 
     async handleLiveKitWebhook(input: { rawBody: string; authHeader: string | null }): Promise<StudyGroupWebhookOutcome> {
@@ -1171,58 +1287,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           return { status: "duplicate" };
         }
       }
-      let result: "processed" | "ignored" = "ignored";
-      if (event.eventType === "participant_joined" && event.room && event.participantIdentity && event.participantSid) {
-        const room = event.room;
-        const identity = event.participantIdentity;
-        const sid = event.participantSid;
-        // Record which connection the seat's current holder is (audit F-5):
-        // the participant_left mapping below may then refuse to close a seat
-        // whose recorded connection differs. The same seat-generation rule
-        // gates the write: a join event that predates the seat's enteredAt
-        // reports an older generation (a delayed retry of the previous
-        // connection's join) and must not overwrite the current id. The
-        // mapping still only reduces nothing and grants nothing.
-        result = await deps.repository.update((store) => {
-          const session = store.sessions.find((item) => item.id === room);
-          if (!session) return "ignored" as const;
-          const at = event.createdAt ?? deps.now().toISOString();
-          const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
-          const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) > Date.parse(at) : false;
-          if (presence && !seatIsNewer) presence.liveKitParticipantSid = sid;
-          return "processed" as const;
-        });
-      } else if (event.eventType === "participant_left" && event.room && event.participantIdentity) {
-        const room = event.room;
-        const identity = event.participantIdentity;
-        // The close action: close that identity's open presence row inside
-        // the serialized mutate — unless the seat was (re)established
-        // at or after the event's own time, in which case the event reports a
-        // connection generation that no longer exists (a refresh re-entered
-        // before a delayed participant_left arrived) and the fresh seat must
-        // stay open. Audit F-5: a creation time alone cannot tell a late
-        // delivery from a late creation — a zombie connection's
-        // participant_left may postdate the re-entry the provider has not yet
-        // observed — so when the seat and the event both name their LiveKit
-        // connection and the ids differ, the event reports a replaced
-        // connection and must not close the fresh seat either. Absence of
-        // either id (legacy rows, sid-less events) keeps the timestamp
-        // semantics above. Closing the last open presence of a live session
-        // also completes the session and ends its meeting — the same reducing
-        // rule as an explicit leave — and can never grant membership, role,
-        // token, or access.
-        result = await deps.repository.update((store) => {
-          const session = store.sessions.find((item) => item.id === room);
-          if (!session) return "ignored" as const;
-          const at = event.createdAt ?? deps.now().toISOString();
-          const presence = store.presences.find((item) => item.sessionId === room && item.userId === identity && item.leftAt === null);
-          const seatIsNewer = presence?.enteredAt ? Date.parse(presence.enteredAt) >= Date.parse(at) : false;
-          const connectionMismatch = Boolean(presence?.liveKitParticipantSid && event.participantSid && presence.liveKitParticipantSid !== event.participantSid);
-          if (presence && !seatIsNewer && !connectionMismatch) presence.leftAt = at;
-          completeLiveSessionIfEmpty(store, session, at);
-          return "processed" as const;
-        });
-      }
+      // Provider events are recorded, never acted on: who holds a seat is the
+      // server's own lease (presence.ts), renewed by the seat holder's
+      // heartbeat. A participant_left used to close seats here, which raced
+      // the reload it could not tell apart from a departure (BUG-0108) and,
+      // with its timestamp misread, closed nothing at all (QA N3). Verifying
+      // and recording the receipt keeps the endpoint an honest audit trail.
+      const result = "ignored" as const;
       // Success only: an unexpected action failure above propagates with the
       // receipt still `received` (route 500; the retry resumes it).
       await deps.repository.markWebhookProcessed({ receiptId: event.eventId, result });
@@ -1239,72 +1310,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async reconcileLiveKitState(): Promise<{ abandonedReceipts: number; sessionsChecked: number; presencesClosed: number }> {
       // Bounded reconciliation (slice-2 design §4). Sweep A errors propagate:
-      // the runtime timer swallows and logs a tick at its layer.
+      // the runtime timer swallows and logs a tick at its layer. Seats are no
+      // longer repaired from the provider's participant list: the seat lease
+      // is the single source of truth, so this tick runs the same presence
+      // sweep every backend runs.
       const abandonedReceipts = await deps.repository.abandonStaleWebhookReceipts({ olderThanSeconds: 300, limit: 50 });
-      // Sweep B needs a provider-verified participant read; absence means the
-      // capability is unavailable and the sweep is skipped, never guessed.
-      const gateway = deps.liveKitGateway;
-      if (!gateway?.listParticipants) return { abandonedReceipts, sessionsChecked: 0, presencesClosed: 0 };
-      const sessions = await deps.repository.listLiveSessionsWithOpenPresences(5);
-      let sessionsChecked = 0;
-      let presencesClosed = 0;
-      for (const session of sessions) {
-        let project: LiveKitProjectRef;
-        try {
-          if (!deps.liveKitProjects || !session.liveKitProjectId) throw new Error("The Live Session has no resolvable LiveKit project.");
-          project = deps.liveKitProjects.getAssigned(session.liveKitProjectId);
-        } catch {
-          // A dangling assignment cannot be probed. Redacted incident only —
-          // never identities, tokens, or payloads — and no check is counted.
-          emitLiveKitIncident({
-            sessionId: session.id,
-            projectId: session.liveKitProjectId,
-            code: classifyLiveKitIncident({ source: "gateway", code: "credential_unavailable", phase: "existing_room" }).code,
-            source: "gateway"
-          });
-          continue;
-        }
-        let participants: ReadonlyArray<{ identity: string }>;
-        try {
-          participants = await gateway.listParticipants({ project, room: session.id });
-        } catch (error) {
-          emitLiveKitIncident({
-            sessionId: session.id,
-            projectId: project.id,
-            code: classifyLiveKitIncident({
-              source: "gateway",
-              code: error instanceof LiveKitGatewayError ? error.code : "unreachable",
-              phase: "existing_room"
-            }).code,
-            source: "gateway"
-          });
-          sessionsChecked += 1;
-          continue;
-        }
-        sessionsChecked += 1;
-        const presentIdentities = new Set(participants.map((participant) => participant.identity));
-        // The only repair actions: conditionally close open presences of this
-        // session whose identity the provider no longer lists — and, when that
-        // closed the last open presence of a live session, complete the session
-        // and end its meeting (the reducing counterpart of the leave rule,
-        // never a grant) — inside the serialized mutate. Rows younger than the
-        // grace window are left alone so a join in flight is never raced.
-        presencesClosed += await deps.repository.update((store) => {
-          const now = deps.now();
-          let closed = 0;
-          for (const presence of store.presences) {
-            if (presence.sessionId !== session.id || presence.leftAt !== null || presentIdentities.has(presence.userId)) continue;
-            const age = presenceAgeMs(presence);
-            if (!Number.isFinite(age) || now.getTime() - age <= RECONCILE_GRACE_SECONDS * 1000) continue;
-            presence.leftAt = now.toISOString();
-            closed += 1;
-          }
-          const sessionRow = store.sessions.find((entry) => entry.id === session.id);
-          if (sessionRow) completeLiveSessionIfEmpty(store, sessionRow, now.toISOString());
-          return closed;
-        });
-      }
-      return { abandonedReceipts, sessionsChecked, presencesClosed };
+      const swept = await sweepPresence();
+      return { abandonedReceipts, sessionsChecked: swept.sessionsEnded, presencesClosed: swept.seatsClosed };
     },
 
     async operationalMetrics(): Promise<StudyGroupOperationalMetrics> {

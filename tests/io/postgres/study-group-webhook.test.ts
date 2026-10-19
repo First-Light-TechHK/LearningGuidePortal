@@ -1,9 +1,10 @@
 // PostgreSQL-level proofs for the slice-2 signed-webhook path (design §3): the
 // receipt-first insert, the resume of `received`/abandoned deliveries, the
-// settled duplicate with zero side effects, the conditional presence close
-// inside the serialized update(), and the unknown-room ignore — exercised
-// through real service instances built by the workers.ts `service-webhook`
-// mode, each process holding its own pool, so only PostgreSQL arbitrates.
+// settled duplicate with zero side effects, and the unknown-room ignore —
+// exercised through real service instances built by the workers.ts
+// `service-webhook` mode, each process holding its own pool, so only
+// PostgreSQL arbitrates. Since the QA 2026-10-19 seat redesign a provider
+// event never touches a seat: every verified event settles `ignored`.
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import {
@@ -34,7 +35,7 @@ beforeEach(async () => {
   await truncateStudyGroupTables();
 });
 
-const CLOSED_AT = "2026-10-11T02:05:00.000Z";
+const EVENT_AT = "2026-10-11T02:05:00.000Z";
 type WebhookResult = { role: string; outcome: { status: "processed" | "ignored" | "duplicate" } };
 
 function webhookEnv(input: { session: string; eventId: string; identity: string; eventType?: string }): Record<string, string> {
@@ -42,7 +43,7 @@ function webhookEnv(input: { session: string; eventId: string; identity: string;
     LG_IO_SESSION: input.session,
     LG_IO_EVENT_ID: input.eventId,
     LG_IO_IDENTITY: input.identity,
-    LG_IO_CREATED_AT: CLOSED_AT,
+    LG_IO_CREATED_AT: EVENT_AT,
     ...(input.eventType ? { LG_IO_EVENT_TYPE: input.eventType } : {})
   };
 }
@@ -72,43 +73,36 @@ async function presenceLeftAt(sessionId: string, userId: string): Promise<string
   return row && row.left_at ? row.left_at.toISOString() : null;
 }
 
-test("two processes delivering the same signed event leave one receipt and one closed seat", async () => {
+test("two processes delivering the same signed event leave one receipt and the seat untouched", async () => {
   const repository = await seedRoomWithOpenPresence("s-wh-race", ["u-9"]);
-  const membershipsBefore = (await repository.read()).memberships;
+  const before = JSON.stringify(await repository.read());
   const results = (await runWorkers([
     { mode: "service-webhook", env: webhookEnv({ session: "s-wh-race", eventId: "e-race-1", identity: "u-2" }) },
     { mode: "service-webhook", env: webhookEnv({ session: "s-wh-race", eventId: "e-race-1", identity: "u-2" }) }
   ])).map((outcome) => workerResult<WebhookResult>(outcome));
 
-  // The race splits as (processed, duplicate) when the loser reads the settled
-  // receipt, or as (processed, processed) when both resume the same `received`
-  // row — the resumed close is idempotent. Only those two splits are legal,
-  // and at least one process must actually process the event.
+  // The race splits as (ignored, duplicate) when the loser reads the settled
+  // receipt, or as (ignored, ignored) when both resume the same `received` row.
   const statuses = results.map((result) => result.outcome.status);
   const seen = statuses.join(" + ");
   for (const status of statuses) {
-    assert.equal(status === "processed" || status === "duplicate", true, `worker outcomes must be processed/duplicate, saw [${seen}]`);
+    assert.equal(status === "ignored" || status === "duplicate", true, `worker outcomes must be ignored/duplicate, saw [${seen}]`);
   }
-  assert.equal(statuses.includes("processed"), true, `at least one worker processes the event, saw [${seen}]`);
-
+  assert.equal(statuses.includes("ignored"), true, `at least one worker settles the event, saw [${seen}]`);
   assert.equal(await countScalar("SELECT count(*) FROM study_group_webhook_receipts WHERE receipt_id = 'e-race-1'"), 1, `exactly one receipt row, outcomes [${seen}]`);
-  assert.equal(await countScalar("SELECT count(*) FROM study_group_webhook_receipts WHERE receipt_id = 'e-race-1' AND status = 'processed'"), 1, `the single receipt settles processed, outcomes [${seen}]`);
-  assert.equal(await presenceLeftAt("s-wh-race", "u-2"), CLOSED_AT, `u-2 closes at the event timestamp, outcomes [${seen}]`);
-  assert.equal(await countScalar("SELECT count(*) FROM study_group_presences WHERE session_id = 's-wh-race' AND left_at IS NOT NULL"), 1, `u-2 is the only closed presence, outcomes [${seen}]`);
-  assert.equal(await presenceLeftAt("s-wh-race", "u-9"), null, `the bystander seat stays open, outcomes [${seen}]`);
-  assert.deepEqual((await repository.read()).memberships, membershipsBefore, `memberships unchanged, outcomes [${seen}]`);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_webhook_receipts WHERE receipt_id = 'e-race-1' AND status = 'ignored'"), 1, `the single receipt settles ignored, outcomes [${seen}]`);
+  assert.equal(await presenceLeftAt("s-wh-race", "u-2"), null, `the seat is the lease's, not the provider's, outcomes [${seen}]`);
+  assert.equal(JSON.stringify(await repository.read()), before, `no store row changed, outcomes [${seen}]`);
 });
 
 test("a settled duplicate delivery has zero side effects", async () => {
   const repository = await seedRoomWithOpenPresence("s-wh-dupe");
   const first = await deliverWebhook(webhookEnv({ session: "s-wh-dupe", eventId: "e-dupe-1", identity: "u-2" }));
-  assert.equal(first.outcome.status, "processed");
-  const leftAtAfterFirst = await presenceLeftAt("s-wh-dupe", "u-2");
-  assert.equal(leftAtAfterFirst, CLOSED_AT);
+  assert.equal(first.outcome.status, "ignored");
   const receiptBefore = (await rows<{ status: string; processed_at: Date | null }>(
     "SELECT status, processed_at FROM study_group_webhook_receipts WHERE receipt_id = 'e-dupe-1'"
   ))[0];
-  assert.equal(receiptBefore.status, "processed");
+  assert.equal(receiptBefore.status, "ignored");
   assert.notEqual(receiptBefore.processed_at, null);
   const snapshotBefore = JSON.stringify(await repository.read());
 
@@ -116,12 +110,11 @@ test("a settled duplicate delivery has zero side effects", async () => {
   assert.equal(second.outcome.status, "duplicate");
 
   assert.equal(await countScalar("SELECT count(*) FROM study_group_webhook_receipts WHERE receipt_id = 'e-dupe-1'"), 1, "the duplicate writes no second receipt");
-  assert.equal(await presenceLeftAt("s-wh-dupe", "u-2"), leftAtAfterFirst, "left_at unchanged by the duplicate");
   assert.equal(JSON.stringify(await repository.read()), snapshotBefore, "no store row changed");
   const receiptAfter = (await rows<{ status: string; processed_at: Date | null }>(
     "SELECT status, processed_at FROM study_group_webhook_receipts WHERE receipt_id = 'e-dupe-1'"
   ))[0];
-  assert.equal(receiptAfter.status, "processed");
+  assert.equal(receiptAfter.status, "ignored");
   assert.equal(receiptAfter.processed_at?.getTime(), receiptBefore.processed_at?.getTime(), "the duplicate never re-marks the receipt");
 });
 
@@ -135,13 +128,13 @@ test("a crashed delivery resumes from its received receipt", async () => {
 
   const result = await deliverWebhook(webhookEnv({ session: "s-wh-crash", eventId: "e-crash-1", identity: "u-2" }));
 
-  assert.equal(result.outcome.status, "processed");
+  assert.equal(result.outcome.status, "ignored");
   const receipt = (await rows<{ status: string; processed_at: Date | null }>(
     "SELECT status, processed_at FROM study_group_webhook_receipts WHERE receipt_id = 'e-crash-1'"
   ))[0];
-  assert.equal(receipt.status, "processed");
+  assert.equal(receipt.status, "ignored");
   assert.notEqual(receipt.processed_at, null);
-  assert.equal(await presenceLeftAt("s-wh-crash", "u-2"), CLOSED_AT);
+  assert.equal(await presenceLeftAt("s-wh-crash", "u-2"), null);
 });
 
 test("a duplicate of a settled receipt cannot close an open seat", async () => {

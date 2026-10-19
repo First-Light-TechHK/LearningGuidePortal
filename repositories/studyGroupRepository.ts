@@ -11,6 +11,7 @@ import {
   type ReminderRow,
   type StudyGroupRow,
   type StudyGroupStore,
+  type TutorOutboxPayload,
   type TutorRequestRow,
   type TutorRequestStatus
 } from "@/modules/group-study/domain";
@@ -81,6 +82,7 @@ type PresenceDbRow = {
   left_at: Date | null;
   phase: PresenceRow["phase"];
   livekit_participant_sid: string | null;
+  last_seen_at: Date | null;
 };
 
 type MeetingDbRow = {
@@ -224,7 +226,10 @@ function mapPresence(row: PresenceDbRow): PresenceRow {
     phase: row.phase,
     // NULL (including every row written before the column existed) reads as
     // "connection unknown"; the webhook's timestamp guard decides for it.
-    liveKitParticipantSid: row.livekit_participant_sid ?? null
+    liveKitParticipantSid: row.livekit_participant_sid ?? null,
+    // The seat lease (presence.ts); NULL on rows written before the column
+    // existed, which the lease reads as their entry time.
+    lastSeenAt: iso(row.last_seen_at ?? null)
   };
 }
 
@@ -430,12 +435,12 @@ async function persistDiff(client: PoolClient, before: StudyGroupStore, after: S
     if (!changed(beforePresences, row)) continue;
     occupancySessions.add(row.sessionId);
     await client.query(
-      `INSERT INTO study_group_presences (id, session_id, user_id, requested_at, entered_at, left_at, phase, livekit_participant_sid)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO study_group_presences (id, session_id, user_id, requested_at, entered_at, left_at, phase, livekit_participant_sid, last_seen_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (id) DO UPDATE SET session_id = EXCLUDED.session_id, user_id = EXCLUDED.user_id,
          requested_at = EXCLUDED.requested_at, entered_at = EXCLUDED.entered_at, left_at = EXCLUDED.left_at,
-         phase = EXCLUDED.phase, livekit_participant_sid = EXCLUDED.livekit_participant_sid`,
-      [row.id, row.sessionId, row.userId, row.requestedAt, row.enteredAt, row.leftAt, row.phase, row.liveKitParticipantSid ?? null]
+         phase = EXCLUDED.phase, livekit_participant_sid = EXCLUDED.livekit_participant_sid, last_seen_at = EXCLUDED.last_seen_at`,
+      [row.id, row.sessionId, row.userId, row.requestedAt, row.enteredAt, row.leftAt, row.phase, row.liveKitParticipantSid ?? null, row.lastSeenAt ?? null]
     );
   }
   for (const row of after.sessions) {
@@ -584,7 +589,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
   async function settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
+    outbox?: TutorOutboxPayload;
   }) {
     await ensureSchema();
     const client = await getPool().connect();

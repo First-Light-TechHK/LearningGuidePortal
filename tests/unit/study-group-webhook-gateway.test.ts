@@ -54,7 +54,7 @@ function participantLeftBody(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
     event: "participant_left",
     id: "EV_webhook_1",
-    createdAt: String(NOW.getTime() * 1000),
+    createdAt: String(NOW.getTime() / 1000),
     room: { name: "s-session-1", sid: "RM_1" },
     participant: { identity: "u-7", sid: "PA_1" },
     ...overrides
@@ -82,7 +82,7 @@ test("a signed webhook verifies, resolves its project by issuer, and maps the ty
 });
 
 test("an event without a room or participant maps to null fields but still verifies", async () => {
-  const body = JSON.stringify({ event: "egress_started", id: "EV_webhook_2", createdAt: String(NOW.getTime() * 1000) });
+  const body = JSON.stringify({ event: "egress_started", id: "EV_webhook_2", createdAt: String(NOW.getTime() / 1000) });
   const event = await gateway().verifyWebhook!({ rawBody: body, authHeader: sign(body, alpha.apiKey, alpha.apiSecret) });
   assert.equal(event.eventType, "egress_started");
   assert.equal(event.room, null);

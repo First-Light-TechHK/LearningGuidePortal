@@ -68,7 +68,7 @@ function participantLeftBody() {
   return JSON.stringify({
     event: "participant_left",
     id: "EV_route_webhook_1",
-    createdAt: String(Date.now() * 1000),
+    createdAt: String(Math.floor(Date.now() / 1000)),
     room: { name: "s-session-1", sid: "RM_1" },
     participant: { identity: "u-7", sid: "PA_1" }
   });

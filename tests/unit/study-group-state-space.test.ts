@@ -6,6 +6,7 @@ import { afterEach, test } from "node:test";
 import { effectiveSessionState, type StudyGroupStore } from "../../modules/group-study/domain";
 import { LiveKitGatewayError } from "../../modules/group-study/liveKitGateway";
 import { parseLiveKitProjects } from "../../modules/group-study/liveKitProjectRegistry";
+import { seatHeld } from "../../modules/group-study/presence";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 import { decryptTokenLogLine } from "../../modules/group-study/tokenLog";
@@ -74,6 +75,11 @@ async function rejectsCode(run: () => Promise<unknown>, code: string) {
 
 function openPresences(store: StudyGroupStore, sessionId: string) {
   return store.presences.filter((row) => row.sessionId === sessionId && row.enteredAt && !row.leftAt);
+}
+
+/** Seats the server counts at `now`: open rows whose lease has not run out (presence.ts). */
+function heldPresences(store: StudyGroupStore, sessionId: string, now: Date) {
+  return store.presences.filter((row) => row.sessionId === sessionId && seatHeld(row, now));
 }
 
 async function logLines(directory: string) {
@@ -179,14 +185,17 @@ test("entry matrix: state x actor x capacity follows the documented accept and r
   // "A duplicate enter for someone already seated does not add a row."
   assert.equal((await f.service.enterSession({ actorUserId: "m1", sessionId: soon.id, requestedAt: "2026-09-19T02:00:09.000Z" })).occupancy, 1);
   assert.equal((await f.repository.read()).presences.filter((row) => row.sessionId === soon.id).length, 1);
-  // Capacity: "the seventh person ... gets Session Full and no row"; the Host has no reserved seat.
+  // Capacity: "the seventh person ... gets Session Full and no row". Starting
+  // Soon keeps the last seat for the Host while the Host is not in (QA
+  // 2026-10-19), so members fill only max - 1 seats before the Host enters.
   await f.service.enterSession({ actorUserId: "m2", sessionId: soon.id, requestedAt: NOW });
-  assert.equal((await f.service.enterSession({ actorUserId: "m3", sessionId: soon.id, requestedAt: NOW })).occupancy, 3);
-  await rejectsCode(() => f.service.enterSession({ actorUserId: "host", sessionId: soon.id, requestedAt: NOW }), "session_full");
-  assert.deepEqual(openPresences(await f.repository.read(), soon.id).map((row) => row.userId), ["m1", "m2", "m3"]);
-  // Leave frees exactly one seat for the waiting line.
-  await f.service.leaveSession({ actorUserId: "m3", sessionId: soon.id });
+  await rejectsCode(() => f.service.enterSession({ actorUserId: "m3", sessionId: soon.id, requestedAt: NOW }), "session_full");
   assert.equal((await f.service.enterSession({ actorUserId: "host", sessionId: soon.id, requestedAt: NOW })).occupancy, 3);
+  assert.deepEqual(openPresences(await f.repository.read(), soon.id).map((row) => row.userId).sort(), ["host", "m1", "m2"]);
+  await rejectsCode(() => f.service.enterSession({ actorUserId: "m3", sessionId: soon.id, requestedAt: NOW }), "session_full");
+  // Leave frees exactly one seat for the waiting line.
+  await f.service.leaveSession({ actorUserId: "m2", sessionId: soon.id });
+  assert.equal((await f.service.enterSession({ actorUserId: "m3", sessionId: soon.id, requestedAt: NOW })).occupancy, 3);
 });
 
 test("plan to attend never reserves a seat and a planned member stays blocked when full", async () => {
@@ -340,13 +349,14 @@ test("interleaving enter+enter: overlapping grants keep occupancy within the cap
   gate.arm();
   const delayed = racing.enterSession({ actorUserId: "m1", sessionId: soon.id, requestedAt: NOW });
   await gate.entered;
-  // The two other grants complete while m1 sits between its access read and its write.
+  // The two other grants complete while m1 sits between its access read and
+  // its write (the Host first, so the Host's kept seat is not in play).
+  await f.service.enterSession({ actorUserId: "host", sessionId: soon.id, requestedAt: NOW });
   await f.service.enterSession({ actorUserId: "m2", sessionId: soon.id, requestedAt: NOW });
-  await f.service.enterSession({ actorUserId: "m3", sessionId: soon.id, requestedAt: NOW });
   gate.open();
   // "The repository grants one presence if occupancy is still under the Session maximum."
   await rejectsCode(() => delayed, "session_full");
-  assert.deepEqual(openPresences(await f.repository.read(), soon.id).map((row) => row.userId), ["m2", "m3"]);
+  assert.deepEqual(openPresences(await f.repository.read(), soon.id).map((row) => row.userId), ["host", "m2"]);
 });
 
 test("interleaving enter+start: an entrant admitted during the start is moved live and occupancy is preserved", async () => {
@@ -491,7 +501,7 @@ async function assertInvariants(f: Fixture, groupId: string, where: string) {
   const itemKeys = store.tutorRequests.map((row) => `${row.sessionId}:${row.userId}:${row.clientEventId}`);
   assert.equal(new Set(itemKeys).size, itemKeys.length, `${where}: one tutor item per clientEventId`);
   for (const session of store.sessions) {
-    const open = openPresences(store, session.id);
+    const open = heldPresences(store, session.id, f.clock.now);
     assert.ok(open.length <= session.maxParticipants, `${where}: occupancy ${open.length} exceeds maxParticipants ${session.maxParticipants}`);
     const meetings = store.meetings.filter((row) => row.sessionId === session.id);
     assert.ok(meetings.length <= 1, `${where}: more than one meeting row`);
@@ -503,7 +513,7 @@ async function assertInvariants(f: Fixture, groupId: string, where: string) {
     if (session.status === "completed" || session.status === "removed") assert.equal(open.length, 0, `${where}: closed sessions hold no open presence`);
   }
   for (const view of (await f.service.getGroup({ actorUserId: "host", groupId })).sessions ?? []) {
-    assert.equal(view.occupancy, openPresences(store, view.id).length, `${where}: the session view occupancy must match the store`);
+    assert.equal(view.occupancy, heldPresences(store, view.id, f.clock.now).length, `${where}: the session view occupancy must match the store`);
   }
 }
 
@@ -540,7 +550,7 @@ test("seeded sweep: random short operation sequences preserve the invariants aft
           [`enter(${actor})`, async () => {
             await f.service.enterSession({ actorUserId: actor, sessionId, requestedAt: f.clock.now.toISOString() });
             // Count only a seat the store actually holds, so a non-persisting enter cannot earn credit.
-            if (openPresences(await f.repository.read(), sessionId).some((row) => row.userId === actor)) liveness.enterAdmitted += 1;
+            if (heldPresences(await f.repository.read(), sessionId, f.clock.now).some((row) => row.userId === actor)) liveness.enterAdmitted += 1;
           }],
           [`plan(${actor})`, () => f.service.planToAttend({ actorUserId: actor, sessionId })],
           [`cancelAttendance(${actor})`, () => f.service.cancelAttendance({ actorUserId: actor, sessionId })],
@@ -553,7 +563,7 @@ test("seeded sweep: random short operation sequences preserve the invariants aft
             const issued = await f.service.issueToken({ actorUserId: actor, sessionId });
             const store = await f.repository.read();
             assert.equal(store.sessions.find((row) => row.id === sessionId)?.status, "live");
-            assert.equal(openPresences(store, sessionId).some((row) => row.userId === actor), true);
+            assert.equal(heldPresences(store, sessionId, f.clock.now).some((row) => row.userId === actor), true);
             liveness.tokenIssued += 1;
             return issued;
           }],

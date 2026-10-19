@@ -205,7 +205,9 @@ test("host edits title and about, cannot change the course, and cancel keeps com
   await service.cancelGroup({ actorUserId: "host", groupId: group.id });
   assert.equal((await service.listMine("host")).some((item) => item.id === group.id), false);
   assert.equal((await service.listDiscover({ actorUserId: "member" })).some((item) => item.id === group.id), false);
-  assert.equal(notes.find((item) => item.userId === "member")?.body, "This Study Group is no longer available.");
+  assert.equal(notes.find((item) => item.userId === "member")?.body, 'The Study Group "Updated" has been cancelled.');
+  // The PRD tells the members; the Host who cancelled is not notified.
+  assert.equal(notes.some((item) => item.userId === "host"), false);
   const stored = await repository.read();
   assert.equal(stored.sessions.some((item) => item.id === session.id && item.status === "completed"), true);
 });
@@ -418,25 +420,30 @@ test("session schedule, attendance, capacity, start and token follow the P0 rule
   const second = service.enterSession({ actorUserId: "m1", sessionId: soon.id, requestedAt: "2026-09-19T02:00:01.000Z" });
   const third = service.enterSession({ actorUserId: "m3", sessionId: soon.id, requestedAt: "2026-09-19T02:00:03.000Z" });
   const entered = await Promise.allSettled([first, second, third]);
-  assert.equal(entered.filter((item) => item.status === "fulfilled").length, 2);
+  // Two seats, one of them reserved for the Host before the start (QA
+  // 2026-10-19 N7, owner decision): only the first member gets to wait.
+  assert.equal(entered.filter((item) => item.status === "fulfilled").length, 1);
+  assert.equal(entered[0].status, "fulfilled");
+  assert.equal(entered[1].status, "rejected");
   assert.equal(entered[2].status, "rejected");
-  const waiting = await service.getSession({ actorUserId: "m1", sessionId: soon.id });
-  assert.equal(waiting.occupancy, 2);
+  const waiting = await service.getSession({ actorUserId: "m2", sessionId: soon.id });
+  assert.equal(waiting.occupancy, 1);
   assert.equal(waiting.state, "starting_soon");
-  const duplicate = await service.enterSession({ actorUserId: "m1", sessionId: soon.id, requestedAt: "2026-09-19T02:00:04.000Z" });
-  assert.equal(duplicate.occupancy, 2);
+  const duplicate = await service.enterSession({ actorUserId: "m2", sessionId: soon.id, requestedAt: "2026-09-19T02:00:04.000Z" });
+  assert.equal(duplicate.occupancy, 1);
   const started = await service.startSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal(started.state, "live");
-  assert.equal(started.occupancy, 2);
+  assert.equal(started.occupancy, 1);
+  assert.equal((await service.enterSession({ actorUserId: "host", sessionId: soon.id, requestedAt: NOW })).occupancy, 2);
   const meetings = (await repository.read()).meetings.filter((item) => item.sessionId === soon.id);
   assert.equal(meetings.length, 1);
   await service.startSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal((await repository.read()).meetings.filter((item) => item.sessionId === soon.id).length, 1);
   await assert.rejects(() => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: soon.id, title: "Too late" }), (error: unknown) => (error as { code: string }).code === "forbidden");
-  const token = await service.issueToken({ actorUserId: "m1", sessionId: soon.id });
+  const token = await service.issueToken({ actorUserId: "m2", sessionId: soon.id });
   assert.equal(token.liveKitUrl, "wss://livekit.example.test");
   const payload = JSON.parse(Buffer.from(token.token.split(".")[1], "base64url").toString("utf8")) as { sub: string; video: { room: string; roomAdmin?: boolean }; metadata?: string };
-  assert.equal(payload.sub, "m1");
+  assert.equal(payload.sub, "m2");
   assert.equal(payload.video.room, soon.id);
   assert.equal(payload.video.roomAdmin, undefined);
   assert.equal(payload.metadata, undefined);
@@ -445,15 +452,15 @@ test("session schedule, attendance, capacity, start and token follow the P0 rule
   assert.equal(log.includes(token.token), false);
   assert.equal(log.includes("lk-secret-at-least-32-characters"), false);
   const decoded = decryptTokenLogLine(log.trim().split("\n").at(-1)!, tokenLogKey);
-  assert.equal(decoded.userId, "m1");
+  assert.equal(decoded.userId, "m2");
   assert.equal(decoded.sessionId, soon.id);
   assert.equal(decoded.role, "member");
   assert.equal(JSON.stringify(decoded).includes(token.token), false);
   await assert.rejects(() => service.issueToken({ actorUserId: "m3", sessionId: soon.id }), (error: unknown) => (error as { code: string }).code === "forbidden");
   await assert.rejects(() => service.issueToken({ actorUserId: "m1", sessionId: "missing-session" }), (error: unknown) => (error as { code: string }).code === "not_found");
-  await service.leaveSession({ actorUserId: "m1", sessionId: soon.id });
-  assert.equal((await service.getSession({ actorUserId: "m2", sessionId: soon.id })).state, "live");
   await service.leaveSession({ actorUserId: "m2", sessionId: soon.id });
+  assert.equal((await service.getSession({ actorUserId: "m2", sessionId: soon.id })).state, "live");
+  await service.leaveSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: soon.id })).state, "completed");
   assert.equal((await repository.read()).meetings.find((item) => item.sessionId === soon.id)?.endedAt, NOW);
 });
@@ -1028,13 +1035,17 @@ test("tutor delivery keeps enqueue order when requests share a timestamp", async
       return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` };
     }
   });
+  access.add("member:course-1");
   const group = await local.createGroup({ actorUserId: "host", title: "Timestamp queue", courseId: "course-1", about: "About the group." });
+  await local.joinGroup({ actorUserId: "member", groupId: group.id });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Timestamp queue", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: NOW });
   await local.startSession({ actorUserId: "host", sessionId: session.id });
+  // Two questions per asker may wait at once (QA N5); the third is the member's.
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 first?", clientEventId: "evt-timestamp-first" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 second?", clientEventId: "evt-timestamp-second" });
-  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 third?", clientEventId: "evt-timestamp-third" });
+  await local.enqueueTutor({ actorUserId: "member", sessionId: session.id, text: "What ended in 1933 third?", clientEventId: "evt-timestamp-third" });
   await repository.update((store) => {
     const queued = store.tutorRequests.filter((item) => item.sessionId === session.id);
     queued[0].id = "m-first";
@@ -1192,7 +1203,7 @@ test("a zh-CN member is told in Chinese that the Study Group was cancelled", asy
   const group = await zh.createGroup({ actorUserId: "host-zh-cancel", title: "取消组", courseId: "course-1", about: "Cancel in Chinese." });
   await zh.joinGroup({ actorUserId: "member-zh-cancel", groupId: group.id });
   await zh.cancelGroup({ actorUserId: "host-zh-cancel", groupId: group.id });
-  assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.body, "这个学习小组已经不再可用。");
+  assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.body, "学习小组“取消组”已被取消。");
   // The title is localised the same way (hunt L1): no English/Chinese mix on
   // one notification card.
   assert.equal(localNotes.find((item) => item.userId === "member-zh-cancel")?.title, "学习小组已取消");
@@ -1298,21 +1309,51 @@ test("audit F-6: the reminders reader only touches the Study Group store when a 
   }
 });
 
-test("a full session refuses the Host when six people are already in", async () => {
+// QA 2026-10-19 N7 (owner decision): before the start, waiting members may
+// fill every seat but the Host's, so the Host can always open and enter their
+// own session; once it is live a full room still refuses everyone, the Host
+// included (decisions.md).
+test("waiting members never take the Host's seat, and a full live room still refuses the Host", async () => {
   for (const userId of ["m1", "m2", "m3", "m4", "m5", "m6"]) access.add(`${userId}:course-1`);
   const group = await service.createGroup({ actorUserId: "host", title: "Full", courseId: "course-1", about: "About the full group." });
   for (const userId of ["m1", "m2", "m3", "m4", "m5", "m6"]) await service.joinGroup({ actorUserId: userId, groupId: group.id });
   const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Six", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 6 });
-  for (const [index, userId] of ["m1", "m2", "m3", "m4", "m5", "m6"].entries()) {
+  for (const [index, userId] of ["m1", "m2", "m3", "m4", "m5"].entries()) {
     await service.enterSession({ actorUserId: userId, sessionId: session.id, requestedAt: `2026-09-19T02:00:0${index}.000Z` });
   }
+  await assert.rejects(
+    () => service.enterSession({ actorUserId: "m6", sessionId: session.id, requestedAt: "2026-09-19T02:00:06.000Z" }),
+    (error: unknown) => (error as { code: string }).code === "session_full"
+  );
+  await service.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW })).occupancy, 6);
+  const seated = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt);
+  assert.equal(seated.length, 6);
+  assert.equal(seated.some((item) => item.userId === "host"), true);
+
+  // Live and full: the Host who stepped out is refused like anyone else.
+  await service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  await service.enterSession({ actorUserId: "m6", sessionId: session.id, requestedAt: NOW });
   await assert.rejects(
     () => service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW }),
     (error: unknown) => (error as { code: string }).code === "session_full"
   );
-  const seated = (await repository.read()).presences.filter((item) => item.sessionId === session.id && item.enteredAt && !item.leftAt);
-  assert.equal(seated.length, 6);
-  assert.equal(seated.some((item) => item.userId === "host"), false);
+});
+
+test("the Host cannot start a session waiting members have filled", async () => {
+  for (const userId of ["m1", "m2"]) access.add(`${userId}:course-1`);
+  const group = await service.createGroup({ actorUserId: "host", title: "Backstop", courseId: "course-1", about: "About the backstop." });
+  for (const userId of ["m1", "m2"]) await service.joinGroup({ actorUserId: userId, groupId: group.id });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Two", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 2 });
+  // Seats filled outside the reservation (rows written before it existed).
+  await repository.update((store) => {
+    for (const userId of ["m1", "m2"]) store.presences.push({ id: `p-${userId}`, sessionId: session.id, userId, requestedAt: NOW, enteredAt: NOW, lastSeenAt: NOW, leftAt: null, phase: "waiting" });
+  });
+  await assert.rejects(
+    () => service.startSession({ actorUserId: "host", sessionId: session.id }),
+    (error: unknown) => (error as { code: string }).code === "session_full"
+  );
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: session.id })).state, "starting_soon");
 });
 
 test("empty course knowledge still answers: the model is called and the reply is forced to general", async () => {
@@ -1501,13 +1542,16 @@ test("one delivery answers every waiting question in receipt order", async () =>
       return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` };
     }
   });
+  access.add("member:course-1");
   const group = await local.createGroup({ actorUserId: "host", title: "Drain", courseId: "course-1", about: "About the group." });
+  await local.joinGroup({ actorUserId: "member", groupId: group.id });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Drain", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: NOW });
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933?", clientEventId: "evt-drain-1" });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 again?", clientEventId: "evt-drain-2" });
-  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-drain-3" });
+  await local.enqueueTutor({ actorUserId: "member", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-drain-3" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
   // Every question reaches the model now, including the one the material does
   // not cover; an untagged fake reply defaults to the general mode.
@@ -1855,4 +1899,134 @@ test("a reply that contains a tutor key secret is never published", async () => 
   assert.deepEqual(published, [{ text: "", mode: "unavailable" }]);
   const stored = JSON.stringify(await repository.read());
   assert.equal(stored.includes("fake-key-healthy"), false);
+});
+
+// QA 2026-10-19 N4/N5: each asker may have two questions waiting and five per
+// minute; the answer names whom it answers; a question whose session ended is
+// settled without calling the model.
+test("the AI Tutor limits each asker, quotes the question it answers, and drops questions of an ended session", async () => {
+  let clock = Date.parse(NOW);
+  const calls: string[] = [];
+  const published: Array<{ text: string; replyTo?: { name: string; question: string } }> = [];
+  const local = serviceWith({
+    now: () => new Date(clock),
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text, replyTo }) => { published.push({ text, replyTo }); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ text }) => { calls.push(text); return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` }; }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Tutor limits", courseId: "course-1", about: "About the limits." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Tutor limits", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  const ask = (n: number) => local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: `Why did 1933 happen ${n}?`, clientEventId: `evt-limit-${n}` });
+  const code = async (run: () => Promise<unknown>) => { try { await run(); return "ok"; } catch (error) { return (error as { code?: string }).code; } };
+
+  await ask(1);
+  await ask(2);
+  assert.equal(await code(() => ask(3)), "tutor_busy");
+  // A retry of a question already queued is the same question, not a new one.
+  assert.equal(await code(() => ask(2)), "ok");
+  await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(published.map((item) => item.replyTo), [
+    { name: "Anna Williams", question: "Why did 1933 happen 1?" },
+    { name: "Anna Williams", question: "Why did 1933 happen 2?" }
+  ]);
+  for (const n of [3, 4, 5]) {
+    await ask(n);
+    await local.deliverTutorAnswer({ sessionId: session.id });
+  }
+  assert.equal(await code(() => ask(6)), "tutor_rate_limited");
+  for (let step = 0; step < 4; step += 1) {
+    clock += 16_000;
+    await local.heartbeat({ actorUserId: "host", sessionId: session.id });
+  }
+  assert.equal(await code(() => ask(6)), "ok");
+
+  // The last person leaves before the answer: the queued question is settled
+  // as session_ended and the model is never called for it.
+  const callsBefore = calls.length;
+  await local.leaveSession({ actorUserId: "host", sessionId: session.id });
+  await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.equal(calls.length, callsBefore);
+  const sixth = (await repository.read()).tutorRequests.find((item) => item.clientEventId === "evt-limit-6");
+  assert.equal(sixth?.status, "dead_letter");
+  assert.equal(sixth?.terminalReason, "session_ended");
+});
+
+// QA 2026-10-19 N9: a moved Start Time is announced to the members who
+// planned to attend, and its reminder is sent again for the new time.
+test("rescheduling tells the planned members and the new time gets its own reminder", async () => {
+  let clock = Date.parse(NOW);
+  const local = serviceWith({ now: () => new Date(clock) });
+  access.add("planner:course-1");
+  access.add("quiet:course-1");
+  const group = await local.createGroup({ actorUserId: "host", title: "Moved session", courseId: "course-1", about: "About the move." });
+  await local.joinGroup({ actorUserId: "planner", groupId: group.id });
+  await local.joinGroup({ actorUserId: "quiet", groupId: group.id });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Moved session", startsAt: "2026-09-19T02:08:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.planToAttend({ actorUserId: "planner", sessionId: session.id });
+  await local.dispatchDueReminders();
+  const reminders = () => notes.filter((item) => item.userId === "planner" && item.body.includes("starts in 10 minutes")).length;
+  assert.equal(reminders(), 1);
+
+  notes.length = 0;
+  mails.length = 0;
+  await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T03:00:00.000Z" });
+  assert.deepEqual(notes.filter((item) => item.title === "Live Session rescheduled").map((item) => item.userId), ["planner"]);
+  assert.deepEqual(mails.map((item) => item.to), ["planner@example.test"]);
+
+  // Saving the same Start Time again is not a move.
+  notes.length = 0;
+  await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T03:00:00.000Z" });
+  assert.equal(notes.length, 0);
+
+  clock = Date.parse("2026-09-19T02:52:00.000Z");
+  await local.dispatchDueReminders();
+  assert.equal(reminders(), 1);
+  await local.dispatchDueReminders();
+  assert.equal(reminders(), 1, "one reminder per Start Time");
+});
+
+// QA 2026-10-19 N7: a double click or a retried request makes one group and
+// one session, not two.
+test("a repeated create or schedule inside the submit window returns the same row", async () => {
+  let clock = Date.parse(NOW);
+  const local = serviceWith({ now: () => new Date(clock) });
+  const input = { actorUserId: "host", title: "Double click", courseId: "course-1", about: "About the double click." };
+  const [first, second] = await Promise.all([local.createGroup(input), local.createGroup(input)]);
+  assert.equal(second.id, first.id);
+  const plan = { actorUserId: "host", groupId: first.id, title: "Double schedule", startsAt: "2026-09-19T05:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 };
+  const one = await local.scheduleSession(plan);
+  clock += 5_000;
+  assert.equal((await local.scheduleSession(plan)).id, one.id);
+  assert.equal((await repository.read()).groups.filter((item) => item.title === "Double click").length, 1);
+  assert.equal((await repository.read()).sessions.filter((item) => item.title === "Double schedule").length, 1);
+  // Outside the window the same values are a deliberate second row.
+  clock += 10_000;
+  assert.notEqual((await local.scheduleSession(plan)).id, one.id);
+});
+
+// QA 2026-10-19 N11: a group's sessions read live first, then the next ones
+// soonest first, then the past ones latest first; Discover shows new groups first.
+test("sessions and Discover come back in a fixed, useful order", async () => {
+  let clock = Date.parse(NOW);
+  const local = serviceWith({ now: () => new Date(clock) });
+  const group = await local.createGroup({ actorUserId: "host", title: "Ordering", courseId: "course-1", about: "About the order." });
+  const later = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Later", startsAt: "2026-09-19T06:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const sooner = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Sooner", startsAt: "2026-09-19T04:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const live = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Live now", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const ended = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Ended", startsAt: "2026-09-19T02:06:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await local.enterSession({ actorUserId: "host", sessionId: ended.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: ended.id });
+  await local.leaveSession({ actorUserId: "host", sessionId: ended.id });
+  await local.enterSession({ actorUserId: "host", sessionId: live.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: live.id });
+  const order = (await local.getGroup({ actorUserId: "host", groupId: group.id })).sessions?.map((item) => item.id);
+  assert.deepEqual(order, [live.id, sooner.id, later.id, ended.id]);
+
+  clock += 60_000;
+  const newer = await local.createGroup({ actorUserId: "host", title: "Newer group", courseId: "course-1", about: "About the newer group." });
+  access.add("viewer:course-1");
+  assert.deepEqual((await local.listDiscover({ actorUserId: "viewer" })).map((item) => item.id), [newer.id, group.id]);
 });

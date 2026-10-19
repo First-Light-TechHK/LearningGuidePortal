@@ -86,6 +86,12 @@ const SCHEMA_PROBE = `
         AND column_name = 'livekit_participant_sid'
         AND table_schema = ANY (current_schemas(false))
     )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'study_group_presences'
+        AND column_name = 'last_seen_at'
+        AND table_schema = ANY (current_schemas(false))
+    )
   ) AS ready
 `;
 
@@ -242,7 +248,8 @@ CREATE INDEX IF NOT EXISTS contact_requests_status_created_idx ON contact_reques
           entered_at TIMESTAMPTZ,
           left_at TIMESTAMPTZ,
           phase TEXT NOT NULL CHECK (phase IN ('waiting', 'live')),
-          livekit_participant_sid TEXT,           -- seat's current LiveKit connection id (audit F-5); NULL = unknown
+          livekit_participant_sid TEXT,           -- legacy (audit F-5), no longer written
+          last_seen_at TIMESTAMPTZ,               -- seat lease: last entry or heartbeat (016)
           UNIQUE (session_id, user_id)            -- one row per user+session; re-entry flips left_at
         );
         CREATE INDEX IF NOT EXISTS study_group_presences_seated_idx
@@ -252,6 +259,9 @@ CREATE INDEX IF NOT EXISTS contact_requests_status_created_idx ON contact_reques
         -- only fires on a fresh table); idempotent boot self-heal mirroring
         -- db/migrations/013_study_group_presence_connection_sid.sql.
         ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS livekit_participant_sid TEXT;
+        -- Seat lease (QA 2026-10-19 redesign): same idempotent self-heal,
+        -- mirroring db/migrations/016_study_group_presence_last_seen.sql.
+        ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
         CREATE TABLE IF NOT EXISTS study_group_meetings (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES live_sessions(id),

@@ -183,12 +183,11 @@ test("the view hides legacy, foreign, rescheduled and started reminders", async 
   assert.equal((await view()).some((item) => item.body === "Legacy starts in 10 minutes."), false);
   assert.equal((await view()).some((item) => item.body === "Not a reminder."), false);
 
-  // Moving the Session outside its Starting Soon window hides the reminder
-  // through the read filter alone; the stored row stays until an action
-  // withdraws it.
+  // Moving the Start Time withdraws the reminder for the old time (QA
+  // 2026-10-19 N9); the new time gets its own when its window opens.
   await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: minutesFromNow(180) });
   assert.deepEqual(await view(), []);
-  assert.equal((await linkedReminders("host", session.id)).length, 1);
+  assert.deepEqual(await linkedReminders("host", session.id), []);
 
   // Once the Session starts, the reminder stops being a pending prompt.
   const open = await schedule(service, group.id, "Starting now", 5);

@@ -14,6 +14,8 @@ const statusFor: Record<string, number> = {
   session_full: 409,
   session_not_open: 409,
   session_unavailable: 409,
+  tutor_busy: 409,
+  tutor_rate_limited: 429,
   unavailable: 503
 };
 

@@ -330,10 +330,10 @@ export function studyGroupService() {
       reasoning: tutorReasoningFromEnv(),
       url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined
     }),
-    publishRoomChat: async ({ room, text, projectId, messageId, mode }) => {
+    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo });
     }
   });
   services.set(key, service);
@@ -342,8 +342,11 @@ export function studyGroupService() {
   if (!timers.__lgStudyGroupReminderTimers.has(key)) {
     timers.__lgStudyGroupReminderTimers.add(key);
     const timer = setInterval(() => {
+      // Seat leases and abandoned live sessions are swept on every backend
+      // (presence.ts); the reminder dispatch shares the cadence.
+      void service.sweepPresence().catch(() => undefined);
       void service.dispatchDueReminders().catch(() => undefined);
-    }, 30_000);
+    }, 15_000);
     timer.unref();
   }
   // Redacted signal while Study Group has no LiveKit project configuration.
@@ -376,10 +379,9 @@ export function studyGroupService() {
     const timer = setInterval(reportHealth, 5 * 60_000);
     timer.unref();
   }
-  // Bounded reconciliation timer (slice-2 design §4): sweep A plus sweep B
-  // every 5 minutes, PostgreSQL store and a provider-verified gateway only
-  // (the DEV fake gateway has no participant listing, so there is nothing to
-  // reconcile against). A tick that repaired or abandoned anything logs one
+  // Bounded reconciliation timer (slice-2 design §4): sweep A (stale webhook
+  // receipts) every 5 minutes, PostgreSQL store and a provider-verified
+  // gateway only. Seats are swept by the timer above on every backend. A tick that repaired or abandoned anything logs one
   // redacted summary line; a throwing tick logs the redacted
   // study_group.reconcile_failed line (the release-gate alarm keys on it) —
   // never error detail, same contract as the reminder and health timers.

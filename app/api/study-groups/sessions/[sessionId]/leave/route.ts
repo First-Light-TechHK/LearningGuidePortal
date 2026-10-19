@@ -5,12 +5,9 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   const { sessionId } = await context.params;
-  // The optional body carries the only two kinds of leaving: an unload
-  // (pagehide: refresh, tab close) releases the seat without ending the
-  // session, so a reload can re-enter; an absent or unknown reason is the
-  // explicit Leave Session action, which keeps its immediate
-  // last-participant-completes rule (PRD BR-026 / BR-027). An unreadable
-  // body is the explicit action.
+  // An absent or unknown reason is the explicit Leave Session action (PRD
+  // BR-026 / BR-027). "unload" comes only from clients built before the seat
+  // lease and is a no-op: the seat lapses on its own (presence.ts).
   const body = await request.json().catch(() => null) as { reason?: unknown } | null;
   const reason = body?.reason === "unload" ? "unload" as const : undefined;
   try {

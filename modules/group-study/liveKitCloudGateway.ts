@@ -88,11 +88,14 @@ function jwtIssuer(authHeader: string): string | null {
   }
 }
 
-// Webhook createdAt is unix microseconds (proto int64, bigint at runtime).
+// Webhook createdAt is unix SECONDS (proto int64, bigint at runtime; the
+// protocol documents it as "timestamp in seconds"). It used to be read as
+// microseconds, which put every event in January 1970: participant_left then
+// never closed a seat because every seat looked newer than the event.
 function createdAtIso(value: unknown): string | null {
-  const micros = typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
-  if (!Number.isFinite(micros) || micros <= 0) return null;
-  return new Date(micros / 1000).toISOString();
+  const seconds = typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return new Date(seconds * 1000).toISOString();
 }
 
 export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGateway {
@@ -219,8 +222,8 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
       const credentials = await verifiedCurrentCredentials(project);
       return participantToken(credentials, { project, room, identity, name, ttlSeconds });
     },
-    async publishTutorMessage({ project, room, messageId, text, mode }) {
-      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text, mode }));
+    async publishTutorMessage({ project, room, messageId, text, mode, replyTo }) {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text, mode, ...(replyTo ? { replyTo } : {}) }));
       let service: LiveKitRoomService;
       try {
         service = await roomService(project);

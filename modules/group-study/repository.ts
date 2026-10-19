@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { emptyStore, type OutboxRow, type StudyGroupStore, type TutorRequestRow, type TutorRequestStatus } from "./domain";
+import { emptyStore, type OutboxRow, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
 
 export type {
   OutboxKind,
@@ -51,7 +51,7 @@ export type StudyGroupRepository = {
   settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
+    outbox?: TutorOutboxPayload;
   }): Promise<void>;
 
   // durable room-message outbox (at-least-once publish, bounded)
@@ -223,7 +223,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
   async function settleTutorRequest(input: {
     id: string; leaseOwner: string;
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
-    outbox?: { room: string; projectId: string; text: string; messageId: string; mode?: string };
+    outbox?: TutorOutboxPayload;
   }) {
     await update((store) => {
       const row = store.tutorRequests.find((item) => item.id === input.id);

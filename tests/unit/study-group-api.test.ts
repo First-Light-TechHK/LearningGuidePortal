@@ -23,6 +23,7 @@ let patchSession: Route;
 let postStart: Route;
 let postTutor: Route;
 let postCancelSession: Route;
+let postHeartbeat: Route;
 let memberToken = "";
 let otherMemberToken = "";
 let filledTokens: string[] = [];
@@ -92,6 +93,7 @@ before(async () => {
   postJoin = (await import("../../app/api/study-groups/[groupId]/join/route")).POST as unknown as Route;
   postSession = (await import("../../app/api/study-groups/[groupId]/sessions/route")).POST as unknown as Route;
   postEnter = (await import("../../app/api/study-groups/sessions/[sessionId]/enter/route")).POST as unknown as Route;
+  postHeartbeat = (await import("../../app/api/study-groups/sessions/[sessionId]/heartbeat/route")).POST as unknown as Route;
   postToken = (await import("../../app/api/study-groups/sessions/[sessionId]/token/route")).POST as unknown as Route;
   postLiveKitIncident = (await import("../../app/api/study-groups/sessions/[sessionId]/livekit-incident/route")).POST as unknown as Route;
   patchSession = (await import("../../app/api/study-groups/sessions/[sessionId]/route")).PATCH as unknown as Route;
@@ -101,10 +103,14 @@ before(async () => {
 });
 
 beforeEach(async () => {
+  // The AI Tutor POST answers after its response; a previous test's delivery
+  // must finish before its store is wiped.
+  await (await import("../../modules/group-study/tutorHttp")).tutorDeliveriesSettled();
   await rm(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group"), { recursive: true, force: true });
 });
 
 after(async () => {
+  await (await import("../../modules/group-study/tutorHttp")).tutorDeliveriesSettled();
   process.chdir(cwd);
   process.env = env;
   await rm(directory, { recursive: true, force: true });
@@ -355,7 +361,7 @@ test("AI Tutor enqueue is idempotent and does not issue a token or call a model"
   }
 });
 
-test("create, join, schedule, and a full session refuses the Host", async () => {
+test("create, join, schedule, and the waiting room keeps the Host's seat", async () => {
   const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Full room", courseId: "api-course", about: "About the full group." }, token);
   assert.equal(created.status, 200);
   const groupId = (await created.json()).data.id as string;
@@ -375,19 +381,45 @@ test("create, join, schedule, and a full session refuses the Host", async () => 
   assert.equal(scheduledBody.data.durationSeconds, 1800);
   assert.equal(scheduledBody.data.durationMinutes, undefined);
   const sessionId = scheduledBody.data.id as string;
-  for (const cookie of filledTokens) {
+  // Starting Soon keeps one seat for the Host (QA 2026-10-19): the first
+  // five members take seats, the sixth is refused, and the Host still gets in.
+  const [lastMember, ...firstMembers] = [...filledTokens].reverse();
+  for (const cookie of firstMembers) {
     const entered = await call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, {}, cookie, { sessionId });
     assert.equal(entered.status, 200);
   }
+  const refused = await call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, {}, lastMember, { sessionId });
+  assert.equal(refused.status, 409);
+  assert.equal((await refused.json()).code, "session_full");
   const host = await call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, {}, token, { sessionId });
-  assert.equal(host.status, 409);
-  assert.equal((await host.json()).code, "session_full");
+  assert.equal(host.status, 200);
   const stored = JSON.parse(await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8")) as { sessions: Array<{ id: string; durationSeconds: number }>; presences: Array<{ sessionId: string; userId: string; leftAt: string | null }> };
   assert.equal(stored.sessions.find((item) => item.id === sessionId)?.durationSeconds, 1800);
   assert.equal(JSON.stringify(stored).includes("durationMinutes"), false);
   const seated = stored.presences.filter((item) => item.sessionId === sessionId && !item.leftAt);
   assert.equal(seated.length, 6);
-  assert.equal(seated.some((item) => item.userId === "api-host"), false);
+  assert.equal(seated.some((item) => item.userId === "api-host"), true);
+});
+
+test("the heartbeat renews only the caller's own seat and says when it is gone", async () => {
+  const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Heartbeat room", courseId: "api-course", about: "About the heartbeat." }, token);
+  const groupId = (await created.json()).data.id as string;
+  const scheduled = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
+    title: "Heartbeat",
+    startsAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    durationSeconds: 1800,
+    maxParticipants: 4
+  }, token, { groupId });
+  const sessionId = (await scheduled.json()).data.id as string;
+  const url = `http://localhost/api/study-groups/sessions/${sessionId}/heartbeat`;
+  assert.equal((await call(postHeartbeat, url, {}, undefined, { sessionId })).status, 401);
+  const before = await call(postHeartbeat, url, {}, token, { sessionId });
+  assert.equal(before.status, 200);
+  assert.deepEqual((await before.json()).data, { seated: false, occupancy: 0, state: "starting_soon" });
+  await call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, {}, token, { sessionId });
+  assert.deepEqual((await (await call(postHeartbeat, url, {}, token, { sessionId })).json()).data, { seated: true, occupancy: 1, state: "starting_soon" });
+  // Someone outside the group learns nothing about the session.
+  assert.equal((await call(postHeartbeat, url, {}, strangerToken, { sessionId })).status >= 400, true);
 });
 
 test("the reminders view requires a session and returns only current reminders", async () => {

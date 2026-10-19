@@ -57,12 +57,14 @@ export type PresenceRow = {
   enteredAt: string | null;
   leftAt: string | null;
   phase: "waiting" | "live";
-  // The LiveKit connection id (ParticipantInfo.sid) of the entry this seat
-  // currently holds: written when that connection's participant_joined
-  // webhook lands, cleared by seat() on every (re)entry so a new generation
-  // starts unknown (audit F-5). Optional: snapshots written before the field
-  // existed carry no value = "connection unknown", and the webhook's close
-  // falls back to the enteredAt/createdAt guard for them.
+  // The seat lease (modules/group-study/presence.ts): when the server last
+  // heard from the seat holder (entry or heartbeat). The seat is released one
+  // lease after it. Optional: rows written before the lease existed read
+  // their enteredAt instead.
+  lastSeenAt?: string | null;
+  // Legacy (audit F-5), no longer written: the LiveKit connection id the
+  // participant_joined webhook used to record. Seats are decided by the lease
+  // above alone; the column stays so existing rows and schemas keep loading.
   liveKitParticipantSid?: string | null;
 };
 
@@ -104,6 +106,11 @@ export type TutorRequestRow = {
   outboxMessageId?: string | null;
 };
 
+// Who the AI Tutor answer replies to, so everyone in the room can tell which
+// question an answer belongs to (QA 2026-10-19 N6).
+export type TutorReplyTo = { name: string; question: string };
+export type TutorOutboxPayload = { room: string; projectId: string; text: string; messageId: string; mode?: string; replyTo?: TutorReplyTo };
+
 export type OutboxKind = "room_message";
 export type OutboxStatus = "queued" | "sending" | "delivered" | "failed" | "dead";
 
@@ -112,7 +119,7 @@ export type OutboxRow = {
   kind: OutboxKind;
   dedupeKey: string;
   sessionId: string;
-  payload: { room: string; projectId: string; text: string; messageId: string; mode?: string };
+  payload: TutorOutboxPayload;
   status: OutboxStatus;
   attempts: number;
   leaseOwner: string | null;

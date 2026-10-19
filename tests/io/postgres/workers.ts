@@ -139,7 +139,7 @@ async function main(): Promise<Record<string, unknown>> {
         [STUDY_GROUP_TABLES]
       );
       const column = await getPool().query(
-        "SELECT 1 FROM information_schema.columns WHERE table_schema = ANY (current_schemas(false)) AND table_name = 'study_group_presences' AND column_name = 'livekit_participant_sid'"
+        "SELECT 1 FROM information_schema.columns WHERE table_schema = ANY (current_schemas(false)) AND table_name = 'study_group_presences' AND column_name = 'last_seen_at'"
       );
       return { role: ROLE, ready: true, studyGroupTables: tables.rowCount, presenceColumn: column.rowCount === 1 };
     }
@@ -279,10 +279,10 @@ async function main(): Promise<Record<string, unknown>> {
       return { role: ROLE, outcome };
     }
     case "service-reconcile": {
-      // Sweep B attaches its provider reader only when the environment asks
-      // for it: LG_IO_PRESENT set (even to the empty string) or LG_IO_FAIL_ROOM
-      // set. With neither set the fixture has no listParticipants member, so
-      // the service must skip sweep B entirely (no-reader no-sweep rule).
+      // The provider reader is attached only when the environment asks for
+      // it: LG_IO_PRESENT set (even to the empty string) or LG_IO_FAIL_ROOM
+      // set. The seat-lease sweep never reads it (QA 2026-10-19), so the
+      // tests attach a failing one to prove that.
       const present = process.env.LG_IO_PRESENT;
       const failRoom = process.env.LG_IO_FAIL_ROOM;
       const reconcileParticipants: ReconcileParticipants | undefined = present !== undefined || failRoom !== undefined
@@ -291,7 +291,7 @@ async function main(): Promise<Record<string, unknown>> {
             failRoom: failRoom || undefined
           }
         : undefined;
-      // Sweep A ages receipts against SQL NOW() and sweep B ages presences
+      // Sweep A ages receipts against SQL NOW() and the lease sweep ages seats
       // against deps.now(), so reconciliation runs on the real clock here:
       // the other service modes pin TEST_NOW for their timetable operations.
       const { service } = serviceFor(repository, undefined, reconcileParticipants, () => new Date());

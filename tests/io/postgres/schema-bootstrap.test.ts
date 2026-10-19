@@ -39,8 +39,9 @@ test("two workers bootstrapping an empty schema concurrently complete without de
     [STUDY_GROUP_TABLES]
   );
   assert.equal(tables.length, STUDY_GROUP_TABLES.length);
-  const column = await rows<{ column_name: string }>(
-    "SELECT column_name FROM information_schema.columns WHERE table_schema = ANY (current_schemas(false)) AND table_name = 'study_group_presences' AND column_name = 'livekit_participant_sid'"
+  const columns = await rows<{ column_name: string }>(
+    "SELECT column_name FROM information_schema.columns WHERE table_schema = ANY (current_schemas(false)) AND table_name = 'study_group_presences' AND column_name = ANY($1) ORDER BY column_name",
+    [["last_seen_at", "livekit_participant_sid"]]
   );
-  assert.equal(column.length, 1);
+  assert.deepEqual(columns.map((row) => row.column_name), ["last_seen_at", "livekit_participant_sid"]);
 });

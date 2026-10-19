@@ -1,0 +1,15 @@
+-- QA 2026-10-19 root-cause redesign: a Study Group seat is a server-held
+-- lease (modules/group-study/presence.ts). Entering grants it, the room
+-- page's heartbeat renews it, an explicit Leave releases it, and a seat that
+-- stops being renewed is released one lease later. last_seen_at is when the
+-- server last heard from the seat holder.
+--
+-- Additive and backward-compatible: existing rows keep NULL, which the
+-- service reads as their entered_at. The ensureSchema bootstrap in
+-- services/persistence/db.ts applies the same idempotent ALTER on boot, so
+-- this file is for environments that apply migrations manually.
+--
+-- Rollback: ALTER TABLE study_group_presences DROP COLUMN last_seen_at;
+-- (with the column gone every seat lapses one lease after its entry, so roll
+-- the application back first).
+ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;

@@ -9,11 +9,13 @@ import { parseLiveKitProjects, type LiveKitProjectRef, type LiveKitProjectRegist
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 
-// Slice-2 bounded reconciliation (production-persistence-slice2-design.md §4):
-// sweep A abandons stale receipts, sweep B closes open presences the provider
-// no longer lists — behind a 120 s grace window so a join in flight is never
-// raced. The repository is the real file store with the two PostgreSQL-only
-// sweep operations stubbed, mirroring the webhook-service fixture style.
+// Bounded reconciliation: sweep A abandons stale receipts (slice-2 design §4),
+// then the seat-lease sweep (QA 2026-10-19 redesign, presence.ts) closes the
+// seats whose lease ran out and ends live sessions that have had no seat for
+// the grace period. The provider's participant list is never consulted: the
+// lease is the single source of truth for seats. The repository is the real
+// file store with the PostgreSQL-only sweep operations stubbed, mirroring the
+// webhook-service fixture style.
 
 const NOW = "2026-09-19T02:00:00.000Z";
 const OLD = "2026-09-19T01:30:00.000Z"; // 30 min before NOW: past the grace window
@@ -153,30 +155,29 @@ async function seedStore(f: ReconcileFixture, presences: PresenceRow[]) {
         aiTutorEnabled: true,
         liveKitProjectId: project,
         status: "live",
-        startedAt: NOW,
+        startedAt: OLD,
         completedAt: null,
         createdAt: NOW,
         updatedAt: NOW
       });
     }
-    store.meetings.push({ id: "m-1", sessionId: "s-1", startedAt: NOW, endedAt: null });
+    store.meetings.push({ id: "m-1", sessionId: "s-1", startedAt: OLD, endedAt: null });
     store.presences.push(...presences);
   });
   f.calls.updates = 0;
 }
 
-test("sweep B closes only provider-absent presences past the grace window", async () => {
-  const f = await reconcileFixture({ listParticipants: async () => [{ identity: "u-1" }] });
+const at = (ms: number) => new Date(Date.parse(NOW) + ms).toISOString();
+
+test("the sweep closes lapsed seats at the moment their lease ran out and never asks the provider", async () => {
+  const f = await reconcileFixture({ listParticipants: async () => [] });
   f.state.abandonResult = 4;
-  f.state.sessions = [{ id: "s-1", liveKitProjectId: "eu-primary" }];
   await seedStore(f, [
-    presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD, phase: "live" }), // present at the provider: kept
-    presence({ sessionId: "s-1", userId: "u-2", enteredAt: OLD, phase: "live" }), // absent + old: closed
-    presence({ sessionId: "s-1", userId: "u-3", enteredAt: YOUNG, phase: "live" }), // absent but inside the grace window: kept
-    presence({ sessionId: "s-1", userId: "u-3b", requestedAt: `${OLD}#00000001`, phase: "waiting" }), // waiting, absent, old: closed
-    presence({ sessionId: "s-1", userId: "u-4", requestedAt: `${YOUNG}#00000001`, phase: "waiting" }), // waiting, absent, young: kept
-    presence({ sessionId: "s-2", userId: "u-5", enteredAt: OLD, phase: "live" }), // unlisted session: never touched
-    presence({ sessionId: "s-1", userId: "u-6", enteredAt: OLD, leftAt: "2026-09-19T01:45:00.000Z", phase: "live" }) // already closed: never touched
+    presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD, lastSeenAt: at(-5_000) }), // renewed 5 s ago: kept
+    presence({ sessionId: "s-1", userId: "u-2", enteredAt: OLD, lastSeenAt: at(-45_000) }), // lapsed 15 s ago: closed then
+    presence({ sessionId: "s-1", userId: "u-3", enteredAt: at(-40_000) }), // legacy row, no renewal: lapses 30 s after entry
+    presence({ sessionId: "s-1", userId: "u-4", requestedAt: `${YOUNG}#00000001`, phase: "waiting" }), // never entered: untouched
+    presence({ sessionId: "s-1", userId: "u-5", enteredAt: OLD, leftAt: "2026-09-19T01:45:00.000Z" }) // already closed: untouched
   ]);
   const before = await f.repository.read();
 
@@ -184,130 +185,62 @@ test("sweep B closes only provider-absent presences past the grace window", asyn
 
   assert.deepEqual(result, { abandonedReceipts: 4, sessionsChecked: 1, presencesClosed: 2 });
   assert.deepEqual(f.calls.abandon, [{ olderThanSeconds: 300, limit: 50 }]);
-  assert.deepEqual(f.calls.listLimits, [5]);
-  assert.deepEqual(f.calls.providerReads, [{ projectId: "eu-primary", room: "s-1" }]);
+  assert.deepEqual(f.calls.listLimits, []);
+  assert.deepEqual(f.calls.providerReads, []);
   assert.equal(f.calls.updates, 1);
   const after = await f.repository.read();
-  const expected = before.presences.map((row) =>
-    row.userId === "u-2" || row.userId === "u-3b" ? { ...row, leftAt: NOW } : { ...row });
-  assert.deepEqual(after.presences, expected);
-  // Only presence rows of the listed session may change at all.
+  const closedAt: Record<string, string> = { "u-2": at(-15_000), "u-3": at(-10_000) };
+  assert.deepEqual(after.presences, before.presences.map((row) => closedAt[row.userId] ? { ...row, leftAt: closedAt[row.userId] } : { ...row }));
+  // s-1 still has a held seat; s-2 has had none since it started at OLD, so
+  // it ends dated to its start.
+  assert.equal(after.sessions.find((row) => row.id === "s-1")?.status, "live");
+  assert.equal(after.sessions.find((row) => row.id === "s-2")?.completedAt, OLD);
   assert.deepEqual(after.groups, before.groups);
-  assert.deepEqual(after.sessions, before.sessions);
-  assert.deepEqual(after.meetings, before.meetings);
   assert.deepEqual(after.memberships, before.memberships);
   assert.deepEqual(after.tutorRequests, before.tutorRequests);
   assert.deepEqual(f.incidents, []);
 });
 
-test("sweep B closing the last open presence completes the live session", async () => {
-  const f = await reconcileFixture({ listParticipants: async () => [] });
-  f.state.sessions = [{ id: "s-1", liveKitProjectId: "eu-primary" }];
-  await seedStore(f, [presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD, phase: "live" })]);
+test("a live session empty past the grace ends dated to when it emptied; inside the grace it stays live", async () => {
+  const f = await reconcileFixture();
+  await seedStore(f, [
+    presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD, lastSeenAt: at(-100_000) }), // lapsed 70 s ago
+    presence({ sessionId: "s-2", userId: "u-2", enteredAt: OLD, lastSeenAt: at(-50_000) }) // lapsed 20 s ago: a reload can still return
+  ]);
 
   const result = await f.service.reconcileLiveKitState();
 
-  assert.deepEqual(result, { abandonedReceipts: 0, sessionsChecked: 1, presencesClosed: 1 });
-  assert.deepEqual(f.calls.providerReads, [{ projectId: "eu-primary", room: "s-1" }]);
+  assert.deepEqual(result, { abandonedReceipts: 0, sessionsChecked: 1, presencesClosed: 2 });
   const after = await f.repository.read();
-  assert.equal(after.presences.find((row) => row.sessionId === "s-1" && row.userId === "u-1")?.leftAt, NOW);
-  const completed = after.sessions.find((row) => row.id === "s-1");
-  assert.equal(completed?.status, "completed");
-  assert.equal(completed?.completedAt, NOW);
-  assert.equal(after.meetings.find((row) => row.id === "m-1")?.endedAt, NOW);
-  // The unlisted second session keeps its live status untouched.
+  const ended = after.sessions.find((row) => row.id === "s-1");
+  assert.equal(ended?.status, "completed");
+  assert.equal(ended?.completedAt, at(-70_000));
+  assert.equal(after.meetings.find((row) => row.id === "m-1")?.endedAt, at(-70_000));
   assert.equal(after.sessions.find((row) => row.id === "s-2")?.status, "live");
 });
 
-test("a provider failure on one session reports a redacted incident and the next session still reconciles", async () => {
-  const f = await reconcileFixture({
-    listParticipants: async ({ room }) => {
-      if (room === "s-1") throw new LiveKitGatewayError("rate_limited");
-      return [{ identity: "u-9" }];
-    }
-  });
-  f.state.abandonResult = 1;
-  f.state.sessions = [
-    { id: "s-1", liveKitProjectId: "eu-primary" },
-    { id: "s-2", liveKitProjectId: "eu-secondary" }
-  ];
-  await seedStore(f, [
-    presence({ sessionId: "s-1", userId: "u-7", enteredAt: OLD, phase: "live" }),
-    presence({ sessionId: "s-2", userId: "u-8", enteredAt: OLD, phase: "live" }),
-    presence({ sessionId: "s-2", userId: "u-9", enteredAt: OLD, phase: "live" })
-  ]);
-
-  const result = await f.service.reconcileLiveKitState();
-
-  assert.deepEqual(result, { abandonedReceipts: 1, sessionsChecked: 2, presencesClosed: 1 });
-  assert.deepEqual(f.calls.listLimits, [5]);
-  assert.deepEqual(f.calls.providerReads, [
-    { projectId: "eu-primary", room: "s-1" },
-    { projectId: "eu-secondary", room: "s-2" }
-  ]);
-  const after = await f.repository.read();
-  assert.equal(after.presences.find((row) => row.userId === "u-7")?.leftAt, null); // failed read: untouched
-  assert.equal(after.presences.find((row) => row.userId === "u-8")?.leftAt, NOW); // second session repaired
-  assert.equal(after.presences.find((row) => row.userId === "u-9")?.leftAt, null); // still present at the provider
-  assert.equal(f.calls.updates, 1);
-  // The incident line is exactly the typed, redacted shape: no identities, no
-  // tokens, no provider payload.
-  assert.deepEqual(f.incidents, [{ sessionId: "s-1", projectId: "eu-primary", code: "provider_rate_limited", source: "gateway" }]);
-  const raw = JSON.stringify(f.incidents);
-  assert.equal(["u-7", "u-8", "u-9"].some((identity) => raw.includes(identity)), false);
-  assert.equal(raw.toLowerCase().includes("token"), false);
-});
-
-test("a gateway without listParticipants skips sweep B with zero checks, closes, and provider calls", async () => {
+test("an idle sweep with every seat renewed performs no write", async () => {
   const f = await reconcileFixture();
-  f.state.abandonResult = 5;
-  f.state.sessions = [{ id: "s-1", liveKitProjectId: "eu-primary" }];
-  await seedStore(f, [presence({ sessionId: "s-1", userId: "u-2", enteredAt: OLD, phase: "live" })]);
-  const before = await f.repository.read();
-
-  const result = await f.service.reconcileLiveKitState();
-
-  assert.deepEqual(result, { abandonedReceipts: 5, sessionsChecked: 0, presencesClosed: 0 });
-  assert.deepEqual(f.calls.abandon, [{ olderThanSeconds: 300, limit: 50 }]);
-  assert.deepEqual(f.calls.listLimits, []);
-  assert.deepEqual(f.calls.providerReads, []);
-  assert.equal(f.calls.updates, 0);
-  assert.deepEqual((await f.repository.read()).presences, before.presences);
-  assert.deepEqual(f.incidents, []);
-});
-
-test("a session whose project cannot be resolved is skipped with a redacted incident and no check counted", async () => {
-  const f = await reconcileFixture({ listParticipants: async () => [{ identity: "u-2" }] });
-  f.state.abandonResult = 2;
-  f.state.sessions = [
-    { id: "s-1", liveKitProjectId: "eu-gone" }, // dangling assignment: getAssigned throws
-    { id: "s-2", liveKitProjectId: null }
-  ];
-  await seedStore(f, [presence({ sessionId: "s-1", userId: "u-2", enteredAt: OLD, phase: "live" })]);
-  const before = await f.repository.read();
-
-  const result = await f.service.reconcileLiveKitState();
-
-  assert.deepEqual(result, { abandonedReceipts: 2, sessionsChecked: 0, presencesClosed: 0 });
-  assert.deepEqual(f.calls.providerReads, []);
-  assert.equal(f.calls.updates, 0);
-  assert.deepEqual(f.incidents, [
-    { sessionId: "s-1", projectId: "eu-gone", code: "provider_credentials_invalid", source: "gateway" },
-    { sessionId: "s-2", projectId: null, code: "provider_credentials_invalid", source: "gateway" }
+  await seedStore(f, [
+    presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD, lastSeenAt: at(-1_000) }),
+    presence({ sessionId: "s-2", userId: "u-2", enteredAt: OLD, lastSeenAt: at(-1_000) })
   ]);
-  assert.deepEqual((await f.repository.read()).presences, before.presences);
+  const before = await f.repository.read();
+
+  assert.deepEqual(await f.service.reconcileLiveKitState(), { abandonedReceipts: 0, sessionsChecked: 0, presencesClosed: 0 });
+  assert.equal(f.calls.updates, 0);
+  assert.deepEqual(await f.repository.read(), before);
 });
 
-test("a sweep A failure propagates and sweep B never runs", async () => {
+test("a sweep A failure propagates and no seat is touched", async () => {
   const f = await reconcileFixture({ listParticipants: async () => [] });
   f.state.abandonError = new Error("receipt sweep failed");
-  f.state.sessions = [{ id: "s-1", liveKitProjectId: "eu-primary" }];
+  await seedStore(f, [presence({ sessionId: "s-1", userId: "u-1", enteredAt: OLD })]);
 
   await assert.rejects(
     () => f.service.reconcileLiveKitState(),
     (error: unknown) => error instanceof Error && error.message === "receipt sweep failed"
   );
-  assert.deepEqual(f.calls.listLimits, []);
   assert.deepEqual(f.calls.providerReads, []);
   assert.equal(f.calls.updates, 0);
 });

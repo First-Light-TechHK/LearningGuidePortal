@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
@@ -7,20 +7,20 @@ import type { PresenceRow, StudyGroupStore } from "../../modules/group-study/dom
 import type { LiveKitRoomGateway, LiveKitWebhookEvent } from "../../modules/group-study/liveKitGateway";
 import { parseLiveKitProjects } from "../../modules/group-study/liveKitProjectRegistry";
 import { createStudyGroupRepository, type StudyGroupRepository, type WebhookReceiptStatus } from "../../modules/group-study/repository";
+import { EMPTY_LIVE_GRACE_MS, SEAT_LEASE_MS } from "../../modules/group-study/presence";
 import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 
-// BUG-0108 regression (SIT): refreshing the browser during a Live Session
-// used to send the same explicit Leave Session request as the Leave button, so
-// the reloading user — being the room's last open presence — completed the
-// session before the reload could re-enter it ("已经结束"). The refresh now
-// sends an unload-class leave instead: it releases the seat only while others
-// remain in the room; the last open seat is held and its age renewed so the
-// 120 s grace window plus the provider-verified reconcile (or the signed
-// participant_left webhook) own the completion — a live session with nobody in
-// it may never hang. An explicit Leave Session keeps its immediate "the final
-// participant completes it" contract (PRD BR-026 / BR-027), and a stale
-// participant_left that reports on a pre-refresh connection must not close a
-// seat a re-entry has re-established.
+// BUG-0108 regression (SIT) and the QA 2026-10-19 seat redesign: refreshing
+// the browser during a Live Session used to send a Leave request, so a
+// reloading last person completed the session before the reload could come
+// back ("已经结束"). Later fixes layered an unload-class leave, a provider sweep
+// and participant_left webhooks on top, and those four sources disagreed: a
+// last person who closed the tab or lost the network kept the room live and
+// the seat held (QA 一 / N1-N3). A seat is now a server lease (presence.ts):
+// entering grants it, the room's heartbeat renews it, an explicit Leave
+// releases it, and a seat nobody renews lapses one lease later. A live session
+// with no seat for the grace period ends, dated to when it emptied. The unload
+// beacon and provider webhooks no longer touch seats at all.
 
 const START = "2026-10-14T10:00:00.000Z";
 const tokenLogKey = Buffer.alloc(32, 7);
@@ -164,244 +164,140 @@ async function liveRoom(f: RefreshFixture, seat: string[] = ["host"]) {
   return { group, session };
 }
 
-test("a refresh (unload leave) keeps the session live and the user re-enters to continue", async () => {
+const LEASE_S = SEAT_LEASE_MS / 1000;
+const GRACE_S = EMPTY_LIVE_GRACE_MS / 1000;
+const at = (seconds: number) => new Date(Date.parse(START) + seconds * 1000).toISOString();
+
+/** Advances the clock in heartbeat steps, renewing the given users' seats each step. */
+async function heartbeatFor(f: RefreshFixture, sessionId: string, users: string[], seconds: number) {
+  for (let elapsed = 0; elapsed < seconds; elapsed += 10) {
+    f.advanceSeconds(Math.min(10, seconds - elapsed));
+    for (const userId of users) await f.service.heartbeat({ actorUserId: userId, sessionId });
+  }
+}
+
+test("a refresh keeps the seat: the unload signal is a no-op and the reload re-enters the same live session", async () => {
   const f = await refreshFixture();
   const { session } = await liveRoom(f);
 
-  // pagehide fires: the room disconnects and the unload signal reaches the
-  // server. The single user holds the last open seat, so it must be kept —
-  // age renewed, nobody completed — for the reload to come back to.
   await f.service.leaveSession({ actorUserId: "host", sessionId: session.id, reason: "unload" });
-
   const held = await f.service.getSession({ actorUserId: "host", sessionId: session.id });
   assert.equal(held.state, "live");
   assert.equal(held.occupancy, 1);
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, null);
-  assert.equal(presenceOf(store, session.id, "host")?.enteredAt, f.clock());
-  assert.equal(store.meetings.find((row) => row.sessionId === session.id)?.endedAt, null);
+  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, null);
 
-  // The reload finishes about two seconds later: the same user enters again,
-  // the re-entry renews the seat's age, and the session is still live.
+  // The reload finishes two seconds later and enters again: the same seat is
+  // renewed, not a second one taken.
   f.advanceSeconds(2);
   const again = await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
   assert.equal(again.occupancy, 1);
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.enteredAt, f.clock());
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
+  const store = await f.repository.read();
+  assert.equal(store.presences.filter((row) => row.sessionId === session.id && row.userId === "host").length, 1);
+  assert.equal(presenceOf(store, session.id, "host")?.lastSeenAt, f.clock());
 
   // An explicit Leave Session still ends the session when nobody remains.
   await f.service.leaveSession({ actorUserId: "host", sessionId: session.id });
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
+  const ended = await f.service.getSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(ended.state, "completed");
+  assert.equal((await f.repository.read()).sessions.find((row) => row.id === session.id)?.completedAt, f.clock());
 });
 
-test("an unload leave with others in the room releases only that seat and never ends the session", async () => {
+test("a closed tab or lost network releases only that seat one lease later while others keep the room", async () => {
   const f = await refreshFixture();
   const { session } = await liveRoom(f, ["host", "member"]);
 
-  await f.service.leaveSession({ actorUserId: "member", sessionId: session.id, reason: "unload" });
-
+  // The member's page goes away without any signal; the Host keeps renewing.
+  await heartbeatFor(f, session.id, ["host"], LEASE_S + 10);
   const view = await f.service.getSession({ actorUserId: "host", sessionId: session.id });
   assert.equal(view.state, "live");
   assert.equal(view.occupancy, 1);
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "member")?.leftAt, f.clock());
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, null);
+  // Readers already see the lapse; the next write records it at the lapse time.
+  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, at(LEASE_S));
 
-  // The member's reload re-enters and both continue in the same session.
-  f.advanceSeconds(2);
+  // The member's own heartbeat after the lapse does not revive the seat: the
+  // page has to enter again, which takes a seat through the normal checks.
+  assert.deepEqual(await f.service.heartbeat({ actorUserId: "member", sessionId: session.id }), { seated: false, occupancy: 1, state: "live" });
   await f.service.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: f.clock() });
   assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 2);
 
-  // The explicit Leave contract is untouched: the leave that empties the room completes it.
   await f.service.leaveSession({ actorUserId: "member", sessionId: session.id });
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
   await f.service.leaveSession({ actorUserId: "host", sessionId: session.id });
   assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
 });
 
-test("a room emptied by an unload with nobody returning completes through the provider-verified sweep inside the grace", async () => {
+test("the last person gone without leaving ends the session after the grace, dated to when the room emptied", async () => {
   const f = await refreshFixture();
   const { session } = await liveRoom(f);
 
-  await f.service.leaveSession({ actorUserId: "host", sessionId: session.id, reason: "unload" });
-  // Nobody comes back: the provider no longer lists the identity.
-  f.participants.length = 0;
-
-  // Inside the 120 s grace window the repair path must not race the reload.
-  f.advanceSeconds(60);
-  const young = await f.service.reconcileLiveKitState();
-  assert.deepEqual(young, { abandonedReceipts: 0, sessionsChecked: 1, presencesClosed: 0 });
+  // The seat lapses at the lease end; inside the grace the session waits for
+  // a reload to come back, so a sweep there changes nothing but the seat.
+  f.advanceSeconds(LEASE_S + GRACE_S - 5);
+  assert.deepEqual(await f.service.reconcileLiveKitState(), { abandonedReceipts: 0, sessionsChecked: 0, presencesClosed: 1 });
   assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 0);
 
-  // Past the grace window the sweep closes the last seat and completes the
-  // session — a live session may never hang with nobody in it.
-  f.advanceSeconds(70);
-  const sweep = await f.service.reconcileLiveKitState();
-  assert.deepEqual(sweep, { abandonedReceipts: 0, sessionsChecked: 1, presencesClosed: 1 });
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
+  f.advanceSeconds(10);
+  assert.deepEqual(await f.service.reconcileLiveKitState(), { abandonedReceipts: 0, sessionsChecked: 1, presencesClosed: 0 });
   const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, f.clock());
-  assert.equal(store.meetings.find((row) => row.sessionId === session.id)?.endedAt, f.clock());
+  const ended = store.sessions.find((row) => row.id === session.id);
+  assert.equal(ended?.status, "completed");
+  assert.equal(ended?.completedAt, at(LEASE_S));
+  assert.equal(presenceOf(store, session.id, "host")?.leftAt, at(LEASE_S));
+  assert.equal(store.meetings.find((row) => row.sessionId === session.id)?.endedAt, at(LEASE_S));
 });
 
-test("the signed participant_left webhook still closes a gone seat and, when last, completes at the event time", async () => {
+test("a reload that comes back after the seat lapsed but inside the grace continues the same session", async () => {
+  const f = await refreshFixture();
+  const { session } = await liveRoom(f);
+
+  f.advanceSeconds(LEASE_S + 20);
+  await f.service.sweepPresence();
+  const again = await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal(again.occupancy, 1);
+  f.advanceSeconds(GRACE_S + 30);
+  await f.service.heartbeat({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
+});
+
+test("a held seat in Starting Soon lapses too, so it never blocks the room", async () => {
+  const f = await refreshFixture();
+  const group = await f.service.createGroup({ actorUserId: "host", title: "Waiting group", courseId: "course-1", about: "About the waiting group." });
+  await f.service.joinGroup({ actorUserId: "member", groupId: group.id });
+  const session = await f.service.scheduleSession({
+    actorUserId: "host",
+    groupId: group.id,
+    title: "Waiting session",
+    startsAt: at(5 * 60),
+    durationSeconds: 1800,
+    maxParticipants: 2
+  });
+  // The member waits, then closes the tab. With two seats and the Host's seat
+  // kept, the member's lapsed seat must not still count once it runs out.
+  await f.service.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 1);
+  f.advanceSeconds(LEASE_S + 1);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 0);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "starting_soon");
+  await f.service.sweepPresence();
+  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, at(LEASE_S));
+});
+
+test("provider webhooks are recorded but never open or close a seat or end a session", async () => {
   const f = await refreshFixture();
   const { session } = await liveRoom(f, ["host", "member"]);
-  const memberLeftAt = new Date(Date.parse(START) + 30_000).toISOString();
-  const hostLeftAt = new Date(Date.parse(START) + 90_000).toISOString();
+  const before = await f.repository.read();
 
-  // A crash (no unload signal) at 30 s: the member's event postdates the seat.
-  f.nextEvent({ eventId: "evt-member", eventType: "participant_left", room: session.id, participantIdentity: "member", createdAt: memberLeftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-member" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, memberLeftAt);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
-
-  // The Host's own departure closes the last seat: completed at the event time.
-  f.nextEvent({ eventId: "evt-host", eventType: "participant_left", room: session.id, participantIdentity: "host", createdAt: hostLeftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-host" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, hostLeftAt);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
-  assert.equal(store.meetings.find((row) => row.sessionId === session.id)?.endedAt, hostLeftAt);
-});
-
-test("a participant_left delivered after a refresh re-entered must not close the re-established seat", async () => {
-  const f = await refreshFixture();
-  const { session } = await liveRoom(f);
-
-  // pagehide: the unload signal lands; the reload re-enters two seconds later.
-  await f.service.leaveSession({ actorUserId: "host", sessionId: session.id, reason: "unload" });
-  const unloadedAt = f.clock();
-  f.advanceSeconds(2);
-  await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
-
-  // The provider's participant_left for the OLD connection arrives late — it
-  // postdates the unload but predates the re-entry, so its evidence is about
-  // a seat generation that no longer exists: the fresh seat stays open.
-  const staleCreatedAt = new Date(Date.parse(unloadedAt) + 1000).toISOString();
-  f.nextEvent({ eventId: "evt-stale", eventType: "participant_left", room: session.id, participantIdentity: "host", createdAt: staleCreatedAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-stale" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, null);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
-
-  // An event that genuinely postdates the re-entry still closes the seat and,
-  // with nobody left, completes the session — the reducing rule stays intact.
-  f.advanceSeconds(10);
-  const trulyLeftAt = f.clock();
-  f.nextEvent({ eventId: "evt-real", eventType: "participant_left", room: session.id, participantIdentity: "host", createdAt: trulyLeftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-real" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, trulyLeftAt);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
-});
-
-// Audit F-5: the createdAt guard only covered LATE DELIVERIES of events the
-// provider created before the re-entry. A non-graceful disconnect (browser
-// crash, network switch) leaves a zombie connection the provider removes only
-// after its own timeout, so the participant_left may be CREATED after the
-// user already re-entered — and used to close the fresh seat and complete the
-// session with the user still in the room. The seat now records the
-// connection id (ParticipantInfo.sid) of its current entry, and a left event
-// that names a different connection cannot close it; the connection's own
-// later departure still does.
-test("a participant_left for a replaced connection created after a re-entry must not close the renewed seat", async () => {
-  const f = await refreshFixture();
-  const { session } = await liveRoom(f);
-
-  // The first connection joins (its participant_joined webhook arrives).
-  f.nextEvent({ eventId: "evt-join-1", eventType: "participant_joined", room: session.id, participantIdentity: "host", participantSid: "PA-1", createdAt: new Date(Date.parse(START) + 1_000).toISOString(), projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-join-1" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.liveKitParticipantSid, "PA-1");
-
-  // The connection dies without an unload signal; the user re-enters 30 s
-  // later and a new connection joins the room.
-  f.advanceSeconds(30);
-  await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
-  // The renewed seat holds no connection of its own until the new join lands.
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.liveKitParticipantSid, null);
-  f.nextEvent({ eventId: "evt-join-2", eventType: "participant_joined", room: session.id, participantIdentity: "host", participantSid: "PA-2", createdAt: new Date(Date.parse(START) + 31_000).toISOString(), projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-join-2" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-
-  // The provider only now times out the zombie and creates its
-  // participant_left: the event postdates the re-entry, but it reports the
-  // replaced connection PA-1 and must not close the seat holding PA-2.
-  f.advanceSeconds(20);
-  const zombieLeftAt = f.clock();
-  f.nextEvent({ eventId: "evt-zombie", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: "PA-1", createdAt: zombieLeftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-zombie" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, null);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
-
-  // The current connection's own departure still closes and completes.
-  f.advanceSeconds(10);
-  const leftAt = f.clock();
-  f.nextEvent({ eventId: "evt-current-left", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: "PA-2", createdAt: leftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-current-left" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, leftAt);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
-});
-
-// The backward-compatibility arm of the same contract: presence rows written
-// before the connection id existed (existing snapshots) carry no value, so
-// the timestamp semantics decide exactly as before — enteredAt >= createdAt
-// skips, otherwise the seat closes.
-test("presence snapshots without a connection id keep the timestamp semantics", async () => {
-  const f = await refreshFixture();
-  const { session } = await liveRoom(f);
-  await f.repository.update((store) => {
-    for (const presence of store.presences) delete (presence as { liveKitParticipantSid?: string | null }).liveKitParticipantSid;
-  });
-  const raw = await readFile(path.join(f.directory, "study-group.json"), "utf8");
-  assert.equal(raw.includes("liveKitParticipantSid"), false, "the legacy fixture really carries no connection id");
-
-  const legacyLeftAt = new Date(Date.parse(START) + 30_000).toISOString();
-  f.nextEvent({ eventId: "evt-legacy", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: "PA-legacy", createdAt: legacyLeftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-legacy" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, legacyLeftAt);
-  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "completed");
-});
-
-// A provider event without a connection id cannot be matched against the
-// seat's recorded one; like the legacy seat, it falls back to the timestamp
-// guard (the reconcile sweep still bounds every stale state).
-test("a participant_left without a connection id falls back to the timestamp guard", async () => {
-  const f = await refreshFixture();
-  const { session } = await liveRoom(f);
-  f.nextEvent({ eventId: "evt-join", eventType: "participant_joined", room: session.id, participantIdentity: "host", participantSid: "PA-1", createdAt: new Date(Date.parse(START) + 1_000).toISOString(), projectId: "eu-primary" });
-  await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-join" }), authHeader: "Signature test" });
-
-  const leftAt = new Date(Date.parse(START) + 30_000).toISOString();
-  f.nextEvent({ eventId: "evt-no-sid", eventType: "participant_left", room: session.id, participantIdentity: "host", participantSid: null, createdAt: leftAt, projectId: "eu-primary" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-no-sid" }), authHeader: "Signature test" }),
-    { status: "processed" }
-  );
-  assert.equal(presenceOf(await f.repository.read(), session.id, "host")?.leftAt, leftAt);
+  for (const [eventId, eventType, identity] of [["evt-join", "participant_joined", "member"], ["evt-left", "participant_left", "member"], ["evt-host-left", "participant_left", "host"]] as const) {
+    f.nextEvent({ eventId, eventType, room: session.id, participantIdentity: identity, participantSid: "PA-1", createdAt: f.clock(), projectId: "eu-primary" });
+    assert.deepEqual(
+      await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: eventId }), authHeader: "Signature test" }),
+      { status: "ignored" }
+    );
+    assert.equal(f.receipts.get(eventId)?.status, "ignored");
+  }
+  const after = await f.repository.read();
+  assert.deepEqual(after.presences, before.presences);
+  assert.deepEqual(after.sessions, before.sessions);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 2);
 });

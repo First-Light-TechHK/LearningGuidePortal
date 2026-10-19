@@ -8,10 +8,12 @@ import { createStudyGroupRepository, StudyGroupStoreUnsupportedError, type Study
 import { createStudyGroupService, StudyGroupWebhookError, webhookRejectionLogLine, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 
 // Slice-2 service contract (production-persistence-slice2-design.md §3): the
-// webhook path verifies, records the receipt first, maps the event through a
-// conditional idempotent action, and only then marks the receipt. Receipts are
-// a database guarantee, so the fixture wraps the file store with an in-memory
-// receipt table the way the PostgreSQL adapter will store them.
+// webhook path verifies, records the receipt first, and only then marks the
+// receipt. Since the QA 2026-10-19 seat redesign no provider event acts on the
+// store: seats are the server's own lease (presence.ts), so every verified
+// event is recorded and marked ignored. Receipts are a database guarantee, so
+// the fixture wraps the file store with an in-memory receipt table the way the
+// PostgreSQL adapter stores them.
 
 const NOW = "2026-09-19T02:00:00.000Z";
 const CLOSED_AT = "2026-09-19T02:06:00.000Z";
@@ -159,10 +161,11 @@ async function tokenLog(directory: string) {
   }
 }
 
-test("participant_left closes the identity's open presence at the event time and marks the receipt processed", async () => {
+test("participant_left is recorded and marked ignored without touching any seat", async () => {
   let next: LiveKitWebhookEvent | null = null;
   const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
   const { session } = await seededRoom(f);
+  const before = JSON.stringify(await f.repository.read());
   f.calls.updates = 0;
   next = webhookEvent(session.id, { eventId: "evt-close" });
 
@@ -171,30 +174,12 @@ test("participant_left closes the identity's open presence at the event time and
     authHeader: "Bearer signed-token"
   });
 
-  assert.deepEqual(outcome, { status: "processed" });
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "member")?.leftAt, CLOSED_AT);
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, null);
-  assert.equal(f.calls.updates, 1);
+  assert.deepEqual(outcome, { status: "ignored" });
+  assert.equal(JSON.stringify(await f.repository.read()), before);
+  assert.equal(f.calls.updates, 0);
   assert.equal(f.calls.insertAttempts, 1);
-  assert.deepEqual([...f.receipts.values()], [{ receiptId: "evt-close", status: "processed", failureClass: null }]);
-  assert.deepEqual(f.calls.marks, [{ receiptId: "evt-close", result: "processed" }]);
-});
-
-test("a participant_left with no open presence is processed without further mutation", async () => {
-  let next: LiveKitWebhookEvent | null = null;
-  const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
-  const { session } = await seededRoom(f);
-  next = webhookEvent(session.id, { eventId: "evt-first" });
-  await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-first" }), authHeader: "Bearer signed-token" });
-
-  next = webhookEvent(session.id, { eventId: "evt-again", createdAt: "2026-09-19T02:07:00.000Z" });
-  const outcome = await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-again" }), authHeader: "Bearer signed-token" });
-
-  assert.deepEqual(outcome, { status: "processed" });
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "member")?.leftAt, CLOSED_AT);
-  assert.equal(f.receipts.get("evt-again")?.status, "processed");
+  assert.deepEqual([...f.receipts.values()], [{ receiptId: "evt-close", status: "ignored", failureClass: null }]);
+  assert.deepEqual(f.calls.marks, [{ receiptId: "evt-close", result: "ignored" }]);
 });
 
 test("participant_left for an unknown room is ignored and marked ignored", async () => {
@@ -255,39 +240,22 @@ test("a duplicate of a finished receipt returns duplicate with no side effects",
   assert.equal(f.receipts.get("evt-failed")?.failureClass, "unknown_event");
 });
 
-test("a retry of a received receipt resumes the close exactly once and marks processed", async () => {
+test("a retry of a received or abandoned receipt resumes and marks it once", async () => {
   let next: LiveKitWebhookEvent | null = null;
   const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
   const { session } = await seededRoom(f);
   f.receipts.set("evt-resume", { receiptId: "evt-resume", status: "received", failureClass: null });
-  f.calls.updates = 0;
-  next = webhookEvent(session.id, { eventId: "evt-resume" });
-
-  const outcome = await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-resume" }), authHeader: "Bearer signed-token" });
-
-  assert.deepEqual(outcome, { status: "processed" });
-  const store = await f.repository.read();
-  assert.equal(presenceOf(store, session.id, "member")?.leftAt, CLOSED_AT);
-  assert.equal(presenceOf(store, session.id, "host")?.leftAt, null);
-  assert.equal(f.calls.updates, 1);
-  assert.equal(f.calls.insertAttempts, 1);
-  assert.equal(f.receipts.get("evt-resume")?.status, "processed");
-  assert.deepEqual(f.calls.marks, [{ receiptId: "evt-resume", result: "processed" }]);
-});
-
-test("a retry after an abandoned receipt resumes processing and marks processed", async () => {
-  let next: LiveKitWebhookEvent | null = null;
-  const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
-  const { session } = await seededRoom(f);
   f.receipts.set("evt-abandoned", { receiptId: "evt-abandoned", status: "failed", failureClass: "abandoned" });
-  next = webhookEvent(session.id, { eventId: "evt-abandoned" });
+  f.calls.updates = 0;
 
-  const outcome = await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-abandoned" }), authHeader: "Bearer signed-token" });
-
-  assert.deepEqual(outcome, { status: "processed" });
-  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, CLOSED_AT);
-  assert.equal(f.receipts.get("evt-abandoned")?.status, "processed");
-  assert.deepEqual(f.calls.marks, [{ receiptId: "evt-abandoned", result: "processed" }]);
+  for (const eventId of ["evt-resume", "evt-abandoned"]) {
+    next = webhookEvent(session.id, { eventId });
+    assert.deepEqual(await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: eventId }), authHeader: "Bearer signed-token" }), { status: "ignored" });
+    assert.equal(f.receipts.get(eventId)?.status, "ignored");
+  }
+  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, null);
+  assert.equal(f.calls.updates, 0);
+  assert.deepEqual(f.calls.marks, [{ receiptId: "evt-resume", result: "ignored" }, { receiptId: "evt-abandoned", result: "ignored" }]);
 });
 
 test("a gateway without verifyWebhook fails the delivery as webhook_unavailable", async () => {
@@ -343,72 +311,42 @@ test("a store that cannot record receipts fails the delivery as webhook_unavaila
   );
 });
 
-test("a processing failure propagates with the receipt left received and never marks", async () => {
+test("a store that cannot be written still settles the receipt: the webhook never writes seats or sessions", async () => {
   let next: LiveKitWebhookEvent | null = null;
   const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
   const { session } = await seededRoom(f);
   next = webhookEvent(session.id, { eventId: "evt-broken" });
   f.hooks.updateError = new Error("write failed");
 
-  await assert.rejects(
-    () => f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-broken" }), authHeader: "Bearer signed-token" }),
-    (error: unknown) => error instanceof Error && error.message === "write failed"
+  assert.deepEqual(
+    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-broken" }), authHeader: "Bearer signed-token" }),
+    { status: "ignored" }
   );
-
-  assert.deepEqual(f.calls.marks, []);
-  assert.equal(f.receipts.get("evt-broken")?.status, "received");
+  assert.deepEqual(f.calls.marks, [{ receiptId: "evt-broken", result: "ignored" }]);
   assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, null);
 });
 
-test("the webhook flow cannot change memberships, roles, sessions, or token state", async () => {
-  let next: LiveKitWebhookEvent | null = null;
-  const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
-  const { group, session } = await seededRoom(f);
-  const before = await f.repository.read();
-  const tokenLogBefore = await tokenLog(f.directory);
-  next = webhookEvent(session.id, { eventId: "evt-grant" });
-
-  const outcome = await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-grant" }), authHeader: "Bearer signed-token" });
-
-  assert.deepEqual(outcome, { status: "processed" });
-  const after = await f.repository.read();
-  assert.deepEqual(after.memberships, before.memberships);
-  assert.deepEqual(after.sessions, before.sessions);
-  assert.deepEqual(after.meetings, before.meetings);
-  assert.deepEqual(after.groups, before.groups);
-  assert.equal(after.memberships.find((row) => row.groupId === group.id && row.userId === "member")?.role, "member");
-  assert.equal(await tokenLog(f.directory), tokenLogBefore);
-});
-
-test("participant_left that closes the last open presence completes the session and ends its meeting", async () => {
+test("the webhook flow cannot change memberships, roles, seats, sessions, or token state", async () => {
   let next: LiveKitWebhookEvent | null = null;
   const f = await webhookFixture({ gateway: stubGateway(async () => next!) });
   const { session } = await seededRoom(f);
   await f.service.startSession({ actorUserId: "host", sessionId: session.id });
-  const membershipsBefore = (await f.repository.read()).memberships;
+  const before = await f.repository.read();
+  const tokenLogBefore = await tokenLog(f.directory);
 
-  // The member's departure leaves the Host present: the session stays live.
-  next = webhookEvent(session.id, { eventId: "evt-member-left" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-member-left" }), authHeader: "Bearer signed-token" }),
-    { status: "processed" }
-  );
-  assert.equal((await f.repository.read()).sessions.find((row) => row.id === session.id)?.status, "live");
-
-  // The Host's departure closes the last open presence: the live session
-  // completes and its meeting ends at the event time.
-  next = webhookEvent(session.id, { eventId: "evt-host-left", participantIdentity: "host" });
-  assert.deepEqual(
-    await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: "evt-host-left" }), authHeader: "Bearer signed-token" }),
-    { status: "processed" }
-  );
-  const store = await f.repository.read();
-  const completed = store.sessions.find((row) => row.id === session.id);
-  assert.equal(completed?.status, "completed");
-  assert.equal(completed?.completedAt, CLOSED_AT);
-  assert.equal(store.meetings.find((row) => row.sessionId === session.id)?.endedAt, CLOSED_AT);
-  assert.deepEqual(store.memberships, membershipsBefore);
-  assert.equal(store.memberships.find((row) => row.groupId === session.groupId && row.userId === "member")?.role, "member");
+  // Both departures, the Host's last: the live session is not ended by the
+  // provider's word. It ends when its seats lapse (presence.ts) or on Leave.
+  for (const [eventId, identity] of [["evt-member-left", "member"], ["evt-host-left", "host"]] as const) {
+    next = webhookEvent(session.id, { eventId, participantIdentity: identity });
+    assert.deepEqual(
+      await f.service.handleLiveKitWebhook({ rawBody: JSON.stringify({ id: eventId }), authHeader: "Bearer signed-token" }),
+      { status: "ignored" }
+    );
+  }
+  const after = await f.repository.read();
+  assert.deepEqual(after, before);
+  assert.equal(after.sessions.find((row) => row.id === session.id)?.status, "live");
+  assert.equal(await tokenLog(f.directory), tokenLogBefore);
 });
 
 // Signature-rejection observability (flood-safe): the service counts only
