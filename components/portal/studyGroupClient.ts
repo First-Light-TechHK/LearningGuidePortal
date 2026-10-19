@@ -64,20 +64,59 @@ export function clampGroupAbout(value: string) {
 
 export const DURATION_MINUTE_CHOICES = [30, 45, 60, 90] as const;
 
+type ValidatableForm = { checkValidity: () => boolean; elements: ArrayLike<unknown> };
+
+// The one form check every Study Group form runs before it submits (QA
+// 2026-10-19 BUG-0125): the forms are `noValidate`, so the browser never
+// shows its own bubble in the browser's language; a field that is missing or
+// out of range becomes the page's own message in the page's language. A date
+// or time before its `min` is the dedicated "Start Time must be in the future"
+// message; anything else is the generic required-fields one. The server runs
+// the same rules again (modules/group-study/service.ts).
+export function studyGroupFormProblem(form: ValidatableForm): "validation" | "start_in_past" | null {
+  if (form.checkValidity()) return null;
+  for (const element of Array.from(form.elements)) {
+    const validity = (element as { validity?: { rangeUnderflow?: boolean } }).validity;
+    if (validity?.rangeUnderflow) return "start_in_past";
+  }
+  return "validation";
+}
+
 export function hostMayOpenRoom(startOk: boolean, enterOk: boolean) {
   return startOk && enterOk;
 }
 
-export function tutorQueueBody(message: string) {
-  return { message };
+export function tutorQueueBody(message: string, clientEventId?: string) {
+  return clientEventId ? { message, clientEventId } : { message };
 }
 
 // The outbox publishes at-least-once: a crash between publish and settle can
 // republish an answer with the same tutor message id, so chat lines keyed by
 // that id render once (design §3.2, client companion).
-export function tutorChatLines<T extends { id: string }>(current: T[], line: T): T[] {
-  if (current.some((item) => item.id === line.id)) return current;
-  return [...current, line];
+// The asker's own "answering" placeholder carries the same id (the queued
+// question's id is the answer's message id), so the arriving answer takes the
+// placeholder's place instead of rendering next to it.
+export function tutorChatLines<T extends { id: string; pending?: boolean }>(current: T[], line: T): T[] {
+  const index = current.findIndex((item) => item.id === line.id);
+  if (index < 0) return [...current, line];
+  if (!current[index].pending || line.pending) return current;
+  return current.map((item, position) => position === index ? line : item);
+}
+
+// The seat lease is renewed this often while the page holds a seat (the
+// server releases a seat 30 s after the last renewal, modules/group-study/presence.ts).
+export const SEAT_HEARTBEAT_MS = 10_000;
+
+// Waits between automatic reconnect attempts after the SDK's own recovery
+// gave up: quick at first, then every 30 s, for as long as the page is open.
+export function reconnectDelayMs(failures: number) {
+  return Math.min(30_000, 1_000 * 2 ** Math.max(0, failures));
+}
+
+// A question queued for the AI Tutor keeps one client event id across
+// retries, so a retry of a request that did reach the server is not asked twice.
+export function tutorClientEventId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function sessionNotStarted(session: { state: string; occupancy: number; startsAt: string; durationSeconds: number }, now = Date.now()) {

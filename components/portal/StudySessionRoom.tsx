@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
+import { liveKitDisconnectReasonName, transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
-import { fill, plannedMinutes, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { fill, plannedMinutes, reconnectDelayMs, SEAT_HEARTBEAT_MS, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorClientEventId, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -68,7 +68,20 @@ function elapsedClock(startedAt: string | null) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-type ChatLine = { id: string; from: string; text: string; at: string; host?: boolean; tutor?: boolean; mode?: "course" | "general" | "unavailable"; failed?: boolean };
+type ChatLine = {
+  id: string; from: string; text: string; at: string; host?: boolean; tutor?: boolean; mode?: "course" | "general" | "unavailable"; failed?: boolean;
+  // AI Tutor lines: `pending` is the asker's own "answering" placeholder until
+  // the answer with the same id replaces it; `replyTo` names the question an
+  // answer belongs to.
+  pending?: boolean; replyTo?: { name: string; question: string };
+  // The asker's own question line: what to resend, and why the last ask failed.
+  tutorAsk?: { question: string; clientEventId: string }; tutorError?: string;
+};
+
+// Failures no automatic retry can fix: the page stops reconnecting and says why.
+const FINAL_ENTRY_CODES = new Set(["forbidden", "not_found", "session_unavailable", "session_full", "course_access_required", "unauthenticated"]);
+// How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
+const TUTOR_ANSWER_TIMEOUT_MS = 120_000;
 
 function endedParts(body: string) {
   const splitAt = body.search(/[.。]\s+\S/);
@@ -130,33 +143,49 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const audioRoot = useRef<HTMLDivElement>(null);
   const groupRef = useRef<StudyGroupDetail | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
-  const roomRef = useRef<{ startAudio: () => Promise<void>; disconnect: () => Promise<void> } | null>(null);
+  const roomRef = useRef<{ startAudio: () => Promise<void>; disconnect: () => Promise<void>; canPlaybackAudio: boolean } | null>(null);
   const connectGeneration = useRef(0);
-  const seatedRef = useRef(false);
   const leftRef = useRef(false);
-  const releasedRef = useRef(false);
-  const sessionStateRef = useRef("");
-  seatedRef.current = seated;
   leftRef.current = left;
-  sessionStateRef.current = session?.state || "";
   const [connectAttempt, setConnectAttempt] = useState(0);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
   const recoveryUsedRef = useRef(false);
   const incidentReportsRef = useRef(new Map<string, number>());
   const [sideTab, setSideTab] = useState<"participants" | "chat">("participants");
+  const sideTabRef = useRef<"participants" | "chat">("participants");
+  const [unread, setUnread] = useState(0);
+  // The session poll's own failure, kept apart from the connection's error so
+  // a failed poll never shows a "reconnect" that would drop a working call
+  // (QA 2026-10-19 N4); the next successful poll clears it.
+  const [pollError, setPollError] = useState("");
+  // The SDK is recovering the media connection on its own: the room stays up.
+  const [reconnecting, setReconnecting] = useState(false);
+  // A disconnect no automatic retry may undo (another tab took over this
+  // account's place, removed, room ended): only the user reconnects (QA N2).
+  const [blocked, setBlocked] = useState(false);
+  const failuresRef = useRef(0);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   groupRef.current = group;
 
   async function load() {
     try {
       const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${sessionId}`);
       if (!current.ok) {
-        setErrorCode(current.code);
+        setPollError(current.code);
         if (current.code === "not_found") {
           setSession(null);
           await releaseRoom();
         }
+        if (current.code === "forbidden" || current.code === "unauthenticated") {
+          // No longer a member (left the Study Group in another tab) or signed
+          // out: this page may not keep the call open.
+          setBlocked(true);
+          await releaseRoom();
+          setConnected(false);
+        }
         return;
       }
+      setPollError("");
       const detail = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${current.data.groupId}`);
       setSession(current.data);
       if (detail.ok) setGroup(detail.data);
@@ -171,14 +200,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   async function connect(generation: number, recovery: boolean) {
     const issued = await studyGroupRequest<{ token: string; liveKitUrl: string }>(`/api/study-groups/sessions/${sessionId}/token`, { method: "POST", body: JSON.stringify(recovery ? { recovery: true } : {}) });
     if (!issued.ok || !issued.data.liveKitUrl) throw new Error(issued.ok ? "unavailable" : issued.code);
-    const { Room, RoomEvent } = await import("livekit-client");
-    const room = new Room({
-      reconnectPolicy: {
-        nextRetryDelayInMs({ retryCount }) {
-          return retryCount < 1 ? 300 : null;
-        }
-      }
-    });
+    const { DisconnectReason, Room, RoomEvent } = await import("livekit-client");
+    // The SDK's own reconnect policy (several attempts with backoff) rides out
+    // a short network drop without tearing the room down (QA 2026-10-19 N1).
+    const room = new Room();
     const showShare = () => {
       const publications = [
         ...room.localParticipant.trackPublications.values(),
@@ -237,12 +262,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           text: message.text,
           at: chatStamp(),
           tutor: true,
-          mode: message.mode
+          mode: message.mode,
+          ...(message.replyTo ? { replyTo: message.replyTo } : {})
         }));
         setSideTab("chat");
         return;
       }
-      if (message.type === "chat") setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text, at: chatStamp(), host: hostIds.has(participant?.identity || "") }]);
+      if (message.type === "chat") {
+        setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text, at: chatStamp(), host: hostIds.has(participant?.identity || "") }]);
+        if (sideTabRef.current !== "chat") setUnread((count) => count + 1);
+      }
       if (message.type === "raise-hand") {
         const identity = participant?.identity || "";
         setHands((items) => raisedHands(items, identity, message.raised));
@@ -276,8 +305,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       const element = track.attach();
       element.autoplay = true;
       if (audioRoot.current && element.parentElement !== audioRoot.current) audioRoot.current.appendChild(element);
-      void room.startAudio().catch(() => undefined);
+      void room.startAudio().catch(() => undefined).finally(() => setAudioBlocked(!room.canPlaybackAudio));
     };
+    // Autoplay policy (Safari, iOS): remote audio stays silent until a user
+    // gesture; the page offers a button instead of failing silently (QA N13).
+    room.on(RoomEvent.AudioPlaybackStatusChanged, () => setAudioBlocked(!room.canPlaybackAudio));
     room.on(RoomEvent.TrackSubscribed, (track) => { attachRemoteAudio(track); paint(); showShare(); });
     room.on(RoomEvent.TrackUnpublished, () => { paint(); showShare(); });
     room.on(RoomEvent.TrackUnsubscribed, (track) => {
@@ -287,14 +319,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     });
     room.on(RoomEvent.LocalTrackPublished, () => { paint(); showShare(); });
     room.on(RoomEvent.LocalTrackUnpublished, () => { paint(); showShare(); });
+    // While the SDK recovers the connection the room stays up and connected:
+    // tearing it down here used to cancel the SDK's own recovery (QA N1).
     room.on(RoomEvent.Reconnecting, () => {
-      setConnected(false);
+      setReconnecting(true);
       const transition = transitionLiveKitClient({ type: "connection_quality", quality: "Lost" });
-      if (transition.incident) showIncident(transition.incident);
+      if (transition.incident) reportIncident(transition.incident.code);
     });
     room.on(RoomEvent.Reconnected, () => {
       if (transitionLiveKitClient({ type: "reconnected" }).type === "connected") {
-        setConnected(true);
+        setReconnecting(false);
         setErrorCode("");
         paint();
         showShare();
@@ -303,24 +337,32 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
       if (participant?.identity !== room.localParticipant.identity) return;
       const transition = transitionLiveKitClient({ type: "connection_quality", quality: String(quality) });
-      if (transition.type === "sdk_reconnecting" && transition.incident) showIncident(transition.incident);
+      if (transition.type === "sdk_reconnecting" && transition.incident) reportIncident(transition.incident.code);
     });
     room.on(RoomEvent.Disconnected, (reason) => {
-      if (roomRef.current !== room || leftRef.current || releasedRef.current) return;
+      if (roomRef.current !== room || leftRef.current) return;
       roomRef.current = null;
       setRoomApi(null);
+      setReconnecting(false);
       setConnected(false);
       setMicOn(false);
       setCameraOn(false);
       setSharing(false);
       setShareTrack(null);
-      const transition = transitionLiveKitClient({ type: "disconnect", reason: String(reason), recoveryUsed: recoveryUsedRef.current });
+      const reasonName = liveKitDisconnectReasonName(reason, DisconnectReason as unknown as Record<number, string>);
+      const transition = transitionLiveKitClient({ type: "disconnect", reason: reasonName, recoveryUsed: recoveryUsedRef.current });
       if (transition.type === "recover_token") {
         recoveryUsedRef.current = true;
         if (transition.incident) reportIncident(transition.incident.code);
         setRecoveryRequired(true);
         setConnectAttempt((attempt) => attempt + 1);
-      } else if (transition.incident) showIncident(transition.incident);
+        return;
+      }
+      // A terminal reason (another tab of this account joined, removed, room
+      // ended) must not be fought with an automatic reconnect: two tabs used
+      // to kick each other out forever (QA N2).
+      if (transition.type === "terminal") setBlocked(true);
+      if (transition.incident) showIncident(transition.incident);
     });
     try {
       await room.connect(issued.data.liveKitUrl, issued.data.token);
@@ -335,27 +377,24 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     roomRef.current = room;
     setRoomApi(room);
     setConnected(true);
+    setReconnecting(false);
+    failuresRef.current = 0;
     recoveryUsedRef.current = false;
     setRecoveryRequired(false);
     setErrorCode("");
     paint();
-    void room.startAudio().catch(() => undefined);
+    void room.startAudio().catch(() => undefined).finally(() => setAudioBlocked(!room.canPlaybackAudio));
   }
 
   useEffect(() => {
+    // Unload (refresh, tab close, navigating away) only drops this page's own
+    // media connection. The seat is the server's business: it stops being
+    // renewed and lapses one lease later, so a reload re-enters the same live
+    // session and a closed tab frees its seat (modules/group-study/presence.ts).
     const release = () => {
-      // Unload (refresh, tab close, navigating away): drop the media
-      // connection and tell the server it is an unload-class leave. Unlike the
-      // explicit Leave Session action this never ends the session, so a reload
-      // re-enters the same live session; a room left for good is completed by
-      // the provider webhook or the grace-bounded reconciliation.
       const room = roomRef.current;
       roomRef.current = null;
       void room?.disconnect().catch(() => undefined);
-      if (releasedRef.current || !seatedRef.current || leftRef.current) return;
-      if (sessionStateRef.current !== "live" && sessionStateRef.current !== "starting_soon") return;
-      releasedRef.current = true;
-      void fetch(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: "unload" }), keepalive: true });
     };
     window.addEventListener("pagehide", release);
     return () => {
@@ -363,6 +402,40 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       release();
     };
   }, [sessionId]);
+
+  // The seat holder's heartbeat: keeps this page's seat while the page is
+  // open. A seat the server no longer holds (the device slept, the network
+  // was gone longer than the lease) is entered again through the normal
+  // admission rules.
+  useEffect(() => {
+    if (!seated || left || (session?.state !== "live" && session?.state !== "starting_soon")) return;
+    const beat = async () => {
+      const result = await studyGroupRequest<{ seated: boolean }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" });
+      if (!result.ok || result.data.seated || leftRef.current) return;
+      const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
+      if (!entered.ok && FINAL_ENTRY_CODES.has(entered.code)) {
+        setSeated(false);
+        setErrorCode(entered.code);
+        await releaseRoom();
+        setConnected(false);
+      }
+    };
+    const timer = window.setInterval(() => void beat(), SEAT_HEARTBEAT_MS);
+    return () => window.clearInterval(timer);
+  }, [seated, left, session?.state, sessionId]);
+
+  // Coming back online retries a dropped connection at once instead of
+  // waiting for the next backoff step.
+  useEffect(() => {
+    const retry = () => setConnectAttempt((attempt) => attempt + 1);
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, []);
+
+  useEffect(() => {
+    sideTabRef.current = sideTab;
+    if (sideTab === "chat") setUnread(0);
+  }, [sideTab]);
 
   useEffect(() => {
     void load();
@@ -404,41 +477,44 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   }, [session?.state, sessionId, left, entryAttempt]);
 
   useEffect(() => {
-    if (session?.state !== "live" || connected || left || !seated) return;
+    if (session?.state !== "live" || connected || left || !seated || blocked) return;
     const generation = connectGeneration.current + 1;
     connectGeneration.current = generation;
     let timer = 0;
     const recovery = recoveryRequired;
-    const run = (triesLeft: number) => {
-      void (async () => {
-        await releaseRoom();
-        if (connectGeneration.current !== generation) return;
-        const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
-        if (connectGeneration.current !== generation) return;
-        if (!entered.ok) throw new Error(entered.code);
-        await connect(generation, recovery);
-      })().catch((error: unknown) => {
-        if (connectGeneration.current !== generation) return;
-        if (triesLeft > 0) {
-          timer = window.setTimeout(() => run(triesLeft - 1), 600);
-          return;
-        }
-        if (!recovery && !recoveryUsedRef.current) {
-          recoveryUsedRef.current = true;
-          setRecoveryRequired(true);
-          setConnectAttempt((attempt) => attempt + 1);
-          return;
-        }
-        const code = error instanceof Error ? error.message : "";
-        setErrorCode(code in copy.errors ? code : "connect_failed");
-      });
-    };
-    run(recovery ? 0 : 1);
+    void (async () => {
+      await releaseRoom();
+      if (connectGeneration.current !== generation) return;
+      const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
+      if (connectGeneration.current !== generation) return;
+      if (!entered.ok) throw new Error(entered.code);
+      await connect(generation, recovery);
+    })().catch((error: unknown) => {
+      if (connectGeneration.current !== generation) return;
+      const code = error instanceof Error ? error.message : "";
+      if (FINAL_ENTRY_CODES.has(code)) {
+        setErrorCode(code);
+        setBlocked(true);
+        return;
+      }
+      // One verified-token recovery, then keep trying with backoff for as
+      // long as the page is open: a connection that failed a few times in a
+      // row used to stop for good (QA 2026-10-19 N1).
+      if (!recovery && !recoveryUsedRef.current) {
+        recoveryUsedRef.current = true;
+        setRecoveryRequired(true);
+        setConnectAttempt((attempt) => attempt + 1);
+        return;
+      }
+      setErrorCode(code in copy.errors ? code : "connect_failed");
+      timer = window.setTimeout(() => setConnectAttempt((attempt) => attempt + 1), reconnectDelayMs(failuresRef.current));
+      failuresRef.current += 1;
+    });
     return () => {
       connectGeneration.current += 1;
       window.clearTimeout(timer);
     };
-  }, [session?.state, connected, left, seated, connectAttempt, recoveryRequired]);
+  }, [session?.state, connected, left, seated, connectAttempt, recoveryRequired, blocked]);
 
   useEffect(() => {
     if (session?.state !== "live") return;
@@ -524,15 +600,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   }
 
   async function exitTo(href: string) {
-    if (session && (session.state === "live" || session.state === "starting_soon") && !left && !sessionNotStarted(session)) {
-      releasedRef.current = true;
-      leftRef.current = true;
-      await releaseRoom();
-      // The leave POST is best-effort (audit F-8): a rejection must not skip
-      // the navigation below — the closed seat is owned by the webhook or the
-      // reconcile sweep, never by a stuck breadcrumb.
-      await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }).catch(() => undefined);
-    }
+    // Navigating away is not Leave Session: the media connection closes and
+    // the seat lapses on the server like any closed page, so a last person
+    // following a breadcrumb no longer ends the session on the spot.
+    leftRef.current = true;
+    await releaseRoom();
     window.location.assign(href);
   }
 
@@ -551,7 +623,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     );
   }
 
-  if (!session) return <p className={styles.panel} role="status">{errorCode ? copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error : copy.loading}</p>;
+  const loadError = pollError || errorCode;
+  if (!session) return <p className={styles.panel} role="status">{loadError ? copy.errors[loadError as keyof typeof copy.errors] || copy.errors.error : copy.loading}</p>;
   if (session.state === "completed" || left) {
     const ended = session.state === "completed";
     return (
@@ -610,6 +683,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         status: "" as const
       }));
   const errorText = errorCode ? copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error : "";
+  // A failed poll shows only when it means this page may not stay (signed
+  // out, no longer a member); a passing network blip heals on the next poll.
+  const pollText = pollError === "forbidden" || pollError === "unauthenticated" ? copy.errors[pollError] : "";
 
   const mentionRows: MentionRow[] = [];
   if (mention) {
@@ -635,6 +711,24 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   function markChatLine(id: string, failed: boolean) {
     setChat((items) => items.map((item) => item.id === id ? { ...item, failed } : item));
+  }
+
+  // Queues a question for the AI Tutor. Success adds the asker's "answering"
+  // line, which the answer replaces; a refusal (busy, too many, not enabled,
+  // signed out) stays on the question's own line with a retry, never on the
+  // room banner — an AI Tutor failure has nothing to do with the call (QA N4).
+  async function askTutor(lineId: string, ask: { question: string; clientEventId: string }) {
+    setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorAsk: ask, tutorError: undefined } : item));
+    const queued = await studyGroupRequest<{ id: string }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody(ask.question, ask.clientEventId)) });
+    if (!queued.ok) {
+      setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorError: queued.code } : item));
+      return;
+    }
+    const answerId = `tutor-${queued.data.id}`;
+    setChat((items) => tutorChatLines(items, { id: answerId, from: roomCopy.tutorName, text: "", at: chatStamp(), tutor: true, pending: true }));
+    window.setTimeout(() => {
+      setChat((items) => items.map((item) => item.id === answerId && item.pending ? { ...item, mode: "unavailable" } : item));
+    }, TUTOR_ANSWER_TIMEOUT_MS);
   }
 
   // The optimistic echo must not claim success the room never saw (hunt M5):
@@ -674,11 +768,14 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           {group?.courseTitle ? <span className={styles.coursePill}>{group.courseTitle}</span> : null}
           <p className={styles.liveClock}><span className={styles.liveDot} aria-hidden="true">●</span> {fill(roomCopy.liveClock, { time: clock }).replace(/^●\s*/, "")}</p>
         </div>
-        {errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
+        {pollText ? <p className={styles.alert} role="alert">{pollText}</p> : null}
+        {!pollText && reconnecting ? <p className={styles.alert} role="status">{copy.errors.network_lost}</p> : null}
+        {!pollText && !reconnecting && errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setBlocked(false); failuresRef.current = 0; setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
+        {audioBlocked ? <p className={styles.alert} role="alert"><button className={styles.textButton} type="button" onClick={() => { const room = roomRef.current; void room?.startAudio().catch(() => undefined).finally(() => setAudioBlocked(Boolean(room && !room.canPlaybackAudio))); }}>{roomCopy.enableAudio}</button></p> : null}
         <div ref={audioRoot} hidden />
         {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
         <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
-          {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : roomCopy.notConnected}</span></div> : tiles.map((tile) => {
+          {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
             return (
               <div className={styles.tile} data-video={camera ? "on" : "off"} key={tile.identity}>
@@ -716,7 +813,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       <aside className={styles.side} aria-label={sideTab === "participants" ? roomCopy.participants : roomCopy.chat}>
         <div className={styles.sideTabs} role="tablist">
           <button type="button" role="tab" aria-selected={sideTab === "participants"} onClick={() => setSideTab("participants")}>{roomCopy.participants} <span className={styles.tabCount}>{present}/{session.maxParticipants}</span></button>
-          <button type="button" role="tab" aria-selected={sideTab === "chat"} onClick={() => setSideTab("chat")}>{roomCopy.chat}</button>
+          <button type="button" role="tab" aria-selected={sideTab === "chat"} onClick={() => setSideTab("chat")}>{roomCopy.chat}{unread > 0 ? <span className={styles.tabCount} aria-label={fill(roomCopy.unread, { count: unread })}>{unread}</span> : null}</button>
         </div>
         {sideTab === "participants" ? (
           <div className={styles.sidePanel} role="tabpanel">
@@ -729,8 +826,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
             <div className={styles.chatLog} role="tabpanel" aria-live="polite">
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
                 <p className={`${styles.chatBody} ${styles.tutorBody}`}>
+                  {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participants, question: line.replyTo.question })}</span> : null}
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
+                    : line.pending
+                    ? <span className={styles.tutorRow} role="status">{roomCopy.tutorAnswering}</span>
                     : <>
                         {line.mode === "general" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorGeneral}</span> : null}
                         {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
@@ -738,7 +838,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                           : <span key={index} className={styles.tutorRow}>{row}</span>)}
                       </>}
                 </p>
-              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}</>}</article>)}
+              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{copy.errors[line.tutorError as keyof typeof copy.errors] || copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {
@@ -752,11 +852,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" };
               setChat((items) => [...items, line]);
               void sendChatLine(line);
-              if (mentionsTutor) {
-                void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody((hasPrefix ? text.slice(prefix.length) : text).trim())) }).then((queued) => {
-                  if (!queued.ok) setErrorCode(queued.code);
-                }).catch(() => setErrorCode("error"));
-              }
+              if (mentionsTutor) void askTutor(line.id, { question: (hasPrefix ? text.slice(prefix.length) : text).trim(), clientEventId: tutorClientEventId() });
               setMention(null);
               setDraft("");
               setAddressTutor(false);

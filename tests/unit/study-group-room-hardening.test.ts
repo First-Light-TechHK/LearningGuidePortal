@@ -124,13 +124,14 @@ test("audit F-7: a rejected load cannot surface as an unhandled rejection", () =
 
 test("audit F-8: a failed leave request cannot skip the room's cleanup", () => {
   const room = roomSource();
-  // Breadcrumb navigation (exitTo): the leave POST is best-effort — a
-  // rejection must not stop the navigation (the seat is closed by the
-  // webhook or the reconcile, never by a stuck button).
+  // Breadcrumb navigation (exitTo) is not Leave Session (QA 2026-10-19 seat
+  // lease): it sends no request that could hang or fail, only closes the media
+  // connection; the server releases the seat when its lease runs out.
   const exitStart = room.indexOf("async function exitTo");
   assert.notEqual(exitStart, -1);
   const exitBody = room.slice(exitStart, room.indexOf("function path()"));
-  assert.match(exitBody, /await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\)\.catch\(\(\) => undefined\);/);
+  assert.doesNotMatch(exitBody, /studyGroupRequest/);
+  assert.match(exitBody, /await releaseRoom\(\);/);
   assert.match(exitBody, /window\.location\.assign\(href\);/);
   // Leave button: setLeft(true) and the refreshing load() run whether or not
   // the leave request settles — a rejection cannot leave the button "dead".

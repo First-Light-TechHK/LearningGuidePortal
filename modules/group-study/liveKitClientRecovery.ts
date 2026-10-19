@@ -23,3 +23,14 @@ export function transitionLiveKitClient(event: LiveKitClientEvent): LiveKitClien
   if (incident.terminal) return { type: "terminal", incident };
   return { type: "unavailable", incident };
 }
+
+// livekit-client reports a disconnect reason as the protocol's NUMERIC enum
+// (DisconnectReason.DUPLICATE_IDENTITY === 2), while the classifier matches
+// reason NAMES. String(reason) turned every disconnect into "2", "7", ... so
+// none was ever recognised (QA 2026-10-19 N2). The caller passes the SDK's
+// enum object; a reason that is already a name passes through.
+export function liveKitDisconnectReasonName(reason: unknown, names: Record<number, string>): string | undefined {
+  if (typeof reason === "number") return names[reason];
+  if (typeof reason === "string" && reason) return reason;
+  return undefined;
+}

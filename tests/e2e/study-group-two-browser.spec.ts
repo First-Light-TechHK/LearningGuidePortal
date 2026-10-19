@@ -136,11 +136,16 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
     await pageB.getByRole("textbox", { name: "Chat" }).fill(TUTOR_QUESTION);
     await pageB.getByRole("button", { name: "Send", exact: true }).click();
 
-    await expect(tutorLine(pageB)).toBeVisible();
+    // The asker first sees an "answering" line (QA 2026-10-19 N4); the answer
+    // takes that line's place, so exactly one tutor line remains. It opens
+    // with whom and what it answers, then the reply.
+    await expect(tutorLine(pageB)).toContainText(MOCK_TUTOR_REPLY, { timeout: 60_000 });
     const tutorTextB = ((await tutorLine(pageB).textContent()) || "").trim();
     // The tutor never refuses any more; the mock's fixed answer (minus the
     // stripped mode-tag line) is the only reply this environment can produce.
-    expect(tutorTextB, "tutor reply text").toBe(MOCK_TUTOR_REPLY);
+    expect(tutorTextB.endsWith(MOCK_TUTOR_REPLY), "tutor reply text").toBe(true);
+    expect(tutorTextB.startsWith("Replying to "), "the answer names whom it answers").toBe(true);
+    expect(tutorTextB, "the answer quotes the question it answers").toContain(`: ${TUTOR_QUESTION}`);
     await expect(tutorLine(pageA)).toBeVisible();
     const tutorTextA = ((await tutorLine(pageA).textContent()) || "").trim();
     expect(tutorTextA, "both browsers see the same tutor reply").toBe(tutorTextB);

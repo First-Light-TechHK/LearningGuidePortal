@@ -963,6 +963,14 @@
     "save": "保存",
     "cancelGroupConfirmTitle": "取消这个学习小组？",
     "confirmCancelGroup": "未开始的直播课会被移除，已经开始的直播课会结束，并通知成员。",
+    "confirmBack": "返回",
+    "confirmCancelGroupAction": "确认取消小组",
+    "cancelSessionConfirmTitle": "取消这节直播课？",
+    "confirmCancelSession": "这节直播课会从学习小组中移除。",
+    "confirmCancelSessionAction": "确认取消本节",
+    "leaveGroupConfirmTitle": "退出这个学习小组？",
+    "confirmLeaveGroup": "你报名参加的未开始直播课会一并取消。",
+    "confirmLeaveGroupAction": "确认退出",
     "sessionTitle": "直播课标题",
     "date": "日期",
     "startTime": "开始时间",
@@ -1032,6 +1040,12 @@
       "endedTitle": "感谢一起学习",
       "endedBody": "本节已结束。你可以返回课程继续学习。",
       "returnToCourse": "返回课程",
+      "connecting": "正在连接直播课…",
+      "tutorAnswering": "AI Tutor 正在回答…",
+      "tutorReplyTo": "回复 {name}：{question}",
+      "tutorRetry": "重新提问",
+      "enableAudio": "浏览器拦截了声音，点击这里开启。",
+      "unread": "{count} 条未读",
       "youLeft": "你已离开直播课。"
     },
     "errors": {
@@ -1052,6 +1066,9 @@
       "room_ended": "这节直播课已结束。",
       "duplicate_identity": "该账号已在其他位置加入本节直播课。请关闭另一处会话后重新连接。",
       "participant_removed": "你已被移出这节直播课。",
+      "tutor_busy": "请等 AI Tutor 先回答完你之前的问题。",
+      "tutor_rate_limited": "提问太频繁，请过一分钟再试。",
+      "network": "网络连接失败，请检查网络后重试。",
       "error": "出了点问题。请重试。"
     }
   },

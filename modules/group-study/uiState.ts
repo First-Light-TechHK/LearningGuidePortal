@@ -36,7 +36,7 @@ export function sessionControls(input: { role: "host" | "member" | null; state: 
   return actions;
 }
 
-export type StudyGroupDialogKind = "create" | "edit" | "edit-session" | "schedule" | "waiting" | "attendees" | "cancel-group" | null;
+export type StudyGroupDialogKind = "create" | "edit" | "edit-session" | "schedule" | "waiting" | "attendees" | "cancel-group" | "cancel-session" | "leave-group" | null;
 
 /**
  * BUG-0100: exactly one error surface may render a given errorCode at a time.
@@ -48,7 +48,7 @@ export function studyGroupErrorPlace(input: { status: PaneStatus; dialog: StudyG
   if (!input.hasError) return "none";
   if (input.status === "error") return "pane";
   if (input.dialog === "create") return "create";
-  if (input.dialog === "edit" || input.dialog === "edit-session" || input.dialog === "schedule") return "dialog";
+  if (input.dialog === "edit" || input.dialog === "edit-session" || input.dialog === "schedule" || input.dialog === "cancel-session" || input.dialog === "leave-group") return "dialog";
   if (input.hasSelected) return "sheet";
   return "none";
 }

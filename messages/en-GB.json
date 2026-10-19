@@ -963,6 +963,14 @@
     "save": "Save",
     "cancelGroupConfirmTitle": "Cancel this Study Group?",
     "confirmCancelGroup": "Upcoming Live Sessions will be removed, a Live Session that is already open will end, and members will be notified.",
+    "confirmBack": "Go back",
+    "confirmCancelGroupAction": "Yes, cancel group",
+    "cancelSessionConfirmTitle": "Cancel this Live Session?",
+    "confirmCancelSession": "The Live Session will be removed from the Study Group.",
+    "confirmCancelSessionAction": "Yes, cancel session",
+    "leaveGroupConfirmTitle": "Leave this Study Group?",
+    "confirmLeaveGroup": "Your Plan to Attend for its upcoming Live Sessions will be cancelled.",
+    "confirmLeaveGroupAction": "Yes, leave group",
     "sessionTitle": "Session Title",
     "date": "Date",
     "startTime": "Start Time",
@@ -1032,6 +1040,12 @@
       "endedTitle": "Thanks for studying together",
       "endedBody": "The Session has ended. You can return to the lesson and continue learning.",
       "returnToCourse": "Return to Course",
+      "connecting": "Connecting to the Live Session…",
+      "tutorAnswering": "AI Tutor is answering…",
+      "tutorReplyTo": "Replying to {name}: {question}",
+      "tutorRetry": "Ask again",
+      "enableAudio": "Sound is blocked by your browser. Click to turn it on.",
+      "unread": "{count} unread",
       "youLeft": "You left the Live Session."
     },
     "errors": {
@@ -1052,6 +1066,9 @@
       "room_ended": "This Live Session has ended.",
       "duplicate_identity": "This account joined the Live Session elsewhere. Close the other session and reconnect.",
       "participant_removed": "You were removed from this Live Session.",
+      "tutor_busy": "Wait for the AI Tutor to answer your earlier questions first.",
+      "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
+      "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."
     }
   },

@@ -7,7 +7,7 @@
 // comfortable margin under that and matches what a chat message needs.
 export const ROOM_CHAT_MAX_LENGTH = 2000;
 
-export type RoomTutorMessage = { type: "tutor"; id?: string; text: string; mode: "course" | "general" | "unavailable" };
+export type RoomTutorMessage = { type: "tutor"; id?: string; text: string; mode: "course" | "general" | "unavailable"; replyTo?: { name: string; question: string } };
 export type RoomChatMessage = { type: "chat"; text: string };
 export type RoomRaiseHandMessage = { type: "raise-hand"; raised: boolean };
 export type RoomDataMessage = RoomTutorMessage | RoomChatMessage | RoomRaiseHandMessage;
@@ -31,6 +31,13 @@ export function chatLabel(locale: string, at: string) {
 // Only the server may render as the AI Tutor; only members may chat or raise
 // hands. Malformed payloads are dropped instead of throwing: one bad message
 // must not interrupt the event handler for every later room event.
+function tutorReplyTo(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const { name, question } = value as Record<string, unknown>;
+  if (typeof name !== "string" || typeof question !== "string" || !question) return null;
+  return { name, question };
+}
+
 export function parseRoomDataMessage(raw: Uint8Array, fromServer: boolean): RoomDataMessage | null {
   let value: unknown;
   try {
@@ -50,7 +57,8 @@ export function parseRoomDataMessage(raw: Uint8Array, fromServer: boolean): Room
       type: "tutor",
       ...(typeof message.id === "string" ? { id: message.id } : {}),
       text: message.text,
-      mode: message.mode === "general" || message.mode === "unavailable" ? message.mode : "course"
+      mode: message.mode === "general" || message.mode === "unavailable" ? message.mode : "course",
+      ...(tutorReplyTo(message.replyTo) ? { replyTo: tutorReplyTo(message.replyTo)! } : {})
     };
   }
   if (message.type === "chat") {

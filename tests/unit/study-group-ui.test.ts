@@ -32,13 +32,15 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.deepEqual(tutorQueueBody("Why did 1928 look stable?"), { message: "Why did 1928 look stable?" });
   assert.equal("prompt" in tutorQueueBody("Why did 1928 look stable?"), false);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /tutorQueueBody\(\(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\)\)/);
+  assert.match(room, /askTutor\(line\.id, \{ question: \(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
+  assert.match(room, /JSON\.stringify\(tutorQueueBody\(ask\.question, ask\.clientEventId\)\)/);
   assert.match(room, /<time dateTime=\{line\.at\}>/);
   assert.match(room, /session\.aiTutorEnabled \?/);
   assert.equal(room.includes("/api/ai-tutor"), false);
   assert.equal(room.includes("prompts/"), false);
   assert.equal(room.includes("You are"), false);
-  assert.equal(room.includes("queued.data"), false);
+  // The queue response only names the pending line; the answer arrives through the room.
+  assert.equal(room.replace(/queued\.data\.id/g, "").includes("queued.data"), false);
 });
 
 test("host start opens the room only after entry succeeds", () => {
@@ -141,7 +143,8 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /connected && tiles\.length > 0 \? tiles\.length : session\.occupancy/);
   assert.match(room, /controls\.includes\("participants"\)/);
   assert.match(room, /data-participants=\{present\}/);
-  assert.match(room, /triesLeft > 0/);
+  // A dropped connection keeps retrying with a capped backoff while the page is open (QA N1).
+  assert.match(room, /reconnectDelayMs\(failuresRef\.current\)/);
   assert.match(room, /releaseRoom\(\)/);
   assert.match(room, /session\?\.state === "completed"\) void releaseRoom\(\)/);
   assert.match(room, /sessions\/\$\{sessionId\}\/enter/);
@@ -177,9 +180,10 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /!seated && !entryDone/);
   assert.equal(en.studyGroupsPage.start, "Start Live Session");
   assert.match(room, /room\?\.disconnect\(\)/);
+  // pagehide only closes the media connection; no leave beacon (QA 2026-10-19 seat lease).
   assert.match(room, /pagehide/);
-  assert.match(room, /keepalive: true/);
-  assert.match(room, /seatedRef\.current/);
+  assert.equal(room.includes("/leave`, { method: \"POST\", headers"), false);
+  assert.equal(room.includes("reason: \"unload\""), false);
   assert.match(room, /setConnectAttempt\(\(attempt\) => attempt \+ 1\)/);
   assert.match(room, /connectAttempt/);
   assert.equal(en.studyGroupsPage.errors.connect_failed, "The Live Session could not connect. Check the connection and try again.");
@@ -208,10 +212,13 @@ test("a starting-soon Live Session shows its title, time, duration, and occupanc
   assert.match(room, /sessionScheduleLabel\(locale, session\)/);
   assert.match(room, /copy\.currentlyInSession/);
   assert.match(room, /copy\.upToParticipants/);
-  assert.match(room, /session\.state === "live" \|\| session\.state === "starting_soon"/);
+  // The seat is held by the heartbeat while the room page is open (QA 2026-10-19 seat lease).
+  assert.match(room, /session\?\.state !== "live" && session\?\.state !== "starting_soon"\)\) return;/);
+  assert.match(room, /sessions\/\$\{sessionId\}\/heartbeat/);
   assert.match(app, /waitingHoldRef/);
   assert.match(app, /waitingHandedOffRef\.current = true/);
-  assert.match(app, /addEventListener\("pagehide"/);
+  // The waiting popup keeps its seat by heartbeat; closing the popup releases it.
+  assert.equal(app.includes('addEventListener("pagehide"'), false);
   assert.match(app, /keepalive: true/);
   assert.match(app, /setWaitingSession\(null\)/);
   assert.match(app, /if \(result\.code === "not_found"\)/);
@@ -266,7 +273,8 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
   assert.match(app, /setAttendees\(current\.attendees\)/);
   assert.match(app, /dialog !== "waiting" \? \(/);
   assert.match(app, /styles\.waitingBanner/);
-  assert.match(app, /sessions\/\$\{sessionId\}\/leave/);
+  assert.match(app, /sessions\/\$\{held\}\/leave/);
+  assert.match(app, /sessions\/\$\{sessionId\}\/heartbeat/);
   assert.match(app, /result\.code === "not_found"/);
   assert.match(app, /live: result\.data\.live/);
   assert.match(app, /styles\.reminders/);
@@ -489,7 +497,10 @@ test("the Host Control frame pins the placeholder tile, name strip, hand badge, 
   assert.match(room, /\{tile\.host \? <span className=\{styles\.tileHost\}> · \{roomCopy\.host\}<\/span> : ""\}/);
   // The focus line moved from under the title to directly above the controls.
   assert.match(room, /\{session\.focus \? <p>\{session\.focus\}<\/p> : null\}\s*<div className=\{styles\.controls\}>/);
-  assert.match(room, /<\/div>\s*\{errorText \? <p className=\{styles\.alert\}/);
+  // One banner at a time: the poll failure, then a reconnect in progress, then the error with its retry.
+  assert.match(room, /<\/div>\s*\{pollText \? <p className=\{styles\.alert\}/);
+  assert.match(room, /\{!pollText && reconnecting \? /);
+  assert.match(room, /\{!pollText && !reconnecting && errorText \? /);
 });
 
 test("typing @ in the chat opens a mention list for AI Tutor and the present members", () => {
@@ -530,7 +541,8 @@ test("typing @ in the chat opens a mention list for AI Tutor and the present mem
   assert.match(room, /event\.key === "Enter"\) \{ event\.preventDefault\(\); chooseMention\(mentionRows\[mentionIndex\]\); \}/);
   // Submission: a typed "@AI Tutor " prefix queues the body without the prefix.
   assert.match(room, /const mentionsTutor = \(addressTutor \|\| hasPrefix\) && session\.aiTutorEnabled/);
-  assert.match(room, /tutorQueueBody\(\(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\)\)/);
+  assert.match(room, /askTutor\(line\.id, \{ question: \(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
+  assert.match(room, /JSON\.stringify\(tutorQueueBody\(ask\.question, ask\.clientEventId\)\)/);
 
   assert.equal(en.studyGroupsPage.room.mentionList, "Mention AI Tutor or a participant");
   assert.equal(zh.studyGroupsPage.room.mentionList, "提及 AI Tutor 或参与者");
@@ -574,7 +586,7 @@ test("creating a group hands the whole panel to the success state and reopening 
   // values, and refreshes the lists; the panel then shows only the created state.
   assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*setErrorCode\("idle"\);\s*setCreateTitle\(""\);\s*setCreateAbout\(""\);\s*await loadLists\(\);/);
   // The empty pane and the group sheet step aside while the success state owns the panel.
-  assert.match(app, /pane\.kind === "empty" && dialog !== "create" && !createdGroup/);
+  assert.match(app, /pane\.kind === "empty" && !selectedId && dialog !== "create" && !createdGroup/);
   assert.match(app, /dialog !== "create" && !createdGroup \? \(/);
   assert.match(app, /className=\{`\$\{styles\.panel\} \$\{styles\.createdPanel\}`\} role="status"/);
   assert.match(app, /copy\.createdTitle/);
@@ -623,7 +635,8 @@ test("one error is shown in exactly one place: the failing pane, create form, di
 
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /const errorPlace = studyGroupErrorPlace\(\{ status, dialog, hasSelected: Boolean\(selected\), hasError: studyGroupHasError\(errorCode\) \}\);/);
-  assert.equal(app.split('{errorPlace === "').length - 1, 3);
+  // create form, sheet, the form dialogs and the confirm dialogs (one slot each, never two at once).
+  assert.equal(app.split('{errorPlace === "').length - 1, 4);
   assert.match(app, /\{errorPlace === "create" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.match(app, /\{errorPlace === "sheet" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.match(app, /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
@@ -727,7 +740,13 @@ test("an empty Create Study Group submit reports through the app's own validatio
   // instead of the module's localised copy. The submit button now gates the click on
   // form.checkValidity() (no native UI) and routes the failure into the existing
   // single error slot as "validation" - the same surface server rejections already use.
-  assert.match(app, /<button className=\{styles\.primary\} type="submit" disabled=\{creating\} onClick=\{\(event\) => \{ const form = event\.currentTarget\.form; if \(form && !form\.checkValidity\(\)\) \{ event\.preventDefault\(\); setErrorCode\("validation"\); \} \}\}>\{copy\.create\}<\/button>/);
+  // QA 2026-10-19 (BUG-0125 rest): every Study Group form is noValidate and goes through
+  // one shared check (studyGroupFormProblem), so no dialog shows the browser's bubble.
+  assert.match(app, /<button className=\{styles\.primary\} type="submit" disabled=\{creating\}>\{copy\.create\}<\/button>/);
+  // The create form and the shared edit/schedule/edit-session form.
+  assert.equal(app.split("noValidate onSubmit").length - 1, 2);
+  assert.equal(app.includes("reportValidity"), false);
+  assert.equal(app.includes("checkValidity"), false);
   assert.equal(en.studyGroupsPage.errors.validation, "Check the required fields and try again.");
   assert.equal(zh.studyGroupsPage.errors.validation, "请检查必填项后重试。");
   assert.equal(studyGroupErrorPlace({ status: "ready", dialog: "create", hasSelected: false, hasError: studyGroupHasError("validation") }), "create");
@@ -745,9 +764,13 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.match(app, /\{dialog === "cancel-group" \? \(\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{cancelling\}>/);
   assert.match(app, /<h2 id="study-group-dialog-title">\{copy\.cancelGroupConfirmTitle\}<\/h2>/);
   assert.match(app, /<p className=\{styles\.confirmBody\}>\{copy\.confirmCancelGroup\}<\/p>/);
-  assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{cancelling\}>\{copy\.cancel\}<\/button><button className=\{styles\.danger\} type="submit" disabled=\{cancelling\}>\{copy\.cancelGroup\}<\/button>/);
+  // BUG-0099 follow-up: the two buttons no longer both read "Cancel" (取消 / 取消小组).
+  assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{cancelling\}>\{copy\.confirmBack\}<\/button><button className=\{styles\.danger\} type="submit" disabled=\{cancelling\}>\{copy\.confirmCancelGroupAction\}<\/button>/);
+  assert.equal(zh.studyGroupsPage.confirmBack.includes("取消"), false);
+  assert.notEqual(zh.studyGroupsPage.confirmBack, zh.studyGroupsPage.confirmCancelGroupAction);
+  assert.notEqual(en.studyGroupsPage.confirmBack, en.studyGroupsPage.confirmCancelGroupAction);
   // A failed cancellation keeps the sheet selected so studyGroupErrorPlace has a home for the error.
-  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("idle"\);\s*setSelected\(null\);\s*setSelectedId\(null\);\s*await loadLists\(\);/);
+  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("idle"\);(?:\s*\/\/[^\n]*)*\s*openGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*await loadLists\(\);/);
   assert.match(css, /\.confirmBody \{ margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; \}/);
   assert.match(css, /\.dialogActions \.danger:disabled \{ opacity: \.45; cursor: not-allowed; \}/);
   assert.equal(en.studyGroupsPage.cancelGroupConfirmTitle, "Cancel this Study Group?");
@@ -775,20 +798,22 @@ test("Plan, Cancel Attendance, Cancel Session, and Leave Group only advance the 
   assert.match(app, /async function runSessionMutation\(action: "plan" \| "cancel-attendance" \| "cancel-session", session: StudySession\) \{\s*if \(!selected \|\| mutating\) return;/);
   assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runSessionMutation\("plan", session\)\}/);
   assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runSessionMutation\("cancel-attendance", session\)\}/);
-  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runSessionMutation\("cancel-session", session\)\}/);
-  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => void runLeaveGroup\(\)\}/);
+  // Cancel Session and Leave Group ask first in the module's own confirm dialog (QA 2026-10-19).
+  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => \{ setErrorCode\("idle"\); setConfirmSession\(session\); setDialog\("cancel-session"\); \}\}/);
+  assert.match(app, /disabled=\{mutating !== null\} onClick=\{\(\) => \{ setErrorCode\("idle"\); setDialog\("leave-group"\); \}\}/);
+  assert.match(app, /if \(dialog === "leave-group"\) void runLeaveGroup\(\); else if \(confirmSession\) void runSessionMutation\("cancel-session", confirmSession\);/);
   assert.match(app, /async function runLeaveGroup\(\) \{\s*if \(!selected \|\| mutating\) return;/);
   // Every failure lands only in the shared slot; the unconditional panel wipe is gone.
   assert.equal(app.split("setErrorCode(outcome.errorCode)").length - 1, 2);
-  assert.match(app, /if \(outcome\.clearSelection\) \{\s*setSelected\(null\);\s*setSelectedId\(null\);\s*\}/);
+  assert.match(app, /if \(outcome\.clearSelection\) \{\s*openGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*\}/);
   // The silent fire-and-forget handlers are gone.
   assert.equal(app.includes("onClick={async () => { await studyGroupRequest("), false);
   assert.equal(app.includes("}); await openGroup(selected.id); }}"), false);
   // The five button labels are still rendered from copy.
   assert.match(app, /runSessionMutation\("plan", session\)\}>\{copy\.plan\}/);
   assert.match(app, /runSessionMutation\("cancel-attendance", session\)\}>\{copy\.cancelAttendance\}/);
-  assert.match(app, /runSessionMutation\("cancel-session", session\)\}>\{copy\.cancelSession\}/);
-  assert.match(app, /runLeaveGroup\(\)\}>\{copy\.leaveGroup\}/);
+  assert.match(app, /setDialog\("cancel-session"\); \}\}>\{copy\.cancelSession\}/);
+  assert.match(app, /setDialog\("leave-group"\); \}\}>\{copy\.leaveGroup\}/);
 });
 
 test("the Create Study Group dialog is centred on the viewport like the module's other dialogs", () => {
@@ -798,7 +823,7 @@ test("the Create Study Group dialog is centred on the viewport like the module's
   // column right of the 460px sidebar), so it sat below/right of the viewport centre.
   // It now renders inside the shared native modal (PortalDialog) with the same fixed, centred overlay.
   assert.match(app, /\{dialog === "create" \? \(\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{creating\}>/);
-  assert.match(app, /<form className=\{styles\.createForm\} onSubmit=\{\(event\) => \{ event\.preventDefault\(\); void submitCreate\(new FormData\(event\.currentTarget\)\); \}\}>/);
+  assert.match(app, /<form className=\{styles\.createForm\} noValidate onSubmit=\{\(event\) => \{ event\.preventDefault\(\); submitDialogForm\(event\.currentTarget, submitCreate\); \}\}>/);
   assert.equal(app.includes("<form className={styles.panel} onSubmit"), false);
   // Centring comes from the shared overlay: fixed full-viewport backdrop, grid centre.
   assert.match(css, /\.modal \{ position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; padding: 24px; background: rgba\(16, 24, 40, \.45\); display: grid; place-items: center; \}/);
@@ -840,13 +865,15 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   // poll is the only self-healing path and it does not run for guests. The catch lands
   // on the existing pane error, whose Retry button re-runs loadLists.
   assert.match(app, /async function loadLists\(\) \{\s*const generation = \+\+listGeneration\.current;\s*try \{/);
-  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current\) return;\s*setStatus\("error"\);\s*setErrorCode\("error"\);\s*\}/);
+  // Only a list that never loaded becomes the error pane; a failed poll keeps the screen (QA N10).
+  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current \|\| loadedOnce\.current\) return;\s*setStatus\("error"\);\s*setErrorCode\("error"\);\s*\}/);
   // The same landing covers the ?group= deep link: a rejected detail fetch must not
   // leave a silently empty pane with no way to retry.
-  assert.match(app, /\} catch \{\s*if \(openGroupId\.current !== id\) return;\s*setErrorCode\("error"\);\s*setStatus\("error"\);\s*\}/);
+  // A failed group open lands on that group's own error panel with a Retry (QA N10).
+  assert.match(app, /if \(openGroupId\.current !== id\) return;\s*if \(!result\.ok\) \{\s*setGroupError\(result\.code\);\s*return;\s*\}/);
   // The pane error is driven by status (studyGroupPane), so the synthetic code still
   // renders the generic copy and the Retry button.
-  assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p><button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("idle"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button><\/div> : null\}/);
+  assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p>(?:\{errorCode === "unauthenticated" \? <a className=\{styles\.primary\} href=\{signInHref\}>\{copy\.signIn\}<\/a> : )?<button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("idle"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button>\}?<\/div> : null\}/);
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
   assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
 });
@@ -859,7 +886,7 @@ test("the Study Group popups are real modals: showModal, Escape close, focus in,
   // focus containment and Escape for the whole module.
   assert.match(app, /import \{ PortalDialog \} from "\.\/PortalDialog";/);
   assert.equal(app.includes("<dialog open"), false);
-  assert.match(app, /<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{dialog === "waiting" \? closeWaiting : closeDialog\}>/);
+  assert.match(app, /<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{dialog === "waiting" \? closeWaiting : closeDialog\} busy=\{submitting\}>/);
   // The waiting Close control and the Cancel Group confirm controls keep their closers.
   // Their busy states make PortalDialog ignore Escape, mirroring the disabled buttons.
   assert.match(app, /onClick=\{closeWaiting\}>\{copy\.close\}<\/button>/);
@@ -898,9 +925,10 @@ test("a rejected fetch or a non-JSON body resolves as a network failure instead 
   // the one error slot, no new display point is added, and "network" renders the generic
   // copy (there is deliberately no copy.errors.network key; the lookup falls back).
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.equal(app.split('{errorPlace === "').length - 1, 3);
+  // create form, sheet, the form dialogs and the confirm dialogs (one slot each, never two at once).
+  assert.equal(app.split('{errorPlace === "').length - 1, 4);
   assert.match(app, /if \(!outcome\.ok\) \{\s*setErrorCode\(outcome\.errorCode\);\s*return;\s*\}/);
-  assert.match(app, /if \(!result\.ok\) \{ setErrorCode\(result\.code\); return; \} await loadLists\(\); await openGroup\(selected\.id\);/);
+  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*await loadLists\(\);\s*await openGroup\(group\.id\);/);
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
   assert.equal(zh.studyGroupsPage.errors.error, "出了点问题。请重试。");
 });
@@ -933,6 +961,8 @@ test("the background group refresh and the unload release beacons never surface 
   // swallow their rejection explicitly instead of getting a feedback surface.
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /async function refreshOpenGroup\(id: string\) \{\n\s*const result = await studyGroupRequest<StudyGroupDetail>\(`\/api\/study-groups\/\$\{id\}`\);\n\s*if \(openGroupId\.current !== id\) return;\n\s*if \(!result\.ok\) \{\n\s*if \(result\.code === "not_found"\) \{/);
-  assert.equal(app.split("keepalive: true }).catch(() => undefined)").length - 1, 2);
+  // Closing the waiting popup is the one remaining release beacon; the room page
+  // sends none (its seat lapses on the server, QA 2026-10-19 seat lease).
+  assert.equal(app.split("keepalive: true }).catch(() => undefined)").length - 1, 1);
   assert.equal(app.includes("keepalive: true });"), false);
 });
