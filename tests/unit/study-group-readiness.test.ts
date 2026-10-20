@@ -69,6 +69,12 @@ test("the Live Session tutor falls back to the site's OpenRouter key and says wh
   process.env.STUDY_GROUP_TUTOR_URL = "https://llm.example.com/v1/chat/completions";
   assert.equal((await studyGroup()).tutorKeySource, "none");
   assert.deepEqual(studyGroupTutorKeys(process.env), []);
+  // Only OpenRouter's own host counts, not a name that merely contains it
+  // (final review 4).
+  for (const lookalike of ["https://openrouter.ai.example.net/v1/chat/completions", "https://example.net/openrouter.ai/v1", "https://notopenrouter.ai/v1", "http://openrouter.ai/api/v1/chat/completions", "not a url openrouter.ai"]) {
+    process.env.STUDY_GROUP_TUTOR_URL = lookalike;
+    assert.deepEqual(studyGroupTutorKeys(process.env), [], lookalike);
+  }
   process.env.STUDY_GROUP_TUTOR_URL = "https://openrouter.ai/api/v1/chat/completions";
   assert.equal((await studyGroup()).tutorKeySource, "shared");
 

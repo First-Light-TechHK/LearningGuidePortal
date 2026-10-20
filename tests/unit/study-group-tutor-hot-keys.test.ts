@@ -73,3 +73,20 @@ test("without a secret id the environment decides: own pool, then the site's Ope
   assert.equal(shared.source(), "shared");
   assert.equal(createTutorKeySource({ reader: null, env: {} }).source(), "none");
 });
+
+test("a failed read with no pool yet is not repeated by every caller inside the cache window (final review 1)", async () => {
+  let clock = 0;
+  const secret = fakeSecret(undefined);
+  secret.state.fail = true;
+  const source = createTutorKeySource({ reader: secret.reader, secretId: "lg-dev-studygroup-tutor-keys", env: { OPENROUTER_API_KEY: "site-key" }, now: () => clock, cacheTtlMs: 60_000 });
+  assert.deepEqual(await source.keys(), [{ id: "openrouter-shared", secret: "site-key" }]);
+  await source.keys();
+  await source.keys();
+  assert.equal(secret.state.reads, 1, "one read per window");
+  await source.keys({ forceRefresh: true });
+  assert.equal(secret.state.reads, 2, "a forced read still goes through");
+  secret.state.fail = false;
+  secret.state.value = JSON.stringify([{ id: "k1", secret: "one" }]);
+  clock += 60_000;
+  assert.deepEqual(await source.keys(), [{ id: "k1", secret: "one" }], "retried after the window");
+});

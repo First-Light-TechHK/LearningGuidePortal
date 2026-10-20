@@ -366,7 +366,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const group = snapshot.groups.find((entry) => entry.id === session.groupId);
         const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId).catch(() => "") : "";
         const context = corpus.trim();
-        let keys = await Promise.resolve(deps.tutorKeys?.() ?? []).catch(() => []);
+        // The key read is inside the answer deadline too (a stalled secret
+        // read must not outlast the claim lease and invite a second call).
+        const readKeys = (options?: { forceRefresh?: boolean }) => withTimeout(Promise.resolve(deps.tutorKeys?.(options) ?? []), Math.max(0, answerBy - Date.now())).catch(() => []);
+        let keys = await readKeys();
         let reply: { text: string; mode: "course" | "general" | "unavailable" } = { text: "", mode: "unavailable" };
         if (deps.tutorCall && keys.length > 0) {
           // A call that throws (rather than reporting a failed outcome) is an
@@ -378,7 +381,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             // rotated (a hot secret), so read it again and, only when it
             // changed, give this question one more try with the new keys,
             // inside the same answer deadline.
-            const fresh = await Promise.resolve(deps.tutorKeys?.({ forceRefresh: true }) ?? []).catch(() => []);
+            const fresh = await readKeys({ forceRefresh: true });
             if (fresh.length > 0 && JSON.stringify(fresh) !== JSON.stringify(keys)) {
               keys = fresh;
               result = await ask(fresh);

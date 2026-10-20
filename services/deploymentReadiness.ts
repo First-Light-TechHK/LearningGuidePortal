@@ -28,9 +28,15 @@ let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
 //   webhook verification and reconciliation.
 // Reads the hot pool once (cached for a minute) so a fresh instance reports
 // `secret` before its first question; a failed read reports the fallback.
+// The health checks never wait on Secrets Manager for more than a second: a
+// slow read reports what is cached now and finishes in the background.
 async function tutorKeySource() {
   const source = studyGroupTutorKeySource(awsRegion());
-  await source.keys().catch(() => []);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    source.keys().catch(() => []),
+    new Promise((resolve) => { timer = setTimeout(resolve, 1_000); })
+  ]).finally(() => clearTimeout(timer));
   return source.source();
 }
 

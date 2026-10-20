@@ -5,6 +5,10 @@ type SecretValueReader = {
   getSecretValue(secretId: string): Promise<string | undefined>;
 };
 
+// One Secrets Manager read may take this long before it counts as failed (the
+// SDK itself has no timeout); callers then use the last good or fallback pool.
+export const SECRET_READ_TIMEOUT_MS = 3_000;
+
 export type TutorKey = { id: string; secret: string };
 export type TutorKeyReadOptions = Readonly<{ forceRefresh?: boolean }>;
 
@@ -15,7 +19,9 @@ export type TutorKeyReadOptions = Readonly<{ forceRefresh?: boolean }>;
 // A failed or empty read keeps the last good pool; with none yet, the
 // environment pool (STUDY_GROUP_TUTOR_KEYS, then the site's OpenRouter key,
 // see studyGroupTutorKeys) answers instead. `forceRefresh` re-reads at once:
-// the drain asks for it when every key it had was refused.
+// the drain asks for it when every key it had was refused. A read that
+// failed with no pool yet is not retried before the TTL either, so a stalled
+// Secrets Manager costs one bounded read a minute, not one per caller.
 export function createTutorKeySource(input: {
   reader: SecretValueReader | null;
   secretId?: string;
@@ -27,6 +33,7 @@ export function createTutorKeySource(input: {
   const cacheTtlMs = input.cacheTtlMs ?? 60_000;
   const secretId = input.secretId?.trim() || "";
   let cached: { keys: TutorKey[]; at: number } | null = null;
+  let missedAt: number | null = null;
   let inFlight: Promise<TutorKey[]> | null = null;
 
   async function readSecret() {
@@ -34,9 +41,11 @@ export function createTutorKeySource(input: {
       const keys = readTutorKeys(await input.reader!.getSecretValue(secretId));
       if (keys.length > 0) cached = { keys, at: now() };
       else if (cached) cached = { keys: cached.keys, at: now() };
+      else missedAt = now();
     } catch {
       // Keep the last good pool; the next read after the TTL tries again.
       if (cached) cached = { keys: cached.keys, at: now() };
+      else missedAt = now();
     }
     return cached?.keys ?? studyGroupTutorKeys(input.env);
   }
@@ -45,6 +54,7 @@ export function createTutorKeySource(input: {
     async keys(options: TutorKeyReadOptions = {}): Promise<TutorKey[]> {
       if (!secretId || !input.reader) return studyGroupTutorKeys(input.env);
       if (!options.forceRefresh && cached && now() - cached.at < cacheTtlMs) return cached.keys;
+      if (!options.forceRefresh && !cached && missedAt !== null && now() - missedAt < cacheTtlMs) return studyGroupTutorKeys(input.env);
       if (!inFlight) inFlight = readSecret().finally(() => { inFlight = null; });
       return inFlight;
     },
@@ -59,13 +69,13 @@ export function createTutorKeySource(input: {
 
 export function createAwsTutorKeySource(input: { region?: string; env: Record<string, string | undefined>; client?: SecretsManagerClient }) {
   const secretId = input.env.STUDY_GROUP_TUTOR_KEYS_SECRET_ID?.trim();
-  const client = secretId ? input.client ?? new SecretsManagerClient(input.region ? { region: input.region } : {}) : null;
+  const client = secretId ? input.client ?? new SecretsManagerClient({ ...(input.region ? { region: input.region } : {}), maxAttempts: 2 }) : null;
   return createTutorKeySource({
     secretId,
     env: input.env,
     reader: client ? {
       async getSecretValue(id) {
-        const response = await client.send(new GetSecretValueCommand({ SecretId: id }));
+        const response = await client.send(new GetSecretValueCommand({ SecretId: id }), { abortSignal: AbortSignal.timeout(SECRET_READ_TIMEOUT_MS) });
         return response.SecretString;
       }
     } : null

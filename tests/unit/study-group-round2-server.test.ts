@@ -923,6 +923,24 @@ test("r3 server 5: one question's keys share one deadline, so it settles inside 
   assert.equal(published.at(-1)?.text, "Answer: Fast failover");
 });
 
+test("r3 server 5: a stalled key read is inside the same deadline (final review 3)", async () => {
+  const published: Array<{ messageId: string; mode: string }> = [];
+  let calls = 0;
+  const f = await fixture(() => ({
+    tutorAnswerBudgetMs: 60,
+    publishRoomChat: async (input) => { published.push(input); },
+    tutorKeys: () => new Promise<Array<{ id: string; secret: string }>>(() => undefined),
+    tutorCall: async () => { calls += 1; return { outcome: "ok", latencyMs: 1, body: "never" }; }
+  }));
+  const session = await tutorRoom(f);
+  const asked = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Stalled secret?", clientEventId: "evt-stalled" });
+  const started = Date.now();
+  await f.service.deliverTutorAnswer({ sessionId: session.id });
+  assert.ok(Date.now() - started < 2_000, "settled at the deadline, not when the read ends");
+  assert.equal(calls, 0);
+  assert.deepEqual(published.map((item) => [item.messageId, item.mode]), [[asked.id, "unavailable"]]);
+});
+
 test("r3 server 7a: a dispatch that lands between the move and the withdrawal reminds once, by mail too", async () => {
   const f = await fixture();
   const created = await group(f, ["m1"]);

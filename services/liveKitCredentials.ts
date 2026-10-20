@@ -74,10 +74,12 @@ export function createLiveKitCredentialResolver(
 // One Secrets Manager reader for the LiveKit credentials and the hot project
 // list (LIVEKIT_PROJECTS_SECRET_ID).
 export function createAwsSecretValueReader(input: { region?: string; client?: SecretsManagerClient } = {}): SecretValueReader {
-  const client = input.client ?? new SecretsManagerClient(input.region ? { region: input.region } : {});
+  const client = input.client ?? new SecretsManagerClient({ ...(input.region ? { region: input.region } : {}), maxAttempts: 2 });
   return {
     async getSecretValue(secretId) {
-      const response = await client.send(new GetSecretValueCommand({ SecretId: secretId }));
+      // Bounded: the SDK has no timeout of its own, and a stalled read would
+      // hold a token issuance or the project list refresh behind it.
+      const response = await client.send(new GetSecretValueCommand({ SecretId: secretId }), { abortSignal: AbortSignal.timeout(3_000) });
       return response.SecretString;
     }
   };

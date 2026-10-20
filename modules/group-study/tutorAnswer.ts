@@ -101,8 +101,17 @@ export function studyGroupTutorKeys(env: Record<string, string | undefined>) {
   if (own.length > 0) return own;
   const shared = env.OPENROUTER_API_KEY?.trim();
   const url = env.STUDY_GROUP_TUTOR_URL?.trim();
-  if (!shared || (url && !url.includes("openrouter.ai"))) return [];
+  if (!shared || (url && !isOpenRouterUrl(url))) return [];
   return [{ id: SHARED_TUTOR_KEY_ID, secret: shared }];
+}
+
+function isOpenRouterUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && (parsed.hostname === "openrouter.ai" || parsed.hostname.endsWith(".openrouter.ai"));
+  } catch {
+    return false;
+  }
 }
 
 export function readTutorKeys(raw: string | undefined) {
