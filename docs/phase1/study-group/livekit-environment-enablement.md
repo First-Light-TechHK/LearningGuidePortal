@@ -16,6 +16,7 @@
 
 - SG 代码只依赖两个接口：LiveKit 网关（房间、令牌、数据消息）与令牌日志加密钥。代码不接触具体凭据。
 - 钥在 AWS 上自动签发与注入：LiveKit 钥对存入 Secrets Manager，运行时由实例读取（`credentialSecretId`）；令牌日志钥自动生成一次，经 App Runner 注入。人工不选择、不转抄钥值。
+- LiveKit 全部热生效（业主决定，2026-10-20）：项目列表与各项目钥对都在运行时从 Secrets Manager 读取，最多缓存 60 秒；新增项目、改 url / 权重 / 状态、排空项目、轮换钥对，写入密钥新版本即生效，**不需要重新部署**。读取失败或内容无效时保留上一次有效值。
 - 轮换沿用既有设计（`livekit-operations.md` §Key rotation）：create → inject → overlap → revoke，只存一份、从不回读。
 - 零配置环境（配置尚未执行时）：数据功能照常（浏览 / 建组 / 入组 / 排期 / 开始）；直播类操作返回类型化 `unavailable`（HTTP 503）；后台健康面报告 not ready。生产由 preflight 直接阻断。
 
@@ -49,7 +50,8 @@
 | PPE/PROD | 新建生产项目 | 待平台执行 |
 
 密钥命名：`lg-<env>-studygroup-livekit`（存 apiKey/apiSecret）、`lg-<env>-studygroup-token-log-key`（存 token 加密钥）、`lg-<env>-studygroup-tutor-keys`（存 AI Tutor 钥池 JSON，`[{"id","secret"}]`）。每环境三条，互不复用。三条都是真凭据，都只存 Secrets Manager；普通环境变量会被 `describe-service` 明文回显，禁止把任何钥值放进普通变量。
-消费方式（业主决定）：LiveKit 钥对 = 应用**运行时**按 `credentialSecretId` 从 Secrets Manager 读取（保持不变，轮换 ≤60 秒生效）；令牌日志钥与 tutor 钥池 = App Runner `RuntimeEnvironmentSecrets` **启动注入**（同款，轮换后重部署生效）。
+另有一条项目列表：`lg-<env>-studygroup-livekit-projects`（存与 `LIVEKIT_PROJECTS_JSON` 相同的 JSON 数组）。内容本身不是凭据（只有项目 id、wss 网址、状态、权重和 `credentialSecretId`），放进 Secrets Manager 是为了运行时热读取。
+消费方式（业主决定）：LiveKit 钥对 = 应用**运行时**按 `credentialSecretId` 从 Secrets Manager 读取（轮换 ≤60 秒生效；提供方拒绝缓存钥对（401/403）时立即重读并重试一次）；LiveKit 项目列表 = 应用**运行时**按普通变量 `LIVEKIT_PROJECTS_SECRET_ID`（值为密钥名）读取（≤60 秒生效）；令牌日志钥与 tutor 钥池 = App Runner `RuntimeEnvironmentSecrets` **启动注入**（同款，轮换后重部署生效）。
 令牌日志钥由工作流自动签发（`openssl rand -base64 32`，首次创建；已存在则不覆盖）。LiveKit 钥对来自 LiveKit 控制台（平台建项目时创建），**一次性写入 Secrets Manager，此后只存这一处**——不再复制到 GitHub 或 repo。
 工作流读取的仓库变量（非密）：`LIVEKIT_DEV_PROJECT_URL`（DEV 项目的 wss 网址，必填）、`LIVEKIT_DEV_PROJECT_ID`（可选，默认 `dev-primary`）。
 
@@ -59,12 +61,14 @@
 
 1. 读仓库坐标表（非密，`scripts/release/environments.mjs`）：每环境的 App Runner ARN、站点域名、密钥名、项目 id/网址。
 2. 校验该环境已开通。未开通：立即失败。
-3. 校验 `lg-<env>-studygroup-livekit` 与 `lg-<env>-studygroup-tutor-keys` 已存在于 Secrets Manager（平台各写入一次；值分别来自 LiveKit 控制台与 OpenRouter 控制台）。缺失：立即失败，并打印平台侧的一次性写入命令（值不经过 repo / 聊天 / GitHub）。
+3. 校验 `lg-<env>-studygroup-livekit`、`lg-<env>-studygroup-livekit-projects` 与 `lg-<env>-studygroup-tutor-keys` 已存在于 Secrets Manager（平台各写入一次；值分别来自 LiveKit 控制台与 OpenRouter 控制台）。缺失：立即失败，并打印平台侧的一次性写入命令（值不经过 repo / 聊天 / GitHub）。
 4. 在 LiveKit 控制台把该项目的 **webhook 地址**设为 `https://<环境站点域名>/api/livekit/webhook`。不设置 = 回调腿静默失效（签名回调永不到达，runbook 的签名回调门无法验证）。座位不依赖回调：座位由服务端租约决定。
 5. 令牌日志钥自动签发：不存在则以 `openssl rand -base64 32` 生成并写入 `lg-<env>-studygroup-token-log-key`；已存在则保持原值（不覆盖，旧日志行仍以旧钥版本解密）。
-6. 合并进 App Runner 服务：`LIVEKIT_PROJECTS_JSON` 进普通变量；`STUDY_GROUP_TOKEN_LOG_KEY` 与 `STUDY_GROUP_TUTOR_KEYS` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。代码读的是同名环境变量，自身零改动。
+6. 合并进 App Runner 服务（一次性设置）：`LIVEKIT_PROJECTS_SECRET_ID` 进普通变量，值为项目列表密钥名 `lg-<env>-studygroup-livekit-projects`（之后增删改项目只写这条密钥，不再动 App Runner；设置了它，`LIVEKIT_PROJECTS_JSON` 即被忽略，可删除）；`STUDY_GROUP_TOKEN_LOG_KEY` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。代码读的是同名环境变量，自身零改动。
    AI Tutor 的 LLM key 走热读取（2026-10-20）：普通变量 `STUDY_GROUP_TUTOR_KEYS_SECRET_ID=lg-<env>-studygroup-tutor-keys`，实例角色需有该密钥的 `secretsmanager:GetSecretValue`。之后加、删、换 key 只改密钥值，一分钟内生效，无需重新部署；`/api/health/config` 的 `studyGroup.tutorKeySource` 为 `secret` 即已接上。
-7. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。同一响应里的三个自查字段（代码在健康面核实，无需 AWS 访问）：`studyGroup.tutorKeys` 应为 `configured`（AI Tutor 可用）、`credentialSource` 应为 `secrets-manager`（未被本地凭据遮蔽）、`simulated` 应为 `false`（未开假网关）。凭据级证据（密钥真能解析、被提供方接受）另见：backoffice `livekit-health` 的 `providerVerified:true`，或 CloudWatch 里 `study_group.livekit_health` 行的 `provider_api` 证据。
+7. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。同一响应里的自查字段（代码在健康面核实，无需 AWS 访问）：`studyGroup.tutorKeySource` 应为 `secret`（AI Tutor 的 LLM key 热读取）、`credentialSource` 应为 `secrets-manager`（未被本地凭据遮蔽）、`simulated` 应为 `false`（未开假网关）、`liveKitProjectsSource` 应为 `secret`（项目列表热读取；`env` = 仍是部署时固定的 `LIVEKIT_PROJECTS_JSON`）。`secret` 只说明变量已设置；密钥里是否有有效列表看 backoffice `livekit-health`（项目为空 = 尚未读到有效列表）与 CloudWatch 的 `study_group.livekit_projects_rejected` 行。凭据级证据（密钥真能解析、被提供方接受）另见：backoffice `livekit-health` 的 `providerVerified:true`，或 CloudWatch 里 `study_group.livekit_health` 行的 `provider_api` 证据。
+
+项目列表密钥已设置但尚未读到有效列表时（密钥不存在、不可读、内容无效）：开始直播返回类型化 `unavailable`，健康面 not ready，同样重复打 `configured:false` 那行；每次被拒的读取另打一行脱敏 `study_group.livekit_projects_rejected`（`reason` 为 `unreadable` 或 `invalid`）。写入有效列表后一分钟内自动恢复，无需重启。
 
 未配置期间的已知行为（代码已固化，测试见 §9.4）：数据功能可用；直播操作 503；按 5 分钟周期重复打一行脱敏 `study_group.livekit_health`（`configured:false`），供 CloudWatch 报警。若会话在未配置时开始：房间在首次加入时由 LiveKit 按默认容量自动创建（应用侧席位上限仍生效），项目分配在第一次发令牌时自动补齐并持久化；补齐前对账可能每 5 分钟记录一条脱敏 `credential_unavailable` 事件（噪音，不是数据损坏）。
 
@@ -81,15 +85,16 @@
 ## 7. 需要的 AWS 权限（平台授予）
 
 1. 执行工作流的 IAM 用户/角色：`apprunner:DescribeService`、`apprunner:UpdateService`、`secretsmanager:CreateSecret`、`secretsmanager:PutSecretValue`、`secretsmanager:DescribeSecret`。
-2. App Runner **实例角色**：`secretsmanager:GetSecretValue`，覆盖全部三条密钥（启动注入 + 运行时读取）。
+2. App Runner **实例角色**：`secretsmanager:GetSecretValue`，覆盖全部 Study Group 密钥：三条凭据（启动注入 + 运行时读取）和项目列表 `lg-<env>-studygroup-livekit-projects`（运行时读取；缺这条权限 = 列表永远读不到，直播类操作一直 `unavailable`）。
 
 ## 8. 轮换与已暴露钥处置
 
-1. **LiveKit 钥对**：按 `livekit-operations.md` §Key rotation 执行 create → inject → overlap → revoke。写入 Secrets Manager 新版本即可——应用在运行时按 `credentialSecretId` 读取，**不需要改 App Runner 配置**；重叠期 ≥ 最大 token TTL（600 秒）+ 回滚窗口；监控鉴权失败后再吊销旧钥。每次轮换后跑一次冒烟。
-2. **令牌日志钥**：轮换 = 生成新值写入 Secrets Manager 新版本 → 重新执行开通步骤（触发滚动重启把新值注入实例）→ 旧日志行以旧钥版本离线解密。已泄露的钥必须实际换掉。
-3. **AI Tutor 钥池**：轮换 = 更新 `lg-<env>-studygroup-tutor-keys` 新版本（可整池或逐把）→ 重新部署（注入发生在实例启动）。池内的失败切换逻辑不变。
-4. **staging 钥：实际轮换**（已暴露过）。步骤：LiveKit 控制台建新钥（命名 `ci-smoke`）→ 更新 GitHub `livekit-staging` 环境密钥（CI 冒烟专用副本，与 Secrets Manager 同步更新，避免漂移）→ 跑冒烟工作流确认绿 → 吊销旧钥 → 记录证据（项目 id、时间、操作人）。
-5. SIT/UAT/PPE 首配即用各自的新钥。无历史包袱。
+1. **LiveKit 钥对**：按 `livekit-operations.md` §Key rotation 执行 create → inject → overlap → revoke。写入 Secrets Manager 新版本即可——应用在运行时按 `credentialSecretId` 读取，**不需要改 App Runner 配置，也不需要重新部署**：所有实例 60 秒内换用新钥；提供方拒绝旧钥时（例如旧钥被提前吊销），房间、数据消息、移除成员各路径当场重读密钥并重试一次，浏览器入房失败会请求一次经验证的新令牌（同样当场重读），webhook 遇到未知签发钥也会重读（最多每 10 秒一次）。重叠期 ≥ 最大 token TTL（600 秒）+ 回滚窗口；监控鉴权失败后再吊销旧钥。每次轮换后跑一次冒烟。
+2. **LiveKit 项目列表**：新增项目、改 url / 权重 / 状态、排空项目 = 写 `lg-<env>-studygroup-livekit-projects` 新版本，60 秒内生效，不需要重新部署。退役项目先改为 `draining`，等其房间全部结束后再改 `disabled` 或移出列表：已读到它的实例会把移出的项目继续当作 `draining` 解析，但移出之后才启动的实例（部署、扩容）不认识它。内容无效（非 JSON、空数组、没有 `active` 项目、url 不是干净的 wss）时保留上一次有效列表并打 `study_group.livekit_projects_rejected`。
+3. **令牌日志钥**：轮换 = 生成新值写入 Secrets Manager 新版本 → 重新执行开通步骤（触发滚动重启把新值注入实例）→ 旧日志行以旧钥版本离线解密。已泄露的钥必须实际换掉。
+4. **AI Tutor 钥池**：轮换 = 更新 `lg-<env>-studygroup-tutor-keys` 新版本（可整池或逐把）→ 重新部署（注入发生在实例启动）。池内的失败切换逻辑不变。
+5. **staging 钥：实际轮换**（已暴露过）。步骤：LiveKit 控制台建新钥（命名 `ci-smoke`）→ 更新 GitHub `livekit-staging` 环境密钥（CI 冒烟专用副本，与 Secrets Manager 同步更新，避免漂移）→ 跑冒烟工作流确认绿 → 吊销旧钥 → 记录证据（项目 id、时间、操作人）。
+6. SIT/UAT/PPE 首配即用各自的新钥。无历史包袱。
 
 ## 9. 验收
 
@@ -97,7 +102,7 @@
 2. 轮换记录齐备。
 3. 生产 preflight 在缺配置时阻断（已有测试）。
 4. 零配置环境页面可用：数据功能 200、直播操作返回类型化 503——由 `tests/unit/study-group-livekit-degradation.test.ts` 固化；令牌日志钥先于签名解析（缺钥不签名、不写日志、保留席位）由 `tests/unit/study-group-service.test.ts` 固化。
-5. 部署自查（代码核实，不需 AWS 访问）：`/api/health/config` 的 `studyGroup` 显示 `tutorKeys:"configured"`、`credentialSource:"secrets-manager"`、`simulated:false`——由 `tests/unit/study-group-readiness.test.ts` 固化。
+5. 部署自查（代码核实，不需 AWS 访问）：`/api/health/config` 的 `studyGroup` 显示 `tutorKeys:"configured"`、`credentialSource:"secrets-manager"`、`simulated:false`、`liveKitProjectsSource:"secret"`——由 `tests/unit/study-group-readiness.test.ts` 固化。热生效行为由 `tests/unit/study-group-livekit-hot-credentials.test.ts`（钥对）与 `tests/unit/study-group-livekit-hot-projects.test.ts`（项目列表）固化。
 6. 部署盖章（平台侧接线，使用引用已备齐）：
    - 脚本：`scripts/apprunner-set-version.mjs`（已在仓库）。用法：设两个环境变量后直接运行——`APP_RUNNER_SERVICE_ARN`（该环境的服务 ARN）、`APP_VERSION`（当次部署的 SHA）。脚本自己合并进 `RuntimeEnvironmentVariables`、触发滚动更新并等待成功。
    - 接线：dev-deploy 在"部署完成"后加一步 `node scripts/apprunner-set-version.mjs`，env 传上述两个值（`APP_VERSION: ${{ github.sha }}`）。
@@ -107,19 +112,21 @@
 ### 9.1 Secrets Manager 使用引用速查（照抄）
 
 ```
-Secrets Manager 条目（每环境三条）:
-  lg-<env>-studygroup-livekit        {"apiKey":"...","apiSecret":"..."}
-  lg-<env>-studygroup-token-log-key  <openssl rand -base64 32 的输出>
-  lg-<env>-studygroup-tutor-keys     [{"id":"...","secret":"..."}]
+Secrets Manager 条目（每环境三条凭据 + 一条项目列表）:
+  lg-<env>-studygroup-livekit           {"apiKey":"...","apiSecret":"..."}
+  lg-<env>-studygroup-token-log-key     <openssl rand -base64 32 的输出>
+  lg-<env>-studygroup-tutor-keys        [{"id":"...","secret":"..."}]
+  lg-<env>-studygroup-livekit-projects  [{"id":"dev-primary","url":"wss://<项目>.livekit.cloud","state":"active","weight":1,"credentialSecretId":"lg-dev-studygroup-livekit"}]
+  （credentialSecretId 必须与实际密钥名一致；应用运行时按它读 Secrets Manager。改列表只写这条密钥的新版本，≤60 秒生效）
 
-App Runner 普通变量:
-  LIVEKIT_PROJECTS_JSON = [{"id":"dev-primary","url":"wss://<项目>.livekit.cloud","state":"active","weight":1,"credentialSecretId":"lg-dev-studygroup-livekit"}]
-  （credentialSecretId 必须与实际密钥名一致；应用运行时按它读 Secrets Manager）
+App Runner 普通变量（一次性设置）:
+  LIVEKIT_PROJECTS_SECRET_ID = lg-<env>-studygroup-livekit-projects
+  （本地 / 未设此变量时才用 LIVEKIT_PROJECTS_JSON，同样的 JSON，部署后固定）
 
 App Runner RuntimeEnvironmentSecrets（值 = 密钥完整 ARN，含随机后缀）:
   STUDY_GROUP_TOKEN_LOG_KEY = <ARN of lg-<env>-studygroup-token-log-key>
   STUDY_GROUP_TUTOR_KEYS    = <ARN of lg-<env>-studygroup-tutor-keys>
 
-部署后自查（无需 AWS 访问）: /api/health/config 的 studyGroup 三项
-  configured=true, tutorKeys="configured", credentialSource="secrets-manager", simulated=false
+部署后自查（无需 AWS 访问）: /api/health/config 的 studyGroup
+  configured=true, tutorKeys="configured", credentialSource="secrets-manager", simulated=false, liveKitProjectsSource="secret"
 ```
