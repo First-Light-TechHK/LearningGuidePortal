@@ -106,6 +106,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+// A provider failure the next try may not hit (QA M12): rate limiting or a
+// network failure answers "temporarily unavailable, try again" rather than
+// the configuration-class `unavailable`.
+function liveKitFailure(error: LiveKitGatewayError, message: string) {
+  return error.code === "rate_limited" || error.code === "unreachable"
+    ? new StudyGroupError("livekit_temporarily_unavailable", "LiveKit is temporarily unavailable. Try again.")
+    : new StudyGroupError("unavailable", message);
+}
+
 function tutorRequestPending(row: { status?: string; answeredAt?: string | null; inFlight: boolean }) {
   const status = row.status ?? (row.answeredAt ? "answered" : row.inFlight ? "in_flight" : "queued");
   return status === "queued" || status === "in_flight";
@@ -590,7 +599,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (error.code !== "credential_unavailable" && error.code !== "unauthorized") {
           // A room may exist on this project. Keep the durable assignment so a
           // retry provisions against the same project.
-          throw new StudyGroupError("unavailable", "LiveKit cannot create this room right now.");
+          throw liveKitFailure(error, "LiveKit cannot create this room right now.");
         }
         await deps.repository.update((store) => {
           const row = store.sessions.find((item) => item.id === current.id);
@@ -1376,7 +1385,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: "existing_room" }).code,
             source: "gateway"
           });
-          throw new StudyGroupError("unavailable", "LiveKit cannot issue a verified participant token right now.");
+          throw liveKitFailure(error, "LiveKit cannot issue a verified participant token right now.");
         }
         throw error;
       }

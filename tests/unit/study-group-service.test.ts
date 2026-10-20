@@ -680,7 +680,8 @@ test("an ambiguous provisioning failure pins the assignment and the retry reuses
     liveKitProjects: projects,
     liveKitGateway: {
       // An ambiguous failure (a room may have been created): the start stays
-      // unavailable and never advances to the standby project (design §3.2).
+      // temporarily unavailable (QA M12) and never advances to the standby
+      // project (design §3.2).
       ensureRoom: async ({ project }) => {
         calls.push(project.id);
         throw new LiveKitGatewayError("unreachable");
@@ -695,13 +696,13 @@ test("an ambiguous provisioning failure pins the assignment and the retry reuses
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Pinned", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
 
-  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "livekit_temporarily_unavailable");
   assert.equal(calls.length, 1);
   const pinned = (await repository.read()).sessions.find((row) => row.id === session.id)?.liveKitProjectId;
   assert.equal(pinned, calls[0]);
 
   // The retry provisions the SAME stored project instead of the standby one.
-  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "livekit_temporarily_unavailable");
   assert.deepEqual(calls, [calls[0], calls[0]]);
   assert.equal((await repository.read()).sessions.find((row) => row.id === session.id)?.liveKitProjectId, calls[0]);
 });
@@ -725,7 +726,7 @@ test("provider failures emit one normalized incident without exposing the gatewa
   const group = await local.createGroup({ actorUserId: "host", title: "Observe provider failure", courseId: "course-1", about: "About telemetry." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Rate limited", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
-  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+  await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "livekit_temporarily_unavailable");
 
   assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "eu-primary", code: "provider_rate_limited", source: "gateway" }]);
   assert.equal(JSON.stringify(incidents).includes("LiveKitGatewayError"), false);

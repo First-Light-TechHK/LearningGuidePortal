@@ -1096,6 +1096,7 @@
       "session_unavailable": "This Live Session has ended.",
       "unauthenticated": "Sign in is required.",
       "unavailable": "Live Session connection is not configured.",
+      "livekit_temporarily_unavailable": "The Live Session connection is temporarily unavailable. Try again in a moment.",
       "connect_failed": "The Live Session could not connect. Check the connection and try again.",
       "network_lost": "Your network connection is weak. Trying to reconnect…",
       "room_ended": "This Live Session has ended.",

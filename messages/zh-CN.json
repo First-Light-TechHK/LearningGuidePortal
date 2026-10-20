@@ -1096,6 +1096,7 @@
       "session_unavailable": "这节直播课已结束。",
       "unauthenticated": "需要登录。",
       "unavailable": "直播课连接尚未配置。",
+      "livekit_temporarily_unavailable": "直播课连接暂时不可用，请稍后重试。",
       "connect_failed": "直播课无法连接。请检查连接后重试。",
       "network_lost": "网络连接不稳定，正在尝试恢复…",
       "room_ended": "这节直播课已结束。",

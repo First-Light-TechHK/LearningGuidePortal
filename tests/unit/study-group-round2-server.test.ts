@@ -506,3 +506,38 @@ test("M17: leaving the Study Group removes the member from the group's live room
   assert.deepEqual(g.removed, [{ room: other.session.id, identity: "m2" }]);
   assert.equal((await g.service.listMine("m2")).some((item) => item.id === other.group.id), false);
 });
+
+test("M12: rate limiting and network failures answer livekit_temporarily_unavailable (503), never \"not configured\"", async () => {
+  const { LiveKitGatewayError } = await import("../../modules/group-study/liveKitGateway");
+  const { studyGroupFailure } = await import("../../modules/group-study/http");
+  for (const [failure, expected] of [["rate_limited", "livekit_temporarily_unavailable"], ["unreachable", "livekit_temporarily_unavailable"], ["unverified", "unavailable"]] as const) {
+    const f = await fixture((base) => ({
+      liveKitGateway: {
+        ensureRoom: async () => { throw new LiveKitGatewayError(failure); },
+        issueParticipantToken: async () => ({ token: "stub-token", expiresAt: START, url: "wss://livekit.example.test" }),
+        recoverParticipantToken: async () => { throw new LiveKitGatewayError(failure); },
+        publishTutorMessage: async () => undefined,
+        removeParticipant: async (input) => { base.removed.push(input); },
+        healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: START, latencyMs: 0 })
+      }
+    }));
+    const created = await group(f, []);
+    const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: `Provider ${failure}`, startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+    assert.equal(await code(() => f.service.startSession({ actorUserId: "host", sessionId: session.id })), expected, `start on ${failure}`);
+    // The token path maps the same way.
+    await f.repository.update((store) => {
+      const row = store.sessions.find((item) => item.id === session.id);
+      if (row) Object.assign(row, { status: "live", startedAt: f.clock(), liveKitProjectId: "eu-primary" });
+    });
+    await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
+    assert.equal(await code(() => f.service.issueToken({ actorUserId: "host", sessionId: session.id, recovery: true })), expected, `token on ${failure}`);
+  }
+  const { StudyGroupError } = await import("../../modules/group-study/domain");
+  const response = studyGroupFailure(new StudyGroupError("livekit_temporarily_unavailable", "LiveKit is temporarily unavailable. Try again."));
+  assert.equal(response.status, 503);
+  const { readFile } = await import("node:fs/promises");
+  const en = JSON.parse(await readFile(path.join(process.cwd(), "messages/en-GB.json"), "utf8")) as { studyGroupsPage: { errors: Record<string, string> } };
+  const zh = JSON.parse(await readFile(path.join(process.cwd(), "messages/zh-CN.json"), "utf8")) as { studyGroupsPage: { errors: Record<string, string> } };
+  assert.equal(en.studyGroupsPage.errors.livekit_temporarily_unavailable, "The Live Session connection is temporarily unavailable. Try again in a moment.");
+  assert.equal(zh.studyGroupsPage.errors.livekit_temporarily_unavailable, "直播课连接暂时不可用，请稍后重试。");
+});

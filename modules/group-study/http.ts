@@ -16,7 +16,8 @@ const statusFor: Record<string, number> = {
   session_unavailable: 409,
   tutor_busy: 409,
   tutor_rate_limited: 429,
-  unavailable: 503
+  unavailable: 503,
+  livekit_temporarily_unavailable: 503
 };
 
 export function studyGroupData(data: unknown, status = 200) {
