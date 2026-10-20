@@ -950,6 +950,33 @@ test("r3 server 7a: a dispatch that lands between the move and the withdrawal re
   assert.deepEqual(reminders(f, "m1"), ['Raced mail in the Study Group "Round two" starts in 8 minutes.']);
 });
 
+test("r3 server 7a: a dispatch whose rows were claimed before a move sends nothing for the old time", async () => {
+  let moveDuringSend: (() => Promise<void>) | undefined;
+  const f = await fixture(() => ({
+    userProfile: async (userId) => {
+      // The move's write commits after the dispatch claimed its rows and
+      // before it sends.
+      const move = moveDuringSend;
+      moveDuringSend = undefined;
+      await move?.();
+      return { id: userId, displayName: userId, email: `${userId}@example.test`, locale: "en-GB" };
+    }
+  }));
+  const created = await group(f, ["m1"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Claimed early", startsAt: inMinutes(f, 30), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+  f.advanceSeconds(22 * 60);
+  moveDuringSend = async () => {
+    await f.repository.update((store) => {
+      const row = store.sessions.find((item) => item.id === session.id)!;
+      row.startsAt = inMinutes(f, 60);
+    });
+  };
+  await f.service.dispatchDueReminders();
+  assert.deepEqual(f.mails.filter((item) => item.text.includes(" starts in ")), [], "no mail for the old time");
+  assert.deepEqual(f.notes.filter((item) => item.title === "Live Session reminder"), [], "no reminder for the old time");
+});
+
 test("r3 server 7b: a reschedule sends only that session's reminders", async () => {
   const f = await fixture();
   const created = await group(f, ["m1"]);

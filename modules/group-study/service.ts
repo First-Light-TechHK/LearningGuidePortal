@@ -736,11 +736,25 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     };
     if (dueJobs(snapshot ?? await deps.repository.read(), false).length === 0) return;
     const due = await deps.repository.update((store) => dueJobs(store, true));
-    for (const job of due) {
+    if (due.length === 0) return;
+    const profiles = await Promise.all(due.map((job) => deps.userProfile(job.userId).catch(() => null)));
+    // The rows were claimed above; the sends come after. A Start Time moved
+    // (or a session cancelled) in between already reset or withdrew those
+    // rows, and its own dispatch reminds for the new time, so a job whose
+    // session no longer starts when it was claimed is dropped here instead of
+    // mailing the old time (r3 server 7a). One read per batch that sends.
+    const current = await deps.repository.read().catch(() => null);
+    const stillDue = (job: (typeof due)[number]) => {
+      if (!current) return true;
+      const session = current.sessions.find((item) => item.id === job.sessionId);
+      return Boolean(session && session.status === "scheduled" && session.startsAt === job.startsAt);
+    };
+    for (const [index, job] of due.entries()) {
+      if (!stillDue(job)) continue;
       // One recipient's failure must not cost the rest their reminder, nor
       // fail the page poll that triggered the dispatch (QA M11).
       try {
-        const profile = await deps.userProfile(job.userId);
+        const profile = profiles[index];
         // The row title is localised at write time and doubles as the reminders
         // view's marker (hunt L1): the en-GB title must stay exactly this
         // string — the view filters on the known per-locale titles — and the
