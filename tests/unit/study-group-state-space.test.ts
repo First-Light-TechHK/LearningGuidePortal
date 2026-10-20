@@ -235,10 +235,12 @@ test("start matrix: only the Host starts, only from Starting Soon, waiters move 
   // BR-034: "Host Start moves waiting people into Live without another join, and the count stays."
   const started = await f.service.startSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal(started.state, "live");
-  assert.equal(started.occupancy, 2);
+  // The waiters plus the Host, seated by the start itself (QA final review F-1).
+  assert.equal(started.occupancy, 3);
   const after = await f.repository.read();
-  const liveRows = after.presences.filter((row) => row.sessionId === soon.id).sort((a, b) => a.id.localeCompare(b.id));
+  const liveRows = after.presences.filter((row) => row.sessionId === soon.id && row.userId !== "host").sort((a, b) => a.id.localeCompare(b.id));
   assert.deepEqual(liveRows.map((row) => [row.id, row.enteredAt, row.phase]), waitingRows.map((row) => [row.id, row.enteredAt, "live"]));
+  assert.equal(after.presences.filter((row) => row.sessionId === soon.id && row.userId === "host" && !row.leftAt).length, 1);
   assert.equal(after.meetings.filter((row) => row.sessionId === soon.id).length, 1);
   assert.equal(after.sessions.find((row) => row.id === soon.id)?.startedAt, NOW);
   // "A second Start does not insert another row."

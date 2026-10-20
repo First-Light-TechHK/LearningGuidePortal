@@ -118,6 +118,9 @@ test("leaving a Study Group releases a waiting seat and ends a live session with
   const live = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Only waiter", startsAt: "2026-09-19T02:06:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await service.startSession({ actorUserId: "host", sessionId: live.id });
   await service.enterSession({ actorUserId: "waiter", sessionId: live.id, requestedAt: NOW });
+  // Starting seats the Host (F-1); the Host steps out, the waiter is last.
+  await service.leaveSession({ actorUserId: "host", sessionId: live.id });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "live");
   await service.leaveGroup({ actorUserId: "waiter", groupId: group.id });
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "completed");
   assert.equal((await service.listDiscover({ actorUserId: "waiter" })).some((item) => item.id === group.id), true);
@@ -246,8 +249,9 @@ test("View attendees shows planners until the Session is live, then the actual e
   await service.startSession({ actorUserId: "host", sessionId: soon.id });
   const live = await service.getSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal(live.state, "live");
-  // Live: the actual entrants; a planner who never entered is not an attendee.
-  assert.deepEqual(live.attendees.map((item) => item.userId), ["walker"]);
+  // Live: the actual entrants (the Host is seated by the start); a planner
+  // who never entered is not an attendee.
+  assert.deepEqual(live.attendees.map((item) => item.userId), ["walker", "host"]);
   const later = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Later list", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await service.planToAttend({ actorUserId: "planner-only", sessionId: later.id });
   const upcoming = await service.getSession({ actorUserId: "host", sessionId: later.id });
@@ -433,7 +437,9 @@ test("session schedule, attendance, capacity, start and token follow the P0 rule
   assert.equal(duplicate.occupancy, 1);
   const started = await service.startSession({ actorUserId: "host", sessionId: soon.id });
   assert.equal(started.state, "live");
-  assert.equal(started.occupancy, 1);
+  // The start seats the Host in the same write (QA final review F-1); the
+  // Host's own entry afterwards renews that seat.
+  assert.equal(started.occupancy, 2);
   assert.equal((await service.enterSession({ actorUserId: "host", sessionId: soon.id, requestedAt: NOW })).occupancy, 2);
   const meetings = (await repository.read()).meetings.filter((item) => item.sessionId === soon.id);
   assert.equal(meetings.length, 1);

@@ -1086,6 +1086,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           for (const presence of store.presences) {
             if (presence.sessionId === current.id && presence.enteredAt && !presence.leftAt) presence.phase = "live";
           }
+          // The Host's reserved seat becomes a held one in this same write:
+          // once the session is live the reservation is gone, so a member's
+          // Join Now landing between this start and the Host's own entry
+          // could otherwise take it (QA 2026-10-19 final review F-1).
+          const hostSeat = store.presences.find((item) => item.sessionId === current.id && item.userId === input.actorUserId);
+          if (hostSeat && seatHeld(hostSeat, deps.now())) {
+            hostSeat.lastSeenAt = now;
+          } else if (hostSeat) {
+            Object.assign(hostSeat, { enteredAt: now, lastSeenAt: now, leftAt: null, phase: "live", liveKitParticipantSid: null });
+          } else {
+            store.presences.push({ id: randomUUID(), sessionId: current.id, userId: input.actorUserId, requestedAt: now, enteredAt: now, lastSeenAt: now, leftAt: null, phase: "live", liveKitParticipantSid: null });
+          }
           if (!store.meetings.some((item) => item.sessionId === current.id)) {
             store.meetings.push({ id: randomUUID(), sessionId: current.id, startedAt: now, endedAt: null });
           }
