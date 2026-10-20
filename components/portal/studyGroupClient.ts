@@ -69,16 +69,17 @@ type ValidatableForm = { checkValidity: () => boolean; elements: ArrayLike<unkno
 // The one form check every Study Group form runs before it submits (QA
 // 2026-10-19 BUG-0125): the forms are `noValidate`, so the browser never
 // shows its own bubble in the browser's language; a field that is missing or
-// out of range becomes the page's own message in the page's language. A date
-// or time before its `min` is the dedicated "Start Time must be in the future"
-// message; anything else is the generic required-fields one. The server runs
-// the same rules again (modules/group-study/service.ts).
+// out of range becomes the page's own message in the page's language. A
+// missing field is reported first, so fixing the Start Time never uncovers a
+// second message (QA r1-F-3); then a date or time before its `min` is the
+// dedicated "Start Time must be in the future" message; anything else is the
+// generic required-fields one. The server runs the same rules again
+// (modules/group-study/service.ts).
 export function studyGroupFormProblem(form: ValidatableForm): "validation" | "start_in_past" | null {
   if (form.checkValidity()) return null;
-  for (const element of Array.from(form.elements)) {
-    const validity = (element as { validity?: { rangeUnderflow?: boolean } }).validity;
-    if (validity?.rangeUnderflow) return "start_in_past";
-  }
+  const validities = Array.from(form.elements).map((element) => (element as { validity?: { valueMissing?: boolean; rangeUnderflow?: boolean } }).validity);
+  if (validities.some((validity) => validity?.valueMissing)) return "validation";
+  if (validities.some((validity) => validity?.rangeUnderflow)) return "start_in_past";
   return "validation";
 }
 
@@ -164,4 +165,20 @@ export function sessionTitleCount(value: string) {
 
 export function fill(template: string, values: Record<string, string | number>) {
   return Object.entries(values).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), template);
+}
+
+// A counted line in the page's language: "1 learner" / "2 learners" (QA M8).
+// Chinese has one form, so its copy repeats it under both keys.
+export function fillCount(locale: string, forms: { one: string; other: string }, count: number) {
+  return fill(new Intl.PluralRules(locale).select(count) === "one" ? forms.one : forms.other, { count });
+}
+
+// The Study Groups page, with the open group in its query so a reload, the
+// language switch and a sign-in come back to it (QA M6).
+export function studyGroupsPageHref(locale: string, groupId: string | null) {
+  return `/${locale}/portal/study-groups${groupId ? `?group=${encodeURIComponent(groupId)}` : ""}`;
+}
+
+export function studyGroupSignInHref(locale: string, returnTo: string) {
+  return `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(returnTo)}`;
 }

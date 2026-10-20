@@ -91,3 +91,69 @@ export function uniqueReminderBodies<T extends { body: string }>(reminders: T[])
     return true;
   });
 }
+
+/**
+ * QA N10: what a failed list load does to the page. Before the first load
+ * every failure is the page's error. After it, a failed 3 s poll keeps what
+ * is on screen and the next poll heals it; a lost sign-in is the exception,
+ * since no poll heals it and the error pane carries the sign-in link (N10-b).
+ * A load the viewer asked for (a filter, a search, Retry, a change) always
+ * shows its failure (N10-c).
+ */
+export function studyGroupListFailureShown(input: { poll: boolean; loadedOnce: boolean; code: string }) {
+  if (!input.loadedOnce || input.code === "unauthenticated") return true;
+  return !input.poll;
+}
+
+/**
+ * QA M2 / M3: the sidebar's empty lines, only once the lists have loaded (no
+ * flash of "no groups" during the first load). Hosted by Me has its own line,
+ * and a Discover search that finds nothing says so.
+ */
+export function mineEmptyCopy(input: { signedIn: boolean; listsLoaded: boolean; filter: "all" | "host"; count: number }) {
+  if (!input.signedIn || !input.listsLoaded || input.count > 0) return null;
+  return input.filter === "host" ? "noHosted" as const : "noMine" as const;
+}
+
+export function discoverEmptyCopy(input: { listsLoaded: boolean; count: number; filtered: boolean }) {
+  if (!input.listsLoaded || input.count > 0) return null;
+  return input.filtered ? "noDiscoverMatch" as const : "noDiscover" as const;
+}
+
+export type StudyGroupNotice = "groupCancelled" | "sessionCancelled" | "sessionRescheduled";
+
+// The waiting dialog's seat can no longer come back after these: the dialog
+// closes and says why instead of waiting on (QA r2-B4 / r1-F-4).
+const WAITING_TERMINAL_CODES = new Set(["session_full", "not_found", "session_unavailable", "session_not_open", "forbidden", "unauthenticated", "course_access_required"]);
+
+export type WaitingDialogStep =
+  | { kind: "keep" }
+  | { kind: "reenter" }
+  | { kind: "open-room" }
+  | { kind: "close"; errorCode: string | null; notice: StudyGroupNotice | null };
+
+/**
+ * One reading of the server for the waiting dialog, from its heartbeat, its
+ * re-enter or its session poll (the server's state decides, QA M9):
+ * - gone (not_found): the session was cancelled; close with a notice;
+ * - another terminal error: close and show it;
+ * - back to scheduled: moved to a later time; close (which releases the seat)
+ *   with a notice;
+ * - completed: it ended without the viewer; close with that error;
+ * - the seat lapsed: enter again;
+ * - live: open the room;
+ * - a transient failure (network, a 500) or anything else: keep waiting.
+ */
+export function waitingDialogStep(result: { ok: boolean; code: string; data?: { seated?: boolean; state?: string; occupancy?: number } | null }): WaitingDialogStep {
+  if (!result.ok) {
+    if (result.code === "not_found") return { kind: "close", errorCode: null, notice: "sessionCancelled" };
+    if (WAITING_TERMINAL_CODES.has(result.code)) return { kind: "close", errorCode: result.code, notice: null };
+    return { kind: "keep" };
+  }
+  const state = result.data?.state;
+  if (state === "scheduled") return { kind: "close", errorCode: null, notice: "sessionRescheduled" };
+  if (state === "completed") return { kind: "close", errorCode: "session_unavailable", notice: null };
+  if (result.data?.seated === false) return { kind: "reenter" };
+  if (state === "live") return { kind: "open-room" };
+  return { kind: "keep" };
+}

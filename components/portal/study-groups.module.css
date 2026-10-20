@@ -14,6 +14,13 @@
 .bell { width: 20px; height: 20px; }
 /* 599:40 notification bell: centre the 20px icon in the header tool row (icon y24). */
 .tools a[href*="/notifications"] { display: inline-flex; align-items: center; }
+/* QA M23: the phone header's compact menu (hidden where the nav row shows). */
+.menu { display: none; position: relative; margin-right: 10px; }
+.menu summary { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e4e7ec; border-radius: 8px; color: #4a5565; list-style: none; cursor: pointer; }
+.menu summary::-webkit-details-marker { display: none; }
+.menu nav { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; display: grid; min-width: 180px; padding: 6px; background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; box-shadow: 0 10px 24px rgba(16, 24, 40, .14); }
+.menu nav a { padding: 10px 12px; border-radius: 8px; color: #4a5565; font-size: 14px; font-weight: 500; text-decoration: none; }
+.menu nav a.active { color: #155dfc; font-weight: 700; }
 .avatar { width: 32px; height: 32px; border-radius: 18px; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 13px; font-weight: 600; text-decoration: none; }
 .layout { display: grid; grid-template-columns: 460px minmax(0, 1fr); min-height: calc(100vh - 68px); }
 /* BUG-0129: the grid used to let the sidebar grow with its cards (overflow:auto with no
@@ -34,8 +41,8 @@
 /* 599:10/599:11 sidebar cards: 120px tall on a 132px pitch (16/16/15 padding keeps the design card height). */
 .card { position: relative; width: 100%; text-align: left; background: #fbfbfb; border: 1px solid #e4e7ec; border-radius: 8px; padding: 16px 16px 15px; margin: 0 0 12px; cursor: pointer; font: inherit; color: inherit; }
 .card[aria-current="true"] { background: #f1f7ff; border: 2px solid #1d6bff; border-radius: 12px; outline: none; }
-.card h3 { margin: 0 48px 4px 0; font-size: 16px; font-weight: 600; line-height: 19px; }
-.course { margin: 0; color: #000; opacity: .4; font-size: 12px; font-weight: 500; }
+.card h3 { margin: 0 48px 4px 0; font-size: 16px; font-weight: 600; line-height: 19px; overflow-wrap: anywhere; }
+.course { margin: 0; color: #000; opacity: .4; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .role { display: inline-flex; margin-top: 8px; border-radius: 8px; padding: 2px 8px; font-size: 12px; }
 .hosted { background: #e8f1ff; color: #1d6bff; }
 .joined { background: #d1f1dd; color: #16a34a; }
@@ -70,6 +77,9 @@
 .fieldBox input + .counter { top: 14px; }
 .fieldBox textarea + .counter { bottom: 10px; }
 .focusBox textarea { min-height: 80px; }
+/* QA M25: Edit Group uses the create form's fields; its Course cannot change, so it reads as a value. */
+.modal h2 + .field { margin-top: 24px; }
+.readonlyValue { padding: 10px 14px; border-radius: 7px; background: #f7f8fa; font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
 .actions { display: flex; justify-content: space-between; margin-top: 8px; }
 .ghost, .primary { height: 37px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .ghost { width: 80px; border: 1px solid #e4e7ed; background: #fff; color: #111827; }
@@ -82,14 +92,16 @@
 .toast span { color: #6b7280; font-size: 12px; }
 .sheet { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 30px; min-height: calc(100vh - 108px); background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1); padding: 8px 8px 30px 30px; box-sizing: border-box; }
 .sheet > article { margin-top: 22px; }
-.groupTitle { margin: 0 0 12px; font-size: 30px; font-weight: 700; color: #111827; }
+/* QA M1: a title may be 50 characters with no space; it wraps instead of widening the page. */
+.groupTitle { margin: 0 0 12px; font-size: 30px; font-weight: 700; color: #111827; overflow-wrap: anywhere; }
 .hostChip { display: inline-flex; background: #e0f5e5; color: #26ad61; border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 600; }
 .facts { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; margin: 18px 0; }
 .facts h3 { margin: 0 0 6px; font-size: 12px; color: #1d6bff; }
-.facts p { margin: 0; }
+.facts p { margin: 0; overflow-wrap: anywhere; }
 .aboutLabel { color: #111827; font-size: 14px; font-weight: 600; }
-/* BUG-0101: About text may be one long word or URL; break it inside the facts column. */
-.aboutBody { color: #000; opacity: .6; font-size: 12px; overflow-wrap: anywhere; }
+/* BUG-0101: About text may be one long word or URL; break it inside the facts column.
+   QA M1: the line breaks the Host typed are kept. */
+.aboutBody { color: #000; opacity: .6; font-size: 12px; overflow-wrap: anywhere; white-space: pre-line; }
 .tabRow { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e4e7ec; margin-bottom: 18px; }
 .tab { color: #1d6bff; font-size: 14px; font-weight: 600; border-bottom: 2px solid #1d6bff; padding-bottom: 8px; }
 .countBadge { background: #edf3ff; color: #1d6bff; border-radius: 10px; min-width: 20px; height: 21px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; }
@@ -104,12 +116,14 @@
 /* BUG-0097: the created state owns the whole panel — a 450px card centred in the panel flow. */
 .createdPanel { width: min(450px, 100%); display: grid; justify-items: center; gap: 12px; text-align: center; }
 .createdPanel strong { font-size: 16px; }
+/* QA M26: the created card names the new group and its Course. */
+.createdPanel .createdName { display: block; margin-top: 6px; color: #111827; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .createdPanel span.createdBody { color: #6b7280; font-size: 12px; }
 .createdPanel .primary { min-width: 0; height: 35px; margin-top: 6px; padding: 0 16px; font-size: 12px; }
 .createdIcon { position: relative; width: 32px; height: 32px; flex: none; }
 .createdIcon img { position: absolute; inset: 0; }
 .createdIcon i { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 16px; font-weight: 700; font-style: normal; }
-.memberCol li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e4e7ec; font-size: 12px; color: #000; opacity: .8; }
+.memberCol li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e4e7ec; font-size: 12px; color: #000; opacity: .8; overflow-wrap: anywhere; }
 .memberAvatar { width: 28px; height: 28px; border-radius: 17px; background: #e8f1ff; color: #1d6bff; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
 .hostTag { margin-left: auto; background: #e8f1ff; color: #1d6bff; border-radius: 8px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
 .hostFoot { margin: auto -20px 0; display: grid; gap: 8px; }
@@ -119,7 +133,7 @@
 .hostFoot .primary, .hostFoot .ghost, .hostFoot .danger { width: 100%; height: 36px; font-size: 12px; }
 .toast { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); width: min(450px, calc(100% - 32px)); }
 .session { display: grid; grid-template-columns: minmax(0, 1fr) 152px; column-gap: 16px; align-items: center; background: #fff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 25px 16px 16px; margin-bottom: 12px; }
-.sessionBody { min-width: 0; }
+.sessionBody { min-width: 0; overflow-wrap: anywhere; }
 /* 599:488 session-card title: 14px/600 #000 (the UA h3 1.17em/bold otherwise leaks). */
 .sessionBody h3 { font-size: 14px; font-weight: 600; color: #000; }
 .factList { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
@@ -156,14 +170,14 @@
    design's wider 760px card, without the old inline page-panel margins. */
 .modal .createForm { width: min(760px, 100%); margin: 0; }
 .modal .waitingBanner { display: grid; justify-items: center; gap: 10px; margin: 0 0 25px; padding: 16px; border: 1px solid #1d6bff; border-radius: 12px; background: #f1f7ff; color: #1d6bff; font-size: 14px; font-weight: 500; }
-.waitingTitle { margin: 0 0 12px; font-size: 20px; font-weight: 700; color: #111827; }
+.waitingTitle { margin: 0 0 12px; font-size: 20px; font-weight: 700; color: #111827; overflow-wrap: anywhere; }
 .waitingFacts { list-style: none; margin: 0 0 16px; padding: 12px; display: grid; gap: 12px; background: #fbfbfb; border: 1px solid #e4e7ec; border-radius: 8px; font-size: 14px; font-weight: 500; color: rgba(0,0,0,.4); }
 .waitingFacts li { display: flex; align-items: center; gap: 8px; }
 .waitingFacts svg { width: 16px; height: 16px; flex: none; }
 .divider { display: inline-block; width: 1px; height: 10px; background: #d0d5dd; flex: none; vertical-align: middle; }
 .waitingFocus { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
 /* 599:755 focus body text is 12px in the design. */
-.waitingFocus + p { font-size: 12px; }
+.waitingFocus + p { font-size: 12px; overflow-wrap: anywhere; }
 /* BUG-0102: the context card repeats the Group title/About; overflow-wrap is inherited
    by both, so a long unbroken word or URL stays inside the schedule dialog. */
 .contextCard { margin: 16px 0 18px; background: #f7f8fa; border-radius: 8px; padding: 12px; overflow-wrap: anywhere; }
@@ -181,6 +195,15 @@
 .dialogActions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
 /* BUG-0099: the Cancel Group confirm body and its busy confirm button. */
 .confirmBody { margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; }
+/* QA M24: the attendees list, and its line when nobody is there yet. */
+.attendeeList { margin: 16px 0 24px; padding-left: 18px; font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.attendeeEmpty { margin: 16px 0 24px; color: #6b7280; font-size: 14px; }
+/* QA M4: the Create dialog without any Course access says why and where to get it. */
+.noCourses { margin: -12px 0 18px; padding: 12px; border-radius: 8px; background: #f6f9fe; color: #344054; font-size: 13px; line-height: 18px; }
+.noCourses a { color: #1d6bff; font-weight: 600; }
+/* QA M9: what happened to the group or session that just closed. */
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: min(760px, 100%); margin: 0 auto 16px; box-sizing: border-box; padding: 12px 16px; border-radius: 10px; background: #fff7ed; color: #9a3412; font-size: 14px; }
+.notice button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
 .dialogActions .danger:disabled { opacity: .45; cursor: not-allowed; }
 .locked { position: relative; height: 175px; background: #fff; border: 1px solid #e4e7ec; border-radius: 8px; margin: 0 0 12px; }
 .lockedTitle, .lockedSub, .lockedFact1, .lockedFact2, .lockedFact3, .lockedFactBox { position: absolute; height: 17px; border-radius: 4px; background: #ebedf2; }
@@ -267,6 +290,8 @@
 .tutorDisclosure { color: #9a3412; font-size: 12px; font-weight: 600; }
 .chatForm { position: relative; display: block; min-height: 100px; padding: 12px 36px 12px 12px; border: 1px solid #e4e7ed; border-radius: 8px; }
 .chatForm input { width: 100%; border: 0; font: inherit; outline: none; background: transparent; }
+/* QA M27: the input draws no outline of its own, so the box shows where the keyboard is. */
+.chatForm:focus-within { border-color: #1d6bff; box-shadow: 0 0 0 3px rgba(29, 107, 255, .2); }
 .chatForm input::placeholder { color: #98a2b3; }
 .sendButton { position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px; border: 0; border-radius: 12px; background: #1d6bff; color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; }
 .sendButton svg { width: 12px; height: 12px; }
@@ -305,4 +330,11 @@
      host-footer -42px shift is a desktop-only alignment — reset both. */
   .endCard { margin: -35px auto 0; }
   .hostFootWithCopy { margin-bottom: 0; }
+  /* QA M23: at 375px the session card stacks its buttons under the text, the
+     member column has no desktop height, and the compact menu replaces the nav. */
+  .session { grid-template-columns: minmax(0, 1fr); row-gap: 12px; padding: 16px; }
+  .memberCol { min-height: 0; }
+  .menu { display: block; }
+  .brand { font-size: 16px; }
+  .tools { gap: 12px; }
 }

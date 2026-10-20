@@ -4,7 +4,7 @@ import { participantStatus, raisedHands, sessionControls, sessionStateLabel, stu
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
-import { clampGroupAbout, DURATION_MINUTE_CHOICES, fill, GROUP_ABOUT_MAX, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
+import { clampGroupAbout, DURATION_MINUTE_CHOICES, fill, fillCount, GROUP_ABOUT_MAX, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
 
 test("schedule duration is a required dropdown of 30, 45, 60, and 90 minutes", () => {
   assert.deepEqual([...DURATION_MINUTE_CHOICES], [30, 45, 60, 90]);
@@ -154,8 +154,8 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.equal(en.studyGroupsPage.errors.start_in_past, "Start Time must be in the future.");
   assert.equal(zh.studyGroupsPage.errors.start_in_past, "开始时间必须还在将来。");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/); // BUG-0100: one slot-gated alert per dialog
-  assert.equal(en.studyGroupsPage.courseAccessRequired, "Course access required, You don't currently have access to {course}.\nGet Course access to join this Study Group.");
-  assert.equal(fill(en.studyGroupsPage.courseAccessRequired, { course: "German History" }), "Course access required, You don't currently have access to German History.\nGet Course access to join this Study Group.");
+  assert.equal(en.studyGroupsPage.courseAccessRequired, "Course access required. You don't currently have access to {course}.\nGet Course access to join this Study Group.");
+  assert.equal(fill(en.studyGroupsPage.courseAccessRequired, { course: "German History" }), "Course access required. You don't currently have access to German History.\nGet Course access to join this Study Group.");
   assert.equal(zh.studyGroupsPage.courseAccessRequired, "需要课程访问权限，你目前没有{course}的访问权限。\n获取课程访问权限后才能加入这个学习小组。");
   assert.equal(en.studyGroupsPage.joinAccess, "You have access to this Course.\nJoin this Study Group to view and take part in its Live Sessions.");
   assert.equal(zh.studyGroupsPage.joinAccess, "你有这门课的访问权限。\n加入学习小组后可以查看并参加直播课。");
@@ -233,14 +233,14 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
   assert.equal(en.studyGroupsPage.liveNow, "Live now");
   assert.equal(zh.studyGroupsPage.liveNow, "正在直播");
   assert.equal(sessionStateLabel("completed"), "completed");
-  assert.equal(fill(en.studyGroupsPage.attended, { count: 4 }), "4 members attended");
+  assert.equal(fillCount("en-GB", en.studyGroupsPage.attended, 4), "4 members attended");
   assert.equal(fill(en.studyGroupsPage.maximumLine, { count: 6 }), "Maximum 6 participants");
   assert.equal(en.studyGroupsPage.planNote, "Planning to attend does not reserve a place.");
   assert.equal(en.studyGroupsPage.planning, "You are planning to attend this session.");
   assert.equal(zh.studyGroupsPage.planNote, "计划参加不保留座位。");
   assert.equal(zh.studyGroupsPage.planning, "你已计划参加本节。");
   assert.equal(en.studyGroupsPage.reminderHint, "You'll get a reminder before it starts");
-  assert.equal(fill(zh.studyGroupsPage.attended, { count: 4 }), "4 人参加过");
+  assert.equal(fillCount("zh-CN", zh.studyGroupsPage.attended, 4), "4 人参加过");
   assert.equal(zh.studyGroupsPage.reminderHint, "开始前你会收到提醒");
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /sessionStateLabel\(session\.state\)/);
@@ -426,9 +426,11 @@ test("the retained create form cannot submit twice while the request is in fligh
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /const \[creating, setCreating\] = useState\(false\)/);
   assert.match(app, /if \(creating\) return;/);
-  assert.match(app, /type="submit" disabled=\{creating\}/);
+  assert.match(app, /type="submit" disabled=\{creating \|\| noCourseAccess\}/);
+  // QA M26: Cancel cannot close the dialog under a request still in flight either.
+  assert.match(app, /onClick=\{closeDialog\} disabled=\{creating\}>\{copy\.cancel\}/);
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.sessionBody \{ min-width: 0; \}/);
+  assert.match(css, /\.sessionBody \{ min-width: 0;[^}]*\}/);
 });
 
 test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor modes", () => {
@@ -590,10 +592,11 @@ test("creating a group hands the whole panel to the success state and reopening 
   assert.match(app, /dialog !== "create" && !createdGroup \? \(/);
   assert.match(app, /className=\{`\$\{styles\.panel\} \$\{styles\.createdPanel\}`\} role="status"/);
   assert.match(app, /copy\.createdTitle/);
-  assert.match(app, /copy\.createdBody/);
+  // QA M26: the card names the new group and its Course (PRD GS-CREATE-006).
+  assert.match(app, /<span className=\{styles\.createdName\}>\{createdGroup\.title\}<\/span><span className=\{styles\.createdBody\}>\{createdGroup\.courseTitle\}<\/span>/);
   assert.match(app, /copy\.openGroup/);
   // Opening a group from the sidebar while the success state is showing resolves that state.
-  assert.match(app, /openGroupId\.current = id;\s*setSelectedId\(id\);\s*setCreatedGroup\(null\);/);
+  assert.match(app, /openGroupId\.current = id;\s*setSelectedId\(id\);\s*showGroupInAddress\(id\);\s*setCreatedGroup\(null\);/);
   // BUG-0110: closing the success page resets the form and errorCode, so the next
   // Create dialog opens clean and the same name cannot be resubmitted by accident.
   assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("idle"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
@@ -656,7 +659,8 @@ test("the waiting dialog offers a Close control that releases the hold without b
   // The enter flow itself is untouched: the poll only follows a live waitingSession and
   // pushes into the room, so clearing it on close just stops the poll and releases the hold.
   assert.match(app, /if \(!waitingSession \|\| waitingSession\.state === "live"\) return;/);
-  assert.match(app, /if \(result\.data\.state === "live"\) \{\s*waitingHandedOffRef\.current = true;\s*waitingHoldRef\.current = null;\s*router\.push\(`\/\$\{locale\}\/portal\/study-groups\/sessions\/\$\{result\.data\.id\}`\);/);
+  assert.match(app, /const step = waitingDialogStep\(result\);\s*if \(step\.kind === "keep" && result\.ok\) setWaitingSession\(result\.data\);\s*else settleWaiting\(step, sessionId\);/);
+  assert.match(app, /if \(step\.kind === "open-room"\) \{\s*waitingHandedOffRef\.current = true;\s*waitingHoldRef\.current = null;\s*router\.push\(`\/\$\{locale\}\/portal\/study-groups\/sessions\/\$\{sessionId\}`\);/);
   assert.match(app, /const held = waitingHoldRef\.current;\s*if \(!held\) return;\s*waitingHoldRef\.current = null;\s*void fetch\(`\/api\/study-groups\/sessions\/\$\{held\}\/leave`/);
 });
 
@@ -702,9 +706,9 @@ test("editing a Study Group clamps About to the create form's 200 character limi
   assert.equal(clampGroupAbout("x".repeat(250)).length, GROUP_ABOUT_MAX);
   assert.equal(clampGroupAbout("short"), "short");
   assert.match(app, /const \[editAbout, setEditAbout\] = useState\(""\)/);
-  assert.match(app, /function openEditGroup\(\) \{\s*setErrorCode\("idle"\);\s*setEditAbout\(clampGroupAbout\(selected\?\.about \|\| ""\)\);\s*setDialog\("edit"\);\s*\}/);
+  assert.match(app, /function openEditGroup\(\) \{\s*setErrorCode\("idle"\);\s*setEditTitle\(\(selected\?\.title \|\| ""\)\.slice\(0, 50\)\);\s*setEditAbout\(clampGroupAbout\(selected\?\.about \|\| ""\)\);\s*setDialog\("edit"\);\s*\}/);
   assert.match(app, /onClick=\{openEditGroup\}>\{copy\.editGroup\}<\/button>/);
-  assert.match(app, /<textarea name="about" required maxLength=\{GROUP_ABOUT_MAX\} value=\{editAbout\} onChange=\{\(event\) => setEditAbout\(clampGroupAbout\(event\.target\.value\)\)\} \/>/);
+  assert.match(app, /<textarea name="about" required maxLength=\{GROUP_ABOUT_MAX\} placeholder=\{copy\.enterDescription\} value=\{editAbout\} onChange=\{\(event\) => setEditAbout\(clampGroupAbout\(event\.target\.value\)\)\} \/>/);
   assert.match(app, /\{editAbout\.length\}\/\{GROUP_ABOUT_MAX\}/);
   assert.equal(/<textarea name="about"[^>]*defaultValue=/.test(app), false);
   // The create form keeps the same 200 boundary through the shared helper.
@@ -742,7 +746,7 @@ test("an empty Create Study Group submit reports through the app's own validatio
   // single error slot as "validation" - the same surface server rejections already use.
   // QA 2026-10-19 (BUG-0125 rest): every Study Group form is noValidate and goes through
   // one shared check (studyGroupFormProblem), so no dialog shows the browser's bubble.
-  assert.match(app, /<button className=\{styles\.primary\} type="submit" disabled=\{creating\}>\{copy\.create\}<\/button>/);
+  assert.match(app, /<button className=\{styles\.primary\} type="submit" disabled=\{creating \|\| noCourseAccess\}>\{copy\.create\}<\/button>/);
   // The create form and the shared edit/schedule/edit-session form.
   assert.equal(app.split("noValidate onSubmit").length - 1, 2);
   assert.equal(app.includes("reportValidity"), false);
@@ -770,7 +774,8 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.notEqual(zh.studyGroupsPage.confirmBack, zh.studyGroupsPage.confirmCancelGroupAction);
   assert.notEqual(en.studyGroupsPage.confirmBack, en.studyGroupsPage.confirmCancelGroupAction);
   // A failed cancellation keeps the sheet selected so studyGroupErrorPlace has a home for the error.
-  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("idle"\);(?:\s*\/\/[^\n]*)*\s*openGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*await loadLists\(\);/);
+  assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("idle"\);(?:\s*\/\/[^\n]*)*\s*forgetOpenGroup\(\);\s*await loadLists\(\);/);
+  assert.match(app, /function forgetOpenGroup\(\) \{\s*openGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*showGroupInAddress\(null\);\s*\}/);
   assert.match(css, /\.confirmBody \{ margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; \}/);
   assert.match(css, /\.dialogActions \.danger:disabled \{ opacity: \.45; cursor: not-allowed; \}/);
   assert.equal(en.studyGroupsPage.cancelGroupConfirmTitle, "Cancel this Study Group?");
@@ -805,7 +810,7 @@ test("Plan, Cancel Attendance, Cancel Session, and Leave Group only advance the 
   assert.match(app, /async function runLeaveGroup\(\) \{\s*if \(!selected \|\| mutating\) return;/);
   // Every failure lands only in the shared slot; the unconditional panel wipe is gone.
   assert.equal(app.split("setErrorCode(outcome.errorCode)").length - 1, 2);
-  assert.match(app, /if \(outcome\.clearSelection\) \{\s*openGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*\}/);
+  assert.match(app, /if \(outcome\.clearSelection\) forgetOpenGroup\(\);/);
   // The silent fire-and-forget handlers are gone.
   assert.equal(app.includes("onClick={async () => { await studyGroupRequest("), false);
   assert.equal(app.includes("}); await openGroup(selected.id); }}"), false);
@@ -864,11 +869,13 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   // page) left status "loading" forever for the anonymous visitor - the signed-in 3s
   // poll is the only self-healing path and it does not run for guests. The catch lands
   // on the existing pane error, whose Retry button re-runs loadLists.
-  assert.match(app, /async function loadLists\(options: \{ poll\?: boolean \} = \{\}\) \{(?:\s*\/\/[^\n]*)*\s*if \(options\.poll && listLoading\.current\) return;\s*const generation = \+\+listGeneration\.current;\s*listLoading\.current = true;\s*try \{/);
+  assert.match(app, /async function loadLists\(options: \{ poll\?: boolean; discoverOnly\?: boolean \} = \{\}\) \{(?:\s*\/\/[^\n]*)*\s*if \(options\.poll && listLoading\.current\) return;(?:\s*\/\/[^\n]*)*\s*const discoverOnly = [^\n]*\n\s*const generation = \+\+listGeneration\.current;\s*listLoading\.current = true;/);
   // A poll never supersedes a load in flight, so slow lists still land.
   assert.match(app, /\} finally \{\s*if \(generation === listGeneration\.current\) listLoading\.current = false;\s*\}/);
-  // Only a list that never loaded becomes the error pane; a failed poll keeps the screen (QA N10).
-  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current \|\| loadedOnce\.current\) return;\s*setStatus\("error"\);\s*setErrorCode\("error"\);\s*\}/);
+  // Only a list that never loaded, a lost sign-in or a load the viewer asked for
+  // becomes the error pane; a failed poll keeps the screen (QA N10, studyGroupListFailureShown).
+  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current\) return;\s*showFailure\("error"\);\s*\}/);
+  assert.match(app, /const showFailure = \(code: string\) => \{\s*if \(!studyGroupListFailureShown\(\{ poll: Boolean\(options\.poll\), loadedOnce: loadedOnce\.current, code \}\)\) return;\s*listFailed\.current = true;\s*setStatus\("error"\);\s*setErrorCode\(code\);\s*\};/);
   // The same landing covers the ?group= deep link: a rejected detail fetch must not
   // leave a silently empty pane with no way to retry.
   // A failed group open lands on that group's own error panel with a Retry (QA N10).

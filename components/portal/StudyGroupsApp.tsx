@@ -5,10 +5,10 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupMutation, studyGroupPane, uniqueReminderBodies } from "@/modules/group-study/uiState";
+import { discoverEmptyCopy, mineEmptyCopy, sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupListFailureShown, studyGroupMutation, studyGroupPane, uniqueReminderBodies, waitingDialogStep, type StudyGroupNotice, type WaitingDialogStep } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
-import { DURATION_MINUTE_CHOICES, clampGroupAbout, fill, GROUP_ABOUT_MAX, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SEAT_HEARTBEAT_MS, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, studyGroupRequest, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { DURATION_MINUTE_CHOICES, clampGroupAbout, fill, fillCount, GROUP_ABOUT_MAX, hostMayOpenRoom, plannedMinutes, scheduleSessionFields, SEAT_HEARTBEAT_MS, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 type CourseOption = { id: string; title: string; slug: string };
 
@@ -65,20 +65,38 @@ function localDateTime(startsAt: string) {
 }
 type Card = { id: string; title: string; courseTitle: string; role: "host" | "member" | null; memberCount: number; live: boolean; courseId: string };
 
+// Keeps the open group in the address (?group=id), so a reload, the language
+// switch and the header's Sign In come back to it (QA M6).
+function showGroupInAddress(groupId: string | null) {
+  const url = new URL(window.location.href);
+  if (groupId) url.searchParams.set("group", groupId);
+  else url.searchParams.delete("group");
+  window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+}
+
+// The search box asks the server once the typing stops (QA M3).
+const SEARCH_DEBOUNCE_MS = 300;
+
 export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn: boolean }) {
   const copy = getMessages(locale).studyGroupsPage;
   const router = useRouter();
   const [mine, setMine] = useState<Card[]>([]);
   const [discover, setDiscover] = useState<Card[]>([]);
-  const [courses, setCourses] = useState<CourseOption[]>([]);
+  // null until the server has answered: an empty list then means no Course
+  // access at all (QA M4), not "not loaded yet".
+  const [courses, setCourses] = useState<CourseOption[] | null>(null);
   const [courseOptions, setCourseOptions] = useState<Array<{ id: string; title: string }>>([]);
   const [mineFilter, setMineFilter] = useState<"all" | "host">("all");
   const [courseFilter, setCourseFilter] = useState("");
+  const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<StudyGroupDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [errorCode, setErrorCode] = useState("idle");
+  // What happened to the group or session that just closed under the viewer
+  // (QA M9); cleared by the viewer's next choice.
+  const [notice, setNotice] = useState<StudyGroupNotice | null>(null);
   const [dialog, setDialog] = useState<"create" | "edit" | "schedule" | "edit-session" | "waiting" | "attendees" | "cancel-group" | "cancel-session" | "leave-group" | null>(null);
   // The one in-flight write of the shared dialogs, Join and the confirms: its
   // buttons are disabled and the dialog is busy until it settles (QA N8).
@@ -88,6 +106,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   // that same group again (QA N10), while the lists stay as they are.
   const [groupError, setGroupError] = useState<string | null>(null);
   const loadedOnce = useRef(false);
+  const [listsLoaded, setListsLoaded] = useState(false);
+  // The lists are on their error pane: the next good load clears its code (QA N10-d).
+  const listFailed = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
   const [createdGroup, setCreatedGroup] = useState<{ id: string; title: string; courseTitle: string } | null>(null);
   const [creating, setCreating] = useState(false);
@@ -106,6 +127,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [sessionTutor, setSessionTutor] = useState(true);
   const [sessionLesson, setSessionLesson] = useState("");
   const [createTitle, setCreateTitle] = useState("");
+  const [editTitle, setEditTitle] = useState("");
   const [createAbout, setCreateAbout] = useState("");
   const [editAbout, setEditAbout] = useState("");
   const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string }>>([]);
@@ -114,6 +136,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const openGroupId = useRef<string | null>(null);
   const waitingHoldRef = useRef<string | null>(null);
   const waitingHandedOffRef = useRef(false);
+  // The Discover filters the lists were last asked for (the first load asks with none).
+  const appliedFilters = useRef({ courseFilter: "", query: "" });
 
   // Runs one write at a time for the shared dialogs, Join and the confirms.
   async function guarded(run: () => Promise<void>) {
@@ -126,31 +150,40 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     }
   }
 
-  async function loadLists(options: { poll?: boolean } = {}) {
+  async function loadLists(options: { poll?: boolean; discoverOnly?: boolean } = {}) {
     // A poll never supersedes a load still in flight: when the lists take
     // longer than the poll interval, superseding every answer would leave the
     // page on "loading" for good. An explicit load (after a change) still does.
     if (options.poll && listLoading.current) return;
+    // A search or Course filter asks for Discover only (QA M3); before the
+    // first load there is nothing to keep, so it loads everything.
+    const discoverOnly = Boolean(options.discoverOnly) && loadedOnce.current;
     const generation = ++listGeneration.current;
     listLoading.current = true;
+    const showFailure = (code: string) => {
+      if (!studyGroupListFailureShown({ poll: Boolean(options.poll), loadedOnce: loadedOnce.current, code })) return;
+      listFailed.current = true;
+      setStatus("error");
+      setErrorCode(code);
+    };
     try {
+      const fetchAll = signedIn && !discoverOnly;
       const [myResult, discoverResult, courseResult, reminderResult] = await Promise.all([
-        signedIn ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
+        fetchAll ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
         studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
-        signedIn ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as CourseOption[] }),
-        signedIn ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Array<{ body: string; createdAt: string }> })
+        fetchAll ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as CourseOption[] }),
+        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string }> })
       ]);
       if (generation !== listGeneration.current) return;
       if (!myResult.ok || !discoverResult.ok) {
-        // Only a list that never loaded is an error page; a failed 3 s poll
-        // keeps what is on screen and the next poll heals it (QA N10).
-        if (loadedOnce.current) return;
-        setStatus("error");
-        setErrorCode(myResult.ok ? discoverResult.code : myResult.code);
+        // Only a list that never loaded, a lost sign-in or a load the viewer
+        // asked for is an error page; a failed 3 s poll keeps what is on
+        // screen and the next poll heals it (QA N10).
+        showFailure(myResult.ok ? discoverResult.code : myResult.code);
         return;
       }
       loadedOnce.current = true;
-      setMine(myResult.data);
+      if (!discoverOnly) setMine(myResult.data);
       setDiscover(discoverResult.data);
       if (courseResult.ok) setCourses(courseResult.data);
       if (reminderResult.ok) setReminders(uniqueReminderBodies(reminderResult.data));
@@ -164,14 +197,19 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         for (const item of incoming) if (item.id && item.title) next.set(item.id, item.title);
         return Array.from(next, ([id, title]) => ({ id, title }));
       });
+      setListsLoaded(true);
       setStatus("ready");
+      if (listFailed.current) {
+        // From the error pane back to the lists: its code goes too (QA N10-d).
+        listFailed.current = false;
+        setErrorCode("idle");
+      }
     } catch {
       // M6: a rejected fetch (offline, a non-JSON gateway page) must land the screen
       // on the pane error with its Retry button instead of staying on "loading"
       // forever - the anonymous visitor has no 3s poll to self-heal.
-      if (generation !== listGeneration.current || loadedOnce.current) return;
-      setStatus("error");
-      setErrorCode("error");
+      if (generation !== listGeneration.current) return;
+      showFailure("error");
     } finally {
       if (generation === listGeneration.current) listLoading.current = false;
     }
@@ -181,12 +219,18 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     const switching = openGroupId.current !== id;
     openGroupId.current = id;
     setSelectedId(id);
+    showGroupInAddress(id);
     setCreatedGroup(null);
     setGroupError(null);
+    setNotice(null);
     // A mutation error belongs to the group it came from: opening another
     // group starts clean (QA N10).
     if (switching) setErrorCode("idle");
     if (switching) setSelected(null);
+    // Single-column (phone) layout: the detail renders under the whole list,
+    // so a tap looked like it did nothing (QA N12). Bring it into view before
+    // the request, so its loading or error panel is what the viewer sees (N12-a).
+    if (options.reveal && window.matchMedia("(max-width: 800px)").matches) mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);
     if (openGroupId.current !== id) return;
     if (!result.ok) {
@@ -196,9 +240,15 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setSelected(result.data);
     setMine((current) => current.map((group) => group.id === result.data.id ? { ...group, live: result.data.live, memberCount: result.data.memberCount } : group));
     if (status === "loading") setStatus("ready");
-    // Single-column (phone) layout: the detail renders under the whole list,
-    // so a tap looked like it did nothing (QA N12). Bring it into view.
-    if (options.reveal && window.matchMedia("(max-width: 800px)").matches) mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // The open group is gone from the pane (cancelled, left): forget it, so a
+  // refresh still in flight cannot bring it back.
+  function forgetOpenGroup() {
+    openGroupId.current = null;
+    setSelected(null);
+    setSelectedId(null);
+    showGroupInAddress(null);
   }
 
   async function refreshOpenGroup(id: string) {
@@ -206,9 +256,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     if (openGroupId.current !== id) return;
     if (!result.ok) {
       if (result.code === "not_found") {
-        openGroupId.current = null;
-        setSelected(null);
-        setSelectedId(null);
+        // The group was cancelled while open: say so instead of going blank (QA M9).
+        forgetOpenGroup();
+        setNotice("groupCancelled");
         setDialog(null);
         setWaitingSession(null);
         setEditingSession(null);
@@ -217,6 +267,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       return;
     }
     setSelected(result.data);
+    // A group that failed to open and then loaded drops its error panel (QA N10-a).
+    setGroupError(null);
     setMine((current) => current.map((group) => group.id === result.data.id ? { ...group, live: result.data.live, memberCount: result.data.memberCount } : group));
   }
 
@@ -226,6 +278,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     return () => window.clearInterval(timer);
   }, [selectedId, signedIn]);
 
+  // A dialog whose session is no longer in the group (cancelled) closes and
+  // says so (QA M9).
   useEffect(() => {
     if (dialog !== "attendees" || !attendeeSessionId || !selected?.sessions) return;
     const current = selected.sessions.find((item) => item.id === attendeeSessionId);
@@ -233,6 +287,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     else {
       setDialog(null);
       setAttendeeSessionId(null);
+      setNotice("sessionCancelled");
     }
   }, [dialog, attendeeSessionId, selected]);
 
@@ -241,6 +296,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     if (!selected.sessions.some((item) => item.id === editingSession.id)) {
       setDialog(null);
       setEditingSession(null);
+      setNotice("sessionCancelled");
     }
   }, [dialog, editingSession, selected]);
 
@@ -249,8 +305,30 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     if (!selected.sessions.some((item) => item.id === waitingSession.id)) {
       setDialog(null);
       setWaitingSession(null);
+      setNotice("sessionCancelled");
     }
   }, [dialog, waitingSession, selected]);
+
+  // Acts on one reading of the server for the waiting dialog (heartbeat,
+  // re-enter or poll; modules/group-study/uiState.ts waitingDialogStep).
+  // Closing the dialog releases the seat (the hold effect below calls leave).
+  function settleWaiting(step: WaitingDialogStep, sessionId: string) {
+    if (waitingHoldRef.current !== sessionId) return;
+    if (step.kind === "open-room") {
+      waitingHandedOffRef.current = true;
+      waitingHoldRef.current = null;
+      router.push(`/${locale}/portal/study-groups/sessions/${sessionId}`);
+      return;
+    }
+    if (step.kind !== "close") return;
+    setDialog(null);
+    setWaitingSession(null);
+    setNotice(step.notice);
+    setErrorCode(step.errorCode ?? "idle");
+    const groupId = openGroupId.current;
+    if (groupId) void refreshOpenGroup(groupId);
+    void loadLists();
+  }
 
   // While the waiting dialog holds a seat, its heartbeat keeps it. Closing the
   // page simply stops the heartbeat and the server releases the seat one
@@ -259,14 +337,34 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   useEffect(() => {
     if (dialog !== "waiting" || !waitingSession) return;
     const sessionId = waitingSession.id;
-    const timer = window.setInterval(() => {
-      void studyGroupRequest<{ seated: boolean }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" }).then((result) => {
-        if (result.ok && !result.data.seated && waitingHoldRef.current === sessionId) {
-          void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
-        }
-      });
-    }, SEAT_HEARTBEAT_MS);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    const beat = async () => {
+      const result = await studyGroupRequest<{ seated: boolean; state?: string }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" });
+      if (stopped) return;
+      const step = waitingDialogStep(result);
+      if (step.kind !== "reenter") {
+        settleWaiting(step, sessionId);
+        return;
+      }
+      if (waitingHoldRef.current !== sessionId) return;
+      // The seat lapsed: enter again. A refusal that cannot change (full,
+      // ended, cancelled) closes the dialog with it instead of "waiting" on
+      // (QA r2-B4 / r1-F-4).
+      const entered = await studyGroupRequest<{ occupancy: number }>(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
+      if (!stopped) settleWaiting(waitingDialogStep(entered), sessionId);
+    };
+    const timer = window.setInterval(() => { void beat(); }, SEAT_HEARTBEAT_MS);
+    // A background tab's timers run as rarely as once a minute, longer than
+    // the 30 s lease: renew the moment the page is visible or online again.
+    const wake = () => { if (document.visibilityState === "visible") void beat(); };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+    };
   }, [dialog, waitingSession?.id]);
 
   useEffect(() => {
@@ -284,7 +382,21 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
 
   useEffect(() => {
     void loadLists();
-  }, [courseFilter, query, signedIn]);
+  }, [signedIn]);
+
+  // QA M3: the search box waits for the typing to stop; a new search or
+  // Course filter asks for Discover only.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  useEffect(() => {
+    const applied = appliedFilters.current;
+    if (applied.courseFilter === courseFilter && applied.query === query) return;
+    appliedFilters.current = { courseFilter, query };
+    void loadLists({ discoverOnly: true });
+  }, [courseFilter, query]);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("group");
@@ -299,24 +411,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
 
   useEffect(() => {
     if (!waitingSession || waitingSession.state === "live") return;
+    const sessionId = waitingSession.id;
     const timer = window.setInterval(async () => {
-      const result = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${waitingSession.id}`);
-      if (!result.ok) {
-        if (result.code === "not_found") {
-          setDialog(null);
-          setWaitingSession(null);
-          const groupId = openGroupId.current;
-          if (groupId) void openGroup(groupId);
-          void loadLists();
-        }
-        return;
-      }
-      setWaitingSession(result.data);
-      if (result.data.state === "live") {
-        waitingHandedOffRef.current = true;
-        waitingHoldRef.current = null;
-        router.push(`/${locale}/portal/study-groups/sessions/${result.data.id}`);
-      }
+      const result = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${sessionId}`);
+      const step = waitingDialogStep(result);
+      if (step.kind === "keep" && result.ok) setWaitingSession(result.data);
+      else settleWaiting(step, sessionId);
     }, 3000);
     return () => window.clearInterval(timer);
   }, [waitingSession, locale, router]);
@@ -325,7 +425,11 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const visibleMine = mine.filter((group) => mineFilter === "all" || group.role === "host");
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
   const timeOnly = dialog === "edit-session";
-  const signInHref = `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/study-groups${selectedId ? `?group=${selectedId}` : ""}`)}`;
+  const signInHref = studyGroupSignInHref(locale, studyGroupsPageHref(locale, selectedId));
+  const mineEmpty = mineEmptyCopy({ signedIn, listsLoaded, filter: mineFilter, count: visibleMine.length });
+  const discoverEmpty = discoverEmptyCopy({ listsLoaded, count: discover.length, filtered: Boolean(query || courseFilter) });
+  // QA M4: no Course to create a group for; the Create dialog says why.
+  const noCourseAccess = courses !== null && courses.length === 0;
   const errorPlace = studyGroupErrorPlace({ status, dialog, hasSelected: Boolean(selected), hasError: studyGroupHasError(errorCode) });
 
   async function submitCreate(form: FormData) {
@@ -364,9 +468,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setErrorCode("idle");
       // Forget the open group too, so a group refresh still in flight cannot
       // bring the cancelled group back (QA BUG-0099 follow-up).
-      openGroupId.current = null;
-      setSelected(null);
-      setSelectedId(null);
+      forgetOpenGroup();
       await loadLists();
     } finally {
       setCancelling(false);
@@ -406,11 +508,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       }
       setErrorCode("idle");
       setDialog(null);
-      if (outcome.clearSelection) {
-        openGroupId.current = null;
-        setSelected(null);
-        setSelectedId(null);
-      }
+      if (outcome.clearSelection) forgetOpenGroup();
       await loadLists();
     } finally {
       setMutating(null);
@@ -430,6 +528,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
 
   function openEditGroup() {
     setErrorCode("idle");
+    setEditTitle((selected?.title || "").slice(0, 50));
     setEditAbout(clampGroupAbout(selected?.about || ""));
     setDialog("edit");
   }
@@ -599,14 +698,14 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
           <button type="button" aria-pressed={mineFilter === "all"} onClick={() => setMineFilter("all")}>{copy.all}</button>
           <button type="button" aria-pressed={mineFilter === "host"} onClick={() => setMineFilter("host")}>{copy.hostedByMe}</button>
         </div> : null}
-        {signedIn && visibleMine.length === 0 ? <p className={styles.noMine}>{copy.noMine}</p> : null}
+        {mineEmpty ? <p className={styles.noMine}>{copy[mineEmpty]}</p> : null}
         {visibleMine.map((group) => (
           <button className={styles.card} type="button" key={group.id} aria-current={selectedId === group.id} onClick={() => void openGroup(group.id, { reveal: true })}>
             <h3>{group.title}</h3>
             {group.live ? <span className={styles.live}>{copy.live}</span> : null}
             <p className={styles.course}>{group.courseTitle}</p>
             {group.role ? <span className={`${styles.role} ${group.role === "host" ? styles.hosted : styles.joined}`}>{group.role === "host" ? copy.hosted : copy.joined}</span> : null}
-            <p className={styles.count}>{fill(copy.learners, { count: group.memberCount })}</p>
+            <p className={styles.count}>{fillCount(locale, copy.learners, group.memberCount)}</p>
           </button>
         ))}
         <hr className={styles.rule} />
@@ -619,35 +718,38 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
             </select>
           </label>
           <label>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} aria-label={copy.keyword} placeholder={copy.keyword} />
+            <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} aria-label={copy.keyword} placeholder={copy.keyword} />
           </label>
         </div>
+        {discoverEmpty ? <p className={styles.noMine}>{copy[discoverEmpty]}</p> : null}
         {discover.map((group) => (
           <button className={styles.card} type="button" key={group.id} aria-current={selectedId === group.id} onClick={() => void openGroup(group.id, { reveal: true })}>
             <h3>{group.title}</h3>
             {group.live ? <span className={styles.live}>{copy.live}</span> : null}
             <p className={styles.course}>{group.courseTitle}</p>
             <p className={styles.openLabel}>{copy.openStudyGroup}</p>
-            <p className={styles.count}>{fill(copy.learners, { count: group.memberCount })}</p>
+            <p className={styles.count}>{fillCount(locale, copy.learners, group.memberCount)}</p>
           </button>
         ))}
       </aside>
       <section className={styles.main} aria-live="polite" ref={mainRef}>
+        {notice ? <p className={styles.notice} role="status"><span>{copy.notices[notice]}</span><button type="button" onClick={() => setNotice(null)}>{copy.dismiss}</button></p> : null}
         {pane.kind === "loading" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
         {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p>{errorCode === "unauthenticated" ? <a className={styles.primary} href={signInHref}>{copy.signIn}</a> : <button className={styles.primary} type="button" onClick={() => { setErrorCode("idle"); void loadLists(); }}>{copy.retry}</button>}</div> : null}
         {pane.kind !== "error" && pane.kind !== "loading" && groupError && selectedId ? <div className={styles.panel} role="alert"><p className={styles.alert}>{copy.errors[groupError as keyof typeof copy.errors] || copy.errors.error}</p>{groupError === "unauthenticated" ? <a className={styles.primary} href={signInHref}>{copy.signIn}</a> : <button className={styles.primary} type="button" onClick={() => void openGroup(selectedId)}>{copy.retry}</button>}</div> : null}
         {pane.kind === "empty" && selectedId && !groupError && !createdGroup && dialog !== "create" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
-        {pane.kind === "empty" && !selectedId && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={`/${locale}/portal/sign-in`}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
-        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdBody}>{copy.createdBody}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("idle"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
+        {pane.kind === "empty" && !selectedId && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={signInHref}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
+        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdName}>{createdGroup.title}</span><span className={styles.createdBody}>{createdGroup.courseTitle}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("idle"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
         {dialog === "create" ? (
           <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={creating}>
             <form className={styles.createForm} noValidate onSubmit={(event) => { event.preventDefault(); submitDialogForm(event.currentTarget, submitCreate); }}>
               <h2 id="study-group-dialog-title">{copy.create}</h2>
               <p className={styles.lead}>{copy.createLead}</p>
               <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
-              <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+              <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{(courses || []).map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+              {noCourseAccess ? <p className={styles.noCourses}>{copy.noCourseAccess} <a href={`/${locale}/portal/courses`}>{copy.viewCourses}</a></p> : null}
               <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{createAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
-              <div className={styles.actions}><button className={styles.ghost} type="button" onClick={closeDialog}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating}>{copy.create}</button></div>
+              <div className={styles.actions}><button className={styles.ghost} type="button" onClick={closeDialog} disabled={creating}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating || noCourseAccess}>{copy.create}</button></div>
               {errorPlace === "create" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
             </form>
           </PortalDialog>
@@ -662,7 +764,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 <div><h3>{copy.relatedCourse}</h3><p>{selected.courseTitle}</p></div>
                 <div><h3 className={styles.aboutLabel}>{copy.about}</h3><p className={styles.aboutBody}>{selected.about}</p></div>
               </div>
-              <div className={styles.tabRow}><span className={styles.tab}>{copy.liveSessions}</span><span className={styles.countBadge}>{(selected.sessions || []).length}</span></div>
+              {/* QA M5: behind the join gate there is no count to show. */}
+              <div className={styles.tabRow}><span className={styles.tab}>{copy.liveSessions}</span>{pane.kind === "sessions" ? <span className={styles.countBadge}>{(selected.sessions || []).length}</span> : null}</div>
               <h3 className={styles.sectionLabel}>{copy.liveSessions}</h3>
               {errorPlace === "sheet" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
               {pane.kind === "join-gate" ? (
@@ -670,7 +773,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <p className={styles.joinBanner}>{copy.joinBanner}</p>
                   <LockedCard />
                   <LockedCard />
-                  <p className={styles.joinNote}>{selected.canJoin ? copy.joinAccess : fill(copy.courseAccessRequired, { course: selected.courseTitle })}</p>
+                  <p className={styles.joinNote}>{selected.canJoin ? copy.joinAccess : signedIn ? fill(copy.courseAccessRequired, { course: selected.courseTitle }) : copy.signInToJoin}</p>
                   <div className={styles.joinAction}>{selected.canJoin ? <button className={styles.primary} type="button" disabled={submitting} onClick={() => void joinGroup(selected)}>{copy.joinGroup}</button> : <a className={styles.primary} href={signedIn ? `/${locale}/portal/courses/${selected.courseSlug}` : signInHref}>{signedIn ? copy.getCourseAccess : copy.signIn}</a>}</div>
                 </>
               ) : null}
@@ -685,7 +788,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <ul className={styles.factList}>
                     <li><FactIcon kind="date" />{sessionDateLabel(locale, session.startsAt)}<span className={styles.divider} aria-hidden="true" />{sessionTimeLabel(locale, session)}</li>
                     <li><FactIcon kind="duration" />{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</li>
-                    <li data-live={!sessionNotStarted(session) && (session.state === "live" || session.state === "starting_soon") ? "true" : undefined}><FactIcon kind="people" />{sessionNotStarted(session) ? copy.notStartedBody : session.state === "completed" ? <>{fill(copy.attended, { count: session.attendees.length })}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : session.state === "scheduled" ? <>{fill(copy.plannedCount, { count: session.plannedCount })}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</li>
+                    <li data-live={!sessionNotStarted(session) && (session.state === "live" || session.state === "starting_soon") ? "true" : undefined}><FactIcon kind="people" />{sessionNotStarted(session) ? copy.notStartedBody : session.state === "completed" ? <>{fillCount(locale, copy.attended, session.attendees.length)}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : session.state === "scheduled" ? <>{fill(copy.plannedCount, { count: session.plannedCount })}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</li>
                   </ul>
                   {session.state === "scheduled" && (selected.role === "host" || session.viewerPlanned) ? <p className={styles.reminderHint}>{copy.reminderHint}</p> : null}
                   {session.attendees.length ? <p className={styles.avatarRow}>{session.attendees.slice(0, 4).map((person) => <span key={person.userId}>{person.displayName.slice(0, 1).toUpperCase()}</span>)}{session.attendees.length > 4 ? <span className={styles.avatarMore}>+{session.attendees.length - 4}</span> : null}</p> : null}
@@ -729,12 +832,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 {waitingSession.focus ? <><h3 className={styles.waitingFocus}>{copy.focus}</h3><p>{waitingSession.focus}</p></> : null}
               </div>
             ) : null}
-            {dialog === "attendees" ? <ul>{attendees.map((person) => <li key={person.userId}>{person.displayName}</li>)}</ul> : null}
+            {dialog === "attendees" ? attendees.length ? <ul className={styles.attendeeList}>{attendees.map((person) => <li key={person.userId}>{person.displayName}</li>)}</ul> : <p className={styles.attendeeEmpty}>{copy.nobodyYet}</p> : null}
             {dialog === "edit" ? (
               <>
-                <label>{copy.groupTitle}<input name="title" required maxLength={50} defaultValue={selected?.title} /></label>
-                <p>{selected?.courseTitle}</p>
-                <label>{copy.about}<span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} value={editAbout} onChange={(event) => setEditAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{editAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
+                <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={editTitle} onChange={(event) => setEditTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{editTitle.length}/50</span></span></label>
+                <div className={styles.field}><span>{copy.relatedCourse}</span><span className={styles.readonlyValue}>{selected?.courseTitle}</span></div>
+                <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} placeholder={copy.enterDescription} value={editAbout} onChange={(event) => setEditAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{editAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
               </>
             ) : null}
             {dialog === "schedule" || dialog === "edit-session" ? (
@@ -749,14 +852,14 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <label className={styles.field}><span>{copy.duration} <span className={styles.req}>*</span></span><select name="durationMinutes" required disabled={timeOnly} value={sessionDuration} onChange={(event) => setSessionDuration(event.target.value)}><option value="">{copy.selectDuration}</option>{DURATION_MINUTE_CHOICES.map((minutes) => <option key={minutes} value={minutes}>{fill(copy.plannedDuration, { count: minutes })}</option>)}</select></label>
                   <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required disabled={timeOnly} value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
                 </div>
-                <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={50} placeholder={copy.enterDescription} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, 50))} /><span className={styles.counter}>{sessionFocus.length}/50</span></span></label>
+                <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={50} placeholder={copy.enterFocus} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, 50))} /><span className={styles.counter}>{sessionFocus.length}/50</span></span></label>
                 <label className={styles.switch}><span>{copy.aiTutorLabel}</span><span className={styles.switchText}>{copy.enableAiTutor}</span><input name="aiTutor" type="checkbox" disabled={timeOnly} checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} /></label>
               </>
             ) : null}
             {errorPlace === "dialog" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
             {dialog !== "waiting" ? (
               <div className={styles.dialogActions}>
-                <button className={styles.ghost} type="button" onClick={closeDialog} disabled={submitting}>{copy.cancel}</button>
+                <button className={styles.ghost} type="button" onClick={closeDialog} disabled={submitting}>{dialog === "attendees" ? copy.close : copy.cancel}</button>
                 {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" ? <button className={styles.primary} type="submit" disabled={submitting}>{dialog === "schedule" ? copy.scheduleAction : copy.save}</button> : null}
               </div>
             ) : (
