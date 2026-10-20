@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "playwright/test";
 import {
   appAlerts,
@@ -241,7 +242,8 @@ test("M3: the search waits for typing to stop, asks for Discover only, and says 
     await page.goto("/en-GB/portal/study-groups");
     await expect(page.getByRole("heading", { level: 3, name: title })).toBeVisible();
     // Hold the next 3 s poll in flight: a poll never starts while another
-    // load runs, so every request from here on comes from the search.
+    // load runs (until the 15 s request timeout, QA3 #1), so every request
+    // from here on comes from the search.
     let heldPolls = 0;
     await page.route("**/api/study-groups?view=mine*", () => { heldPolls += 1; });
     await expect.poll(() => heldPolls, { timeout: 10_000 }).toBeGreaterThan(0);
@@ -510,5 +512,268 @@ test("M27: the header speaks Chinese on zh-CN, the avatar has a name, the chip i
     expect(await chat.evaluate((element) => getComputedStyle(element.closest("form") as HTMLFormElement).boxShadow)).not.toBe("none");
   } finally {
     await room.close();
+  }
+});
+
+// QA3 review of the groups page (scratchpad qa3/groups.md). A Course cannot be
+// unpublished from a test, so #3 and #8 rewrite the group's answer the way the
+// server sends it for such a group.
+
+async function patchGroupAnswer(page: Page, groupId: string, patch: Record<string, unknown>) {
+  await page.route(`**/api/study-groups/${groupId}`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue().catch(() => undefined);
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, data: body.data ? { ...body.data, ...patch } : body.data } }).catch(() => undefined);
+  });
+}
+
+const COURSE_GONE = { courseAvailable: false, courseTitle: "", courseSlug: "" };
+
+test("QA3 #1: a list request that never answers stops holding the 3 s poll back", async ({ browser, baseURL }) => {
+  test.setTimeout(90_000);
+  const host = await newMember(browser, appOrigin(baseURL), "qa3-1", "Study Host");
+  try {
+    const page = await host.context.newPage();
+    await page.goto("/en-GB/portal/study-groups");
+    await expect(page.getByText("You haven't joined any Study Group yet.")).toBeVisible();
+    // The next poll's My list stalls: no answer, no reset (a phone changing networks).
+    let stalled = 0;
+    await page.route("**/api/study-groups?view=mine*", async (route) => {
+      if (stalled === 0) {
+        stalled += 1;
+        return;
+      }
+      await route.continue().catch(() => undefined);
+    });
+    await expect.poll(() => stalled, { timeout: 10_000 }).toBe(1);
+    const title = unique("E2E QA3-1");
+    await createGroup(host, title);
+    // The stalled request times out after 15 s and the next poll shows the new group.
+    await expect(page.getByRole("heading", { level: 3, name: title }).first()).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await host.context.close();
+  }
+});
+
+test("QA3 #2: a member whose seat is still held can go back to waiting; another member sees Session full", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "qa3-2-a", "Study Host");
+  const member = await newMember(browser, origin, "qa3-2-b", "Study Guest");
+  const other = await newMember(browser, origin, "qa3-2-c", "Study Other");
+  try {
+    const groupId = await createGroup(host, unique("E2E QA3-2"));
+    await joinGroup(member, groupId);
+    await joinGroup(other, groupId);
+    // Max 2: the member's seat plus the one kept for the Host.
+    const sessionId = await scheduleSession(host, groupId, { title: "Held seat", startsInMs: SOON_MS, maxParticipants: 2 });
+    expect((await enterSession(member, sessionId)).status(), "the member holds a seat").toBe(200);
+
+    // The member reloads the page (or opens a second tab) while the seat is held.
+    const page = await openGroupPage(member, groupId);
+    const card = page.locator("article article").filter({ hasText: "Held seat" });
+    await expect(card.getByRole("button", { name: "Join now" })).toBeEnabled();
+    await card.getByRole("button", { name: "Join now" }).click();
+    await expect(page.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
+
+    const otherPage = await openGroupPage(other, groupId);
+    await expect(otherPage.locator("article article").filter({ hasText: "Held seat" }).getByRole("button", { name: "Session full" })).toBeDisabled();
+  } finally {
+    await host.context.close();
+    await member.context.close();
+    await other.context.close();
+  }
+});
+
+test("QA3 #3: a group whose Course is gone only says so, with no Join Now", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "qa3-3-a", "Study Host");
+  const learner = await newMember(browser, origin, "qa3-3-b", "Study Guest");
+  try {
+    const title = unique("E2E QA3-3");
+    const groupId = await createGroup(host, title);
+    const page = await learner.context.newPage();
+    // canJoin true as well: the page must not offer joining whatever it says.
+    await patchGroupAnswer(page, groupId, { ...COURSE_GONE, canJoin: true });
+    await page.goto(groupPath(groupId));
+    await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
+    await expect(page.getByText("Join this Study Group to view its Live Sessions")).toBeVisible();
+    await expect(page.getByText("This Course is no longer available.")).toHaveCount(2);
+    await expect(page.getByText(/You have access to this Course/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Join Now" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "View Course", exact: true })).toHaveCount(0);
+  } finally {
+    await host.context.close();
+    await learner.context.close();
+  }
+});
+
+test("QA3 #4: a group that loads after the lists failed leaves the error pane and its Try again", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "qa3-4", "Study Host");
+  const visitor = await browser.newContext({ baseURL: origin });
+  try {
+    const title = unique("E2E QA3-4");
+    const groupId = await createGroup(host, title);
+    const page = await visitor.newPage();
+    await page.route("**/api/study-groups?view=discover*", (route) => route.fulfill(apiFailure("error")));
+    let groupAnswered = false;
+    await page.route(`**/api/study-groups/${groupId}`, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await route.continue().catch(() => undefined);
+      groupAnswered = true;
+    });
+    await page.goto(groupPath(groupId));
+    const failed = appAlerts(page).filter({ has: page.getByRole("button", { name: "Try again" }) });
+    await expect(failed).toBeVisible();
+    await expect.poll(() => groupAnswered, { timeout: 10_000 }).toBe(true);
+    await page.waitForTimeout(500);
+    await expect(failed).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: title })).toHaveCount(0);
+  } finally {
+    await visitor.close();
+    await host.context.close();
+  }
+});
+
+test("QA3 #5: a refresh sent before Plan to Attend and answered after it does not bring the old button back", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "qa3-5-a", "Study Host");
+  const member = await newMember(browser, origin, "qa3-5-b", "Study Guest");
+  try {
+    const groupId = await createGroup(host, unique("E2E QA3-5"));
+    await joinGroup(member, groupId);
+    await scheduleSession(host, groupId, { title: "Planned later", startsInMs: 3 * HOUR });
+    const page = await openGroupPage(member, groupId);
+    const card = page.locator("article article").filter({ hasText: "Planned later" });
+    await expect(card.getByRole("button", { name: "Plan to Attend" })).toBeVisible();
+    // Hold the next 3 s refresh: its answer is read now (not planned yet) and delivered late.
+    let holdNext = true;
+    let held = 0;
+    let release = () => undefined as void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(`**/api/study-groups/${groupId}`, async (route) => {
+      if (route.request().method() !== "GET" || !holdNext) return route.continue().catch(() => undefined);
+      holdNext = false;
+      const response = await route.fetch();
+      held += 1;
+      await released;
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    await expect.poll(() => held, { timeout: 10_000 }).toBe(1);
+    await card.getByRole("button", { name: "Plan to Attend" }).click();
+    await expect(card.getByRole("button", { name: "Cancel Attendance" })).toBeVisible();
+    release();
+    await page.waitForTimeout(300);
+    await expect(card.getByRole("button", { name: "Plan to Attend" })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Cancel Attendance" })).toBeVisible();
+  } finally {
+    await host.context.close();
+    await member.context.close();
+  }
+});
+
+test("QA3 #6: on a phone, the notice for a session cancelled while waiting is brought into view", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "qa3-6-a", "Study Host");
+  const member = await newMember(browser, origin, "qa3-6-b", "Study Guest");
+  try {
+    const groupId = await createGroup(host, unique("E2E QA3-6"));
+    // Enough Discover cards that the details start below the first screen.
+    for (let index = 0; index < 5; index += 1) await createGroup(host, unique(`E2E QA3-6 other ${index}`));
+    await joinGroup(member, groupId);
+    const sessionId = await scheduleSession(host, groupId, { title: "Cancelled while waiting", startsInMs: SOON_MS });
+    const page = await member.context.newPage();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(groupPath(groupId));
+    await page.locator("article article").filter({ hasText: "Cancelled while waiting" }).getByRole("button", { name: "Join now" }).click();
+    await expect(page.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
+    // The viewer is back up in the sidebar.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const details = page.locator("section[aria-live]");
+    expect(await details.evaluate((element) => element.getBoundingClientRect().top > window.innerHeight), "the details start below the screen").toBe(true);
+    expect((await host.context.request.post(`/api/study-groups/sessions/${sessionId}/cancel`, { data: {} })).status()).toBe(200);
+    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByRole("status").filter({ hasText: "This Live Session has been cancelled." })).toBeInViewport({ timeout: 5_000 });
+  } finally {
+    await host.context.close();
+    await member.context.close();
+  }
+});
+
+test("QA3 #7: a ?group= value that is not a Study Group id is not opened", async ({ browser, baseURL }) => {
+  const learner = await newMember(browser, appOrigin(baseURL), "qa3-7", "Study Guest");
+  try {
+    const page = await learner.context.newPage();
+    // Unencoded, these reached the My list and the API root as if they were groups.
+    for (const value of ["../../api/study-groups?view=mine", ".."]) {
+      await page.goto(`/en-GB/portal/study-groups?group=${encodeURIComponent(value)}`);
+      await expect(page.getByRole("heading", { level: 2, name: "Learn together, not alone." })).toBeVisible();
+      await page.waitForTimeout(3_500);
+      await expect(page.getByRole("heading", { level: 2, name: "Learn together, not alone." }), value).toBeVisible();
+      await expect(appAlerts(page), value).toHaveCount(0);
+    }
+  } finally {
+    await learner.context.close();
+  }
+});
+
+test("QA3 #8: Edit Group names an unavailable Course instead of an empty box", async ({ browser, baseURL }) => {
+  const host = await newMember(browser, appOrigin(baseURL), "qa3-8", "Study Host");
+  try {
+    const title = unique("E2E QA3-8");
+    const groupId = await createGroup(host, title);
+    const page = await host.context.newPage();
+    await patchGroupAnswer(page, groupId, COURSE_GONE);
+    await page.goto(groupPath(groupId));
+    await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
+    await page.getByRole("button", { name: "Edit Group" }).click();
+    await expect(page.getByRole("dialog").getByText("This Course is no longer available.")).toBeVisible();
+  } finally {
+    await host.context.close();
+  }
+});
+
+test("QA3 #9: an unknown group id keeps its not-found panel and is never called cancelled", async ({ browser, baseURL }) => {
+  const learner = await newMember(browser, appOrigin(baseURL), "qa3-9", "Study Guest");
+  try {
+    const page = await learner.context.newPage();
+    await page.goto(groupPath(randomUUID()));
+    const failed = appAlerts(page).filter({ hasText: "That Study Group or Live Session was not found." });
+    await expect(failed).toBeVisible();
+    // Past at least one 3 s refresh.
+    await page.waitForTimeout(4_500);
+    await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible();
+    await expect(page.getByText("This Study Group has been cancelled.")).toHaveCount(0);
+  } finally {
+    await learner.context.close();
+  }
+});
+
+test("QA3 N-a / N-b: a search's outcome is announced, and a failed search shows under the search box while the group stays", async ({ browser, baseURL }) => {
+  const host = await newMember(browser, appOrigin(baseURL), "qa3-nb", "Study Host");
+  try {
+    const title = unique("E2E QA3-Nb");
+    const groupId = await createGroup(host, title);
+    const page = await openGroupPage(host, groupId);
+    await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
+    const search = page.getByRole("textbox", { name: "Keyword search..." });
+    await search.fill(`zz${Date.now().toString(36)}`);
+    await expect(page.getByRole("status").filter({ hasText: "No Study Groups match your search." })).toBeVisible();
+
+    const discoverRoute = "**/api/study-groups?view=discover*";
+    await page.route(discoverRoute, (route) => route.fulfill(apiFailure("error")));
+    await search.fill(`yy${Date.now().toString(36)}`);
+    const sidebar = page.getByRole("complementary", { name: "Study Groups" });
+    const failed = sidebar.getByRole("alert").filter({ hasText: "Something went wrong" });
+    await expect(failed).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
+    await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible();
+    // Healed by the next load (the 3 s poll, or Try again).
+    await page.unroute(discoverRoute);
+    await expect(failed).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByRole("status").filter({ hasText: "No Study Groups match your search." })).toBeVisible();
+  } finally {
+    await host.context.close();
   }
 });
