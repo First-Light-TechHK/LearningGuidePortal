@@ -231,6 +231,8 @@ test("a closed tab or lost network releases only that seat one lease later while
 test("the last person gone without leaving ends the session after the grace, dated to when the room emptied", async () => {
   const f = await refreshFixture();
   const { session } = await liveRoom(f);
+  // A closed tab leaves the provider's room as well.
+  f.participants.splice(0);
 
   // The seat lapses at the lease end; inside the grace the session waits for
   // a reload to come back, so a sweep there changes nothing but the seat.
@@ -281,6 +283,7 @@ test("a Leave by the last seated person keeps the room for someone whose seat on
   // Without a return, the room ends one grace after the Leave, dated to it.
   const g = await refreshFixture();
   const other = (await liveRoom(g, ["host", "member"])).session;
+  g.participants.splice(0);
   await heartbeatFor(g, other.id, ["host"], LEASE_S + 10);
   await g.service.leaveSession({ actorUserId: "host", sessionId: other.id });
   const emptied = g.clock();

@@ -141,12 +141,25 @@ export function endLiveSessionIfEmpty(store: StudyGroupStore, session: LiveSessi
   return true;
 }
 
-/** The server sweep: persist lapsed leases everywhere and end abandoned live sessions. */
-export function sweepSeats(store: StudyGroupStore, now: Date) {
+/** Live sessions the sweep would end now: no seat for the whole grace period. */
+export function abandonedLiveSessions(store: StudyGroupStore, now: Date) {
+  return store.sessions.filter((session) => {
+    const since = emptySince(store, session, now);
+    return since !== null && now.getTime() - since >= EMPTY_LIVE_GRACE_MS;
+  });
+}
+
+/**
+ * The server sweep: persist lapsed leases everywhere and end abandoned live
+ * sessions, except those in `keepLive` (rooms the provider reports still
+ * occupied: the seats lapsed because heartbeats could not get through, not
+ * because people left; QA 2026-10-19 final review X-3).
+ */
+export function sweepSeats(store: StudyGroupStore, now: Date, keepLive: ReadonlySet<string> = new Set()) {
   const seatsClosed = closeLapsedSeats(store, now);
   let sessionsEnded = 0;
   for (const session of store.sessions) {
-    if (session.status === "live" && endAbandonedLiveSession(store, session, now)) sessionsEnded += 1;
+    if (session.status === "live" && !keepLive.has(session.id) && endAbandonedLiveSession(store, session, now)) sessionsEnded += 1;
   }
   return { seatsClosed, sessionsEnded };
 }

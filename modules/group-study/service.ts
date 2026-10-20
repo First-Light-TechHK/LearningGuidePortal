@@ -19,7 +19,7 @@ import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent 
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
-import { closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatRenewable, sweepSeats } from "./presence";
+import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
 import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
@@ -55,6 +55,9 @@ export type StudyGroupDeps = {
   publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
   tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
+  // One redacted operational line (a fixed type and counts, never an id or
+  // a name); the runtime writes it to the log stream.
+  operationalLog?: (event: Record<string, unknown>) => void;
   // Injectable scheduler for the failing context's own re-drain (test seam):
   // the default is an unref'd setTimeout so a pending retry never keeps the
   // process alive.
@@ -84,6 +87,21 @@ export const TUTOR_PENDING_PER_USER = 2;
 export const TUTOR_REQUESTS_PER_MINUTE = 5;
 // The answer carries a short excerpt of the question it replies to.
 const TUTOR_REPLY_QUOTE_MAX = 80;
+
+// The provider reads the sweep and the seat check may make (QA final review
+// X-3, X-4): bounded in number and in time, so a slow provider can never hold
+// a sweep or an entry for long. A read that fails or times out counts as no
+// answer, and the lease rules decide alone, as before.
+const PROVIDER_ROOM_CHECKS_PER_SWEEP = 10;
+const PROVIDER_ROOM_CHECK_TIMEOUT_MS = 2_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timed out")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 function tutorRequestPending(row: { status?: string; answeredAt?: string | null; inFlight: boolean }) {
   const status = row.status ?? (row.answeredAt ? "answered" : row.inFlight ? "in_flight" : "queued");
@@ -648,6 +666,41 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
   }
 
+  // The LiveKit identities in a live session's room, or null when the
+  // provider cannot say: no provider-verified reader (the cloud gateway has
+  // listParticipants only when verified), no assigned project, or a read that
+  // failed or timed out.
+  async function providerParticipants(session: LiveSessionRow): Promise<Set<string> | null> {
+    const gateway = deps.liveKitGateway;
+    if (!gateway?.listParticipants || !deps.liveKitProjects || !session.liveKitProjectId) return null;
+    try {
+      const project = deps.liveKitProjects.getAssigned(session.liveKitProjectId);
+      const participants = await withTimeout(gateway.listParticipants({ project, room: session.id }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
+      return new Set(participants.map((item) => item.identity));
+    } catch {
+      return null;
+    }
+  }
+
+  // Ending an empty live session is destructive and cannot be undone: the
+  // room's clients see "completed" and disconnect. When every heartbeat fails
+  // at once (a deploy, a stalled store, a WAF rule) the seats lapse while the
+  // call goes on, so before ending one the provider is asked whether its room
+  // is really empty (QA final review X-3). Only the first few candidates are
+  // asked per sweep; the rest, and any room the provider cannot answer for,
+  // follow the lease rule as before.
+  async function roomsStillOccupied(store: StudyGroupStore, now: Date) {
+    const kept = new Set<string>();
+    if (!deps.liveKitGateway?.listParticipants) return kept;
+    const candidates = abandonedLiveSessions(store, now).slice(0, PROVIDER_ROOM_CHECKS_PER_SWEEP);
+    await Promise.all(candidates.map(async (session) => {
+      const participants = await providerParticipants(session);
+      if (participants && participants.size > 0) kept.add(session.id);
+    }));
+    if (kept.size > 0) deps.operationalLog?.({ type: "study_group.empty_live_kept", reason: "provider_participants", count: kept.size });
+    return kept;
+  }
+
   // The server sweep (runtime timer and the throttled request path): writes
   // down lapsed seats and ends live sessions nobody has held a seat in for
   // the grace period. Reads first so an idle tick never takes the write lock.
@@ -655,8 +708,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     const now = deps.now();
     const pending = (store: StudyGroupStore) => store.presences.some((item) => item.enteredAt && !item.leftAt && !seatHeld(item, now))
       || store.sessions.some((session) => session.status === "live" && seatCount(store, session.id, now) === 0);
-    if (!pending(snapshot ?? await deps.repository.read())) return { seatsClosed: 0, sessionsEnded: 0 };
-    return deps.repository.update((store) => sweepSeats(store, deps.now()));
+    const store = snapshot ?? await deps.repository.read();
+    if (!pending(store)) return { seatsClosed: 0, sessionsEnded: 0 };
+    const keepLive = await roomsStillOccupied(store, now);
+    return deps.repository.update((current) => sweepSeats(current, deps.now(), keepLive));
   }
 
   // The portal's view routes call this on every poll. A sweep reads the whole

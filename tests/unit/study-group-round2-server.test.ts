@@ -29,8 +29,9 @@ type Fixture = {
   clock: () => string;
   advanceSeconds: (seconds: number) => void;
   access: Set<string>;
-  /** The provider's room membership (listParticipants); null makes the read fail. */
-  participants: { list: string[] | null };
+  /** The provider's room membership (listParticipants); null fails the read, "hang" never answers. */
+  participants: { list: string[] | null | "hang" };
+  providerReads: string[];
   removed: Array<{ room: string; identity: string }>;
   notes: Array<{ userId: string; title: string; body: string; sessionId?: string }>;
   logs: Array<Record<string, unknown>>;
@@ -44,7 +45,8 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
   const repository = createStudyGroupRepository(directory);
   let nowMs = Date.parse(START);
   const access = new Set(["host:course-1", "m1:course-1", "m2:course-1", "m3:course-1"]);
-  const participants: { list: string[] | null } = { list: [] };
+  const participants: Fixture["participants"] = { list: [] };
+  const providerReads: string[] = [];
   const removed: Array<{ room: string; identity: string }> = [];
   const notes: Fixture["notes"] = [];
   const logs: Fixture["logs"] = [];
@@ -55,7 +57,9 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     publishTutorMessage: async () => undefined,
     removeParticipant: async (input) => { removed.push({ room: input.room, identity: input.identity }); },
     healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: START, latencyMs: 0 }),
-    listParticipants: async () => {
+    listParticipants: async ({ room }) => {
+      providerReads.push(room);
+      if (participants.list === "hang") return new Promise(() => undefined);
       if (!participants.list) throw new Error("provider unreachable");
       return participants.list.map((identity) => ({ identity }));
     }
@@ -66,6 +70,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     advanceSeconds: (seconds: number) => { nowMs += seconds * 1000; },
     access,
     participants,
+    providerReads,
     removed,
     notes,
     logs,
@@ -93,6 +98,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     liveKitProjects: parseLiveKitProjects(PROJECTS_JSON),
     liveKitGateway: gateway,
     tokenLogKey: () => tokenLogKey,
+    operationalLog: (event) => { logs.push(event); },
     ...extra(base)
   };
   return { ...base, service: createStudyGroupService(deps) };
@@ -343,4 +349,70 @@ test("M11-a: a failing reminder withdrawal never fails cancel, leave or cancel-a
   // The cancel went through and the remaining member was still told.
   assert.equal((await f.repository.read()).groups.find((row) => row.id === created.id)?.status, "cancelled");
   assert.deepEqual(f.notes.filter((item) => item.title === "Study Group cancelled").map((item) => item.userId), ["m2"]);
+});
+
+async function liveSession(f: Fixture, title: string, seated: string[] = []) {
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title, startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  for (const userId of seated) await f.service.enterSession({ actorUserId: userId, sessionId: session.id, requestedAt: f.clock() });
+  return { group: created, session };
+}
+
+const stateOf = async (f: Fixture, sessionId: string) => (await f.repository.read()).sessions.find((row) => row.id === sessionId)?.status;
+
+test("X-3: a room the provider still sees occupied is not ended when every heartbeat stops", async () => {
+  const f = await fixture();
+  const { session } = await liveSession(f, "Heartbeats down", ["m1"]);
+  // The heartbeat endpoint is down for minutes while the call goes on.
+  f.participants.list = ["host", "m1"];
+  f.advanceSeconds(30 + 60 + 15);
+  assert.deepEqual(await f.service.sweepPresence(), { seatsClosed: 2, sessionsEnded: 0 });
+  assert.equal(await stateOf(f, session.id), "live");
+  assert.deepEqual(f.providerReads, [session.id]);
+  assert.deepEqual(f.logs, [{ type: "study_group.empty_live_kept", reason: "provider_participants", count: 1 }], "one redacted line: no room id, no identity");
+  // Heartbeats come back: the members re-enter the same live session.
+  assert.equal((await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })).occupancy, 1);
+
+  // Once the provider's room is empty too, the lease rule ends it as before.
+  const g = await fixture();
+  const other = (await liveSession(g, "Really gone", ["m1"])).session;
+  const emptied = new Date(Date.parse(g.clock()) + 30_000).toISOString();
+  g.participants.list = ["m1"];
+  g.advanceSeconds(30 + 60 + 15);
+  await g.service.sweepPresence();
+  assert.equal(await stateOf(g, other.id), "live");
+  g.participants.list = [];
+  g.advanceSeconds(15);
+  assert.deepEqual(await g.service.sweepPresence(), { seatsClosed: 0, sessionsEnded: 1 });
+  const ended = (await g.repository.read()).sessions.find((row) => row.id === other.id);
+  assert.equal(ended?.status, "completed");
+  assert.equal(ended?.completedAt, emptied, "dated to when the seats emptied");
+});
+
+test("X-3: a provider that fails or does not answer in time falls back to the lease rule", async () => {
+  for (const failure of [null, "hang"] as const) {
+    const f = await fixture();
+    const { session } = await liveSession(f, `Provider ${String(failure)}`);
+    f.participants.list = failure;
+    f.advanceSeconds(30 + 60 + 1);
+    const started = Date.now();
+    assert.deepEqual(await f.service.sweepPresence(), { seatsClosed: 1, sessionsEnded: 1 });
+    assert.ok(Date.now() - started < 5_000, "a hanging provider read is cut off");
+    assert.equal(await stateOf(f, session.id), "completed");
+    assert.deepEqual(f.logs, []);
+  }
+});
+
+test("X-3: one sweep asks the provider about at most ten rooms", async () => {
+  const f = await fixture();
+  const ids: string[] = [];
+  for (let index = 0; index < 12; index += 1) ids.push((await liveSession(f, `Room ${index}`)).session.id);
+  f.participants.list = ["host"];
+  f.advanceSeconds(30 + 60 + 1);
+  const result = await f.service.sweepPresence();
+  assert.equal(f.providerReads.length, 10);
+  assert.equal(result.sessionsEnded, 2, "rooms beyond the bound follow the lease rule");
+  const states = await Promise.all(ids.map((id) => stateOf(f, id)));
+  assert.equal(states.filter((state) => state === "live").length, 10);
 });

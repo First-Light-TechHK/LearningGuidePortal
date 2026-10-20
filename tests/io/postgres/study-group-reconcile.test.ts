@@ -197,6 +197,20 @@ test("the heartbeat fast path renews only a still-held seat of a scheduled or li
   }
 });
 
+// QA final review X-3: before the sweep ends an abandoned room it asks the
+// provider; an occupied room stays live, and a failed read ends it as before.
+test("the sweep keeps a room the provider still sees occupied and ends it once the provider cannot say", async () => {
+  await seedLeaseState({ busy: "s-busy-x3", abandoned: "s-gone-x3" });
+  const kept = await runReconcile({ LG_IO_PRESENT: "u-gone" });
+  assert.equal(kept.sessionsChecked, 0, "the occupied room is not ended");
+  assert.equal(kept.presencesClosed, 2, "lapsed seats still close");
+  assert.equal(await countScalar("SELECT count(*) FROM live_sessions WHERE id = 's-gone-x3' AND status = 'live'"), 1);
+
+  const failed = await runReconcile({ LG_IO_PRESENT: "u-gone", LG_IO_FAIL_ROOM: "s-gone-x3" });
+  assert.equal(failed.sessionsChecked, 1, "a failed provider read falls back to the lease rule");
+  assert.equal(await countScalar("SELECT count(*) FROM live_sessions WHERE id = 's-gone-x3' AND status = 'completed'"), 1);
+});
+
 // QA final review B6 / X-2: a scheduled session's seat renews only in
 // Starting Soon (start at or before startsBy) and before its planned end.
 test("the heartbeat fast path never renews a seat of a session that is not open for seats", async () => {

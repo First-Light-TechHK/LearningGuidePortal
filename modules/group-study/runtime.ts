@@ -319,6 +319,7 @@ export function studyGroupService() {
       console.info(JSON.stringify({ type: "study_group.livekit_incident", ...incident }));
     },
     tokenLogKey: tokenLogKeyFromEnv,
+    operationalLog: (event) => console.info(JSON.stringify(event)),
     courseKnowledge: readStoredCourseKnowledge,
     tutorKeys: () => readTutorKeys(process.env.STUDY_GROUP_TUTOR_KEYS),
     tutorCall: (input) => openRouterTutorCall({

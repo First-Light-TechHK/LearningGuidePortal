@@ -170,7 +170,7 @@ async function seedStore(f: ReconcileFixture, presences: PresenceRow[]) {
 
 const at = (ms: number) => new Date(Date.parse(NOW) + ms).toISOString();
 
-test("the sweep closes lapsed seats at the moment their lease ran out and never asks the provider", async () => {
+test("the sweep closes lapsed seats at the moment their lease ran out and asks the provider only before ending a room", async () => {
   const f = await reconcileFixture({ listParticipants: async () => [] });
   f.state.abandonResult = 4;
   await seedStore(f, [
@@ -187,7 +187,9 @@ test("the sweep closes lapsed seats at the moment their lease ran out and never 
   assert.deepEqual(result, { abandonedReceipts: 4, sessionsChecked: 1, presencesClosed: 2 });
   assert.deepEqual(f.calls.abandon, [{ olderThanSeconds: 300, limit: 50 }]);
   assert.deepEqual(f.calls.listLimits, []);
-  assert.deepEqual(f.calls.providerReads, []);
+  // Seats are the lease's alone; the provider is read only for the room the
+  // sweep is about to end (QA final review X-3), and its empty room ends.
+  assert.deepEqual(f.calls.providerReads, [{ projectId: "eu-secondary", room: "s-2" }]);
   assert.equal(f.calls.updates, 1);
   const after = await f.repository.read();
   const closedAt: Record<string, string> = { "u-2": at(-15_000), "u-3": at(-10_000) };
