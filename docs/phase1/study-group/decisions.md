@@ -18,7 +18,7 @@ One question is in flight per Live Session. Later questions wait. Order is the s
 
 ## API keys
 
-`STUDY_GROUP_TUTOR_KEYS` is one environment variable. Its value is a JSON list of `{ "id", "secret" }`. On auth failure, rate limit, or quota, the next healthy key is used. Request counts, errors, and latency stay in memory. Changing keys means editing that variable. There is no admin UI, no key file, and no secret in the repo, logs, or responses.
+`STUDY_GROUP_TUTOR_KEYS` is one environment variable. Its value is a JSON list of `{ "id", "secret" }`. On auth failure, rate limit, or quota, the next healthy key is used. Request counts, errors, and latency stay in memory. Changing keys means editing that variable. There is no admin UI, no key file, and no secret in the repo, logs, or responses. An environment that never set it uses the site's `OPENROUTER_API_KEY` as a one-key pool (DEV and SIT had no pool on 2026-10-20, so every question answered "temporarily unavailable"); the shared key is never sent to a custom `STUDY_GROUP_TUTOR_URL` outside OpenRouter. `/api/health/config` reports which pool is in use as `studyGroup.tutorKeySource` (`own`, `shared` or `none`).
 
 ## Labels and seats
 

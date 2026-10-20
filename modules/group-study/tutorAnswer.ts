@@ -90,6 +90,21 @@ export function clampTutorReply(raw: string): string {
   return `${kept.replace(TRAILING_MARKS, "")}…`;
 }
 
+// The Live Session tutor's key pool. Its own STUDY_GROUP_TUTOR_KEYS wins; an
+// environment that never set them (DEV and SIT did not, 2026-10-20) uses the
+// site's OpenRouter key as a one-key pool instead of answering every question
+// "temporarily unavailable". The shared key only ever goes to OpenRouter: a
+// custom STUDY_GROUP_TUTOR_URL elsewhere gets no fallback.
+export const SHARED_TUTOR_KEY_ID = "openrouter-shared";
+export function studyGroupTutorKeys(env: Record<string, string | undefined>) {
+  const own = readTutorKeys(env.STUDY_GROUP_TUTOR_KEYS);
+  if (own.length > 0) return own;
+  const shared = env.OPENROUTER_API_KEY?.trim();
+  const url = env.STUDY_GROUP_TUTOR_URL?.trim();
+  if (!shared || (url && !url.includes("openrouter.ai"))) return [];
+  return [{ id: SHARED_TUTOR_KEY_ID, secret: shared }];
+}
+
 export function readTutorKeys(raw: string | undefined) {
   if (!raw?.trim()) return [];
   try {

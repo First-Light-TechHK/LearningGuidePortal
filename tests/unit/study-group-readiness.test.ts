@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { GET as healthConfig } from "../../app/api/health/config/route";
+import { SHARED_TUTOR_KEY_ID, studyGroupTutorKeys } from "../../modules/group-study/tutorAnswer";
 
 // The studyGroup block on /api/health/config is the "code verifies the
 // deployment" surface: the tutor key pool state, whether a DEV deployment is
@@ -8,7 +9,7 @@ import { GET as healthConfig } from "../../app/api/health/config/route";
 // whether the fake gateway is on. All values stay redacted — nothing here may
 // echo a key, a pool secret or the local-credentials JSON.
 
-const keys = ["APP_ENV", "STUDY_GROUP_STORE", "DATABASE_URL", "LIVEKIT_PROJECTS_JSON", "STUDY_GROUP_TOKEN_LOG_KEY", "STUDY_GROUP_TUTOR_KEYS", "LIVEKIT_LOCAL_CREDENTIALS_JSON", "LIVEKIT_FAKE_GATEWAY"] as const;
+const keys = ["APP_ENV", "STUDY_GROUP_STORE", "DATABASE_URL", "LIVEKIT_PROJECTS_JSON", "STUDY_GROUP_TOKEN_LOG_KEY", "STUDY_GROUP_TUTOR_KEYS", "LIVEKIT_LOCAL_CREDENTIALS_JSON", "LIVEKIT_FAKE_GATEWAY", "OPENROUTER_API_KEY", "STUDY_GROUP_TUTOR_URL"] as const;
 const saved = new Map(keys.map((key) => [key, process.env[key]]));
 
 after(() => {
@@ -47,6 +48,36 @@ test("the tutor key pool state is reported without echoing any key", async () =>
   const configured = await studyGroup();
   assert.equal(configured.tutorKeys, "configured");
   assert.equal(JSON.stringify(configured).includes("secret-value-never-echoed"), false);
+});
+
+test("the Live Session tutor falls back to the site's OpenRouter key and says which pool it uses (DEV/SIT 2026-10-20)", async () => {
+  process.env.APP_ENV = "SIT";
+  delete process.env.STUDY_GROUP_TUTOR_URL;
+  delete process.env.STUDY_GROUP_TUTOR_KEYS;
+  delete process.env.OPENROUTER_API_KEY;
+  assert.equal((await studyGroup()).tutorKeySource, "none");
+
+  process.env.OPENROUTER_API_KEY = "shared-secret-never-echoed";
+  const shared = await studyGroup();
+  assert.equal(shared.tutorKeys, "missing");
+  assert.equal(shared.tutorKeySource, "shared");
+  assert.equal(JSON.stringify(shared).includes("shared-secret-never-echoed"), false);
+  assert.deepEqual(studyGroupTutorKeys(process.env), [{ id: SHARED_TUTOR_KEY_ID, secret: "shared-secret-never-echoed" }]);
+
+  // A custom endpoint elsewhere never receives the site's OpenRouter key.
+  process.env.STUDY_GROUP_TUTOR_URL = "https://llm.example.com/v1/chat/completions";
+  assert.equal((await studyGroup()).tutorKeySource, "none");
+  assert.deepEqual(studyGroupTutorKeys(process.env), []);
+  process.env.STUDY_GROUP_TUTOR_URL = "https://openrouter.ai/api/v1/chat/completions";
+  assert.equal((await studyGroup()).tutorKeySource, "shared");
+
+  // The Live Session's own pool always wins.
+  process.env.STUDY_GROUP_TUTOR_KEYS = JSON.stringify([{ id: "pool-1", secret: "own-secret" }]);
+  assert.equal((await studyGroup()).tutorKeySource, "own");
+  assert.deepEqual(studyGroupTutorKeys(process.env), [{ id: "pool-1", secret: "own-secret" }]);
+  delete process.env.STUDY_GROUP_TUTOR_URL;
+  delete process.env.STUDY_GROUP_TUTOR_KEYS;
+  delete process.env.OPENROUTER_API_KEY;
 });
 
 test("a DEV deployment with local LiveKit credentials or the fake gateway says so", async () => {

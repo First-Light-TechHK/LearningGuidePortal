@@ -2,6 +2,7 @@ import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getPool } from "./persistence/db";
 import { awsRegion, dataS3Bucket, dataS3Prefix } from "./persistence/config";
 import { isManagedEnvironment, runtimeConfiguration } from "./runtimeConfig";
+import { readTutorKeys, studyGroupTutorKeys } from "@/modules/group-study/tutorAnswer";
 
 let cached: { expires: number; result: Awaited<ReturnType<typeof checkDependencies>> } | undefined;
 let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
@@ -17,10 +18,18 @@ let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
 //   (modules/group-study/tutorAnswer.ts) so readiness never claims a pool the
 //   runtime would ignore; `invalid` means the variable exists but yields no
 //   usable key.
+// - tutorKeySource: which pool the Live Session tutor actually uses: `own`
+//   (STUDY_GROUP_TUTOR_KEYS), `shared` (the site's OpenRouter key, see
+//   studyGroupTutorKeys) or `none` (every question answers "unavailable").
 // - credentialSource: `local` means LIVEKIT_LOCAL_CREDENTIALS_JSON is set on a
 //   DEV deployment, where it silently shadows Secrets Manager.
 // - simulated: LIVEKIT_FAKE_GATEWAY=1 is honored only on DEV; it disables
 //   webhook verification and reconciliation.
+function tutorKeySource(): "own" | "shared" | "none" {
+  if (readTutorKeys(process.env.STUDY_GROUP_TUTOR_KEYS).length > 0) return "own";
+  return studyGroupTutorKeys(process.env).length > 0 ? "shared" : "none";
+}
+
 function tutorKeyState(): "configured" | "missing" | "invalid" {
   const raw = process.env.STUDY_GROUP_TUTOR_KEYS?.trim();
   if (!raw) return "missing";
@@ -42,6 +51,7 @@ function studyGroupReadiness(): {
   store: "postgresql" | "file";
   configured: boolean;
   tutorKeys: "configured" | "missing" | "invalid";
+  tutorKeySource: "own" | "shared" | "none";
   credentialSource: "secrets-manager" | "local";
   simulated: boolean;
 } {
@@ -56,6 +66,7 @@ function studyGroupReadiness(): {
     store,
     configured: Boolean(process.env.LIVEKIT_PROJECTS_JSON?.trim() && process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim()),
     tutorKeys: tutorKeyState(),
+    tutorKeySource: tutorKeySource(),
     credentialSource: onDev && Boolean(process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON?.trim()) ? "local" : "secrets-manager",
     simulated: onDev && process.env.LIVEKIT_FAKE_GATEWAY === "1"
   };
