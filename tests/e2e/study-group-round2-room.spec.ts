@@ -252,7 +252,7 @@ test("X-5: a refused question is marked Not sent to AI Tutor, with the reason", 
   }
 });
 
-test("X-4: a seat lost under a working call is not taken back by a full session", async ({ browser, baseURL }) => {
+test("X-4: a seat lost under a working call comes back to its holder, even from a full session", async ({ browser, baseURL }) => {
   test.setTimeout(300_000);
   const origin = appOrigin(baseURL);
   const room = await openLiveRoom(browser, origin, "x4", { maxParticipants: 2 });
@@ -266,18 +266,18 @@ test("X-4: a seat lost under a working call is not taken back by a full session"
     await expect.poll(async () => (await sessionView(room.host, sessionId)).occupancy, { timeout: LEASE_MS + 40_000, intervals: [3_000] }).toBe(1);
     expect((await enterSession(third, sessionId)).status(), "the lapsed seat goes to someone else").toBe(200);
 
+    // The server asks LiveKit who is in the call (QA round two X-4): the
+    // member still in it gets the seat back from the newcomer who never
+    // connected, and the call never drops.
     const reentry = pageB.waitForResponse((response) => response.url().endsWith(`/api/study-groups/sessions/${sessionId}/enter`) && response.request().method() === "POST", { timeout: 30_000 });
     await pageB.unroute(heartbeat);
-    expect((await (await reentry).json()).code).toBe("session_full");
-    // The call stays, and the page keeps trying.
+    expect((await (await reentry).json()).code).toBe("ok");
+    const view = await sessionView(room.host, sessionId);
+    expect(view.occupancy).toBe(2);
+    expect(view.attendees.map((person) => person.displayName).sort()).toEqual(["Study Guest", "Study Host"]);
     await pageB.waitForTimeout(12_000);
     await expectConnected(pageB, 2);
     await expect(pageB.getByRole("heading", { name: "Session full." })).toHaveCount(0);
-
-    // Once a seat is free again, the next heartbeat takes it back.
-    expect((await third.context.request.post(`/api/study-groups/sessions/${sessionId}/leave`, { data: {} })).status()).toBe(200);
-    await expect.poll(async () => (await sessionView(room.host, sessionId)).occupancy, { timeout: 30_000 }).toBe(2);
-    await expectConnected(pageB, 2);
   } finally {
     await third.context.close();
     await room.close();

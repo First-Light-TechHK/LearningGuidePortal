@@ -314,8 +314,9 @@ test("X-5: asking the AI Tutor after the seat lapsed says why instead of a bare 
   try {
     await blockHeartbeat(room.pageB, room.sessionId);
     await room.pageB.waitForTimeout(LEASE_MS + 5_000);
+    await room.pageB.getByRole("tab", { name: "Chat" }).click();
     await askTutor(room.pageB, "Are you still there?");
-    await expect(room.pageB.getByText("Your connection to the Live Session dropped for a moment. Wait until you are back in, then ask again.")).toBeVisible();
+    await expect(room.pageB.getByText("Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.")).toBeVisible();
     await expect(room.pageB.getByRole("button", { name: "Reconnect" })).toHaveCount(0);
   } finally {
     await room.close();

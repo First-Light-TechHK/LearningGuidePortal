@@ -91,7 +91,7 @@ export function enterSession(member: Member, sessionId: string) {
 export async function sessionView(member: Member, sessionId: string) {
   const response = await member.context.request.get(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
   expect(response.status(), "session view").toBe(200);
-  return (await response.json()).data as { state: string; occupancy: number; completedAt?: string | null; startsAt: string };
+  return (await response.json()).data as { state: string; occupancy: number; completedAt?: string | null; startsAt: string; attendees: Array<{ userId: string; displayName: string }> };
 }
 
 export async function groupView(member: Member, groupId: string) {
