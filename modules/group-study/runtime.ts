@@ -83,11 +83,12 @@ export function studyGroupReminderStillValid(store: StudyGroupStore, userId: str
 // Reminder notifications recorded before the sessionId linkage existed (the
 // pre-BUG-0109 rows already in production) carry the Session title inside
 // their body: "<title> starts in 10 minutes." / "<title> 将在 10 分钟后开始。"
-// (the exact copy dispatchDueReminders writes). Recover the title so those
+// (the copy dispatchDueReminders wrote then; its rows now always carry their
+// sessionId, so only those old rows need this). Recover the title so those
 // rows can be resolved back to their Live Session through the viewer's own
 // recorded reminder rows and judged by the same validity rule — otherwise a
 // currently valid pre-deploy reminder would be withheld alongside the stale
-// ones it sits next to. The suffixes mirror the dispatch copy in service.ts.
+// ones it sits next to. The suffixes mirror that earlier dispatch copy.
 const REMINDER_BODY_SUFFIXES = [" starts in 10 minutes.", " 将在 10 分钟后开始。"];
 
 function reminderBodyTitle(body: string): string | null {

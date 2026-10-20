@@ -34,6 +34,8 @@ type Fixture = {
   removed: Array<{ room: string; identity: string }>;
   notes: Array<{ userId: string; title: string; body: string; sessionId?: string }>;
   logs: Array<Record<string, unknown>>;
+  /** Runs inside withdrawReminders before it deletes (a racing dispatch). */
+  hooks: { beforeWithdraw?: () => Promise<void> };
 };
 
 async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyGroupDeps> = () => ({})): Promise<Fixture> {
@@ -46,6 +48,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
   const removed: Array<{ room: string; identity: string }> = [];
   const notes: Fixture["notes"] = [];
   const logs: Fixture["logs"] = [];
+  const hooks: Fixture["hooks"] = {};
   const gateway: LiveKitRoomGateway = {
     ensureRoom: async () => undefined,
     issueParticipantToken: async () => ({ token: "stub-token", expiresAt: START, url: "wss://livekit.example.test" }),
@@ -65,7 +68,8 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     participants,
     removed,
     notes,
-    logs
+    logs,
+    hooks
   };
   const deps: StudyGroupDeps = {
     repository,
@@ -76,6 +80,14 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input); },
     listReminders: async () => [],
+    // The stored reminder notifications, withdrawn like productStore does.
+    withdrawReminders: async (input) => {
+      await hooks.beforeWithdraw?.();
+      for (let index = notes.length - 1; index >= 0; index -= 1) {
+        const note = notes[index];
+        if (note.title === "Live Session reminder" && note.sessionId && input.sessionIds.includes(note.sessionId) && (!input.userId || note.userId === input.userId)) notes.splice(index, 1);
+      }
+    },
     sendMail: async () => undefined,
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
     liveKitProjects: parseLiveKitProjects(PROJECTS_JSON),
@@ -262,4 +274,57 @@ test("B6 / X-2: the file store's one-row renewal applies the same rule as the se
     const renewed = await f.repository.renewSeat({ sessionId: ids[index], userId: "host", at: iso(nowMs), heldSince: iso(nowMs - 30_000), startsBy: iso(nowMs + 10 * 60_000) });
     assert.equal(renewed, item.renews, item.title);
   }
+});
+
+const reminders = (f: Fixture, userId: string) => f.notes.filter((item) => item.userId === userId && item.title === "Live Session reminder").map((item) => item.body);
+
+test("N9-a: moving a reminded session later inside the window still reminds for the new time", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Moved later", startsAt: inMinutes(f, 10), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+  f.advanceSeconds(60);
+  await f.service.dispatchDueReminders();
+  assert.deepEqual(reminders(f, "m1"), ['Moved later in the Study Group "Round two" starts in 9 minutes.']);
+
+  // 10:03: the Host moves 10:10 to 10:11. The old reminder goes; the new time
+  // is already inside its window, so its reminder goes out at once.
+  f.advanceSeconds(120);
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 8) });
+  assert.deepEqual(reminders(f, "m1"), ['Moved later in the Study Group "Round two" starts in 8 minutes.']);
+  assert.equal(reminders(f, "host").length, 1, "the Host is reminded for the new time too");
+  await f.service.dispatchDueReminders();
+  assert.equal(reminders(f, "m1").length, 1, "still one reminder per Start Time");
+});
+
+test("N9-b: a reminder for the new time sent just before the withdrawal is sent again", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Raced move", startsAt: inMinutes(f, 30), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+  // The new time is saved; a dispatch tick lands before the withdrawal and
+  // reminds for it, then the withdrawal deletes that reminder too.
+  f.hooks.beforeWithdraw = async () => { await f.service.dispatchDueReminders(); };
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 6) });
+  f.hooks.beforeWithdraw = undefined;
+  assert.deepEqual(reminders(f, "m1"), ['Raced move in the Study Group "Round two" starts in 6 minutes.']);
+});
+
+test("M10-a: a reminder names the group and the minutes really left, in both locales", async () => {
+  const f = await fixture((base) => ({
+    userProfile: async (userId) => ({ id: userId, displayName: userId, email: null, locale: userId === "m1" ? "zh-CN" : "en-GB" }),
+    notify: async (input) => { base.notes.push(input); }
+  }));
+  const created = await group(f, ["m1"]);
+  const soon = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Ninety seconds", startsAt: new Date(Date.parse(f.clock()) + 90_000).toISOString(), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.planToAttend({ actorUserId: "m1", sessionId: soon.id });
+  await f.service.dispatchDueReminders();
+  assert.deepEqual(reminders(f, "host"), ['Ninety seconds in the Study Group "Round two" starts in 2 minutes.']);
+  assert.deepEqual(f.notes.filter((item) => item.userId === "m1").map((item) => [item.title, item.body]), [["直播课提醒", "学习小组“Round two”的 Ninety seconds 将在 2 分钟后开始。"]]);
+
+  const g = await fixture();
+  const other = await group(g, []);
+  await g.service.scheduleSession({ actorUserId: "host", groupId: other.id, title: "Half a minute", startsAt: new Date(Date.parse(g.clock()) + 30_000).toISOString(), durationSeconds: 1800, maxParticipants: 4 });
+  await g.service.dispatchDueReminders();
+  assert.deepEqual(reminders(g, "host"), ['Half a minute in the Study Group "Round two" starts in 1 minute.']);
 });

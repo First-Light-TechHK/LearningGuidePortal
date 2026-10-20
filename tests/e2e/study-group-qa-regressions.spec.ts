@@ -488,19 +488,20 @@ test("N9: a moved Start Time withdraws the old reminder, tells planned members, 
     await joinGroup(member, groupId);
     const sessionId = await scheduleSession(host, groupId, { title, startsInMs: 8 * 60_000 });
     expect((await member.context.request.post(`/api/study-groups/sessions/${sessionId}/plan`, { data: {} })).status()).toBe(200);
-    const reminder = `${title} starts in 10 minutes.`;
-    await expect.poll(() => remindersFor(member), { timeout: 60_000, intervals: [3_000] }).toContain(reminder);
+    // "<title> in the Study Group "<group>" starts in N minutes." (QA M10-a).
+    const reminded = async () => (await remindersFor(member)).some((body) => body.startsWith(`${title} in the Study Group`));
+    await expect.poll(reminded, { timeout: 60_000, intervals: [3_000] }).toBe(true);
 
     // The Host moves the start to just outside the reminder window.
     const moved = await host.context.request.patch(`/api/study-groups/sessions/${sessionId}`, { data: { groupId, startsAt: new Date(Date.now() + 10 * 60_000 + 40_000).toISOString() } });
     expect(moved.status(), "reschedule").toBe(200);
-    await expect.poll(() => remindersFor(member), { timeout: 15_000 }).not.toContain(reminder);
+    await expect.poll(reminded, { timeout: 15_000 }).toBe(false);
     await expect.poll(async () => (await notificationsFor(member.email)).filter((item) => item.title === "Live Session rescheduled" && item.body.includes(title)).length, { timeout: 15_000 }).toBe(1);
     expect((await notificationsFor(host.email)).filter((item) => item.title === "Live Session rescheduled"), "the Host who moved it is not told").toHaveLength(0);
     await expect.poll(async () => (await mailTo(member.email)).filter((message) => message.raw.includes("Live Session rescheduled")).length, { timeout: 15_000 }).toBe(1);
 
     // When the new time enters the window, the reminder comes again.
-    await expect.poll(() => remindersFor(member), { timeout: 150_000, intervals: [5_000] }).toContain(reminder);
+    await expect.poll(reminded, { timeout: 150_000, intervals: [5_000] }).toBe(true);
     await expect.poll(async () => (await mailTo(member.email)).filter((message) => message.raw.includes("Live Session reminder")).length, { timeout: 30_000 }).toBe(2);
   } finally {
     await host.context.close();

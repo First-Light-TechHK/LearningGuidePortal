@@ -1218,7 +1218,7 @@ test("a zh-CN reminder uses the Chinese sentence", async () => {
   const group = await zh.createGroup({ actorUserId: "host-zh", title: "中文提醒组", courseId: "course-1", about: "Chinese reminder." });
   await zh.scheduleSession({ actorUserId: "host-zh", groupId: group.id, title: "中文课", startsAt: "2026-09-19T02:08:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await zh.dispatchDueReminders();
-  assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.body, "中文课 将在 10 分钟后开始。");
+  assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.body, "学习小组“中文提醒组”的 中文课 将在 8 分钟后开始。");
   // The notification title follows the recipient's locale too (hunt L1): the
   // body was already Chinese while the title stayed hard-coded English.
   assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.title, "直播课提醒");
@@ -2018,7 +2018,7 @@ test("rescheduling tells the planned members and the new time gets its own remin
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Moved session", startsAt: "2026-09-19T02:08:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await local.planToAttend({ actorUserId: "planner", sessionId: session.id });
   await local.dispatchDueReminders();
-  const reminders = () => notes.filter((item) => item.userId === "planner" && item.body.includes("starts in 10 minutes")).length;
+  const reminders = () => notes.filter((item) => item.userId === "planner" && item.title === "Live Session reminder").length;
   assert.equal(reminders(), 1);
 
   notes.length = 0;

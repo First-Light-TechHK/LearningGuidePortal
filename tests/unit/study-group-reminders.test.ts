@@ -120,7 +120,7 @@ test("three reminders become one after cancelling and completing two of the sess
   assert.equal((await linkedReminders("host", third.id)).length, 1);
   const remaining = await view();
   assert.equal(remaining.length, 1);
-  assert.equal(remaining[0].body, "Session one starts in 10 minutes.");
+  assert.equal(remaining[0].body, 'Session one in the Study Group "Reminder group" starts in 5 minutes.');
 });
 
 test("cancelling the Study Group withdraws its sessions' reminders and hides the cancellation notice", async () => {
@@ -179,7 +179,7 @@ test("the view hides legacy, foreign, rescheduled and started reminders", async 
   const session = await schedule(service, group.id, "Rescheduled", 5);
   await service.dispatchDueReminders();
   const view = () => service.listReminders("host");
-  assert.equal((await view()).some((item) => item.body === "Rescheduled starts in 10 minutes."), true);
+  assert.equal((await view()).some((item) => item.body === 'Rescheduled in the Study Group "Validity group" starts in 5 minutes.'), true);
   assert.equal((await view()).some((item) => item.body === "Legacy starts in 10 minutes."), false);
   assert.equal((await view()).some((item) => item.body === "Not a reminder."), false);
 
@@ -192,10 +192,10 @@ test("the view hides legacy, foreign, rescheduled and started reminders", async 
   // Once the Session starts, the reminder stops being a pending prompt.
   const open = await schedule(service, group.id, "Starting now", 5);
   await service.dispatchDueReminders();
-  assert.equal((await view()).some((item) => item.body === "Starting now starts in 10 minutes."), true);
+  assert.equal((await view()).some((item) => item.body === 'Starting now in the Study Group "Validity group" starts in 5 minutes.'), true);
   await service.enterSession({ actorUserId: "host", sessionId: open.id, requestedAt: new Date().toISOString() });
   await service.startSession({ actorUserId: "host", sessionId: open.id });
-  assert.equal((await view()).some((item) => item.body === "Starting now starts in 10 minutes."), false);
+  assert.equal((await view()).some((item) => item.body === 'Starting now in the Study Group "Validity group" starts in 5 minutes.'), false);
 });
 
 test("a pre-linkage reminder keeps showing while its session is still pending", async () => {

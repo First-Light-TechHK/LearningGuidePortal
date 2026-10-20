@@ -427,17 +427,19 @@ test("BUG-0109: a reminder goes away when its session is cancelled, unplanned, l
       groupCancelled: await scheduleSession(host, toCancel, { title: titles.groupCancelled, startsInMs: 8 * 60_000 }),
     };
     for (const id of Object.values(ids)) expect((await member.context.request.post(`/api/study-groups/sessions/${id}/plan`, { data: {} })).status()).toBe(200);
-    const reminder = (title: string) => `${title} starts in 10 minutes.`;
+    // "<title> in the Study Group "<group>" starts in N minutes." (QA M10-a).
+    const reminder = (title: string) => `${title} in the Study Group`;
+    const reminded = (shown: string[], title: string) => shown.some((body) => body.startsWith(reminder(title)));
     await expect.poll(async () => {
       const shown = await remindersFor(member);
-      return Object.values(titles).every((title) => shown.includes(reminder(title)));
+      return Object.values(titles).every((title) => reminded(shown, title));
     }, { timeout: 60_000, intervals: [3_000] }).toBe(true);
     // The Host is reminded as well, and the page shows the strip.
-    expect(await remindersFor(host)).toContain(reminder(titles.cancelled));
+    expect(reminded(await remindersFor(host), titles.cancelled)).toBe(true);
     const page = await openStudyGroups(member);
     await expect(page.getByRole("status").filter({ hasText: reminder(titles.cancelled) })).toBeVisible();
 
-    const gone = async (title: string) => expect.poll(async () => (await remindersFor(member)).includes(reminder(title)), { timeout: 5_000 }).toBe(false);
+    const gone = async (title: string) => expect.poll(async () => reminded(await remindersFor(member), title), { timeout: 5_000 }).toBe(false);
     expect((await host.context.request.post(`/api/study-groups/sessions/${ids.cancelled}/cancel`, { data: {} })).status()).toBe(200);
     await gone(titles.cancelled);
     expect((await member.context.request.post(`/api/study-groups/sessions/${ids.unplanned}/cancel-attendance`, { data: {} })).status()).toBe(200);

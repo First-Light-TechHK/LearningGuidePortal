@@ -565,7 +565,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   async function dispatchDueReminders(snapshot?: StudyGroupStore) {
     const now = deps.now();
     const dueJobs = (store: StudyGroupStore, record: boolean) => {
-      const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string }> = [];
+      const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string; groupTitle: string; startsAt: string }> = [];
       for (const session of store.sessions) {
         if (session.status !== "scheduled") continue;
         const startsAt = new Date(session.startsAt).getTime();
@@ -589,7 +589,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             if (existing) existing.sentAt = now.toISOString();
             else store.reminders.push({ id: randomUUID(), sessionId: session.id, userId, sentAt: now.toISOString() });
           }
-          jobs.push({ userId, sessionId: session.id, sessionTitle: session.title });
+          jobs.push({ userId, sessionId: session.id, sessionTitle: session.title, groupTitle: group.title, startsAt: session.startsAt });
         }
       }
       return jobs;
@@ -605,9 +605,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // view's marker (hunt L1): the en-GB title must stay exactly this
         // string — the view filters on the known per-locale titles — and the
         // zh-CN title is its Chinese counterpart. Both match the email subject.
+        // The body names the group and the minutes really left (QA M10-a): a
+        // reminder sent again after a reschedule rarely lands at T-10.
+        const minutes = Math.max(1, Math.ceil((Date.parse(job.startsAt) - now.getTime()) / 60_000));
         const copy = profile?.locale === "zh-CN"
-          ? { title: "直播课提醒", body: `${job.sessionTitle} 将在 10 分钟后开始。` }
-          : { title: "Live Session reminder", body: `${job.sessionTitle} starts in 10 minutes.` };
+          ? { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` }
+          : { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` };
         await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
       } catch {
@@ -617,11 +620,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   }
 
   // A moved Start Time (QA 2026-10-19 N9): the reminder for the old time is
-  // withdrawn (the dispatch sends a fresh one for the new time, see
-  // dispatchDueReminders), and every member who planned to attend is told.
-  // Best-effort per recipient: the move itself has already been saved.
+  // withdrawn, the session's reminder rows are reset so the dispatch sends a
+  // fresh one for the new time, and every member who planned to attend is
+  // told. Resetting after the withdrawal matters: a reminder for the new time
+  // sent before the withdrawal (or within ten minutes of the old one) would
+  // otherwise count as already sent and never come again (final review
+  // N9-a, N9-b). Best-effort throughout: the move itself has already been saved.
   async function announceReschedule(session: { id: string; title: string; planned: string[] }) {
     await deps.withdrawReminders?.({ sessionIds: [session.id] })?.catch(() => undefined);
+    await deps.repository.update((store) => {
+      for (const row of store.reminders) {
+        if (row.sessionId === session.id) row.sentAt = new Date(0).toISOString();
+      }
+    }).catch(() => undefined);
+    await dispatchDueReminders().catch(() => undefined);
     for (const userId of session.planned) {
       try {
         const profile = await deps.userProfile(userId);
