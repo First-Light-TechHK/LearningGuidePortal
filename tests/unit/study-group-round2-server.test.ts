@@ -328,3 +328,19 @@ test("M10-a: a reminder names the group and the minutes really left, in both loc
   await g.service.dispatchDueReminders();
   assert.deepEqual(reminders(g, "host"), ['Half a minute in the Study Group "Round two" starts in 1 minute.']);
 });
+
+test("M11-a: a failing reminder withdrawal never fails cancel, leave or cancel-attendance", async () => {
+  const f = await fixture(() => ({ withdrawReminders: async () => { throw new Error("notification store down"); } }));
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Withdrawals", startsAt: inMinutes(f, 60), durationSeconds: 1800, maxParticipants: 4 });
+  const other = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Cancelled one", startsAt: inMinutes(f, 90), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+  await f.service.cancelAttendance({ actorUserId: "m1", sessionId: session.id });
+  await f.service.cancelSession({ actorUserId: "host", sessionId: other.id });
+  await f.service.leaveGroup({ actorUserId: "m1", groupId: created.id });
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 120) });
+  await f.service.cancelGroup({ actorUserId: "host", groupId: created.id });
+  // The cancel went through and the remaining member was still told.
+  assert.equal((await f.repository.read()).groups.find((row) => row.id === created.id)?.status, "cancelled");
+  assert.deepEqual(f.notes.filter((item) => item.title === "Study Group cancelled").map((item) => item.userId), ["m2"]);
+});

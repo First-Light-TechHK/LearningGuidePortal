@@ -833,7 +833,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       });
       // Leaving drops the member's pending Plan-to-Attend reminders (BR-023):
       // withdraw their reminder rows for this group's Sessions only.
-      await deps.withdrawReminders?.({ sessionIds, userId: input.actorUserId });
+      await deps.withdrawReminders?.({ sessionIds, userId: input.actorUserId })?.catch(() => undefined);
     },
 
     async listDiscover(input: { actorUserId: string | null; courseId?: string; query?: string }) {
@@ -906,8 +906,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         };
       });
       // The cancelled group's pending reminders die with it (storage honesty);
-      // the members' in-site cancellation notices below are kept.
-      await deps.withdrawReminders?.({ sessionIds });
+      // the members' in-site cancellation notices below are kept. Like every
+      // withdrawal, best effort: the cancel is already saved, and a failed
+      // withdrawal must neither fail it nor skip the notices (QA M11-a); the
+      // reminders view's validity filter hides what is left behind.
+      await deps.withdrawReminders?.({ sessionIds })?.catch(() => undefined);
       // Best-effort per member (QA M11): the group is already cancelled, so a
       // failed notice must not report the cancel itself as failed.
       await Promise.all(notified.map(async (userId) => {
@@ -1027,7 +1030,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       });
       // The cancelled Session can start no more, so its pending reminders are
       // withdrawn for every audience member (BUG-0109 storage honesty).
-      await deps.withdrawReminders?.({ sessionIds: [input.sessionId] });
+      await deps.withdrawReminders?.({ sessionIds: [input.sessionId] })?.catch(() => undefined);
     },
 
     async getSession(input: { actorUserId: string; sessionId: string }) {
@@ -1069,7 +1072,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // the pending row the member's Plan to Attend produced. Only an actual
       // cancellation withdraws — a no-op cancel must not touch a reminder that
       // belongs to another audience reason (e.g. the Host's).
-      if (cancelled) await deps.withdrawReminders?.({ sessionIds: [input.sessionId], userId: input.actorUserId });
+      if (cancelled) await deps.withdrawReminders?.({ sessionIds: [input.sessionId], userId: input.actorUserId })?.catch(() => undefined);
     },
 
     orderEntry<T>(requestedAt: string, run: () => Promise<T>) {
