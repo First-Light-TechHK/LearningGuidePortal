@@ -125,7 +125,7 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
     const mine = await (await host.context.request.get("/api/study-groups?view=mine")).json();
     expect((mine.data as Array<{ title: string }>).filter((group) => group.title === title), "one group for a double click").toHaveLength(1);
     await page.getByRole("button", { name: "Open Group" }).click();
-    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
     await expect(page.getByText("Hosting", { exact: true })).toBeVisible();
 
     // The next Create form is empty.
@@ -222,7 +222,9 @@ test("BUG-0129: many groups scroll inside the sidebar on a desktop, down to the 
     const sidebar = page.getByRole("complementary", { name: "Study Groups" });
     await expect(sidebar.getByRole("heading", { name: titles[0] })).toBeVisible();
     expect(await sidebar.evaluate((element) => element.scrollHeight > element.clientHeight), "the sidebar scrolls").toBe(true);
-    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1), "the page itself does not grow").toBe(true);
+    // The sidebar is capped to the viewport below the 68px header, so the
+    // groups no longer stretch the page.
+    expect(await sidebar.evaluate((element) => element.getBoundingClientRect().height <= window.innerHeight - 68 + 1), "the sidebar fits the viewport").toBe(true);
     const oldest = sidebar.getByRole("button", { name: new RegExp(titles[0]) }).first();
     await oldest.scrollIntoViewIfNeeded();
     await oldest.click();
@@ -410,7 +412,7 @@ test("BUG-0109: a reminder goes away when its session is cancelled, unplanned, l
     const toLeave = await createGroup(host, unique("E2E 0109 leave"));
     const toCancel = await createGroup(host, unique("E2E 0109 cancel"));
     for (const id of [main, toLeave, toCancel]) await joinGroup(member, id);
-    const titles = { cancelled: unique("Cancelled"), unplanned: unique("Unplanned"), started: unique("Started"), left: unique("Left"), groupCancelled: unique("Group cancelled") };
+    const titles = { cancelled: unique("Session cancelled"), unplanned: unique("Unplanned"), started: unique("Started"), left: unique("Left"), groupCancelled: unique("Group cancelled") };
     const ids = {
       cancelled: await scheduleSession(host, main, { title: titles.cancelled, startsInMs: 8 * 60_000 }),
       unplanned: await scheduleSession(host, main, { title: titles.unplanned, startsInMs: 8 * 60_000 }),

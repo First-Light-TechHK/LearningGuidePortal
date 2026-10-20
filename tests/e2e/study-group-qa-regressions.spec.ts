@@ -160,7 +160,7 @@ test("BUG-0099 / M16: cancel group, cancel session and leave group ask with Go b
     await expect(dialog.getByRole("heading")).toHaveText("Cancel this Study Group?");
     await expect(dialog.getByRole("button")).toHaveText(["Go back", "Yes, cancel group"]);
     await dialog.getByRole("button", { name: "Go back" }).click();
-    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
     await page.getByRole("button", { name: "Cancel Group" }).click();
     await dialog.getByRole("button", { name: "Yes, cancel group" }).click();
     await expect(page.getByRole("heading", { name: title })).toHaveCount(0);
@@ -537,13 +537,13 @@ test("N10 / M6: a failed poll keeps the page, a failed group has its own retry, 
     await joinGroup(member, second);
     await scheduleSession(host, first, { title: "Plan me", startsInMs: 3 * 60 * 60_000 });
     const page = await openGroupPage(member, first);
-    await expect(page.getByRole("heading", { name: firstTitle })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: firstTitle })).toBeVisible();
 
     // The list polls fail for a while: what is on screen stays.
     const listRoute = "**/api/study-groups?view=mine*";
     await page.route(listRoute, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
     await page.waitForTimeout(8_000);
-    await expect(page.getByRole("heading", { name: firstTitle })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: firstTitle })).toBeVisible();
     await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
     await page.unroute(listRoute);
 
@@ -560,17 +560,17 @@ test("N10 / M6: a failed poll keeps the page, a failed group has its own retry, 
     await page.getByRole("button", { name: new RegExp(secondTitle) }).first().click();
     const failed = appAlerts(page).filter({ has: page.getByRole("button", { name: "Try again" }) });
     await expect(failed).toBeVisible();
-    await expect(page.getByRole("heading", { name: firstTitle }), "the old group does not stand in for the failed one").toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 2, name: firstTitle }), "the old group does not stand in for the failed one").toHaveCount(0);
     await page.unroute(groupRoute);
     await failed.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("heading", { name: secondTitle })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: secondTitle })).toBeVisible();
     await expect(page.getByText("Something went wrong. Try again."), "the first group's error stayed behind").toHaveCount(0);
 
     // M6: signed out, the sign-in link brings the visitor back to this group.
     const visitor = await browser.newContext({ baseURL: origin });
     const visitorPage = await visitor.newPage();
     await visitorPage.goto(groupPath(second));
-    await expect(visitorPage.getByRole("heading", { name: secondTitle })).toBeVisible();
+    await expect(visitorPage.getByRole("heading", { level: 2, name: secondTitle })).toBeVisible();
     const signIn = visitorPage.getByRole("link", { name: "Sign In" }).last();
     expect(decodeURIComponent((await signIn.getAttribute("href")) || "")).toContain(`returnTo=/en-GB/portal/study-groups?group=${second}`);
     await visitor.close();
@@ -611,8 +611,11 @@ test("N11: sessions run live, then soonest upcoming, then the latest ended; Disc
     const page = await openGroupPage(host, groupId);
     await expect(page.locator("article article h3")).toHaveText(expected);
 
-    const discover = await host.context.request.get("/api/study-groups?view=discover");
+    // Discover lists groups the viewer is not in, so a signed-out visitor looks.
+    const visitor = await browser.newContext({ baseURL: origin });
+    const discover = await visitor.request.get("/api/study-groups?view=discover");
     const titles = ((await discover.json()).data as Array<{ title: string }>).map((group) => group.title);
+    await visitor.close();
     expect(titles.indexOf(title), "the newer group comes first").toBeLessThan(titles.indexOf(olderTitle));
     expect(titles.indexOf(title)).toBeGreaterThanOrEqual(0);
   } finally {
@@ -645,12 +648,29 @@ test("N12: on a phone, opening a group brings its details into view", async ({ b
 
 // Holds media playback until the page has had a user gesture, as Safari and
 // iOS do: audio from the room cannot play until the member clicks something.
+// Headless Chromium plays everything (and reports the page as already
+// activated), so both media elements and the AudioContext, which LiveKit also
+// checks, are held here until the first real click or key press.
 function blockAutoplayUntilGesture() {
+  let gestured = false;
+  const gesture = (event: Event) => { if (event.isTrusted) gestured = true; };
+  window.addEventListener("pointerdown", gesture, true);
+  window.addEventListener("keydown", gesture, true);
+  const allowed = () => gestured;
   const play = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function playAfterGesture(this: HTMLMediaElement) {
-    if (!navigator.userActivation?.hasBeenActive) return Promise.reject(new DOMException("play() needs a user gesture", "NotAllowedError"));
+    if (!allowed()) return Promise.reject(new DOMException("play() needs a user gesture", "NotAllowedError"));
     return play.call(this);
   };
+  class GestureAudioContext extends window.AudioContext {
+    get state(): AudioContextState {
+      return allowed() ? super.state : "suspended";
+    }
+    resume() {
+      return allowed() ? super.resume() : Promise.resolve();
+    }
+  }
+  window.AudioContext = GestureAudioContext;
 }
 
 test("N13: sound blocked by the browser shows a button that turns it on", async ({ browser, baseURL }) => {
