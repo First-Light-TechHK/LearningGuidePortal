@@ -12,6 +12,9 @@ export type StudySession = {
   relatedLessonId: string | null;
   state: "scheduled" | "starting_soon" | "live" | "completed";
   occupancy: number;
+  // Seats a member who is not the Host can still take: before the start the
+  // server keeps one for the Host until the Host holds a seat.
+  seatsOpen: number;
   plannedCount: number;
   viewerPlanned: boolean;
   attendees: Array<{ userId: string; displayName: string }>;

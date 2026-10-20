@@ -130,3 +130,36 @@ test("F-1: the start seats the Host in the same write, so a member cannot take t
   g.advanceSeconds(31);
   assert.equal((await g.service.getSession({ actorUserId: "host", sessionId: lone.id })).occupancy, 0);
 });
+
+test("F-2: the session view tells a member how many seats they can take, the Host's reserved seat subtracted", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2", "m3"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Three seats", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 3 });
+  const open = async () => (await f.service.getSession({ actorUserId: "m3", sessionId: session.id })).seatsOpen;
+  assert.equal(await open(), 2, "one of three is the Host's");
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal(await open(), 1);
+  await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal((await f.service.getSession({ actorUserId: "m3", sessionId: session.id })).occupancy, 2, "2/3 seated");
+  assert.equal(await open(), 0, "…and still full for a member: the last seat waits for the Host");
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m3", sessionId: session.id, requestedAt: f.clock() })), "session_full");
+
+  // Live, the reservation is gone; the started room is full with the Host in it.
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(await open(), 0);
+  await f.service.leaveSession({ actorUserId: "m2", sessionId: session.id });
+  assert.equal(await open(), 1);
+  await f.service.leaveSession({ actorUserId: "m1", sessionId: session.id });
+  await f.service.leaveSession({ actorUserId: "m3", sessionId: session.id }).catch(() => undefined);
+  await f.service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await f.service.getSession({ actorUserId: "m3", sessionId: session.id })).state, "completed");
+  assert.equal(await open(), 0, "an ended session has no seat to offer");
+});
+
+test("F-2: the groups page disables Join Now from the server's seat count, not occupancy against the maximum", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const app = await readFile(path.join(process.cwd(), "components/portal/StudyGroupsApp.tsx"), "utf8");
+  assert.match(app, /disabled=\{session\.seatsOpen <= 0\}/);
+  assert.match(app, /\{session\.seatsOpen <= 0 \? copy\.sessionFull : copy\.joinNow\}/);
+  assert.equal(app.includes("session.occupancy >= session.maxParticipants"), false);
+});

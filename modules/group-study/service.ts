@@ -385,6 +385,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     };
   }
 
+  // The seats a member who is not the Host can still take (QA final review
+  // F-2): before the start one seat stays the Host's until the Host holds
+  // one (the reservation in seat()), so "5/6" is already full for a member.
+  function seatsOpen(store: StudyGroupStore, session: LiveSessionRow, state: EffectiveSessionState | "removed") {
+    if (state === "completed" || state === "removed") return 0;
+    const now = deps.now();
+    const seats = seatCount(store, session.id, now);
+    const hostUserId = store.groups.find((item) => item.id === session.groupId)?.hostUserId;
+    const reserved = state !== "live" && !store.presences.some((item) => item.sessionId === session.id && item.userId === hostUserId && seatHeld(item, now)) ? 1 : 0;
+    return Math.max(0, session.maxParticipants - seats - reserved);
+  }
+
   async function sessionView(store: StudyGroupStore, session: LiveSessionRow, actorUserId: string) {
     const state = effectiveSessionState(session, deps.now());
     if (state === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
@@ -414,6 +426,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       startedAt: session.startedAt,
       state: state as EffectiveSessionState,
       occupancy: seatCount(store, session.id, deps.now()),
+      seatsOpen: seatsOpen(store, session, state),
       plannedCount: plannedCount(store, session.id),
       viewerPlanned: store.intents.some((item) => item.sessionId === session.id && item.userId === actorUserId && !item.cancelledAt),
       attendees
