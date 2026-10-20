@@ -889,9 +889,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!membership) throw new StudyGroupError("forbidden", "Join the Study Group first.");
       if (membership.role === "host") throw new StudyGroupError("forbidden", "The Host cancels the Study Group instead of leaving it.");
       const now = deps.now().toISOString();
-      const sessionIds = await deps.repository.update((current) => {
+      const { sessionIds, liveRooms } = await deps.repository.update((current) => {
         const row = current.memberships.find((item) => item.groupId === input.groupId && item.userId === input.actorUserId && !item.leftAt);
         if (row) row.leftAt = now;
+        const liveRooms = current.sessions
+          .filter((item) => item.groupId === input.groupId && item.status === "live" && item.liveKitProjectId)
+          .map((item) => ({ id: item.id, projectId: item.liveKitProjectId! }));
         const sessionIds = new Set(current.sessions.filter((item) => item.groupId === input.groupId && item.status === "scheduled").map((item) => item.id));
         for (const intent of current.intents) {
           if (intent.userId === input.actorUserId && sessionIds.has(intent.sessionId) && !intent.cancelledAt) intent.cancelledAt = now;
@@ -907,11 +910,26 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           presence.leftAt = now;
           endLiveSessionIfEmpty(current, session, at);
         }
-        return current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id);
+        return { sessionIds: current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id), liveRooms };
       });
       // Leaving drops the member's pending Plan-to-Attend reminders (BR-023):
       // withdraw their reminder rows for this group's Sessions only.
       await deps.withdrawReminders?.({ sessionIds, userId: input.actorUserId })?.catch(() => undefined);
+      // A member who left the group is out of its live rooms too, including
+      // a room open in another tab, which could otherwise go on talking and
+      // watching (QA M17). Best effort, bounded per room: the leave is saved,
+      // and a member not in the room is simply not found by the provider.
+      const gateway = deps.liveKitGateway;
+      const projects = deps.liveKitProjects;
+      if (gateway && projects) {
+        await Promise.all(liveRooms.map(async (room) => {
+          try {
+            await withTimeout(gateway.removeParticipant({ project: projects.getAssigned(room.projectId), room: room.id, identity: input.actorUserId }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
+          } catch {
+            // Not in that room, or the provider is unavailable: nothing to undo.
+          }
+        }));
+      }
     },
 
     async listDiscover(input: { actorUserId: string | null; courseId?: string; query?: string }) {

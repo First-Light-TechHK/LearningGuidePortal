@@ -483,3 +483,26 @@ test("M7: Discover hides a group whose Course is gone, and the group says so ins
     assert.ok(messages.studyGroupsPage.courseUnavailable, `${locale} has the copy`);
   }
 });
+
+test("M17: leaving the Study Group removes the member from the group's live room, best effort", async () => {
+  const f = await fixture();
+  const { group: created, session } = await liveSession(f, "Leaving mid-call", ["m1"]);
+  await f.service.leaveGroup({ actorUserId: "m1", groupId: created.id });
+  assert.deepEqual(f.removed, [{ room: session.id, identity: "m1" }]);
+  assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 1);
+
+  // A provider failure never fails the leave itself.
+  const g = await fixture((base) => ({
+    liveKitGateway: {
+      ensureRoom: async () => undefined,
+      issueParticipantToken: async () => ({ token: "stub-token", expiresAt: START, url: "wss://livekit.example.test" }),
+      publishTutorMessage: async () => undefined,
+      removeParticipant: async (input) => { base.removed.push({ room: input.room, identity: input.identity }); throw new Error("provider down"); },
+      healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: START, latencyMs: 0 })
+    }
+  }));
+  const other = await liveSession(g, "Provider down", ["m2"]);
+  await g.service.leaveGroup({ actorUserId: "m2", groupId: other.group.id });
+  assert.deepEqual(g.removed, [{ room: other.session.id, identity: "m2" }]);
+  assert.equal((await g.service.listMine("m2")).some((item) => item.id === other.group.id), false);
+});
