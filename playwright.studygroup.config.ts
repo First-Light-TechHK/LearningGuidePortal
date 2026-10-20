@@ -116,7 +116,7 @@ export default defineConfig({
   projects: [
     {
       name: "studygroup-local",
-      testMatch: ["**/study-group-two-browser.spec.ts", "**/study-group-qa-regressions.spec.ts", "**/study-group-bug-regressions.spec.ts"],
+      testMatch: ["**/study-group-*.spec.ts"],
     },
   ],
 });
