@@ -120,6 +120,7 @@ test("health/config detects the file store and reports the studyGroup entry with
   delete process.env.STUDY_GROUP_STORE;
   delete process.env.DATABASE_URL;
   delete process.env.STUDY_GROUP_TUTOR_KEYS;
+  delete process.env.OPENROUTER_API_KEY;
   delete process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON;
   delete process.env.LIVEKIT_FAKE_GATEWAY;
   process.env.APP_ENV = "DEV";
@@ -128,7 +129,7 @@ test("health/config detects the file store and reports the studyGroup entry with
   process.env.LIVEKIT_PROJECTS_JSON = projectsJson;
   process.env.STUDY_GROUP_TOKEN_LOG_KEY = tokenKey;
   const body = await (await healthConfig()).json() as Record<string, unknown>;
-  assert.deepEqual(body.studyGroup, { store: "file", configured: true, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
+  assert.deepEqual(body.studyGroup, { store: "file", configured: true, tutorKeys: "missing", tutorKeySource: "none", credentialSource: "secrets-manager", simulated: false });
   // Threading the entry through must not change the existing keys.
   for (const key of ["environment", "ready", "storage", "payment", "authentication"]) {
     assert.equal(key in body, true, `existing key ${key} must remain`);
@@ -148,14 +149,14 @@ test("health/config reports the store the runtime would select (exact name or DA
   process.env.LIVEKIT_PROJECTS_JSON = JSON.stringify([{ id: "lg-prod", url: "wss://lg-prod.livekit.cloud", state: "active", credentialSecretId: "lg/livekit/prod" }]);
   process.env.STUDY_GROUP_STORE = "postgres";
   const postgresql = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(postgresql.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
+  assert.deepEqual(postgresql.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", tutorKeySource: "none", credentialSource: "secrets-manager", simulated: false });
   // An unrecognized name falls through to the DATABASE_URL rule, as the runtime does.
   process.env.STUDY_GROUP_STORE = "filesystem";
   const filesystem = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(filesystem.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
+  assert.deepEqual(filesystem.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", tutorKeySource: "none", credentialSource: "secrets-manager", simulated: false });
   // Explicit postgres wins over a missing DATABASE_URL, as the runtime does.
   delete process.env.DATABASE_URL;
   process.env.STUDY_GROUP_STORE = "postgres";
   const noDatabase = await (await healthConfig()).json() as { studyGroup: { store: string; configured: boolean } };
-  assert.deepEqual(noDatabase.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", credentialSource: "secrets-manager", simulated: false });
+  assert.deepEqual(noDatabase.studyGroup, { store: "postgresql", configured: false, tutorKeys: "missing", tutorKeySource: "none", credentialSource: "secrets-manager", simulated: false });
 });

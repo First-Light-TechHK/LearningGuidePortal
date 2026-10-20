@@ -13,7 +13,8 @@ import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHeal
 import { parseLiveKitProjects } from "./liveKitProjectRegistry";
 import { awsRegion } from "@/services/persistence/config";
 import { createAwsLiveKitCredentialResolver, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
-import { openRouterTutorCall, studyGroupTutorKeys } from "./tutorAnswer";
+import { openRouterTutorCall } from "./tutorAnswer";
+import { studyGroupTutorKeySource } from "@/services/tutorKeySource";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
 
 // Tutor model settings live here, in one place, so a later backoffice
@@ -336,7 +337,7 @@ export function studyGroupService() {
     tokenLogKey: tokenLogKeyFromEnv,
     operationalLog: (event) => console.info(JSON.stringify(event)),
     courseKnowledge: readStoredCourseKnowledge,
-    tutorKeys: () => studyGroupTutorKeys(process.env),
+    tutorKeys: (options) => studyGroupTutorKeySource(awsRegion()).keys(options),
     tutorCall: (input) => openRouterTutorCall({
       secret: input.secret,
       model: process.env.STUDY_GROUP_TUTOR_MODEL?.trim() || process.env.OPENROUTER_MODEL?.trim() || "openrouter/auto",

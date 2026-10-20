@@ -63,6 +63,7 @@
 4. 在 LiveKit 控制台把该项目的 **webhook 地址**设为 `https://<环境站点域名>/api/livekit/webhook`。不设置 = 回调腿静默失效（签名回调永不到达，runbook 的签名回调门无法验证）。座位不依赖回调：座位由服务端租约决定。
 5. 令牌日志钥自动签发：不存在则以 `openssl rand -base64 32` 生成并写入 `lg-<env>-studygroup-token-log-key`；已存在则保持原值（不覆盖，旧日志行仍以旧钥版本解密）。
 6. 合并进 App Runner 服务：`LIVEKIT_PROJECTS_JSON` 进普通变量；`STUDY_GROUP_TOKEN_LOG_KEY` 与 `STUDY_GROUP_TUTOR_KEYS` 进 `RuntimeEnvironmentSecrets`（引用密钥完整 ARN）。代码读的是同名环境变量，自身零改动。
+   AI Tutor 的 LLM key 走热读取（2026-10-20）：普通变量 `STUDY_GROUP_TUTOR_KEYS_SECRET_ID=lg-<env>-studygroup-tutor-keys`，实例角色需有该密钥的 `secretsmanager:GetSecretValue`。之后加、删、换 key 只改密钥值，一分钟内生效，无需重新部署；`/api/health/config` 的 `studyGroup.tutorKeySource` 为 `secret` 即已接上。
 7. 等部署完成。验证：`/api/health/config` 的 `studyGroup.configured` 为 true，且匿名 `GET /api/study-groups?view=discover` 返回 200（后者才证明配置可解析）。同一响应里的三个自查字段（代码在健康面核实，无需 AWS 访问）：`studyGroup.tutorKeys` 应为 `configured`（AI Tutor 可用）、`credentialSource` 应为 `secrets-manager`（未被本地凭据遮蔽）、`simulated` 应为 `false`（未开假网关）。凭据级证据（密钥真能解析、被提供方接受）另见：backoffice `livekit-health` 的 `providerVerified:true`，或 CloudWatch 里 `study_group.livekit_health` 行的 `provider_api` 证据。
 
 未配置期间的已知行为（代码已固化，测试见 §9.4）：数据功能可用；直播操作 503；按 5 分钟周期重复打一行脱敏 `study_group.livekit_health`（`configured:false`），供 CloudWatch 报警。若会话在未配置时开始：房间在首次加入时由 LiveKit 按默认容量自动创建（应用侧席位上限仍生效），项目分配在第一次发令牌时自动补齐并持久化；补齐前对账可能每 5 分钟记录一条脱敏 `credential_unavailable` 事件（噪音，不是数据损坏）。

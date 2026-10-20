@@ -55,7 +55,9 @@ export type StudyGroupDeps = {
   tokenLogKey: () => Buffer | null;
   courseKnowledge?: (courseId: string) => Promise<string>;
   publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo }) => Promise<void>;
-  tutorKeys?: () => Array<{ id: string; secret: string }>;
+  // Sync or async: the runtime reads a hot pool from Secrets Manager.
+  // `forceRefresh` re-reads it when every key the drain had was refused.
+  tutorKeys?: (options?: { forceRefresh?: boolean }) => Array<{ id: string; secret: string }> | Promise<Array<{ id: string; secret: string }>>;
   // `timeoutMs` is how long this call may take (what is left of the answer
   // deadline); the call must give up by then.
   tutorCall?: (input: { secret: string; text: string; context: string; timeoutMs?: number }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
@@ -364,12 +366,24 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const group = snapshot.groups.find((entry) => entry.id === session.groupId);
         const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId).catch(() => "") : "";
         const context = corpus.trim();
-        const keys = deps.tutorKeys?.() ?? [];
+        let keys = await Promise.resolve(deps.tutorKeys?.() ?? []).catch(() => []);
         let reply: { text: string; mode: "course" | "general" | "unavailable" } = { text: "", mode: "unavailable" };
         if (deps.tutorCall && keys.length > 0) {
           // A call that throws (rather than reporting a failed outcome) is an
           // unavailable answer like any other failure, never a stranded item.
-          const result = await tutorPoolFor(keys).execute(item.text, (secret, timeoutMs) => deps.tutorCall!({ secret, text: item.text, context, timeoutMs }), { deadline: answerBy }).catch(() => ({ keyId: "", body: "" }));
+          const ask = (pool: Array<{ id: string; secret: string }>) => tutorPoolFor(pool).execute(item.text, (secret, timeoutMs) => deps.tutorCall!({ secret, text: item.text, context, timeoutMs }), { deadline: answerBy }).catch(() => ({ keyId: "", body: "" }));
+          let result = await ask(keys);
+          if (!result.keyId) {
+            // Every key was refused or failed: the pool may have just been
+            // rotated (a hot secret), so read it again and, only when it
+            // changed, give this question one more try with the new keys,
+            // inside the same answer deadline.
+            const fresh = await Promise.resolve(deps.tutorKeys?.({ forceRefresh: true }) ?? []).catch(() => []);
+            if (fresh.length > 0 && JSON.stringify(fresh) !== JSON.stringify(keys)) {
+              keys = fresh;
+              result = await ask(fresh);
+            }
+          }
           const body = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? "" : result.body.trim();
           if (body) {
             const parsed = parseTutorReply(body);

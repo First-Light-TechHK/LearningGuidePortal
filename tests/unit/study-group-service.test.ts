@@ -1066,6 +1066,48 @@ test("tutor delivery keeps enqueue order when requests share a timestamp", async
   assert.deepEqual(calls, ["What ended in 1933 first?", "What ended in 1933 second?", "What ended in 1933 third?"]);
 });
 
+test("a key pool rotated in Secrets Manager answers the very question the old keys failed (hot LLM keys)", async () => {
+  const published: Array<{ text: string; mode?: string }> = [];
+  const reads: boolean[] = [];
+  let pool = [{ id: "old", secret: "fake-key-revoked" }];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: async (options) => {
+      reads.push(Boolean(options?.forceRefresh));
+      // The operator rotates the secret after the instance cached the old pool.
+      if (options?.forceRefresh) pool = [{ id: "new", secret: "fake-key-rotated" }];
+      return pool;
+    },
+    tutorCall: async ({ secret }) => secret === "fake-key-rotated"
+      ? { outcome: "ok", latencyMs: 1, body: "COURSE\nIt ended in 1933." }
+      : { outcome: "auth_failed", latencyMs: 1 }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Hot keys", courseId: "course-1", about: "About the group." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Hot keys", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "When did it end?", clientEventId: "evt-hot-1" });
+
+  await local.deliverTutorAnswer({ sessionId: session.id });
+
+  assert.deepEqual(reads, [false, true]);
+  assert.deepEqual(published.map((item) => item.text), ["It ended in 1933."]);
+
+  // A forced re-read that finds the same refused pool does not ask again.
+  const calls: string[] = [];
+  const stale = serviceWith({
+    courseKnowledge: async () => "",
+    publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
+    tutorKeys: async () => [{ id: "old", secret: "fake-key-revoked" }],
+    tutorCall: async ({ secret }) => { calls.push(secret); return { outcome: "auth_failed", latencyMs: 1 }; }
+  });
+  await stale.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "And again?", clientEventId: "evt-hot-2" });
+  await stale.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(calls, ["fake-key-revoked"]);
+  assert.equal(published.at(-1)?.mode, "unavailable");
+});
+
 test("each tutor answer reaches the room as soon as it settles, before the next question is asked (QA r3-B1)", async () => {
   const events: string[] = [];
   const local = serviceWith({
