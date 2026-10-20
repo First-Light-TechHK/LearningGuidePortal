@@ -416,3 +416,42 @@ test("X-3: one sweep asks the provider about at most ten rooms", async () => {
   const states = await Promise.all(ids.map((id) => stateOf(f, id)));
   assert.equal(states.filter((state) => state === "live").length, 10);
 });
+
+test("X-4: a member still in the call takes the seat back from a newcomer who never connected", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Two in the call", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  // m1's heartbeats fail for 40 s while the call goes on; the Host renews.
+  f.participants.list = ["host", "m1"];
+  await heartbeats(f, session.id, ["host"], 40);
+  // m2 takes the lapsed seat but the provider's room is full: never connects.
+  assert.equal((await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() })).occupancy, 2);
+  f.advanceSeconds(2);
+  assert.equal((await f.service.heartbeat({ actorUserId: "m1", sessionId: session.id })).seated, false);
+  // m1 re-enters: the provider still has m1 in the room, so m1 keeps the call.
+  assert.equal((await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })).occupancy, 2);
+  assert.deepEqual(f.providerReads, [session.id], "the provider is read only for the full room");
+  const store = await f.repository.read();
+  assert.equal(store.presences.find((row) => row.sessionId === session.id && row.userId === "m2")?.leftAt, f.clock());
+  assert.equal(store.presences.find((row) => row.sessionId === session.id && row.userId === "m1")?.leftAt, null);
+  // m2 is told at the next heartbeat and finds the room full again.
+  assert.equal((await f.service.heartbeat({ actorUserId: "m2", sessionId: session.id })).seated, false);
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() })), "session_full");
+});
+
+test("X-4: without the provider's word, or for someone not in the room, a full room stays full", async () => {
+  for (const provider of [null, ["host", "m2"]] as const) {
+    const f = await fixture();
+    const created = await group(f, ["m1", "m2"]);
+    const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Full room", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+    await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+    await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+    await heartbeats(f, session.id, ["host"], 40);
+    await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() });
+    f.participants.list = provider ? [...provider] : null;
+    assert.equal(await code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })), "session_full");
+    assert.equal((await f.repository.read()).presences.find((row) => row.sessionId === session.id && row.userId === "m2")?.leftAt, null);
+  }
+});

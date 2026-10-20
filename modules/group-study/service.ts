@@ -462,16 +462,23 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   }
 
   async function seat(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
-    const allowed = await (async () => {
-      const store = await deps.repository.read();
-      const session = store.sessions.find((item) => item.id === input.sessionId);
-      return session ? deps.hasCourseAccess(input.actorUserId, store.groups.find((item) => item.id === session.groupId)?.courseId || "") : false;
-    })();
-    if (!allowed) {
-      const store = await deps.repository.read();
-      if (!store.sessions.some((item) => item.id === input.sessionId && item.status !== "removed")) throw new StudyGroupError("not_found", "Live Session was not found.");
+    const snapshot = await deps.repository.read();
+    const pending = snapshot.sessions.find((item) => item.id === input.sessionId);
+    const allowed = pending ? await deps.hasCourseAccess(input.actorUserId, snapshot.groups.find((item) => item.id === pending.groupId)?.courseId || "") : false;
+    if (!pending || !allowed) {
+      if (!pending || pending.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
       throw new StudyGroupError("course_access_required", "Valid Course access is required.");
     }
+    // A full live room may be full of leases, not of people: a seat holder
+    // whose heartbeats failed lost the seat to someone who then could never
+    // connect (the provider's room was full), and was refused on coming
+    // back while still in the call (QA final review X-4). Only then is the
+    // provider asked who is really in the room; the write below decides.
+    const before = deps.now();
+    const fullLive = pending.status === "live"
+      && !snapshot.presences.some((item) => item.sessionId === pending.id && item.userId === input.actorUserId && seatHeld(item, before))
+      && seatCount(snapshot, pending.id, before) >= pending.maxParticipants;
+    const inRoom = fullLive ? await providerParticipants(pending) : null;
     const outcome = await deps.repository.update((store) => {
       const now = deps.now();
       const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
@@ -489,7 +496,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (existing && seatHeld(existing, now)) existing.leftAt = now.toISOString();
         return { notStarted: true as const };
       }
-      const seats = seatCount(store, session.id, now);
+      let seats = seatCount(store, session.id, now);
       if (existing && seatHeld(existing, now)) {
         // Entering while already seated (a reload, a second tab): the same
         // seat, its lease renewed.
@@ -498,7 +505,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         return { occupancy: seats };
       }
       if (missedUnstarted(session, now, seats)) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
-      if (seats >= session.maxParticipants) throw new StudyGroupError("session_full", "Session Full.");
+      if (seats >= session.maxParticipants) {
+        // The caller is in the provider's room: the seat goes back to them
+        // from the newest holder who is not in it (X-4). Anyone else, or any
+        // room the provider could not answer for, finds the session full.
+        const displaced = state === "live" && inRoom?.has(input.actorUserId)
+          ? store.presences
+            .filter((item) => item.sessionId === session.id && item.userId !== input.actorUserId && seatHeld(item, now) && !inRoom.has(item.userId))
+            .sort((left, right) => (right.enteredAt ?? "").localeCompare(left.enteredAt ?? ""))[0]
+          : undefined;
+        if (!displaced) throw new StudyGroupError("session_full", "Session Full.");
+        displaced.leftAt = now.toISOString();
+        seats -= 1;
+      }
       // Before the start the Host's seat is reserved: members waiting may fill
       // every other seat, never the Host's, so the Host can always open their
       // own session (QA 2026-10-19 N7, owner decision).
