@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type Page } from "playwright/test";
 import {
+  appAlerts,
   askTutor,
   createGroup,
   enterSession,
@@ -270,6 +271,7 @@ test("N1: a network drop recovers on its own, also when it outlasts the seat lea
     await expectConnected(room.pageA, 2);
     await expect.poll(async () => (await sessionView(room.host, room.sessionId)).occupancy, { timeout: 30_000 }).toBe(2);
     await expectNoRoomBanner(room.pageB);
+    await room.pageB.getByRole("tab", { name: "Chat" }).click();
     await expect(room.pageB.getByRole("textbox", { name: "Chat" })).toBeEnabled();
   } finally {
     await room.close();
@@ -325,7 +327,7 @@ test("N4: an AI Tutor or poll failure stays on its own line and never drops the 
     const pollRoute = `**/api/study-groups/sessions/${sessionId}`;
     await pageB.route(pollRoute, (route) => route.request().method() === "GET" ? route.fulfill({ status: 500, contentType: "application/json", body: "{}" }) : route.continue());
     await pageB.waitForTimeout(8_000);
-    await expect(pageB.getByRole("alert")).toHaveCount(0);
+    await expect(appAlerts(pageB)).toHaveCount(0);
     await expectNoRoomBanner(pageB);
     await pageB.unroute(pollRoute);
     await expectConnected(pageB, 2);
@@ -549,14 +551,14 @@ test("N10 / M6: a failed poll keeps the page, a failed group has its own retry, 
     const planRoute = "**/api/study-groups/sessions/*/plan";
     await page.route(planRoute, (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, code: "error", message: "", data: null }) }));
     await page.getByRole("button", { name: "Plan to Attend" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Something went wrong. Try again.");
+    await expect(appAlerts(page)).toHaveText("Something went wrong. Try again.");
     await page.unroute(planRoute);
 
     // Opening the other group fails: its own error and a Retry that opens it.
     const groupRoute = `**/api/study-groups/${second}`;
     await page.route(groupRoute, (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, code: "error", message: "", data: null }) }));
     await page.getByRole("button", { name: new RegExp(secondTitle) }).first().click();
-    const failed = page.getByRole("alert").filter({ has: page.getByRole("button", { name: "Try again" }) });
+    const failed = appAlerts(page).filter({ has: page.getByRole("button", { name: "Try again" }) });
     await expect(failed).toBeVisible();
     await expect(page.getByRole("heading", { name: firstTitle }), "the old group does not stand in for the failed one").toHaveCount(0);
     await page.unroute(groupRoute);

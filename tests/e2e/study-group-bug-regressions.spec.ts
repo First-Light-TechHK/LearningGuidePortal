@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "playwright/test";
 import {
+  appAlerts,
   createGroup,
   groupPath,
   groupView,
@@ -296,12 +297,12 @@ test("BUG-0106 / BUG-0100: an error shows once, inside the dialog, and is gone a
       return route.continue();
     });
     await page.getByRole("dialog").getByRole("button", { name: "Schedule Session" }).click();
-    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(appAlerts(page)).toHaveCount(1);
     await expect(page.getByRole("dialog").getByRole("alert")).toHaveText("Check the required fields and try again.");
     await page.getByRole("dialog").getByRole("button", { name: "Schedule Session" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Fails then works" })).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(appAlerts(page)).toHaveCount(0);
 
     // Plan to Attend: fails once, then works, and no red text stays behind.
     const memberPage = await openGroupPage(member, groupId);
@@ -314,10 +315,10 @@ test("BUG-0106 / BUG-0100: an error shows once, inside the dialog, and is gone a
       return route.continue();
     });
     await memberPage.getByRole("button", { name: "Plan to Attend" }).click();
-    await expect(memberPage.getByRole("alert")).toHaveText("Something went wrong. Try again.");
+    await expect(appAlerts(memberPage)).toHaveText("Something went wrong. Try again.");
     await memberPage.getByRole("button", { name: "Plan to Attend" }).click();
     await expect(memberPage.getByText("You are planning to attend this session.")).toBeVisible();
-    await expect(memberPage.getByRole("alert")).toHaveCount(0);
+    await expect(appAlerts(memberPage)).toHaveCount(0);
   } finally {
     await host.context.close();
     await member.context.close();

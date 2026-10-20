@@ -100,6 +100,13 @@ export async function groupView(member: Member, groupId: string) {
   return (await response.json()).data as { sessions?: Array<{ id: string; title: string; state: string }>; memberCount: number };
 }
 
+// The page's own alerts. Next.js also renders a route announcer with
+// role="alert" (empty, or the page title after a client navigation), which
+// is not part of the app and must not count.
+export function appAlerts(page: Page) {
+  return page.locator('[role="alert"]:not(#__next-route-announcer__)');
+}
+
 export const roomPath = (sessionId: string) => `/en-GB/portal/study-groups/sessions/${sessionId}`;
 export const groupPath = (groupId: string) => `/en-GB/portal/study-groups?group=${groupId}`;
 
