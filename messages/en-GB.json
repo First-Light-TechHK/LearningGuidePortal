@@ -962,6 +962,7 @@
     "joinGroup": "Join Now",
     "getCourseAccess": "View Course",
     "courseAccessRequired": "Course access required. You don't currently have access to {course}.\nGet Course access to join this Study Group.",
+    "courseUnavailable": "This Course is no longer available.",
     "signInRequired": "Sign in to create or join a Study Group.",
     "signInToJoin": "Sign in to join this Study Group.",
     "signIn": "Sign In",

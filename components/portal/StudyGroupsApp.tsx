@@ -63,7 +63,7 @@ function localDateTime(startsAt: string) {
     time: `${pad(date.getHours())}:${pad(date.getMinutes())}`
   };
 }
-type Card = { id: string; title: string; courseTitle: string; role: "host" | "member" | null; memberCount: number; live: boolean; courseId: string };
+type Card = { id: string; title: string; courseTitle: string; courseAvailable?: boolean; role: "host" | "member" | null; memberCount: number; live: boolean; courseId: string };
 
 // Keeps the open group in the address (?group=id), so a reload, the language
 // switch and the header's Sign In come back to it (QA M6).
@@ -705,7 +705,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
           <button className={styles.card} type="button" key={group.id} aria-current={selectedId === group.id} onClick={() => void openGroup(group.id, { reveal: true })}>
             <h3>{group.title}</h3>
             {group.live ? <span className={styles.live}>{copy.live}</span> : null}
-            <p className={styles.course}>{group.courseTitle}</p>
+            <p className={styles.course}>{group.courseAvailable === false ? copy.courseUnavailable : group.courseTitle}</p>
             {group.role ? <span className={`${styles.role} ${group.role === "host" ? styles.hosted : styles.joined}`}>{group.role === "host" ? copy.hosted : copy.joined}</span> : null}
             <p className={styles.count}>{fillCount(locale, copy.learners, group.memberCount)}</p>
           </button>
@@ -763,7 +763,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               {selected.role === "host" ? <span className={styles.hostChip}>{copy.hosting}</span> : null}
               {selected.role === "member" ? <span className={`${styles.hostChip} ${styles.joinedChip}`}>{copy.joined}</span> : null}
               <div className={styles.facts}>
-                <div><h3>{copy.relatedCourse}</h3><p>{selected.courseTitle}</p></div>
+                <div><h3>{copy.relatedCourse}</h3><p>{selected.courseAvailable === false ? copy.courseUnavailable : selected.courseTitle}</p></div>
                 <div><h3 className={styles.aboutLabel}>{copy.about}</h3><p className={styles.aboutBody}>{selected.about}</p></div>
               </div>
               {/* QA M5: behind the join gate there is no count to show. */}
@@ -775,8 +775,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <p className={styles.joinBanner}>{copy.joinBanner}</p>
                   <LockedCard />
                   <LockedCard />
-                  <p className={styles.joinNote}>{selected.canJoin ? copy.joinAccess : signedIn ? fill(copy.courseAccessRequired, { course: selected.courseTitle }) : copy.signInToJoin}</p>
-                  <div className={styles.joinAction}>{selected.canJoin ? <button className={styles.primary} type="button" disabled={submitting} onClick={() => void joinGroup(selected)}>{copy.joinGroup}</button> : <a className={styles.primary} href={signedIn ? `/${locale}/portal/courses/${selected.courseSlug}` : signInHref}>{signedIn ? copy.getCourseAccess : copy.signIn}</a>}</div>
+                  <p className={styles.joinNote}>{selected.canJoin ? copy.joinAccess : !signedIn ? copy.signInToJoin : selected.courseAvailable === false ? copy.courseUnavailable : fill(copy.courseAccessRequired, { course: selected.courseTitle })}</p>
+                  <div className={styles.joinAction}>{selected.canJoin ? <button className={styles.primary} type="button" disabled={submitting} onClick={() => void joinGroup(selected)}>{copy.joinGroup}</button> : selected.courseAvailable === false && signedIn ? null : <a className={styles.primary} href={signedIn ? `/${locale}/portal/courses/${selected.courseSlug}` : signInHref}>{signedIn ? copy.getCourseAccess : copy.signIn}</a>}</div>
                 </>
               ) : null}
               {pane.kind === "sessions" && (selected.sessions || []).length === 0 ? <div className={styles.emptySessions}><p>{copy.noSessions}</p><Image src="/portal/study-groups/empty-sessions.png" width={150} height={113} alt="" /></div> : null}

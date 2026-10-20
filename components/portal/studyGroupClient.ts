@@ -25,6 +25,9 @@ export type StudyGroupDetail = {
   courseId: string;
   courseTitle: string;
   courseSlug: string;
+  // False when the related Course is no longer published: its title and
+  // slug are then empty and the page says so instead.
+  courseAvailable?: boolean;
   about: string;
   role: "host" | "member" | null;
   memberCount: number;

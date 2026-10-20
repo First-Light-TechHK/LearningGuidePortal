@@ -69,6 +69,9 @@ export type GroupView = StudyGroupRow & {
   memberCount: number;
   courseTitle: string;
   courseSlug: string;
+  // False when the related Course is no longer published (QA M7): the title
+  // and slug are then empty, and Discover leaves the group out.
+  courseAvailable: boolean;
   live: boolean;
 };
 
@@ -399,6 +402,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       memberCount,
       courseTitle: course?.title || "",
       courseSlug: course?.slug || "",
+      courseAvailable: Boolean(course),
       live: groupIsLive(store, group.id)
     };
   }
@@ -920,6 +924,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (group.status !== "active" || joined.has(group.id)) continue;
         if (input.courseId && group.courseId !== input.courseId) continue;
         const course = await courseSummary(group.courseId);
+        // A group whose Course is no longer available cannot be joined (QA M7).
+        if (!course) continue;
         const haystack = `${group.title} ${group.about} ${course?.title || ""}`.toLowerCase();
         if (needle && !haystack.includes(needle)) continue;
         const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;

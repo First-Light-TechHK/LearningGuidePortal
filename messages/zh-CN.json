@@ -962,6 +962,7 @@
     "joinGroup": "立即加入",
     "getCourseAccess": "查看课程",
     "courseAccessRequired": "需要课程访问权限，你目前没有{course}的访问权限。\n获取课程访问权限后才能加入这个学习小组。",
+    "courseUnavailable": "该课程已不再提供。",
     "signInRequired": "登录后才能创建或加入学习小组。",
     "signInToJoin": "登录后即可加入这个学习小组。",
     "signIn": "登录",

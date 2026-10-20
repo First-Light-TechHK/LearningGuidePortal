@@ -455,3 +455,31 @@ test("X-4: without the provider's word, or for someone not in the room, a full r
     assert.equal((await f.repository.read()).presences.find((row) => row.sessionId === session.id && row.userId === "m2")?.leftAt, null);
   }
 });
+
+test("M7: Discover hides a group whose Course is gone, and the group says so instead of an empty name", async () => {
+  const published = { value: true };
+  const f = await fixture(() => ({
+    courseSummary: async (courseId) => courseId === "course-1" && published.value ? { id: courseId, title: "German History", slug: "german-history" } : null
+  }));
+  const created = await group(f, ["m1"]);
+  assert.equal((await f.service.listDiscover({ actorUserId: "m2" })).some((item) => item.id === created.id), true);
+  assert.equal((await f.service.getGroup({ actorUserId: "m1", groupId: created.id })).courseAvailable, true);
+
+  published.value = false;
+  assert.equal((await f.service.listDiscover({ actorUserId: "m2" })).some((item) => item.id === created.id), false);
+  assert.equal((await f.service.listDiscover({ actorUserId: null })).some((item) => item.id === created.id), false);
+  const detail = await f.service.getGroup({ actorUserId: "m1", groupId: created.id });
+  assert.deepEqual([detail.courseAvailable, detail.courseTitle, detail.courseSlug], [false, "", ""]);
+  // Members keep the group in their own list, marked the same way.
+  assert.equal((await f.service.listMine("m1")).find((item) => item.id === created.id)?.courseAvailable, false);
+
+  const { readFile } = await import("node:fs/promises");
+  const app = await readFile(path.join(process.cwd(), "components/portal/StudyGroupsApp.tsx"), "utf8");
+  assert.match(app, /<p>\{selected\.courseAvailable === false \? copy\.courseUnavailable : selected\.courseTitle\}<\/p>/);
+  assert.match(app, /selected\.courseAvailable === false \? copy\.courseUnavailable : fill\(copy\.courseAccessRequired/);
+  assert.match(app, /selected\.courseAvailable === false && signedIn \? null : <a className=\{styles\.primary\} href=\{signedIn \? `\/\$\{locale\}\/portal\/courses\/\$\{selected\.courseSlug\}`/);
+  for (const locale of ["en-GB", "zh-CN"]) {
+    const messages = JSON.parse(await readFile(path.join(process.cwd(), `messages/${locale}.json`), "utf8")) as { studyGroupsPage: { courseUnavailable?: string } };
+    assert.ok(messages.studyGroupsPage.courseUnavailable, `${locale} has the copy`);
+  }
+});
