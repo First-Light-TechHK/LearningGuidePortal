@@ -1038,8 +1038,8 @@
       "tutorGeneral": "Not covered in the course material — a general answer:",
       "tutorUnavailable": "AI Tutor is temporarily unavailable. Please try again.",
       "mentionList": "Mention AI Tutor or a participant",
-      "mediaBlockedCamera": "Chrome is blocking camera access for this site. Click the camera icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Camera.",
-      "mediaBlockedMic": "Chrome is blocking microphone access for this site. Click the microphone icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Microphone.",
+      "mediaBlockedCamera": "Your browser is blocking camera access for this site. Allow the camera in the browser's site settings (usually the icon beside the address), then try again. If it stays blocked, allow the browser to use the camera in your device's privacy settings.",
+      "mediaBlockedMic": "Your browser is blocking microphone access for this site. Allow the microphone in the browser's site settings (usually the icon beside the address), then try again. If it stays blocked, allow the browser to use the microphone in your device's privacy settings.",
       "mediaDeviceBlocked": "No camera or microphone was found, or the device is in use by another application. Close the other app and try again.",
       "you": "You",
       "mic": "Mic",
@@ -1067,7 +1067,20 @@
       "tutorRetry": "Ask again",
       "enableAudio": "Sound is blocked by your browser. Click to turn it on.",
       "unread": "{count} unread",
-      "youLeft": "You left the Live Session."
+      "youLeft": "You left the Live Session.",
+      "starting": "Starting…",
+      "leaveConfirmTitle": "Leave this Live Session?",
+      "leaveConfirmBody": "You can rejoin while the session is still live.",
+      "leaveConfirmLast": "You are the last one here, so leaving ends the Live Session.",
+      "confirmLeave": "Yes, leave",
+      "leaveFailed": "You have not left yet: the request did not go through.",
+      "rejoin": "Rejoin",
+      "noAccess": "You do not have access to this Live Session. Only members of its Study Group can join.",
+      "backToGroups": "Back to Study Groups",
+      "shareFailed": "Screen sharing did not start. Check that this browser may share your screen, then try again.",
+      "sharingNotice": "You are sharing your screen.",
+      "tutorNotSent": "Not sent to AI Tutor: {reason}",
+      "tutorNotLive": "AI Tutor answers only while the Live Session is live."
     },
     "errors": {
       "validation": "Check the required fields and try again.",
@@ -1089,6 +1102,8 @@
       "participant_removed": "You were removed from this Live Session.",
       "tutor_busy": "Wait for the AI Tutor to answer your earlier questions first.",
       "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
+      "seat_lapsed": "Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.",
+      "livekit_temporarily_unavailable": "The Live Session service is temporarily unavailable. Try again in a moment.",
       "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."
     }

@@ -133,9 +133,16 @@ test("audit F-8: a failed leave request cannot skip the room's cleanup", () => {
   assert.doesNotMatch(exitBody, /studyGroupRequest/);
   assert.match(exitBody, /await releaseRoom\(\);/);
   assert.match(exitBody, /window\.location\.assign\(href\);/);
-  // Leave button: setLeft(true) and the refreshing load() run whether or not
-  // the leave request settles — a rejection cannot leave the button "dead".
-  assert.match(room, /await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\)\.catch\(\(\) => undefined\); setLeft\(true\); await load\(\);/);
+  // Leave Session: the request resolves either way (studyGroupRequest never
+  // rejects), so the button cannot go "dead". A leave the server did not take
+  // keeps the call and offers the leave again; only a taken leave releases the
+  // room, shows "You left" and refreshes (QA 2026-10-19 M15).
+  const leaveStart = room.indexOf("async function leaveSession");
+  assert.notEqual(leaveStart, -1);
+  const leaveBody = room.slice(leaveStart, room.indexOf("function rejoin()"));
+  assert.match(leaveBody, /const result = await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\);/);
+  assert.match(leaveBody, /if \(!result\.ok && result\.code !== "session_unavailable"\) \{\s*leftRef\.current = false;\s*setLeaveError\(result\.code\);\s*return;\s*\}/);
+  assert.match(leaveBody, /await releaseRoom\(\);\s*setLeft\(true\);\s*await load\(\);/);
 });
 
 test("hunt M5: the tutor queue enforces the learning-page limit at the service", () => {

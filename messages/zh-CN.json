@@ -1038,8 +1038,8 @@
       "tutorGeneral": "课程材料未覆盖此内容，以下为一般性解答。",
       "tutorUnavailable": "AI Tutor 暂时不可用，请稍后重试。",
       "mentionList": "提及 AI Tutor 或参与者",
-      "mediaBlockedCamera": "Chrome 已阻止本站点使用摄像头。点击地址栏的摄像头图标，选择「允许」后重试；若图标里没有可改的选项，请在 macOS 系统设置 → 隐私与安全性 → 摄像头 中允许 Chrome。",
-      "mediaBlockedMic": "Chrome 已阻止本站点使用麦克风。点击地址栏的麦克风图标，选择「允许」后重试；若图标里没有可改的选项，请在 macOS 系统设置 → 隐私与安全性 → 麦克风 中允许 Chrome。",
+      "mediaBlockedCamera": "浏览器已阻止本站点使用摄像头。请在浏览器的网站设置中允许使用摄像头（通常在地址栏旁的图标里），然后重试；如果仍被阻止，请在设备的隐私设置中允许浏览器使用摄像头。",
+      "mediaBlockedMic": "浏览器已阻止本站点使用麦克风。请在浏览器的网站设置中允许使用麦克风（通常在地址栏旁的图标里），然后重试；如果仍被阻止，请在设备的隐私设置中允许浏览器使用麦克风。",
       "mediaDeviceBlocked": "未找到摄像头或麦克风，或设备正被其他应用占用。请关闭占用后重试。",
       "you": "你",
       "mic": "麦克风",
@@ -1067,7 +1067,20 @@
       "tutorRetry": "重新提问",
       "enableAudio": "浏览器拦截了声音，点击这里开启。",
       "unread": "{count} 条未读",
-      "youLeft": "你已离开直播课。"
+      "youLeft": "你已离开直播课。",
+      "starting": "正在开始…",
+      "leaveConfirmTitle": "离开这节直播课？",
+      "leaveConfirmBody": "直播课还在进行时，你可以随时重新加入。",
+      "leaveConfirmLast": "你是最后一位在场的人，离开后这节直播课就会结束。",
+      "confirmLeave": "确认离开",
+      "leaveFailed": "你还没有离开：请求没有成功。",
+      "rejoin": "重新加入",
+      "noAccess": "你无权进入这节直播课。只有所属学习小组的成员可以加入。",
+      "backToGroups": "返回学习小组",
+      "shareFailed": "屏幕共享没有开始。请确认浏览器允许共享屏幕后重试。",
+      "sharingNotice": "你正在共享屏幕。",
+      "tutorNotSent": "未发送给 AI Tutor：{reason}",
+      "tutorNotLive": "AI Tutor 只在直播课进行中回答问题。"
     },
     "errors": {
       "validation": "请检查必填项后重试。",
@@ -1089,6 +1102,8 @@
       "participant_removed": "你已被移出这节直播课。",
       "tutor_busy": "请等 AI Tutor 先回答完你之前的问题。",
       "tutor_rate_limited": "提问太频繁，请过一分钟再试。",
+      "seat_lapsed": "连接中断期间，你在直播课中的位置已失效。请等重新进入后再提问。",
+      "livekit_temporarily_unavailable": "直播课服务暂时不可用，请稍后重试。",
       "network": "网络连接失败，请检查网络后重试。",
       "error": "出了点问题。请重试。"
     }

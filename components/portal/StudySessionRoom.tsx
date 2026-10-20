@@ -8,7 +8,8 @@ import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
-import { fill, plannedMinutes, reconnectDelayMs, SEAT_HEARTBEAT_MS, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorChatLines, tutorClientEventId, tutorQueueBody, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { PortalDialog } from "./PortalDialog";
+import { FINAL_ENTRY_CODES, fill, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -76,10 +77,10 @@ type ChatLine = {
   pending?: boolean; replyTo?: { name: string; question: string };
   // The asker's own question line: what to resend, and why the last ask failed.
   tutorAsk?: { question: string; clientEventId: string }; tutorError?: string;
+  // The id of the answer line this question's latest ask is waiting on.
+  tutorAnswerId?: string;
 };
 
-// Failures no automatic retry can fix: the page stops reconnecting and says why.
-const FINAL_ENTRY_CODES = new Set(["forbidden", "not_found", "session_unavailable", "session_full", "course_access_required", "unauthenticated"]);
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
 const TUTOR_ANSWER_TIMEOUT_MS = 120_000;
 
@@ -96,7 +97,7 @@ function chatStamp() {
 type Tile = { identity: string; name: string; host: boolean; mic: boolean; speaking: boolean };
 type MentionRow = { key: string; name: string; tutor?: boolean };
 type AttachableTrack = { attach: (element: HTMLMediaElement) => HTMLMediaElement; detach: (element: HTMLMediaElement) => HTMLMediaElement[] };
-type LocalMedia = { setMicrophoneEnabled: (on: boolean) => Promise<unknown>; setCameraEnabled: (on: boolean) => Promise<unknown>; setScreenShareEnabled: (on: boolean) => Promise<unknown>; publishData: (data: Uint8Array, options: { reliable: boolean }) => Promise<unknown>; identity?: string; isMicrophoneEnabled: boolean; isCameraEnabled: boolean };
+type LocalMedia = { setMicrophoneEnabled: (on: boolean) => Promise<unknown>; setCameraEnabled: (on: boolean) => Promise<unknown>; setScreenShareEnabled: (on: boolean) => Promise<unknown>; publishData: (data: Uint8Array, options: { reliable: boolean; destinationIdentities?: string[] }) => Promise<unknown>; identity?: string; isMicrophoneEnabled: boolean; isCameraEnabled: boolean };
 
 function ParticipantCamera({ track }: { track: AttachableTrack | null }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -124,6 +125,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [draft, setDraft] = useState("");
   const [hands, setHands] = useState<string[]>([]);
+  const handsRef = useRef<string[]>([]);
+  handsRef.current = hands;
   const [roomApi, setRoomApi] = useState<{ localParticipant: LocalMedia } | null>(null);
   const [micOn, setMicOn] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
@@ -143,10 +146,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const audioRoot = useRef<HTMLDivElement>(null);
   const groupRef = useRef<StudyGroupDetail | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
-  const roomRef = useRef<{ startAudio: () => Promise<void>; disconnect: () => Promise<void>; canPlaybackAudio: boolean } | null>(null);
+  const roomRef = useRef<{ startAudio: () => Promise<void>; disconnect: () => Promise<void>; canPlaybackAudio: boolean; state: string } | null>(null);
   const connectGeneration = useRef(0);
+  // Set the moment this page leaves (Leave Session, a breadcrumb) and cleared
+  // only by a failed leave or Rejoin: a re-render while the leave request is
+  // in flight must not undo it, or a heartbeat could seat the page again.
   const leftRef = useRef(false);
-  leftRef.current = left;
   const [connectAttempt, setConnectAttempt] = useState(0);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
   const recoveryUsedRef = useRef(false);
@@ -158,6 +163,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // a failed poll never shows a "reconnect" that would drop a working call
   // (QA 2026-10-19 N4); the next successful poll clears it.
   const [pollError, setPollError] = useState("");
+  // Signed out, or no longer a member: the page may not keep (or start) a call.
+  const accessLost = pollError === "forbidden" || pollError === "unauthenticated";
   // The SDK is recovering the media connection on its own: the room stays up.
   const [reconnecting, setReconnecting] = useState(false);
   // A disconnect no automatic retry may undo (another tab took over this
@@ -167,6 +174,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   blockedRef.current = blocked;
   const failuresRef = useRef(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  // The Host's Start in the waiting view: in flight, and why it failed. Kept
+  // apart from the connection's error so it never follows the page into the
+  // live room (QA 2026-10-19 M13).
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState("");
+  // Leave Session asks first; a leave the server did not take keeps the call
+  // and offers the leave again (QA 2026-10-19 M15).
+  const [leaveAsked, setLeaveAsked] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
+  const [shareFailed, setShareFailed] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  const heartbeatBusy = useRef(false);
   groupRef.current = group;
 
   async function load() {
@@ -180,10 +200,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         }
         if (current.code === "forbidden" || current.code === "unauthenticated") {
           // No longer a member (left the Study Group in another tab) or signed
-          // out: this page may not keep the call open.
-          setBlocked(true);
+          // out: this page may not keep the call open. The page says so with
+          // a way back (QA 2026-10-19 M17); a later poll that succeeds again
+          // lets the room reconnect.
           await releaseRoom();
-          setConnected(false);
         }
         return;
       }
@@ -207,11 +227,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     // a short network drop without tearing the room down (QA 2026-10-19 N1).
     const room = new Room();
     const showShare = () => {
-      const publications = [
-        ...room.localParticipant.trackPublications.values(),
-        ...Array.from(room.remoteParticipants.values()).flatMap((person) => [...person.trackPublications.values()])
-      ];
-      const shared = publications.find((item) => item.source === "screen_share" && item.track && item.track.mediaStreamTrack?.readyState !== "ended" && item.isMuted !== true);
+      // Only someone else's share fills the main view: the sharer's own screen
+      // shown back to them nests itself into a hall of mirrors (QA M18).
+      const remote = Array.from(room.remoteParticipants.values()).flatMap((person) => [...person.trackPublications.values()]);
+      const shared = remote.find((item) => item.source === "screen_share" && item.track && item.track.mediaStreamTrack?.readyState !== "ended" && item.isMuted !== true);
       setShareTrack(shared?.track ?? null);
       setSharing([...room.localParticipant.trackPublications.values()].some((item) => item.source === "screen_share" && item.track));
       setMicOn(room.localParticipant.isMicrophoneEnabled);
@@ -297,8 +316,20 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       })));
     };
     repaintRef.current = paint;
-    room.on(RoomEvent.ParticipantConnected, () => { paint(); window.setTimeout(() => void load(), 400); });
-    room.on(RoomEvent.ParticipantDisconnected, () => { paint(); window.setTimeout(() => void load(), 400); });
+    // Raised hands live in the room, not on the server: a newcomer hears every
+    // raised hand from its owner, and a hand goes down with the person who
+    // leaves or drops (QA 2026-10-19 M19).
+    room.on(RoomEvent.ParticipantConnected, (participant) => {
+      paint();
+      window.setTimeout(() => void load(), 400);
+      if (!handsRef.current.includes(room.localParticipant.identity)) return;
+      void room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "raise-hand", raised: true })), { reliable: true, destinationIdentities: [participant.identity] }).catch(() => undefined);
+    });
+    room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      setHands((items) => raisedHands(items, participant.identity, false));
+      paint();
+      window.setTimeout(() => void load(), 400);
+    });
     room.on(RoomEvent.ActiveSpeakersChanged, paint);
     room.on(RoomEvent.TrackMuted, () => { paint(); showShare(); });
     room.on(RoomEvent.TrackUnmuted, () => { paint(); showShare(); });
@@ -344,13 +375,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     room.on(RoomEvent.Disconnected, (reason) => {
       if (roomRef.current !== room || leftRef.current) return;
       roomRef.current = null;
-      setRoomApi(null);
-      setReconnecting(false);
-      setConnected(false);
-      setMicOn(false);
-      setCameraOn(false);
-      setSharing(false);
-      setShareTrack(null);
+      resetCall();
       const reasonName = liveKitDisconnectReasonName(reason, DisconnectReason as unknown as Record<number, string>);
       const transition = transitionLiveKitClient({ type: "disconnect", reason: reasonName, recoveryUsed: recoveryUsedRef.current });
       if (transition.type === "recover_token") {
@@ -412,22 +437,38 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // A page stopped for good (another tab took this account's place, removed,
   // signed out) holds no seat: it stops renewing, so the tab that took over,
   // or nobody, decides (QA 2026-10-19 final review B1).
+  // A background tab's timers are throttled to about once a minute, so the
+  // lease could lapse while the page sleeps; coming back to the tab or back
+  // online renews at once (QA 2026-10-19 final review r2-B4).
   useEffect(() => {
-    if (!seated || left || blocked || (session?.state !== "live" && session?.state !== "starting_soon")) return;
+    if (!seated || left || blocked || accessLost || (session?.state !== "live" && session?.state !== "starting_soon")) return;
     const beat = async () => {
-      const result = await studyGroupRequest<{ seated: boolean }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" });
-      if (!result.ok || result.data.seated || leftRef.current || blockedRef.current) return;
-      const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
-      if (!entered.ok && FINAL_ENTRY_CODES.has(entered.code)) {
+      if (heartbeatBusy.current) return;
+      heartbeatBusy.current = true;
+      try {
+        const result = await studyGroupRequest<{ seated: boolean }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" });
+        if (!result.ok || result.data.seated || leftRef.current || blockedRef.current) return;
+        const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
+        if (entered.ok || leftRef.current) return;
+        if (seatReentryAction(entered.code, roomRef.current?.state === "connected") === "keep") return;
         setSeated(false);
         setErrorCode(entered.code);
         await releaseRoom();
-        setConnected(false);
+      } finally {
+        heartbeatBusy.current = false;
       }
     };
     const timer = window.setInterval(() => void beat(), SEAT_HEARTBEAT_MS);
-    return () => window.clearInterval(timer);
-  }, [seated, left, blocked, session?.state, sessionId]);
+    const beatWhenVisible = () => { if (document.visibilityState === "visible") void beat(); };
+    const beatNow = () => void beat();
+    document.addEventListener("visibilitychange", beatWhenVisible);
+    window.addEventListener("online", beatNow);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", beatWhenVisible);
+      window.removeEventListener("online", beatNow);
+    };
+  }, [seated, left, blocked, accessLost, session?.state, sessionId]);
 
   // Coming back online retries a dropped connection at once instead of
   // waiting for the next backoff step.
@@ -450,7 +491,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     if (session?.state === "completed") void releaseRoom();
+    if (session?.state === "live") setStartError("");
   }, [session?.state]);
+
+  useEffect(() => {
+    setCanShare(screenShareSupported(navigator.mediaDevices));
+  }, []);
 
   useEffect(() => {
     if (!session || left) return;
@@ -482,7 +528,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   }, [session?.state, sessionId, left, entryAttempt]);
 
   useEffect(() => {
-    if (session?.state !== "live" || connected || left || !seated || blocked) return;
+    if (session?.state !== "live" || connected || left || !seated || blocked || accessLost) return;
     const generation = connectGeneration.current + 1;
     connectGeneration.current = generation;
     let timer = 0;
@@ -519,7 +565,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       connectGeneration.current += 1;
       window.clearTimeout(timer);
     };
-  }, [session?.state, connected, left, seated, connectAttempt, recoveryRequired, blocked]);
+  }, [session?.state, connected, left, seated, connectAttempt, recoveryRequired, blocked, accessLost]);
 
   useEffect(() => {
     if (session?.state !== "live") return;
@@ -598,9 +644,75 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     }
   }
 
+  // Leave Session after the confirmation. The server decides: until it has
+  // taken the leave, the seat and the call stay and the dialog offers the
+  // leave again instead of claiming "You left" (QA 2026-10-19 M15). An ended
+  // session has nobody left to leave.
+  async function leaveSession() {
+    leftRef.current = true;
+    setLeaving(true);
+    setLeaveError("");
+    const result = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" });
+    setLeaving(false);
+    if (!result.ok && result.code !== "session_unavailable") {
+      leftRef.current = false;
+      setLeaveError(result.code);
+      return;
+    }
+    setLeaveAsked(false);
+    await releaseRoom();
+    setLeft(true);
+    await load();
+  }
+
+  // Back into a session that is still live after leaving it: the normal
+  // entry runs again, with every admission rule.
+  function rejoin() {
+    leftRef.current = false;
+    setErrorCode("");
+    setBlocked(false);
+    setSeated(false);
+    setEntryDone(false);
+    failuresRef.current = 0;
+    setLeft(false);
+  }
+
+  async function startSession() {
+    setStarting(true);
+    setStartError("");
+    const started = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/start`, { method: "POST", body: "{}" });
+    if (!started.ok) setStartError(started.code);
+    else await load();
+    setStarting(false);
+  }
+
+  function retryLoad() {
+    setPollError("");
+    setErrorCode("");
+    void load();
+  }
+
+  // Everything the page shows about a call goes with the call: a stale "turn
+  // sound on" button after a disconnect did nothing when clicked (QA r4-N13-a),
+  // and a hand raised in the old room is not raised in the next one.
+  function resetCall() {
+    setRoomApi(null);
+    setConnected(false);
+    setReconnecting(false);
+    setMicOn(false);
+    setCameraOn(false);
+    setSharing(false);
+    setShareTrack(null);
+    setAudioBlocked(false);
+    setTiles([]);
+    setCameraTracks({});
+    setHands([]);
+  }
+
   async function releaseRoom() {
     const room = roomRef.current;
     roomRef.current = null;
+    resetCall();
     await room?.disconnect().catch(() => undefined);
   }
 
@@ -628,8 +740,26 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     );
   }
 
+  // A page that cannot show the session says why and offers the way on:
+  // sign in, back to Study Groups, or try again (QA 2026-10-19 M17, M20).
+  function gate(code: string) {
+    const action = roomGateAction(code);
+    const message = code === "forbidden" ? roomCopy.noAccess : copy.errors[code as keyof typeof copy.errors] || copy.errors.error;
+    return (
+      <section className={styles.empty} role="alert">
+        <h1>{message}</h1>
+        {action === "sign-in"
+          ? <a className={styles.primary} href={roomSignInHref(locale, sessionId)}>{copy.signIn}</a>
+          : action === "groups"
+          ? <a className={styles.primary} href={`/${locale}/portal/study-groups`}>{roomCopy.backToGroups}</a>
+          : <button className={styles.primary} type="button" onClick={retryLoad}>{copy.retry}</button>}
+      </section>
+    );
+  }
+
   const loadError = pollError || errorCode;
-  if (!session) return <p className={styles.panel} role="status">{loadError ? copy.errors[loadError as keyof typeof copy.errors] || copy.errors.error : copy.loading}</p>;
+  if (!session) return loadError ? <>{path()}{gate(loadError)}</> : <p className={styles.panel} role="status">{copy.loading}</p>;
+  if (accessLost) return <>{path()}{gate(pollError)}</>;
   if (session.state === "completed" || left) {
     const ended = session.state === "completed";
     return (
@@ -642,7 +772,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           <p className={styles.endTitle}>{group?.title || session.title}</p>
           <p className={styles.meta}>{group?.courseTitle ? <>{group.courseTitle}<span className={styles.divider} aria-hidden="true" />{fill(roomCopy.groupStudy, { count: plannedMinutes(session) })}</> : fill(roomCopy.groupStudy, { count: plannedMinutes(session) })}</p>
           {ended ? endedParts(roomCopy.endedBody).map((line) => <p className={styles.endBody} key={line}>{line}</p>) : null}
-          <div className={styles.endActions}><a className={styles.primary} href={group ? `/${locale}/portal/courses/${group.courseSlug}` : `/${locale}/portal/study-groups`}>{roomCopy.returnToCourse}</a></div>
+          <div className={styles.endActions}>{!ended && session.state === "live" ? <button className={styles.primary} type="button" onClick={rejoin}>{roomCopy.rejoin}</button> : null}<a className={styles.primary} href={group ? `/${locale}/portal/courses/${group.courseSlug}` : `/${locale}/portal/study-groups`}>{roomCopy.returnToCourse}</a></div>
         </div>
       </section>
       </>
@@ -657,7 +787,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   if ((session.state === "starting_soon" || session.state === "live") && !seated && errorCode) {
     // Entry finished without a seat: the request failed on its way out or was
     // refused (hunt M1). Show the failure with a retry that re-runs the entry
-    // request in place instead of leaving the viewer stuck on Loading.
+    // request in place instead of leaving the viewer stuck on Loading. A
+    // refusal no retry fixes (signed out, not a member) points the way on.
+    if (roomGateAction(errorCode) !== "retry") return <>{path()}{gate(errorCode)}</>;
     return <>{path()}<section className={styles.empty} role="alert"><h1>{copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error}</h1><p>{session.title}</p><button className={styles.primary} type="button" onClick={() => { setErrorCode(""); setEntryDone(false); setEntryAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></section></>;
   }
   if (session.state === "scheduled") {
@@ -667,7 +799,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     return <>{path()}<section className={styles.empty} role="status"><h1>{copy.notStarted}</h1><p>{copy.notStartedBody}</p><p>{session.title}</p><p>{sessionScheduleLabel(locale, session)}</p></section></>;
   }
   if (session.state !== "live") {
-    return <>{path()}<section className={styles.empty} role="status"><h1>{group?.role === "host" ? copy.hostWaiting : copy.waiting}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</p><p>{fill(copy.upToParticipants, { count: session.maxParticipants })}</p>{group?.role === "host" ? <button className={styles.primary} type="button" onClick={() => { void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/start`, { method: "POST", body: "{}" }).then((started) => { if (!started.ok) { setErrorCode(started.code); return; } return load(); }); }}>{copy.start}</button> : null}</section></>;
+    return <>{path()}<section className={styles.empty} role="status"><h1>{group?.role === "host" ? copy.hostWaiting : copy.waiting}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</p><p>{fill(copy.upToParticipants, { count: session.maxParticipants })}</p>{group?.role === "host" ? <button className={styles.primary} type="button" disabled={starting} aria-busy={starting} onClick={() => void startSession()}>{starting ? roomCopy.starting : copy.start}</button> : null}{startError ? <p className={styles.alert} role="alert">{copy.errors[startError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</section></>;
   }
 
   const controls = sessionControls({ role: group?.role || "member", state: "live", occupancy: session.occupancy, maxParticipants: session.maxParticipants });
@@ -687,10 +819,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         hand: false,
         status: "" as const
       }));
+  // A failed poll never shows here: one that means this page may not stay
+  // (signed out, no longer a member) has its own page above, and a passing
+  // network blip heals on the next poll.
   const errorText = errorCode ? copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error : "";
-  // A failed poll shows only when it means this page may not stay (signed
-  // out, no longer a member); a passing network blip heals on the next poll.
-  const pollText = pollError === "forbidden" || pollError === "unauthenticated" ? copy.errors[pollError] : "";
 
   const mentionRows: MentionRow[] = [];
   if (mention) {
@@ -720,17 +852,20 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   // Queues a question for the AI Tutor. Success adds the asker's "answering"
   // line, which the answer replaces; a refusal (busy, too many, not enabled,
-  // signed out) stays on the question's own line with a retry, never on the
-  // room banner — an AI Tutor failure has nothing to do with the call (QA N4).
+  // signed out) stays on the question's own line, marked as not sent to the
+  // AI Tutor with the reason and a retry, never on the room banner — an AI
+  // Tutor failure has nothing to do with the call (QA N4, X-5). Every ask
+  // carries its client event id, so a retry of a request the server did take
+  // is answered once (QA M21).
   async function askTutor(lineId: string, ask: { question: string; clientEventId: string }) {
-    setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorAsk: ask, tutorError: undefined } : item));
+    setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorAsk: ask, tutorError: undefined, tutorAnswerId: undefined } : item));
     const queued = await studyGroupRequest<{ id: string }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody(ask.question, ask.clientEventId)) });
     if (!queued.ok) {
       setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorError: queued.code } : item));
       return;
     }
     const answerId = `tutor-${queued.data.id}`;
-    setChat((items) => tutorChatLines(items, { id: answerId, from: roomCopy.tutorName, text: "", at: chatStamp(), tutor: true, pending: true }));
+    setChat((items) => tutorChatLines(items.map((item) => item.id === lineId ? { ...item, tutorAnswerId: answerId } : item), { id: answerId, from: roomCopy.tutorName, text: "", at: chatStamp(), tutor: true, pending: true }));
     window.setTimeout(() => {
       setChat((items) => items.map((item) => item.id === answerId && item.pending ? { ...item, mode: "unavailable" } : item));
     }, TUTOR_ANSWER_TIMEOUT_MS);
@@ -773,12 +908,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           {group?.courseTitle ? <span className={styles.coursePill}>{group.courseTitle}</span> : null}
           <p className={styles.liveClock}><span className={styles.liveDot} aria-hidden="true">●</span> {fill(roomCopy.liveClock, { time: clock }).replace(/^●\s*/, "")}</p>
         </div>
-        {pollText ? <p className={styles.alert} role="alert">{pollText}</p> : null}
-        {!pollText && reconnecting ? <p className={styles.alert} role="status">{copy.errors.network_lost}</p> : null}
-        {!pollText && !reconnecting && errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setBlocked(false); failuresRef.current = 0; setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
+        {reconnecting ? <p className={styles.alert} role="status">{copy.errors.network_lost}</p> : null}
+        {!reconnecting && errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setBlocked(false); failuresRef.current = 0; setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
         {audioBlocked ? <p className={styles.alert} role="alert"><button className={styles.textButton} type="button" onClick={() => { const room = roomRef.current; void room?.startAudio().catch(() => undefined).finally(() => setAudioBlocked(Boolean(room && !room.canPlaybackAudio))); }}>{roomCopy.enableAudio}</button></p> : null}
         <div ref={audioRoot} hidden />
         {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
+        {sharing ? <p className={styles.meta} role="status">{roomCopy.sharingNotice}</p> : null}
         <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
           {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
@@ -794,11 +929,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           })}
         </div>
         {mediaNotice ? <p className={styles.alert} role="alert">{mediaNotice.device ? roomCopy.mediaDeviceBlocked : mediaNotice.kind === "camera" ? roomCopy.mediaBlockedCamera : roomCopy.mediaBlockedMic} <button className={styles.textButton} type="button" onClick={() => setMediaNotice(null)}>{copy.close}</button></p> : null}
+        {shareFailed ? <p className={styles.alert} role="alert">{roomCopy.shareFailed} <button className={styles.textButton} type="button" onClick={() => setShareFailed(false)}>{copy.close}</button></p> : null}
         {session.focus ? <p>{session.focus}</p> : null}
         <div className={styles.controls}>
           {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
-          {controls.includes("share") ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => void setMedia("share", !sharing).catch(() => setSharing(false))}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
+          {controls.includes("share") && canShare ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => {
+            const start = !sharing;
+            setShareFailed(false);
+            void setMedia("share", start).catch(() => {
+              setSharing(false);
+              if (start) setShareFailed(true);
+            });
+          }}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
           {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
           {controls.includes("raise-hand") ? <button type="button" aria-pressed={Boolean(roomApi?.localParticipant.identity && hands.includes(roomApi.localParticipant.identity))} disabled={!connected} onClick={() => {
             const identity = roomApi?.localParticipant.identity || "";
@@ -812,8 +955,21 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
             // error strip: a transient hand is retried by clicking again.
             void publish({ type: "raise-hand", raised }).catch(() => setHands((items) => (items.includes(identity) === raised ? raisedHands(items, identity, !raised) : items)));
           }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
-          {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { leftRef.current = true; await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }).catch(() => undefined); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
+          {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={() => { setLeaveError(""); setLeaveAsked(true); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
         </div>
+        {leaveAsked ? (
+          <PortalDialog className={styles.modal} labelledBy="study-session-leave-title" onClose={() => setLeaveAsked(false)} busy={leaving}>
+            <form method="dialog" onSubmit={(event) => { event.preventDefault(); void leaveSession(); }}>
+              <h2 id="study-session-leave-title">{roomCopy.leaveConfirmTitle}</h2>
+              {/* The server's seat count says whether anyone stays behind. */}
+              <p className={styles.confirmBody}>{session.occupancy <= 1 ? roomCopy.leaveConfirmLast : roomCopy.leaveConfirmBody}</p>
+              {leaveError ? <p className={styles.alert} role="alert">{roomCopy.leaveFailed} {copy.errors[leaveError as keyof typeof copy.errors] || copy.errors.error}</p> : null}
+              <div className={styles.dialogActions}>
+                <button className={styles.ghost} type="button" onClick={() => setLeaveAsked(false)} disabled={leaving}>{copy.confirmBack}</button><button className={styles.danger} type="submit" disabled={leaving}>{leaveError ? copy.retry : roomCopy.confirmLeave}</button>
+              </div>
+            </form>
+          </PortalDialog>
+        ) : null}
       </div>
       <aside className={styles.side} aria-label={sideTab === "participants" ? roomCopy.participants : roomCopy.chat}>
         <div className={styles.sideTabs} role="tablist">
@@ -843,7 +999,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                           : <span key={index} className={styles.tutorRow}>{row}</span>)}
                       </>}
                 </p>
-              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{copy.errors[line.tutorError as keyof typeof copy.errors] || copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
+              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {

@@ -104,6 +104,58 @@ export function tutorChatLines<T extends { id: string; pending?: boolean }>(curr
   return current.map((item, position) => position === index ? line : item);
 }
 
+// The asker's question line asks again, with a new client event id, once its
+// answer came back unavailable (the model failed, or the wait timed out): the
+// old id is settled on the server, so a retry under it would only return the
+// failed answer again (QA 2026-10-19 final review r3-B2).
+export function tutorAskAgain(items: Array<{ id: string; mode?: string }>, answerId: string | undefined) {
+  if (!answerId) return false;
+  return items.some((item) => item.id === answerId && item.mode === "unavailable");
+}
+
+// Why a question never reached the AI Tutor, for the asker's own line (QA
+// 2026-10-19 X-5): the refusals the server names get their own words, any
+// other failure the generic one.
+export const TUTOR_REFUSAL_CODES = ["tutor_busy", "tutor_rate_limited", "seat_lapsed", "session_not_open"] as const;
+export function tutorRefusalReason(code: string, words: { errors: Record<string, string>; notLive: string }) {
+  if (code === "session_not_open") return words.notLive;
+  return words.errors[code] || words.errors.error;
+}
+
+// Entry refusals no automatic retry can fix: the page stops re-entering and says why.
+export const FINAL_ENTRY_CODES = new Set(["forbidden", "not_found", "session_unavailable", "session_full", "course_access_required", "unauthenticated"]);
+
+// What the seat heartbeat does when its seat is gone and entering again was
+// refused. "keep" leaves everything as it is and the next heartbeat tries
+// again; "stop" gives the seat up and releases the call. A full session while
+// this page's own call is still connected means the lease lapsed under a
+// working call (the heartbeat failed for a while) and someone took the seat:
+// the call is not dropped for it (QA 2026-10-19 final review X-4).
+export function seatReentryAction(code: string, callConnected: boolean): "keep" | "stop" {
+  if (!FINAL_ENTRY_CODES.has(code)) return "keep";
+  if (code === "session_full" && callConnected) return "keep";
+  return "stop";
+}
+
+// The way forward a room page offers when it cannot show the session (QA
+// 2026-10-19 M20): signing in for a signed-out visitor, the Study Groups page
+// for someone who is not (or no longer) a member, a retry otherwise.
+export function roomGateAction(code: string): "sign-in" | "groups" | "retry" {
+  if (code === "unauthenticated") return "sign-in";
+  if (code === "forbidden" || code === "not_found" || code === "course_access_required") return "groups";
+  return "retry";
+}
+
+export function roomSignInHref(locale: string, sessionId: string) {
+  return `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/study-groups/sessions/${sessionId}`)}`;
+}
+
+// Screen sharing needs getDisplayMedia, which phones and some embedded
+// browsers lack; the Share control is hidden there (QA 2026-10-19 M18).
+export function screenShareSupported(media: { getDisplayMedia?: unknown } | undefined) {
+  return typeof media?.getDisplayMedia === "function";
+}
+
 // The seat lease is renewed this often while the page holds a seat (the
 // server releases a seat 30 s after the last renewal, modules/group-study/presence.ts).
 export const SEAT_HEARTBEAT_MS = 10_000;

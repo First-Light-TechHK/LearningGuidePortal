@@ -10,6 +10,7 @@ import {
   groupPath,
   groupView,
   joinGroup,
+  leaveSession,
   MOCK_TUTOR_REPLY,
   newMember,
   openLiveRoom,
@@ -178,7 +179,7 @@ test("BUG-0108 side effect: the last person closing the page ends the live sessi
   test.setTimeout(300_000);
   const room = await openLiveRoom(browser, appOrigin(baseURL), "0108-live");
   try {
-    await room.pageA.getByRole("button", { name: "Leave Session" }).click();
+    await leaveSession(room.pageA);
     await expect(room.pageB.locator('[data-participants="1"]')).toBeVisible();
     const closedAt = Date.now();
     await room.pageB.close();
@@ -239,7 +240,7 @@ test("N3: closing a tab frees that seat for everyone else; the session stays liv
 test("M15: following the breadcrumb out of the room does not end the session on the spot", async ({ browser, baseURL }) => {
   const room = await openLiveRoom(browser, appOrigin(baseURL), "m15");
   try {
-    await room.pageA.getByRole("button", { name: "Leave Session" }).click();
+    await leaveSession(room.pageA);
     await expect(room.pageB.locator('[data-participants="1"]')).toBeVisible();
     await room.pageB.getByRole("navigation", { name: "Study Group" }).getByRole("button", { name: "Study Group Info" }).click();
     await room.pageB.waitForURL(/\/portal\/study-groups\?group=/);

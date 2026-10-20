@@ -129,16 +129,22 @@ export async function expectConnected(page: Page, participants: number) {
   await expect(page.locator(`[data-participants="${participants}"]`)).toBeVisible();
 }
 
+// Leave Session asks first (QA 2026-10-19 M15): click it, then confirm.
+export async function leaveSession(page: Page) {
+  await page.getByRole("button", { name: "Leave Session" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Yes, leave" }).click();
+}
+
 export type LiveRoom = { host: Member; member: Member; pageA: Page; pageB: Page; groupId: string; sessionId: string; close: () => Promise<void> };
 
 // A live session with the Host (A) and one member (B) both connected to the
 // LiveKit room: the starting point of every in-room regression.
-export async function openLiveRoom(browser: Browser, appOrigin: string, label: string, options: { memberInitScript?: () => void } = {}): Promise<LiveRoom> {
+export async function openLiveRoom(browser: Browser, appOrigin: string, label: string, options: { memberInitScript?: () => void; maxParticipants?: number; sessionTitle?: string } = {}): Promise<LiveRoom> {
   const host = await newMember(browser, appOrigin, `${label}-a`, "Study Host");
   const member = await newMember(browser, appOrigin, `${label}-b`, "Study Guest", { initScript: options.memberInitScript });
   const groupId = await createGroup(host, `E2E ${label}`);
   await joinGroup(member, groupId);
-  const sessionId = await scheduleSession(host, groupId, { title: `E2E ${label} session`, startsInMs: 90_000 });
+  const sessionId = await scheduleSession(host, groupId, { title: options.sessionTitle ?? `E2E ${label} session`, startsInMs: 90_000, maxParticipants: options.maxParticipants });
   for (const [who, person] of [["b", member], ["a", host]] as const) {
     expect((await enterSession(person, sessionId)).status(), `enter ${who}`).toBe(200);
   }

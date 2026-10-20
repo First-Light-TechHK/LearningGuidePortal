@@ -317,6 +317,12 @@
 .tutorEntry { border: 0; background: transparent; color: #1d6bff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; }
 .tutorEntry[aria-pressed="true"] { text-decoration: underline; }
 .tutorMention { color: #1d6bff; font-weight: 600; }
+/* QA 2026-10-19 M1 (room): a long unbroken title or name wraps inside the
+   room instead of pushing it wider than the screen. */
+.stageHead { flex-wrap: wrap; }
+.stageHead h1, .empty h1, .empty p, .endCard h1, .endCard p, .tile .tileCaption > span, .roster strong, .chatBody, .chatHead strong { min-width: 0; overflow-wrap: anywhere; }
+.stageHead h1 { flex: 1 1 12ch; }
+.endActions { flex-wrap: wrap; gap: 12px; }
 @media (max-width: 800px) {
   .header { padding: 0 16px; }
   .nav { display: none; }
@@ -337,4 +343,16 @@
   .menu { display: block; }
   .brand { font-size: 16px; }
   .tools { gap: 12px; }
+}
+/* QA 2026-10-19 M23 (room): at phone width the room fits the screen without
+   sideways scrolling; the breadcrumb and the controls wrap. */
+@media (max-width: 720px) {
+  .crumb { flex-wrap: wrap; row-gap: 4px; padding: 8px 16px; }
+  .room { padding: 16px; }
+  .stage, .side { padding: 14px; }
+  .side { min-height: 360px; }
+  .controls { gap: 6px; }
+  .controls button { padding: 6px 10px; }
+  .endCard { box-sizing: border-box; }
+  .shareMain { min-height: 200px; }
 }

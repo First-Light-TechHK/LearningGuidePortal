@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "playwright/test";
-import { COURSE_ID, MOCK_TUTOR_REPLY, registerAndEntitle, tutorLine } from "./study-group-helpers";
+import { COURSE_ID, leaveSession, MOCK_TUTOR_REPLY, registerAndEntitle, tutorLine } from "./study-group-helpers";
 
 test.skip(Boolean(process.env.CI), "local-only Study Group E2E; CI does not run e2e");
 
@@ -116,7 +116,7 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
     }
 
     // 10. Host leaves; the member remains and the session stays live.
-    await pageA.getByRole("button", { name: "Leave Session" }).click();
+    await leaveSession(pageA);
     await expect(pageB.locator('[data-participants="1"]')).toBeVisible();
 
     // 11. BUG-0108 regression: the LAST participant refreshes the browser. A
@@ -131,7 +131,7 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
     expect((await afterReload.json()).data.state, "a refresh must not end the session").toBe("live");
 
     // 12. The member leaves explicitly; with nobody left the session completes.
-    await pageB.getByRole("button", { name: "Leave Session" }).click();
+    await leaveSession(pageB);
     await expect
       .poll(async () => {
         const response = await contextA.request.get(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);

@@ -139,7 +139,9 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /person\.isSpeaking/);
   assert.match(room, /type: "raise-hand", raised/);
   assert.match(room, /raise-hand"\) \? <button type="button" aria-pressed=\{Boolean\(roomApi\?\.localParticipant\.identity && hands\.includes\(roomApi\.localParticipant\.identity\)\)\} disabled=\{!connected\}/);
-  assert.match(room, /ParticipantDisconnected, \(\) => \{ paint\(\); window\.setTimeout\(\(\) => void load\(\), 400\); \}/);
+  // A hand goes down with the person who leaves; a newcomer hears raised hands from their owners (QA M19).
+  assert.match(room, /ParticipantDisconnected, \(participant\) => \{\s*setHands\(\(items\) => raisedHands\(items, participant\.identity, false\)\);\s*paint\(\);\s*window\.setTimeout\(\(\) => void load\(\), 400\);\s*\}/);
+  assert.match(room, /ParticipantConnected, \(participant\) => \{[\s\S]*?destinationIdentities: \[participant\.identity\]/);
   assert.match(room, /connected && tiles\.length > 0 \? tiles\.length : session\.occupancy/);
   assert.match(room, /controls\.includes\("participants"\)/);
   assert.match(room, /data-participants=\{present\}/);
@@ -499,10 +501,12 @@ test("the Host Control frame pins the placeholder tile, name strip, hand badge, 
   assert.match(room, /\{tile\.host \? <span className=\{styles\.tileHost\}> · \{roomCopy\.host\}<\/span> : ""\}/);
   // The focus line moved from under the title to directly above the controls.
   assert.match(room, /\{session\.focus \? <p>\{session\.focus\}<\/p> : null\}\s*<div className=\{styles\.controls\}>/);
-  // One banner at a time: the poll failure, then a reconnect in progress, then the error with its retry.
-  assert.match(room, /<\/div>\s*\{pollText \? <p className=\{styles\.alert\}/);
-  assert.match(room, /\{!pollText && reconnecting \? /);
-  assert.match(room, /\{!pollText && !reconnecting && errorText \? /);
+  // One banner at a time: a reconnect in progress, then the error with its
+  // retry. A poll that says this page may not stay (signed out, no longer a
+  // member) replaces the room with its own page instead (QA M17).
+  assert.match(room, /<\/div>\s*\{reconnecting \? <p className=\{styles\.alert\}/);
+  assert.match(room, /\{!reconnecting && errorText \? /);
+  assert.match(room, /if \(accessLost\) return <>\{path\(\)\}\{gate\(pollError\)\}<\/>;/);
 });
 
 test("typing @ in the chat opens a mention list for AI Tutor and the present members", () => {
@@ -567,7 +571,7 @@ test("the Live Session end card follows 599:1398 and its CTA never overlaps the 
   // 599:1398 shows no focus row in the end card; only the live stage keeps one.
   assert.equal(room.split("{session.focus ? <p>{session.focus}</p> : null}").length - 1, 1);
   assert.match(room, /endedParts\(roomCopy\.endedBody\)\.map\(\(line\) => <p className=\{styles\.endBody\} key=\{line\}>\{line\}<\/p>\)/);
-  assert.match(room, /<div className=\{styles\.endActions\}><a className=\{styles\.primary\} href=\{group \?/);
+  assert.match(room, /<div className=\{styles\.endActions\}>\{!ended && session\.state === "live" \? <button className=\{styles\.primary\} type="button" onClick=\{rejoin\}>\{roomCopy\.rejoin\}<\/button> : null\}<a className=\{styles\.primary\} href=\{group \?/);
 });
 
 test(":has() is gone from the stylesheet and the single-tile layout is a plain class", () => {
@@ -855,10 +859,15 @@ test("camera and microphone buttons check permission state and surface targeted 
   assert.match(room, /onClick=\{\(\) => setMediaNotice\(null\)\}>\{copy\.close\}<\/button>/);
   assert.match(room, /permissionWatchRef\.current\.onchange = null/);
 
-  assert.equal(en.studyGroupsPage.room.mediaBlockedCamera, "Chrome is blocking camera access for this site. Click the camera icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Camera.");
-  assert.equal(zh.studyGroupsPage.room.mediaBlockedCamera, "Chrome 已阻止本站点使用摄像头。点击地址栏的摄像头图标，选择「允许」后重试；若图标里没有可改的选项，请在 macOS 系统设置 → 隐私与安全性 → 摄像头 中允许 Chrome。");
-  assert.equal(en.studyGroupsPage.room.mediaBlockedMic, "Chrome is blocking microphone access for this site. Click the microphone icon in the address bar, choose Allow, then try again. If the icon offers no option, allow Chrome in macOS System Settings → Privacy & Security → Microphone.");
-  assert.equal(zh.studyGroupsPage.room.mediaBlockedMic, "Chrome 已阻止本站点使用麦克风。点击地址栏的麦克风图标，选择「允许」后重试；若图标里没有可改的选项，请在 macOS 系统设置 → 隐私与安全性 → 麦克风 中允许 Chrome。");
+  // Browser-neutral guidance: Safari, Firefox, Windows and phone users get
+  // steps that apply to them too (QA 2026-10-19 M12).
+  assert.equal(en.studyGroupsPage.room.mediaBlockedCamera, "Your browser is blocking camera access for this site. Allow the camera in the browser's site settings (usually the icon beside the address), then try again. If it stays blocked, allow the browser to use the camera in your device's privacy settings.");
+  assert.equal(zh.studyGroupsPage.room.mediaBlockedCamera, "浏览器已阻止本站点使用摄像头。请在浏览器的网站设置中允许使用摄像头（通常在地址栏旁的图标里），然后重试；如果仍被阻止，请在设备的隐私设置中允许浏览器使用摄像头。");
+  assert.equal(en.studyGroupsPage.room.mediaBlockedMic, "Your browser is blocking microphone access for this site. Allow the microphone in the browser's site settings (usually the icon beside the address), then try again. If it stays blocked, allow the browser to use the microphone in your device's privacy settings.");
+  assert.equal(zh.studyGroupsPage.room.mediaBlockedMic, "浏览器已阻止本站点使用麦克风。请在浏览器的网站设置中允许使用麦克风（通常在地址栏旁的图标里），然后重试；如果仍被阻止，请在设备的隐私设置中允许浏览器使用麦克风。");
+  for (const text of [en.studyGroupsPage.room.mediaBlockedCamera, en.studyGroupsPage.room.mediaBlockedMic, zh.studyGroupsPage.room.mediaBlockedCamera, zh.studyGroupsPage.room.mediaBlockedMic]) {
+    assert.equal(/Chrome|macOS|Safari|Windows/.test(text), false);
+  }
   assert.equal(en.studyGroupsPage.room.mediaDeviceBlocked, "No camera or microphone was found, or the device is in use by another application. Close the other app and try again.");
   assert.equal(zh.studyGroupsPage.room.mediaDeviceBlocked, "未找到摄像头或麦克风，或设备正被其他应用占用。请关闭占用后重试。");
 });
