@@ -71,7 +71,9 @@ function showGroupInAddress(groupId: string | null) {
   const url = new URL(window.location.href);
   if (groupId) url.searchParams.set("group", groupId);
   else url.searchParams.delete("group");
-  window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  // null state: Next.js then syncs useSearchParams (the header Sign In reads
+  // it); passing its own state back makes the router ignore the change.
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
 // The search box asks the server once the typing stops (QA M3).
