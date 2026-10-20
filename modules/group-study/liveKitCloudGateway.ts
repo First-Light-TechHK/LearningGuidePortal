@@ -70,6 +70,7 @@ function healthFailure(error: unknown): LiveKitProjectHealthStatus {
 }
 
 function recoveryFailure(error: unknown) {
+  if (error instanceof LiveKitGatewayError) return error;
   const status = healthFailure(error);
   if (status === "unauthorized" || status === "rate_limited") return new LiveKitGatewayError(status);
   return new LiveKitGatewayError("unreachable");
@@ -105,6 +106,41 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
     const credentials = await deps.resolveCredentials(project, options);
     return deps.createRoomService ? deps.createRoomService(project, credentials) : defaultRoomService(project, credentials);
   };
+  let webhookRefreshAt = -Infinity;
+
+  // A provider call with the project's current key pair. A rotation inside
+  // the credential cache window shows up as a 401/403 from the provider: the
+  // secret is then re-read at once and, if it now holds another pair, the
+  // call is made once more with it. Every call here is safe to repeat (create
+  // and remove are idempotent, a refused send delivered nothing).
+  async function withRoomService<T>(project: LiveKitProjectRef, run: (service: LiveKitRoomService) => Promise<T>): Promise<T> {
+    let credentials: LiveKitCredentials;
+    let service: LiveKitRoomService;
+    try {
+      credentials = await deps.resolveCredentials(project);
+      service = deps.createRoomService ? await deps.createRoomService(project, credentials) : defaultRoomService(project, credentials);
+    } catch {
+      throw new LiveKitGatewayError("credential_unavailable");
+    }
+    try {
+      return await run(service);
+    } catch (error) {
+      if (healthFailure(error) !== "unauthorized") throw recoveryFailure(error);
+    }
+    let current: LiveKitCredentials;
+    try {
+      current = await deps.resolveCredentials(project, { forceRefresh: true });
+      if (current.apiKey === credentials.apiKey && current.apiSecret === credentials.apiSecret) throw new LiveKitGatewayError("unauthorized");
+      service = deps.createRoomService ? await deps.createRoomService(project, current) : defaultRoomService(project, current);
+    } catch (error) {
+      throw error instanceof LiveKitGatewayError ? error : new LiveKitGatewayError("credential_unavailable");
+    }
+    try {
+      return await run(service);
+    } catch (error) {
+      throw recoveryFailure(error);
+    }
+  }
   const recoveryVerifications = new Map<string, Promise<LiveKitCredentials>>();
 
   async function verifiedCurrentCredentials(project: LiveKitProjectRef) {
@@ -137,14 +173,29 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
     if (!deps.registry || !providerVerified || !rawBody) throw new LiveKitGatewayError("unverified");
     const issuer = authHeader ? jwtIssuer(authHeader) : null;
     if (!issuer) throw new LiveKitGatewayError("unverified");
-    for (const project of deps.registry.all()) {
-      let credentials: LiveKitCredentials;
-      try {
-        credentials = await deps.resolveCredentials(project);
-      } catch {
-        continue;
+    const registry = deps.registry;
+    await registry.refresh?.();
+    const issuerProject = async (forceRefresh: boolean) => {
+      for (const project of registry.all()) {
+        try {
+          const credentials = await deps.resolveCredentials(project, forceRefresh ? { forceRefresh: true } : undefined);
+          if (credentials.apiKey === issuer) return { project, credentials };
+        } catch {
+          // An unreadable project secret cannot be the signer; try the next.
+        }
       }
-      if (credentials.apiKey !== issuer) continue;
+      return null;
+    };
+    // An issuer no cached key matches may be a key rotated in within the
+    // cache window: the secrets are re-read at once, at most every 10 s,
+    // because anyone can send this request with any issuer.
+    let match = await issuerProject(false);
+    if (!match && now().getTime() - webhookRefreshAt >= 10_000) {
+      webhookRefreshAt = now().getTime();
+      match = await issuerProject(true);
+    }
+    if (match) {
+      const { project, credentials } = match;
       let event: WebhookEvent;
       try {
         event = await new WebhookReceiver(credentials.apiKey, credentials.apiSecret).receive(rawBody, authHeader ?? undefined);
@@ -170,20 +221,12 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
   }
 
   async function listParticipants({ project, room }: { project: LiveKitProjectRef; room: string }): Promise<ReadonlyArray<{ identity: string }>> {
-    let service: LiveKitRoomService;
-    try {
-      service = await roomService(project);
-    } catch {
-      throw new LiveKitGatewayError("credential_unavailable");
-    }
-    // A transport without the capability must fail typed here: reading a
-    // missing list as "nobody is present" would close live seats.
-    if (!service.listParticipants) throw new LiveKitGatewayError("unreachable");
-    try {
-      return await service.listParticipants(room);
-    } catch (error) {
-      throw recoveryFailure(error);
-    }
+    return withRoomService(project, async (service) => {
+      // A transport without the capability must fail typed here: reading a
+      // missing list as "nobody is present" would close live seats.
+      if (!service.listParticipants) throw new LiveKitGatewayError("unreachable");
+      return service.listParticipants(room);
+    });
   }
 
   async function participantToken(credentials: LiveKitCredentials, input: { project: LiveKitProjectRef; room: string; identity: string; name: string; ttlSeconds: number }) {    const token = new AccessToken(credentials.apiKey, credentials.apiSecret, { identity: input.identity, name: input.name, ttl: input.ttlSeconds });
@@ -197,17 +240,7 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
 
   return {
     async ensureRoom({ project, room, maxParticipants }) {
-      let service: LiveKitRoomService;
-      try {
-        service = await roomService(project);
-      } catch {
-        throw new LiveKitGatewayError("credential_unavailable");
-      }
-      try {
-        await service.createRoom({ room, maxParticipants });
-      } catch (error) {
-        throw recoveryFailure(error);
-      }
+      await withRoomService(project, (service) => service.createRoom({ room, maxParticipants }));
     },
     async issueParticipantToken({ project, room, identity, name, ttlSeconds }) {
       let credentials: LiveKitCredentials;
@@ -224,30 +257,10 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
     },
     async publishTutorMessage({ project, room, messageId, text, mode, replyTo }) {
       const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text, mode, ...(replyTo ? { replyTo } : {}) }));
-      let service: LiveKitRoomService;
-      try {
-        service = await roomService(project);
-      } catch {
-        throw new LiveKitGatewayError("credential_unavailable");
-      }
-      try {
-        await service.sendData(room, payload, "RELIABLE", {});
-      } catch (error) {
-        throw recoveryFailure(error);
-      }
+      await withRoomService(project, (service) => service.sendData(room, payload, "RELIABLE", {}));
     },
     async removeParticipant({ project, room, identity }) {
-      let service: LiveKitRoomService;
-      try {
-        service = await roomService(project);
-      } catch {
-        throw new LiveKitGatewayError("credential_unavailable");
-      }
-      try {
-        await service.removeParticipant(room, identity);
-      } catch (error) {
-        throw recoveryFailure(error);
-      }
+      await withRoomService(project, (service) => service.removeParticipant(room, identity));
     },
     verifyWebhook,
     // Participant listing is a provider-verified capability: the DEV fake
