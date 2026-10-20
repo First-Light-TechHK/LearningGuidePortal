@@ -240,10 +240,16 @@ test("BUG-0130: a signed-out visitor sees no My Study Groups, Create or tabs, in
   const host = await newMember(browser, origin, "0130", "Study Host");
   try {
     const page = await visitor.newPage();
+    // The controls a visitor cannot use: the My Study Groups heading, the
+    // Create button and the All / Hosted by Me tabs. (The empty pane's own
+    // "Select a Study Group or Create Study Group" line is design copy.)
     for (const [locale, words] of [["en-GB", ["My Study Groups", "Create Study Group", "Hosted by Me"]], ["zh-CN", ["我的学习小组", "创建学习小组", "我主持的"]]] as const) {
       await page.goto(`/${locale}/portal/study-groups`);
       await expect(page.locator("aside h1")).toBeVisible();
-      for (const word of words) await expect(page.getByText(word)).toHaveCount(0);
+      const [mine, create, hosted] = words;
+      await expect(page.getByRole("heading", { name: mine })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: create })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: hosted })).toHaveCount(0);
     }
     const signedIn = await openStudyGroups(host);
     await expect(signedIn.getByRole("heading", { name: "My Study Groups" })).toBeVisible();
