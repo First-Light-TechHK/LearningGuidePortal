@@ -12,7 +12,6 @@ const required = [
   "WECHAT_APP_SECRET",
   "SES_FROM_EMAIL",
   "OPENROUTER_API_KEY",
-  "LIVEKIT_PROJECTS_JSON",
   "STUDY_GROUP_TOKEN_LOG_KEY"
 ];
 
@@ -39,7 +38,12 @@ try {
 if ((process.env.STUDY_GROUP_STORE || "").trim().toLowerCase() === "file") {
   missing.push("STUDY_GROUP_STORE must not be the file store in production");
 }
-if (process.env.LIVEKIT_PROJECTS_JSON?.trim()) {
+// The LiveKit project list comes from LIVEKIT_PROJECTS_SECRET_ID (read hot at
+// run time; its content is checked by the runtime, not here) or, without it,
+// from LIVEKIT_PROJECTS_JSON.
+if (!process.env.LIVEKIT_PROJECTS_SECRET_ID?.trim() && !process.env.LIVEKIT_PROJECTS_JSON?.trim()) {
+  missing.push("LIVEKIT_PROJECTS_SECRET_ID or LIVEKIT_PROJECTS_JSON");
+} else if (!process.env.LIVEKIT_PROJECTS_SECRET_ID?.trim()) {
   let hasActiveProject = false;
   try {
     const projects = JSON.parse(process.env.LIVEKIT_PROJECTS_JSON);

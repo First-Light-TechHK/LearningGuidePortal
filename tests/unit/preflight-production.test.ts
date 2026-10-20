@@ -93,8 +93,17 @@ test("preflight requires the Study Group env names", async () => {
   const run = await runPreflight({ LIVEKIT_PROJECTS_JSON: undefined, STUDY_GROUP_TOKEN_LOG_KEY: undefined });
   assert.equal(run.code, 1);
   const missing = (JSON.parse(run.stderr) as { missing: string[] }).missing;
-  assert.ok(missing.includes("LIVEKIT_PROJECTS_JSON"));
+  assert.ok(missing.includes("LIVEKIT_PROJECTS_SECRET_ID or LIVEKIT_PROJECTS_JSON"));
   assert.ok(missing.includes("STUDY_GROUP_TOKEN_LOG_KEY"));
+});
+
+test("preflight accepts the hot project list secret in place of the JSON", async () => {
+  // The secret's content is read and validated by the runtime; an inline JSON
+  // left beside it is ignored there, so it is not judged here either.
+  for (const json of [undefined, "[]"]) {
+    const run = await runPreflight({ LIVEKIT_PROJECTS_SECRET_ID: "lg/livekit/projects", LIVEKIT_PROJECTS_JSON: json });
+    assert.equal(run.code, 0, run.stderr);
+  }
 });
 
 test("preflight passes with a valid Study Group environment and no store override", async () => {

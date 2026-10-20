@@ -10,9 +10,9 @@ import { createStudyGroupRepository } from "./repository";
 import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
-import { parseLiveKitProjects } from "./liveKitProjectRegistry";
+import { createHotLiveKitProjectRegistry, parseLiveKitProjects } from "./liveKitProjectRegistry";
 import { awsRegion } from "@/services/persistence/config";
-import { createAwsLiveKitCredentialResolver, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
+import { createAwsLiveKitCredentialResolver, createAwsSecretValueReader, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
 import { openRouterTutorCall } from "./tutorAnswer";
 import { studyGroupTutorKeySource } from "@/services/tutorKeySource";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
@@ -191,20 +191,30 @@ function localCredentialResolver() {
 }
 
 function liveKitRuntime() {
+  const projectsSecretId = process.env.LIVEKIT_PROJECTS_SECRET_ID?.trim();
   const rawProjects = process.env.LIVEKIT_PROJECTS_JSON?.trim();
-  if (!rawProjects) {
+  if (!projectsSecretId && !rawProjects) {
     // Zero-config degradation: data operations (browse, create, join, schedule)
     // run normally; live-room operations answer with the typed `unavailable`
     // state until the platform enablement resolves this environment's
     // credentials. A project list that is present but invalid still fails fast.
     return { projects: null, gateway: null, providerVerified: false };
   }
-  const projects = parseLiveKitProjects(rawProjects);
   // Explicit region: the rest of the persistence stack resolves through
   // awsRegion() with its ap-southeast-1 fallback; the SDK default chain alone
   // would throw "Region is missing" if the platform ever stops setting
   // AWS_REGION.
-  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({ region: awsRegion() });
+  const secrets = createAwsSecretValueReader({ region: awsRegion() });
+  // With LIVEKIT_PROJECTS_SECRET_ID the list is read hot from that secret
+  // (same JSON as LIVEKIT_PROJECTS_JSON, which is then ignored); a rejected
+  // read keeps the last good list and logs one redacted line, never a value.
+  const projects = projectsSecretId
+    ? createHotLiveKitProjectRegistry({
+      read: () => secrets.getSecretValue(projectsSecretId),
+      onRejected: (reason) => console.info(JSON.stringify({ type: "study_group.livekit_projects_rejected", reason }))
+    })
+    : parseLiveKitProjects(rawProjects);
+  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({ reader: secrets });
   const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
   const gateway = createLiveKitCloudGateway({
     resolveCredentials: (project, options) => resolver.resolve(project, options),
@@ -352,6 +362,7 @@ export function studyGroupService() {
     publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
+      await liveKit.projects.refresh?.();
       await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo });
     }
   });
@@ -368,14 +379,16 @@ export function studyGroupService() {
     }, 15_000);
     timer.unref();
   }
-  // Redacted signal while Study Group has no LiveKit project configuration.
-  // The health timer below stays silent in that state, so this line is what a
-  // CloudWatch alarm (release-runbook, Study Group gate) keys on. It carries no
-  // values, no credential references and no identities. It repeats on the
-  // health cadence: a service that goes idle after its first request must still
-  // produce the line, otherwise the alarm goes quiet exactly when it matters.
+  // Redacted signal while Study Group has no LiveKit project list. Without
+  // any configuration the health timer below does not run, so this line is
+  // what a CloudWatch alarm (release-runbook, Study Group gate) keys on; a hot
+  // list with no good read yet gets the same line from the health timer. It
+  // carries no values, no credential references and no identities. It repeats
+  // on the health cadence: a service that goes idle after its first request
+  // must still produce the line, otherwise the alarm goes quiet exactly when
+  // it matters.
+  const emitUnconfigured = () => console.info(JSON.stringify({ type: "study_group.livekit_health", configured: false, ready: false, attentionRequired: false, projects: [] }));
   if (!liveKit.projects || !liveKit.gateway) {
-    const emitUnconfigured = () => console.info(JSON.stringify({ type: "study_group.livekit_health", configured: false, ready: false, attentionRequired: false, projects: [] }));
     emitUnconfigured();
     const timer = setInterval(emitUnconfigured, 5 * 60_000);
     timer.unref();
@@ -388,6 +401,11 @@ export function studyGroupService() {
     healthTimers.__lgStudyGroupLiveKitHealthTimers.add(key);
     const reportHealth = () => {
       void health.check().then((snapshot) => {
+        if (snapshot.projects.length === 0) {
+          healthTimers.__lgStudyGroupLiveKitHealthStates?.delete(key);
+          emitUnconfigured();
+          return;
+        }
         const state = snapshot.projects.map((project) => `${project.id}:${project.status}`).join(",");
         if (healthTimers.__lgStudyGroupLiveKitHealthStates?.get(key) === state) return;
         healthTimers.__lgStudyGroupLiveKitHealthStates?.set(key, state);

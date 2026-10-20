@@ -1,3 +1,5 @@
+import { LiveKitGatewayError } from "./liveKitGateway";
+
 export type LiveKitProjectState = "active" | "draining" | "disabled";
 
 export type LiveKitProjectRef = Readonly<{
@@ -21,6 +23,10 @@ export interface LiveKitProjectRegistry {
   getAssigned(projectId: string): LiveKitProjectRef;
   all(): ReadonlyArray<LiveKitProjectRef>;
   diagnostics(): ReadonlyArray<LiveKitProjectDiagnostic>;
+  // A hot list (createHotLiveKitProjectRegistry) re-reads its source here
+  // once its cache is stale; callers await it before the reads above. A fixed
+  // list has nothing to refresh.
+  refresh?(): Promise<void>;
 }
 
 type ProjectConfig = {
@@ -74,7 +80,9 @@ function stableHash(value: string) {
   return hash >>> 0;
 }
 
-export function parseLiveKitProjects(raw: string | undefined): LiveKitProjectRegistry {
+type ProjectEntry = LiveKitProjectRef & { endpointHost: string };
+
+function parseProjectEntries(raw: string | undefined): ReadonlyArray<ProjectEntry> {
   if (!raw?.trim()) throw new Error("LIVEKIT_PROJECTS_JSON is not configured.");
   let parsed: unknown;
   try {
@@ -89,9 +97,12 @@ export function parseLiveKitProjects(raw: string | undefined): LiveKitProjectReg
     if (ids.has(project.id)) throw new Error("LiveKit project ids must be unique.");
     ids.add(project.id);
   }
-  const active = entries.filter((project) => project.state === "active");
-  if (active.length === 0) throw new Error("At least one active LiveKit project is required.");
+  if (!entries.some((project) => project.state === "active")) throw new Error("At least one active LiveKit project is required.");
+  return entries;
+}
 
+function registryOf(entries: ReadonlyArray<ProjectEntry>): LiveKitProjectRegistry {
+  const active = entries.filter((project) => project.state === "active");
   const byId = new Map(entries.map((project) => [project.id, project]));
   return {
     selectForNewSession({ sessionId, region, excludeProjectIds }) {
@@ -115,6 +126,88 @@ export function parseLiveKitProjects(raw: string | undefined): LiveKitProjectReg
     },
     diagnostics() {
       return entries.map(({ id, endpointHost, region, state }) => ({ id, endpointHost, region, state }));
+    }
+  };
+}
+
+export function parseLiveKitProjects(raw: string | undefined): LiveKitProjectRegistry {
+  return registryOf(parseProjectEntries(raw));
+}
+
+export type LiveKitProjectListRejection = "unreadable" | "invalid";
+
+// The project list, hot (LIVEKIT_PROJECTS_SECRET_ID): `read` returns the same
+// JSON as LIVEKIT_PROJECTS_JSON and is called at most once a minute, from
+// refresh(), with concurrent refreshes sharing one read. Adding a project,
+// changing its url, weight or state, or draining it therefore needs no
+// redeploy. A failed or invalid read keeps the last good list (and is tried
+// again after the same minute); before any good read there is no list, and
+// selecting or resolving a project fails typed, which the service answers
+// with `unavailable`. A project that leaves the list stays resolvable as
+// `draining` for the rest of this process, so the rooms already assigned to
+// it keep their tokens, tutor messages and webhooks; it gets no new rooms and
+// is no longer health-checked. An instance started after the removal never
+// saw the project, which is why retirement drains first (livekit-operations.md).
+export function createHotLiveKitProjectRegistry(input: {
+  read: () => Promise<string | undefined>;
+  now?: () => number;
+  cacheTtlMs?: number;
+  onRejected?: (reason: LiveKitProjectListRejection) => void;
+}): LiveKitProjectRegistry & { refresh(): Promise<void> } {
+  const now = input.now ?? Date.now;
+  const cacheTtlMs = input.cacheTtlMs ?? 60_000;
+  let entries: ReadonlyArray<ProjectEntry> = [];
+  let current: LiveKitProjectRegistry | null = null;
+  const departed = new Map<string, ProjectEntry>();
+  let readAt: number | null = null;
+  let inFlight: Promise<void> | null = null;
+
+  async function load() {
+    let next: ReadonlyArray<ProjectEntry> | null = null;
+    try {
+      const raw = await input.read();
+      try {
+        next = parseProjectEntries(raw);
+      } catch {
+        input.onRejected?.("invalid");
+      }
+    } catch {
+      input.onRejected?.("unreadable");
+    }
+    readAt = now();
+    if (!next) return;
+    const ids = new Set(next.map((project) => project.id));
+    for (const project of entries) {
+      if (!ids.has(project.id) && project.state !== "disabled") departed.set(project.id, { ...project, state: "draining" });
+    }
+    for (const id of ids) departed.delete(id);
+    entries = next;
+    current = registryOf(next);
+  }
+
+  function listed() {
+    if (!current) throw new LiveKitGatewayError("credential_unavailable");
+    return current;
+  }
+
+  return {
+    refresh() {
+      if (readAt !== null && now() - readAt < cacheTtlMs) return Promise.resolve();
+      inFlight ??= load().finally(() => { inFlight = null; });
+      return inFlight;
+    },
+    selectForNewSession(selection) {
+      return listed().selectForNewSession(selection);
+    },
+    getAssigned(projectId) {
+      const project = departed.get(projectId);
+      return project ?? listed().getAssigned(projectId);
+    },
+    all() {
+      return [...entries, ...departed.values()];
+    },
+    diagnostics() {
+      return current?.diagnostics() ?? [];
     }
   };
 }

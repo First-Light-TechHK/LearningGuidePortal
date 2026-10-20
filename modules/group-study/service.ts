@@ -662,6 +662,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // `rate_limited` and `unverified` are ambiguous, pin the assignment, and
   // surface `unavailable` for a retry against the same project.
   async function provisionProject(current: LiveSessionRow, projects: LiveKitProjectRegistry, gateway: LiveKitRoomGateway) {
+    await projects.refresh?.();
     const activeProjectCount = projects.diagnostics().filter((project) => project.state === "active").length;
     const excluded = new Set<string>();
     let pinned: string | null = current.liveKitProjectId;
@@ -795,6 +796,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     const gateway = deps.liveKitGateway;
     if (!gateway?.listParticipants || !deps.liveKitProjects || !session.liveKitProjectId) return null;
     try {
+      await deps.liveKitProjects.refresh?.();
       const readAt = deps.now().toISOString();
       const project = deps.liveKitProjects.getAssigned(session.liveKitProjectId);
       const participants = await withTimeout(gateway.listParticipants({ project, room: session.id }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
@@ -865,6 +867,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     const projects = deps.liveKitProjects;
     const projectId = session.liveKitProjectId;
     if (!gateway || !projects || !projectId || identities.length === 0) return;
+    await projects.refresh?.();
     await Promise.all(identities.map(async (identity) => {
       try {
         await withTimeout(gateway.removeParticipant({ project: projects.getAssigned(projectId), room: session.id, identity }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
@@ -1464,6 +1467,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const tokenLogKey = deps.tokenLogKey();
         if (!tokenLogKey) throw new StudyGroupError("unavailable", "The Study Group token issuance log key is not configured.");
         const profile = await deps.userProfile(input.actorUserId);
+        // A hot project list is read as it stands now (a project added,
+        // drained or moved to another url within the last minute).
+        await deps.liveKitProjects?.refresh?.();
         if (deps.liveKitProjects && deps.liveKitGateway && !assignedProjectId) {
           const selected = deps.liveKitProjects.selectForNewSession({ sessionId: session.id });
           assignedProjectId = await deps.repository.update((current) => {

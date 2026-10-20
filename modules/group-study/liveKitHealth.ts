@@ -39,6 +39,7 @@ export function createLiveKitHealthService(deps: LiveKitHealthDeps): LiveKitHeal
   let checking: Promise<LiveKitHealthSnapshot> | undefined;
 
   async function fresh() {
+    await deps.registry.refresh?.();
     const expected = deps.registry.diagnostics().filter((project) => project.state !== "disabled");
     const projects = await Promise.all(expected.map(async (diagnostic) => {
       let result;
@@ -62,7 +63,10 @@ export function createLiveKitHealthService(deps: LiveKitHealthDeps): LiveKitHeal
         ...(result.activeRooms === undefined ? {} : { activeRooms: result.activeRooms })
       } as LiveKitHealthProject;
     }));
-    const ready = projects.filter((project) => project.state === "active").every((project) => project.status === "healthy");
+    // A hot list that has not been read yet has no active project: that is
+    // not ready, never a vacuous "every active project is healthy".
+    const active = projects.filter((project) => project.state === "active");
+    const ready = active.length > 0 && active.every((project) => project.status === "healthy");
     return { checkedAt: now().toISOString(), ready, attentionRequired: projects.some((project) => project.status !== "healthy"), projects };
   }
 
