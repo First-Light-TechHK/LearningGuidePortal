@@ -557,3 +557,257 @@ test("M23: the room is usable at 375 px: no sideways scroll, the controls wrap o
     await room.close();
   }
 });
+
+// The third QA review of the room client (QA3, 2026-10-20): the room's seat
+// intents and call lifecycle, one test per finding a browser can show.
+
+const JOINED_ELSEWHERE = "This account joined the Live Session elsewhere. Close the other session and reconnect.";
+
+function seatIntentUrl(sessionId: string, url: string) {
+  return /\/(enter|heartbeat|leave)$/.test(url) && url.includes(`/api/study-groups/sessions/${sessionId}/`);
+}
+
+// The page's seat intents (enter, heartbeat, leave) as it sends them.
+function recordSeatIntents(page: Page, sessionId: string) {
+  const sent: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && seatIntentUrl(sessionId, request.url())) sent.push(request.url().split("/").pop() || "");
+  });
+  return sent;
+}
+
+// The back/forward cache, as far as a page can tell: pagehide on the way out,
+// pageshow with persisted on the way back.
+function pageTransition(page: Page, type: "pagehide" | "pageshow") {
+  return page.evaluate((name) => {
+    setTimeout(() => window.dispatchEvent(new PageTransitionEvent(name, { persisted: true })), 0);
+  }, type);
+}
+
+function markDocument(page: Page) {
+  return page.evaluate(() => { (window as unknown as { qa3Mark?: boolean }).qa3Mark = true; });
+}
+
+function documentMarked(page: Page) {
+  return page.evaluate(() => Boolean((window as unknown as { qa3Mark?: boolean }).qa3Mark));
+}
+
+test("QA3 F1: a page put in the back/forward cache holds no seat; restored, it reloads, or stays left", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "qa3f1");
+  try {
+    const { pageA, pageB, sessionId } = room;
+    const intents = recordSeatIntents(pageB, sessionId);
+    await markDocument(pageB);
+    // Hidden for the cache: no renewal goes out, not even on the wake-up triggers.
+    await pageTransition(pageB, "pagehide");
+    await expect(pageA.locator('[data-participants="1"]')).toBeVisible();
+    intents.length = 0;
+    await pageB.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+    });
+    await pageB.waitForTimeout(12_000);
+    expect(intents, "a hidden page sends no seat intent").toEqual([]);
+    // Restored: the dead call is not passed off as connected; the page reloads and enters by the normal rules.
+    const reloaded = pageB.waitForEvent("load");
+    await pageTransition(pageB, "pageshow");
+    await reloaded;
+    expect(await documentMarked(pageB)).toBe(false);
+    await expectConnected(pageB, 2);
+    await expectConnected(pageA, 2);
+
+    // A page that had left stays left when it comes back, and takes no seat.
+    await leaveSession(pageB);
+    await expect(pageB.getByRole("heading", { name: "You left the Live Session." })).toBeVisible();
+    await expect.poll(async () => (await sessionView(room.host, sessionId)).occupancy, { timeout: 10_000 }).toBe(1);
+    await markDocument(pageB);
+    intents.length = 0;
+    await pageTransition(pageB, "pagehide");
+    await pageTransition(pageB, "pageshow");
+    await pageB.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await pageB.waitForTimeout(4_000);
+    expect(await documentMarked(pageB), "no reload").toBe(true);
+    await expect(pageB.getByRole("heading", { name: "You left the Live Session." })).toBeVisible();
+    expect(intents).toEqual([]);
+    expect((await sessionView(room.host, sessionId)).occupancy).toBe(1);
+  } finally {
+    await room.close();
+  }
+});
+
+test("QA3 F2: a dropped call leaves no tile of the dead room behind, poll after poll", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "qa3f2");
+  try {
+    const { pageB, member, sessionId } = room;
+    // A second tab of the same account takes the place: the first tab's call ends for good.
+    const secondTab = await member.context.newPage();
+    await secondTab.goto(roomPath(sessionId));
+    await expect(pageB.getByText(JOINED_ELSEWHERE)).toBeVisible();
+    // Two group polls later the stage still says it is not connected, with no tile of its own.
+    await pageB.waitForTimeout(7_000);
+    await expect(pageB.getByText("The Live Session could not connect. Check the connection and try again.")).toBeVisible();
+    await expect(pageB.getByRole("button", { name: "Mic" })).toBeDisabled();
+  } finally {
+    await room.close();
+  }
+});
+
+test("QA3 F3: a heartbeat stalled by a sleeping device does not hold back the renewal on wake", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "qa3f3");
+  let wake = () => undefined as void;
+  try {
+    const { pageB, sessionId } = room;
+    const isHeartbeat = (url: string) => url.endsWith(`/api/study-groups/sessions/${sessionId}/heartbeat`);
+    const asleep = new Promise<void>((resolve) => { wake = resolve; });
+    let stall = true;
+    await pageB.route(`**/api/study-groups/sessions/${sessionId}/heartbeat`, async (route) => {
+      if (!stall) return route.continue();
+      stall = false;
+      await asleep;
+      await route.abort().catch(() => undefined);
+    });
+    // A heartbeat goes out and never comes back.
+    await pageB.waitForRequest((request) => isHeartbeat(request.url()), { timeout: 20_000 });
+    // Back in front of the user after the stalled request gave up: the renewal goes out at once.
+    await pageB.waitForTimeout(9_500);
+    const renewal = pageB.waitForRequest((request) => isHeartbeat(request.url()), { timeout: 3_000 });
+    await pageB.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect((await (await renewal).response())?.status()).toBe(200);
+    await expectConnected(pageB, 2);
+  } finally {
+    wake();
+    await room.close();
+  }
+});
+
+test("QA3 F4: a call that drops while the leave is on its way is not left marked connected when the leave fails", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "qa3f4");
+  let failLeave = () => undefined as void;
+  let releaseToken = () => undefined as void;
+  try {
+    const { pageB, member, sessionId } = room;
+    const leaveHeld = new Promise<void>((resolve) => { failLeave = resolve; });
+    await pageB.route(`**/api/study-groups/sessions/${sessionId}/leave`, async (route) => {
+      await leaveHeld;
+      await route.fulfill({ status: 500, contentType: "application/json", body: FAILED }).catch(() => undefined);
+    });
+    // A second tab of this account, held just before it joins the call.
+    const secondTab = await member.context.newPage();
+    const tokenHeld = new Promise<void>((resolve) => { releaseToken = resolve; });
+    let tokenAsked = () => undefined as void;
+    const tokenSeen = new Promise<void>((resolve) => { tokenAsked = resolve; });
+    await secondTab.route(`**/api/study-groups/sessions/${sessionId}/token`, async (route) => {
+      tokenAsked();
+      await tokenHeld;
+      await route.continue();
+    });
+    await secondTab.goto(roomPath(sessionId));
+    await tokenSeen;
+    // Leave is confirmed; while it is on its way the second tab takes the place.
+    await pageB.getByRole("button", { name: "Leave Session" }).click();
+    await pageB.getByRole("dialog").getByRole("button", { name: "Yes, leave" }).click();
+    releaseToken();
+    // The confirmation dialog is modal, so the controls behind it are found by their text.
+    const mic = pageB.locator("button", { hasText: /^Mic$/ });
+    await expect(mic).toBeDisabled({ timeout: 6_000 });
+    failLeave();
+    await expect(pageB.getByRole("dialog").getByRole("alert")).toContainText("You have not left yet");
+    await expect(pageB.getByRole("heading", { name: "You left the Live Session." })).toHaveCount(0);
+    // The page knows its call is gone and why; it does not claim to be connected.
+    await expect(mic).toBeDisabled();
+    await expect(pageB.getByText(JOINED_ELSEWHERE)).toBeVisible();
+  } finally {
+    failLeave();
+    releaseToken();
+    await room.close();
+  }
+});
+
+test("QA3 F5: a Leave sent while a re-entry is on its way leaves no seat behind", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "qa3f5");
+  try {
+    const { pageB, sessionId } = room;
+    // The server reads the member's seat as lapsed, so the page enters again...
+    await pageB.route(`**/api/study-groups/sessions/${sessionId}/heartbeat`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, code: "ok", message: "", data: { seated: false, occupancy: 1, state: "live" } }) }));
+    // ...and that entry is slow on its way to the server.
+    let entryAsked = () => undefined as void;
+    const entrySeen = new Promise<void>((resolve) => { entryAsked = resolve; });
+    await pageB.route(`**/api/study-groups/sessions/${sessionId}/enter`, async (route) => {
+      entryAsked();
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      await route.continue();
+    });
+    const events: string[] = [];
+    pageB.on("request", (request) => { if (request.method() === "POST" && seatIntentUrl(sessionId, request.url())) events.push(`${request.url().split("/").pop()} sent`); });
+    pageB.on("response", (response) => { if (response.request().method() === "POST" && seatIntentUrl(sessionId, response.url())) events.push(`${response.url().split("/").pop()} answered`); });
+    await pageB.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await entrySeen;
+    await leaveSession(pageB);
+    await expect(pageB.getByRole("heading", { name: "You left the Live Session." })).toBeVisible();
+    // The leave went out only once the entry had its answer, so the server took the entry first.
+    const leaveSent = events.indexOf("leave sent");
+    expect(leaveSent, events.join(", ")).toBeGreaterThan(events.lastIndexOf("enter answered"));
+    expect(events.slice(leaveSent), "nothing after the leave").toEqual(["leave sent", "leave answered"]);
+    await expect.poll(async () => (await sessionView(room.host, sessionId)).occupancy, { timeout: 10_000 }).toBe(1);
+    await pageB.waitForTimeout(4_000);
+    expect((await sessionView(room.host, sessionId)).occupancy).toBe(1);
+  } finally {
+    await room.close();
+  }
+});
+
+test("QA3 F7: a full session offers Try again, and enters once a seat is free", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const origin = appOrigin(baseURL);
+  const room = await openLiveRoom(browser, origin, "qa3f7", { maxParticipants: 2 });
+  const third = await newMember(browser, origin, "qa3f7-c", "Third Member");
+  try {
+    await joinGroup(third, room.groupId);
+    const page = await third.context.newPage();
+    await page.goto(roomPath(room.sessionId));
+    await expect(page.getByRole("heading", { name: "Session full" })).toBeVisible();
+    const retry = appAlerts(page).getByRole("button", { name: "Try again" });
+    // Still full: the page says so again, with the same offer.
+    await retry.click();
+    await expect(page.getByRole("heading", { name: "Session full" })).toBeVisible();
+    await expect(retry).toBeVisible();
+    // A seat frees up: trying again enters the room.
+    await leaveSession(room.pageB);
+    await expect(room.pageB.getByRole("heading", { name: "You left the Live Session." })).toBeVisible();
+    await retry.click();
+    await expectConnected(page, 2);
+    await expect(page.getByRole("heading", { name: "Session full" })).toHaveCount(0);
+  } finally {
+    await third.context.close();
+    await room.close();
+  }
+});
+
+test("QA3 F8: coming back online while the call is connecting starts no second connect", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "qa3f8");
+  try {
+    const { pageB, sessionId } = room;
+    let tokens = 0;
+    await pageB.route(`**/api/study-groups/sessions/${sessionId}/token`, async (route) => {
+      tokens += 1;
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      await route.continue();
+    });
+    await pageB.reload();
+    await expect.poll(() => tokens).toBe(1);
+    for (let index = 0; index < 3; index += 1) await pageB.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expectConnected(pageB, 2);
+    await pageB.waitForTimeout(3_000);
+    expect(tokens, "one connect").toBe(1);
+    await expect(pageB.getByText(JOINED_ELSEWHERE)).toHaveCount(0);
+    await expectConnected(pageB, 2);
+  } finally {
+    await room.close();
+  }
+});
