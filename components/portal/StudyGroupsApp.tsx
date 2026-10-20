@@ -370,7 +370,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     const groupId = selected.id;
     setMutating(`${action}:${session.id}`);
     try {
-      const result = await studyGroupRequest(`/api/study-groups/sessions/${session.id}/${action}`, { method: "POST", body: "{}" });
+      // Cancelling a Session is POST …/cancel; the action name is the UI's.
+      const route = action === "cancel-session" ? "cancel" : action;
+      const result = await studyGroupRequest(`/api/study-groups/sessions/${session.id}/${route}`, { method: "POST", body: "{}" });
       const outcome = studyGroupMutation({ action, result });
       if (!outcome.ok) {
         setErrorCode(outcome.errorCode);

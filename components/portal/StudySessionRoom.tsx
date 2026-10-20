@@ -163,6 +163,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // A disconnect no automatic retry may undo (another tab took over this
   // account's place, removed, room ended): only the user reconnects (QA N2).
   const [blocked, setBlocked] = useState(false);
+  const blockedRef = useRef(false);
+  blockedRef.current = blocked;
   const failuresRef = useRef(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
   groupRef.current = group;
@@ -407,11 +409,14 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // open. A seat the server no longer holds (the device slept, the network
   // was gone longer than the lease) is entered again through the normal
   // admission rules.
+  // A page stopped for good (another tab took this account's place, removed,
+  // signed out) holds no seat: it stops renewing, so the tab that took over,
+  // or nobody, decides (QA 2026-10-19 final review B1).
   useEffect(() => {
-    if (!seated || left || (session?.state !== "live" && session?.state !== "starting_soon")) return;
+    if (!seated || left || blocked || (session?.state !== "live" && session?.state !== "starting_soon")) return;
     const beat = async () => {
       const result = await studyGroupRequest<{ seated: boolean }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" });
-      if (!result.ok || result.data.seated || leftRef.current) return;
+      if (!result.ok || result.data.seated || leftRef.current || blockedRef.current) return;
       const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
       if (!entered.ok && FINAL_ENTRY_CODES.has(entered.code)) {
         setSeated(false);
@@ -422,7 +427,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     };
     const timer = window.setInterval(() => void beat(), SEAT_HEARTBEAT_MS);
     return () => window.clearInterval(timer);
-  }, [seated, left, session?.state, sessionId]);
+  }, [seated, left, blocked, session?.state, sessionId]);
 
   // Coming back online retries a dropped connection at once instead of
   // waiting for the next backoff step.
@@ -807,7 +812,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
             // error strip: a transient hand is retried by clicking again.
             void publish({ type: "raise-hand", raised }).catch(() => setHands((items) => (items.includes(identity) === raised ? raisedHands(items, identity, !raised) : items)));
           }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
-          {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }).catch(() => undefined); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
+          {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={async () => { leftRef.current = true; await releaseRoom(); await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" }).catch(() => undefined); setLeft(true); await load(); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
         </div>
       </div>
       <aside className={styles.side} aria-label={sideTab === "participants" ? roomCopy.participants : roomCopy.chat}>
