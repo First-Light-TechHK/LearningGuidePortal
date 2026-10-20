@@ -163,3 +163,23 @@ test("F-2: the groups page disables Join Now from the server's seat count, not o
   assert.match(app, /\{session\.seatsOpen <= 0 \? copy\.sessionFull : copy\.joinNow\}/);
   assert.equal(app.includes("session.occupancy >= session.maxParticipants"), false);
 });
+
+test("F-5: a schedule inside the submit window is a duplicate only when Focus, lesson and AI Tutor match too", async () => {
+  const f = await fixture();
+  const created = await group(f, []);
+  const plan = { actorUserId: "host", groupId: created.id, title: "Same slot", startsAt: inMinutes(f, 60), durationSeconds: 1800, maxParticipants: 4, focus: "Weimar", relatedLessonId: "lesson-1", aiTutorEnabled: true };
+  const first = await f.service.scheduleSession(plan);
+  f.advanceSeconds(3);
+  assert.equal((await f.service.scheduleSession({ ...plan, focus: " Weimar " })).id, first.id, "the same request again is the same session");
+  const ids = new Set([first.id]);
+  for (const change of [{ focus: "Versailles" }, { focus: "" }, { relatedLessonId: "lesson-2" }, { relatedLessonId: null }, { aiTutorEnabled: false }]) {
+    const other = await f.service.scheduleSession({ ...plan, ...change });
+    assert.equal(ids.has(other.id), false, `${JSON.stringify(change)} makes a new session`);
+    ids.add(other.id);
+  }
+  const stored = (await f.repository.read()).sessions.filter((row) => row.title === "Same slot");
+  assert.equal(stored.length, 6);
+  assert.deepEqual(stored.map((row) => [row.focus, row.relatedLessonId, row.aiTutorEnabled]), [
+    ["Weimar", "lesson-1", true], ["Versailles", "lesson-1", true], [null, "lesson-1", true], ["Weimar", "lesson-2", true], ["Weimar", null, true], ["Weimar", "lesson-1", false]
+  ]);
+});

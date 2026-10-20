@@ -914,23 +914,31 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (startsAt.getTime() <= deps.now().getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
       if (!SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
+      const focus = clean(input.focus || "");
+      if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long.");
+      const relatedLessonId = clean(input.relatedLessonId || "") || null;
+      const aiTutorEnabled = input.aiTutorEnabled !== false;
       const now = deps.now().toISOString();
       const session = await deps.repository.update((store) => {
         const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (!group) throw new StudyGroupError("not_found", "Study Group was not found.");
         if (activeMembership(store, group.id, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can schedule a Live Session.");
-        const duplicate = store.sessions.find((item) => item.groupId === group.id && item.status === "scheduled" && item.title === title && item.startsAt === startsAt.toISOString() && item.durationSeconds === input.durationSeconds && item.maxParticipants === input.maxParticipants && sameSubmitWindow(item.createdAt, now));
+        // A duplicate is the same request again: every field the Host chose
+        // matches, so a second session that differs only in its Focus, lesson
+        // or AI Tutor switch is a new session (QA final review F-5).
+        const duplicate = store.sessions.find((item) => item.groupId === group.id && item.status === "scheduled" && item.title === title && item.startsAt === startsAt.toISOString() && item.durationSeconds === input.durationSeconds && item.maxParticipants === input.maxParticipants
+          && (item.focus || null) === (focus || null) && (item.relatedLessonId || null) === relatedLessonId && item.aiTutorEnabled === aiTutorEnabled && sameSubmitWindow(item.createdAt, now));
         if (duplicate) return duplicate;
         const row: LiveSessionRow = {
           id: randomUUID(),
           groupId: group.id,
           title,
-          relatedLessonId: clean(input.relatedLessonId || "") || null,
+          relatedLessonId,
           startsAt: startsAt.toISOString(),
           durationSeconds: input.durationSeconds,
           maxParticipants: input.maxParticipants,
-          focus: (() => { const focus = clean(input.focus || ""); if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long."); return focus || null; })(),
-          aiTutorEnabled: input.aiTutorEnabled !== false,
+          focus: focus || null,
+          aiTutorEnabled,
           liveKitProjectId: null,
           status: "scheduled",
           startedAt: null,
