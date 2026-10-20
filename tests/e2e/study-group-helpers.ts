@@ -18,7 +18,7 @@ function freshEmail(side: string) {
   return `e2e-sg-${side}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`;
 }
 
-export async function registerAndEntitle(context: BrowserContext, side: string, nickname: string, appOrigin: string) {
+export async function register(context: BrowserContext, side: string, nickname: string) {
   const email = freshEmail(side);
   const registered = await context.request.post("/api/auth/register", {
     data: { email, password: PASSWORD, nickname, locale: "en-GB" },
@@ -28,7 +28,11 @@ export async function registerAndEntitle(context: BrowserContext, side: string, 
     data: { email, password: PASSWORD, rememberMe: false },
   });
   expect(loggedIn.status(), "login").toBe(200);
+  return email;
+}
 
+export async function registerAndEntitle(context: BrowserContext, side: string, nickname: string, appOrigin: string) {
+  const email = await register(context, side, nickname);
   const quote = await context.request.post("/api/subscription/quote", {
     data: { planId: PLAN_ID, kind: "trial" },
   });
@@ -47,10 +51,11 @@ export async function registerAndEntitle(context: BrowserContext, side: string, 
   return email;
 }
 
-export async function newMember(browser: Browser, appOrigin: string, side: string, nickname: string, options: { initScript?: () => void } = {}): Promise<Member> {
+// A signed-in learner with Course access (entitle: false leaves them without).
+export async function newMember(browser: Browser, appOrigin: string, side: string, nickname: string, options: { initScript?: () => void; entitle?: boolean } = {}): Promise<Member> {
   const context = await browser.newContext({ baseURL: appOrigin, ignoreHTTPSErrors: true });
   if (options.initScript) await context.addInitScript(options.initScript);
-  const email = await registerAndEntitle(context, side, nickname, appOrigin);
+  const email = options.entitle === false ? await register(context, side, nickname) : await registerAndEntitle(context, side, nickname, appOrigin);
   return { context, email, nickname };
 }
 
