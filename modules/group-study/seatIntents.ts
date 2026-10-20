@@ -57,3 +57,9 @@ export function createSeatIntents(input: {
     return run;
   };
 }
+
+// A signal that aborts a request after `ms`, where the browser can (older
+// Safari has no AbortSignal.timeout; the request then simply runs on).
+export function deadlineSignal(ms: number): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(ms) : undefined;
+}

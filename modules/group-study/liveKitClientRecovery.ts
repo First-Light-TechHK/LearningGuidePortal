@@ -34,3 +34,28 @@ export function liveKitDisconnectReasonName(reason: unknown, names: Record<numbe
   if (typeof reason === "string" && reason) return reason;
   return undefined;
 }
+
+export type LiveKitDisconnectStep = "recover" | "blocked" | "show" | "report";
+
+// What the room does once its call dropped (the page has already let go of
+// the call's state). A terminal reason blocks automatic reconnects whatever
+// the page is doing. A page that is leaving starts no recovery and shows no
+// connection error: the leave decides, and a leave the server refuses
+// reconnects through the normal path (QA3 room review F4).
+export function liveKitDisconnectStep(transition: LiveKitClientTransition, leaving: boolean): LiveKitDisconnectStep {
+  if (transition.type === "terminal") return "blocked";
+  if (leaving) return "report";
+  if (transition.type === "recover_token") return "recover";
+  return "show";
+}
+
+// A room's event handler that only runs while that room is still the page's
+// current call. A released room keeps emitting while it tears down (track and
+// audio events from its own disconnect, a startAudio that settles late), and
+// those must not paint tiles or a "turn sound on" button for a call that is
+// gone (QA3 room review F2, F6).
+export function whileCurrentRoom<A extends unknown[]>(isCurrent: () => boolean, handler: (...args: A) => void) {
+  return (...args: A) => {
+    if (isCurrent()) handler(...args);
+  };
+}

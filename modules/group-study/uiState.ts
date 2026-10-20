@@ -212,3 +212,16 @@ export function waitingDialogStep(result: { ok: boolean; code: string; data?: { 
   if (state === "live") return { kind: "open-room" };
   return { kind: "keep" };
 }
+
+/**
+ * QA3 room review F1: a room page coming back from the back/forward cache.
+ * Leaving the page (pagehide) dropped its call and stopped its seat intents,
+ * so a restored page that was in (or waiting for) the session is a dead call
+ * that still looks connected: it reloads, which reads the server again and
+ * enters by the normal rules. A page that had left holds no seat and already
+ * says so ("You left", with Rejoin): it stays as it is. A page shown normally
+ * (not from the cache) has nothing to undo.
+ */
+export function roomPageRestoreAction(input: { persisted: boolean; left: boolean }): "reload" | "keep" {
+  return input.persisted && !input.left ? "reload" : "keep";
+}
