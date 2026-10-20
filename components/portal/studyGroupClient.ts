@@ -17,6 +17,9 @@ export type StudySession = {
   seatsOpen: number;
   plannedCount: number;
   viewerPlanned: boolean;
+  // True when the viewer already holds a seat (another tab, or a reload while
+  // waiting): entering again renews that seat, so the session is not full for them.
+  viewerSeated?: boolean;
   attendees: Array<{ userId: string; displayName: string }>;
 };
 export type StudyGroupDetail = {
@@ -40,18 +43,58 @@ export type StudyGroupDetail = {
 
 export type StudyGroupResponse<T> = { ok: boolean; code: string; message: string; data: T };
 
-export async function studyGroupRequest<T>(url: string, init?: RequestInit): Promise<StudyGroupResponse<T>> {
+// A request that gets no answer (a phone switching networks can stall one for
+// minutes) ends as the network failure after this long, so a poll waiting on it
+// runs again instead of waiting for good (QA3 groups #1).
+export const STUDY_GROUP_REQUEST_TIMEOUT_MS = 15_000;
+
+export async function studyGroupRequest<T>(url: string, init?: RequestInit, timeoutMs = STUDY_GROUP_REQUEST_TIMEOUT_MS): Promise<StudyGroupResponse<T>> {
   try {
-    const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
+    const response = await fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(timeoutMs), headers: { "content-type": "application/json", ...(init?.headers || {}) } });
     return await response.json() as StudyGroupResponse<T>;
   } catch {
     // F-1 (dev audit 2026-10-14): a rejected fetch (offline, DNS failure) or a non-JSON
     // body (a gateway error page) used to reject at the await, skip every caller's !ok
     // branch and surface as an unhandled rejection with no UI feedback. Resolve a
     // synthetic failure instead so the existing single error slot renders it; callers
-    // that still carry a catch keep it as belt-and-braces only.
+    // that still carry a catch keep it as belt-and-braces only. A timed-out request
+    // lands here too.
     return { ok: false, code: "network", message: "", data: null as T };
   }
+}
+
+// The server issues Study Group ids as UUIDs. A `?group=` value is only opened
+// when it is one, and every id goes into the API path encoded, so a crafted
+// value cannot point the request at another route (QA3 groups #7).
+const STUDY_GROUP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function studyGroupIdFromQuery(search: string) {
+  const id = new URLSearchParams(search).get("group");
+  return id && STUDY_GROUP_ID.test(id) ? id : null;
+}
+
+export function studyGroupPath(groupId: string) {
+  return `/api/study-groups/${encodeURIComponent(groupId)}`;
+}
+
+// Join now is closed only for a viewer who holds no seat: a seat the viewer
+// already holds is renewed when they enter again (QA3 groups #2).
+export function sessionFullForViewer(session: { seatsOpen: number; viewerSeated?: boolean }) {
+  return session.seatsOpen <= 0 && !session.viewerSeated;
+}
+
+// The Related Course line wherever a group shows it: a Course that is no
+// longer published says so instead of an empty title (QA M7, QA3 groups #8).
+export function groupCourseLabel(group: { courseTitle: string; courseAvailable?: boolean }, unavailable: string) {
+  return group.courseAvailable === false ? unavailable : group.courseTitle;
+}
+
+// The phone layout puts the details under the whole sidebar; what changes
+// there is brought into view (QA N12, QA3 groups #6).
+export const PHONE_LAYOUT_QUERY = "(max-width: 800px)";
+
+export function revealOnPhone(element: { scrollIntoView: (options: ScrollIntoViewOptions) => void } | null, matchMedia: (query: string) => { matches: boolean }) {
+  if (element && matchMedia(PHONE_LAYOUT_QUERY).matches) element.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters like the Study

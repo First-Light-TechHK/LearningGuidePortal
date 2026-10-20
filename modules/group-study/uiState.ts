@@ -93,16 +93,71 @@ export function uniqueReminderBodies<T extends { body: string }>(reminders: T[])
 }
 
 /**
- * QA N10: what a failed list load does to the page. Before the first load
- * every failure is the page's error. After it, a failed 3 s poll keeps what
- * is on screen and the next poll heals it; a lost sign-in is the exception,
- * since no poll heals it and the error pane carries the sign-in link (N10-b).
- * A load the viewer asked for (a filter, a search, Retry, a change) always
- * shows its failure (N10-c).
+ * QA N10: where a failed list load shows. Before the first load every failure
+ * is the page's error pane. After it, a failed 3 s poll keeps what is on
+ * screen and the next poll heals it; a lost sign-in is the exception, since no
+ * poll heals it and the error pane carries the sign-in link (N10-b). A load
+ * the viewer asked for always shows its failure (N10-c): a search or Course
+ * filter under the search box, since only Discover failed and the open group
+ * stays (QA3 groups N-b); anything else on the error pane.
  */
-export function studyGroupListFailureShown(input: { poll: boolean; loadedOnce: boolean; code: string }) {
-  if (!input.loadedOnce || input.code === "unauthenticated") return true;
-  return !input.poll;
+export function studyGroupListFailurePlace(input: { poll: boolean; loadedOnce: boolean; discoverOnly: boolean; code: string }): "pane" | "discover" | "none" {
+  if (!input.loadedOnce || input.code === "unauthenticated") return "pane";
+  if (input.poll) return "none";
+  return input.discoverOnly ? "discover" : "pane";
+}
+
+/**
+ * The newest request of a kind is the only one whose answer counts (QA M3,
+ * QA3 groups #5): an older answer arriving late is dropped, so it cannot put
+ * back what a newer read (after a change) already showed. `busy` is true
+ * until the newest request settles; a poll does not start while it is, and a
+ * request the viewer asked for still supersedes it.
+ */
+export function latestOnly() {
+  let latest = 0;
+  let settled = 0;
+  return {
+    start: () => ++latest,
+    isLatest: (ticket: number) => ticket === latest,
+    settle: (ticket: number) => { if (ticket === latest) settled = ticket; },
+    get busy() { return settled !== latest; }
+  };
+}
+
+/**
+ * What one answer for the open group does (QA M9, N10, QA3 groups #9):
+ * - loaded: show it;
+ * - gone (not_found) after it was on screen: it was cancelled; say so;
+ * - any failure for a group never shown (an old link, a typo): its error panel
+ *   with Try again, whichever request it came from;
+ * - a failed 3 s refresh of a group on screen keeps it; the next one heals;
+ * - a failed open the viewer asked for shows its error.
+ */
+export function groupAnswerStep(input: { ok: boolean; code: string; shown: boolean; poll: boolean }): "show" | "cancelled" | "error" | "ignore" {
+  if (input.ok) return "show";
+  if (input.shown && input.code === "not_found") return "cancelled";
+  if (input.shown && input.poll) return "ignore";
+  return "error";
+}
+
+// The pane leaves "loading" once something has loaded, but never covers a
+// list failure already on the error pane (QA3 groups #4).
+export function paneStatusAfterGroup(current: PaneStatus): PaneStatus {
+  return current === "loading" ? "ready" : current;
+}
+
+/**
+ * The join gate's note and its one way forward (QA M6, M7, QA3 groups #3). A
+ * group whose Course is no longer available cannot be joined, so it only says
+ * so; otherwise the server's canJoin offers Join Now, a signed-out visitor is
+ * asked to sign in, and a learner without access is sent to the Course.
+ */
+export function joinGate(input: { signedIn: boolean; canJoin?: boolean; courseAvailable?: boolean }) {
+  if (input.courseAvailable === false) return { note: "courseUnavailable" as const, action: null };
+  if (input.canJoin) return { note: "joinAccess" as const, action: "join" as const };
+  if (!input.signedIn) return { note: "signInToJoin" as const, action: "sign-in" as const };
+  return { note: "courseAccessRequired" as const, action: "get-course" as const };
 }
 
 /**

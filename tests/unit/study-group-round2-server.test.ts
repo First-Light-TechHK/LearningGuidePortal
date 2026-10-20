@@ -181,8 +181,10 @@ test("F-2: the session view tells a member how many seats they can take, the Hos
 test("F-2: the groups page disables Join Now from the server's seat count, not occupancy against the maximum", async () => {
   const { readFile } = await import("node:fs/promises");
   const app = await readFile(path.join(process.cwd(), "components/portal/StudyGroupsApp.tsx"), "utf8");
-  assert.match(app, /disabled=\{session\.seatsOpen <= 0\}/);
-  assert.match(app, /\{session\.seatsOpen <= 0 \? copy\.sessionFull : copy\.joinNow\}/);
+  // The rule itself (with the viewer's own seat) is sessionFullForViewer,
+  // tested in study-group-groups-page.test.ts (QA3 groups #2).
+  assert.match(app, /disabled=\{sessionFullForViewer\(session\)\}/);
+  assert.match(app, /\{sessionFullForViewer\(session\) \? copy\.sessionFull : copy\.joinNow\}/);
   assert.equal(app.includes("session.occupancy >= session.maxParticipants"), false);
 });
 
@@ -499,9 +501,10 @@ test("M7: Discover hides a group whose Course is gone, and the group says so ins
 
   const { readFile } = await import("node:fs/promises");
   const app = await readFile(path.join(process.cwd(), "components/portal/StudyGroupsApp.tsx"), "utf8");
-  assert.match(app, /<p>\{selected\.courseAvailable === false \? copy\.courseUnavailable : selected\.courseTitle\}<\/p>/);
-  assert.match(app, /selected\.courseAvailable === false \? copy\.courseUnavailable : fill\(copy\.courseAccessRequired/);
-  assert.match(app, /selected\.courseAvailable === false && signedIn \? null : <a className=\{styles\.primary\} href=\{signedIn \? `\/\$\{locale\}\/portal\/courses\/\$\{selected\.courseSlug\}`/);
+  // The page's side (groupCourseLabel, joinGate) is tested by behaviour in
+  // study-group-groups-page.test.ts (QA3 groups #3, #8).
+  assert.match(app, /<p>\{groupCourseLabel\(selected, copy\.courseUnavailable\)\}<\/p>/);
+  assert.match(app, /joinGate\(\{ signedIn, canJoin: selected\.canJoin, courseAvailable: selected\.courseAvailable \}\)/);
   for (const locale of ["en-GB", "zh-CN"]) {
     const messages = JSON.parse(await readFile(path.join(process.cwd(), `messages/${locale}.json`), "utf8")) as { studyGroupsPage: { courseUnavailable?: string } };
     assert.ok(messages.studyGroupsPage.courseUnavailable, `${locale} has the copy`);

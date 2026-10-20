@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
-import { fillCount, studyGroupFormProblem, studyGroupSignInHref, studyGroupsPageHref } from "../../components/portal/studyGroupClient";
-import { discoverEmptyCopy, mineEmptyCopy, studyGroupListFailureShown, waitingDialogStep } from "../../modules/group-study/uiState";
+import { fillCount, groupCourseLabel, PHONE_LAYOUT_QUERY, revealOnPhone, sessionFullForViewer, STUDY_GROUP_REQUEST_TIMEOUT_MS, studyGroupFormProblem, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref } from "../../components/portal/studyGroupClient";
+import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy, paneStatusAfterGroup, studyGroupListFailurePlace, waitingDialogStep } from "../../modules/group-study/uiState";
 
 // Round 2 of the SG groups-page QA fixes (lg-qa/sg-tutor-qa-2026-10-19.md
 // section 二 and the final review's r1/r2/r4 items). Each test names its item.
@@ -49,21 +49,30 @@ test("r1-F-3: a missing field is reported before a Start Time in the past", () =
 
 test("r4-N10: group refresh clears its error, a lost sign-in always shows, asked-for loads show, the error code clears", () => {
   // N10-a: a refresh that loads the group drops the failed-open panel.
+  assert.equal(groupAnswerStep({ ok: true, code: "ok", shown: false, poll: true }), "show");
   assert.match(app, /setSelected\(result\.data\);\s*\/\/[^\n]*\n\s*setGroupError\(null\);/);
   // N10-b / N10-c: only a poll after the first load swallows its failure, and never a lost sign-in.
-  assert.equal(studyGroupListFailureShown({ poll: true, loadedOnce: true, code: "error" }), false);
-  assert.equal(studyGroupListFailureShown({ poll: true, loadedOnce: true, code: "network" }), false);
-  assert.equal(studyGroupListFailureShown({ poll: true, loadedOnce: true, code: "unauthenticated" }), true);
-  assert.equal(studyGroupListFailureShown({ poll: false, loadedOnce: true, code: "error" }), true);
-  assert.equal(studyGroupListFailureShown({ poll: true, loadedOnce: false, code: "error" }), true);
+  const place = (input: { poll: boolean; loadedOnce: boolean; code: string }) => studyGroupListFailurePlace({ ...input, discoverOnly: false });
+  assert.equal(place({ poll: true, loadedOnce: true, code: "error" }), "none");
+  assert.equal(place({ poll: true, loadedOnce: true, code: "network" }), "none");
+  assert.equal(place({ poll: true, loadedOnce: true, code: "unauthenticated" }), "pane");
+  assert.equal(place({ poll: false, loadedOnce: true, code: "error" }), "pane");
+  assert.equal(place({ poll: true, loadedOnce: false, code: "error" }), "pane");
   assert.match(app, /showFailure\(myResult\.ok \? discoverResult\.code : myResult\.code\);/);
   // N10-d: back from the error pane to the lists, the stale code goes.
   assert.match(app, /setStatus\("ready"\);\s*if \(listFailed\.current\) \{\s*\/\/[^\n]*\n\s*listFailed\.current = false;\s*setErrorCode\("idle"\);\s*\}/);
 });
 
 test("r4-N12-a: on a phone the details scroll into view before the group request", () => {
-  const scroll = app.indexOf('mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })');
-  const request = app.indexOf("const result = await studyGroupRequest<StudyGroupDetail>(`/api/study-groups/${id}`);");
+  const scrolled: ScrollIntoViewOptions[] = [];
+  const element = { scrollIntoView: (options: ScrollIntoViewOptions) => { scrolled.push(options); } };
+  revealOnPhone(element, (query) => ({ matches: query === PHONE_LAYOUT_QUERY }));
+  assert.deepEqual(scrolled, [{ behavior: "smooth", block: "start" }]);
+  revealOnPhone(element, () => ({ matches: false }));
+  revealOnPhone(null, () => ({ matches: true }));
+  assert.equal(scrolled.length, 1, "only in the phone layout, and only with an element");
+  const scroll = app.indexOf("if (options.reveal) revealOnPhone(mainRef.current, window.matchMedia);");
+  const request = app.indexOf("await readOpenGroup(id, false);");
   assert.ok(scroll > 0 && request > 0);
   assert.ok(scroll < request, "the scroll comes before the await");
 });
@@ -124,7 +133,7 @@ test("M6: every sign-in link comes back to the open group, and a signed-out visi
   assert.match(app, /setSelectedId\(id\);\s*showGroupInAddress\(id\);/);
   assert.match(header, /<StudyGroupSignInLink locale=\{locale\} className=\{styles\.signInLink\} label=\{copy\.signIn\} \/>/);
   assert.match(signInLink, /studyGroupSignInHref\(locale, pathname \+ \(query \? `\?\$\{query\}` : ""\)\)/);
-  assert.match(app, /selected\.canJoin \? copy\.joinAccess : !signedIn \? copy\.signInToJoin : selected\.courseAvailable === false \? copy\.courseUnavailable : fill\(copy\.courseAccessRequired, \{ course: selected\.courseTitle \}\)/);
+  assert.deepEqual(joinGate({ signedIn: false, canJoin: false, courseAvailable: true }), { note: "signInToJoin", action: "sign-in" });
   // Next.js only syncs useSearchParams (the header link) when replaceState gets a state of its own.
   assert.match(app, /window\.history\.replaceState\(null, "", url\.pathname \+ url\.search \+ url\.hash\);/);
   assert.equal(en.studyGroupsPage.signInToJoin, "Sign in to join this Study Group.");
@@ -154,7 +163,8 @@ test("M9: a cancelled group or session, or a session moved later, closes with a 
   assert.deepEqual(waitingDialogStep({ ok: true, code: "ok", data: { state: "live" } }), { kind: "open-room" });
   assert.deepEqual(waitingDialogStep({ ok: true, code: "ok", data: { state: "starting_soon" } }), { kind: "keep" });
   // The group open on screen was cancelled.
-  assert.match(app, /if \(result\.code === "not_found"\) \{\s*\/\/[^\n]*\n\s*forgetOpenGroup\(\);\s*setNotice\("groupCancelled"\);/);
+  assert.equal(groupAnswerStep({ ok: false, code: "not_found", shown: true, poll: true }), "cancelled");
+  assert.match(app, /if \(step === "cancelled"\) \{\s*\/\/[^\n]*\n\s*forgetOpenGroup\(\);\s*setNotice\("groupCancelled"\);/);
   // The waiting, edit-session and attendees dialogs lose their session.
   assert.equal((app.match(/setNotice\("sessionCancelled"\);/g) || []).length, 3);
   // Closing the waiting dialog releases its seat (the hold effect calls leave).
@@ -204,6 +214,119 @@ test("M27: the header speaks the page's language, the avatar has a name, the lan
   assert.match(header, /className=\{styles\.avatar\} href=\{`\/\$\{locale\}\/account\/my-learning`\} prefetch=\{false\} aria-label=\{copy\.myLearning\}>/);
   assert.match(header, /<Suspense fallback=\{<span className=\{styles\.lang\}>\{languageLabel\}<\/span>\}>\s*<PortalLanguageLink locale=\{locale\} label=\{languageLabel\} \/>/);
   assert.match(css, /\.chatForm:focus-within \{[^}]*border-color: #1d6bff;[^}]*box-shadow:[^}]*\}/);
+});
+
+// QA3 review of the groups page (scratchpad qa3/groups.md): findings 1-9 and nits N-a to N-d.
+
+test("QA3 #1: a request that never answers ends as the network failure, and the lists poll runs again", async () => {
+  assert.equal(STUDY_GROUP_REQUEST_TIMEOUT_MS, 15_000);
+  const originalFetch = globalThis.fetch;
+  // AbortSignal.timeout does not keep Node's event loop alive; this does.
+  const keepAlive = setTimeout(() => undefined, 5_000);
+  try {
+    // A stalled request: no headers ever, until the signal aborts it.
+    globalThis.fetch = ((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    })) as typeof fetch;
+    assert.deepEqual(await studyGroupRequest("/api/study-groups?view=mine", undefined, 20), { ok: false, code: "network", message: "", data: null });
+    // Headers arrived but the body stalls: the same signal ends the read.
+    globalThis.fetch = ((_url: string, init?: RequestInit) => Promise.resolve({
+      json: () => new Promise((_resolve, reject) => { init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)); })
+    })) as unknown as typeof fetch;
+    assert.deepEqual(await studyGroupRequest("/api/study-groups?view=mine", undefined, 20), { ok: false, code: "network", message: "", data: null });
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearTimeout(keepAlive);
+  }
+  // The settled (timed-out) load frees the poll.
+  const lists = latestOnly();
+  const stalled = lists.start();
+  assert.equal(lists.busy, true, "a poll waits while the load runs");
+  lists.settle(stalled);
+  assert.equal(lists.busy, false, "after the timeout the next poll runs");
+});
+
+test("QA3 #2: a viewer who already holds a seat is never shown Session full", () => {
+  assert.equal(sessionFullForViewer({ seatsOpen: 0 }), true);
+  assert.equal(sessionFullForViewer({ seatsOpen: 0, viewerSeated: false }), true);
+  assert.equal(sessionFullForViewer({ seatsOpen: 0, viewerSeated: true }), false);
+  assert.equal(sessionFullForViewer({ seatsOpen: 1, viewerSeated: false }), false);
+});
+
+test("QA3 #3: a group whose Course is gone only says so, whatever canJoin says", () => {
+  for (const signedIn of [true, false]) {
+    for (const canJoin of [true, false]) {
+      assert.deepEqual(joinGate({ signedIn, canJoin, courseAvailable: false }), { note: "courseUnavailable", action: null }, `${signedIn}/${canJoin}`);
+    }
+  }
+  assert.deepEqual(joinGate({ signedIn: true, canJoin: true, courseAvailable: true }), { note: "joinAccess", action: "join" });
+  assert.deepEqual(joinGate({ signedIn: true, canJoin: false }), { note: "courseAccessRequired", action: "get-course" });
+  assert.deepEqual(joinGate({ signedIn: false }), { note: "signInToJoin", action: "sign-in" });
+});
+
+test("QA3 #4: a group that loads after a list failure leaves the error pane in place", () => {
+  assert.equal(paneStatusAfterGroup("loading"), "ready");
+  assert.equal(paneStatusAfterGroup("error"), "error");
+  assert.equal(paneStatusAfterGroup("ready"), "ready");
+  assert.match(app, /setStatus\(paneStatusAfterGroup\);/);
+  assert.equal(app.includes('if (status === "loading") setStatus("ready")'), false);
+});
+
+test("QA3 #5 / N-d: only the newest read counts; a late older answer is dropped", () => {
+  const reads = latestOnly();
+  const refresh = reads.start();
+  const afterChange = reads.start();
+  assert.equal(reads.isLatest(afterChange), true);
+  reads.settle(afterChange);
+  assert.equal(reads.isLatest(refresh), false, "the refresh sent before the change lands late and is dropped");
+  // An older load settling does not clear busy for the newer one.
+  const lists = latestOnly();
+  const poll = lists.start();
+  const search = lists.start();
+  lists.settle(poll);
+  assert.equal(lists.busy, true);
+  lists.settle(search);
+  assert.equal(lists.busy, false);
+});
+
+test("QA3 #6: a notice is brought into view on a phone", () => {
+  assert.match(app, /useEffect\(\(\) => \{\s*if \(notice\) revealOnPhone\(mainRef\.current, window\.matchMedia\);\s*\}, \[notice\]\);/);
+});
+
+test("QA3 #7: only a Study Group id from ?group= is opened, and the path is encoded", () => {
+  const id = "0b6f3c1e-2a4d-4e5f-8a9b-1c2d3e4f5a6b";
+  assert.equal(studyGroupIdFromQuery(`?group=${id}`), id);
+  assert.equal(studyGroupIdFromQuery("?group=..%2F..%2Fapi%2Fstudy-groups%3Fview%3Dmine"), null);
+  assert.equal(studyGroupIdFromQuery("?group=.."), null);
+  assert.equal(studyGroupIdFromQuery("?other=1"), null);
+  assert.equal(studyGroupPath("a/b?c"), "/api/study-groups/a%2Fb%3Fc");
+  assert.equal(app.includes("`/api/study-groups/${id}`"), false);
+});
+
+test("QA3 #8: every Related Course line names an unavailable Course instead of going blank", () => {
+  assert.equal(groupCourseLabel({ courseTitle: "", courseAvailable: false }, en.studyGroupsPage.courseUnavailable), "This Course is no longer available.");
+  assert.equal(groupCourseLabel({ courseTitle: "German History", courseAvailable: true }, "x"), "German History");
+  assert.equal(groupCourseLabel({ courseTitle: "German History" }, "x"), "German History");
+  // The two cards, the sheet and the Edit Group dialog.
+  assert.equal((app.match(/groupCourseLabel\(/g) || []).length, 4);
+  assert.equal(app.includes("{selected?.courseTitle}"), false);
+});
+
+test("QA3 #9: a group never shown that is not found keeps its error panel; one on screen that vanishes was cancelled", () => {
+  assert.equal(groupAnswerStep({ ok: false, code: "not_found", shown: false, poll: true }), "error");
+  assert.equal(groupAnswerStep({ ok: false, code: "not_found", shown: false, poll: false }), "error");
+  assert.equal(groupAnswerStep({ ok: false, code: "not_found", shown: true, poll: false }), "cancelled");
+  assert.equal(groupAnswerStep({ ok: false, code: "network", shown: true, poll: true }), "ignore");
+  assert.equal(groupAnswerStep({ ok: false, code: "network", shown: true, poll: false }), "error");
+});
+
+test("QA3 N-a / N-b: Discover's outcome is announced, and a failed search shows under the search box", () => {
+  assert.match(app, /<div role="status">\{discoverEmpty && !discoverError \? <p className=\{styles\.noMine\}>/);
+  assert.equal(studyGroupListFailurePlace({ poll: false, loadedOnce: true, discoverOnly: true, code: "error" }), "discover");
+  assert.equal(studyGroupListFailurePlace({ poll: false, loadedOnce: true, discoverOnly: true, code: "unauthenticated" }), "pane");
+  assert.equal(studyGroupListFailurePlace({ poll: false, loadedOnce: false, discoverOnly: true, code: "error" }), "pane");
+  assert.equal(studyGroupListFailurePlace({ poll: true, loadedOnce: true, discoverOnly: false, code: "error" }), "none");
+  assert.match(css, /\.discoverError \{[^}]*\}/);
 });
 
 test("QA3 N-c: the zh-CN sidebar lines end alike, and Dismiss is not Close", () => {

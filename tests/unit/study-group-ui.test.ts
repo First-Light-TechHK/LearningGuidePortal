@@ -227,7 +227,7 @@ test("a starting-soon Live Session shows its title, time, duration, and occupanc
   assert.equal(app.includes('addEventListener("pagehide"'), false);
   assert.match(app, /keepalive: true/);
   assert.match(app, /setWaitingSession\(null\)/);
-  assert.match(app, /if \(result\.code === "not_found"\)/);
+  assert.match(app, /if \(step === "cancelled"\)/);
   assert.match(room, /current\.code === "not_found"/);
   assert.match(room, /setSession\(null\)/);
 });
@@ -266,9 +266,9 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
   assert.equal(zh.studyGroupsPage.hostingNote, "你正在主持这个学习小组。");
   assert.match(app, /copy\.maximumLine/);
   assert.match(app, /view=reminders/);
-  assert.match(app, /void refreshOpenGroup\(selectedId\)/);
+  assert.match(app, /void readOpenGroup\(selectedId, true\)/);
   assert.match(app, /void loadLists\(\{ poll: true \}\); \}, 3_000\)/);
-  assert.match(app, /generation !== listGeneration\.current/);
+  assert.match(app, /if \(!listRequests\.isLatest\(ticket\)\) return;/);
   assert.match(app, /openGroupId\.current !== id/);
   assert.match(app, /setAttendeeSessionId\(session\.id\)/);
   assert.match(app, /session\.attendees\.slice\(0, 4\)/);
@@ -281,7 +281,7 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
   assert.match(app, /styles\.waitingBanner/);
   assert.match(app, /sessions\/\$\{held\}\/leave/);
   assert.match(app, /sessions\/\$\{sessionId\}\/heartbeat/);
-  assert.match(app, /result\.code === "not_found"/);
+  assert.match(app, /groupAnswerStep\(\{ ok: result\.ok, code: result\.code/);
   assert.match(app, /live: result\.data\.live/);
   assert.match(app, /styles\.reminders/);
 });
@@ -317,7 +317,7 @@ test("the ended screen and live clock follow the Live Session frames", () => {
   assert.equal(zh.studyGroupsPage.room.crumbGroups, "学习小组");
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /session\.state === "live" \? "liveNow"/);
-  assert.match(app, /URLSearchParams\(window\.location\.search\)\.get\("group"\)/);
+  assert.match(app, /studyGroupIdFromQuery\(window\.location\.search\)/);
 });
 
 test("the Host starts from the session controls instead of waiting in the member flow", () => {
@@ -351,7 +351,7 @@ test("the join gate call-to-action centres its label for the sign-in link", () =
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   assert.match(css, /\n\.primary \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;[^}]*text-decoration: none;[^}]*\}/);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /<a className=\{styles\.primary\} href=\{signedIn \?/);
+  assert.match(app, /<a className=\{styles\.primary\} href=\{gate\.action === "get-course" \?/);
 });
 
 test("the final design tokens pin the join gate, session chips, and secondary buttons", () => {
@@ -783,7 +783,7 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.notEqual(en.studyGroupsPage.confirmBack, en.studyGroupsPage.confirmCancelGroupAction);
   // A failed cancellation keeps the sheet selected so studyGroupErrorPlace has a home for the error.
   assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*setErrorCode\("idle"\);(?:\s*\/\/[^\n]*)*\s*forgetOpenGroup\(\);\s*await loadLists\(\);/);
-  assert.match(app, /function forgetOpenGroup\(\) \{\s*openGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*showGroupInAddress\(null\);\s*\}/);
+  assert.match(app, /function forgetOpenGroup\(\) \{\s*openGroupId\.current = null;\s*shownGroupId\.current = null;\s*setSelected\(null\);\s*setSelectedId\(null\);\s*showGroupInAddress\(null\);\s*\}/);
   assert.match(css, /\.confirmBody \{ margin: 12px 0 24px; color: #111827; font-size: 14px; line-height: 20px; \}/);
   assert.match(css, /\.dialogActions \.danger:disabled \{ opacity: \.45; cursor: not-allowed; \}/);
   assert.equal(en.studyGroupsPage.cancelGroupConfirmTitle, "Cancel this Study Group?");
@@ -882,17 +882,16 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   // page) left status "loading" forever for the anonymous visitor - the signed-in 3s
   // poll is the only self-healing path and it does not run for guests. The catch lands
   // on the existing pane error, whose Retry button re-runs loadLists.
-  assert.match(app, /async function loadLists\(options: \{ poll\?: boolean; discoverOnly\?: boolean \} = \{\}\) \{(?:\s*\/\/[^\n]*)*\s*if \(options\.poll && listLoading\.current\) return;(?:\s*\/\/[^\n]*)*\s*const discoverOnly = [^\n]*\n\s*const generation = \+\+listGeneration\.current;\s*listLoading\.current = true;/);
-  // A poll never supersedes a load in flight, so slow lists still land.
-  assert.match(app, /\} finally \{\s*if \(generation === listGeneration\.current\) listLoading\.current = false;\s*\}/);
+  // The lists load through latestOnly (QA3 groups #5 / N-d, behaviour in
+  // study-group-groups-page.test.ts): a poll never supersedes a load in flight.
+  assert.match(app, /if \(options\.poll && listRequests\.busy\) return;/);
+  assert.match(app, /\} finally \{\s*listRequests\.settle\(ticket\);\s*\}/);
   // Only a list that never loaded, a lost sign-in or a load the viewer asked for
-  // becomes the error pane; a failed poll keeps the screen (QA N10, studyGroupListFailureShown).
-  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current\) return;\s*showFailure\("error"\);\s*\}/);
-  assert.match(app, /const showFailure = \(code: string\) => \{\s*if \(!studyGroupListFailureShown\(\{ poll: Boolean\(options\.poll\), loadedOnce: loadedOnce\.current, code \}\)\) return;\s*listFailed\.current = true;\s*setStatus\("error"\);\s*setErrorCode\(code\);\s*\};/);
+  // shows its failure; a failed poll keeps the screen (QA N10, studyGroupListFailurePlace).
+  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(!listRequests\.isLatest\(ticket\)\) return;\s*showFailure\("error"\);\s*\}/);
   // The same landing covers the ?group= deep link: a rejected detail fetch must not
-  // leave a silently empty pane with no way to retry.
-  // A failed group open lands on that group's own error panel with a Retry (QA N10).
-  assert.match(app, /if \(openGroupId\.current !== id\) return;\s*if \(!result\.ok\) \{\s*setGroupError\(result\.code\);\s*return;\s*\}/);
+  // leave a silently empty pane with no way to retry (groupAnswerStep "error").
+  assert.match(app, /if \(step === "error"\) setGroupError\(result\.code\);/);
   // The pane error is driven by status (studyGroupPane), so the synthetic code still
   // renders the generic copy and the Retry button.
   assert.match(app, /\{pane\.kind === "error" \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{errorText\}<\/p>(?:\{errorCode === "unauthenticated" \? <a className=\{styles\.primary\} href=\{signInHref\}>\{copy\.signIn\}<\/a> : )?<button className=\{styles\.primary\} type="button" onClick=\{\(\) => \{ setErrorCode\("idle"\); void loadLists\(\); \}\}>\{copy\.retry\}<\/button>\}?<\/div> : null\}/);
@@ -975,14 +974,14 @@ test("the idle sentinel is its own value so a generic 500 error code renders in 
 });
 
 test("the background group refresh and the unload release beacons never surface unhandled rejections", () => {
-  // F-7/F-8 (dev audit 2026-10-14): refreshOpenGroup (3s poll) and the pagehide /
+  // F-7/F-8 (dev audit 2026-10-14): the 3s group refresh (readOpenGroup) and the pagehide /
   // effect-cleanup leave beacons could reject on a dying network with nothing to catch
   // them. The request wrapper no longer rejects (F-1), so the poll keeps its silent
-  // failure handling - any code but not_found is ignored and the next tick self-heals -
+  // failure handling (groupAnswerStep) - the next tick self-heals -
   // while the beacons, which run as the page unloads where no UI could ever render,
   // swallow their rejection explicitly instead of getting a feedback surface.
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /async function refreshOpenGroup\(id: string\) \{\n\s*const result = await studyGroupRequest<StudyGroupDetail>\(`\/api\/study-groups\/\$\{id\}`\);\n\s*if \(openGroupId\.current !== id\) return;\n\s*if \(!result\.ok\) \{\n\s*if \(result\.code === "not_found"\) \{/);
+  assert.match(app, /async function readOpenGroup\(id: string, poll: boolean\) \{\n\s*const ticket = groupRequests\.start\(\);\n\s*const result = await studyGroupRequest<StudyGroupDetail>\(studyGroupPath\(id\)\);/);
   // Closing the waiting popup is the one remaining release beacon; the room page
   // sends none (its seat lapses on the server, QA 2026-10-19 seat lease).
   assert.equal(app.split("keepalive: true }).catch(() => undefined)").length - 1, 1);

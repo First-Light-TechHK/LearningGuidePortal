@@ -57,6 +57,9 @@
 .filters select { width: 120px; height: 32px; padding: 0 8px; font-size: 13px; font-weight: 600; }
 .filters input { width: 272px; height: 32px; padding: 0 10px; font-size: 12px; }
 .filters input::placeholder { color: #111827; opacity: .2; }
+/* QA3 groups N-b: a failed search or Course filter shows under the search box. */
+.discoverError { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 24px; font-size: 13px; }
+.discoverError p { margin: 0; }
 .empty { min-height: 720px; display: grid; justify-items: center; align-content: start; text-align: center; padding-top: 130px; }
 .empty img { width: 250px; height: 150px; margin-top: 160px; object-fit: cover; object-position: center 33%; }
 .empty p:first-of-type { margin: 0; color: #111827; opacity: .2; font-size: 14px; font-weight: 500; }
