@@ -7,7 +7,7 @@ import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, 
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
 import { STARTING_SOON_MS, type StudyGroupStore } from "./domain";
 import { createStudyGroupRepository } from "./repository";
-import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService } from "./service";
+import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
 import { parseLiveKitProjects } from "./liveKitProjectRegistry";
@@ -134,6 +134,14 @@ export function createReminderListReader(repository: { read(): Promise<StudyGrou
     return listStudyGroupReminders(userId, (item) =>
       (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
   };
+}
+
+// A learner's Study Group profile. A learner without a nickname has an empty
+// displayName: each place that shows a name chooses its own stand-in (the
+// roster and the video tiles show the user id, as before; the AI Tutor's
+// "replying to" line shows "a participant" instead of the id; QA r3-B3).
+export function studyGroupProfile(user: { id: string; nickname?: string | null; email: string | null; locale?: string | null }): UserProfile {
+  return { id: user.id, displayName: user.nickname || "", email: user.email, locale: user.locale === "zh-CN" ? "zh-CN" : "en-GB" };
 }
 
 const services = new Map<string, StudyGroupService>();
@@ -286,8 +294,7 @@ export function studyGroupService() {
     },
     userProfile: async (userId) => {
       const user = await getUserById(userId);
-      if (!user) return null;
-      return { id: user.id, displayName: user.nickname || user.id, email: user.email, locale: user.locale === "zh-CN" ? "zh-CN" : "en-GB" };
+      return user ? studyGroupProfile(user) : null;
     },
     notify: async (input) => {
       await recordUserNotification(input.userId, input.title, input.body, input.sessionId);

@@ -51,7 +51,9 @@ export type StudyGroupRepository = {
   // of heartbeats never loads the store.
   renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string; startsBy: string }): Promise<boolean>;
 
-  // durable tutor queue (hazard 2)
+  // durable tutor queue (hazard 2). A claim that dead-letters an item whose
+  // attempts ran out (every attempt died with its process) queues an
+  // "unavailable" room message for it while the session is live (QA M21).
   claimNextTutorRequest(input: {
     sessionId: string; leaseOwner: string; leaseSeconds: number; maxAttempts: number;
   }): Promise<TutorRequestRow | null>;
@@ -64,6 +66,10 @@ export type StudyGroupRepository = {
   // durable room-message outbox (at-least-once publish, bounded)
   claimNextOutboxMessage(input: { sessionId: string; leaseOwner: string; leaseSeconds: number }): Promise<OutboxRow | null>;
   markOutboxDelivered(input: { id: string; leaseOwner: string }): Promise<void>;
+  // A row that runs out of attempts goes dead and, unless it already was an
+  // "unavailable" notice, queues one (dedupe key `<key>:unavailable`, same
+  // messageId, empty text): the asker hears that no answer is coming instead
+  // of nothing (QA M21). The notice gets its own bounded attempts.
   markOutboxFailed(input: { id: string; leaseOwner: string; failureClass: string; maxAttempts: number; retryDelaySeconds: number }): Promise<void>;
 
   // webhook receipts (used by the slice-2 route; operations land now)
@@ -124,6 +130,24 @@ function tutorStatus(row: TutorRequestRow): TutorRequestStatus {
   if (row.status) return row.status;
   if (row.answeredAt) return "answered";
   return row.inFlight ? "in_flight" : "queued";
+}
+
+function queuedOutbox(dedupeKey: string, sessionId: string, payload: TutorOutboxPayload): OutboxRow {
+  return {
+    id: randomUUID(),
+    kind: "room_message",
+    dedupeKey,
+    sessionId,
+    payload,
+    status: "queued",
+    attempts: 0,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    nextAttemptAt: null,
+    failureClass: null,
+    createdAt: new Date().toISOString(),
+    deliveredAt: null
+  };
 }
 
 function dueAt(value: string | null | undefined, nowMs: number) {
@@ -241,6 +265,10 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
             row.leaseOwner = null;
             row.leaseExpiresAt = null;
             row.nextAttemptAt = null;
+            const session = store.sessions.find((item) => item.id === row.sessionId);
+            if (session?.status === "live" && !store.outbox.some((item) => item.dedupeKey === row.id)) {
+              store.outbox.push(queuedOutbox(row.id, row.sessionId, { room: row.sessionId, projectId: session.liveKitProjectId ?? "", text: "", messageId: row.id, mode: "unavailable" }));
+            }
           }
         });
         continue;
@@ -267,21 +295,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
       if (!input.outbox) return;
       row.outboxMessageId = input.outbox.messageId;
       if (store.outbox.some((item) => item.dedupeKey === row.id)) return;
-      store.outbox.push({
-        id: randomUUID(),
-        kind: "room_message",
-        dedupeKey: row.id,
-        sessionId: row.sessionId,
-        payload: { ...input.outbox },
-        status: "queued",
-        attempts: 0,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        nextAttemptAt: null,
-        failureClass: null,
-        createdAt: new Date().toISOString(),
-        deliveredAt: null
-      });
+      store.outbox.push(queuedOutbox(row.id, row.sessionId, { ...input.outbox }));
     });
   }
 
@@ -327,6 +341,10 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
       if (row.attempts >= input.maxAttempts) {
         row.status = "dead";
         row.nextAttemptAt = null;
+        const noticeKey = `${row.dedupeKey}:unavailable`;
+        if (row.payload.mode !== "unavailable" && !store.outbox.some((item) => item.dedupeKey === noticeKey)) {
+          store.outbox.push(queuedOutbox(noticeKey, row.sessionId, { ...row.payload, text: "", mode: "unavailable" }));
+        }
         return;
       }
       row.status = "failed";

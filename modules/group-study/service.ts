@@ -58,6 +58,11 @@ export type StudyGroupDeps = {
   // One redacted operational line (a fixed type and counts, never an id or
   // a name); the runtime writes it to the log stream.
   operationalLog?: (event: Record<string, unknown>) => void;
+  // How long one drain keeps claiming new questions, and how long a second
+  // drain waits for a running one (test seams; defaults TUTOR_DRAIN_BUDGET_MS
+  // and TUTOR_DRAIN_WAIT_MS). The budget stays below the 60 s claim lease.
+  tutorDrainBudgetMs?: number;
+  tutorDrainWaitMs?: number;
   // Injectable scheduler for the failing context's own re-drain (test seam):
   // the default is an unref'd setTimeout so a pending retry never keeps the
   // process alive.
@@ -90,6 +95,13 @@ export const TUTOR_PENDING_PER_USER = 2;
 export const TUTOR_REQUESTS_PER_MINUTE = 5;
 // The answer carries a short excerpt of the question it replies to.
 const TUTOR_REPLY_QUOTE_MAX = 80;
+// One drain claims new questions for at most this long, below the 60 s claim
+// lease, then hands the rest to a fresh drain (QA M21): a long queue never
+// keeps one drain, and its publishes, running past every lease. A drain that
+// finds another one running waits at most TUTOR_DRAIN_WAIT_MS for it; the
+// running drain claims whatever was queued meanwhile.
+const TUTOR_DRAIN_BUDGET_MS = 45_000;
+const TUTOR_DRAIN_WAIT_MS = 60_000;
 
 // The provider reads the sweep and the seat check may make (QA final review
 // X-3, X-4): bounded in number and in time, so a slow provider can never hold
@@ -227,13 +239,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     // the observable timing (a second drain waits, then finds nothing to
     // claim) stays as before. Correctness across instances is the durable
     // claim/settle/outbox flow below (design §3.2, hazard 2).
+    const waitStarted = Date.now();
     for (;;) {
       if (!tutorDraining.has(sessionId)) {
         tutorDraining.add(sessionId);
         break;
       }
+      if (Date.now() - waitStarted >= (deps.tutorDrainWaitMs ?? TUTOR_DRAIN_WAIT_MS)) return null;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    const drainStarted = Date.now();
     const leaseOwner = randomUUID();
     let last: { text: string; mode: string } | null = null;
     // Publishes every due outbox row of this session. It runs after each
@@ -280,6 +295,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     };
     try {
       for (;;) {
+        if (Date.now() - drainStarted >= (deps.tutorDrainBudgetMs ?? TUTOR_DRAIN_BUDGET_MS)) {
+          // Out of budget: a fresh drain takes the rest of the queue.
+          scheduleTutorRetry(sessionId, 1_000);
+          break;
+        }
         // Claim before any provider work: at most one in-flight item per
         // session, lease-bounded, receipt-ordered across all instances.
         const item = await deps.repository.claimNextTutorRequest({
@@ -303,7 +323,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_ended" } });
           continue;
         }
-        const asker = await deps.userProfile(item.userId);
+        // A failing profile or knowledge read must not strand the item in
+        // flight until its lease runs out, holding the asker's pending slot
+        // and the questions behind it (QA r3-ops): the answer goes out without
+        // a name, or without course material, instead. A nameless asker is
+        // answered with name "" (r3-B3), which the room shows as "a participant".
+        const asker = await deps.userProfile(item.userId).catch(() => null);
         const question = item.text.length > TUTOR_REPLY_QUOTE_MAX ? `${item.text.slice(0, TUTOR_REPLY_QUOTE_MAX - 1)}…` : item.text;
         const replyTo: TutorReplyTo = { name: asker?.displayName || "", question };
         // Grounding and the model call run outside every transaction and
@@ -312,12 +337,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // model itself fuzzy-matches a question against it, across languages,
         // so no server-side retrieval or threshold may short-circuit the call.
         const group = snapshot.groups.find((entry) => entry.id === session.groupId);
-        const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId) : "";
+        const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId).catch(() => "") : "";
         const context = corpus.trim();
         const keys = deps.tutorKeys?.() ?? [];
         let reply: { text: string; mode: "course" | "general" | "unavailable" } = { text: "", mode: "unavailable" };
         if (deps.tutorCall && keys.length > 0) {
-          const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context }));
+          // A call that throws (rather than reporting a failed outcome) is an
+          // unavailable answer like any other failure, never a stranded item.
+          const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context })).catch(() => ({ keyId: "", body: "" }));
           const body = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? "" : result.body.trim();
           if (body) {
             const parsed = parseTutorReply(body);

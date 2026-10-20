@@ -541,3 +541,136 @@ test("M12: rate limiting and network failures answer livekit_temporarily_unavail
   assert.equal(en.studyGroupsPage.errors.livekit_temporarily_unavailable, "The Live Session connection is temporarily unavailable. Try again in a moment.");
   assert.equal(zh.studyGroupsPage.errors.livekit_temporarily_unavailable, "直播课连接暂时不可用，请稍后重试。");
 });
+
+async function tutorRoom(f: Fixture, asker = "m1") {
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Tutor room", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: asker, sessionId: session.id, requestedAt: f.clock() });
+  return session;
+}
+
+type Published = { text: string; mode: string; messageId: string; replyTo?: { name: string; question: string } };
+
+test("M21: a drain stops claiming after its budget and hands the rest of the queue to a fresh drain", async () => {
+  const published: Published[] = [];
+  const retries: Array<() => void> = [];
+  const f = await fixture(() => ({
+    tutorDrainBudgetMs: 30,
+    scheduleRetry: (run) => { retries.push(run); },
+    publishRoomChat: async (input) => { published.push(input); },
+    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
+    tutorCall: async ({ text }) => { await new Promise((resolve) => setTimeout(resolve, 40)); return { outcome: "ok", latencyMs: 40, body: `Answer: ${text}` }; }
+  }));
+  const session = await tutorRoom(f);
+  for (const n of [1, 2]) await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: `Question ${n}`, clientEventId: `evt-${n}` });
+  await f.service.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(published.map((item) => item.text), ["Answer: Question 1"], "the first answer is out; the second waits for the next drain");
+  assert.equal(retries.length, 1, "the drain scheduled its own continuation");
+  retries[0]();
+  for (let tries = 0; tries < 100 && published.length < 2; tries += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(published.map((item) => item.text), ["Answer: Question 1", "Answer: Question 2"]);
+});
+
+test("M21: a drain waits for a running one only so long, and the running one answers what was queued meanwhile", async () => {
+  const published: Published[] = [];
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const f = await fixture(() => ({
+    tutorDrainWaitMs: 50,
+    publishRoomChat: async (input) => { published.push(input); },
+    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
+    tutorCall: async ({ text }) => { await gate; return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` }; }
+  }));
+  const session = await tutorRoom(f);
+  await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "First", clientEventId: "evt-first" });
+  const running = f.service.deliverTutorAnswer({ sessionId: session.id });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Second", clientEventId: "evt-second" });
+  assert.equal(await f.service.deliverTutorAnswer({ sessionId: session.id }), null, "the second drain gives up instead of waiting for ever");
+  release();
+  await running;
+  assert.deepEqual(published.map((item) => item.text), ["Answer: First", "Answer: Second"]);
+});
+
+test("r3-ops / r3-B3: a failing profile, knowledge read or model call answers instead of stranding the question", async () => {
+  const published: Published[] = [];
+  const profileDown = { value: false };
+  const f = await fixture(() => ({
+    userProfile: async (userId) => {
+      if (userId === "m1" && profileDown.value) throw new Error("profile store down");
+      return { id: userId, displayName: userId === "m2" ? "" : userId, email: null, locale: "en-GB" };
+    },
+    courseKnowledge: async () => { throw new Error("knowledge unreadable"); },
+    publishRoomChat: async (input) => { published.push(input); },
+    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
+    tutorCall: async ({ text, context }) => {
+      if (text.includes("explode")) throw new Error("socket hang up");
+      return { outcome: "ok", latencyMs: 1, body: `COURSE\nAnswer (${context ? "with" : "without"} material): ${text}` };
+    }
+  }));
+  const session = await tutorRoom(f);
+  await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() });
+  await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Why 1933?", clientEventId: "evt-a" });
+  await f.service.enqueueTutor({ actorUserId: "m2", sessionId: session.id, text: "Please explode", clientEventId: "evt-b" });
+  profileDown.value = true;
+  await f.service.deliverTutorAnswer({ sessionId: session.id });
+  profileDown.value = false;
+  assert.deepEqual(published.map((item) => [item.text, item.mode, item.replyTo?.name]), [
+    ["Answer (without material): Why 1933?", "general", ""],
+    ["", "unavailable", ""]
+  ]);
+  const store = await f.repository.read();
+  assert.deepEqual(store.tutorRequests.map((row) => row.status), ["answered", "answered"], "nothing is left in flight");
+
+  // The runtime gives a learner without a nickname an empty name, so the
+  // answer says "a participant" rather than an id (r3-B3).
+  const { studyGroupProfile } = await import("../../modules/group-study/runtime");
+  assert.equal(studyGroupProfile({ id: "usr_123", nickname: "", email: null, locale: "en-GB" }).displayName, "");
+  assert.equal(studyGroupProfile({ id: "usr_123", nickname: "Anna", email: null, locale: "zh-CN" }).displayName, "Anna");
+  assert.equal((await f.service.getSession({ actorUserId: "m2", sessionId: session.id })).attendees.find((item) => item.userId === "m2")?.displayName, "m2", "the roster keeps its own stand-in");
+});
+
+test("M21: an answer whose publish dies queues one unavailable notice for the same message", async () => {
+  const published: Published[] = [];
+  const f = await fixture(() => ({
+    scheduleRetry: () => undefined,
+    publishRoomChat: async (input) => {
+      if (input.mode !== "unavailable") throw new Error("publish failed");
+      published.push(input);
+    },
+    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
+    tutorCall: async ({ text }) => ({ outcome: "ok", latencyMs: 1, body: `Answer: ${text}` })
+  }));
+  const session = await tutorRoom(f);
+  const asked = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Lost answer", clientEventId: "evt-lost" });
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    await f.repository.update((store) => { for (const row of store.outbox) row.nextAttemptAt = null; });
+    await f.service.deliverTutorAnswer({ sessionId: session.id });
+  }
+  assert.deepEqual(published.map((item) => [item.messageId, item.text, item.mode]), [[asked.id, "", "unavailable"]]);
+  const outbox = (await f.repository.read()).outbox;
+  assert.deepEqual(outbox.map((row) => [row.dedupeKey, row.status]), [[asked.id, "dead"], [`${asked.id}:unavailable`, "delivered"]]);
+});
+
+test("M21: a question whose every attempt died is dead-lettered with an unavailable message while the room is live", async () => {
+  const published: Published[] = [];
+  const f = await fixture(() => ({ publishRoomChat: async (input) => { published.push(input); } }));
+  const session = await tutorRoom(f);
+  const asked = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Crashing question", clientEventId: "evt-crash" });
+  // Five processes died holding it: the lease ran out with attempts used up.
+  await f.repository.update((store) => {
+    const row = store.tutorRequests.find((item) => item.id === asked.id);
+    if (row) Object.assign(row, { status: "in_flight", inFlight: true, attempts: 5, leaseOwner: "dead-process", leaseExpiresAt: new Date(Date.now() - 1_000).toISOString() });
+  });
+  await f.service.deliverTutorAnswer({ sessionId: session.id });
+  const row = (await f.repository.read()).tutorRequests.find((item) => item.id === asked.id);
+  assert.deepEqual([row?.status, row?.terminalReason], ["dead_letter", "attempts_exhausted"]);
+  assert.deepEqual(published.map((item) => [item.messageId, item.text, item.mode]), [[asked.id, "", "unavailable"]]);
+});
+
+test("r3-ops: a failed background tutor delivery leaves one redacted log line", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(path.join(process.cwd(), "modules/group-study/tutorHttp.ts"), "utf8");
+  assert.match(source, /\.catch\(\(\) => \{ console\.info\(JSON\.stringify\(\{ type: "study_group\.tutor_delivery_failed" \}\)\); \}\)/);
+});

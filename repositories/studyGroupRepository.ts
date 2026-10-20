@@ -574,12 +574,23 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
       // The candidate was an expired lease whose attempts had already reached
       // maxAttempts: dead-letter it and re-run the bounded claim once more so
       // a poisoned item cannot stall later questions (design §3.2).
+      // One statement: the dead letter and, while the session is live, its
+      // "unavailable" room message (QA M21), so the asker is not left waiting.
       await query(
-        `UPDATE study_group_tutor_requests
-         SET status = 'dead_letter', terminal_reason = 'attempts_exhausted',
-           lease_owner = NULL, lease_expires_at = NULL, next_attempt_at = NULL
-         WHERE id = $1 AND lease_owner = $2 AND status = 'in_flight'`,
-        [claimed.id, input.leaseOwner]
+        `WITH dead AS (
+           UPDATE study_group_tutor_requests
+           SET status = 'dead_letter', terminal_reason = 'attempts_exhausted',
+             lease_owner = NULL, lease_expires_at = NULL, next_attempt_at = NULL
+           WHERE id = $1 AND lease_owner = $2 AND status = 'in_flight'
+           RETURNING id, session_id)
+         INSERT INTO study_group_outbox (id, kind, dedupe_key, session_id, payload, status, created_at)
+         SELECT $3, 'room_message', dead.id, dead.session_id,
+           jsonb_build_object('room', dead.session_id, 'projectId', COALESCE(s.livekit_project_id, ''), 'text', '', 'messageId', dead.id, 'mode', 'unavailable'),
+           'queued', NOW()
+         FROM dead JOIN live_sessions s ON s.id = dead.session_id
+         WHERE s.status = 'live'
+         ON CONFLICT (dedupe_key) DO NOTHING`,
+        [claimed.id, input.leaseOwner, randomUUID()]
       );
       return attemptTutorClaim(input);
     }
@@ -661,14 +672,24 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
   }
 
   async function markOutboxFailed(input: { id: string; leaseOwner: string; failureClass: string; maxAttempts: number; retryDelaySeconds: number }) {
+    // A row that goes dead queues its one "unavailable" notice in the same
+    // statement (QA M21); a dead notice queues nothing further.
     await query(
-      `UPDATE study_group_outbox SET
-         status = CASE WHEN attempts >= $5 THEN 'dead' ELSE 'failed' END,
-         failure_class = $3,
-         next_attempt_at = CASE WHEN attempts >= $5 THEN NULL ELSE NOW() + ($4::int * INTERVAL '1 second') END,
-         lease_owner = NULL, lease_expires_at = NULL
-       WHERE id = $1 AND lease_owner = $2 AND status = 'sending'`,
-      [input.id, input.leaseOwner, input.failureClass, input.retryDelaySeconds, input.maxAttempts]
+      `WITH failed AS (
+         UPDATE study_group_outbox SET
+           status = CASE WHEN attempts >= $5 THEN 'dead' ELSE 'failed' END,
+           failure_class = $3,
+           next_attempt_at = CASE WHEN attempts >= $5 THEN NULL ELSE NOW() + ($4::int * INTERVAL '1 second') END,
+           lease_owner = NULL, lease_expires_at = NULL
+         WHERE id = $1 AND lease_owner = $2 AND status = 'sending'
+         RETURNING dedupe_key, session_id, payload, status)
+       INSERT INTO study_group_outbox (id, kind, dedupe_key, session_id, payload, status, created_at)
+       SELECT $6, 'room_message', failed.dedupe_key || ':unavailable', failed.session_id,
+         failed.payload || jsonb_build_object('text', '', 'mode', 'unavailable'), 'queued', NOW()
+       FROM failed
+       WHERE failed.status = 'dead' AND COALESCE(failed.payload->>'mode', '') <> 'unavailable'
+       ON CONFLICT (dedupe_key) DO NOTHING`,
+      [input.id, input.leaseOwner, input.failureClass, input.retryDelaySeconds, input.maxAttempts, randomUUID()]
     );
   }
 

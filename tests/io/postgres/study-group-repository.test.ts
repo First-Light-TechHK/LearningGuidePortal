@@ -202,6 +202,22 @@ test("lease expiry reclaims, attempts dead-letter, and the poisoned item does no
   assert.equal(poison[0].status, "dead_letter");
   assert.equal(poison[0].terminal_reason, "attempts_exhausted");
   assert.equal(poison[0].lease_owner, null);
+  // The live room is told the poisoned question will not be answered (QA M21).
+  const notice = await rows<{ dedupe_key: string; status: string; payload: unknown }>("SELECT dedupe_key, status, payload FROM study_group_outbox WHERE session_id = 's-lease'");
+  assert.deepEqual(notice, [{ dedupe_key: "r-1", status: "queued", payload: { room: "s-lease", projectId: "", text: "", messageId: "r-1", mode: "unavailable" } }]);
+});
+
+test("an exhausted question of a session that is no longer live is dead-lettered without a room message", async () => {
+  const repository = studyGroupRepository();
+  await seedGroupAndSession(repository, { sessionId: "s-ended", maxParticipants: 2, status: "completed" });
+  await seedTutorRequest(repository, { id: "r-ended", sessionId: "s-ended", receivedAt: TEST_NOW });
+  for (const owner of ["owner-1", "owner-2"]) {
+    await repository.claimNextTutorRequest({ sessionId: "s-ended", leaseOwner: owner, leaseSeconds: 1, maxAttempts: 2 });
+    await sleep(1500);
+  }
+  assert.equal(await repository.claimNextTutorRequest({ sessionId: "s-ended", leaseOwner: "owner-3", leaseSeconds: 1, maxAttempts: 2 }), null);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_tutor_requests WHERE id = 'r-ended' AND status = 'dead_letter'"), 1);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_outbox WHERE session_id = 's-ended'"), 0);
 });
 
 test("duplicate client_event_id enqueue is idempotent across two workers and UNIQUE-guarded", async () => {
@@ -361,7 +377,23 @@ test("outbox claim, delivery and bounded failure bookkeeping", async () => {
   const dead = await rows<{ status: string; failure_class: string }>("SELECT status, failure_class FROM study_group_outbox WHERE id = $1", [first!.id]);
   assert.equal(dead[0].status, "dead");
   assert.equal(dead[0].failure_class, "rate_limited");
-  assert.equal(await repository.claimNextOutboxMessage({ sessionId: "s-outbox", leaseOwner: "pub-4", leaseSeconds: 60 }), null);
+
+  // The dead answer queued one "unavailable" notice for the same message
+  // (QA M21): the asker hears that no answer is coming. A notice that dies
+  // in turn queues nothing further.
+  const notice = await repository.claimNextOutboxMessage({ sessionId: "s-outbox", leaseOwner: "pub-4", leaseSeconds: 60 });
+  assert.equal(notice?.dedupeKey, "r-1:unavailable");
+  assert.deepEqual(notice?.payload, { room: "s-outbox", projectId: "p-1", text: "", messageId: "r-1", mode: "unavailable" });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (attempt > 1) {
+      await rows("UPDATE study_group_outbox SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE id = $1", [notice!.id]);
+      assert.equal((await repository.claimNextOutboxMessage({ sessionId: "s-outbox", leaseOwner: `notice-${attempt}`, leaseSeconds: 60 }))?.id, notice!.id);
+    }
+    await repository.markOutboxFailed({ id: notice!.id, leaseOwner: attempt === 1 ? "pub-4" : `notice-${attempt}`, failureClass: "unreachable", maxAttempts: 3, retryDelaySeconds: 0 });
+  }
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_outbox WHERE id = $1 AND status = 'dead'", [notice!.id]), 1);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_outbox WHERE session_id = 's-outbox'"), 3);
+  assert.equal(await repository.claimNextOutboxMessage({ sessionId: "s-outbox", leaseOwner: "pub-5", leaseSeconds: 60 }), null);
 });
 
 test("token log is append-only", async () => {

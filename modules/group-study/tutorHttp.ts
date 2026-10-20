@@ -24,7 +24,11 @@ export async function acceptTutorPost(request: Request, sessionId: string) {
     // the queued question back at once and shows "answering" until the answer
     // arrives in the room. The durable claim/outbox flow owns delivery, and
     // the recovery timer picks up anything a crash leaves behind.
-    const delivery = studyGroupService().deliverTutorAnswer({ sessionId }).catch(() => undefined).finally(() => backgroundDeliveries.delete(delivery));
+    // A failed background delivery leaves one redacted line (no session,
+    // user, question or error detail); the recovery timer retries the work.
+    const delivery = studyGroupService().deliverTutorAnswer({ sessionId })
+      .catch(() => { console.info(JSON.stringify({ type: "study_group.tutor_delivery_failed" })); })
+      .finally(() => backgroundDeliveries.delete(delivery));
     backgroundDeliveries.add(delivery);
     return studyGroupData(queued);
   } catch (error) {
