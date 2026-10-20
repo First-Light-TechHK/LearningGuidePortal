@@ -979,7 +979,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       }
       const view = await toView(group, store, active.length, mine?.role || null);
       const sessions = mine ? sortSessions(await Promise.all(store.sessions.filter((item) => item.groupId === group.id && item.status !== "removed").map((item) => sessionView(store, item, input.actorUserId || "")))) : null;
-      const canJoin = !mine && Boolean(input.actorUserId) && await deps.hasCourseAccess(input.actorUserId || "", group.courseId);
+      // A group whose Course is gone cannot be joined (QA r3 groups 3), the
+      // same rule that keeps it out of Discover.
+      const canJoin = !mine && Boolean(input.actorUserId) && view.courseAvailable && await deps.hasCourseAccess(input.actorUserId || "", group.courseId);
       const lessons = deps.courseLessons ? await deps.courseLessons(group.courseId) : [];
       return { ...view, members, sessions, canJoin, lessons };
     },
@@ -992,9 +994,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         throw new StudyGroupError("course_access_required", "Valid Course access is required.");
       }
       const now = deps.now().toISOString();
+      const courseAvailable = Boolean(await deps.courseSummary(group.courseId));
       const memberCount = await deps.repository.update((current) => {
         const existing = current.memberships.find((item) => item.groupId === input.groupId && item.userId === input.actorUserId);
         if (existing && !existing.leftAt) return current.memberships.filter((item) => item.groupId === input.groupId && !item.leftAt).length;
+        // Joining needs the Course the group studies (QA r3 groups 3); a
+        // member already in stays in, so a repeated Join still answers.
+        if (!courseAvailable) throw new StudyGroupError("course_unavailable", "This Course is no longer available.");
         if (existing) {
           existing.leftAt = null;
           existing.joinedAt = now;

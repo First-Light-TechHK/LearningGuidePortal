@@ -856,6 +856,31 @@ test("r3 groups 2: the session view tells a seated viewer they hold a seat, so a
   assert.equal((await view("m1")).viewerSeated, false);
 });
 
+test("r3 groups 3: a group whose Course is gone cannot be joined", async () => {
+  const published = { value: true };
+  const f = await fixture(() => ({
+    courseSummary: async (courseId) => courseId === "course-1" && published.value ? { id: courseId, title: "German History", slug: "german-history" } : null
+  }));
+  const created = await group(f, ["m1"]);
+  assert.equal((await f.service.getGroup({ actorUserId: "m2", groupId: created.id })).canJoin, true);
+  published.value = false;
+  const gate = await f.service.getGroup({ actorUserId: "m2", groupId: created.id });
+  assert.deepEqual([gate.courseAvailable, gate.canJoin], [false, false]);
+  assert.equal(await code(() => f.service.joinGroup({ actorUserId: "m2", groupId: created.id })), "course_unavailable");
+  assert.equal((await f.repository.read()).memberships.some((row) => row.groupId === created.id && row.userId === "m2"), false);
+  // A member already in stays in; joining again still answers.
+  assert.equal((await f.service.joinGroup({ actorUserId: "m1", groupId: created.id })).memberCount, 2);
+
+  const { studyGroupFailure } = await import("../../modules/group-study/http");
+  const { StudyGroupError } = await import("../../modules/group-study/domain");
+  assert.equal(studyGroupFailure(new StudyGroupError("course_unavailable", "gone")).status, 409);
+  const { readFile } = await import("node:fs/promises");
+  for (const locale of ["en-GB", "zh-CN"]) {
+    const messages = JSON.parse(await readFile(path.join(process.cwd(), `messages/${locale}.json`), "utf8")) as { studyGroupsPage: { errors: Record<string, string> } };
+    assert.ok(messages.studyGroupsPage.errors.course_unavailable, `${locale} has the copy`);
+  }
+});
+
 test("r3 server 7c: entering a session moved back out of Starting Soon releases the seat, as documented", async () => {
   const f = await fixture();
   const created = await group(f);

@@ -1087,6 +1087,7 @@
       "validation": "请检查必填项后重试。",
       "start_in_past": "开始时间必须还在将来。",
       "course_access_required": "需要有效的课程访问权限。",
+      "course_unavailable": "该课程已不再提供，无法加入这个学习小组。",
       "forbidden": "你不能进行这个操作。",
       "session_time_only": "即将开始的直播课只能修改日期和开始时间。",
       "not_found": "找不到该学习小组或直播课。",
