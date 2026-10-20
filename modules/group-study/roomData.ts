@@ -10,7 +10,11 @@ export const ROOM_CHAT_MAX_LENGTH = 2000;
 export type RoomTutorMessage = { type: "tutor"; id?: string; text: string; mode: "course" | "general" | "unavailable"; replyTo?: { name: string; question: string } };
 export type RoomChatMessage = { type: "chat"; text: string };
 export type RoomRaiseHandMessage = { type: "raise-hand"; raised: boolean };
-export type RoomDataMessage = RoomTutorMessage | RoomChatMessage | RoomRaiseHandMessage;
+// A newcomer, once its own connection is up, asks who has a hand raised; each
+// raiser answers to it alone (QA M19: a push sent on ParticipantConnected can
+// reach the newcomer before its data channel is open and be lost).
+export type RoomHandsQueryMessage = { type: "hands-query" };
+export type RoomDataMessage = RoomTutorMessage | RoomChatMessage | RoomRaiseHandMessage | RoomHandsQueryMessage;
 
 // The chat line's HH:mm stamp in the APPLICATION locale (hunt L6). The room
 // used to format with the browser locale, so a zh-CN user on an en-US
@@ -71,5 +75,6 @@ export function parseRoomDataMessage(raw: Uint8Array, fromServer: boolean): Room
     if (message.raised !== undefined && typeof message.raised !== "boolean") return null;
     return { type: "raise-hand", raised: message.raised !== false };
   }
+  if (message.type === "hands-query") return fromServer ? null : { type: "hands-query" };
   return null;
 }

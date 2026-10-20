@@ -73,6 +73,9 @@ test("hunt M2: malformed or mis-shaped room messages are dropped, not thrown", (
   assert.deepEqual(parseRoomDataMessage(encode({ type: "raise-hand" }), false), { type: "raise-hand", raised: true });
   assert.equal(parseRoomDataMessage(encode({ type: "raise-hand", raised: "yes" }), false), null);
   assert.equal(parseRoomDataMessage(encode({ type: "raise-hand", raised: true }), true), null);
+  // QA M19: a newcomer's hands-query is a member message only.
+  assert.deepEqual(parseRoomDataMessage(encode({ type: "hands-query" }), false), { type: "hands-query" });
+  assert.equal(parseRoomDataMessage(encode({ type: "hands-query" }), true), null);
 });
 
 test("hunt M2: the room dispatches data messages through the source-checked parser", () => {

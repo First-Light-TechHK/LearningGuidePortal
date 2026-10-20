@@ -373,6 +373,10 @@ test("M15: Leave asks first, a failed leave keeps the call, the left page rejoin
     // The last one is told that leaving ends the session.
     await leaveSession(pageB);
     await expect(pageA.locator('[data-participants="1"]')).toBeVisible();
+    // The left page holds no seat: dropping the call must not enter again.
+    await expect.poll(async () => (await sessionView(room.host, sessionId)).occupancy, { timeout: 10_000 }).toBe(1);
+    await pageB.waitForTimeout(3_000);
+    expect((await sessionView(room.host, sessionId)).occupancy).toBe(1);
     await pageA.getByRole("button", { name: "Leave Session" }).click();
     await expect(pageA.getByRole("dialog")).toContainText("You are the last one here, so leaving ends the Live Session.", { timeout: 10_000 });
     await pageA.getByRole("dialog").getByRole("button", { name: "Yes, leave" }).click();

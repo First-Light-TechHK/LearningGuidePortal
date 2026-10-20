@@ -297,6 +297,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         const identity = participant?.identity || "";
         setHands((items) => raisedHands(items, identity, message.raised));
       }
+      if (message.type === "hands-query" && participant) sendRaisedHand(participant.identity);
     });
     const paint = () => {
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
@@ -318,12 +319,17 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     repaintRef.current = paint;
     // Raised hands live in the room, not on the server: a newcomer hears every
     // raised hand from its owner, and a hand goes down with the person who
-    // leaves or drops (QA 2026-10-19 M19).
+    // leaves or drops (QA 2026-10-19 M19). The owner pushes on
+    // ParticipantConnected and answers the newcomer's own hands-query, which
+    // it sends once its connection is up (the push alone can be lost).
+    const sendRaisedHand = (identity: string) => {
+      if (!handsRef.current.includes(room.localParticipant.identity)) return;
+      void room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "raise-hand", raised: true })), { reliable: true, destinationIdentities: [identity] }).catch(() => undefined);
+    };
     room.on(RoomEvent.ParticipantConnected, (participant) => {
       paint();
       window.setTimeout(() => void load(), 400);
-      if (!handsRef.current.includes(room.localParticipant.identity)) return;
-      void room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "raise-hand", raised: true })), { reliable: true, destinationIdentities: [participant.identity] }).catch(() => undefined);
+      sendRaisedHand(participant.identity);
     });
     room.on(RoomEvent.ParticipantDisconnected, (participant) => {
       setHands((items) => raisedHands(items, participant.identity, false));
@@ -405,6 +411,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     setRoomApi(room);
     setConnected(true);
     setReconnecting(false);
+    void room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "hands-query" })), { reliable: true }).catch(() => undefined);
     failuresRef.current = 0;
     recoveryUsedRef.current = false;
     setRecoveryRequired(false);
@@ -528,14 +535,15 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   }, [session?.state, sessionId, left, entryAttempt]);
 
   useEffect(() => {
-    if (session?.state !== "live" || connected || left || !seated || blocked || accessLost) return;
+    // leftRef: a Leave or a navigation away already dropped this page's seat.
+    if (session?.state !== "live" || connected || left || leftRef.current || !seated || blocked || accessLost) return;
     const generation = connectGeneration.current + 1;
     connectGeneration.current = generation;
     let timer = 0;
     const recovery = recoveryRequired;
     void (async () => {
       await releaseRoom();
-      if (connectGeneration.current !== generation) return;
+      if (connectGeneration.current !== generation || leftRef.current) return;
       const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
       if (connectGeneration.current !== generation) return;
       if (!entered.ok) throw new Error(entered.code);
@@ -659,9 +667,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setLeaveError(result.code);
       return;
     }
+    // Left first: dropping the call flips `connected`, and the connect effect
+    // must not see a seated, not-left page and enter again (QA M15).
     setLeaveAsked(false);
-    await releaseRoom();
     setLeft(true);
+    await releaseRoom();
     await load();
   }
 
