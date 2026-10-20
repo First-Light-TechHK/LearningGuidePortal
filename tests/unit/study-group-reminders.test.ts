@@ -219,3 +219,26 @@ test("a pre-linkage reminder keeps showing while its session is still pending", 
   assert.deepEqual(await service.listReminders("host"), []);
 });
 
+
+test("r3 server 7a: a reschedule withdraws only the reminders sent before the move", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Moved group", courseId: "course-1", about: "About the move." });
+  const session = await schedule(service, group.id, "Moved twice", 5);
+  await service.dispatchDueReminders();
+  const before = await linkedReminders("host", session.id);
+  assert.equal(before.length, 1);
+  const movedAt = new Date(Date.now() + 1).toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await recordUserNotification("host", "Live Session reminder", "Moved twice, sent for the new time.", session.id);
+  await withdrawStudyGroupReminders({ sessionIds: [session.id], sentBefore: movedAt });
+  assert.deepEqual((await linkedReminders("host", session.id)).map((item) => item.body), ["Moved twice, sent for the new time."]);
+});
+
+test("r3 server 7d: a reminder sent for an earlier Start Time is stale even when its withdrawal failed", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Stale group", courseId: "course-1", about: "About the stale reminder." });
+  const session = await schedule(service, group.id, "Moved in the window", 5);
+  const store = await repository.read();
+  const item = (createdAt: string) => ({ body: "Moved in the window starts in 9 minutes.", sessionId: session.id, createdAt });
+  // The current Start Time's window opened five minutes ago.
+  assert.equal(studyGroupReminderNotificationStillValid(store, "host", item(minutesFromNow(-2))), true);
+  assert.equal(studyGroupReminderNotificationStillValid(store, "host", item(minutesFromNow(-20))), false, "sent before this Start Time's window: for an earlier time");
+});

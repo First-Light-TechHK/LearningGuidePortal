@@ -99,16 +99,24 @@ function reminderBodyTitle(body: string): string | null {
 }
 
 // The reminders view's per-notification predicate: session-linked rows are
-// judged directly; a pre-linkage row shows only while at least one Live
-// Session with its title, already recorded as reminded for this viewer, is
-// still a pending Session (its reminder row is kept as the dispatch record).
+// judged directly, and a row sent before the current Start Time's window was
+// sent for an earlier Start Time, so it is stale even when its withdrawal
+// failed (QA r3 server 7d); the view also shows only the newest row per
+// Session. A pre-linkage row shows only while at least one Live Session with
+// its title, already recorded as reminded for this viewer, is still a
+// pending Session (its reminder row is kept as the dispatch record).
 export function studyGroupReminderNotificationStillValid(
   store: StudyGroupStore,
   userId: string,
-  item: { body: string; sessionId?: string },
+  item: { body: string; sessionId?: string; createdAt?: string },
   nowMs: number = Date.now()
 ) {
-  if (item.sessionId) return studyGroupReminderStillValid(store, userId, item.sessionId, nowMs);
+  if (item.sessionId) {
+    if (!studyGroupReminderStillValid(store, userId, item.sessionId, nowMs)) return false;
+    const startsAt = Date.parse(store.sessions.find((row) => row.id === item.sessionId)?.startsAt ?? "");
+    const sentAt = Date.parse(item.createdAt ?? "");
+    return !Number.isFinite(sentAt) || sentAt >= startsAt - STARTING_SOON_MS;
+  }
   const title = reminderBodyTitle(item.body);
   if (!title) return false;
   return store.reminders.some((row) => {

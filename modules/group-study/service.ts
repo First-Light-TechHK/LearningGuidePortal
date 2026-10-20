@@ -39,9 +39,11 @@ export type StudyGroupDeps = {
   listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string }>>;
   // Withdraws the pending reminder rows a cancelling action invalidates
   // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
-  // Scoped to the given Live Sessions, optionally to one user. Optional so
-  // existing wiring keeps its shape; the runtime always provides it.
-  withdrawReminders?: (input: { sessionIds: string[]; userId?: string }) => Promise<void>;
+  // Scoped to the given Live Sessions, optionally to one user, and to rows
+  // recorded before `sentBefore` (a reschedule withdraws only the old time's
+  // reminder). Optional so existing wiring keeps its shape; the runtime
+  // always provides it.
+  withdrawReminders?: (input: { sessionIds: string[]; userId?: string; sentBefore?: string }) => Promise<void>;
   sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN" }) => Promise<void>;
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
@@ -685,12 +687,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
   }
 
-  async function dispatchDueReminders(snapshot?: StudyGroupStore) {
+  async function dispatchDueReminders(snapshot?: StudyGroupStore, onlySessionId?: string) {
     const now = deps.now();
     const dueJobs = (store: StudyGroupStore, record: boolean) => {
       const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string; groupTitle: string; startsAt: string }> = [];
       for (const session of store.sessions) {
-        if (session.status !== "scheduled") continue;
+        if (session.status !== "scheduled" || (onlySessionId && session.id !== onlySessionId)) continue;
         const startsAt = new Date(session.startsAt).getTime();
         if (now.getTime() < startsAt - STARTING_SOON_MS || now.getTime() >= startsAt) continue;
         const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
@@ -742,21 +744,17 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
   }
 
-  // A moved Start Time (QA 2026-10-19 N9): the reminder for the old time is
-  // withdrawn, the session's reminder rows are reset so the dispatch sends a
-  // fresh one for the new time, and every member who planned to attend is
-  // told. Resetting after the withdrawal matters: a reminder for the new time
-  // sent before the withdrawal (or within ten minutes of the old one) would
-  // otherwise count as already sent and never come again (final review
-  // N9-a, N9-b). Best-effort throughout: the move itself has already been saved.
-  async function announceReschedule(session: { id: string; title: string; planned: string[] }) {
-    await deps.withdrawReminders?.({ sessionIds: [session.id] })?.catch(() => undefined);
-    await deps.repository.update((store) => {
-      for (const row of store.reminders) {
-        if (row.sessionId === session.id) row.sentAt = new Date(0).toISOString();
-      }
-    }).catch(() => undefined);
-    await dispatchDueReminders().catch(() => undefined);
+  // A moved Start Time (QA 2026-10-19 N9): the move's own write already reset
+  // the session's reminder rows, so a reminder is due again for the new time
+  // (final review N9-a). Here the reminders sent before the move, for the old
+  // time, are withdrawn; one a dispatch sent after the move is for the new
+  // time and stays, and counts as sent, so the new time is reminded once
+  // (N9-b, r3 server 7a). Then this session's reminders are dispatched
+  // (only this session's: r3 server 7b) and every member who planned to
+  // attend is told. Best-effort throughout: the move itself has been saved.
+  async function announceReschedule(session: { id: string; title: string; planned: string[]; movedAt: string }) {
+    await deps.withdrawReminders?.({ sessionIds: [session.id], sentBefore: session.movedAt })?.catch(() => undefined);
+    await dispatchDueReminders(undefined, session.id).catch(() => undefined);
     for (const userId of session.planned) {
       try {
         const profile = await deps.userProfile(userId);
@@ -1239,9 +1237,17 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const previousStartsAt = current.startsAt;
         if (input.startsAt !== undefined) current.startsAt = new Date(input.startsAt).toISOString();
         current.updatedAt = now;
+        const moved = current.startsAt !== previousStartsAt;
+        if (moved) {
+          // In the same write as the move: from the moment the new time is
+          // saved, its reminder is due (announceReschedule).
+          for (const row of store.reminders) {
+            if (row.sessionId === current.id) row.sentAt = new Date(0).toISOString();
+          }
+        }
         const group = store.groups.find((item) => item.id === current.groupId);
         const planned = store.intents.filter((item) => item.sessionId === current.id && !item.cancelledAt && item.userId !== group?.hostUserId).map((item) => item.userId);
-        return { ...current, moved: current.startsAt !== previousStartsAt, planned };
+        return { ...current, moved, planned, movedAt: now };
       });
       if (session.moved) await announceReschedule(session);
       return sessionView(await deps.repository.read(), session, input.actorUserId);

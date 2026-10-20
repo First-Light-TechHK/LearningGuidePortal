@@ -2241,14 +2241,18 @@ export async function listStudyGroupReminders(
 // a Live Session, cancelling attendance or leaving the group withdraws the
 // pending reminder rows those actions invalidate, so storage matches the
 // reminders view without waiting for the read-side filter. Only session-linked
-// reminder rows are touched; other notifications are left untouched.
-export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyArray<string>; userId?: string }) {
+// reminder rows are touched; other notifications are left untouched. A moved
+// Start Time withdraws only the rows recorded before the move (`sentBefore`):
+// a reminder already sent for the new time stays.
+export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyArray<string>; userId?: string; sentBefore?: string }) {
   const sessionIds = new Set(input.sessionIds.filter(Boolean));
   if (!sessionIds.size) return 0;
+  const sentBefore = input.sentBefore ? Date.parse(input.sentBefore) : null;
   return editData((data) => {
     const remaining = data.notifications.filter((item) => {
       if (!item.sessionId || !sessionIds.has(item.sessionId)) return true;
       if (input.userId && item.userId !== input.userId) return true;
+      if (sentBefore !== null && !(Date.parse(item.createdAt) < sentBefore)) return true;
       return false;
     });
     const withdrawn = data.notifications.length - remaining.length;

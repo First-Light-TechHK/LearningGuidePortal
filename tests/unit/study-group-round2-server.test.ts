@@ -33,7 +33,8 @@ type Fixture = {
   participants: { list: string[] | null | "hang" };
   providerReads: string[];
   removed: Array<{ room: string; identity: string }>;
-  notes: Array<{ userId: string; title: string; body: string; sessionId?: string }>;
+  notes: Array<{ userId: string; title: string; body: string; sessionId?: string; createdAt?: string }>;
+  mails: Array<{ to: string; text: string }>;
   logs: Array<Record<string, unknown>>;
   /** Runs inside withdrawReminders before it deletes (a racing dispatch). */
   hooks: { beforeWithdraw?: () => Promise<void> };
@@ -49,6 +50,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
   const providerReads: string[] = [];
   const removed: Array<{ room: string; identity: string }> = [];
   const notes: Fixture["notes"] = [];
+  const mails: Fixture["mails"] = [];
   const logs: Fixture["logs"] = [];
   const hooks: Fixture["hooks"] = {};
   const gateway: LiveKitRoomGateway = {
@@ -73,6 +75,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     providerReads,
     removed,
     notes,
+    mails,
     logs,
     hooks
   };
@@ -83,17 +86,18 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     courseSummary: async (courseId) => courseId === "course-1" ? { id: courseId, title: "German History", slug: "german-history" } : null,
     accessibleCourses: async () => [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: `${userId}@example.test`, locale: "en-GB" }),
-    notify: async (input) => { notes.push(input); },
+    notify: async (input) => { notes.push({ ...input, createdAt: new Date(nowMs).toISOString() }); },
     listReminders: async () => [],
     // The stored reminder notifications, withdrawn like productStore does.
     withdrawReminders: async (input) => {
       await hooks.beforeWithdraw?.();
       for (let index = notes.length - 1; index >= 0; index -= 1) {
         const note = notes[index];
-        if (note.title === "Live Session reminder" && note.sessionId && input.sessionIds.includes(note.sessionId) && (!input.userId || note.userId === input.userId)) notes.splice(index, 1);
+        const sentBefore = !input.sentBefore || Date.parse(note.createdAt ?? "") < Date.parse(input.sentBefore);
+        if (note.title === "Live Session reminder" && note.sessionId && input.sessionIds.includes(note.sessionId) && (!input.userId || note.userId === input.userId) && sentBefore) notes.splice(index, 1);
       }
     },
-    sendMail: async () => undefined,
+    sendMail: async (input) => { mails.push({ to: input.to, text: input.text }); },
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
     liveKitProjects: parseLiveKitProjects(PROJECTS_JSON),
     liveKitGateway: gateway,
@@ -914,6 +918,44 @@ test("r3 server 5: one question's keys share one deadline, so it settles inside 
   await g.service.enqueueTutor({ actorUserId: "m1", sessionId: room.id, text: "Fast failover", clientEventId: "evt-fast" });
   await g.service.deliverTutorAnswer({ sessionId: room.id });
   assert.equal(published.at(-1)?.text, "Answer: Fast failover");
+});
+
+test("r3 server 7a: a dispatch that lands between the move and the withdrawal reminds once, by mail too", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1"]);
+  const mailsTo = (userId: string) => f.mails.filter((item) => item.to === `${userId}@example.test` && item.text.includes(" starts in ")).map((item) => item.text);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Raced mail", startsAt: inMinutes(f, 30), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+  // The move into the window is saved; the timer's dispatch lands before
+  // the reschedule's own withdrawal and dispatch.
+  f.hooks.beforeWithdraw = async () => { await f.service.dispatchDueReminders(); };
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 6) });
+  f.hooks.beforeWithdraw = undefined;
+  assert.deepEqual(mailsTo("m1"), ['Raced mail in the Study Group "Round two" starts in 6 minutes.'], "one mail for the new time, not two");
+  assert.deepEqual(reminders(f, "m1"), ['Raced mail in the Study Group "Round two" starts in 6 minutes.']);
+
+  // Moved again inside the window: the earlier time's reminder goes, the
+  // reminder for the new time comes once.
+  f.advanceSeconds(60);
+  f.hooks.beforeWithdraw = async () => { await f.service.dispatchDueReminders(); };
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 8) });
+  f.hooks.beforeWithdraw = undefined;
+  assert.deepEqual(mailsTo("m1"), [
+    'Raced mail in the Study Group "Round two" starts in 6 minutes.',
+    'Raced mail in the Study Group "Round two" starts in 8 minutes.'
+  ]);
+  assert.deepEqual(reminders(f, "m1"), ['Raced mail in the Study Group "Round two" starts in 8 minutes.']);
+});
+
+test("r3 server 7b: a reschedule sends only that session's reminders", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1"]);
+  const other = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Left to the timer", startsAt: inMinutes(f, 8), durationSeconds: 1800, maxParticipants: 4 });
+  const moved = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Moved in", startsAt: inMinutes(f, 60), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: moved.id, startsAt: inMinutes(f, 7) });
+  assert.deepEqual(f.notes.filter((item) => item.title === "Live Session reminder").map((item) => item.sessionId), [moved.id]);
+  await f.service.dispatchDueReminders();
+  assert.deepEqual(f.notes.filter((item) => item.title === "Live Session reminder").map((item) => item.sessionId), [moved.id, other.id]);
 });
 
 test("r3 server 7c: entering a session moved back out of Starting Soon releases the seat, as documented", async () => {
