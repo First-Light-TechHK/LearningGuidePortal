@@ -387,6 +387,7 @@ export function studyGroupService() {
       roomContext: input.roomContext,
       turns: input.turns,
       tools: input.tools,
+      toolChoice: input.toolChoice,
       maxTokens: tutorMaxTokensFromEnv(),
       reasoning: tutorReasoningFromEnv(),
       url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined,

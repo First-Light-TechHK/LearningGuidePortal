@@ -67,7 +67,7 @@ export type StudyGroupDeps = {
   // left of the answer deadline); the call must give up by then. `model` is
   // the model the engine picked from tutorModels, `roomContext` the room's
   // recent Tutor exchanges, and `turns`/`tools` the tool-calling loop.
-  tutorCall?: (input: { secret: string; text: string; context: string; timeoutMs?: number; model?: string; roomContext?: string; turns?: TutorTurn[]; tools?: TutorToolSpec[] }) => Promise<TutorCallResult>;
+  tutorCall?: (input: { secret: string; text: string; context: string; timeoutMs?: number; model?: string; roomContext?: string; turns?: TutorTurn[]; tools?: TutorToolSpec[]; toolChoice?: "none" }) => Promise<TutorCallResult>;
   // The models to ask, in order: the first is the primary, the rest the
   // fallbacks for a retired or failing one. Absent: one provider default.
   tutorModels?: () => string[];

@@ -178,9 +178,12 @@ export function tutorOfflineReason(session: Pick<StudySession, "aiTutorEnabled" 
 // last returned: "answering" while it is being answered (or nothing says
 // otherwise), "queued" with how many come first (0 = next), and whether it
 // can still be withdrawn (only a question nobody started on).
-export function tutorPendingState(session: Pick<StudySession, "viewerTutorQuestions"> | null, answerLineId: string) {
+// Before the next poll lists a question just taken, the position the server
+// gave when it took it stands in (`queuedPosition`).
+export function tutorPendingState(session: Pick<StudySession, "viewerTutorQuestions"> | null, answerLineId: string, queuedPosition?: number | null) {
   const id = answerLineId.replace(/^tutor-/, "");
-  const entry = session?.viewerTutorQuestions?.find((item) => item.id === id);
+  const listed = session?.viewerTutorQuestions?.find((item) => item.id === id);
+  const entry = listed ?? (typeof queuedPosition === "number" && queuedPosition > 0 ? { id, position: queuedPosition, answering: false } : undefined);
   if (!entry || entry.answering) return { state: "answering" as const, ahead: 0, withdrawable: false };
   return { state: "queued" as const, ahead: Math.max(0, entry.position), withdrawable: true };
 }

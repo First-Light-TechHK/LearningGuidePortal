@@ -217,3 +217,27 @@ test("the room's helpers read the server's word: offline reason and the waiting 
   assert.deepEqual(parseRoomDataMessage(encode({ type: "tutor", id: "b", text: "", mode: "unavailable", reason: "model_gone", kind: "quiz" }), true), { type: "tutor", id: "b", text: "", mode: "unavailable", reason: "model_gone" });
   assert.equal((parseRoomDataMessage(encode({ type: "tutor", text: "x", mode: "course", reason: "<script>" }), true) as { reason?: string }).reason, undefined);
 });
+
+test("the last step of the tool loop reaches the provider call with tool_choice none (Opus final check 2026-10-20)", async () => {
+  const seen: Array<{ tools: number; toolChoice?: string }> = [];
+  const r = await room({
+    tutorCall: async (input) => {
+      seen.push({ tools: input.tools?.length ?? 0, ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}) });
+      return input.toolChoice === "none"
+        ? { outcome: "ok", latencyMs: 1, body: "COURSE\nAnswered after the tools." }
+        : { outcome: "ok", latencyMs: 1, body: "", toolCalls: [{ id: `c${seen.length}`, name: "get_room_history", arguments: "{}" }] };
+    }
+  });
+  await r.ask("host", "What did we cover?");
+  await r.deliver();
+  assert.deepEqual(seen, [{ tools: 2 }, { tools: 2 }, { tools: 2, toolChoice: "none" }]);
+  assert.equal(r.published[0].text, "Answered after the tools.");
+});
+
+test("a missing key does not trip the pause, and a waiting line shows the position the server gave until the poll lists it", async () => {
+  const health = createTutorHealth();
+  for (let index = 0; index < 5; index += 1) health.record({ ok: false, reason: "no_key", latencyMs: 0, attempts: 0 });
+  assert.deepEqual(health.availability({ keysConfigured: true, dailyBudgetUsd: null }), { available: true });
+  assert.deepEqual(tutorPendingState({ viewerTutorQuestions: [] }, "tutor-new", 2), { state: "queued", ahead: 2, withdrawable: true });
+  assert.deepEqual(tutorPendingState({ viewerTutorQuestions: [{ id: "new", position: 0, answering: true }] }, "tutor-new", 2), { state: "answering", ahead: 0, withdrawable: false }, "the poll wins once it lists the question");
+});

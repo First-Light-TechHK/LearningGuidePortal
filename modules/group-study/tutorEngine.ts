@@ -94,6 +94,9 @@ export async function answerTutorQuestion(input: {
   let lastReason: TutorFailureReason = keys.length === 0 ? "no_key" : "no_model";
   // A usable reply in the wrong language, kept in case no model does better.
   let fallback: TutorEngineAnswer | null = null;
+  // Models that refused this very request (moderation, too long): asking
+  // them again in a later round would get the same refusal.
+  const refusedBy = new Set<string>();
   const fail = (reason: TutorFailureReason): TutorEngineFailure => ({ status: "failed", reason, attempts, toolCalls, latencyMs: now() - started, usage });
 
   async function askModel(model: string): Promise<TutorEngineResult> {
@@ -157,11 +160,13 @@ export async function answerTutorQuestion(input: {
 
   if (keys.length === 0) return fail("no_key");
   for (let round = 0; round < TUTOR_ENGINE_ROUNDS; round += 1) {
-    const models = input.models.filter((model) => input.health.modelUsable(model));
+    const models = input.models.filter((model) => input.health.modelUsable(model) && !refusedBy.has(model));
     if (models.length === 0) {
-      // Every model is marked gone: try the list anyway rather than fail
-      // without asking (the marks may be stale).
-      models.push(...input.models);
+      // Every model left is marked gone: try those anyway rather than fail
+      // without asking (the marks may be stale). Models that refused this
+      // request are not asked again.
+      models.push(...input.models.filter((model) => !refusedBy.has(model)));
+      if (models.length === 0) break;
     }
     for (let index = 0; index < models.length; index += 1) {
       const model = models[index];
@@ -174,6 +179,7 @@ export async function answerTutorQuestion(input: {
         continue;
       }
       lastReason = result.reason;
+      if (result.reason === "bad_request") refusedBy.add(model);
       if (result.reason === "model_gone") {
         input.health.markModelGone(model);
         continue;

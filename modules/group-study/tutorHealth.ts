@@ -87,10 +87,11 @@ export function createTutorHealth(input: { now?: () => number } = {}) {
         consecutiveFailures = 0;
         return;
       }
-      // A budget refusal is the Tutor declining work, and a refused request
-      // (a moderated question) is about that question: neither is the
-      // provider failing.
-      if (result.reason === "budget" || result.reason === "bad_request") return;
+      // A budget refusal is the Tutor declining work, a refused request (a
+      // moderated question) is about that question, and a missing key is an
+      // operator's to add (the room already says so): none is the provider
+      // failing, and none may keep the Tutor paused once it is fixed.
+      if (result.reason === "budget" || result.reason === "bad_request" || result.reason === "no_key") return;
       consecutiveFailures += 1;
       lastFailureAt = now();
       lastFailureReason = result.reason ?? null;

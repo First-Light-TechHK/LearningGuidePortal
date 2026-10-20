@@ -76,6 +76,9 @@ type ChatLine = {
   // the answer with the same id replaces it; `replyTo` names the question an
   // answer belongs to.
   pending?: boolean; replyTo?: { name: string; question: string };
+  // The queue position the server gave when it took the question, shown
+  // until the next session poll lists it.
+  queuedPosition?: number | null;
   // The asker's own question line: what to resend, and why the last ask failed.
   tutorAsk?: { question: string; clientEventId: string }; tutorError?: string;
   // The id of the answer line this question's latest ask is waiting on.
@@ -87,6 +90,9 @@ type ChatLine = {
 
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
 const TUTOR_ANSWER_TIMEOUT_MS = 120_000;
+// The answer timer waits again while the server lists the question, at most
+// this many times, so a page whose polling stopped still settles the line.
+const TUTOR_ANSWER_WAITS = 10;
 // A token request that hangs gives up, so the next connect attempt is not
 // held behind it.
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
@@ -986,17 +992,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // is answered once (QA M21).
   async function askTutor(lineId: string, ask: { question: string; clientEventId: string }) {
     setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorAsk: ask, tutorError: undefined, tutorAnswerId: undefined } : item));
-    const queued = await studyGroupRequest<{ id: string }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody(ask.question, ask.clientEventId)) });
+    const queued = await studyGroupRequest<{ id: string; position?: number | null }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "POST", body: JSON.stringify(tutorQueueBody(ask.question, ask.clientEventId)) });
     if (!queued.ok) {
       setChat((items) => items.map((item) => item.id === lineId ? { ...item, tutorError: queued.code } : item));
       return;
     }
     const answerId = `tutor-${queued.data.id}`;
-    setChat((items) => tutorChatLines(items.map((item) => item.id === lineId ? { ...item, tutorAnswerId: answerId } : item), { id: answerId, from: roomCopy.tutorName, text: "", at: chatStamp(), tutor: true, pending: true }));
+    setChat((items) => tutorChatLines(items.map((item) => item.id === lineId ? { ...item, tutorAnswerId: answerId } : item), { id: answerId, from: roomCopy.tutorName, text: "", at: chatStamp(), tutor: true, pending: true, queuedPosition: queued.data.position ?? null }));
     // A question the server still lists as waiting keeps waiting; only one it
     // no longer lists, with no answer here, is called unavailable.
+    let waits = 0;
     const expire = () => {
-      if (tutorStillWaiting(sessionRef.current, answerId)) {
+      if (tutorStillWaiting(sessionRef.current, answerId) && waits < TUTOR_ANSWER_WAITS) {
+        waits += 1;
         window.setTimeout(expire, TUTOR_ANSWER_TIMEOUT_MS);
         return;
       }
@@ -1136,7 +1144,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                     ? roomCopy.tutorUnavailable
                     : line.pending
                     ? (() => {
-                        const pending = tutorPendingState(session, line.id);
+                        const pending = tutorPendingState(session, line.id, line.queuedPosition);
                         return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
                     : <>

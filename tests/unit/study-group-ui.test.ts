@@ -39,8 +39,9 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.equal(room.includes("/api/ai-tutor"), false);
   assert.equal(room.includes("prompts/"), false);
   assert.equal(room.includes("You are"), false);
-  // The queue response only names the pending line; the answer arrives through the room.
-  assert.equal(room.replace(/queued\.data\.id/g, "").includes("queued.data"), false);
+  // The queue response only names the pending line and its queue position
+  // (tutor infra 2026-10-20); the answer arrives through the room.
+  assert.equal(room.replace(/queued\.data\.(?:id|position)/g, "").includes("queued.data"), false);
 });
 
 test("host start opens the room only after entry succeeds", () => {

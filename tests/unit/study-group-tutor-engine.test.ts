@@ -345,3 +345,10 @@ test("a stalled model gets one bounded call, leaving time for the next model", a
   assert.equal(answer.status, "answered");
   assert.equal(timeouts[0], TUTOR_CALL_MS, "the first call is capped below the 45 s deadline");
 });
+
+test("a model that refused the request is not asked the same request again in a later round", async () => {
+  const { result, seen } = engine({ models: ["strict/model"], call: () => ({ outcome: "bad_request", latencyMs: 1 }) });
+  const failed = await result;
+  assert.deepEqual([failed.status, failed.status === "failed" && failed.reason], ["failed", "bad_request"]);
+  assert.equal(seen.length, 1);
+});
