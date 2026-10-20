@@ -80,7 +80,12 @@ test("hunt M2: malformed or mis-shaped room messages are dropped, not thrown", (
 
 test("hunt M2: the room dispatches data messages through the source-checked parser", () => {
   const room = roomSource();
-  assert.match(room, /const message = parseRoomDataMessage\(payload, !participant\);/);
+  // QA3 F9: the sender is the packet's own stamp, not "no participant found".
+  assert.match(room, /const receiveData = \(packet: Parameters<typeof roomDataPacket>\[0\]\) => \{\s*const data = roomDataPacket\(packet\);\s*if \(!data\) return;\s*const message = parseRoomDataMessage\(data\.payload, data\.fromServer\);/);
+  // Every engine a connection brings up is watched (a failed first attempt replaces it).
+  assert.match(room, /room\.engine\.on\(EngineEvent\.DataPacketReceived, live\(receiveData\)\);/);
+  assert.match(room, /room\.on\(RoomEvent\.SignalConnected, watchData\);/);
+  assert.equal(room.includes("RoomEvent.DataReceived"), false);
   assert.equal(room.includes("JSON.parse(new TextDecoder()"), false);
 });
 

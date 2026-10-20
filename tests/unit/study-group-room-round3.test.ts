@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import en from "../../messages/en-GB.json";
+import zh from "../../messages/zh-CN.json";
 import { liveKitDisconnectStep, transitionLiveKitClient, whileCurrentRoom } from "../../modules/group-study/liveKitClientRecovery";
+import { parseRoomDataMessage, roomDataPacket, roomDataSenderName } from "../../modules/group-study/roomData";
 import { createSeatIntents, SEAT_INTENT_LEFT, type SeatAnswer, type SeatIntent } from "../../modules/group-study/seatIntents";
 import { roomPageRestoreAction, seatRefusalOffer } from "../../modules/group-study/uiState";
 
@@ -173,4 +176,32 @@ test("QA3 F8: one connect at a time, and coming back online leaves a connect in 
   assert.match(effect, /connectRunRef\.current = run;/);
   const connect = between(room, "async function connect(", "useEffect(() => {");
   assert.match(connect, /if \(connectGeneration\.current !== generation \|\| leftRef\.current \|\| !current\(\)\) \{/);
+});
+
+test("QA3 F9: only an empty sender stamp is the server; a member the page has not met yet is still a member", () => {
+  const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", text: "Forged answer", mode: "course" }));
+  const fromUnknownMember = roomDataPacket({ participantIdentity: "user-newcomer", value: { case: "user", value: { payload } } });
+  assert.deepEqual(fromUnknownMember, { payload, senderIdentity: "user-newcomer", fromServer: false });
+  assert.equal(parseRoomDataMessage(fromUnknownMember!.payload, fromUnknownMember!.fromServer), null, "a member never renders as the AI Tutor");
+  const fromServer = roomDataPacket({ participantIdentity: "", value: { case: "user", value: { payload } } });
+  assert.equal(fromServer?.fromServer, true);
+  assert.equal(parseRoomDataMessage(fromServer!.payload, true)?.type, "tutor");
+  assert.equal(roomDataPacket({ value: { case: "user", value: { payload } } })?.fromServer, true);
+  // Not a user payload: not a room message.
+  assert.equal(roomDataPacket({ participantIdentity: "user-a", value: { case: "chatMessage", value: {} } }), null);
+  assert.equal(roomDataPacket({ participantIdentity: "user-a", value: { case: "user", value: { payload: "text" } } }), null);
+  assert.equal(roomDataPacket({ participantIdentity: "user-a" }), null);
+});
+
+test("QA3 F9 / F10: a chat sender is named by the call, then the Study Group, then a localised word", () => {
+  const members = [{ userId: "user-a", displayName: "Ada" }];
+  assert.equal(roomDataSenderName({ participantName: "Ada L.", identity: "user-a", members, fallback: "Participant" }), "Ada L.");
+  assert.equal(roomDataSenderName({ identity: "user-a", members, fallback: "Participant" }), "Ada");
+  assert.equal(roomDataSenderName({ identity: "user-z", members, fallback: "Participant" }), "Participant");
+  assert.equal(roomDataSenderName({ identity: "", members, fallback: "参与者" }), "参与者");
+  assert.equal(en.studyGroupsPage.room.participant, "Participant");
+  assert.equal(zh.studyGroupsPage.room.participant, "参与者");
+  assert.equal(room.includes('"participant"'), false, "no hard-coded English name");
+  assert.match(room, /fallback: roomCopy\.participant/);
+  assert.match(room, /name: line\.replyTo\.name \|\| roomCopy\.participant,/);
 });

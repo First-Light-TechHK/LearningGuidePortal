@@ -145,7 +145,7 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /const sendRaisedHand = \(identity: string\) => \{[\s\S]*?destinationIdentities: \[identity\]/);
   // The newcomer asks once its own connection is up; a raiser answers it alone.
   assert.match(room, /setConnected\(true\);\s*setReconnecting\(false\);\s*void room\.localParticipant\.publishData\(new TextEncoder\(\)\.encode\(JSON\.stringify\(\{ type: "hands-query" \}\)\)/);
-  assert.match(room, /message\.type === "hands-query" && participant\) sendRaisedHand\(participant\.identity\);/);
+  assert.match(room, /if \(message\.type === "hands-query"\) sendRaisedHand\(data\.senderIdentity\);/);
   assert.match(room, /connected && tiles\.length > 0 \? tiles\.length : session\.occupancy/);
   assert.match(room, /controls\.includes\("participants"\)/);
   assert.match(room, /data-participants=\{present\}/);
@@ -463,7 +463,7 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   // The forged-tutor fix moved the dispatch (and the mode normalisation plus the
   // empty-text "unavailable" contract) into the pure room-data parser; the room
   // now hands it the payload and renders what the parser returns.
-  assert.match(room, /parseRoomDataMessage\(payload, !participant\)/);
+  assert.match(room, /parseRoomDataMessage\(data\.payload, data\.fromServer\)/);
   const roomData = readFileSync(new URL("../../modules/group-study/roomData.ts", import.meta.url), "utf8");
   assert.match(roomData, /if \(!message\.text && message\.mode !== "unavailable"\) return null;/);
   assert.match(roomData, /mode: message\.mode === "general" \|\| message\.mode === "unavailable" \? message\.mode : "course"/);

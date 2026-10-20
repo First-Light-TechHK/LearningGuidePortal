@@ -30,8 +30,8 @@ export function chatLabel(locale: string, at: string) {
 // must be dropped. The parser is where the room's trust boundary lives
 // (hunt M2): the publisher is passed in as `fromServer` because LiveKit
 // distinguishes them at the protocol level — a member publish always carries
-// its participant, while the server's own RoomService.SendData (the AI Tutor
-// answer republished from the outbox) arrives with no participant at all.
+// its identity, while the server's own RoomService.SendData (the AI Tutor
+// answer republished from the outbox) arrives with none (roomDataPacket).
 // Only the server may render as the AI Tutor; only members may chat or raise
 // hands. Malformed payloads are dropped instead of throwing: one bad message
 // must not interrupt the event handler for every later room event.
@@ -77,4 +77,30 @@ export function parseRoomDataMessage(raw: Uint8Array, fromServer: boolean): Room
   }
   if (message.type === "hands-query") return fromServer ? null : { type: "hands-query" };
   return null;
+}
+
+// The sender of one data packet, as the LiveKit server stamped it (QA3 room
+// review F9). The SFU writes the publishing member's identity into every
+// packet it forwards, and leaves it empty only for its own RoomService
+// SendData (the AI Tutor answer). The SDK's DataReceived event hides that
+// stamp: it hands over the matching remote participant, which is also
+// missing for a member this browser has not heard of yet (a newcomer's first
+// message), and a missing participant used to read as "the server". The room
+// therefore reads the packet itself; `fromServer` is an empty stamp, never an
+// unknown member. Anything but a user payload is not a room message.
+export function roomDataPacket(packet: { participantIdentity?: string; value?: { case?: string; value?: unknown } }): { payload: Uint8Array; senderIdentity: string; fromServer: boolean } | null {
+  if (packet.value?.case !== "user") return null;
+  const payload = (packet.value.value as { payload?: unknown } | undefined)?.payload;
+  if (!(payload instanceof Uint8Array)) return null;
+  const senderIdentity = typeof packet.participantIdentity === "string" ? packet.participantIdentity : "";
+  return { payload, senderIdentity, fromServer: senderIdentity === "" };
+}
+
+// The name a member's chat line shows: the call's own name for them, else
+// their Study Group name (a member the call has not announced yet), else the
+// page's localised word for an unnamed participant (QA3 room review F9, F10).
+export function roomDataSenderName(input: { participantName?: string; identity: string; members: Array<{ userId: string; displayName: string }>; fallback: string }) {
+  if (input.participantName) return input.participantName;
+  const member = input.identity ? input.members.find((item) => item.userId === input.identity) : undefined;
+  return member?.displayName || input.fallback;
 }

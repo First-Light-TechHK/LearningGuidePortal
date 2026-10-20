@@ -5,7 +5,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { liveKitDisconnectReasonName, liveKitDisconnectStep, transitionLiveKitClient, whileCurrentRoom } from "@/modules/group-study/liveKitClientRecovery";
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
-import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
+import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH, roomDataPacket, roomDataSenderName } from "@/modules/group-study/roomData";
 import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatIntents";
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
@@ -247,7 +247,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   async function connect(generation: number, recovery: boolean) {
     const issued = await studyGroupRequest<{ token: string; liveKitUrl: string }>(`/api/study-groups/sessions/${sessionId}/token`, { method: "POST", body: JSON.stringify(recovery ? { recovery: true } : {}), signal: deadlineSignal(TOKEN_REQUEST_TIMEOUT_MS) });
     if (!issued.ok || !issued.data.liveKitUrl) throw new Error(issued.ok ? "unavailable" : issued.code);
-    const { DisconnectReason, Room, RoomEvent } = await import("livekit-client");
+    const { DisconnectReason, EngineEvent, Room, RoomEvent } = await import("livekit-client");
     if (connectGeneration.current !== generation || leftRef.current) return;
     // The SDK's own reconnect policy (several attempts with backoff) rides out
     // a short network drop without tearing the room down (QA 2026-10-19 N1).
@@ -293,14 +293,26 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       }
       setErrorCode("connect_failed");
     };
-    room.on(RoomEvent.DataReceived, live((payload, participant) => {
-      // The parser enforces the room's trust boundary (hunt M2): server
-      // messages arrive without a participant while member messages always
-      // carry one, only the server may speak as the AI Tutor, and malformed
-      // payloads are dropped instead of thrown.
-      const message = parseRoomDataMessage(payload, !participant);
+    // The room's trust boundary (hunt M2, QA3 F9): the packet's own sender
+    // stamp says who spoke (empty only for the server), the parser lets only
+    // the server speak as the AI Tutor, and malformed payloads are dropped
+    // instead of thrown. The stamp is on the packet the room's engine
+    // receives; a failed first attempt (another region) replaces the engine,
+    // so each signal connection watches the engine it brought up.
+    let watchedEngine: unknown = null;
+    const watchData = () => {
+      if (room.engine === watchedEngine) return;
+      watchedEngine = room.engine;
+      room.engine.on(EngineEvent.DataPacketReceived, live(receiveData));
+    };
+    room.on(RoomEvent.SignalConnected, watchData);
+    const receiveData = (packet: Parameters<typeof roomDataPacket>[0]) => {
+      const data = roomDataPacket(packet);
+      if (!data) return;
+      const message = parseRoomDataMessage(data.payload, data.fromServer);
       if (!message) return;
-      const from = participant?.name || participant?.identity || "participant";
+      const participant = data.senderIdentity ? room.remoteParticipants.get(data.senderIdentity) : undefined;
+      const from = roomDataSenderName({ participantName: participant?.name, identity: data.senderIdentity, members: groupRef.current?.members || [], fallback: roomCopy.participant });
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
       if (message.type === "tutor") {
         // The server republishes a crashed tutor answer with the same message
@@ -319,15 +331,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         return;
       }
       if (message.type === "chat") {
-        setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text, at: chatStamp(), host: hostIds.has(participant?.identity || "") }]);
+        setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text, at: chatStamp(), host: hostIds.has(data.senderIdentity) }]);
         if (sideTabRef.current !== "chat") setUnread((count) => count + 1);
       }
-      if (message.type === "raise-hand") {
-        const identity = participant?.identity || "";
-        setHands((items) => raisedHands(items, identity, message.raised));
-      }
-      if (message.type === "hands-query" && participant) sendRaisedHand(participant.identity);
-    }));
+      if (message.type === "raise-hand") setHands((items) => raisedHands(items, data.senderIdentity, message.raised));
+      if (message.type === "hands-query") sendRaisedHand(data.senderIdentity);
+    };
     const paint = () => {
       if (!current()) return;
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
@@ -450,6 +459,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       await room.disconnect().catch(() => undefined);
       return;
     }
+    watchData();
     roomRef.current = room;
     setRoomApi(room);
     setConnected(true);
@@ -1093,7 +1103,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
             <div className={styles.chatLog} role="tabpanel" aria-live="polite">
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
                 <p className={`${styles.chatBody} ${styles.tutorBody}`}>
-                  {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participants, question: line.replyTo.question })}</span> : null}
+                  {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participant, question: line.replyTo.question })}</span> : null}
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
                     : line.pending
