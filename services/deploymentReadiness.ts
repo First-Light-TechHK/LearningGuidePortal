@@ -34,6 +34,16 @@ async function tutorKeySource() {
   return source.source();
 }
 
+// - liveKitProjectsSource: where the LiveKit project list comes from, as the
+//   runtime picks it (modules/group-study/runtime.ts): `secret` (read hot from
+//   LIVEKIT_PROJECTS_SECRET_ID), `env` (LIVEKIT_PROJECTS_JSON, fixed until the
+//   next deploy) or `none`. Whether the secret currently holds a valid list is
+//   the backoffice LiveKit health's answer (no projects = not read yet).
+function liveKitProjectsSource(): "secret" | "env" | "none" {
+  if (process.env.LIVEKIT_PROJECTS_SECRET_ID?.trim()) return "secret";
+  return process.env.LIVEKIT_PROJECTS_JSON?.trim() ? "env" : "none";
+}
+
 function tutorKeyState(): "configured" | "missing" | "invalid" {
   const raw = process.env.STUDY_GROUP_TUTOR_KEYS?.trim();
   if (!raw) return "missing";
@@ -58,6 +68,7 @@ async function studyGroupReadiness(): Promise<{
   tutorKeySource: "secret" | "own" | "shared" | "none";
   credentialSource: "secrets-manager" | "local";
   simulated: boolean;
+  liveKitProjectsSource: "secret" | "env" | "none";
 }> {
   const explicit = (process.env.STUDY_GROUP_STORE || "").trim().toLowerCase();
   // Mirror studyGroupPersistenceBackend (modules/group-study/runtime.ts): only
@@ -66,13 +77,15 @@ async function studyGroupReadiness(): Promise<{
   // pick misleads operators.
   const store = explicit === "postgres" ? "postgresql" : explicit === "file" ? "file" : process.env.DATABASE_URL?.trim() ? "postgresql" : "file";
   const onDev = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV";
+  const projectsSource = liveKitProjectsSource();
   return {
     store,
-    configured: Boolean(process.env.LIVEKIT_PROJECTS_JSON?.trim() && process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim()),
+    configured: projectsSource !== "none" && Boolean(process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim()),
     tutorKeys: tutorKeyState(),
     tutorKeySource: await tutorKeySource(),
     credentialSource: onDev && Boolean(process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON?.trim()) ? "local" : "secrets-manager",
-    simulated: onDev && process.env.LIVEKIT_FAKE_GATEWAY === "1"
+    simulated: onDev && process.env.LIVEKIT_FAKE_GATEWAY === "1",
+    liveKitProjectsSource: projectsSource
   };
 }
 
