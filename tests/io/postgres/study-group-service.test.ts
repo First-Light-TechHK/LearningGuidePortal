@@ -99,7 +99,7 @@ test("two service starts racing keep one durable project assignment that a retry
     { mode: "service-start", env: { LG_IO_SESSION: "s-start-race", LG_IO_ENSURE_FAIL: "1" } },
     { mode: "service-start", env: { LG_IO_SESSION: "s-start-race", LG_IO_ENSURE_FAIL: "1" } }
   ])).map((outcome) => workerResult<StartResult>(outcome));
-  assert.equal(raced.every((result) => !result.ok && result.code === "unavailable"), true, "an ambiguous failure keeps the start unavailable");
+  assert.equal(raced.every((result) => !result.ok && result.code === "livekit_temporarily_unavailable"), true, "an ambiguous failure keeps the start temporarily unavailable");
   const assigned = (await rows<{ livekit_project_id: string | null }>("SELECT livekit_project_id FROM live_sessions WHERE id = 's-start-race'"))[0].livekit_project_id;
   assert.ok(assigned, "the durable assignment is written before any provider attempt");
   for (const result of raced) {
