@@ -337,7 +337,8 @@ export function studyGroupService() {
       text: input.text,
       maxTokens: tutorMaxTokensFromEnv(),
       reasoning: tutorReasoningFromEnv(),
-      url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined
+      url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined,
+      timeoutMs: input.timeoutMs
     }),
     publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");

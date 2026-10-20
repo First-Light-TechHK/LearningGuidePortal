@@ -108,9 +108,11 @@ export function readTutorKeys(raw: string | undefined) {
   }
 }
 
-export async function openRouterTutorCall(input: { secret: string; model: string; system: string; context: string; text: string; url?: string; maxTokens?: number; reasoning?: { effort: string } }): Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }> {
+export async function openRouterTutorCall(input: { secret: string; model: string; system: string; context: string; text: string; url?: string; maxTokens?: number; reasoning?: { effort: string }; timeoutMs?: number }): Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }> {
   const started = Date.now();
   const maxTokens = input.maxTokens ?? 700;
+  // At most 45 s, and never past the caller's answer deadline.
+  const timeoutMs = Math.max(1, Math.min(45_000, input.timeoutMs ?? 45_000));
   const messages = [
     { role: "system", content: input.system },
     { role: "user", content: `<course_material>\n${input.context}\n</course_material>\n<participant_text>\n${input.text}\n</participant_text>\nAnswer the participant message for the shared room, following the reply format exactly.` }
@@ -136,7 +138,7 @@ export async function openRouterTutorCall(input: { secret: string; model: string
         method: "POST",
         headers: { Authorization: `Bearer ${input.secret}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: input.model, temperature: 0.2, max_tokens: maxTokens, stream: false, messages }),
-        signal: AbortSignal.timeout(45_000)
+        signal: AbortSignal.timeout(timeoutMs)
       })
       : await fetchOpenRouter(input.secret, {
       model: input.model,
@@ -145,7 +147,7 @@ export async function openRouterTutorCall(input: { secret: string; model: string
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
       stream: false,
       messages
-    }, { timeoutMs: 45_000, attempts: 1 });
+    }, { timeoutMs, attempts: 1 });
     const latencyMs = Date.now() - started;
     const raw = await response.text();
     if (response.status === 401 || response.status === 403) return { outcome: "auth_failed", latencyMs };

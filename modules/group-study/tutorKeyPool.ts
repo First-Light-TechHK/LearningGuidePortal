@@ -1,6 +1,8 @@
 export type TutorKeyOutcome = "ok" | "failed" | "auth_failed" | "rate_limited" | "quota";
 
-export type TutorKeyCall = (secret: string) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
+// `timeoutMs`, when given, is how long this one call may take: what is left
+// of the caller's deadline.
+export type TutorKeyCall = (secret: string, timeoutMs?: number) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
 
 // Bug hunt 2026-10-14 (M4): a rate limit or a spent quota is a transient
 // provider state, not a verdict on the key. The pool used to mark such a key
@@ -37,12 +39,17 @@ export function createTutorKeyPool(input: { keys: Array<{ id: string; secret: st
   }));
 
   return {
-    async execute(text: string, call: TutorKeyCall = input.call) {
+    // `deadline` (epoch milliseconds) bounds the whole answer, every key
+    // included: no key is tried after it, and each call gets only the time
+    // left (QA r3 server 5), so one question never outlives its claim lease.
+    async execute(text: string, call: TutorKeyCall = input.call, options: { deadline?: number } = {}) {
       void text;
       for (const state of states) {
         if (state.disabledUntil > now()) continue;
+        const left = options.deadline === undefined ? undefined : options.deadline - now();
+        if (left !== undefined && left <= 0) break;
         state.requests += 1;
-        const result = await call(state.secret);
+        const result = await call(state.secret, left);
         state.latencyMs += result.latencyMs;
         if (result.outcome !== "ok") {
           state.errors += 1;

@@ -54,15 +54,19 @@ export type StudyGroupDeps = {
   courseKnowledge?: (courseId: string) => Promise<string>;
   publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo }) => Promise<void>;
   tutorKeys?: () => Array<{ id: string; secret: string }>;
-  tutorCall?: (input: { secret: string; text: string; context: string }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
+  // `timeoutMs` is how long this call may take (what is left of the answer
+  // deadline); the call must give up by then.
+  tutorCall?: (input: { secret: string; text: string; context: string; timeoutMs?: number }) => Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }>;
   // One redacted operational line (a fixed type and counts, never an id or
   // a name); the runtime writes it to the log stream.
   operationalLog?: (event: Record<string, unknown>) => void;
-  // How long one drain keeps claiming new questions, and how long a second
-  // drain waits for a running one (test seams; defaults TUTOR_DRAIN_BUDGET_MS
-  // and TUTOR_DRAIN_WAIT_MS). The budget stays below the 60 s claim lease.
+  // How long one drain keeps claiming new questions, how long a second drain
+  // waits for a running one, and how long one claimed question may take to
+  // answer (test seams; defaults TUTOR_DRAIN_BUDGET_MS, TUTOR_DRAIN_WAIT_MS
+  // and TUTOR_ANSWER_BUDGET_MS).
   tutorDrainBudgetMs?: number;
   tutorDrainWaitMs?: number;
+  tutorAnswerBudgetMs?: number;
   // Injectable scheduler for the failing context's own re-drain (test seam):
   // the default is an unref'd setTimeout so a pending retry never keeps the
   // process alive.
@@ -102,6 +106,11 @@ const TUTOR_REPLY_QUOTE_MAX = 80;
 // running drain claims whatever was queued meanwhile.
 const TUTOR_DRAIN_BUDGET_MS = 45_000;
 const TUTOR_DRAIN_WAIT_MS = 60_000;
+// One claimed question is answered within this long of its claim, every key
+// it tries included, so its settle lands well inside the 60 s claim lease
+// and no other instance re-claims it for a second paid call (QA r3 server 5).
+const TUTOR_CLAIM_LEASE_SECONDS = 60;
+const TUTOR_ANSWER_BUDGET_MS = 45_000;
 
 // The provider reads the sweep and the seat check may make (QA final review
 // X-3, X-4): bounded in number and in time, so a slow provider can never hold
@@ -259,7 +268,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (Date.now() - waitStarted >= (deps.tutorDrainWaitMs ?? TUTOR_DRAIN_WAIT_MS)) return null;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    const drainStarted = Date.now();
+    // The budget runs on the service clock (deps.now), like every other
+    // business time here, so it can be tested without wall-clock races.
+    const drainStarted = deps.now().getTime();
     const leaseOwner = randomUUID();
     let last: { text: string; mode: string } | null = null;
     // Publishes every due outbox row of this session. It runs after each
@@ -306,7 +317,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     };
     try {
       for (;;) {
-        if (Date.now() - drainStarted >= (deps.tutorDrainBudgetMs ?? TUTOR_DRAIN_BUDGET_MS)) {
+        if (deps.now().getTime() - drainStarted >= (deps.tutorDrainBudgetMs ?? TUTOR_DRAIN_BUDGET_MS)) {
           // Out of budget: a fresh drain takes the rest of the queue.
           scheduleTutorRetry(sessionId, 1_000);
           break;
@@ -316,10 +327,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const item = await deps.repository.claimNextTutorRequest({
           sessionId,
           leaseOwner,
-          leaseSeconds: 60,
+          leaseSeconds: TUTOR_CLAIM_LEASE_SECONDS,
           maxAttempts: 5
         });
         if (!item) break;
+        const answerBy = Date.now() + (deps.tutorAnswerBudgetMs ?? TUTOR_ANSWER_BUDGET_MS);
         const snapshot = await deps.repository.read();
         const session = snapshot.sessions.find((entry) => entry.id === sessionId && entry.status !== "removed");
         if (!session) {
@@ -355,7 +367,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (deps.tutorCall && keys.length > 0) {
           // A call that throws (rather than reporting a failed outcome) is an
           // unavailable answer like any other failure, never a stranded item.
-          const result = await tutorPoolFor(keys).execute(item.text, (secret) => deps.tutorCall!({ secret, text: item.text, context })).catch(() => ({ keyId: "", body: "" }));
+          const result = await tutorPoolFor(keys).execute(item.text, (secret, timeoutMs) => deps.tutorCall!({ secret, text: item.text, context, timeoutMs }), { deadline: answerBy }).catch(() => ({ keyId: "", body: "" }));
           const body = !result.keyId || !result.body || keys.some((key) => result.body?.includes(key.secret)) ? "" : result.body.trim();
           if (body) {
             const parsed = parseTutorReply(body);
