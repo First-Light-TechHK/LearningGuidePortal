@@ -352,7 +352,9 @@ test("N5 / M21: two waiting questions per person and five a minute; asking retur
 
     // A second waiting question is fine; a third waits its turn.
     await askTutor(pageB, "[slow] second question");
-    await expect(pageB.getByText("AI Tutor is answering…")).toBeVisible();
+    // The second waits behind the first (tutor infra 2026-10-20: the waiting
+    // line says how many come first).
+    await expect(pageB.getByText("Waiting for AI Tutor — 1 ahead")).toBeVisible();
     await askTutor(pageB, "third question");
     const third = pageB.locator("article").filter({ hasText: "third question" });
     await expect(third.getByRole("alert")).toContainText("Wait for the AI Tutor to answer your earlier questions first.");
