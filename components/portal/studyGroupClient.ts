@@ -1,3 +1,4 @@
+import { deadlineSignal } from "@/modules/group-study/seatIntents";
 export type StudyGroupMember = { userId: string; displayName: string; role: "host" | "member" };
 export type StudySession = {
   id: string;
@@ -50,7 +51,7 @@ export const STUDY_GROUP_REQUEST_TIMEOUT_MS = 15_000;
 
 export async function studyGroupRequest<T>(url: string, init?: RequestInit, timeoutMs = STUDY_GROUP_REQUEST_TIMEOUT_MS): Promise<StudyGroupResponse<T>> {
   try {
-    const response = await fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(timeoutMs), headers: { "content-type": "application/json", ...(init?.headers || {}) } });
+    const response = await fetch(url, { ...init, signal: init?.signal ?? deadlineSignal(timeoutMs), headers: { "content-type": "application/json", ...(init?.headers || {}) } });
     return await response.json() as StudyGroupResponse<T>;
   } catch {
     // F-1 (dev audit 2026-10-14): a rejected fetch (offline, DNS failure) or a non-JSON
