@@ -1,57 +1,11 @@
-import { expect, test, type BrowserContext, type Page } from "playwright/test";
+import { expect, test, type Page } from "playwright/test";
+import { COURSE_ID, MOCK_TUTOR_REPLY, registerAndEntitle, tutorLine } from "./study-group-helpers";
 
 test.skip(Boolean(process.env.CI), "local-only Study Group E2E; CI does not run e2e");
 
 test.describe.configure({ mode: "serial" });
 
-const PASSWORD = "Passw0rd!123";
-const PLAN_ID = "epicureanism-pc-6";
-const COURSE_ID = "epicureanism";
-const CONSENTS = { renewal: true, terms: true, refund: true };
 const TUTOR_QUESTION = "What does the course teach about pleasure?";
-// The mock model answers "COURSE\nMock tutor reply: ..."; the tutor pipeline
-// strips the mode-tag line, so the chat shows the remaining text.
-const MOCK_TUTOR_REPLY = "Mock tutor reply: the course text explains this topic.";
-
-function freshEmail(side: string) {
-  return `e2e-sg-${side}-${Date.now()}@example.com`;
-}
-
-async function registerAndEntitle(context: BrowserContext, side: string, nickname: string, appOrigin: string) {
-  const email = freshEmail(side);
-  const registered = await context.request.post("/api/auth/register", {
-    data: { email, password: PASSWORD, nickname, locale: "en-GB" },
-  });
-  expect(registered.status(), "register").toBe(200);
-  const loggedIn = await context.request.post("/api/auth/login", {
-    data: { email, password: PASSWORD, rememberMe: false },
-  });
-  expect(loggedIn.status(), "login").toBe(200);
-
-  const quote = await context.request.post("/api/subscription/quote", {
-    data: { planId: PLAN_ID, kind: "trial" },
-  });
-  expect(quote.status(), "trial quote").toBe(200);
-  // startPayment (services/paymentService.ts) requires the Origin header to
-  // equal the request host origin; APIRequestContext does not send one.
-  const trial = await context.request.post("/api/trial", {
-    headers: { origin: appOrigin },
-    data: { quoteId: (await quote.json()).quote.id, locale: "en-GB", consents: CONSENTS },
-  });
-  expect(trial.status(), "trial checkout").toBe(200);
-  const confirmed = await context.request.post("/api/purchase/demo/confirm", {
-    data: { orderId: (await trial.json()).order.id, action: "complete" },
-  });
-  expect(confirmed.status(), "demo confirm").toBe(200);
-  return email;
-}
-
-// The tutor line renders as <article><div><strong>AI Tutor</strong>...</div><p>{reply}</p></article>.
-// A user's own chat line uses a <span> for the "@AI Tutor" mention, so an exact
-// <strong>AI Tutor</strong> identifies the tutor's line only.
-function tutorLine(page: Page) {
-  return page.locator("article").filter({ has: page.locator('strong:text-is("AI Tutor")') }).locator("p");
-}
 
 // getDisplayMedia.start() is blocked OS-side on machines without the macOS
 // Screen Recording permission for the browser binary (observed here as

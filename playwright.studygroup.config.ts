@@ -44,6 +44,14 @@ const nextEnv = {
   STUDY_GROUP_TOKEN_LOG_KEY: Buffer.alloc(32, 11).toString("base64"),
   STUDY_GROUP_TUTOR_KEYS: JSON.stringify([{ id: "mock", secret: "mock-tutor-secret-0123456789abcdef" }]),
   STUDY_GROUP_TUTOR_URL: "http://127.0.0.1:8788/v1/chat/completions",
+  // Reminder and notification mail goes to the local sink
+  // (scripts/studygroup-smtp-sink.mjs) so the QA regression spec can read it.
+  SMTP_HOST: "127.0.0.1",
+  SMTP_PORT: "2525",
+  SMTP_SECURE: "0",
+  SMTP_USER: "e2e",
+  SMTP_PASS: "e2e",
+  SMTP_FROM: "study-groups@example.com",
   ...(useCloud ? {} : { NODE_EXTRA_CA_CERTS: "/tmp/lg-livekit-certs/cert.pem" }),
 };
 
@@ -63,6 +71,9 @@ export default defineConfig({
     launchOptions: {
       args: [
         "--use-fake-ui-for-media-stream",
+        // A fake microphone and camera: the QA regression spec publishes
+        // real remote audio (the autoplay check) on machines with no devices.
+        "--use-fake-device-for-media-stream",
         "--auto-select-desktop-capture-source=Entire screen",
       ],
     },
@@ -71,6 +82,13 @@ export default defineConfig({
     {
       command: "node scripts/studygroup-tutor-mock.mjs",
       url: "http://127.0.0.1:8788/health",
+      reuseExistingServer: true,
+      timeout: 15_000,
+      stdout: "pipe",
+    },
+    {
+      command: "node scripts/studygroup-smtp-sink.mjs",
+      url: "http://127.0.0.1:8789/health",
       reuseExistingServer: true,
       timeout: 15_000,
       stdout: "pipe",
@@ -98,7 +116,7 @@ export default defineConfig({
   projects: [
     {
       name: "studygroup-local",
-      testMatch: ["**/study-group-two-browser.spec.ts"],
+      testMatch: ["**/study-group-two-browser.spec.ts", "**/study-group-qa-regressions.spec.ts"],
     },
   ],
 });
