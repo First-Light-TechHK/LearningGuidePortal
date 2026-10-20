@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clampTutorReply, openRouterTutorCall, parseTutorReply, publishLiveKitData } from "../../modules/group-study/tutorAnswer";
+import { clampTutorReply, openRouterTutorCall, parseTutorReply, publishLiveKitData, tutorReplyLimit } from "../../modules/group-study/tutorAnswer";
 import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
 
 // The tutor answer contract (owner decision, replaces lexical retrieval and
@@ -122,7 +122,9 @@ test("clamp caps an English reply at 240 characters on a sentence boundary", () 
   const raw = sentence.repeat(20);
   const clamped = clampTutorReply(raw);
   assert.equal(clamped.length <= 241, true);
-  assert.equal(clamped.endsWith("material.…"), true);
+  // Cut after the last whole sentence; the ellipsis takes the full stop's place.
+  assert.equal(clamped.endsWith("material…"), true);
+  assert.equal(clamped.includes(".…"), false);
 });
 
 test("clamp caps a Chinese reply at 120 characters on a sentence boundary", () => {
@@ -130,8 +132,8 @@ test("clamp caps a Chinese reply at 120 characters on a sentence boundary", () =
   const raw = sentence.repeat(20);
   const clamped = clampTutorReply(raw);
   assert.equal(clamped.length <= 121, true);
-  assert.equal(clamped.endsWith("。…"), true);
-  assert.equal(clamped.includes("…"), true);
+  assert.equal(clamped.endsWith("要点…"), true);
+  assert.equal(clamped.includes("。…"), false);
 });
 
 test("clamp hard-cuts when the only boundary is too early", () => {
@@ -139,6 +141,30 @@ test("clamp hard-cuts when the only boundary is too early", () => {
   const clamped = clampTutorReply(raw);
   // The only boundary sits at position 5, far before half of the 240 cap.
   assert.equal(clamped, `${raw.slice(0, 240)}…`);
+});
+
+test("clamp keeps underscores and asterisks inside words and numbers (QA M22)", () => {
+  assert.equal(clampTutorReply("Use x_1 in snake_case_name; 2*3*4 = 24."), "Use x_1 in snake_case_name; 2*3*4 = 24.");
+  assert.equal(clampTutorReply("a * b * c and file_name_v2"), "a * b * c and file_name_v2");
+  assert.equal(clampTutorReply("**Bold**, *italic*, __strong__ and _em_!"), "Bold, italic, strong and em!");
+  assert.equal(clampTutorReply("这是**重点**内容，_斜体_。"), "这是重点内容，斜体。");
+});
+
+test("clamp sizes the cap by the share of CJK characters (QA M22)", () => {
+  assert.equal(tutorReplyLimit("English only."), 240);
+  assert.equal(tutorReplyLimit("全部是中文。"), 120);
+  // One Chinese word in an English reply barely moves the cap.
+  const mixed = `${"An English answer that names one term ".repeat(5)}伊壁鸠鲁 once.`;
+  assert.equal(tutorReplyLimit(mixed) > 230, true);
+  assert.equal(clampTutorReply(mixed), mixed);
+});
+
+test("a cut reply never ends on doubled punctuation (QA M22)", () => {
+  const clause = clampTutorReply("这是一个很长的句子，".repeat(20));
+  assert.equal(clause.endsWith("句子…"), true);
+  assert.equal(/[，。,.]…$/.test(clause), false);
+  const english = clampTutorReply("one clause, ".repeat(40));
+  assert.equal(english.endsWith("clause…"), true);
 });
 
 test("clamp keeps a reply exactly at the cap and truncates one past it", () => {

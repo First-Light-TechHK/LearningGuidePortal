@@ -30,37 +30,64 @@ export function parseTutorReply(raw: string): { mode: "course" | "general"; text
 
 // Sentence, clause, and line marks a truncated reply may end on.
 const REPLY_BOUNDARIES = ["\n", "。", "！", "？", "；", "…", ".", "!", "?", ";", "，", ","];
+// Marks the "…" of a cut reply replaces, so it never reads ",…" or "。…".
+const TRAILING_MARKS = /[\s。！？；，、：…,.!?;:]+$/u;
+
+// Emphasis markers only count at a word boundary: `x_1`, `snake_case_name`
+// and `2*3*4` keep their `_` and `*` (QA 2026-10-19 M22). A word character
+// here is an ASCII letter or digit, so CJK text around **重点** still loses
+// its markers.
+const EDGE_BEFORE = "(^|[^A-Za-z0-9])";
+const EDGE_AFTER = "(?![A-Za-z0-9])";
+function emphasis(marker: string) {
+  const mark = marker.replace(/\*/g, "\\*");
+  const body = marker[0] === "*" ? "[^*\\n]" : "[^_\\n]";
+  return new RegExp(`${EDGE_BEFORE}${mark}(?=\\S)(${body}*?\\S)${mark}${EDGE_AFTER}`, "g");
+}
+const EMPHASIS = [emphasis("**"), emphasis("__"), emphasis("*"), emphasis("_")];
+
+// CJK ideographs, kana, Hangul, and CJK / full-width punctuation.
+const CJK_CHARACTER = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/gu;
+
+// The length cap follows the reply's script mix: 240 characters of Latin
+// text, 120 of CJK text (a CJK character carries about twice as much), and
+// in between in proportion to the share of CJK characters. One Chinese word
+// in an English reply no longer halves its room (QA 2026-10-19 M22).
+export function tutorReplyLimit(text: string) {
+  const visible = text.replace(/\s+/g, "");
+  if (!visible) return 240;
+  const share = (visible.match(CJK_CHARACTER)?.length ?? 0) / visible.length;
+  return Math.round(240 - 120 * share);
+}
 
 // Reply shape guard (defence in depth behind the prompt's reply_format): drop
 // markdown, normalise bullets to "• ", keep at most four lines (the answer
-// line plus three key points), and cap the total length — 120 characters of
-// CJK reply or 240 otherwise. An over-long reply is cut at the last sentence
-// or line boundary inside the cap (plus "…"); a boundary in the first half is
-// too lossy, so the text is cut straight at the cap instead. The result may be
-// empty when there is nothing left to say.
+// line plus three key points), and cap the total length (tutorReplyLimit). An
+// over-long reply is cut at the last sentence or line boundary inside the cap
+// (its trailing mark becomes "…"); a boundary in the first half is too lossy,
+// so the text is cut straight at the cap instead. The result may be empty
+// when there is nothing left to say.
 export function clampTutorReply(raw: string): string {
-  const lines = raw
+  let cleaned = raw
     .replace(/^\s*---+\s*$/gm, "")
     .replace(/^\s*#{1,6}\s*/gm, "")
-    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
-    .replace(/__([^_\n]+)__/g, "$1")
     .replace(/`([^`\n]*)`/g, "$1")
-    .replace(/\*([^*\n]+)\*/g, "$1")
-    .replace(/_([^_\n]+)_/g, "$1")
-    .replace(/`/g, "")
+    .replace(/`/g, "");
+  for (const pattern of EMPHASIS) cleaned = cleaned.replace(pattern, "$1$2");
+  const lines = cleaned
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.replace(/^(?:[-*]\s+|•\s*)/, "• "))
     .slice(0, 4);
   const text = lines.join("\n");
-  const limit = /[\u3400-\u9fff]/.test(text) ? 120 : 240;
+  const limit = tutorReplyLimit(text);
   if (text.length <= limit) return text;
   const cut = text.slice(0, limit);
   let boundary = -1;
   for (const mark of REPLY_BOUNDARIES) boundary = Math.max(boundary, cut.lastIndexOf(mark));
-  if (boundary >= Math.floor(limit / 2)) return `${text.slice(0, boundary + 1)}…`;
-  return `${cut}…`;
+  const kept = boundary >= Math.floor(limit / 2) ? text.slice(0, boundary + 1) : cut;
+  return `${kept.replace(TRAILING_MARKS, "")}…`;
 }
 
 export function readTutorKeys(raw: string | undefined) {

@@ -6,12 +6,14 @@
 // so assertions can pin the visible message text.
 // Markers in the question drive the QA regression E2E: "[slow]" answers after
 // SLOW_MS (an answer still in progress), "[fail]" answers HTTP 500 (a model
-// failure).
+// failure), "[markdown]" answers with emphasis and identifiers the reply
+// cleaning must tell apart (QA 2026-10-19 M22).
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.STUDYGROUP_TUTOR_MOCK_PORT || 8788);
 const HOST = "127.0.0.1";
 const REPLY = "COURSE\nMock tutor reply: the course text explains this topic.";
+const MARKDOWN_REPLY = "COURSE\nUse x_1 and snake_case_name; 2*3*4 = 24 is the **key** point.";
 const SLOW_MS = Number(process.env.STUDYGROUP_TUTOR_MOCK_SLOW_MS || 8000);
 
 const server = createServer((request, response) => {
@@ -39,7 +41,7 @@ const server = createServer((request, response) => {
         response.end(JSON.stringify({ error: { message: "mock model failure" } }));
         return;
       }
-      setTimeout(() => answer(response), question.includes("[slow]") ? SLOW_MS : 0);
+      setTimeout(() => answer(response, question.includes("[markdown]") ? MARKDOWN_REPLY : REPLY), question.includes("[slow]") ? SLOW_MS : 0);
     });
     return;
   }
@@ -47,14 +49,14 @@ const server = createServer((request, response) => {
   response.end(JSON.stringify({ error: { message: "not found" } }));
 });
 
-function answer(response) {
+function answer(response, content) {
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify({
     id: `chatcmpl-mock-${Date.now()}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model: "mock-tutor",
-    choices: [{ index: 0, message: { role: "assistant", content: REPLY }, finish_reason: "stop" }],
+    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
     usage: { prompt_tokens: 64, completion_tokens: 16, total_tokens: 80 }
   }));
 }
