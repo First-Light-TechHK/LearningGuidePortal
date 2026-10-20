@@ -133,6 +133,7 @@ function gatedRepository(base: StudyGroupRepository, gate: ReturnType<typeof cre
     read: async () => { const result = await base.read(); if (point === "read") await gate.wait(); return result; },
     appendTokenLog: (line) => base.appendTokenLog(line),
     update: async (mutate) => { if (point === "update") await gate.wait(); return base.update(mutate); },
+    renewSeat: async (input) => { if (point === "update") await gate.wait(); return base.renewSeat(input); },
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),
     claimNextOutboxMessage: (input) => base.claimNextOutboxMessage(input),

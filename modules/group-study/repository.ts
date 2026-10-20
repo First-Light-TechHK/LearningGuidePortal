@@ -43,6 +43,11 @@ export type StudyGroupRepository = {
   read(): Promise<StudyGroupStore>;
   appendTokenLog(line: string): Promise<void>;
   update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>): Promise<T>;
+  // The heartbeat's one-row write: moves lastSeenAt of the caller's open seat
+  // to `at` when that seat was last seen after `heldSince` (still held) and
+  // its session is scheduled or live. Returns whether a seat was renewed.
+  // Touches nothing else, so a room full of heartbeats never loads the store.
+  renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string }): Promise<boolean>;
 
   // durable tutor queue (hazard 2)
   claimNextTutorRequest(input: {
@@ -164,6 +169,18 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     });
     chain = run.then(() => undefined, () => undefined);
     return run;
+  }
+
+  function renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string }) {
+    return update((store) => {
+      const session = store.sessions.find((item) => item.id === input.sessionId);
+      if (!session || (session.status !== "scheduled" && session.status !== "live")) return false;
+      const since = Date.parse(input.heldSince);
+      const seat = store.presences.find((item) => item.sessionId === input.sessionId && item.userId === input.userId && item.enteredAt && !item.leftAt && Date.parse(item.lastSeenAt ?? item.enteredAt) > since);
+      if (!seat) return false;
+      seat.lastSeenAt = input.at;
+      return true;
+    });
   }
 
   // The durable operations below are single-process equivalents of the
@@ -325,6 +342,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     read,
     appendTokenLog,
     update,
+    renewSeat,
     claimNextTutorRequest,
     settleTutorRequest,
     claimNextOutboxMessage,

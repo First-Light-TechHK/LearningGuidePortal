@@ -63,6 +63,7 @@ async function refreshFixture(): Promise<RefreshFixture> {
     read: () => base.read(),
     appendTokenLog: (line) => base.appendTokenLog(line),
     update: (mutate) => base.update(mutate),
+    renewSeat: (input) => base.renewSeat(input),
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),
     claimNextOutboxMessage: (input) => base.claimNextOutboxMessage(input),
@@ -211,12 +212,13 @@ test("a closed tab or lost network releases only that seat one lease later while
   const view = await f.service.getSession({ actorUserId: "host", sessionId: session.id });
   assert.equal(view.state, "live");
   assert.equal(view.occupancy, 1);
-  // Readers already see the lapse; the next write records it at the lapse time.
-  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, at(LEASE_S));
+  // Readers already see the lapse. The Host's renewals touch only the Host's
+  // own seat; the next full write records the member's lapse at the lapse time.
 
   // The member's own heartbeat after the lapse does not revive the seat: the
   // page has to enter again, which takes a seat through the normal checks.
   assert.deepEqual(await f.service.heartbeat({ actorUserId: "member", sessionId: session.id }), { seated: false, occupancy: 1, state: "live" });
+  assert.equal(presenceOf(await f.repository.read(), session.id, "member")?.leftAt, at(LEASE_S));
   await f.service.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: f.clock() });
   assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).occupancy, 2);
 
@@ -258,6 +260,36 @@ test("a reload that comes back after the seat lapsed but inside the grace contin
   f.advanceSeconds(GRACE_S + 30);
   await f.service.heartbeat({ actorUserId: "host", sessionId: session.id });
   assert.equal((await f.service.getSession({ actorUserId: "host", sessionId: session.id })).state, "live");
+});
+
+test("a Leave by the last seated person keeps the room for someone whose seat only just ran out", async () => {
+  const f = await refreshFixture();
+  const { session } = await liveRoom(f, ["host", "member"]);
+
+  // The member's phone drops off the network; the Host keeps renewing, then
+  // leaves explicitly while the member's lapse is still inside the grace.
+  await heartbeatFor(f, session.id, ["host"], LEASE_S + 10);
+  await f.service.sweepPresence();
+  await f.service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal((await f.service.getSession({ actorUserId: "member", sessionId: session.id })).state, "live");
+
+  // The member comes back inside the grace and continues the same session.
+  f.advanceSeconds(20);
+  await f.service.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal((await f.service.getSession({ actorUserId: "member", sessionId: session.id })).occupancy, 1);
+
+  // Without a return, the room ends one grace after the Leave, dated to it.
+  const g = await refreshFixture();
+  const other = (await liveRoom(g, ["host", "member"])).session;
+  await heartbeatFor(g, other.id, ["host"], LEASE_S + 10);
+  await g.service.leaveSession({ actorUserId: "host", sessionId: other.id });
+  const emptied = g.clock();
+  assert.equal((await g.service.getSession({ actorUserId: "host", sessionId: other.id })).state, "live");
+  g.advanceSeconds(GRACE_S + 1);
+  await g.service.sweepPresence();
+  const ended = (await g.repository.read()).sessions.find((row) => row.id === other.id);
+  assert.equal(ended?.status, "completed");
+  assert.equal(ended?.completedAt, emptied);
 });
 
 test("a held seat in Starting Soon lapses too, so it never blocks the room", async () => {

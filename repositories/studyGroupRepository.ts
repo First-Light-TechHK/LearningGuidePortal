@@ -692,6 +692,38 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     return result.rows[0] ? mapWebhookReceipt(result.rows[0]) : null;
   }
 
+  // One UPDATE under the write lock instead of update()'s whole-store load
+  // and diff (QA 2026-10-19 final review B3): heartbeats arrive every 10 s
+  // from every seat holder. The lock keeps a concurrent update() from
+  // writing back a stale last_seen_at it loaded before this renewal.
+  async function renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string }) {
+    await ensureSchema();
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(STUDY_GROUP_WRITE_LOCK);
+      const result = await client.query(
+        `UPDATE study_group_presences p SET last_seen_at = $3
+          WHERE p.session_id = $1 AND p.user_id = $2 AND p.entered_at IS NOT NULL AND p.left_at IS NULL
+            AND COALESCE(p.last_seen_at, p.entered_at) > $4
+            AND EXISTS (SELECT 1 FROM live_sessions s WHERE s.id = p.session_id AND s.status IN ('scheduled', 'live'))
+          RETURNING p.id`,
+        [input.sessionId, input.userId, input.at, input.heldSince]
+      );
+      await client.query("COMMIT");
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // The connection is unusable; the original error is the real one.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async function markWebhookProcessed(input: { receiptId: string; result: "processed" | "ignored" | "failed"; failureClass?: string }) {
     await query(
       `UPDATE study_group_webhook_receipts SET status = $2, failure_class = $3, processed_at = NOW() WHERE receipt_id = $1`,
@@ -785,6 +817,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     read,
     appendTokenLog,
     update,
+    renewSeat,
     claimNextTutorRequest,
     settleTutorRequest,
     claimNextOutboxMessage,

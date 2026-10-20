@@ -171,6 +171,31 @@ test("the lease sweep closes lapsed seats at their lease end, keeps renewed seat
   );
 });
 
+test("the heartbeat fast path renews only a still-held seat of a scheduled or live session", async () => {
+  const { repository } = await seedLeaseState({ busy: "s-busy-r4", abandoned: "s-gone-r4" });
+  const nowMs = Date.now();
+  const at = new Date(nowMs).toISOString();
+  const heldSince = new Date(nowMs - 30_000).toISOString();
+  await repository.update((store) => {
+    const gone = store.sessions.find((session) => session.id === "s-gone-r4");
+    if (gone) gone.status = "completed";
+    const held = store.presences.find((row) => row.sessionId === "s-gone-r4" && row.userId === "u-gone");
+    if (held) held.lastSeenAt = new Date(nowMs).toISOString();
+  });
+  const before = await presenceStates();
+
+  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-renewed", at, heldSince }), true, "a held seat renews");
+  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-lapsed", at, heldSince }), false, "a lapsed seat must enter again");
+  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-waiting", at, heldSince }), false, "a waiting row holds no seat");
+  assert.equal(await repository.renewSeat({ sessionId: "s-gone-r4", userId: "u-gone", at, heldSince }), false, "an ended session renews nothing");
+
+  const after = await presenceStates();
+  assert.equal(presenceByUser(after, "s-busy-r4", "u-renewed").last_seen_at?.getTime(), nowMs);
+  for (const [sessionId, userId] of [["s-busy-r4", "u-lapsed"], ["s-busy-r4", "u-waiting"], ["s-gone-r4", "u-gone"]]) {
+    assert.deepEqual(presenceByUser(after, sessionId, userId), presenceByUser(before, sessionId, userId), `${userId} is untouched`);
+  }
+});
+
 test("two reconcile workers racing close each lapsed seat once and an idle tick writes nothing", async () => {
   await seedLeaseState({ busy: "s-busy-r3", abandoned: "s-gone-r3" });
   const results = (await runWorkers([{ mode: "service-reconcile" }, { mode: "service-reconcile" }])).map((outcome) => workerResult<ReconcileResult>(outcome));

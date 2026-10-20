@@ -19,7 +19,7 @@ import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent 
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
-import { closeLapsedSeats, completeSession, endLiveSessionIfEmpty, seatCount, seatHeld, sweepSeats } from "./presence";
+import { closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
 import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
@@ -205,8 +205,50 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     const leaseOwner = randomUUID();
+    let last: { text: string; mode: string } | null = null;
+    // Publishes every due outbox row of this session. It runs after each
+    // settle, so an answer reaches the room as soon as it exists instead of
+    // waiting for the rest of the queue, and once more at the end for rows a
+    // failed or dead process left behind.
+    const flushOutbox = async () => {
+      const publish = deps.publishRoomChat;
+      if (!publish) return;
+      for (;;) {
+        const message = await deps.repository.claimNextOutboxMessage({ sessionId, leaseOwner, leaseSeconds: 60 });
+        if (!message) break;
+        try {
+          // Legacy outbox rows predate the mode field; the client contract
+          // reads a missing mode as "course".
+          const mode = message.payload.mode || "course";
+          await publish({
+            room: message.payload.room,
+            text: message.payload.text,
+            projectId: message.payload.projectId || null,
+            messageId: message.payload.messageId,
+            mode,
+            ...(message.payload.replyTo ? { replyTo: message.payload.replyTo } : {})
+          });
+          await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
+          last = { text: message.payload.text, mode };
+        } catch (error) {
+          // A failed publish never blocks the queue: the request is already
+          // settled, and the failing context schedules its own re-drain with
+          // the same backoff the durable row carries (the failed row is not
+          // due, so the loop simply skips it). The poll sweep is only for
+          // work stranded by a process that died.
+          const retryDelaySeconds = Math.min(30, 5 * Math.max(1, message.attempts));
+          await deps.repository.markOutboxFailed({
+            id: message.id,
+            leaseOwner,
+            failureClass: error instanceof LiveKitGatewayError ? error.code : "publish_failed",
+            maxAttempts: 5,
+            retryDelaySeconds
+          });
+          if (message.attempts < 5) scheduleTutorRetry(sessionId, retryDelaySeconds * 1000);
+        }
+      }
+    };
     try {
-      let last: { text: string; mode: string } | null = null;
       for (;;) {
         // Claim before any provider work: at most one in-flight item per
         // session, lease-bounded, receipt-ordered across all instances.
@@ -268,44 +310,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           outbox: { room: session.id, projectId: session.liveKitProjectId ?? "", text: reply.text, messageId: item.id, mode: reply.mode, replyTo }
         });
         if (!deps.publishRoomChat) last = { text: reply.text, mode: reply.mode };
+        await flushOutbox();
       }
-      const publish = deps.publishRoomChat;
-      if (publish) {
-        for (;;) {
-          const message = await deps.repository.claimNextOutboxMessage({ sessionId, leaseOwner, leaseSeconds: 60 });
-          if (!message) break;
-          try {
-            // Legacy outbox rows predate the mode field; the client contract
-            // reads a missing mode as "course".
-            const mode = message.payload.mode || "course";
-            await publish({
-              room: message.payload.room,
-              text: message.payload.text,
-              projectId: message.payload.projectId || null,
-              messageId: message.payload.messageId,
-              mode,
-              ...(message.payload.replyTo ? { replyTo: message.payload.replyTo } : {})
-            });
-            await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
-            last = { text: message.payload.text, mode };
-          } catch (error) {
-            // A failed publish never blocks the queue: the request is already
-            // settled, and the failing context schedules its own re-drain with
-            // the same backoff the durable row carries (the failed row is not
-            // due, so the loop simply skips it). The poll sweep is only for
-            // work stranded by a process that died.
-            const retryDelaySeconds = Math.min(30, 5 * Math.max(1, message.attempts));
-            await deps.repository.markOutboxFailed({
-              id: message.id,
-              leaseOwner,
-              failureClass: error instanceof LiveKitGatewayError ? error.code : "publish_failed",
-              maxAttempts: 5,
-              retryDelaySeconds
-            });
-            if (message.attempts < 5) scheduleTutorRetry(sessionId, retryDelaySeconds * 1000);
-          }
-        }
-      }
+      await flushOutbox();
       return last;
     } finally {
       tutorDraining.delete(sessionId);
@@ -1096,6 +1103,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     // device slept or was offline, or released elsewhere) and it must enter
     // again, which re-runs every admission rule.
     async heartbeat(input: { actorUserId: string; sessionId: string }) {
+      // The common case, a seat still held, is one row write: no store load
+      // and no diff (QA 2026-10-19 final review B3). Anything else (the seat
+      // lapsed, the session moved on, no such membership) takes the full path
+      // below, which validates and answers why.
+      const now = deps.now();
+      const renewed = await deps.repository.renewSeat({
+        sessionId: input.sessionId,
+        userId: input.actorUserId,
+        at: now.toISOString(),
+        heldSince: new Date(now.getTime() - SEAT_LEASE_MS).toISOString()
+      });
+      if (renewed) return { seated: true };
       return deps.repository.update((store) => {
         const now = deps.now();
         const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);

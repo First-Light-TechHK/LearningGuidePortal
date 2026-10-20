@@ -417,7 +417,8 @@ test("the heartbeat renews only the caller's own seat and says when it is gone",
   assert.equal(before.status, 200);
   assert.deepEqual((await before.json()).data, { seated: false, occupancy: 0, state: "starting_soon" });
   await call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, {}, token, { sessionId });
-  assert.deepEqual((await (await call(postHeartbeat, url, {}, token, { sessionId })).json()).data, { seated: true, occupancy: 1, state: "starting_soon" });
+  // A held seat is renewed on the fast path, which only confirms the seat.
+  assert.deepEqual((await (await call(postHeartbeat, url, {}, token, { sessionId })).json()).data, { seated: true });
   // Someone outside the group learns nothing about the session.
   assert.equal((await call(postHeartbeat, url, {}, strangerToken, { sessionId })).status >= 400, true);
 });

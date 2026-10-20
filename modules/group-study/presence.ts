@@ -103,11 +103,28 @@ export function endAbandonedLiveSession(store: StudyGroupStore, session: LiveSes
 }
 
 /**
+ * A seat that ran out (it was not released by a Leave) within the grace
+ * period: its holder's phone went to the background or lost the network,
+ * and the page re-enters when it comes back. A lapsed seat closed by the
+ * sweep is dated to its lease end exactly; a Leave is dated to the request.
+ */
+function lapsedWithinGrace(presence: PresenceRow, now: Date) {
+  if (!presence.enteredAt) return false;
+  const ends = leaseEndsAt(presence);
+  if (!Number.isFinite(ends) || ends > now.getTime() || now.getTime() - ends >= EMPTY_LIVE_GRACE_MS) return false;
+  return !presence.leftAt || Date.parse(presence.leftAt) === ends;
+}
+
+/**
  * An explicit release (Leave Session, leaving the Study Group): a live
- * session whose last seat this was ends now.
+ * session whose last seat this was ends now, unless someone else's seat only
+ * ran out moments ago. Then the grace period decides, as for a closed page,
+ * so a member who is briefly offline comes back to the session instead of an
+ * ended one (QA 2026-10-19 final review X-1).
  */
 export function endLiveSessionIfEmpty(store: StudyGroupStore, session: LiveSessionRow, now: Date) {
   if (session.status !== "live" || seatCount(store, session.id, now) > 0) return false;
+  if (store.presences.some((item) => item.sessionId === session.id && lapsedWithinGrace(item, now))) return false;
   completeSession(store, session, now.toISOString());
   return true;
 }

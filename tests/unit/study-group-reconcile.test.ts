@@ -81,6 +81,7 @@ async function reconcileFixture(options: {
       calls.updates += 1;
       return base.update(mutate);
     },
+    renewSeat: (input) => base.renewSeat(input),
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),
     claimNextOutboxMessage: (input) => base.claimNextOutboxMessage(input),

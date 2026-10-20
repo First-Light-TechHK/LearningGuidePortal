@@ -779,6 +779,7 @@ test("a member start in flight cannot poison the Host's start", async () => {
     },
     appendTokenLog: (line) => repository.appendTokenLog(line),
     update: (mutate) => repository.update(mutate),
+    renewSeat: (input) => repository.renewSeat(input),
     claimNextTutorRequest: (input) => repository.claimNextTutorRequest(input),
     settleTutorRequest: (input) => repository.settleTutorRequest(input),
     claimNextOutboxMessage: (input) => repository.claimNextOutboxMessage(input),
@@ -1056,6 +1057,32 @@ test("tutor delivery keeps enqueue order when requests share a timestamp", async
   await local.deliverTutorAnswer({ sessionId: session.id });
 
   assert.deepEqual(calls, ["What ended in 1933 first?", "What ended in 1933 second?", "What ended in 1933 third?"]);
+});
+
+test("each tutor answer reaches the room as soon as it settles, before the next question is asked (QA r3-B1)", async () => {
+  const events: string[] = [];
+  const local = serviceWith({
+    courseKnowledge: async () => "The Weimar republic ended in 1933.",
+    publishRoomChat: async ({ text }) => { events.push(`publish ${text}`); },
+    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
+    tutorCall: async ({ text }) => {
+      events.push(`ask ${text}`);
+      return { outcome: "ok", latencyMs: 1, body: `GENERAL\nAnswer ${text}` };
+    }
+  });
+  access.add("member:course-1");
+  const group = await local.createGroup({ actorUserId: "host", title: "Answer as ready", courseId: "course-1", about: "About the group." });
+  await local.joinGroup({ actorUserId: "member", groupId: group.id });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Answer as ready", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "one", clientEventId: "evt-ready-one" });
+  await local.enqueueTutor({ actorUserId: "member", sessionId: session.id, text: "two", clientEventId: "evt-ready-two" });
+
+  await local.deliverTutorAnswer({ sessionId: session.id });
+
+  assert.deepEqual(events, ["ask one", "publish Answer one", "ask two", "publish Answer two"]);
 });
 
 test("reminders go to the host and plan-to-attend members only, once", async () => {
