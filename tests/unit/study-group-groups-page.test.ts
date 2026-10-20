@@ -83,7 +83,7 @@ test("M2: Hosted by Me has its own empty line, and no empty line shows before th
   assert.equal(mineEmptyCopy({ signedIn: true, listsLoaded: true, filter: "host", count: 1 }), null);
   assert.equal(mineEmptyCopy({ signedIn: false, listsLoaded: true, filter: "all", count: 0 }), null);
   assert.equal(en.studyGroupsPage.noHosted, "You aren't hosting any Study Group yet.");
-  assert.equal(zh.studyGroupsPage.noHosted, "你还没有主持任何学习小组");
+  assert.equal(zh.studyGroupsPage.noHosted, "你还没有主持任何学习小组。");
   assert.match(app, /\{mineEmpty \? <p className=\{styles\.noMine\}>\{copy\[mineEmpty\]\}<\/p> : null\}/);
 });
 
@@ -204,4 +204,9 @@ test("M27: the header speaks the page's language, the avatar has a name, the lan
   assert.match(header, /className=\{styles\.avatar\} href=\{`\/\$\{locale\}\/account\/my-learning`\} prefetch=\{false\} aria-label=\{copy\.myLearning\}>/);
   assert.match(header, /<Suspense fallback=\{<span className=\{styles\.lang\}>\{languageLabel\}<\/span>\}>\s*<PortalLanguageLink locale=\{locale\} label=\{languageLabel\} \/>/);
   assert.match(css, /\.chatForm:focus-within \{[^}]*border-color: #1d6bff;[^}]*box-shadow:[^}]*\}/);
+});
+
+test("QA3 N-c: the zh-CN sidebar lines end alike, and Dismiss is not Close", () => {
+  for (const key of ["noMine", "noHosted", "noDiscover", "noDiscoverMatch"] as const) assert.ok(zh.studyGroupsPage[key].endsWith("。"), key);
+  assert.notEqual(zh.studyGroupsPage.dismiss, zh.studyGroupsPage.close);
 });
