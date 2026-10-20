@@ -300,7 +300,7 @@ test("M12: LiveKit briefly unavailable says so, and blocked-camera advice fits a
     const tokenRoute = `**/api/study-groups/sessions/${sessionId}/token`;
     await pageB.route(tokenRoute, (route) => route.fulfill({ status: 503, contentType: "application/json", body: refusal("livekit_temporarily_unavailable") }));
     await pageB.reload();
-    await expect(pageB.getByText("The Live Session service is temporarily unavailable. Try again in a moment.")).toBeVisible({ timeout: 30_000 });
+    await expect(pageB.getByText("The Live Session connection is temporarily unavailable. Try again in a moment.")).toBeVisible({ timeout: 30_000 });
     await expect(pageB.getByText("Live Session connection is not configured.")).toHaveCount(0);
     await pageB.unroute(tokenRoute);
     await expectConnected(pageB, 2);

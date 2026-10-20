@@ -19,7 +19,7 @@ import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent 
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
-import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatRenewable, sweepSeats } from "./presence";
+import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
 import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
@@ -1439,8 +1439,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (session.status === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (session.status !== "live") throw new StudyGroupError("session_not_open", "AI Tutor is available only while the Live Session is live.");
         if (!session.aiTutorEnabled) throw new StudyGroupError("forbidden", "AI Tutor is not enabled for this Live Session.");
-        const seated = store.presences.some((item) => item.sessionId === session.id && item.userId === input.actorUserId && seatHeld(item, deps.now()));
-        if (!seated) throw new StudyGroupError("forbidden", "Enter the Live Session before requesting AI Tutor.");
+        const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
+        if (!presence || !seatHeld(presence, deps.now())) {
+          // A seat that ran out (the page's heartbeats did not get through)
+          // says so, so the room can tell the asker to wait for its re-entry
+          // rather than "You cannot do that" (QA final review X-5).
+          if (presence && seatLapsed(presence, deps.now())) throw new StudyGroupError("seat_lapsed", "Your seat lapsed; ask again once the room has re-entered.");
+          throw new StudyGroupError("forbidden", "Enter the Live Session before requesting AI Tutor.");
+        }
         const mine = store.tutorRequests.filter((item) => item.sessionId === session.id && item.userId === input.actorUserId);
         if (mine.filter(tutorRequestPending).length >= TUTOR_PENDING_PER_USER) throw new StudyGroupError("tutor_busy", "Wait for the AI Tutor to answer your earlier questions.");
         const minuteAgo = deps.now().getTime() - 60_000;

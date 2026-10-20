@@ -121,9 +121,14 @@ export function endAbandonedLiveSession(store: StudyGroupStore, session: LiveSes
  * sweep is dated to its lease end exactly; a Leave is dated to the request.
  */
 function lapsedWithinGrace(presence: PresenceRow, now: Date) {
+  return seatLapsed(presence, now) && now.getTime() - leaseEndsAt(presence) < EMPTY_LIVE_GRACE_MS;
+}
+
+/** A seat that ran out (not one released by a Leave): its holder stopped renewing. */
+export function seatLapsed(presence: PresenceRow, now: Date) {
   if (!presence.enteredAt) return false;
   const ends = leaseEndsAt(presence);
-  if (!Number.isFinite(ends) || ends > now.getTime() || now.getTime() - ends >= EMPTY_LIVE_GRACE_MS) return false;
+  if (!Number.isFinite(ends) || ends > now.getTime()) return false;
   return !presence.leftAt || Date.parse(presence.leftAt) === ends;
 }
 

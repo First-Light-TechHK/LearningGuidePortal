@@ -674,3 +674,30 @@ test("r3-ops: a failed background tutor delivery leaves one redacted log line", 
   const source = await readFile(path.join(process.cwd(), "modules/group-study/tutorHttp.ts"), "utf8");
   assert.match(source, /\.catch\(\(\) => \{ console\.info\(JSON\.stringify\(\{ type: "study_group\.tutor_delivery_failed" \}\)\); \}\)/);
 });
+
+test("X-5: asking the AI Tutor after the seat lapsed answers seat_lapsed (409), not a bare forbidden", async () => {
+  const f = await fixture();
+  const session = await tutorRoom(f);
+  f.advanceSeconds(31);
+  const ask = (n: number) => f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: `Still there ${n}?`, clientEventId: `evt-lapsed-${n}` });
+  assert.equal(await code(() => ask(1)), "seat_lapsed");
+  // Also once the sweep has written the lapse down.
+  await f.service.sweepPresence();
+  assert.equal(await code(() => ask(2)), "seat_lapsed");
+  // After re-entry the question goes through.
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal(await code(() => ask(3)), "ok");
+  // Someone who never entered, or who left, is still simply not in the room.
+  assert.equal(await code(() => f.service.enqueueTutor({ actorUserId: "m2", sessionId: session.id, text: "Hello?", clientEventId: "evt-never" })), "forbidden");
+  await f.service.leaveSession({ actorUserId: "m1", sessionId: session.id });
+  assert.equal(await code(() => ask(4)), "forbidden");
+
+  const { studyGroupFailure } = await import("../../modules/group-study/http");
+  const { StudyGroupError } = await import("../../modules/group-study/domain");
+  assert.equal(studyGroupFailure(new StudyGroupError("seat_lapsed", "lapsed")).status, 409);
+  const { readFile } = await import("node:fs/promises");
+  for (const locale of ["en-GB", "zh-CN"]) {
+    const messages = JSON.parse(await readFile(path.join(process.cwd(), `messages/${locale}.json`), "utf8")) as { studyGroupsPage: { errors: Record<string, string> } };
+    assert.ok(messages.studyGroupsPage.errors.seat_lapsed, `${locale} has the copy`);
+  }
+});

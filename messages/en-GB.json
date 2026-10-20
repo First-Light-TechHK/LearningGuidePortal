@@ -1105,7 +1105,6 @@
       "tutor_busy": "Wait for the AI Tutor to answer your earlier questions first.",
       "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
       "seat_lapsed": "Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.",
-      "livekit_temporarily_unavailable": "The Live Session service is temporarily unavailable. Try again in a moment.",
       "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."
     }
