@@ -359,8 +359,22 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     return store.sessions.some((session) => session.groupId === groupId && effectiveSessionState(session, deps.now()) === "live");
   }
 
-  async function toView(group: StudyGroupRow, store: StudyGroupStore, memberCount: number, role: GroupRole | null): Promise<GroupView> {
-    const course = await deps.courseSummary(group.courseId);
+  // One course lookup per course for a whole list, not one per group: a list
+  // of many groups on few courses stays as fast as the store read.
+  function courseSummaries() {
+    const cache = new Map<string, ReturnType<StudyGroupDeps["courseSummary"]>>();
+    return (courseId: string) => {
+      let summary = cache.get(courseId);
+      if (!summary) {
+        summary = deps.courseSummary(courseId);
+        cache.set(courseId, summary);
+      }
+      return summary;
+    };
+  }
+
+  async function toView(group: StudyGroupRow, store: StudyGroupStore, memberCount: number, role: GroupRole | null, courseSummary = deps.courseSummary): Promise<GroupView> {
+    const course = await courseSummary(group.courseId);
     return {
       ...group,
       role,
@@ -699,12 +713,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const store = await deps.repository.read();
       const views: GroupView[] = [];
       const joinedAt = new Map<string, string>();
+      const courseSummary = courseSummaries();
       for (const membership of store.memberships.filter((item) => item.userId === actorUserId && !item.leftAt)) {
         const group = store.groups.find((item) => item.id === membership.groupId && item.status === "active");
         if (!group) continue;
         const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;
         joinedAt.set(group.id, membership.joinedAt);
-        views.push(await toView(group, store, memberCount, membership.role));
+        views.push(await toView(group, store, memberCount, membership.role, courseSummary));
       }
       // BUG-0120 (SIT): the sidebar used to render in membership insertion order (oldest
       // first), so a just-created Study Group appeared at the very bottom of the list.
@@ -792,14 +807,15 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const joined = new Set(store.memberships.filter((item) => item.userId === input.actorUserId && !item.leftAt).map((item) => item.groupId));
       const needle = clean(input.query || "").toLowerCase();
       const views: GroupView[] = [];
+      const courseSummary = courseSummaries();
       for (const group of store.groups) {
         if (group.status !== "active" || joined.has(group.id)) continue;
         if (input.courseId && group.courseId !== input.courseId) continue;
-        const course = await deps.courseSummary(group.courseId);
+        const course = await courseSummary(group.courseId);
         const haystack = `${group.title} ${group.about} ${course?.title || ""}`.toLowerCase();
         if (needle && !haystack.includes(needle)) continue;
         const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;
-        views.push(await toView(group, store, memberCount, null));
+        views.push(await toView(group, store, memberCount, null, courseSummary));
       }
       // Newest first, like the My list (QA 2026-10-19 N11): the store's row
       // order is not an order (PostgreSQL returns rows in any order).

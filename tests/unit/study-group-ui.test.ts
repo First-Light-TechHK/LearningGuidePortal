@@ -261,7 +261,7 @@ test("a Live Session card names its state, attendance, and the plan reminder", (
   assert.match(app, /copy\.maximumLine/);
   assert.match(app, /view=reminders/);
   assert.match(app, /void refreshOpenGroup\(selectedId\)/);
-  assert.match(app, /void loadLists\(\); \}, 3_000\)/);
+  assert.match(app, /void loadLists\(\{ poll: true \}\); \}, 3_000\)/);
   assert.match(app, /generation !== listGeneration\.current/);
   assert.match(app, /openGroupId\.current !== id/);
   assert.match(app, /setAttendeeSessionId\(session\.id\)/);
@@ -864,7 +864,9 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   // page) left status "loading" forever for the anonymous visitor - the signed-in 3s
   // poll is the only self-healing path and it does not run for guests. The catch lands
   // on the existing pane error, whose Retry button re-runs loadLists.
-  assert.match(app, /async function loadLists\(\) \{\s*const generation = \+\+listGeneration\.current;\s*try \{/);
+  assert.match(app, /async function loadLists\(options: \{ poll\?: boolean \} = \{\}\) \{(?:\s*\/\/[^\n]*)*\s*if \(options\.poll && listLoading\.current\) return;\s*const generation = \+\+listGeneration\.current;\s*listLoading\.current = true;\s*try \{/);
+  // A poll never supersedes a load in flight, so slow lists still land.
+  assert.match(app, /\} finally \{\s*if \(generation === listGeneration\.current\) listLoading\.current = false;\s*\}/);
   // Only a list that never loaded becomes the error pane; a failed poll keeps the screen (QA N10).
   assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(generation !== listGeneration\.current \|\| loadedOnce\.current\) return;\s*setStatus\("error"\);\s*setErrorCode\("error"\);\s*\}/);
   // The same landing covers the ?group= deep link: a rejected detail fetch must not

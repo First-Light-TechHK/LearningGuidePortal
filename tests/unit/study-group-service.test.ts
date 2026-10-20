@@ -1270,6 +1270,24 @@ function serviceWith(extra: Partial<StudyGroupDeps>) {
   });
 }
 
+test("the group lists look each course up once, however many groups share it", async () => {
+  const lookups: string[] = [];
+  const local = serviceWith({
+    courseSummary: async (courseId) => {
+      lookups.push(courseId);
+      return { id: courseId, title: "German History", slug: "german-history" };
+    }
+  });
+  for (let index = 0; index < 5; index += 1) await local.createGroup({ actorUserId: "host", title: `Shared course ${index}`, courseId: "course-1", about: "About the group." });
+  lookups.length = 0;
+  assert.equal((await local.listDiscover({ actorUserId: "other" })).filter((group) => group.title.startsWith("Shared course")).length, 5);
+  assert.deepEqual([...new Set(lookups)], ["course-1"]);
+  assert.equal(lookups.length, 1);
+  lookups.length = 0;
+  assert.equal((await local.listMine("host")).filter((group) => group.title.startsWith("Shared course")).length, 5);
+  assert.equal(lookups.length, 1);
+});
+
 test("the reminders view is served through the service port", async () => {
   const withReminders = serviceWith({
     listReminders: async (userId) => [{ body: `${userId} reminder`, createdAt: "2026-09-19T02:00:00.000Z" }]

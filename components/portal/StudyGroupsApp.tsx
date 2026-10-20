@@ -110,6 +110,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [editAbout, setEditAbout] = useState("");
   const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string }>>([]);
   const listGeneration = useRef(0);
+  const listLoading = useRef(false);
   const openGroupId = useRef<string | null>(null);
   const waitingHoldRef = useRef<string | null>(null);
   const waitingHandedOffRef = useRef(false);
@@ -125,8 +126,13 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     }
   }
 
-  async function loadLists() {
+  async function loadLists(options: { poll?: boolean } = {}) {
+    // A poll never supersedes a load still in flight: when the lists take
+    // longer than the poll interval, superseding every answer would leave the
+    // page on "loading" for good. An explicit load (after a change) still does.
+    if (options.poll && listLoading.current) return;
     const generation = ++listGeneration.current;
+    listLoading.current = true;
     try {
       const [myResult, discoverResult, courseResult, reminderResult] = await Promise.all([
         signedIn ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
@@ -166,6 +172,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       if (generation !== listGeneration.current || loadedOnce.current) return;
       setStatus("error");
       setErrorCode("error");
+    } finally {
+      if (generation === listGeneration.current) listLoading.current = false;
     }
   }
 
@@ -285,7 +293,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
 
   useEffect(() => {
     if (!signedIn) return;
-    const timer = window.setInterval(() => { void loadLists(); }, 3_000);
+    const timer = window.setInterval(() => { void loadLists({ poll: true }); }, 3_000);
     return () => window.clearInterval(timer);
   }, [signedIn, courseFilter, query]);
 
