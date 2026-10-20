@@ -375,3 +375,16 @@ test("tutor queue text that asks to ignore or reveal the system prompt is stored
   }
   assert.equal(await readFile(promptPath, "utf8"), serverPrompt);
 });
+
+test("two copies of the file store on one file queue their writes and lose nothing", async () => {
+  // The dev server can evaluate the repository module more than once (one
+  // copy per route bundle); each copy must still join the same write queue.
+  const first = createStudyGroupRepository(directory);
+  const second = createStudyGroupRepository(directory);
+  const writes = Array.from({ length: 20 }, (_, index) => (index % 2 ? first : second).update((store) => {
+    store.reminders.push({ id: `queued-${index}`, sessionId: "s", userId: `u-${index}`, sentAt: NOW } as (typeof store.reminders)[number]);
+  }));
+  await Promise.all(writes);
+  const ids = (await first.read()).reminders.map((row) => row.id).filter((id) => id.startsWith("queued-"));
+  assert.equal(ids.length, 20);
+});

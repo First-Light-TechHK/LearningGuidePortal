@@ -128,9 +128,16 @@ function dueAt(value: string | null | undefined, nowMs: number) {
   return !value || Date.parse(value) <= nowMs;
 }
 
+// One write queue per store file for the whole process. The dev server
+// evaluates this module more than once (one copy per route bundle, again
+// after a recompile), and each copy used to keep its own queue: two copies
+// then wrote the file at once, lost each other's changes and raced on the
+// temporary file (a 500 on enter or heartbeat).
+const fileQueues = globalThis as typeof globalThis & { __lgStudyGroupFileQueues?: Map<string, Promise<unknown>> };
+
 export function createStudyGroupRepository(directory: string): StudyGroupRepository {
   const file = path.join(directory, "study-group.json");
-  let chain: Promise<unknown> = Promise.resolve();
+  const queues = (fileQueues.__lgStudyGroupFileQueues ??= new Map());
 
   async function read(): Promise<StudyGroupStore> {
     try {
@@ -143,7 +150,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
 
   async function write(store: StudyGroupStore) {
     await mkdir(directory, { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
+    const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(store)}\n`, "utf8");
     await rename(tmp, file);
   }
@@ -161,13 +168,13 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
   }
 
   function update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>) {
-    const run = chain.then(async () => {
+    const run = (queues.get(file) ?? Promise.resolve()).then(async () => {
       const store = await read();
       const result = await mutate(store);
       await write(store);
       return result;
     });
-    chain = run.then(() => undefined, () => undefined);
+    queues.set(file, run.then(() => undefined, () => undefined));
     return run;
   }
 
