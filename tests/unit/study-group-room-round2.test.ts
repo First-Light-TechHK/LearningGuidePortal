@@ -26,7 +26,7 @@ test("r2-B4: the seat heartbeat renews at once when the tab is visible again or 
   assert.match(effect, /document\.removeEventListener\("visibilitychange", beatWhenVisible\);/);
   assert.match(effect, /window\.removeEventListener\("online", beatNow\);/);
   // One heartbeat at a time: an extra trigger never doubles a re-entry.
-  assert.match(effect, /if \(heartbeatBusy\.current\) return;/);
+  assert.match(effect, /if \(heartbeatBusy\.current \|\| leftRef\.current\) return;/);
 });
 
 test("X-4: a heartbeat re-entry refused as full keeps a still-connected call", () => {

@@ -6,6 +6,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { liveKitDisconnectReasonName, transitionLiveKitClient } from "@/modules/group-study/liveKitClientRecovery";
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
+import { createSeatIntents } from "@/modules/group-study/seatIntents";
 import { participantStatus, raisedHands, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
@@ -152,6 +153,14 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // only by a failed leave or Rejoin: a re-render while the leave request is
   // in flight must not undo it, or a heartbeat could seat the page again.
   const leftRef = useRef(false);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  // Enter, renew and leave go to the server one at a time and never enter or
+  // renew after a leave (modules/group-study/seatIntents.ts).
+  const [seatIntent] = useState(() => createSeatIntents({
+    send: (intent, signal) => studyGroupRequest(`/api/study-groups/sessions/${sessionIdRef.current}/${intent}`, { method: "POST", body: "{}", signal }),
+    hasLeft: () => leftRef.current
+  }));
   const [connectAttempt, setConnectAttempt] = useState(0);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
   const recoveryUsedRef = useRef(false);
@@ -449,13 +458,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // online renews at once (QA 2026-10-19 final review r2-B4).
   useEffect(() => {
     if (!seated || left || blocked || accessLost || (session?.state !== "live" && session?.state !== "starting_soon")) return;
+    // Each intent is bounded by the seat intents' own timeout, so a request
+    // stalled by a sleeping device frees the next renewal (QA3 F3), and a page
+    // that has left sends neither a renewal nor an entry (QA3 F1, F5).
     const beat = async () => {
-      if (heartbeatBusy.current) return;
+      if (heartbeatBusy.current || leftRef.current) return;
       heartbeatBusy.current = true;
       try {
-        const result = await studyGroupRequest<{ seated: boolean }>(`/api/study-groups/sessions/${sessionId}/heartbeat`, { method: "POST", body: "{}" });
+        const result = await seatIntent<{ seated: boolean }>("heartbeat");
         if (!result.ok || result.data.seated || leftRef.current || blockedRef.current) return;
-        const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
+        const entered = await seatIntent("enter");
         if (entered.ok || leftRef.current) return;
         if (seatReentryAction(entered.code, roomRef.current?.state === "connected") === "keep") return;
         setSeated(false);
@@ -517,8 +529,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     }
     let cancelled = false;
     setEntryDone(false);
-    void studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" }).then((result) => {
-      if (cancelled) return;
+    void seatIntent("enter").then((result) => {
+      if (cancelled || leftRef.current) return;
       if (result.ok) setSeated(true);
       else if (result.code !== "session_not_open") setErrorCode(result.code);
       setEntryDone(true);
@@ -544,8 +556,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     void (async () => {
       await releaseRoom();
       if (connectGeneration.current !== generation || leftRef.current) return;
-      const entered = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/enter`, { method: "POST", body: "{}" });
-      if (connectGeneration.current !== generation) return;
+      const entered = await seatIntent("enter");
+      if (connectGeneration.current !== generation || leftRef.current) return;
       if (!entered.ok) throw new Error(entered.code);
       await connect(generation, recovery);
     })().catch((error: unknown) => {
@@ -656,11 +668,14 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // taken the leave, the seat and the call stay and the dialog offers the
   // leave again instead of claiming "You left" (QA 2026-10-19 M15). An ended
   // session has nobody left to leave.
+  // The leave goes out after any entry or renewal already on its way, and no
+  // entry or renewal follows it, so the server never seats the page again
+  // after taking its leave (QA3 F5).
   async function leaveSession() {
     leftRef.current = true;
     setLeaving(true);
     setLeaveError("");
-    const result = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/leave`, { method: "POST", body: "{}" });
+    const result = await seatIntent("leave");
     setLeaving(false);
     if (!result.ok && result.code !== "session_unavailable") {
       leftRef.current = false;

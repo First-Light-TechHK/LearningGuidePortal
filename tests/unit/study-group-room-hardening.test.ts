@@ -25,7 +25,7 @@ test("hunt M1: a failed entry request leaves Loading and offers a retry", () => 
   // entryDone stays false and the page shows Loading forever.
   assert.match(
     room,
-    /sessions\/\$\{sessionId\}\/enter`, \{ method: "POST", body: "{}" \}\)\.then\(\(result\) => \{[\s\S]{0,700}?\}\)\.catch\(\(\) => \{[\s\S]{0,600}?setErrorCode\("connect_failed"\);\s*\n\s*setEntryDone\(true\);/
+    /seatIntent\("enter"\)\.then\(\(result\) => \{[\s\S]{0,700}?\}\)\.catch\(\(\) => \{[\s\S]{0,600}?setErrorCode\("connect_failed"\);\s*\n\s*setEntryDone\(true\);/
   );
   // The failure is recoverable in place: the Retry control re-runs the entry
   // request through an attempt counter the effect depends on.
@@ -143,8 +143,10 @@ test("audit F-8: a failed leave request cannot skip the room's cleanup", () => {
   const leaveStart = room.indexOf("async function leaveSession");
   assert.notEqual(leaveStart, -1);
   const leaveBody = room.slice(leaveStart, room.indexOf("function rejoin()"));
-  assert.match(leaveBody, /const result = await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\);/);
-  assert.match(leaveBody, /if \(!result\.ok && result\.code !== "session_unavailable"\) \{\s*leftRef\.current = false;\s*setLeaveError\(result\.code\);\s*return;\s*\}/);
+  // The leave is a seat intent: it goes out after any entry already on its
+  // way and is bounded by the intents' timeout (QA3 F3, F5).
+  assert.match(leaveBody, /const result = await seatIntent\("leave"\);/);
+  assert.match(leaveBody, /if \(!result\.ok && result\.code !== "session_unavailable"\) \{\s*leftRef\.current = false;\s*setLeaveError\(result\.code\);[\s\S]*?return;\s*\}/);
   // Left before the call drops, so the connect effect never enters again (M15).
   assert.match(leaveBody, /setLeft\(true\);\s*await releaseRoom\(\);\s*await load\(\);/);
 });

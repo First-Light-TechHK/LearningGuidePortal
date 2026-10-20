@@ -153,7 +153,7 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /reconnectDelayMs\(failuresRef\.current\)/);
   assert.match(room, /releaseRoom\(\)/);
   assert.match(room, /session\?\.state === "completed"\) void releaseRoom\(\)/);
-  assert.match(room, /sessions\/\$\{sessionId\}\/enter/);
+  assert.match(room, /seatIntent\("enter"\)/);
   assert.match(room, /session\.state === "scheduled"/);
   assert.match(room, /copy\.errors\.session_not_open/);
   assert.match(room, /copy\.enterWindow/);
@@ -220,7 +220,7 @@ test("a starting-soon Live Session shows its title, time, duration, and occupanc
   assert.match(room, /copy\.upToParticipants/);
   // The seat is held by the heartbeat while the room page is open (QA 2026-10-19 seat lease).
   assert.match(room, /session\?\.state !== "live" && session\?\.state !== "starting_soon"\)\) return;/);
-  assert.match(room, /sessions\/\$\{sessionId\}\/heartbeat/);
+  assert.match(room, /await seatIntent<\{ seated: boolean \}>\("heartbeat"\);/);
   assert.match(app, /waitingHoldRef/);
   assert.match(app, /waitingHandedOffRef\.current = true/);
   // The waiting popup keeps its seat by heartbeat; closing the popup releases it.
