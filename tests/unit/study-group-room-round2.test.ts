@@ -96,7 +96,7 @@ test("M17 / M20: a page that may not show the session offers sign-in, the way ba
   const load = between(room, "async function load() {", "async function connect(");
   assert.match(load, /current\.code === "forbidden" \|\| current\.code === "unauthenticated"\) \{[\s\S]*?await releaseRoom\(\);/);
   assert.match(room, /const accessLost = pollError === "forbidden" \|\| pollError === "unauthenticated";/);
-  assert.match(room, /if \(session\?\.state !== "live" \|\| connected \|\| left \|\| !seated \|\| blocked \|\| accessLost\) return;/);
+  assert.match(room, /if \(session\?\.state !== "live" \|\| connected \|\| left \|\| leftRef\.current \|\| !seated \|\| blocked \|\| accessLost\) return;/);
 });
 
 test("M18: the sharer never sees their own share in the main view; failure says so; no Share without getDisplayMedia", () => {

@@ -145,7 +145,8 @@ test("audit F-8: a failed leave request cannot skip the room's cleanup", () => {
   const leaveBody = room.slice(leaveStart, room.indexOf("function rejoin()"));
   assert.match(leaveBody, /const result = await studyGroupRequest\(`\/api\/study-groups\/sessions\/\$\{sessionId\}\/leave`, \{ method: "POST", body: "\{\}" \}\);/);
   assert.match(leaveBody, /if \(!result\.ok && result\.code !== "session_unavailable"\) \{\s*leftRef\.current = false;\s*setLeaveError\(result\.code\);\s*return;\s*\}/);
-  assert.match(leaveBody, /await releaseRoom\(\);\s*setLeft\(true\);\s*await load\(\);/);
+  // Left before the call drops, so the connect effect never enters again (M15).
+  assert.match(leaveBody, /setLeft\(true\);\s*await releaseRoom\(\);\s*await load\(\);/);
 });
 
 test("hunt M5: the tutor queue enforces the learning-page limit at the service", () => {

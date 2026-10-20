@@ -124,7 +124,9 @@ test("M6: every sign-in link comes back to the open group, and a signed-out visi
   assert.match(app, /setSelectedId\(id\);\s*showGroupInAddress\(id\);/);
   assert.match(header, /<StudyGroupSignInLink locale=\{locale\} className=\{styles\.signInLink\} label=\{copy\.signIn\} \/>/);
   assert.match(signInLink, /studyGroupSignInHref\(locale, pathname \+ \(query \? `\?\$\{query\}` : ""\)\)/);
-  assert.match(app, /selected\.canJoin \? copy\.joinAccess : signedIn \? fill\(copy\.courseAccessRequired, \{ course: selected\.courseTitle \}\) : copy\.signInToJoin/);
+  assert.match(app, /selected\.canJoin \? copy\.joinAccess : !signedIn \? copy\.signInToJoin : selected\.courseAvailable === false \? copy\.courseUnavailable : fill\(copy\.courseAccessRequired, \{ course: selected\.courseTitle \}\)/);
+  // Next.js only syncs useSearchParams (the header link) when replaceState gets a state of its own.
+  assert.match(app, /window\.history\.replaceState\(null, "", url\.pathname \+ url\.search \+ url\.hash\);/);
   assert.equal(en.studyGroupsPage.signInToJoin, "Sign in to join this Study Group.");
 });
 

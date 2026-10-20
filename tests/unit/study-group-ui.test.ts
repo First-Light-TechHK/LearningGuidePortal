@@ -141,7 +141,11 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /raise-hand"\) \? <button type="button" aria-pressed=\{Boolean\(roomApi\?\.localParticipant\.identity && hands\.includes\(roomApi\.localParticipant\.identity\)\)\} disabled=\{!connected\}/);
   // A hand goes down with the person who leaves; a newcomer hears raised hands from their owners (QA M19).
   assert.match(room, /ParticipantDisconnected, \(participant\) => \{\s*setHands\(\(items\) => raisedHands\(items, participant\.identity, false\)\);\s*paint\(\);\s*window\.setTimeout\(\(\) => void load\(\), 400\);\s*\}/);
-  assert.match(room, /ParticipantConnected, \(participant\) => \{[\s\S]*?destinationIdentities: \[participant\.identity\]/);
+  assert.match(room, /ParticipantConnected, \(participant\) => \{[\s\S]*?sendRaisedHand\(participant\.identity\);/);
+  assert.match(room, /const sendRaisedHand = \(identity: string\) => \{[\s\S]*?destinationIdentities: \[identity\]/);
+  // The newcomer asks once its own connection is up; a raiser answers it alone.
+  assert.match(room, /setConnected\(true\);\s*setReconnecting\(false\);\s*void room\.localParticipant\.publishData\(new TextEncoder\(\)\.encode\(JSON\.stringify\(\{ type: "hands-query" \}\)\)/);
+  assert.match(room, /message\.type === "hands-query" && participant\) sendRaisedHand\(participant\.identity\);/);
   assert.match(room, /connected && tiles\.length > 0 \? tiles\.length : session\.occupancy/);
   assert.match(room, /controls\.includes\("participants"\)/);
   assert.match(room, /data-participants=\{present\}/);
