@@ -22,6 +22,10 @@ export type StudySession = {
   // waiting): entering again renews that seat, so the session is not full for them.
   viewerSeated?: boolean;
   attendees: Array<{ userId: string; displayName: string }>;
+  // Live sessions with the AI Tutor on: whether the room offers it right now
+  // (and why not), and the viewer's own questions still waiting.
+  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "budget" };
+  viewerTutorQuestions?: Array<{ id: string; position: number; answering: boolean }>;
 };
 export type StudyGroupDetail = {
   id: string;
@@ -161,6 +165,24 @@ export function tutorChatLines<T extends { id: string; pending?: boolean }>(curr
 export function tutorAskAgain(items: Array<{ id: string; mode?: string }>, answerId: string | undefined) {
   if (!answerId) return false;
   return items.some((item) => item.id === answerId && item.mode === "unavailable");
+}
+
+// Why the room does not offer the AI Tutor right now, or null when it does
+// (tutor infra 2026-10-20): the server decides, the room only shows it.
+export function tutorOfflineReason(session: Pick<StudySession, "aiTutorEnabled" | "tutor">) {
+  if (!session.aiTutorEnabled || !session.tutor || session.tutor.available) return null;
+  return session.tutor.reason;
+}
+
+// Where the asker's waiting question stands, from the session the server
+// last returned: "answering" while it is being answered (or nothing says
+// otherwise), "queued" with how many come first, and whether it can still be
+// withdrawn (only a question nobody started on).
+export function tutorPendingState(session: Pick<StudySession, "viewerTutorQuestions"> | null, answerLineId: string) {
+  const id = answerLineId.replace(/^tutor-/, "");
+  const entry = session?.viewerTutorQuestions?.find((item) => item.id === id);
+  if (!entry || entry.answering || entry.position <= 0) return { state: "answering" as const, ahead: 0, withdrawable: Boolean(entry && !entry.answering) };
+  return { state: "queued" as const, ahead: entry.position, withdrawable: true };
 }
 
 // Why a question never reached the AI Tutor, for the asker's own line (QA

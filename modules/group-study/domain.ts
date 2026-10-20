@@ -106,10 +106,44 @@ export type TutorRequestRow = {
   outboxMessageId?: string | null;
 };
 
+export function tutorRequestState(row: TutorRequestRow): TutorRequestStatus {
+  if (row.status) return row.status;
+  if (row.answeredAt) return "answered";
+  return row.inFlight ? "in_flight" : "queued";
+}
+
+// Fair answer order (tutor infra 2026-10-20): the room's questions are
+// answered one at a time, by turns between askers — everyone's first
+// question before anyone's second — and in receipt order within a turn. A
+// question's turn is how many of the same asker's questions in this session
+// came in before it, waiting or already answered; withdrawn and dead-lettered
+// ones do not count. Counting answered ones keeps an asker whose first
+// question was just answered from jumping back to the front. The PostgreSQL
+// claim orders by the same key in SQL.
+// Receipt order: received time, then the PostgreSQL sequence; the file store
+// has no sequence, so its array order (append order) breaks the last tie.
+function tutorReceiptOrder(rows: TutorRequestRow[], left: TutorRequestRow, right: TutorRequestRow) {
+  return left.receivedAt.localeCompare(right.receivedAt) || (left.seq ?? 0) - (right.seq ?? 0) || rows.indexOf(left) - rows.indexOf(right);
+}
+
+export function tutorFairTurn(rows: TutorRequestRow[], row: TutorRequestRow) {
+  return rows.filter((other) => other.sessionId === row.sessionId && other.userId === row.userId && other.id !== row.id
+    && tutorRequestState(other) !== "dead_letter"
+    && tutorReceiptOrder(rows, other, row) < 0).length;
+}
+
+export function compareTutorFairOrder(rows: TutorRequestRow[]) {
+  return (left: TutorRequestRow, right: TutorRequestRow) =>
+    tutorFairTurn(rows, left) - tutorFairTurn(rows, right) || tutorReceiptOrder(rows, left, right);
+}
+
 // Who the AI Tutor answer replies to, so everyone in the room can tell which
 // question an answer belongs to (QA 2026-10-19 N6).
 export type TutorReplyTo = { name: string; question: string };
-export type TutorOutboxPayload = { room: string; projectId: string; text: string; messageId: string; mode?: string; replyTo?: TutorReplyTo };
+// `kind` "quiz" marks an understanding-check question the Tutor asked the
+// group; `reason` is the failure class of an unavailable answer (tutor infra
+// 2026-10-20). Both ride in the JSON payload: no schema change.
+export type TutorOutboxPayload = { room: string; projectId: string; text: string; messageId: string; mode?: string; replyTo?: TutorReplyTo; kind?: "quiz"; reason?: string };
 
 export type OutboxKind = "room_message";
 export type OutboxStatus = "queued" | "sending" | "delivered" | "failed" | "dead";

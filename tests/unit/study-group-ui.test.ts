@@ -528,7 +528,8 @@ test("typing @ in the chat opens a mention list for AI Tutor and the present mem
   assert.match(room, /setMention\(\{ start: at, query: upToCaret\.slice\(at \+ 1\), index: 0 \}\);/);
   // Candidates: AI Tutor first (only when enabled), members in roster order,
   // deduplicated, without the local participant, prefix-filtered, capped at 6.
-  assert.match(room, /session\.aiTutorEnabled \? \[\{ key: "tutor", name: roomCopy\.tutorName, tutor: true \}\] : \[\]/);
+  // The AI Tutor is offered only while the server says it is available.
+  assert.match(room, /session\.aiTutorEnabled && !tutorOffline \? \[\{ key: "tutor", name: roomCopy\.tutorName, tutor: true \}\] : \[\]/);
   assert.match(room, /person\.key === roomApi\?\.localParticipant\.identity \|\| seenNames\.has\(person\.name\)/);
   assert.match(room, /row\.name\.toLowerCase\(\)\.startsWith\(fragment\)/);
   assert.match(room, /if \(mentionRows\.length === 6\) break;/);

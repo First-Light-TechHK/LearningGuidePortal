@@ -12,7 +12,9 @@ import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutor
 //   the text is published; a missing tag defaults to GENERAL so nothing can
 //   be presented as course content unverified.
 // - The published text is clamped: markdown removed, bullets normalised, at
-//   most four lines, and capped at 120 CJK characters or 240 otherwise.
+//   most six lines, and capped at 240 CJK characters or 480 otherwise (tutor
+//   infra 2026-10-20: current models write past the old 4 lines / 120 / 240).
+// - "COURSE QUIZ" / "GENERAL QUIZ" marks an understanding-check question.
 
 test("a COURSE tag line is parsed off and selects the course mode", () => {
   const parsed = parseTutorReply("COURSE\nEpicurus taught that pleasure is the highest good.\n• Pleasure means the absence of pain.");
@@ -65,7 +67,7 @@ test("a bold-wrapped tag is parsed and never leaks into the text", () => {
 });
 
 test("a bare tag yields an empty text", () => {
-  assert.deepEqual(parseTutorReply("COURSE"), { mode: "course", text: "" });
+  assert.deepEqual(parseTutorReply("COURSE"), { mode: "course", kind: "answer", text: "" });
 });
 
 // The two reply_format examples from the system prompt, verbatim. The prompt
@@ -103,9 +105,19 @@ test("the system prompt's GENERAL example is consistent with the parser: mode ge
   assert.equal(clampTutorReply(parsed.text), parsed.text);
 });
 
-test("clamp keeps at most four lines and normalises bullets", () => {
-  const raw = "Intro line.\n- first point\n* second point\n• third point\n- fourth point";
-  assert.equal(clampTutorReply(raw), "Intro line.\n• first point\n• second point\n• third point");
+test("clamp keeps at most six lines and normalises bullets", () => {
+  const raw = "Intro line.\n- first point\n* second point\n• third point\n- fourth point\n- fifth point\n- sixth point";
+  assert.equal(clampTutorReply(raw), "Intro line.\n• first point\n• second point\n• third point\n• fourth point\n• fifth point");
+});
+
+test("a QUIZ word after the tag marks an understanding-check question", () => {
+  assert.deepEqual(parseTutorReply("COURSE QUIZ\nWhy should we not fear death?"), { mode: "course", kind: "quiz", text: "Why should we not fear death?" });
+  assert.deepEqual(parseTutorReply("[GENERAL QUIZ] What does caffeine block?"), { mode: "general", kind: "quiz", text: "What does caffeine block?" });
+  assert.deepEqual(parseTutorReply("**COURSE** **QUIZ**\nWhy?"), { mode: "course", kind: "quiz", text: "Why?" });
+  // Anything else on the tag line is prose, not a tag: the fail-safe holds.
+  assert.equal(parseTutorReply("COURSE QUIZZES\nx").mode, "general");
+  assert.equal(parseTutorReply("COURSE QUIZZES\nx").kind, "answer");
+  assert.equal(parseTutorReply("COURSE\nAn answer.").kind, "answer");
 });
 
 test("clamp strips markdown, headings, and divider lines", () => {
@@ -117,30 +129,32 @@ test("clamp drops empty lines and may return an empty string", () => {
   assert.equal(clampTutorReply("---\n\n"), "");
 });
 
-test("clamp caps an English reply at 240 characters on a sentence boundary", () => {
+test("clamp caps an English reply at 480 characters on a sentence boundary", () => {
   const sentence = "This is a key point about the course material. "; // 47 characters
   const raw = sentence.repeat(20);
   const clamped = clampTutorReply(raw);
-  assert.equal(clamped.length <= 241, true);
+  assert.equal(clamped.length <= 481, true);
+  assert.equal(clamped.length > 400, true);
   // Cut after the last whole sentence; the ellipsis takes the full stop's place.
   assert.equal(clamped.endsWith("material…"), true);
   assert.equal(clamped.includes(".…"), false);
 });
 
-test("clamp caps a Chinese reply at 120 characters on a sentence boundary", () => {
+test("clamp caps a Chinese reply at 240 characters on a sentence boundary", () => {
   const sentence = "这是课程材料中的一个要点。"; // 13 characters
   const raw = sentence.repeat(20);
   const clamped = clampTutorReply(raw);
-  assert.equal(clamped.length <= 121, true);
+  assert.equal(clamped.length <= 241, true);
+  assert.equal(clamped.length > 200, true);
   assert.equal(clamped.endsWith("要点…"), true);
   assert.equal(clamped.includes("。…"), false);
 });
 
 test("clamp hard-cuts when the only boundary is too early", () => {
-  const raw = "Short. " + "x".repeat(400);
+  const raw = "Short. " + "x".repeat(800);
   const clamped = clampTutorReply(raw);
-  // The only boundary sits at position 5, far before half of the 240 cap.
-  assert.equal(clamped, `${raw.slice(0, 240)}…`);
+  // The only boundary sits at position 5, far before half of the 480 cap.
+  assert.equal(clamped, `${raw.slice(0, 480)}…`);
 });
 
 test("clamp keeps underscores and asterisks inside words and numbers (QA M22)", () => {
@@ -151,26 +165,26 @@ test("clamp keeps underscores and asterisks inside words and numbers (QA M22)", 
 });
 
 test("clamp sizes the cap by the share of CJK characters (QA M22)", () => {
-  assert.equal(tutorReplyLimit("English only."), 240);
-  assert.equal(tutorReplyLimit("全部是中文。"), 120);
+  assert.equal(tutorReplyLimit("English only."), 480);
+  assert.equal(tutorReplyLimit("全部是中文。"), 240);
   // One Chinese word in an English reply barely moves the cap.
   const mixed = `${"An English answer that names one term ".repeat(5)}伊壁鸠鲁 once.`;
-  assert.equal(tutorReplyLimit(mixed) > 230, true);
+  assert.equal(tutorReplyLimit(mixed) > 460, true);
   assert.equal(clampTutorReply(mixed), mixed);
 });
 
 test("a cut reply never ends on doubled punctuation (QA M22)", () => {
-  const clause = clampTutorReply("这是一个很长的句子，".repeat(20));
+  const clause = clampTutorReply("这是一个很长的句子，".repeat(40));
   assert.equal(clause.endsWith("句子…"), true);
   assert.equal(/[，。,.]…$/.test(clause), false);
-  const english = clampTutorReply("one clause, ".repeat(40));
+  const english = clampTutorReply("one clause, ".repeat(80));
   assert.equal(english.endsWith("clause…"), true);
 });
 
 test("clamp keeps a reply exactly at the cap and truncates one past it", () => {
-  const exact = "字".repeat(120);
+  const exact = "字".repeat(240);
   assert.equal(clampTutorReply(exact), exact);
-  assert.equal(clampTutorReply("字".repeat(121)), `${"字".repeat(120)}…`);
+  assert.equal(clampTutorReply("字".repeat(241)), `${"字".repeat(240)}…`);
 });
 
 test("the tutor call sends the whole course material under the course_material label", async () => {

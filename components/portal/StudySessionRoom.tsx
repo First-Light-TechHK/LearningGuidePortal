@@ -10,7 +10,7 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
-import { FINAL_ENTRY_CODES, fill, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -80,6 +80,9 @@ type ChatLine = {
   tutorAsk?: { question: string; clientEventId: string }; tutorError?: string;
   // The id of the answer line this question's latest ask is waiting on.
   tutorAnswerId?: string;
+  // An understanding-check question the AI Tutor asked the group; a question
+  // line its asker withdrew before the Tutor started on it.
+  kind?: "quiz"; tutorWithdrawn?: boolean;
 };
 
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
@@ -325,7 +328,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           at: chatStamp(),
           tutor: true,
           mode: message.mode,
-          ...(message.replyTo ? { replyTo: message.replyTo } : {})
+          ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+          ...(message.kind ? { kind: message.kind } : {})
         }));
         setSideTab("chat");
         return;
@@ -940,10 +944,12 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // network blip heals on the next poll.
   const errorText = errorCode ? copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error : "";
 
+  // Why the room does not offer the AI Tutor right now (the server says), or null.
+  const tutorOffline = tutorOfflineReason(session);
   const mentionRows: MentionRow[] = [];
   if (mention) {
     const fragment = mention.query.toLowerCase();
-    const candidates: MentionRow[] = session.aiTutorEnabled ? [{ key: "tutor", name: roomCopy.tutorName, tutor: true }] : [];
+    const candidates: MentionRow[] = session.aiTutorEnabled && !tutorOffline ? [{ key: "tutor", name: roomCopy.tutorName, tutor: true }] : [];
     const seenNames = new Set<string>();
     for (const person of roster) {
       if (person.key === roomApi?.localParticipant.identity || seenNames.has(person.name)) continue;
@@ -985,6 +991,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     window.setTimeout(() => {
       setChat((items) => items.map((item) => item.id === answerId && item.pending ? { ...item, mode: "unavailable" } : item));
     }, TUTOR_ANSWER_TIMEOUT_MS);
+  }
+
+  // Takes back a question the AI Tutor has not started on: its waiting line
+  // goes, and the question line says it was withdrawn. A question the Tutor
+  // has meanwhile started keeps waiting for its answer.
+  async function withdrawTutor(answerId: string) {
+    const requestId = answerId.replace(/^tutor-/, "");
+    const withdrawn = await studyGroupRequest<{ id: string; withdrawn: boolean }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "DELETE", body: JSON.stringify({ requestId }) });
+    if (!withdrawn.ok || !withdrawn.data.withdrawn) return;
+    setChat((items) => items.filter((item) => item.id !== answerId).map((item) => item.tutorAnswerId === answerId ? { ...item, tutorWithdrawn: true, tutorAnswerId: undefined } : item));
   }
 
   // The optimistic echo must not claim success the room never saw (hunt M5):
@@ -1107,15 +1123,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
                     : line.pending
-                    ? <span className={styles.tutorRow} role="status">{roomCopy.tutorAnswering}</span>
+                    ? (() => {
+                        const pending = tutorPendingState(session, line.id);
+                        return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
+                      })()
                     : <>
+                        {line.kind === "quiz" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorQuiz}</span> : null}
                         {line.mode === "general" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorGeneral}</span> : null}
                         {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
                           ? <strong key="lead" className={styles.tutorLead}>{row}</strong>
                           : <span key={index} className={styles.tutorRow}>{row}</span>)}
                       </>}
                 </p>
-              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
+              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {
@@ -1124,7 +1144,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               if (!text || !connected) return;
               const prefix = `${roomCopy.aiTutor} `;
               const hasPrefix = text.startsWith(prefix);
-              const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled;
+              const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled && !tutorOffline;
               const chatText = mentionsTutor && !hasPrefix ? `${roomCopy.aiTutor} ${text}` : text;
               const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" };
               setChat((items) => [...items, line]);
@@ -1134,7 +1154,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               setDraft("");
               setAddressTutor(false);
             }}>
-              {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} onClick={() => setAddressTutor((on) => !on)}>{roomCopy.aiTutor}</button> : null}
+              {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} disabled={Boolean(tutorOffline)} title={tutorOffline ? roomCopy[`tutorOff_${tutorOffline}`] : undefined} onClick={() => setAddressTutor((on) => !on)}>{roomCopy.aiTutor}</button> : null}
+              {tutorOffline ? <p className={styles.chatBody} role="status" data-testid="tutor-offline">{roomCopy[`tutorOff_${tutorOffline}`]}</p> : null}
               {mentionRows.length > 0 ? (
                 <div className={styles.mentionMenu} role="listbox" aria-label={roomCopy.mentionList}>
                   {mentionRows.map((row, index) => (

@@ -84,6 +84,7 @@ async function reconcileFixture(options: {
     renewSeat: (input) => base.renewSeat(input),
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),
+    withdrawTutorRequest: (input) => base.withdrawTutorRequest(input),
     claimNextOutboxMessage: (input) => base.claimNextOutboxMessage(input),
     markOutboxDelivered: (input) => base.markOutboxDelivered(input),
     markOutboxFailed: (input) => base.markOutboxFailed(input),

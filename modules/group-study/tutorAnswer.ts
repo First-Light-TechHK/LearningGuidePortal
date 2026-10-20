@@ -1,6 +1,6 @@
 import { fetchOpenRouter } from "@/services/openRouterClient";
 import { signRoomAdminToken } from "./liveKitToken";
-import type { TutorKeyOutcome } from "./tutorKeyPool";
+import type { TutorCallResult, TutorToolCall, TutorUsage } from "./tutorKeyPool";
 
 // The reply contract (see tutorPrompt.ts): the first line is a tag — exactly
 // COURSE or GENERAL. The tag may be bracketed ([COURSE] … / 【GENERAL】…) or
@@ -10,20 +10,27 @@ import type { TutorKeyOutcome } from "./tutorKeyPool";
 // That default is the fail-safe: nothing unverified may be presented as
 // course content. Bold or italic wrapping around the tag (**COURSE**) is
 // tolerated. The tag line is parsed off before the text is published.
+// An understanding-check question carries a second word on the tag line,
+// QUIZ ("COURSE QUIZ"), so the room can label it and the Tutor knows later
+// that it asked the group something (tutor infra 2026-10-20).
 const TAG_WORD = "course|general";
-const BRACKETED_TAG = new RegExp(`^\\s*[\\[【]\\s*[*_]{0,2}(${TAG_WORD})[*_]{0,2}\\s*[\\]】]\\s*[:：\\-–—]?\\s*(.*)$`, "i");
-const BARE_TAG = new RegExp(`^\\s*[*_]{0,2}(${TAG_WORD})[*_]{0,2}\\s*(?::\\s*(.*))?$`, "i");
+const QUIZ_WORD = "\\s+[*_]{0,2}(quiz)[*_]{0,2}";
+const BRACKETED_TAG = new RegExp(`^\\s*[\\[【]\\s*[*_]{0,2}(${TAG_WORD})[*_]{0,2}(?:${QUIZ_WORD})?\\s*[\\]】]\\s*[:：\\-–—]?\\s*(.*)$`, "i");
+const BARE_TAG = new RegExp(`^\\s*[*_]{0,2}(${TAG_WORD})[*_]{0,2}(?:${QUIZ_WORD})?\\s*(?::\\s*(.*))?$`, "i");
 
-export function parseTutorReply(raw: string): { mode: "course" | "general"; text: string } {
+export type TutorReplyKind = "answer" | "quiz";
+
+export function parseTutorReply(raw: string): { mode: "course" | "general"; kind: TutorReplyKind; text: string } {
   const normalized = raw.replace(/\r\n?/g, "\n").trim();
   const newline = normalized.indexOf("\n");
   const firstLine = newline === -1 ? normalized : normalized.slice(0, newline);
   const rest = newline === -1 ? "" : normalized.slice(newline + 1);
   const match = BRACKETED_TAG.exec(firstLine) ?? BARE_TAG.exec(firstLine);
-  if (!match) return { mode: "general", text: normalized };
-  const tail = (match[2] ?? "").replace(/^[\s、。，,：:】\]]+/, "").trim();
+  if (!match) return { mode: "general", kind: "answer", text: normalized };
+  const tail = (match[3] ?? "").replace(/^[\s、。，,：:】\]]+/, "").trim();
   return {
     mode: match[1].toLowerCase() === "course" ? "course" : "general",
+    kind: match[2] ? "quiz" : "answer",
     text: [tail, rest.trim()].filter(Boolean).join("\n")
   };
 }
@@ -49,20 +56,41 @@ const EMPHASIS = [emphasis("**"), emphasis("__"), emphasis("*"), emphasis("_")];
 // CJK ideographs, kana, Hangul, and CJK / full-width punctuation.
 const CJK_CHARACTER = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/gu;
 
-// The length cap follows the reply's script mix: 240 characters of Latin
-// text, 120 of CJK text (a CJK character carries about twice as much), and
-// in between in proportion to the share of CJK characters. One Chinese word
-// in an English reply no longer halves its room (QA 2026-10-19 M22).
-export function tutorReplyLimit(text: string) {
+// Share of CJK characters among the visible characters of a text (0 to 1).
+export function cjkShare(text: string) {
   const visible = text.replace(/\s+/g, "");
-  if (!visible) return 240;
-  const share = (visible.match(CJK_CHARACTER)?.length ?? 0) / visible.length;
-  return Math.round(240 - 120 * share);
+  if (!visible) return 0;
+  return (visible.match(CJK_CHARACTER)?.length ?? 0) / visible.length;
+}
+
+// The length cap follows the reply's script mix: 480 characters of Latin
+// text, 240 of CJK text (a CJK character carries about twice as much), and
+// in between in proportion to the share of CJK characters. One Chinese word
+// in an English reply no longer halves its room (QA 2026-10-19 M22). The cap
+// sits well above the prompt's own budget (360 / 160): current models write
+// past a tight budget, and the 2026-10-20 real-model run saw 6 of 20 replies
+// cut at the old 240, one mid-sentence. The cap is a runaway guard, not the
+// brevity mechanism.
+export const TUTOR_REPLY_MAX_LINES = 6;
+export function tutorReplyLimit(text: string) {
+  return Math.round(480 - 240 * cjkShare(text));
+}
+
+// Whether a reply is written in the question's script (tutor infra
+// 2026-10-20: one model answered a Chinese question in English). Only a
+// clear mismatch counts: a mostly-Chinese question answered in almost no
+// Chinese, or a question with no Chinese answered mostly in Chinese.
+export function replyMatchesQuestionLanguage(question: string, reply: string) {
+  const asked = cjkShare(question);
+  const answered = cjkShare(reply);
+  if (asked >= 0.3) return answered >= 0.1;
+  if (asked === 0) return answered <= 0.5;
+  return true;
 }
 
 // Reply shape guard (defence in depth behind the prompt's reply_format): drop
-// markdown, normalise bullets to "• ", keep at most four lines (the answer
-// line plus three key points), and cap the total length (tutorReplyLimit). An
+// markdown, normalise bullets to "• ", keep at most TUTOR_REPLY_MAX_LINES
+// lines (the answer line plus key points), and cap the total length (tutorReplyLimit). An
 // over-long reply is cut at the last sentence or line boundary inside the cap
 // (its trailing mark becomes "…"); a boundary in the first half is too lossy,
 // so the text is cut straight at the cap instead. The result may be empty
@@ -79,7 +107,7 @@ export function clampTutorReply(raw: string): string {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.replace(/^(?:[-*]\s+|•\s*)/, "• "))
-    .slice(0, 4);
+    .slice(0, TUTOR_REPLY_MAX_LINES);
   const text = lines.join("\n");
   const limit = tutorReplyLimit(text);
   if (text.length <= limit) return text;
@@ -132,15 +160,66 @@ export function readTutorKeys(raw: string | undefined) {
   }
 }
 
-export async function openRouterTutorCall(input: { secret: string; model: string; system: string; context: string; text: string; url?: string; maxTokens?: number; reasoning?: { effort: string }; timeoutMs?: number }): Promise<{ outcome: TutorKeyOutcome; latencyMs: number; body?: string }> {
+// One message of a tool-calling conversation after the first user turn: the
+// model's own tool calls, and each tool's result.
+export type TutorTurn =
+  | { role: "assistant"; content: string; toolCalls: TutorToolCall[] }
+  | { role: "tool"; toolCallId: string; content: string };
+
+// A tool the model may call, in OpenAI function form.
+export type TutorToolSpec = { name: string; description: string; parameters: Record<string, unknown> };
+
+export function tutorUserMessage(input: { context: string; roomContext?: string; text: string }) {
+  return [
+    `<course_material>\n${input.context}\n</course_material>`,
+    ...(input.roomContext ? [`<room_context>\n${input.roomContext}\n</room_context>`] : []),
+    `<participant_text>\n${input.text}\n</participant_text>`,
+    "Answer the participant message for the shared room, following the reply format exactly."
+  ].join("\n");
+}
+
+// Reads a provider error body for the words that tell a retired model or a
+// rejected tool definition apart from any other refusal.
+const MODEL_GONE = /no endpoints found|not a valid model|model[^\n]{0,40}(?:not found|does not exist|is not available|deprecated)/i;
+const TOOLS_REFUSED = /tool|function/i;
+
+function readUsage(json: { usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown } }): TutorUsage | undefined {
+  const usage = json.usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const promptTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0;
+  const completionTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens : 0;
+  return { promptTokens, completionTokens, ...(typeof usage.cost === "number" ? { costUsd: usage.cost } : {}) };
+}
+
+function readToolCalls(value: unknown): TutorToolCall[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
+    if (typeof record.id !== "string" || typeof record.function?.name !== "string") return [];
+    return [{ id: record.id, name: record.function.name, arguments: typeof record.function.arguments === "string" ? record.function.arguments : "{}" }];
+  });
+}
+
+function timedOut(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { name?: unknown; code?: unknown; message?: unknown };
+  return record.name === "TimeoutError" || record.name === "AbortError" || record.code === "ETIMEDOUT" || (typeof record.message === "string" && /timed out/i.test(record.message));
+}
+
+export async function openRouterTutorCall(input: { secret: string; model: string; system: string; context: string; text: string; roomContext?: string; turns?: TutorTurn[]; tools?: TutorToolSpec[]; url?: string; maxTokens?: number; reasoning?: { effort: string }; timeoutMs?: number }): Promise<TutorCallResult> {
   const started = Date.now();
   const maxTokens = input.maxTokens ?? 700;
   // At most 45 s, and never past the caller's answer deadline.
   const timeoutMs = Math.max(1, Math.min(45_000, input.timeoutMs ?? 45_000));
-  const messages = [
+  const messages: Array<Record<string, unknown>> = [
     { role: "system", content: input.system },
-    { role: "user", content: `<course_material>\n${input.context}\n</course_material>\n<participant_text>\n${input.text}\n</participant_text>\nAnswer the participant message for the shared room, following the reply format exactly.` }
+    { role: "user", content: tutorUserMessage(input) },
+    ...(input.turns ?? []).map((turn) => turn.role === "assistant"
+      ? { role: "assistant", content: turn.content || null, tool_calls: turn.toolCalls.map((call) => ({ id: call.id, type: "function", function: { name: call.name, arguments: call.arguments } })) }
+      : { role: "tool", tool_call_id: turn.toolCallId, content: turn.content })
   ];
+  const tools = input.tools?.length ? input.tools.map((tool) => ({ type: "function", function: tool })) : undefined;
   try {
     // Reply budget: 700 completion tokens is a runaway guard, not the brevity
     // mechanism — brevity is the prompt's reply_format plus clampTutorReply.
@@ -161,7 +240,7 @@ export async function openRouterTutorCall(input: { secret: string; model: string
       ? await fetch(compatibleUrl, {
         method: "POST",
         headers: { Authorization: `Bearer ${input.secret}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: input.model, temperature: 0.2, max_tokens: maxTokens, stream: false, messages }),
+        body: JSON.stringify({ model: input.model, temperature: 0.2, max_tokens: maxTokens, stream: false, messages, ...(tools ? { tools } : {}) }),
         signal: AbortSignal.timeout(timeoutMs)
       })
       : await fetchOpenRouter(input.secret, {
@@ -169,8 +248,11 @@ export async function openRouterTutorCall(input: { secret: string; model: string
       temperature: 0.2,
       max_tokens: maxTokens,
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+      // OpenRouter reports what the call cost, for the daily budget.
+      usage: { include: true },
       stream: false,
-      messages
+      messages,
+      ...(tools ? { tools } : {})
     }, { timeoutMs, attempts: 1 });
     const latencyMs = Date.now() - started;
     const raw = await response.text();
@@ -180,18 +262,29 @@ export async function openRouterTutorCall(input: { secret: string; model: string
     // answer text happens to contain "credit" (attribution, course credit) is
     // a valid answer, not a quota signal.
     if (response.status === 402 || (!response.ok && /quota|insufficient_quota|credit/i.test(raw))) return { outcome: "quota", latencyMs };
-    if (!response.ok) return { outcome: "failed", latencyMs };
-    let content = "";
+    if (response.status === 404 || ((response.status === 400 || response.status === 422) && MODEL_GONE.test(raw))) return { outcome: "model_gone", latencyMs };
+    if ((response.status === 400 || response.status === 422) && tools && TOOLS_REFUSED.test(raw)) return { outcome: "tools_unsupported", latencyMs };
+    if (response.status === 408 || response.status === 504) return { outcome: "timeout", latencyMs };
+    if (response.status >= 500) return { outcome: "upstream_error", latencyMs };
+    if (!response.ok) return { outcome: "bad_request", latencyMs };
+    let json: { model?: unknown; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown }; choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown } }> };
     try {
-      const json = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> };
-      content = json.choices?.[0]?.message?.content?.trim() || "";
+      json = JSON.parse(raw);
     } catch {
-      return { outcome: "failed", latencyMs };
+      return { outcome: "malformed", latencyMs };
     }
-    if (!content || content.includes(input.secret)) return { outcome: "failed", latencyMs };
-    return { outcome: "ok", latencyMs, body: content };
-  } catch {
-    return { outcome: "failed", latencyMs: Date.now() - started };
+    const usage = readUsage(json);
+    const model = typeof json.model === "string" ? json.model : undefined;
+    const message = json.choices?.[0]?.message;
+    const content = typeof message?.content === "string" ? message.content.trim() : "";
+    const toolCalls = readToolCalls(message?.tool_calls);
+    const extras = { ...(usage ? { usage } : {}), ...(model ? { model } : {}) };
+    if (content.includes(input.secret) || toolCalls.some((call) => call.arguments.includes(input.secret))) return { outcome: "malformed", latencyMs, ...extras };
+    if (toolCalls.length > 0) return { outcome: "ok", latencyMs, body: content, toolCalls, ...extras };
+    if (!content) return { outcome: "empty", latencyMs, ...extras };
+    return { outcome: "ok", latencyMs, body: content, ...extras };
+  } catch (error) {
+    return { outcome: timedOut(error) ? "timeout" : "failed", latencyMs: Date.now() - started };
   }
 }
 

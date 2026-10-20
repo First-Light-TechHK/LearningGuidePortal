@@ -533,25 +533,35 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
       // behind — receipt order must not invert. A plain FOR UPDATE serializes
       // same-session claim attempts on the earliest candidate; the lock-wait
       // predicate recheck then skips it once the winner commits.
+      // "Earliest" is the fair answer order (tutor infra 2026-10-20, domain.ts
+      // tutorFairTurn): by the asker's turn — how many of their own questions
+      // in this session (waiting or answered) came in before this one — then
+      // receipt order.
       const result = await getPool().query<TutorDbRow>(
         `UPDATE study_group_tutor_requests SET
            status = 'in_flight', lease_owner = $1,
            lease_expires_at = NOW() + ($2::int * INTERVAL '1 second'),
            attempts = attempts + 1, next_attempt_at = NULL
          WHERE id = (
-           SELECT id FROM study_group_tutor_requests
-           WHERE session_id = $3
-             AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
+           SELECT candidate.id FROM study_group_tutor_requests candidate
+           WHERE candidate.session_id = $3
+             AND (candidate.next_attempt_at IS NULL OR candidate.next_attempt_at <= NOW())
              AND (
-               status = 'queued'
-               OR (status = 'in_flight' AND lease_expires_at <= NOW())
+               candidate.status = 'queued'
+               OR (candidate.status = 'in_flight' AND candidate.lease_expires_at <= NOW())
              )
              AND NOT EXISTS (
                SELECT 1 FROM study_group_tutor_requests other
                WHERE other.session_id = $3 AND other.status = 'in_flight'
                  AND other.lease_expires_at > NOW())
-           ORDER BY received_at, seq
-           LIMIT 1 FOR UPDATE)
+           ORDER BY (
+               SELECT count(*) FROM study_group_tutor_requests mine
+               WHERE mine.session_id = candidate.session_id AND mine.user_id = candidate.user_id
+                 AND mine.id <> candidate.id
+                 AND mine.status IN ('queued', 'in_flight', 'answered')
+                 AND (mine.received_at, mine.seq) < (candidate.received_at, candidate.seq)),
+             candidate.received_at, candidate.seq
+           LIMIT 1 FOR UPDATE OF candidate)
          RETURNING *`,
         [input.leaseOwner, input.leaseSeconds, input.sessionId]
       );
@@ -595,6 +605,25 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
       return attemptTutorClaim(input);
     }
     return claimed;
+  }
+
+  async function withdrawTutorRequest(input: { id: string; userId: string }): Promise<"withdrawn" | "answering" | "settled" | "not_found"> {
+    await ensureSchema();
+    // One conditional statement: only a queued row of the asker's settles, so
+    // a claim racing the withdrawal either wins (the row is answered) or loses
+    // (the row is withdrawn), never both.
+    const withdrawn = await query<{ id: string }>(
+      `UPDATE study_group_tutor_requests
+       SET status = 'dead_letter', terminal_reason = 'withdrawn', next_attempt_at = NULL
+       WHERE id = $1 AND user_id = $2 AND status = 'queued'
+       RETURNING id`,
+      [input.id, input.userId]
+    );
+    if (withdrawn.rows.length > 0) return "withdrawn";
+    const current = await query<{ status: string }>("SELECT status FROM study_group_tutor_requests WHERE id = $1 AND user_id = $2", [input.id, input.userId]);
+    const status = current.rows[0]?.status;
+    if (!status) return "not_found";
+    return status === "in_flight" ? "answering" : "settled";
   }
 
   async function settleTutorRequest(input: {
@@ -842,6 +871,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     renewSeat,
     claimNextTutorRequest,
     settleTutorRequest,
+    withdrawTutorRequest,
     claimNextOutboxMessage,
     markOutboxDelivered,
     markOutboxFailed,

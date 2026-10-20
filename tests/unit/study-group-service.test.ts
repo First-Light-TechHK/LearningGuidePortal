@@ -789,6 +789,7 @@ test("a member start in flight cannot poison the Host's start", async () => {
     renewSeat: (input) => repository.renewSeat(input),
     claimNextTutorRequest: (input) => repository.claimNextTutorRequest(input),
     settleTutorRequest: (input) => repository.settleTutorRequest(input),
+    withdrawTutorRequest: (input) => repository.withdrawTutorRequest(input),
     claimNextOutboxMessage: (input) => repository.claimNextOutboxMessage(input),
     markOutboxDelivered: (input) => repository.markOutboxDelivered(input),
     markOutboxFailed: (input) => repository.markOutboxFailed(input),
@@ -1050,10 +1051,11 @@ test("tutor delivery keeps enqueue order when requests share a timestamp", async
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   await local.enterSession({ actorUserId: "member", sessionId: session.id, requestedAt: NOW });
   await local.startSession({ actorUserId: "host", sessionId: session.id });
-  // Two questions per asker may wait at once (QA N5); the third is the member's.
+  // Two questions per asker may wait at once (QA N5). Askers alternate, so
+  // the fair order (turns, tutor infra 2026-10-20) is the receipt order here.
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 first?", clientEventId: "evt-timestamp-first" });
-  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 second?", clientEventId: "evt-timestamp-second" });
-  await local.enqueueTutor({ actorUserId: "member", sessionId: session.id, text: "What ended in 1933 third?", clientEventId: "evt-timestamp-third" });
+  await local.enqueueTutor({ actorUserId: "member", sessionId: session.id, text: "What ended in 1933 second?", clientEventId: "evt-timestamp-second" });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "What ended in 1933 third?", clientEventId: "evt-timestamp-third" });
   await repository.update((store) => {
     const queued = store.tutorRequests.filter((item) => item.sessionId === session.id);
     queued[0].id = "m-first";
@@ -1088,6 +1090,10 @@ test("a key pool rotated in Secrets Manager answers the very question the old ke
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   await local.startSession({ actorUserId: "host", sessionId: session.id });
   await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "When did it end?", clientEventId: "evt-hot-1" });
+  // The live session view read the pool once already, to tell the room
+  // whether the Tutor is available (tutor infra 2026-10-20); count the
+  // answer's own reads.
+  reads.length = 0;
 
   await local.deliverTutorAnswer({ sessionId: session.id });
 
@@ -1315,6 +1321,7 @@ function serviceWith(extra: Partial<StudyGroupDeps>) {
     sendMail: async (input) => { mails.push(input); },
     liveKit: { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" },
     tokenLogKey: () => tokenLogKey,
+    tutorRetryWait: async () => undefined,
     ...extra
   });
 }
@@ -1622,7 +1629,7 @@ test("a rate-limited tutor key stays unhealthy across separate queue deliveries"
   assert.deepEqual(secrets, ["fake-key-rate-limited", "fake-key-healthy", "fake-key-healthy"]);
 });
 
-test("one delivery answers every waiting question in receipt order", async () => {
+test("one delivery answers every waiting question in fair order", async () => {
   const published: string[] = [];
   const calls: string[] = [];
   let tick = 0;
@@ -1648,10 +1655,12 @@ test("one delivery answers every waiting question in receipt order", async () =>
   await local.enqueueTutor({ actorUserId: "member", sessionId: session.id, text: "qqqqzzzz", clientEventId: "evt-drain-3" });
   const delivered = await local.deliverTutorAnswer({ sessionId: session.id });
   // Every question reaches the model now, including the one the material does
-  // not cover; an untagged fake reply defaults to the general mode.
-  assert.deepEqual(calls, ["What ended in 1933?", "What ended in 1933 again?", "qqqqzzzz"]);
-  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: What ended in 1933 again?", "Answer: qqqqzzzz"]);
-  assert.deepEqual(delivered, { text: "Answer: qqqqzzzz", mode: "general" });
+  // not cover; an untagged fake reply defaults to the general mode. Askers
+  // take turns (tutor infra 2026-10-20): the member's first question goes
+  // before the host's second.
+  assert.deepEqual(calls, ["What ended in 1933?", "qqqqzzzz", "What ended in 1933 again?"]);
+  assert.deepEqual(published, ["Answer: What ended in 1933?", "Answer: qqqqzzzz", "Answer: What ended in 1933 again?"]);
+  assert.deepEqual(delivered, { text: "Answer: What ended in 1933 again?", mode: "general" });
   const items = (await repository.read()).tutorRequests.filter((item) => item.sessionId === session.id);
   assert.equal(items.every((item) => item.answeredAt && !item.inFlight), true);
 });

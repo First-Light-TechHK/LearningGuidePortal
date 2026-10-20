@@ -465,3 +465,40 @@ test("a claim waits on a row held by an in-progress claim instead of skipping it
     holder.release();
   }
 });
+
+// Tutor infra 2026-10-20: the claim answers askers by turns (everyone's first
+// question before anyone's second, an answered question still counting as
+// that asker's turn), and an asker can take back a question the Tutor has not
+// started, in one conditional write.
+test("the claim answers askers by turns, counting answered questions", async () => {
+  const repository = studyGroupRepository();
+  await seedGroupAndSession(repository, { sessionId: "s-fair", maxParticipants: 4 });
+  await seedTutorRequest(repository, { id: "h-1", sessionId: "s-fair", userId: "host", receivedAt: "2026-09-19T02:00:00.000Z" });
+  await seedTutorRequest(repository, { id: "h-2", sessionId: "s-fair", userId: "host", receivedAt: "2026-09-19T02:00:01.000Z" });
+  await seedTutorRequest(repository, { id: "m-1", sessionId: "s-fair", userId: "m1", receivedAt: "2026-09-19T02:00:02.000Z" });
+  const order: string[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const claimed = await repository.claimNextTutorRequest({ sessionId: "s-fair", leaseOwner: `owner-${index}`, leaseSeconds: 60, maxAttempts: 3 });
+    assert.ok(claimed);
+    order.push(claimed.id);
+    await repository.settleTutorRequest({ id: claimed.id, leaseOwner: `owner-${index}`, outcome: { status: "answered", terminalReason: "answered" }, outbox: { room: "s-fair", projectId: "p-1", text: `answer ${claimed.id}`, messageId: claimed.id } });
+  }
+  assert.deepEqual(order, ["h-1", "m-1", "h-2"]);
+});
+
+test("a withdrawal settles only a queued question of the asker, and a withdrawn one is never claimed", async () => {
+  const repository = studyGroupRepository();
+  await seedGroupAndSession(repository, { sessionId: "s-withdraw", maxParticipants: 4 });
+  await seedTutorRequest(repository, { id: "w-1", sessionId: "s-withdraw", userId: "u-1", receivedAt: "2026-09-19T02:00:00.000Z" });
+  await seedTutorRequest(repository, { id: "w-2", sessionId: "s-withdraw", userId: "u-1", receivedAt: "2026-09-19T02:00:01.000Z" });
+  const claimed = await repository.claimNextTutorRequest({ sessionId: "s-withdraw", leaseOwner: "owner-1", leaseSeconds: 60, maxAttempts: 3 });
+  assert.equal(claimed?.id, "w-1");
+  assert.equal(await repository.withdrawTutorRequest({ id: "w-1", userId: "u-1" }), "answering");
+  assert.equal(await repository.withdrawTutorRequest({ id: "w-2", userId: "someone-else" }), "not_found");
+  assert.equal(await repository.withdrawTutorRequest({ id: "w-2", userId: "u-1" }), "withdrawn");
+  assert.equal(await repository.withdrawTutorRequest({ id: "w-2", userId: "u-1" }), "settled", "a second withdrawal changes nothing");
+  const withdrawn = await rows<{ status: string; terminal_reason: string }>("SELECT status, terminal_reason FROM study_group_tutor_requests WHERE id = 'w-2'");
+  assert.deepEqual(withdrawn[0], { status: "dead_letter", terminal_reason: "withdrawn" });
+  await repository.settleTutorRequest({ id: "w-1", leaseOwner: "owner-1", outcome: { status: "answered", terminalReason: "answered" }, outbox: { room: "s-withdraw", projectId: "p-1", text: "answer", messageId: "w-1" } });
+  assert.equal(await repository.claimNextTutorRequest({ sessionId: "s-withdraw", leaseOwner: "owner-2", leaseSeconds: 60, maxAttempts: 3 }), null);
+});

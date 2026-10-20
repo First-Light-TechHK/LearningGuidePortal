@@ -35,3 +35,15 @@ export async function acceptTutorPost(request: Request, sessionId: string) {
     return studyGroupFailure(error);
   }
 }
+
+// DELETE: the asker takes back a question the AI Tutor has not started on.
+export async function acceptTutorWithdraw(request: Request, sessionId: string) {
+  const user = await signedInUser(request);
+  if (!user) return unauthenticated();
+  try {
+    const body = await request.json() as { requestId?: string };
+    return studyGroupData(await studyGroupService().withdrawTutor({ actorUserId: user.id, sessionId, requestId: body.requestId || "" }));
+  } catch (error) {
+    return studyGroupFailure(error);
+  }
+}

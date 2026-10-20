@@ -52,6 +52,7 @@ async function makeFixture(extra: Partial<StudyGroupDeps> = {}): Promise<Fixture
     publishRoomChat: async ({ text }) => { published.push(text); },
     tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
     tutorCall: async ({ text }) => ({ outcome: "ok", latencyMs: 1, body: `Answer: ${text}` }),
+    tutorRetryWait: async () => undefined,
     ...extra
   };
   return { directory, repository, service: createStudyGroupService(deps), deps, access, clock, published };
@@ -136,6 +137,7 @@ function gatedRepository(base: StudyGroupRepository, gate: ReturnType<typeof cre
     renewSeat: async (input) => { if (point === "update") await gate.wait(); return base.renewSeat(input); },
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),
+    withdrawTutorRequest: (input) => base.withdrawTutorRequest(input),
     claimNextOutboxMessage: (input) => base.claimNextOutboxMessage(input),
     markOutboxDelivered: (input) => base.markOutboxDelivered(input),
     markOutboxFailed: (input) => base.markOutboxFailed(input),
@@ -485,7 +487,10 @@ test("interleaving enqueue+deliver: receipt order holds at one millisecond, one 
   assert.equal((await f.repository.read()).tutorRequests.find((row) => row.clientEventId === "evt-3")?.inFlight, false);
   releaseFirst();
   await delivery;
-  assert.deepEqual(calls, ["What ended in 1933? first", "What ended in 1933? second", "What ended in 1933? fail"]);
+  // A failed call is retried inside the question's deadline (tutor infra
+  // 2026-10-20: one round per retry, TUTOR_ENGINE_ROUNDS in all) before the
+  // question settles as unavailable.
+  assert.deepEqual(calls, ["What ended in 1933? first", "What ended in 1933? second", "What ended in 1933? fail", "What ended in 1933? fail", "What ended in 1933? fail"]);
   // The failed call still publishes a message — the empty-text unavailable one
   // the client renders as "temporarily unavailable" — instead of silence.
   assert.deepEqual(f.published, ["Answer: What ended in 1933? first", "Answer: What ended in 1933? second", ""]);

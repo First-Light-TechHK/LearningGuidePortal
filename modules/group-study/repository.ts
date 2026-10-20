@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { emptyStore, plannedEndMs, type OutboxRow, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
+import { compareTutorFairOrder, emptyStore, plannedEndMs, tutorRequestState, type OutboxRow, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
 
 export type {
   OutboxKind,
@@ -62,6 +62,10 @@ export type StudyGroupRepository = {
     outcome: { status: "answered" | "dead_letter"; terminalReason: string };
     outbox?: TutorOutboxPayload;
   }): Promise<void>;
+  // The asker takes back a question nobody has started answering (tutor
+  // infra 2026-10-20): only a queued row of theirs settles, as dead_letter
+  // "withdrawn"; one being answered, or settled, is left alone and says so.
+  withdrawTutorRequest(input: { id: string; userId: string }): Promise<"withdrawn" | "answering" | "settled" | "not_found">;
 
   // durable room-message outbox (at-least-once publish, bounded)
   claimNextOutboxMessage(input: { sessionId: string; leaseOwner: string; leaseSeconds: number }): Promise<OutboxRow | null>;
@@ -126,11 +130,7 @@ function normalise(value: Partial<StudyGroupStore> | null): StudyGroupStore {
   };
 }
 
-function tutorStatus(row: TutorRequestRow): TutorRequestStatus {
-  if (row.status) return row.status;
-  if (row.answeredAt) return "answered";
-  return row.inFlight ? "in_flight" : "queued";
-}
+const tutorStatus = tutorRequestState;
 
 function queuedOutbox(dedupeKey: string, sessionId: string, payload: TutorOutboxPayload): OutboxRow {
   return {
@@ -241,7 +241,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
             if (status === "in_flight" && item.leaseExpiresAt && Date.parse(item.leaseExpiresAt) > now) return false;
             return true;
           })
-          .sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || (left.seq ?? 0) - (right.seq ?? 0))[0];
+          .sort(compareTutorFairOrder(rows))[0];
         if (!candidate) return null;
         candidate.status = "in_flight";
         candidate.inFlight = true;
@@ -296,6 +296,21 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
       row.outboxMessageId = input.outbox.messageId;
       if (store.outbox.some((item) => item.dedupeKey === row.id)) return;
       store.outbox.push(queuedOutbox(row.id, row.sessionId, { ...input.outbox }));
+    });
+  }
+
+  async function withdrawTutorRequest(input: { id: string; userId: string }) {
+    return update((store) => {
+      const row = store.tutorRequests.find((item) => item.id === input.id && item.userId === input.userId);
+      if (!row) return "not_found" as const;
+      const status = tutorStatus(row);
+      if (status === "in_flight") return "answering" as const;
+      if (status !== "queued") return "settled" as const;
+      row.status = "dead_letter";
+      row.inFlight = false;
+      row.terminalReason = "withdrawn";
+      row.nextAttemptAt = null;
+      return "withdrawn" as const;
     });
   }
 
@@ -375,6 +390,7 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     renewSeat,
     claimNextTutorRequest,
     settleTutorRequest,
+    withdrawTutorRequest,
     claimNextOutboxMessage,
     markOutboxDelivered,
     markOutboxFailed,

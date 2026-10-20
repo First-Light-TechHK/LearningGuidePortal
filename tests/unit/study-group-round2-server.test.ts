@@ -103,6 +103,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     liveKitGateway: gateway,
     tokenLogKey: () => tokenLogKey,
     operationalLog: (event) => { logs.push(event); },
+    tutorRetryWait: async () => undefined,
     ...extra(base)
   };
   return { ...base, service: createStudyGroupService(deps) };

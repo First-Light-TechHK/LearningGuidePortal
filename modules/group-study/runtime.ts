@@ -27,6 +27,33 @@ function tutorMaxTokensFromEnv() {
   return Number.isFinite(raw) && raw >= 64 && raw <= 4096 ? raw : 700;
 }
 
+// The models the Live Session tutor asks, in order (tutor infra 2026-10-20).
+// STUDY_GROUP_TUTOR_MODELS is a comma list (primary first, then fallbacks);
+// STUDY_GROUP_TUTOR_MODEL alone is a one-model list. Unset, the tutor uses a
+// pinned, tested pair instead of "openrouter/auto", which picked a different
+// model per call in the 2026-10-20 real-model run (quality, latency and cost
+// out of our hands): the two fastest models that answered every test case
+// correctly there. A custom STUDY_GROUP_TUTOR_URL serves whatever model it
+// serves, so only the configured names are sent to it.
+export const DEFAULT_TUTOR_MODELS = ["anthropic/claude-haiku-5.5", "openai/gpt-5.4-mini"];
+export function tutorModelsFromEnv(env: Record<string, string | undefined> = process.env) {
+  const listed = (env.STUDY_GROUP_TUTOR_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean);
+  if (listed.length > 0) return [...new Set(listed)];
+  const single = env.STUDY_GROUP_TUTOR_MODEL?.trim();
+  if (single) return [single];
+  return DEFAULT_TUTOR_MODELS;
+}
+
+// Today's AI Tutor spend cap per instance, in US dollars (default 10; "off"
+// or "0" turns the cap off). The cost is what OpenRouter reports per call.
+export function tutorDailyBudgetFromEnv(env: Record<string, string | undefined> = process.env): number | null {
+  const raw = env.STUDY_GROUP_TUTOR_DAILY_BUDGET_USD?.trim().toLowerCase();
+  if (!raw) return 10;
+  if (raw === "off" || raw === "0") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 10;
+}
+
 function tutorReasoningFromEnv(): { effort: string } | undefined {
   const raw = process.env.STUDY_GROUP_TUTOR_REASONING?.trim().toLowerCase();
   return raw === "none" || raw === "minimal" || raw === "low" || raw === "medium" || raw === "high" ? { effort: raw } : undefined;
@@ -348,22 +375,28 @@ export function studyGroupService() {
     operationalLog: (event) => console.info(JSON.stringify(event)),
     courseKnowledge: readStoredCourseKnowledge,
     tutorKeys: (options) => studyGroupTutorKeySource(awsRegion()).keys(options),
+    tutorModels: () => tutorModelsFromEnv(),
+    tutorToolsEnabled: process.env.STUDY_GROUP_TUTOR_TOOLS?.trim() !== "0",
+    tutorDailyBudgetUsd: tutorDailyBudgetFromEnv(),
     tutorCall: (input) => openRouterTutorCall({
       secret: input.secret,
-      model: process.env.STUDY_GROUP_TUTOR_MODEL?.trim() || process.env.OPENROUTER_MODEL?.trim() || "openrouter/auto",
+      model: input.model || tutorModelsFromEnv()[0],
       system: STUDY_GROUP_TUTOR_SYSTEM_PROMPT,
       context: input.context,
       text: input.text,
+      roomContext: input.roomContext,
+      turns: input.turns,
+      tools: input.tools,
       maxTokens: tutorMaxTokensFromEnv(),
       reasoning: tutorReasoningFromEnv(),
       url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined,
       timeoutMs: input.timeoutMs
     }),
-    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo }) => {
+    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, kind, reason }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
       await liveKit.projects.refresh?.();
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, kind, reason });
     }
   });
   services.set(key, service);
