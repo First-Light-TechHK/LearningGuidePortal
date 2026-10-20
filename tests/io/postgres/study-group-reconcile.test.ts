@@ -176,6 +176,7 @@ test("the heartbeat fast path renews only a still-held seat of a scheduled or li
   const nowMs = Date.now();
   const at = new Date(nowMs).toISOString();
   const heldSince = new Date(nowMs - 30_000).toISOString();
+  const startsBy = new Date(nowMs + 10 * 60_000).toISOString();
   await repository.update((store) => {
     const gone = store.sessions.find((session) => session.id === "s-gone-r4");
     if (gone) gone.status = "completed";
@@ -184,15 +185,44 @@ test("the heartbeat fast path renews only a still-held seat of a scheduled or li
   });
   const before = await presenceStates();
 
-  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-renewed", at, heldSince }), true, "a held seat renews");
-  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-lapsed", at, heldSince }), false, "a lapsed seat must enter again");
-  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-waiting", at, heldSince }), false, "a waiting row holds no seat");
-  assert.equal(await repository.renewSeat({ sessionId: "s-gone-r4", userId: "u-gone", at, heldSince }), false, "an ended session renews nothing");
+  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-renewed", at, heldSince, startsBy }), true, "a held seat renews");
+  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-lapsed", at, heldSince, startsBy }), false, "a lapsed seat must enter again");
+  assert.equal(await repository.renewSeat({ sessionId: "s-busy-r4", userId: "u-waiting", at, heldSince, startsBy }), false, "a waiting row holds no seat");
+  assert.equal(await repository.renewSeat({ sessionId: "s-gone-r4", userId: "u-gone", at, heldSince, startsBy }), false, "an ended session renews nothing");
 
   const after = await presenceStates();
   assert.equal(presenceByUser(after, "s-busy-r4", "u-renewed").last_seen_at?.getTime(), nowMs);
   for (const [sessionId, userId] of [["s-busy-r4", "u-lapsed"], ["s-busy-r4", "u-waiting"], ["s-gone-r4", "u-gone"]]) {
     assert.deepEqual(presenceByUser(after, sessionId, userId), presenceByUser(before, sessionId, userId), `${userId} is untouched`);
+  }
+});
+
+// QA final review B6 / X-2: a scheduled session's seat renews only in
+// Starting Soon (start at or before startsBy) and before its planned end.
+test("the heartbeat fast path never renews a seat of a session that is not open for seats", async () => {
+  const repository = studyGroupRepository();
+  const nowMs = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const cases = [
+    { sessionId: "s-soon-b6", startsAt: iso(nowMs + 5 * 60_000), renews: true },
+    { sessionId: "s-later-x2", startsAt: iso(nowMs + 2 * 60 * 60_000), renews: false },
+    { sessionId: "s-past-b6", startsAt: iso(nowMs - 31 * 60_000), renews: false },
+    { sessionId: "s-late-b6", startsAt: iso(nowMs - 29 * 60_000), renews: true }
+  ];
+  for (const item of cases) await seedGroupAndSession(repository, { sessionId: item.sessionId, maxParticipants: 4, status: "scheduled" });
+  await repository.update((store) => {
+    for (const item of cases) {
+      const session = store.sessions.find((row) => row.id === item.sessionId);
+      if (session) session.startsAt = item.startsAt;
+      store.presences.push({ id: `p-${item.sessionId}`, sessionId: item.sessionId, userId: "u-wait", requestedAt: `${iso(nowMs)}#00000001`, enteredAt: iso(nowMs - 5_000), leftAt: null, phase: "waiting", lastSeenAt: iso(nowMs - 5_000) });
+    }
+  });
+  const at = iso(nowMs);
+  for (const item of cases) {
+    const renewed = await repository.renewSeat({ sessionId: item.sessionId, userId: "u-wait", at, heldSince: iso(nowMs - 30_000), startsBy: iso(nowMs + 10 * 60_000) });
+    assert.equal(renewed, item.renews, item.sessionId);
+    const seen = (await rows<{ last_seen_at: Date }>("SELECT last_seen_at FROM study_group_presences WHERE session_id = $1", [item.sessionId]))[0].last_seen_at.getTime();
+    assert.equal(seen, item.renews ? nowMs : nowMs - 5_000, `${item.sessionId} last_seen_at`);
   }
 });
 

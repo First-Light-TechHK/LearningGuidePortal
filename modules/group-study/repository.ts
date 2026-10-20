@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { emptyStore, type OutboxRow, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
+import { emptyStore, plannedEndMs, type OutboxRow, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
 
 export type {
   OutboxKind,
@@ -45,9 +45,11 @@ export type StudyGroupRepository = {
   update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>): Promise<T>;
   // The heartbeat's one-row write: moves lastSeenAt of the caller's open seat
   // to `at` when that seat was last seen after `heldSince` (still held) and
-  // its session is scheduled or live. Returns whether a seat was renewed.
-  // Touches nothing else, so a room full of heartbeats never loads the store.
-  renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string }): Promise<boolean>;
+  // its session is live, or scheduled with a start at or before `startsBy`
+  // (Starting Soon) and a planned end after `at` (presence.ts seatRenewable).
+  // Returns whether a seat was renewed. Touches nothing else, so a room full
+  // of heartbeats never loads the store.
+  renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string; startsBy: string }): Promise<boolean>;
 
   // durable tutor queue (hazard 2)
   claimNextTutorRequest(input: {
@@ -178,10 +180,13 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     return run;
   }
 
-  function renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string }) {
+  function renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string; startsBy: string }) {
     return update((store) => {
       const session = store.sessions.find((item) => item.id === input.sessionId);
-      if (!session || (session.status !== "scheduled" && session.status !== "live")) return false;
+      if (!session) return false;
+      const open = session.status === "live"
+        || (session.status === "scheduled" && Date.parse(session.startsAt) <= Date.parse(input.startsBy) && plannedEndMs(session) > Date.parse(input.at));
+      if (!open) return false;
       const since = Date.parse(input.heldSince);
       const seat = store.presences.find((item) => item.sessionId === input.sessionId && item.userId === input.userId && item.enteredAt && !item.leftAt && Date.parse(item.lastSeenAt ?? item.enteredAt) > since);
       if (!seat) return false;

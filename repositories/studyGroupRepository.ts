@@ -696,7 +696,7 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
   // and diff (QA 2026-10-19 final review B3): heartbeats arrive every 10 s
   // from every seat holder. The lock keeps a concurrent update() from
   // writing back a stale last_seen_at it loaded before this renewal.
-  async function renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string }) {
+  async function renewSeat(input: { sessionId: string; userId: string; at: string; heldSince: string; startsBy: string }) {
     await ensureSchema();
     const client = await getPool().connect();
     try {
@@ -706,9 +706,10 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
         `UPDATE study_group_presences p SET last_seen_at = $3
           WHERE p.session_id = $1 AND p.user_id = $2 AND p.entered_at IS NOT NULL AND p.left_at IS NULL
             AND COALESCE(p.last_seen_at, p.entered_at) > $4
-            AND EXISTS (SELECT 1 FROM live_sessions s WHERE s.id = p.session_id AND s.status IN ('scheduled', 'live'))
+            AND EXISTS (SELECT 1 FROM live_sessions s WHERE s.id = p.session_id AND (s.status = 'live'
+              OR (s.status = 'scheduled' AND s.starts_at <= $5 AND s.starts_at + s.duration_seconds * INTERVAL '1 second' > $3)))
           RETURNING p.id`,
-        [input.sessionId, input.userId, input.at, input.heldSince]
+        [input.sessionId, input.userId, input.at, input.heldSince, input.startsBy]
       );
       await client.query("COMMIT");
       return (result.rowCount ?? 0) > 0;

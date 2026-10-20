@@ -19,7 +19,7 @@ import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent 
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
-import { closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, sweepSeats } from "./presence";
+import { closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorKeyOutcome } from "./tutorKeyPool";
 import { clampTutorReply, parseTutorReply } from "./tutorAnswer";
@@ -454,7 +454,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!store.sessions.some((item) => item.id === input.sessionId && item.status !== "removed")) throw new StudyGroupError("not_found", "Live Session was not found.");
       throw new StudyGroupError("course_access_required", "Valid Course access is required.");
     }
-    return deps.repository.update((store) => {
+    const outcome = await deps.repository.update((store) => {
       const now = deps.now();
       const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
       const state = effectiveSessionState(session, now);
@@ -463,8 +463,15 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // Seats are leases (presence.ts): write down the lapsed ones first so
       // every count below, and the stored occupancy, is the real one.
       closeLapsedSeats(store, now, session.id);
-      const seats = seatCount(store, session.id, now);
       const existing = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
+      if (!seatRenewable(session, now)) {
+        // A waiting room past its planned end is closed: the caller's seat is
+        // released (committed, then refused outside the write) instead of
+        // renewed (QA final review B6).
+        if (existing && seatHeld(existing, now)) existing.leftAt = now.toISOString();
+        return { notStarted: true as const };
+      }
+      const seats = seatCount(store, session.id, now);
       if (existing && seatHeld(existing, now)) {
         // Entering while already seated (a reload, a second tab): the same
         // seat, its lease renewed.
@@ -504,6 +511,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       }
       return { occupancy: seats + 1 };
     });
+    if ("notStarted" in outcome) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+    return outcome;
   }
 
   // Design §3.2 "Session project assignment": the durable first-wins
@@ -1161,7 +1170,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         sessionId: input.sessionId,
         userId: input.actorUserId,
         at: now.toISOString(),
-        heldSince: new Date(now.getTime() - SEAT_LEASE_MS).toISOString()
+        heldSince: new Date(now.getTime() - SEAT_LEASE_MS).toISOString(),
+        startsBy: new Date(now.getTime() + STARTING_SOON_MS).toISOString()
       });
       if (renewed) return { seated: true };
       return deps.repository.update((store) => {
@@ -1169,8 +1179,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
         closeLapsedSeats(store, now, session.id);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && seatHeld(item, now));
-        if (presence) presence.lastSeenAt = now.toISOString();
-        return { seated: Boolean(presence), occupancy: seatCount(store, session.id, now), state: effectiveSessionState(session, now) };
+        // A seat renews only while its session is open for seats: live, or
+        // Starting Soon before its planned end. A session moved back out of
+        // Starting Soon, or a waiting room left open past its end, releases
+        // the seat now instead (QA final review B6, X-2).
+        const renewable = seatRenewable(session, now);
+        if (presence && renewable) presence.lastSeenAt = now.toISOString();
+        if (presence && !renewable) presence.leftAt = now.toISOString();
+        return { seated: Boolean(presence) && renewable, occupancy: seatCount(store, session.id, now), state: effectiveSessionState(session, now) };
       });
     },
 

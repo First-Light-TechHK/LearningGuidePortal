@@ -1,4 +1,4 @@
-import type { LiveSessionRow, PresenceRow, StudyGroupStore } from "./domain";
+import { effectiveSessionState, plannedEndMs, type LiveSessionRow, type PresenceRow, type StudyGroupStore } from "./domain";
 
 // The one place that decides who holds a seat in a Live Session and when an
 // empty Live Session ends. Everything here is a pure function over the store
@@ -38,6 +38,18 @@ export function seatHeld(presence: PresenceRow, now: Date) {
   if (!presence.enteredAt || presence.leftAt) return false;
   const ends = leaseEndsAt(presence);
   return Number.isFinite(ends) && ends > now.getTime();
+}
+
+/**
+ * Whether a seat in this session may be taken or renewed now: while it is
+ * live, or in Starting Soon until its planned end. A waiting room left open
+ * past the planned end, or a session moved back out of Starting Soon, holds
+ * no seat (QA 2026-10-19 final review B6, X-2), so a never-started session
+ * cannot be kept "starting soon" for ever.
+ */
+export function seatRenewable(session: LiveSessionRow, now: Date) {
+  if (session.status === "live") return true;
+  return effectiveSessionState(session, now) === "starting_soon" && now.getTime() < plannedEndMs(session);
 }
 
 export function heldSeats(store: StudyGroupStore, sessionId: string, now: Date) {

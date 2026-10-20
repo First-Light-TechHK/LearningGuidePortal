@@ -183,3 +183,83 @@ test("F-5: a schedule inside the submit window is a duplicate only when Focus, l
     ["Weimar", "lesson-1", true], ["Versailles", "lesson-1", true], [null, "lesson-1", true], ["Weimar", "lesson-2", true], ["Weimar", null, true], ["Weimar", "lesson-1", false]
   ]);
 });
+
+async function heartbeats(f: Fixture, sessionId: string, users: string[], seconds: number) {
+  for (let elapsed = 0; elapsed < seconds; elapsed += 10) {
+    f.advanceSeconds(Math.min(10, seconds - elapsed));
+    for (const userId of users) await f.service.heartbeat({ actorUserId: userId, sessionId });
+  }
+}
+
+test("B6: a waiting room left open past the planned end stops renewing, so the session cannot start hours late", async () => {
+  const f = await fixture();
+  const created = await group(f);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Never started", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: f.clock() });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  // Up to the planned end (start + 30 min) the waiting seats renew.
+  await heartbeats(f, session.id, ["host", "m1"], 35 * 60 - 10);
+  assert.equal((await f.service.getSession({ actorUserId: "m1", sessionId: session.id })).occupancy, 2);
+  f.advanceSeconds(10);
+  assert.deepEqual(await f.service.heartbeat({ actorUserId: "m1", sessionId: session.id }), { seated: false, occupancy: 1, state: "starting_soon" });
+  assert.equal((await f.service.heartbeat({ actorUserId: "host", sessionId: session.id })).seated, false);
+  const seats = (await f.repository.read()).presences.filter((row) => row.sessionId === session.id);
+  assert.deepEqual(seats.map((row) => row.leftAt), [f.clock(), f.clock()], "both seats are released now, not renewed");
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })), "session_not_open");
+  assert.equal(await code(() => f.service.startSession({ actorUserId: "host", sessionId: session.id })), "session_not_open");
+  f.advanceSeconds(3 * 60 * 60);
+  assert.equal(await code(() => f.service.startSession({ actorUserId: "host", sessionId: session.id })), "session_not_open");
+});
+
+test("B6: entering again while seated past the planned end releases the seat instead of renewing it", async () => {
+  const f = await fixture();
+  const created = await group(f);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Late re-entry", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  await heartbeats(f, session.id, ["m1"], 35 * 60);
+  // The seat is still held (renewed 10 s before the end), but the room is closed.
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })), "session_not_open");
+  assert.equal((await f.repository.read()).presences.find((row) => row.sessionId === session.id)?.leftAt, f.clock());
+  assert.equal((await f.service.getSession({ actorUserId: "m1", sessionId: session.id })).occupancy, 0);
+});
+
+test("X-2: a session moved back out of Starting Soon releases its waiting seats at the next heartbeat", async () => {
+  const f = await fixture();
+  const created = await group(f);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Moved away", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 120) });
+  f.advanceSeconds(10);
+  assert.deepEqual(await f.service.heartbeat({ actorUserId: "m1", sessionId: session.id }), { seated: false, occupancy: 0, state: "scheduled" });
+  assert.equal((await f.repository.read()).presences.find((row) => row.sessionId === session.id)?.leftAt, f.clock());
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })), "session_not_open");
+});
+
+test("B6 / X-2: the file store's one-row renewal applies the same rule as the service", async () => {
+  const f = await fixture();
+  const created = await group(f, []);
+  const nowMs = Date.parse(f.clock());
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const cases = [
+    { title: "soon", startsAt: iso(nowMs + 5 * 60_000), renews: true },
+    { title: "later", startsAt: iso(nowMs + 2 * 60 * 60_000), renews: false },
+    { title: "past", startsAt: iso(nowMs - 31 * 60_000), renews: false },
+    { title: "late", startsAt: iso(nowMs - 29 * 60_000), renews: true }
+  ];
+  const ids: string[] = [];
+  for (const item of cases) {
+    const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: item.title, startsAt: iso(nowMs + 60 * 60_000), durationSeconds: 1800, maxParticipants: 4 });
+    ids.push(session.id);
+  }
+  await f.repository.update((store) => {
+    cases.forEach((item, index) => {
+      const session = store.sessions.find((row) => row.id === ids[index]);
+      if (session) session.startsAt = item.startsAt;
+      store.presences.push({ id: `p-${index}`, sessionId: ids[index], userId: "host", requestedAt: iso(nowMs), enteredAt: iso(nowMs - 5_000), lastSeenAt: iso(nowMs - 5_000), leftAt: null, phase: "waiting" });
+    });
+  });
+  for (const [index, item] of cases.entries()) {
+    const renewed = await f.repository.renewSeat({ sessionId: ids[index], userId: "host", at: iso(nowMs), heldSince: iso(nowMs - 30_000), startsBy: iso(nowMs + 10 * 60_000) });
+    assert.equal(renewed, item.renews, item.title);
+  }
+});
