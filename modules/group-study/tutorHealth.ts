@@ -25,6 +25,17 @@ export type TutorFailureReason =
   | "deadline"
   | "budget";
 
+// What the room is told about a failed answer: a coarse class, never the
+// provider's internals (QA 2026-10-20). "busy" passes on its own, "setup"
+// needs an operator, "refused" was this question, "provider" is the rest.
+export type TutorPublicReason = "busy" | "setup" | "refused" | "provider";
+export function publicTutorReason(reason: TutorFailureReason): TutorPublicReason {
+  if (reason === "rate_limited" || reason === "quota" || reason === "keys_resting" || reason === "budget") return "busy";
+  if (reason === "no_key" || reason === "auth") return "setup";
+  if (reason === "bad_request") return "refused";
+  return "provider";
+}
+
 export type TutorUnavailableReason = "no_key" | "provider_down" | "budget";
 export type TutorAvailability = { available: true } | { available: false; reason: TutorUnavailableReason };
 
@@ -76,8 +87,10 @@ export function createTutorHealth(input: { now?: () => number } = {}) {
         consecutiveFailures = 0;
         return;
       }
-      // A budget refusal is the Tutor declining work, not the provider failing.
-      if (result.reason === "budget") return;
+      // A budget refusal is the Tutor declining work, and a refused request
+      // (a moderated question) is about that question: neither is the
+      // provider failing.
+      if (result.reason === "budget" || result.reason === "bad_request") return;
       consecutiveFailures += 1;
       lastFailureAt = now();
       lastFailureReason = result.reason ?? null;

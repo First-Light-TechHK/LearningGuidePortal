@@ -1068,6 +1068,7 @@
       "tutorReplyTo": "回复 {name}：{question}",
       "tutorRetry": "重新提问",
       "tutorQueued": "等待 AI Tutor 回答，前面还有 {count} 个",
+      "tutorNext": "AI Tutor 下一个就回答这个问题",
       "tutorWithdraw": "撤回",
       "tutorWithdrawn": "已撤回该提问。",
       "tutorQuiz": "理解检查",
@@ -1114,6 +1115,7 @@
       "tutor_busy": "请等 AI Tutor 先回答完你之前的问题。",
       "tutor_rate_limited": "提问太频繁，请过一分钟再试。",
       "tutor_answering": "AI Tutor 已经在回答这个问题了。",
+      "tutor_unavailable": "AI Tutor 现在不可用，请稍后再试。",
       "seat_lapsed": "连接中断期间，你在直播课中的位置已失效。请等重新进入后再提问。",
       "network": "网络连接失败，请检查网络后重试。",
       "error": "出了点问题。请重试。"

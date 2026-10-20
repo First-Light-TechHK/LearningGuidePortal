@@ -122,19 +122,41 @@ export function tutorRequestState(row: TutorRequestRow): TutorRequestStatus {
 // claim orders by the same key in SQL.
 // Receipt order: received time, then the PostgreSQL sequence; the file store
 // has no sequence, so its array order (append order) breaks the last tie.
-function tutorReceiptOrder(rows: TutorRequestRow[], left: TutorRequestRow, right: TutorRequestRow) {
-  return left.receivedAt.localeCompare(right.receivedAt) || (left.seq ?? 0) - (right.seq ?? 0) || rows.indexOf(left) - rows.indexOf(right);
+function tutorReceiptOrder(index: Map<TutorRequestRow, number>) {
+  return (left: TutorRequestRow, right: TutorRequestRow) =>
+    left.receivedAt.localeCompare(right.receivedAt) || (left.seq ?? 0) - (right.seq ?? 0) || (index.get(left) ?? 0) - (index.get(right) ?? 0);
 }
 
 export function tutorFairTurn(rows: TutorRequestRow[], row: TutorRequestRow) {
-  return rows.filter((other) => other.sessionId === row.sessionId && other.userId === row.userId && other.id !== row.id
-    && tutorRequestState(other) !== "dead_letter"
-    && tutorReceiptOrder(rows, other, row) < 0).length;
+  return tutorFairTurns(rows).get(row) ?? 0;
+}
+
+// Every row's turn in one pass: each asker's countable rows in receipt order.
+export function tutorFairTurns(rows: TutorRequestRow[]) {
+  const byAsker = new Map<string, TutorRequestRow[]>();
+  for (const row of rows) {
+    const key = `${row.sessionId}\u0000${row.userId}`;
+    const list = byAsker.get(key);
+    if (list) list.push(row);
+    else byAsker.set(key, [row]);
+  }
+  const receipt = tutorReceiptOrder(new Map(rows.map((row, position) => [row, position])));
+  const turns = new Map<TutorRequestRow, number>();
+  for (const list of byAsker.values()) {
+    list.sort(receipt);
+    let counted = 0;
+    for (const row of list) {
+      turns.set(row, counted);
+      if (tutorRequestState(row) !== "dead_letter") counted += 1;
+    }
+  }
+  return turns;
 }
 
 export function compareTutorFairOrder(rows: TutorRequestRow[]) {
-  return (left: TutorRequestRow, right: TutorRequestRow) =>
-    tutorFairTurn(rows, left) - tutorFairTurn(rows, right) || tutorReceiptOrder(rows, left, right);
+  const turns = tutorFairTurns(rows);
+  const receipt = tutorReceiptOrder(new Map(rows.map((row, position) => [row, position])));
+  return (left: TutorRequestRow, right: TutorRequestRow) => (turns.get(left) ?? 0) - (turns.get(right) ?? 0) || receipt(left, right);
 }
 
 // Who the AI Tutor answer replies to, so everyone in the room can tell which

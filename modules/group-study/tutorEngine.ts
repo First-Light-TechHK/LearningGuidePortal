@@ -10,7 +10,7 @@ import type { TutorCallResult, TutorKeyCall, TutorPoolResult, TutorToolCall, Tut
 // reply before it may reach the room. All of it stays inside the question's
 // answer deadline, which is itself inside the claim lease.
 
-export type TutorEngineCall = (input: { secret: string; model: string; text: string; context: string; roomContext: string; turns: TutorTurn[]; tools?: TutorToolSpec[]; timeoutMs?: number }) => Promise<TutorCallResult>;
+export type TutorEngineCall = (input: { secret: string; model: string; text: string; context: string; roomContext: string; turns: TutorTurn[]; tools?: TutorToolSpec[]; toolChoice?: "none"; timeoutMs?: number }) => Promise<TutorCallResult>;
 
 export type TutorEngineAnswer = {
   status: "answered";
@@ -26,7 +26,7 @@ export type TutorEngineAnswer = {
 export type TutorEngineFailure = { status: "failed"; reason: TutorFailureReason; attempts: number; toolCalls: number; latencyMs: number; usage: TutorUsage };
 export type TutorEngineResult = TutorEngineAnswer | TutorEngineFailure;
 
-type Pool = { execute(text: string, call: TutorKeyCall, options?: { deadline?: number }): Promise<TutorPoolResult>; ready(): boolean };
+type Pool = { execute(text: string, call: TutorKeyCall, options?: { deadline?: number; model?: string }): Promise<TutorPoolResult>; ready(): boolean };
 
 // Rounds over the whole model list; between rounds the engine backs off.
 export const TUTOR_ENGINE_ROUNDS = 3;
@@ -35,12 +35,19 @@ export const TUTOR_TOOL_STEPS = 3;
 // A retry with less time than this left is not started; the first call of a
 // question only needs some time left.
 const MIN_CALL_MS = 1_500;
+// One model call (every key it tries included) gets at most this long, so a
+// stalled model leaves time for the next one (QA 2026-10-20); the answer
+// deadline still bounds the whole question.
+export const TUTOR_CALL_MS = 20_000;
+// Tool calls run per model step; a reply asking for more runs the first ones.
+const TOOL_CALLS_PER_STEP = 3;
 const BACKOFF_MS = [500, 1_500];
 
 // Failures another try (another model, or the same one a moment later) may
-// not hit. The rest end the question at once: a missing or refused key, a
-// spent quota or every key resting is the same on every model and round.
-const RETRYABLE = new Set<TutorFailureReason>(["model_gone", "timeout", "upstream_error", "network", "bad_request", "empty", "malformed", "no_model"]);
+// not hit. A rate limit or a spent quota rests the key for that model only,
+// so the next model is tried too. The rest end the question at once: a
+// missing or refused key is the same on every model and round.
+const RETRYABLE = new Set<TutorFailureReason>(["model_gone", "timeout", "upstream_error", "network", "bad_request", "empty", "malformed", "no_model", "rate_limited", "quota", "keys_resting"]);
 
 function poolReason(result: TutorPoolResult, keyCount: number, deadline: number, now: number): TutorFailureReason {
   switch (result.outcome) {
@@ -92,24 +99,32 @@ export async function answerTutorQuestion(input: {
   async function askModel(model: string): Promise<TutorEngineResult> {
     const turns: TutorTurn[] = [];
     let tools = input.tools && input.health.modelTakesTools(model) ? input.tools : undefined;
-    for (let step = 0; step < TUTOR_TOOL_STEPS + 1; step += 1) {
+    let retriedWithoutTools = false;
+    for (let step = 0; step < TUTOR_TOOL_STEPS; step += 1) {
       if (input.deadline - now() < (attempts === 0 ? 1 : MIN_CALL_MS)) return fail("deadline");
-      // The last step offers no tools, so the model must answer.
-      const offered = tools && step < TUTOR_TOOL_STEPS - 1 ? tools.specs : undefined;
-      const result = await input.pool(keys).execute(input.question, (secret, timeoutMs) => input.call({ secret, model, text: input.question, context: input.context, roomContext: input.roomContext, turns, tools: offered, timeoutMs }), { deadline: input.deadline });
+      // Tool definitions go with every call of a tool loop (providers reject
+      // tool history without them); the last step forbids another tool call,
+      // so the model must answer.
+      const offered = tools ? tools.specs : undefined;
+      const last = step === TUTOR_TOOL_STEPS - 1;
+      const callDeadline = Math.min(input.deadline, now() + TUTOR_CALL_MS);
+      const result = await input.pool(keys).execute(input.question, (secret, timeoutMs) => input.call({ secret, model, text: input.question, context: input.context, roomContext: input.roomContext, turns, tools: offered, ...(offered && last ? { toolChoice: "none" as const } : {}), timeoutMs }), { deadline: callDeadline, model });
       attempts += result.outcomes.length;
       addUsage(usage, result.usage);
-      if (result.outcome === "tools_unsupported" && tools) {
-        // The model takes no tools: ask it again without, and remember.
+      if (result.outcome === "tools_unsupported" && tools && !retriedWithoutTools) {
+        // The model takes no tools: ask it again without, once, and remember.
         input.health.markModelNoTools(model);
         tools = undefined;
+        retriedWithoutTools = true;
         turns.length = 0;
+        step -= 1;
         continue;
       }
       if (result.outcome !== "ok") return fail(poolReason(result, keys.length, input.deadline, now()));
-      if (result.toolCalls?.length && offered && tools) {
-        turns.push({ role: "assistant", content: result.body, toolCalls: result.toolCalls });
-        for (const call of result.toolCalls) {
+      if (result.toolCalls?.length && tools && !last) {
+        const calls = result.toolCalls.slice(0, TOOL_CALLS_PER_STEP);
+        turns.push({ role: "assistant", content: result.body, toolCalls: calls });
+        for (const call of calls) {
           toolCalls += 1;
           const content = await tools.run(call).catch(() => JSON.stringify({ error: "tool failed" }));
           turns.push({ role: "tool", toolCallId: call.id, content });
@@ -163,7 +178,7 @@ export async function answerTutorQuestion(input: {
         input.health.markModelGone(model);
         continue;
       }
-      if (result.reason === "auth" && input.refreshKeys && !refreshed) {
+      if ((result.reason === "auth" || result.reason === "keys_resting") && input.refreshKeys && !refreshed) {
         // Every key was refused: the pool may have just been rotated (a hot
         // secret), so read it again and, only when it changed, ask this model
         // once more with the new keys.

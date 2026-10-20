@@ -44,9 +44,15 @@ const NOT_THE_KEY = new Set<TutorKeyOutcome>(["model_gone", "tools_unsupported",
 // rest for a cooldown and are retried; a quota is expected to relax on a
 // longer horizon than a rate-limit window. An authenticated rejection stays
 // permanent: the key is wrong, not busy.
-export const TUTOR_KEY_COOLDOWN_MS: Record<"rate_limited" | "quota", number> = {
+// QA 2026-10-20: a rate limit or a "more credits" refusal on OpenRouter is
+// often about one model (its upstream limit, its price), so it rests the key
+// for that model only and the next model of the list may still use it. A
+// refused key (401/403) rests for every model, for a bounded time: a hot key
+// pool replaces a rotated key, and a 403 is not always the key's fault.
+export const TUTOR_KEY_COOLDOWN_MS: Record<"rate_limited" | "quota" | "auth_failed", number> = {
   rate_limited: 60_000,
-  quota: 300_000
+  quota: 300_000,
+  auth_failed: 10 * 60_000
 };
 
 type KeyState = {
@@ -55,9 +61,11 @@ type KeyState = {
   requests: number;
   errors: number;
   latencyMs: number;
-  // Epoch milliseconds until which the key must not be attempted. 0 means
-  // available; Infinity means permanently out (auth_failed).
+  // Epoch milliseconds until which the key must not be attempted for any
+  // model (auth_failed). 0 means available.
   disabledUntil: number;
+  // The same, per model (rate_limited, quota).
+  modelDisabledUntil: Map<string, number>;
 };
 
 export type TutorPoolResult = {
@@ -81,19 +89,22 @@ export function createTutorKeyPool(input: { keys: Array<{ id: string; secret: st
     requests: 0,
     errors: 0,
     latencyMs: 0,
-    disabledUntil: 0
+    disabledUntil: 0,
+    modelDisabledUntil: new Map<string, number>()
   }));
 
   return {
     // `deadline` (epoch milliseconds) bounds the whole answer, every key
     // included: no key is tried after it, and each call gets only the time
     // left (QA r3 server 5), so one question never outlives its claim lease.
-    async execute(text: string, call: TutorKeyCall = input.call, options: { deadline?: number } = {}): Promise<TutorPoolResult> {
+    // `model` scopes the per-model rests; without it they apply to the key.
+    async execute(text: string, call: TutorKeyCall = input.call, options: { deadline?: number; model?: string } = {}): Promise<TutorPoolResult> {
       void text;
       const outcomes: TutorKeyOutcome[] = [];
       let latencyMs = 0;
       for (const state of states) {
         if (state.disabledUntil > now()) continue;
+        if ((state.modelDisabledUntil.get(options.model ?? "") ?? 0) > now()) continue;
         const left = options.deadline === undefined ? undefined : options.deadline - now();
         if (left !== undefined && left <= 0) break;
         state.requests += 1;
@@ -105,13 +116,17 @@ export function createTutorKeyPool(input: { keys: Array<{ id: string; secret: st
           return { keyId: state.id, body: result.body ?? "", log: `key ${state.id} ok`, outcome: "ok", outcomes, latencyMs, ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}), ...(result.usage ? { usage: result.usage } : {}), ...(result.model ? { model: result.model } : {}) };
         }
         state.errors += 1;
-        if (result.outcome === "auth_failed") state.disabledUntil = Number.POSITIVE_INFINITY;
-        else if (result.outcome === "rate_limited" || result.outcome === "quota") state.disabledUntil = now() + TUTOR_KEY_COOLDOWN_MS[result.outcome];
+        if (result.outcome === "auth_failed") state.disabledUntil = now() + TUTOR_KEY_COOLDOWN_MS.auth_failed;
+        else if (result.outcome === "rate_limited" || result.outcome === "quota") state.modelDisabledUntil.set(options.model ?? "", now() + TUTOR_KEY_COOLDOWN_MS[result.outcome]);
         // "failed", "timeout" and "upstream_error" leave the key available:
         // the next key gets this question, the same key the next one.
         if (NOT_THE_KEY.has(result.outcome)) return { keyId: "", body: "", log: `key ${state.id} ${result.outcome}`, outcome: result.outcome, outcomes, latencyMs, ...(result.usage ? { usage: result.usage } : {}) };
       }
-      return { keyId: "", body: "", log: "no healthy key", outcome: outcomes.at(-1) ?? "no_key", outcomes, latencyMs };
+      // With mixed outcomes, a passing one (a rest, a timeout) describes the
+      // question better than one refused key among them: only an all-refused
+      // pool reports auth_failed.
+      const passing = outcomes.filter((outcome) => outcome !== "auth_failed");
+      return { keyId: "", body: "", log: "no healthy key", outcome: passing.at(-1) ?? outcomes.at(-1) ?? "no_key", outcomes, latencyMs };
     },
     // Keys not resting: when none is, the pool can only answer "no key".
     ready() {

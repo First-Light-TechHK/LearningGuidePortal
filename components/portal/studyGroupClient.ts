@@ -176,19 +176,27 @@ export function tutorOfflineReason(session: Pick<StudySession, "aiTutorEnabled" 
 
 // Where the asker's waiting question stands, from the session the server
 // last returned: "answering" while it is being answered (or nothing says
-// otherwise), "queued" with how many come first, and whether it can still be
-// withdrawn (only a question nobody started on).
+// otherwise), "queued" with how many come first (0 = next), and whether it
+// can still be withdrawn (only a question nobody started on).
 export function tutorPendingState(session: Pick<StudySession, "viewerTutorQuestions"> | null, answerLineId: string) {
   const id = answerLineId.replace(/^tutor-/, "");
   const entry = session?.viewerTutorQuestions?.find((item) => item.id === id);
-  if (!entry || entry.answering || entry.position <= 0) return { state: "answering" as const, ahead: 0, withdrawable: Boolean(entry && !entry.answering) };
-  return { state: "queued" as const, ahead: entry.position, withdrawable: true };
+  if (!entry || entry.answering) return { state: "answering" as const, ahead: 0, withdrawable: false };
+  return { state: "queued" as const, ahead: Math.max(0, entry.position), withdrawable: true };
+}
+
+// Whether the server still lists the asker's question as waiting or being
+// answered: the room's own answer timer must not call such a question
+// unavailable (QA 2026-10-20; a fair queue can make the wait long).
+export function tutorStillWaiting(session: Pick<StudySession, "viewerTutorQuestions"> | null, answerLineId: string) {
+  const id = answerLineId.replace(/^tutor-/, "");
+  return Boolean(session?.viewerTutorQuestions?.some((item) => item.id === id));
 }
 
 // Why a question never reached the AI Tutor, for the asker's own line (QA
 // 2026-10-19 X-5): the refusals the server names get their own words, any
 // other failure the generic one.
-export const TUTOR_REFUSAL_CODES = ["tutor_busy", "tutor_rate_limited", "seat_lapsed", "session_not_open"] as const;
+export const TUTOR_REFUSAL_CODES = ["tutor_busy", "tutor_rate_limited", "seat_lapsed", "session_not_open", "tutor_unavailable"] as const;
 export function tutorRefusalReason(code: string, words: { errors: Record<string, string>; notLive: string }) {
   if (code === "session_not_open") return words.notLive;
   return words.errors[code] || words.errors.error;

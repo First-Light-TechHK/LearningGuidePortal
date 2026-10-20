@@ -10,7 +10,7 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
-import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -123,6 +123,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const copy = getMessages(locale).studyGroupsPage;
   const roomCopy = copy.room;
   const [session, setSession] = useState<StudySession | null>(null);
+  // The latest session for timers that outlive a render.
+  const sessionRef = useRef<StudySession | null>(null);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   const [group, setGroup] = useState<StudyGroupDetail | null>(null);
   const [errorCode, setErrorCode] = useState("");
   const [connected, setConnected] = useState(false);
@@ -988,9 +993,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     }
     const answerId = `tutor-${queued.data.id}`;
     setChat((items) => tutorChatLines(items.map((item) => item.id === lineId ? { ...item, tutorAnswerId: answerId } : item), { id: answerId, from: roomCopy.tutorName, text: "", at: chatStamp(), tutor: true, pending: true }));
-    window.setTimeout(() => {
+    // A question the server still lists as waiting keeps waiting; only one it
+    // no longer lists, with no answer here, is called unavailable.
+    const expire = () => {
+      if (tutorStillWaiting(sessionRef.current, answerId)) {
+        window.setTimeout(expire, TUTOR_ANSWER_TIMEOUT_MS);
+        return;
+      }
       setChat((items) => items.map((item) => item.id === answerId && item.pending ? { ...item, mode: "unavailable" } : item));
-    }, TUTOR_ANSWER_TIMEOUT_MS);
+    };
+    window.setTimeout(expire, TUTOR_ANSWER_TIMEOUT_MS);
   }
 
   // Takes back a question the AI Tutor has not started on: its waiting line
@@ -1125,7 +1137,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                     : line.pending
                     ? (() => {
                         const pending = tutorPendingState(session, line.id);
-                        return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
+                        return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
                     : <>
                         {line.kind === "quiz" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorQuiz}</span> : null}

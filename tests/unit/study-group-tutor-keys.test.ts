@@ -26,7 +26,7 @@ type KeyOutcome = "ok" | "failed" | "auth_failed" | "rate_limited" | "quota";
 type KeyStats = { requests: number; errors: number; latencyMs: number };
 
 type TutorKeyPool = {
-  execute: (text: string) => Promise<{ keyId: string; body: string; log: string }>;
+  execute: (text: string, call?: undefined, options?: { deadline?: number; model?: string }) => Promise<{ keyId: string; body: string; log: string }>;
   stats: () => Record<string, KeyStats>;
 };
 
@@ -169,8 +169,9 @@ test("a quota-limited key rests longer than a rate-limited one", async () => {
   assert.equal(attempts, 2);
 });
 
-test("an auth-failed key stays permanently out even after a long wait", async () => {
-  const { createTutorKeyPool } = await loadPool();
+test("an auth-failed key rests for every model, then is tried again (QA 2026-10-20)", async () => {
+  const { createTutorKeyPool, TUTOR_KEY_COOLDOWN_MS } = await loadPool();
+  assert.ok(TUTOR_KEY_COOLDOWN_MS);
   assert.ok(createTutorKeyPool);
   let clock = 0;
   let attempts = 0;
@@ -182,10 +183,12 @@ test("an auth-failed key stays permanently out even after a long wait", async ()
       return { outcome: "auth_failed", latencyMs: 1 };
     }
   });
-  assert.equal((await pool.execute("question one")).keyId, "");
-  clock = 24 * 60 * 60 * 1000;
-  assert.equal((await pool.execute("question two")).keyId, "");
-  assert.equal(attempts, 1, "an authenticated rejection is never retried in-process");
+  assert.equal((await pool.execute("question one", undefined, { model: "a" })).keyId, "");
+  assert.equal((await pool.execute("question two", undefined, { model: "b" })).keyId, "");
+  assert.equal(attempts, 1, "a refused key rests for every model");
+  clock = TUTOR_KEY_COOLDOWN_MS.auth_failed;
+  assert.equal((await pool.execute("question three")).keyId, "");
+  assert.equal(attempts, 2, "past its rest the key is tried again");
 });
 
 test("one execute call attempts each key at most once", async () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import test from "node:test";
 import { openRouterTutorCall, replyMatchesQuestionLanguage } from "../../modules/group-study/tutorAnswer";
-import { answerTutorQuestion, type TutorEngineCall } from "../../modules/group-study/tutorEngine";
+import { TUTOR_CALL_MS, answerTutorQuestion, type TutorEngineCall } from "../../modules/group-study/tutorEngine";
 import { createTutorHealth, TUTOR_CIRCUIT_PAUSE_MS } from "../../modules/group-study/tutorHealth";
 import { createTutorKeyPool, type TutorCallResult } from "../../modules/group-study/tutorKeyPool";
 import { openTutorQuiz, renderRoomContext, roomTutorTools, type TutorExchange } from "../../modules/group-study/tutorTools";
@@ -15,13 +15,13 @@ import { DEFAULT_TUTOR_MODELS, tutorDailyBudgetFromEnv, tutorModelsFromEnv } fro
 
 const KEYS = [{ id: "a", secret: "secret-key-a-0123456789" }, { id: "b", secret: "secret-key-b-0123456789" }];
 
-type Seen = { model: string; secret: string; tools: string[]; turns: number; roomContext: string };
+type Seen = { model: string; secret: string; tools: string[]; toolChoice?: "none"; turns: number; roomContext: string };
 
 function engine(input: { call: (seen: Seen) => TutorCallResult | Promise<TutorCallResult>; models?: string[]; keys?: typeof KEYS; question?: string; context?: string; deadlineMs?: number; health?: ReturnType<typeof createTutorHealth>; tools?: ReturnType<typeof roomTutorTools>; refreshKeys?: () => Promise<typeof KEYS> }) {
   const seen: Seen[] = [];
   const health = input.health ?? createTutorHealth();
   const call: TutorEngineCall = async (args) => {
-    const record = { model: args.model, secret: args.secret, tools: (args.tools ?? []).map((tool) => tool.name), turns: args.turns.length, roomContext: args.roomContext };
+    const record = { model: args.model, secret: args.secret, tools: (args.tools ?? []).map((tool) => tool.name), ...(args.toolChoice ? { toolChoice: args.toolChoice } : {}), turns: args.turns.length, roomContext: args.roomContext };
     seen.push(record);
     return input.call(record);
   };
@@ -146,16 +146,20 @@ test("the tool loop: a tool call is answered from the room's records and the mod
   assert.match(await tools.run({ id: "x", name: "delete_everything", arguments: "{}" }), /unknown tool/);
 });
 
-test("the tool loop is bounded: the last step offers no tools, so the model must answer", async () => {
+test("the tool loop is bounded: the last step forbids another tool call, so the model must answer", async () => {
   const tools = roomTutorTools({ history: [], nowMs: Date.now() });
   const { result, seen } = engine({
     tools,
-    call: ({ tools: offered }) => offered.length
-      ? { outcome: "ok", latencyMs: 1, body: "", toolCalls: [{ id: `c${Math.random()}`, name: "get_room_history", arguments: "{\"limit\":3}" }] }
+    call: ({ toolChoice }) => toolChoice !== "none"
+      ? { outcome: "ok", latencyMs: 1, body: "", toolCalls: Array.from({ length: 5 }, (_, index) => ({ id: `c${index}`, name: "get_room_history", arguments: "{\"limit\":3}" })) }
       : { outcome: "ok", latencyMs: 1, body: ANSWER }
   });
-  assert.equal((await result).status, "answered");
-  assert.deepEqual(seen.map((item) => item.tools.length > 0), [true, true, false]);
+  const answered = await result;
+  assert.equal(answered.status, "answered");
+  // Tool definitions stay on every call of the loop (providers reject tool
+  // history without them); the third call forbids tools.
+  assert.deepEqual(seen.map((item) => [item.tools.length > 0, item.toolChoice ?? null]), [[true, null], [true, null], [true, "none"]]);
+  assert.equal(answered.status === "answered" && answered.toolCalls, 6, "at most three tool calls run per step");
 });
 
 test("a model that refuses tool definitions is asked again without them, and remembered", async () => {
@@ -302,4 +306,42 @@ test("provider: tools, tool turns and room context go out; tool calls, usage and
     const tools = roomTutorTools({ history: [], nowMs: Date.now() }).specs;
     assert.equal((await openRouterTutorCall({ ...providerInput(url), tools })).outcome, "tools_unsupported");
   });
+});
+
+test("a rate limit on one model rests the key for that model only: the next model answers with the same key", async () => {
+  const { result, seen } = engine({
+    keys: [KEYS[0]],
+    models: ["busy/model", "free/model"],
+    call: ({ model }) => model === "busy/model" ? { outcome: "rate_limited", latencyMs: 1 } : { outcome: "ok", latencyMs: 1, body: ANSWER }
+  });
+  assert.equal((await result).status, "answered");
+  assert.deepEqual(seen.map((item) => [item.model, item.secret]), [["busy/model", KEYS[0].secret], ["free/model", KEYS[0].secret]]);
+});
+
+test("a stalled model gets one bounded call, leaving time for the next model", async () => {
+  let clock = 0;
+  const pool = createTutorKeyPool({ keys: [KEYS[0]], call: async () => ({ outcome: "failed", latencyMs: 0 }), now: () => clock });
+  const timeouts: number[] = [];
+  const answer = await answerTutorQuestion({
+    question: "Why?",
+    context: "",
+    roomContext: "",
+    keys: [KEYS[0]],
+    models: ["slow/model", "fast/model"],
+    pool: () => pool,
+    call: async ({ model, timeoutMs }) => {
+      timeouts.push(timeoutMs ?? 0);
+      if (model === "slow/model") {
+        clock += timeoutMs ?? 0;
+        return { outcome: "timeout", latencyMs: timeoutMs ?? 0 };
+      }
+      return { outcome: "ok", latencyMs: 1, body: ANSWER };
+    },
+    health: createTutorHealth({ now: () => clock }),
+    deadline: 45_000,
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; }
+  });
+  assert.equal(answer.status, "answered");
+  assert.equal(timeouts[0], TUTOR_CALL_MS, "the first call is capped below the 45 s deadline");
 });

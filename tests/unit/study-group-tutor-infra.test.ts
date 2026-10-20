@@ -6,7 +6,7 @@ import { afterEach, test } from "node:test";
 import { createStudyGroupRepository } from "../../modules/group-study/repository";
 import { createStudyGroupService, type StudyGroupDeps } from "../../modules/group-study/service";
 import { createTutorHealth } from "../../modules/group-study/tutorHealth";
-import { tutorOfflineReason, tutorPendingState } from "../../components/portal/studyGroupClient";
+import { tutorOfflineReason, tutorPendingState, tutorStillWaiting } from "../../components/portal/studyGroupClient";
 import { parseRoomDataMessage } from "../../modules/group-study/roomData";
 
 // Tutor infra 2026-10-20, service level: the room's Tutor remembers the
@@ -156,7 +156,8 @@ test("an unavailable answer says why, and one redacted line per question is logg
   });
   await r.ask("host", "Anyone there? fake-tutor-key-0123456789");
   await r.deliver();
-  assert.deepEqual([r.published[0].mode, r.published[0].reason], ["unavailable", "model_gone"]);
+  // The room gets a coarse class; the log keeps the precise one.
+  assert.deepEqual([r.published[0].mode, r.published[0].reason], ["unavailable", "provider"]);
   const line = r.logs.find((event) => event.type === "study_group.tutor_answer");
   assert.deepEqual(line && { outcome: line.outcome, reason: line.reason }, { outcome: "failed", reason: "model_gone" });
   const text = JSON.stringify(r.logs);
@@ -193,10 +194,11 @@ test("the room is told whether the Tutor is offered: no key, provider down, over
   spent.addSpend(2);
   const budget = await room({ tutorHealth: spent, tutorDailyBudgetUsd: 1 });
   assert.deepEqual((await budget.view()).tutor, { available: false, reason: "budget" });
-  await budget.ask("host", "over budget?");
+  // The server refuses the question outright: the room already says why.
+  await assert.rejects(() => budget.ask("host", "over budget?"), (error: unknown) => (error as { code: string }).code === "tutor_unavailable");
   await budget.deliver();
   assert.equal(budget.calls.length, 0, "no paid call over the budget");
-  assert.deepEqual([budget.published[0].mode, budget.published[0].reason], ["unavailable", "budget"]);
+  await assert.rejects(() => down.ask("m1", "still down?"), (error: unknown) => (error as { code: string }).code === "tutor_unavailable", "a paused Tutor takes no question");
 });
 
 test("the room's helpers read the server's word: offline reason and the waiting line", () => {
@@ -206,7 +208,9 @@ test("the room's helpers read the server's word: offline reason and the waiting 
   const session = { viewerTutorQuestions: [{ id: "q1", position: 0, answering: true }, { id: "q2", position: 2, answering: false }, { id: "q3", position: 0, answering: false }] };
   assert.deepEqual(tutorPendingState(session, "tutor-q1"), { state: "answering", ahead: 0, withdrawable: false });
   assert.deepEqual(tutorPendingState(session, "tutor-q2"), { state: "queued", ahead: 2, withdrawable: true });
-  assert.deepEqual(tutorPendingState(session, "tutor-q3"), { state: "answering", ahead: 0, withdrawable: true });
+  assert.deepEqual(tutorPendingState(session, "tutor-q3"), { state: "queued", ahead: 0, withdrawable: true }, "next up is not yet answering");
+  assert.equal(tutorStillWaiting(session, "tutor-q2"), true);
+  assert.equal(tutorStillWaiting(session, "tutor-q9"), false);
   assert.deepEqual(tutorPendingState(null, "tutor-q9"), { state: "answering", ahead: 0, withdrawable: false });
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   assert.deepEqual(parseRoomDataMessage(encode({ type: "tutor", id: "a", text: "Why?", mode: "course", kind: "quiz" }), true), { type: "tutor", id: "a", text: "Why?", mode: "course", kind: "quiz" });

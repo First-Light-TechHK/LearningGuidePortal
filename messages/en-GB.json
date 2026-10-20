@@ -1068,6 +1068,7 @@
       "tutorReplyTo": "Replying to {name}: {question}",
       "tutorRetry": "Ask again",
       "tutorQueued": "Waiting for AI Tutor — {count} ahead",
+      "tutorNext": "AI Tutor answers this next",
       "tutorWithdraw": "Withdraw",
       "tutorWithdrawn": "Question withdrawn.",
       "tutorQuiz": "Understanding check",
@@ -1114,6 +1115,7 @@
       "tutor_busy": "Wait for the AI Tutor to answer your earlier questions first.",
       "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
       "tutor_answering": "The AI Tutor is already answering that question.",
+      "tutor_unavailable": "AI Tutor is not available right now. Try again in a minute.",
       "seat_lapsed": "Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.",
       "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."

@@ -169,11 +169,18 @@ export type TutorTurn =
 // A tool the model may call, in OpenAI function form.
 export type TutorToolSpec = { name: string; description: string; parameters: Record<string, unknown> };
 
+// Participant-written text inside a delimited block: angle brackets and
+// ampersands are escaped so the text cannot close its block or open another
+// (QA 2026-10-20). Course material is the server's own and stays as it is.
+export function escapeTutorBlock(text: string) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function tutorUserMessage(input: { context: string; roomContext?: string; text: string }) {
   return [
     `<course_material>\n${input.context}\n</course_material>`,
     ...(input.roomContext ? [`<room_context>\n${input.roomContext}\n</room_context>`] : []),
-    `<participant_text>\n${input.text}\n</participant_text>`,
+    `<participant_text>\n${escapeTutorBlock(input.text)}\n</participant_text>`,
     "Answer the participant message for the shared room, following the reply format exactly."
   ].join("\n");
 }
@@ -182,6 +189,9 @@ export function tutorUserMessage(input: { context: string; roomContext?: string;
 // rejected tool definition apart from any other refusal.
 const MODEL_GONE = /no endpoints found|not a valid model|model[^\n]{0,40}(?:not found|does not exist|is not available|deprecated)/i;
 const TOOLS_REFUSED = /tool|function/i;
+// OpenRouter refuses a question its moderation flagged with a 403; that is
+// the question, not the key.
+const MODERATION = /moderation|flagged/i;
 
 function readUsage(json: { usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown } }): TutorUsage | undefined {
   const usage = json.usage;
@@ -207,7 +217,7 @@ function timedOut(error: unknown) {
   return record.name === "TimeoutError" || record.name === "AbortError" || record.code === "ETIMEDOUT" || (typeof record.message === "string" && /timed out/i.test(record.message));
 }
 
-export async function openRouterTutorCall(input: { secret: string; model: string; system: string; context: string; text: string; roomContext?: string; turns?: TutorTurn[]; tools?: TutorToolSpec[]; url?: string; maxTokens?: number; reasoning?: { effort: string }; timeoutMs?: number }): Promise<TutorCallResult> {
+export async function openRouterTutorCall(input: { secret: string; model: string; system: string; context: string; text: string; roomContext?: string; turns?: TutorTurn[]; tools?: TutorToolSpec[]; toolChoice?: "none"; url?: string; maxTokens?: number; reasoning?: { effort: string }; timeoutMs?: number }): Promise<TutorCallResult> {
   const started = Date.now();
   const maxTokens = input.maxTokens ?? 700;
   // At most 45 s, and never past the caller's answer deadline.
@@ -220,6 +230,9 @@ export async function openRouterTutorCall(input: { secret: string; model: string
       : { role: "tool", tool_call_id: turn.toolCallId, content: turn.content })
   ];
   const tools = input.tools?.length ? input.tools.map((tool) => ({ type: "function", function: tool })) : undefined;
+  // A call that carries tool history keeps the tool definitions (providers
+  // reject tool messages without them); the last step forbids another call.
+  const toolFields = tools ? { tools, ...(input.toolChoice ? { tool_choice: input.toolChoice } : {}) } : {};
   try {
     // Reply budget: 700 completion tokens is a runaway guard, not the brevity
     // mechanism — brevity is the prompt's reply_format plus clampTutorReply.
@@ -240,7 +253,7 @@ export async function openRouterTutorCall(input: { secret: string; model: string
       ? await fetch(compatibleUrl, {
         method: "POST",
         headers: { Authorization: `Bearer ${input.secret}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: input.model, temperature: 0.2, max_tokens: maxTokens, stream: false, messages, ...(tools ? { tools } : {}) }),
+        body: JSON.stringify({ model: input.model, temperature: 0.2, max_tokens: maxTokens, stream: false, messages, ...toolFields }),
         signal: AbortSignal.timeout(timeoutMs)
       })
       : await fetchOpenRouter(input.secret, {
@@ -252,20 +265,25 @@ export async function openRouterTutorCall(input: { secret: string; model: string
       usage: { include: true },
       stream: false,
       messages,
-      ...(tools ? { tools } : {})
+      ...toolFields
     }, { timeoutMs, attempts: 1 });
     const latencyMs = Date.now() - started;
     const raw = await response.text();
+    // Status classes first, then body wording: a 5xx body that happens to
+    // say "credit" is still the provider failing (QA 2026-10-20).
+    if (response.status === 403 && MODERATION.test(raw)) return { outcome: "bad_request", latencyMs };
     if (response.status === 401 || response.status === 403) return { outcome: "auth_failed", latencyMs };
     if (response.status === 429) return { outcome: "rate_limited", latencyMs };
+    if (response.status === 408 || response.status === 504) return { outcome: "timeout", latencyMs };
+    if (response.status >= 500) return { outcome: "upstream_error", latencyMs };
+    // A model without tool support answers 404 "No endpoints found that
+    // support tool use": retry it without tools rather than call it gone.
+    if (tools && !response.ok && TOOLS_REFUSED.test(raw) && (response.status === 404 || response.status === 400 || response.status === 422)) return { outcome: "tools_unsupported", latencyMs };
     // Quota wording only decides on a failed response: a 200 completion whose
     // answer text happens to contain "credit" (attribution, course credit) is
     // a valid answer, not a quota signal.
     if (response.status === 402 || (!response.ok && /quota|insufficient_quota|credit/i.test(raw))) return { outcome: "quota", latencyMs };
     if (response.status === 404 || ((response.status === 400 || response.status === 422) && MODEL_GONE.test(raw))) return { outcome: "model_gone", latencyMs };
-    if ((response.status === 400 || response.status === 422) && tools && TOOLS_REFUSED.test(raw)) return { outcome: "tools_unsupported", latencyMs };
-    if (response.status === 408 || response.status === 504) return { outcome: "timeout", latencyMs };
-    if (response.status >= 500) return { outcome: "upstream_error", latencyMs };
     if (!response.ok) return { outcome: "bad_request", latencyMs };
     let json: { model?: unknown; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown }; choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown } }> };
     try {

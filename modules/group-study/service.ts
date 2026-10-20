@@ -26,7 +26,7 @@ import { encryptTokenLogLine } from "./tokenLog";
 import { createTutorKeyPool, type TutorCallResult } from "./tutorKeyPool";
 import type { TutorToolSpec, TutorTurn } from "./tutorAnswer";
 import { answerTutorQuestion, type TutorEngineResult } from "./tutorEngine";
-import { createTutorHealth, type TutorAvailability, type TutorFailureReason, type TutorHealth } from "./tutorHealth";
+import { createTutorHealth, publicTutorReason, type TutorAvailability, type TutorFailureReason, type TutorHealth } from "./tutorHealth";
 import { renderRoomContext, roomTutorTools, type TutorExchange } from "./tutorTools";
 
 export type CourseSummary = { id: string; title: string; slug: string };
@@ -280,14 +280,42 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   const tutorHealth = deps.tutorHealth ?? createTutorHealth();
   // Whether the room should offer the Tutor, cached briefly: every room page
   // polls the session, and a hot key read per poll would be wasteful.
+  // One read at a time (concurrent room polls share it), and a generation
+  // so an answer settling meanwhile invalidates a read already under way.
   let tutorAvailabilityCache: { at: number; value: TutorAvailability } | null = null;
+  let tutorAvailabilityRead: Promise<TutorAvailability> | null = null;
+  let tutorAvailabilityGeneration = 0;
+  function invalidateTutorAvailability() {
+    tutorAvailabilityCache = null;
+    tutorAvailabilityRead = null;
+    tutorAvailabilityGeneration += 1;
+  }
   async function tutorAvailability(): Promise<TutorAvailability> {
     const current = Date.now();
     if (tutorAvailabilityCache && current - tutorAvailabilityCache.at < TUTOR_AVAILABILITY_CACHE_MS) return tutorAvailabilityCache.value;
-    const keys = deps.tutorCall ? await withTimeout(Promise.resolve(deps.tutorKeys?.() ?? []), 2_000).catch(() => []) : [];
-    const value = tutorHealth.availability({ keysConfigured: keys.length > 0, dailyBudgetUsd: deps.tutorDailyBudgetUsd ?? null });
-    tutorAvailabilityCache = { at: current, value };
-    return value;
+    if (tutorAvailabilityRead) return tutorAvailabilityRead;
+    const generation = tutorAvailabilityGeneration;
+    const read = (async () => {
+      let keysConfigured = false;
+      let readFailed = false;
+      if (deps.tutorCall) {
+        try {
+          keysConfigured = (await withTimeout(Promise.resolve(deps.tutorKeys?.() ?? []), 2_000)).length > 0;
+        } catch {
+          // A slow or failing key read is not "no key": keep offering the
+          // Tutor and let the answer path report what really happens.
+          readFailed = true;
+        }
+      }
+      const value = tutorHealth.availability({ keysConfigured: keysConfigured || readFailed, dailyBudgetUsd: deps.tutorDailyBudgetUsd ?? null });
+      if (generation === tutorAvailabilityGeneration) {
+        if (!readFailed) tutorAvailabilityCache = { at: current, value };
+        tutorAvailabilityRead = null;
+      }
+      return value;
+    })();
+    tutorAvailabilityRead = read;
+    return read;
   }
   // One pending re-drain per session: a failed publish schedules its own
   // retry in this process with the same backoff the outbox row already
@@ -473,7 +501,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         tutorHealth.record(result.status === "answered"
           ? { ok: true, model: result.model, latencyMs: result.latencyMs, attempts: result.attempts }
           : { ok: false, reason: result.reason, latencyMs: result.latencyMs, attempts: result.attempts });
-        tutorAvailabilityCache = null;
+        invalidateTutorAvailability();
         // One redacted line per question: classes, counts and the model name,
         // never an id, a name, the question or a key.
         deps.operationalLog?.({
@@ -507,7 +535,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             mode: reply.mode,
             replyTo,
             ...(result.status === "answered" && result.kind === "quiz" ? { kind: "quiz" as const } : {}),
-            ...(result.status === "failed" ? { reason: result.reason } : {})
+            ...(result.status === "failed" ? { reason: publicTutorReason(result.reason) } : {})
           }
         });
         if (!deps.publishRoomChat) last = { text: reply.text, mode: reply.mode };
@@ -1675,14 +1703,21 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const text = requireText(input.text, "AI Tutor request", TUTOR_REQUEST_MAX_LENGTH);
       const clientEventId = requiredValue(input.clientEventId, "Client event id");
       const receivedAt = deps.now().toISOString();
+      // The server refuses a question while the Tutor is paused (provider
+      // failing) or over its daily budget; the room shows why. A missing key
+      // is still taken and answered "unavailable" (QA N4: the question line
+      // must not block), and the room greys the entry out for it.
+      const availability = await tutorAvailability();
       return deps.repository.update((store) => {
         const existing = store.tutorRequests.find((item) => item.sessionId === input.sessionId && item.userId === input.actorUserId && item.clientEventId === clientEventId);
-        if (existing) return { ...existing, position: tutorQueuePosition(store, existing) };
+        // A replay of a question no longer waiting carries no position.
+        if (existing) return { ...existing, position: tutorRequestPending(existing) ? tutorQueuePosition(store, existing) : null };
         const session = store.sessions.find((item) => item.id === input.sessionId);
         if (!session || session.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
         if (session.status === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (session.status !== "live") throw new StudyGroupError("session_not_open", "AI Tutor is available only while the Live Session is live.");
         if (!session.aiTutorEnabled) throw new StudyGroupError("forbidden", "AI Tutor is not enabled for this Live Session.");
+        if (!availability.available && availability.reason !== "no_key") throw new StudyGroupError("tutor_unavailable", `AI Tutor is unavailable (${availability.reason}).`);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
         if (!presence || !seatHeld(presence, deps.now())) {
           // A seat that ran out (the page's heartbeats did not get through)
@@ -1723,7 +1758,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const outcome = await deps.repository.withdrawTutorRequest({ id: requestId, userId: input.actorUserId });
       if (outcome === "not_found") throw new StudyGroupError("not_found", "That AI Tutor question was not found.");
       if (outcome === "answering") throw new StudyGroupError("tutor_answering", "The AI Tutor is already answering that question.");
-      return { id: requestId, withdrawn: outcome === "withdrawn" };
+      // A retried withdrawal of a question already withdrawn says so again.
+      return { id: requestId, withdrawn: outcome === "withdrawn" || (tutorRequestState(row) === "dead_letter" && row.terminalReason === "withdrawn") };
     },
 
     // The per-process AI Tutor health for the operations view.

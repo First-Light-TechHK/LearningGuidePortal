@@ -18,6 +18,7 @@ const statusFor: Record<string, number> = {
   tutor_busy: 409,
   tutor_rate_limited: 429,
   tutor_answering: 409,
+  tutor_unavailable: 503,
   seat_lapsed: 409,
   unavailable: 503,
   livekit_temporarily_unavailable: 503

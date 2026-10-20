@@ -1,4 +1,4 @@
-import type { TutorReplyKind } from "./tutorAnswer";
+import { escapeTutorBlock, type TutorReplyKind } from "./tutorAnswer";
 import type { TutorToolSpec } from "./tutorAnswer";
 import type { TutorToolCall } from "./tutorKeyPool";
 
@@ -35,12 +35,18 @@ function minutesAgo(at: string, nowMs: number) {
 // The room context block of one call: the latest exchanges and the open
 // understanding check, if any. Questions and answers are room content — the
 // prompt treats the block as untrusted data, like the participant text.
+// Room text goes in on one line, escaped, so a question cannot close the
+// block or forge a line of it (QA 2026-10-20).
+function roomText(text: string) {
+  return escapeTutorBlock(text.replace(/\s*\n\s*/g, " / "));
+}
+
 export function renderRoomContext(history: TutorExchange[], nowMs: number) {
   const recent = history.slice(-TUTOR_INLINE_EXCHANGES);
   const quiz = openTutorQuiz(history, nowMs);
   if (!recent.length) return "";
-  const lines = recent.map((item) => `[${minutesAgo(item.answeredAt, nowMs)} min ago] Participant asked: ${item.question}\nYou ${item.kind === "quiz" ? "asked the group (understanding check)" : "answered"}: ${item.answer}`);
-  if (quiz) lines.push(`Open understanding check (asked ${minutesAgo(quiz.answeredAt, nowMs)} min ago): ${quiz.answer}`);
+  const lines = recent.map((item) => `[${minutesAgo(item.answeredAt, nowMs)} min ago] Participant asked: ${roomText(item.question)}\nYou ${item.kind === "quiz" ? "asked the group (understanding check)" : "answered"}: ${roomText(item.answer)}`);
+  if (quiz) lines.push(`Open understanding check (asked ${minutesAgo(quiz.answeredAt, nowMs)} min ago): ${roomText(quiz.answer)}`);
   if (history.length > recent.length) lines.push(`${history.length - recent.length} earlier exchange(s) are available through get_room_history.`);
   return lines.join("\n");
 }
