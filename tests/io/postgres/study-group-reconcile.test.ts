@@ -198,17 +198,26 @@ test("the heartbeat fast path renews only a still-held seat of a scheduled or li
 });
 
 // QA final review X-3: before the sweep ends an abandoned room it asks the
-// provider; an occupied room stays live, and a failed read ends it as before.
+// provider; a room a member of its Study Group is still in stays live, and a
+// failed read ends it as before. Only members count (r3 server 3).
 test("the sweep keeps a room the provider still sees occupied and ends it once the provider cannot say", async () => {
   await seedLeaseState({ busy: "s-busy-x3", abandoned: "s-gone-x3" });
-  const kept = await runReconcile({ LG_IO_PRESENT: "u-gone" });
+  const kept = await runReconcile({ LG_IO_PRESENT: "host" });
   assert.equal(kept.sessionsChecked, 0, "the occupied room is not ended");
   assert.equal(kept.presencesClosed, 2, "lapsed seats still close");
   assert.equal(await countScalar("SELECT count(*) FROM live_sessions WHERE id = 's-gone-x3' AND status = 'live'"), 1);
 
-  const failed = await runReconcile({ LG_IO_PRESENT: "u-gone", LG_IO_FAIL_ROOM: "s-gone-x3" });
+  const failed = await runReconcile({ LG_IO_PRESENT: "host", LG_IO_FAIL_ROOM: "s-gone-x3" });
   assert.equal(failed.sessionsChecked, 1, "a failed provider read falls back to the lease rule");
   assert.equal(await countScalar("SELECT count(*) FROM live_sessions WHERE id = 's-gone-x3' AND status = 'completed'"), 1);
+});
+
+test("r3 server 3: someone in the room who is not a member of its Study Group does not keep it alive", async () => {
+  await seedLeaseState({ busy: "s-busy-x3s", abandoned: "s-gone-x3s" });
+  // u-gone held the seat but is not (or no longer) a member of the group.
+  const swept = await runReconcile({ LG_IO_PRESENT: "u-gone" });
+  assert.equal(swept.sessionsChecked, 1);
+  assert.equal(await countScalar("SELECT count(*) FROM live_sessions WHERE id = 's-gone-x3s' AND status = 'completed'"), 1);
 });
 
 // QA final review B6 / X-2: a scheduled session's seat renews only in

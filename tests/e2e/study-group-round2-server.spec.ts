@@ -321,3 +321,62 @@ test("X-5: asking the AI Tutor after the seat lapsed says why instead of a bare 
     await room.close();
   }
 });
+
+// QA round three (r3 server 4, 7c and r3 groups 2): the session view and
+// the entry, as the server answers them. X-4's queue, the sweep's strays,
+// the Course-gone join and the tutor deadline need a provider fault, a
+// Course unpublish or injected timing and are locked by unit tests.
+
+test("r3 server 4 / r3 groups 2: seatsOpen is 0 before Starting Soon, and a seated viewer is told they hold a seat", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "r3s4-a", "Study Host");
+  const first = await newMember(browser, origin, "r3s4-b", "First Member");
+  const second = await newMember(browser, origin, "r3s4-c", "Second Member");
+  try {
+    const groupId = await createGroup(host, unique("E2E r3 seats"));
+    await joinGroup(first, groupId);
+    await joinGroup(second, groupId);
+    const later = await scheduleSession(host, groupId, { title: "Later today", startsInMs: 3 * 60 * 60_000 });
+    expect(await seatsOpen(second, later), "nobody can enter yet").toBe(0);
+    expect((await enterSession(second, later)).status()).toBe(409);
+
+    const soon = await scheduleSession(host, groupId, { title: "Two seats", startsInMs: 90_000, maxParticipants: 2 });
+    const viewer = async (member: Member) => {
+      const response = await member.context.request.get(`/api/study-groups/sessions/${encodeURIComponent(soon)}`);
+      expect(response.status(), "session view").toBe(200);
+      const data = (await response.json()).data as { seatsOpen: number; viewerSeated: boolean };
+      return [data.seatsOpen, data.viewerSeated];
+    };
+    expect(await viewer(first)).toEqual([1, false]);
+    expect((await enterSession(first, soon)).status(), "first member waits").toBe(200);
+    expect(await viewer(first), "full for a member, yet the first member holds a seat").toEqual([0, true]);
+    expect(await viewer(second)).toEqual([0, false]);
+    expect((await enterSession(first, soon)).status(), "entering again renews the same seat").toBe(200);
+    expect((await sessionView(first, soon)).occupancy).toBe(1);
+  } finally {
+    await host.context.close();
+    await first.context.close();
+    await second.context.close();
+  }
+});
+
+test("r3 server 7c: entering a session moved out of Starting Soon releases the waiting seat at once", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "r3s7c-a", "Study Host");
+  const member = await newMember(browser, origin, "r3s7c-b", "Study Guest");
+  try {
+    const groupId = await createGroup(host, unique("E2E r3 7c"));
+    await joinGroup(member, groupId);
+    const sessionId = await scheduleSession(host, groupId, { title: "Moved away", startsInMs: 90_000 });
+    expect((await enterSession(member, sessionId)).status(), "member waits").toBe(200);
+    const moved = await host.context.request.patch(`/api/study-groups/sessions/${sessionId}`, { data: { groupId, startsAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString() } });
+    expect(moved.status(), "reschedule").toBe(200);
+    const refused = await enterSession(member, sessionId);
+    expect(refused.status()).toBe(409);
+    expect((await refused.json()).code).toBe("session_not_open");
+    expect((await sessionView(member, sessionId)).occupancy, "the seat is released, not left to lapse").toBe(0);
+  } finally {
+    await host.context.close();
+    await member.context.close();
+  }
+});

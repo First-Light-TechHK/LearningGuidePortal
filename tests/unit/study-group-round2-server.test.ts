@@ -404,17 +404,37 @@ test("X-3: a provider that fails or does not answer in time falls back to the le
   }
 });
 
-test("X-3: one sweep asks the provider about at most ten rooms", async () => {
+test("X-3 / r3 server 2: one sweep asks about at most ten rooms, keeps the rest, and asks those first next time", async () => {
   const f = await fixture();
   const ids: string[] = [];
   for (let index = 0; index < 12; index += 1) ids.push((await liveSession(f, `Room ${index}`)).session.id);
   f.participants.list = ["host"];
   f.advanceSeconds(30 + 60 + 1);
+  const states = async () => Promise.all(ids.map((id) => stateOf(f, id)));
   const result = await f.service.sweepPresence();
   assert.equal(f.providerReads.length, 10);
-  assert.equal(result.sessionsEnded, 2, "rooms beyond the bound follow the lease rule");
-  const states = await Promise.all(ids.map((id) => stateOf(f, id)));
-  assert.equal(states.filter((state) => state === "live").length, 10);
+  assert.equal(result.sessionsEnded, 0, "a room nobody asked about is not ended under its participants");
+  assert.deepEqual(await states(), ids.map(() => "live"));
+  assert.deepEqual(f.logs, [
+    { type: "study_group.empty_live_kept", reason: "provider_participants", count: 10 },
+    { type: "study_group.empty_live_kept", reason: "check_deferred", count: 2 }
+  ]);
+  const unasked = ids.filter((id) => !f.providerReads.includes(id));
+  assert.equal(unasked.length, 2);
+
+  f.providerReads.length = 0;
+  f.advanceSeconds(15);
+  await f.service.sweepPresence();
+  assert.ok(unasked.every((id) => f.providerReads.includes(id)), "the rooms left out last time are asked first");
+
+  // The calls end: the provider's rooms are empty. Ten end now, the last two
+  // at the next sweep.
+  f.participants.list = [];
+  f.advanceSeconds(15);
+  assert.equal((await f.service.sweepPresence()).sessionsEnded, 10);
+  f.advanceSeconds(15);
+  assert.equal((await f.service.sweepPresence()).sessionsEnded, 2);
+  assert.deepEqual(await states(), ids.map(() => "completed"));
 });
 
 test("X-4: a member still in the call takes the seat back from a newcomer who never connected", async () => {
@@ -700,4 +720,150 @@ test("X-5: asking the AI Tutor after the seat lapsed answers seat_lapsed (409), 
     const messages = JSON.parse(await readFile(path.join(process.cwd(), `messages/${locale}.json`), "utf8")) as { studyGroupsPage: { errors: Record<string, string> } };
     assert.ok(messages.studyGroupsPage.errors.seat_lapsed, `${locale} has the copy`);
   }
+});
+
+// QA round three, server review of round two (r3 server 1-7) and the server
+// half of the groups-page review (r3 groups 2, 3).
+
+test("r3 X-4: a non-member or a member who never held the seat costs no provider read", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Full room", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  f.participants.list = ["host", "m1"];
+  // m3 owns the Course but never joined the group.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assert.equal(await code(() => f.service.enterSession({ actorUserId: "m3", sessionId: session.id, requestedAt: f.clock() })), "forbidden");
+  }
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() })), "session_full");
+  assert.deepEqual(f.providerReads, []);
+});
+
+test("r3 X-4: a slow provider read never holds up anyone else's entry", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2", "m3"]);
+  const full = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Full room", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  await f.service.startSession({ actorUserId: "host", sessionId: full.id });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: full.id, requestedAt: f.clock() });
+  await heartbeats(f, full.id, ["host"], 40);
+  await f.service.enterSession({ actorUserId: "m2", sessionId: full.id, requestedAt: f.clock() });
+  const other = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Other room", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+  // m1's seat lapsed: the room check runs, and the provider never answers.
+  f.participants.list = "hang";
+  let lapsedDone = false;
+  const lapsed = code(() => f.service.enterSession({ actorUserId: "m1", sessionId: full.id, requestedAt: f.clock() })).finally(() => { lapsedDone = true; });
+  for (let tries = 0; tries < 50 && f.providerReads.length === 0; tries += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(f.providerReads.length, 1, "the provider is being asked");
+  const started = Date.now();
+  assert.equal((await f.service.enterSession({ actorUserId: "m3", sessionId: other.id, requestedAt: f.clock() })).occupancy, 1);
+  assert.ok(Date.now() - started < 1_000, "another entry is not queued behind the provider read");
+  assert.equal(lapsedDone, false);
+  assert.equal(await lapsed, "session_full", "no answer from the provider: the room stays full");
+});
+
+test("r3 X-4: re-entries of one room share one provider read for a few seconds", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Shared read", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  await heartbeats(f, session.id, ["host"], 40);
+  await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() });
+  f.participants.list = ["host", "m2"];
+  const enter = () => code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() }));
+  assert.deepEqual(await Promise.all([enter(), enter(), enter()]), ["session_full", "session_full", "session_full"]);
+  assert.equal(f.providerReads.length, 1, "concurrent re-entries share one read");
+  f.advanceSeconds(2);
+  assert.equal(await enter(), "session_full");
+  assert.equal(f.providerReads.length, 1, "and reuse it briefly");
+  f.advanceSeconds(2);
+  f.participants.list = ["host", "m1"];
+  assert.equal(await enter(), "ok", "a fresh read once the shared one is old");
+  assert.equal(f.providerReads.length, 2);
+});
+
+test("r3 X-4: a seat taken after the provider read is never given away on that read", async () => {
+  const f = await fixture();
+  f.access.add("m4:course-1");
+  const created = await group(f, ["m1", "m2", "m3", "m4"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Read age", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 3 });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  for (const userId of ["m1", "m2"]) await f.service.enterSession({ actorUserId: userId, sessionId: session.id, requestedAt: f.clock() });
+  await heartbeats(f, session.id, ["host"], 40);
+  await f.service.enterSession({ actorUserId: "m3", sessionId: session.id, requestedAt: f.clock() });
+  f.advanceSeconds(1);
+  await f.service.enterSession({ actorUserId: "m4", sessionId: session.id, requestedAt: f.clock() });
+  // m1 and m2 lapsed but are in the call; m4, the newest holder, never connected.
+  f.participants.list = ["host", "m1", "m2"];
+  f.advanceSeconds(1);
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })), "ok");
+  // A second later m3 leaves and m4 takes that seat again, after the read.
+  f.advanceSeconds(1);
+  await f.service.leaveSession({ actorUserId: "m3", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: "m4", sessionId: session.id, requestedAt: f.clock() });
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() })), "session_full");
+  assert.equal(f.providerReads.length, 1);
+  assert.equal((await f.repository.read()).presences.find((row) => row.sessionId === session.id && row.userId === "m4")?.leftAt, null);
+});
+
+test("r3 server 3: only the group's members keep a room alive, and anyone else still in it is removed", async () => {
+  for (const provider of [["m1"], ["host", "m1"]]) {
+    const f = await fixture();
+    const { group: created, session } = await liveSession(f, `Strays ${provider.join(" ")}`, ["m1"]);
+    await f.service.leaveGroup({ actorUserId: "m1", groupId: created.id });
+    f.removed.length = 0;
+    // m1 reconnects with a token that has not expired yet.
+    f.participants.list = [...provider];
+    f.advanceSeconds(30 + 60 + 15);
+    const kept = provider.includes("host");
+    assert.deepEqual(await f.service.sweepPresence(), { seatsClosed: 1, sessionsEnded: kept ? 0 : 1 });
+    assert.equal(await stateOf(f, session.id), kept ? "live" : "completed");
+    assert.deepEqual(f.removed, [{ room: session.id, identity: "m1" }]);
+  }
+});
+
+test("r3 server 4: seatsOpen is 0 while nobody can enter: before Starting Soon and past the planned end", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Later", startsAt: inMinutes(f, 30), durationSeconds: 1800, maxParticipants: 4 });
+  const view = () => f.service.getSession({ actorUserId: "m2", sessionId: session.id });
+  assert.deepEqual([(await view()).state, (await view()).seatsOpen], ["scheduled", 0]);
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() })), "session_not_open");
+  f.advanceSeconds(25 * 60);
+  assert.deepEqual([(await view()).state, (await view()).seatsOpen], ["starting_soon", 3]);
+  // Never started: past the planned end the waiting room is closed.
+  f.advanceSeconds(36 * 60);
+  assert.deepEqual([(await view()).state, (await view()).seatsOpen], ["starting_soon", 0]);
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() })), "session_not_open");
+});
+
+test("r3 groups 2: the session view tells a seated viewer they hold a seat, so a full session is still theirs", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Two seats", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  const view = (userId: string) => f.service.getSession({ actorUserId: userId, sessionId: session.id });
+  assert.equal((await view("m1")).viewerSeated, false);
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  // A reload of the groups page: no seat left for a member, yet m1 holds one.
+  assert.deepEqual([(await view("m1")).seatsOpen, (await view("m1")).viewerSeated], [0, true]);
+  assert.deepEqual([(await view("m2")).seatsOpen, (await view("m2")).viewerSeated], [0, false]);
+  assert.equal((await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })).occupancy, 1, "entering again renews the same seat");
+  const listed = (await f.service.getGroup({ actorUserId: "m1", groupId: created.id })).sessions?.find((item) => item.id === session.id);
+  assert.equal(listed?.viewerSeated, true, "the group's session list carries it too");
+  // Once the lease runs out, the seat is no longer the viewer's.
+  f.advanceSeconds(31);
+  assert.equal((await view("m1")).viewerSeated, false);
+});
+
+test("r3 server 7c: entering a session moved back out of Starting Soon releases the seat, as documented", async () => {
+  const f = await fixture();
+  const created = await group(f);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Moved away", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 4 });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 120) });
+  f.advanceSeconds(5);
+  assert.equal(await code(() => f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })), "session_not_open");
+  assert.equal((await f.repository.read()).presences.find((row) => row.sessionId === session.id)?.leftAt, f.clock(), "released now, not left to lapse");
+  assert.equal((await f.service.getSession({ actorUserId: "m1", sessionId: session.id })).occupancy, 0);
 });

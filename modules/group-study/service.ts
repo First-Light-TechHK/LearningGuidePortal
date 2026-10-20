@@ -109,6 +109,9 @@ const TUTOR_DRAIN_WAIT_MS = 60_000;
 // answer, and the lease rules decide alone, as before.
 const PROVIDER_ROOM_CHECKS_PER_SWEEP = 10;
 const PROVIDER_ROOM_CHECK_TIMEOUT_MS = 2_000;
+// Entries that need the provider's word on one room share a single read for
+// this long (QA r3 X-4 follow-up), so a burst of re-entries costs one call.
+const PROVIDER_ROOM_READ_REUSE_MS = 3_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -180,6 +183,10 @@ function plannedCount(store: StudyGroupStore, sessionId: string) {
   return store.intents.filter((item) => item.sessionId === sessionId && !item.cancelledAt).length;
 }
 
+// The provider's view of one live room: who is connected, and when it was
+// asked, so a seat taken after the read is never judged by it.
+type RoomRead = { identities: ReadonlySet<string>; readAt: string };
+
 type EntryJob = {
   requestedAt: string;
   seq: number;
@@ -193,6 +200,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   let entrySeq = 0;
   let draining = false;
   const startingSessions = new Map<string, Promise<unknown>>();
+  // Per room: the shared provider read for entries (single flight, reused
+  // briefly) and when the sweep last asked about it (oldest asked first).
+  const roomReads = new Map<string, { at: number; read: Promise<RoomRead | null> }>();
+  const roomCheckedAt = new Map<string, number>();
   const tutorDraining = new Set<string>();
   const tutorPools = new Map<string, ReturnType<typeof createTutorKeyPool>>();
   // One pending re-drain per session: a failed publish schedules its own
@@ -446,9 +457,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // The seats a member who is not the Host can still take (QA final review
   // F-2): before the start one seat stays the Host's until the Host holds
   // one (the reservation in seat()), so "5/6" is already full for a member.
+  // A session nobody can enter has none: not yet Starting Soon, ended, or a
+  // waiting room past its planned end (QA r3 server 4, the B6 rule).
   function seatsOpen(store: StudyGroupStore, session: LiveSessionRow, state: EffectiveSessionState | "removed") {
     if (state === "completed" || state === "removed") return 0;
     const now = deps.now();
+    if (!seatRenewable(session, now)) return 0;
     const seats = seatCount(store, session.id, now);
     const hostUserId = store.groups.find((item) => item.id === session.groupId)?.hostUserId;
     const reserved = state !== "live" && !store.presences.some((item) => item.sessionId === session.id && item.userId === hostUserId && seatHeld(item, now)) ? 1 : 0;
@@ -485,6 +499,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       state: state as EffectiveSessionState,
       occupancy: seatCount(store, session.id, deps.now()),
       seatsOpen: seatsOpen(store, session, state),
+      // The viewer already holds a seat (a reload, a second tab): entering
+      // again renews it, so a full session is still open to them (QA r3
+      // groups 2).
+      viewerSeated: store.presences.some((item) => item.sessionId === session.id && item.userId === actorUserId && seatHeld(item, deps.now())),
       plannedCount: plannedCount(store, session.id),
       viewerPlanned: store.intents.some((item) => item.sessionId === session.id && item.userId === actorUserId && !item.cancelledAt),
       attendees
@@ -501,7 +519,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     return { session, group, membership };
   }
 
-  async function seat(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
+  // One admission decision, made under the write lock. `inRoom` is the
+  // provider's view of the room when the caller has already been sent to ask
+  // for it (enterSession); undefined means nobody asked yet, and then a
+  // caller who needs it gets `{ roomCheck }` back instead of a refusal.
+  async function seat(input: { actorUserId: string; sessionId: string; requestedAt: string }, inRoom?: RoomRead | null): Promise<{ occupancy: number } | { roomCheck: LiveSessionRow }> {
     const snapshot = await deps.repository.read();
     const pending = snapshot.sessions.find((item) => item.id === input.sessionId);
     const allowed = pending ? await deps.hasCourseAccess(input.actorUserId, snapshot.groups.find((item) => item.id === pending.groupId)?.courseId || "") : false;
@@ -509,32 +531,22 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!pending || pending.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
       throw new StudyGroupError("course_access_required", "Valid Course access is required.");
     }
-    // A full live room may be full of leases, not of people: a seat holder
-    // whose heartbeats failed lost the seat to someone who then could never
-    // connect (the provider's room was full), and was refused on coming
-    // back while still in the call (QA final review X-4). Only then is the
-    // provider asked who is really in the room; the write below decides.
-    const before = deps.now();
-    const fullLive = pending.status === "live"
-      && !snapshot.presences.some((item) => item.sessionId === pending.id && item.userId === input.actorUserId && seatHeld(item, before))
-      && seatCount(snapshot, pending.id, before) >= pending.maxParticipants;
-    const inRoom = fullLive ? await providerParticipants(pending) : null;
-    const outcome = await deps.repository.update((store) => {
+    const outcome = await deps.repository.update<{ occupancy: number } | { notOpen: string } | { roomCheck: LiveSessionRow }>((store) => {
       const now = deps.now();
       const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
       const state = effectiveSessionState(session, now);
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
-      if (state !== "starting_soon" && state !== "live") throw new StudyGroupError("session_not_open", "The Live Session is not open yet.");
       // Seats are leases (presence.ts): write down the lapsed ones first so
       // every count below, and the stored occupancy, is the real one.
       closeLapsedSeats(store, now, session.id);
       const existing = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
       if (!seatRenewable(session, now)) {
-        // A waiting room past its planned end is closed: the caller's seat is
-        // released (committed, then refused outside the write) instead of
-        // renewed (QA final review B6).
+        // A session that holds no seat now (moved back out of Starting Soon,
+        // or a waiting room past its planned end) releases the caller's seat
+        // (committed, then refused outside the write) instead of renewing it
+        // (QA final review B6, X-2; r3 server 7c).
         if (existing && seatHeld(existing, now)) existing.leftAt = now.toISOString();
-        return { notStarted: true as const };
+        return { notOpen: state === "scheduled" ? "The Live Session is not open yet." : "This Live Session was not started." };
       }
       let seats = seatCount(store, session.id, now);
       if (existing && seatHeld(existing, now)) {
@@ -546,12 +558,21 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       }
       if (missedUnstarted(session, now, seats)) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
       if (seats >= session.maxParticipants) {
+        // A full live room may be full of leases, not of people: a member
+        // whose heartbeats failed lost the seat to someone who then could
+        // never connect (the provider's room was full), and was refused on
+        // coming back while still in the call (QA final review X-4). Only
+        // such a member, whose own seat ran out, has the provider asked who
+        // is really in the room, and never inside the entry queue (r3 X-4):
+        // the caller asks and comes back with the answer.
+        if (state === "live" && inRoom === undefined && existing && seatLapsed(existing, now) && providerCanList(session)) return { roomCheck: session };
         // The caller is in the provider's room: the seat goes back to them
-        // from the newest holder who is not in it (X-4). Anyone else, or any
-        // room the provider could not answer for, finds the session full.
-        const displaced = state === "live" && inRoom?.has(input.actorUserId)
+        // from the newest holder who is not in it and entered before the
+        // read. Anyone else, or any room the provider could not answer for,
+        // finds the session full.
+        const displaced = state === "live" && inRoom?.identities.has(input.actorUserId)
           ? store.presences
-            .filter((item) => item.sessionId === session.id && item.userId !== input.actorUserId && seatHeld(item, now) && !inRoom.has(item.userId))
+            .filter((item) => item.sessionId === session.id && item.userId !== input.actorUserId && seatHeld(item, now) && !inRoom.identities.has(item.userId) && (item.enteredAt ?? "") <= inRoom.readAt)
             .sort((left, right) => (right.enteredAt ?? "").localeCompare(left.enteredAt ?? ""))[0]
           : undefined;
         if (!displaced) throw new StudyGroupError("session_full", "Session Full.");
@@ -588,7 +609,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       }
       return { occupancy: seats + 1 };
     });
-    if ("notStarted" in outcome) throw new StudyGroupError("session_not_open", "This Live Session was not started.");
+    if ("notOpen" in outcome) throw new StudyGroupError("session_not_open", outcome.notOpen);
+    return outcome;
+  }
+
+  // Entry: admissions run one at a time in receipt order (the entry queue),
+  // and nothing slow runs inside it. The provider read X-4 needs happens
+  // between two turns in the queue, for that caller only.
+  async function enterSession(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
+    let outcome = await enqueueEntry(input.requestedAt, () => seat(input));
+    if ("roomCheck" in outcome) {
+      const inRoom = await sharedRoomRead(outcome.roomCheck);
+      outcome = await enqueueEntry(input.requestedAt, () => seat(input, inRoom));
+    }
+    if ("roomCheck" in outcome) throw new StudyGroupError("session_full", "Session Full.");
     return outcome;
   }
 
@@ -729,35 +763,91 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // provider cannot say: no provider-verified reader (the cloud gateway has
   // listParticipants only when verified), no assigned project, or a read that
   // failed or timed out.
-  async function providerParticipants(session: LiveSessionRow): Promise<Set<string> | null> {
+  function providerCanList(session: LiveSessionRow) {
+    return Boolean(deps.liveKitGateway?.listParticipants && deps.liveKitProjects && session.liveKitProjectId);
+  }
+
+  async function providerParticipants(session: LiveSessionRow): Promise<RoomRead | null> {
     const gateway = deps.liveKitGateway;
     if (!gateway?.listParticipants || !deps.liveKitProjects || !session.liveKitProjectId) return null;
     try {
+      const readAt = deps.now().toISOString();
       const project = deps.liveKitProjects.getAssigned(session.liveKitProjectId);
       const participants = await withTimeout(gateway.listParticipants({ project, room: session.id }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
-      return new Set(participants.map((item) => item.identity));
+      return { identities: new Set(participants.map((item) => item.identity)), readAt };
     } catch {
       return null;
     }
+  }
+
+  // The entries' read of one room: concurrent callers share one provider
+  // call, and its answer (or its failure) is reused for a few seconds.
+  function sharedRoomRead(session: LiveSessionRow) {
+    const nowMs = deps.now().getTime();
+    for (const [roomId, entry] of roomReads) {
+      if (nowMs - entry.at >= PROVIDER_ROOM_READ_REUSE_MS) roomReads.delete(roomId);
+    }
+    const reused = roomReads.get(session.id);
+    if (reused) return reused.read;
+    const read = providerParticipants(session);
+    roomReads.set(session.id, { at: nowMs, read });
+    return read;
   }
 
   // Ending an empty live session is destructive and cannot be undone: the
   // room's clients see "completed" and disconnect. When every heartbeat fails
   // at once (a deploy, a stalled store, a WAF rule) the seats lapse while the
   // call goes on, so before ending one the provider is asked whether its room
-  // is really empty (QA final review X-3). Only the first few candidates are
-  // asked per sweep; the rest, and any room the provider cannot answer for,
-  // follow the lease rule as before.
+  // is really empty (QA final review X-3). Only members of the room's Study
+  // Group count; anyone else still connected (a member who left the group,
+  // with a token that has not expired) is removed, not counted (r3 server 3).
+  // At most a few rooms are asked per sweep, the longest-unasked first; a
+  // room not asked this time is kept for a later sweep (r3 server 2). Only a
+  // room the provider reported empty, or could not answer for, is ended.
   async function roomsStillOccupied(store: StudyGroupStore, now: Date) {
     const kept = new Set<string>();
     if (!deps.liveKitGateway?.listParticipants) return kept;
-    const candidates = abandonedLiveSessions(store, now).slice(0, PROVIDER_ROOM_CHECKS_PER_SWEEP);
-    await Promise.all(candidates.map(async (session) => {
-      const participants = await providerParticipants(session);
-      if (participants && participants.size > 0) kept.add(session.id);
+    const candidates = abandonedLiveSessions(store, now);
+    const live = new Set(candidates.map((session) => session.id));
+    for (const roomId of roomCheckedAt.keys()) {
+      if (!live.has(roomId)) roomCheckedAt.delete(roomId);
+    }
+    candidates.sort((left, right) => (roomCheckedAt.get(left.id) ?? -Infinity) - (roomCheckedAt.get(right.id) ?? -Infinity) || left.id.localeCompare(right.id));
+    const asked = candidates.slice(0, PROVIDER_ROOM_CHECKS_PER_SWEEP);
+    const deferred = candidates.slice(PROVIDER_ROOM_CHECKS_PER_SWEEP);
+    let occupied = 0;
+    await Promise.all(asked.map(async (session) => {
+      roomCheckedAt.set(session.id, now.getTime());
+      const read = await providerParticipants(session);
+      if (!read) return;
+      const groupId = session.groupId;
+      const strays = [...read.identities].filter((identity) => !activeMembership(store, groupId, identity));
+      if (read.identities.size > strays.length) {
+        kept.add(session.id);
+        occupied += 1;
+      }
+      await removeFromRoom(session, strays);
     }));
-    if (kept.size > 0) deps.operationalLog?.({ type: "study_group.empty_live_kept", reason: "provider_participants", count: kept.size });
+    for (const session of deferred) kept.add(session.id);
+    if (occupied > 0) deps.operationalLog?.({ type: "study_group.empty_live_kept", reason: "provider_participants", count: occupied });
+    if (deferred.length > 0) deps.operationalLog?.({ type: "study_group.empty_live_kept", reason: "check_deferred", count: deferred.length });
     return kept;
+  }
+
+  // Disconnects these identities from a live room. Best effort, bounded per
+  // identity: an identity the provider no longer has is simply not found.
+  async function removeFromRoom(session: { id: string; liveKitProjectId: string | null }, identities: string[]) {
+    const gateway = deps.liveKitGateway;
+    const projects = deps.liveKitProjects;
+    const projectId = session.liveKitProjectId;
+    if (!gateway || !projects || !projectId || identities.length === 0) return;
+    await Promise.all(identities.map(async (identity) => {
+      try {
+        await withTimeout(gateway.removeParticipant({ project: projects.getAssigned(projectId), room: session.id, identity }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
+      } catch {
+        // Not in that room, or the provider is unavailable: nothing to undo.
+      }
+    }));
   }
 
   // The server sweep (runtime timer and the throttled request path): writes
@@ -955,17 +1045,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // a room open in another tab, which could otherwise go on talking and
       // watching (QA M17). Best effort, bounded per room: the leave is saved,
       // and a member not in the room is simply not found by the provider.
-      const gateway = deps.liveKitGateway;
-      const projects = deps.liveKitProjects;
-      if (gateway && projects) {
-        await Promise.all(liveRooms.map(async (room) => {
-          try {
-            await withTimeout(gateway.removeParticipant({ project: projects.getAssigned(room.projectId), room: room.id, identity: input.actorUserId }), PROVIDER_ROOM_CHECK_TIMEOUT_MS);
-          } catch {
-            // Not in that room, or the provider is unavailable: nothing to undo.
-          }
-        }));
-      }
+      await Promise.all(liveRooms.map((room) => removeFromRoom({ id: room.id, liveKitProjectId: room.projectId }, [input.actorUserId])));
     },
 
     async listDiscover(input: { actorUserId: string | null; courseId?: string; query?: string }) {
@@ -1209,17 +1289,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (cancelled) await deps.withdrawReminders?.({ sessionIds: [input.sessionId], userId: input.actorUserId })?.catch(() => undefined);
     },
 
-    orderEntry<T>(requestedAt: string, run: () => Promise<T>) {
-      return enqueueEntry(requestedAt, run);
-    },
-
-    enterSession(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
-      return enqueueEntry(input.requestedAt, () => seat(input));
-    },
-
-    grantSeat(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
-      return seat(input);
-    },
+    enterSession,
 
     startSession(input: { actorUserId: string; sessionId: string }) {
       // Single-flight is scoped to the caller: a shared entry keyed only by
