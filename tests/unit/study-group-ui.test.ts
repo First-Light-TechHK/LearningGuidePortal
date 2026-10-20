@@ -180,8 +180,9 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.equal(zh.studyGroupsPage.enterWindow, "开始前 10 分钟可以进入。");
   assert.match(room, /group\?\.role === "host" \? <button className=\{styles\.primary\} type="button"/);
   assert.match(room, /sessions\/\$\{sessionId\}\/start/);
-  assert.match(room, /errorCode === "session_full"/);
-  assert.match(room, /errorCode === "course_access_required"/);
+  // A refused entry: a full session offers to try again, missing Course access points to it (QA3 F7).
+  assert.match(room, /const refusalOffer = seated \? null : seatRefusalOffer\(errorCode\);/);
+  assert.match(room, /refusalOffer === "retry" \? <button className=\{styles\.primary\} type="button" onClick=\{retryEntry\}>\{copy\.retry\}<\/button> : null/);
   assert.match(room, /copy\.getCourseAccess/);
   assert.match(room, /!seated && !entryDone/);
   assert.equal(en.studyGroupsPage.start, "Start Live Session");

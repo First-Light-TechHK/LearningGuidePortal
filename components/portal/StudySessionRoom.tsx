@@ -7,7 +7,7 @@ import { liveKitDisconnectReasonName, liveKitDisconnectStep, transitionLiveKitCl
 import type { LiveKitIncident } from "@/modules/group-study/liveKitIncident";
 import { chatLabel, parseRoomDataMessage, ROOM_CHAT_MAX_LENGTH } from "@/modules/group-study/roomData";
 import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatIntents";
-import { participantStatus, raisedHands, roomPageRestoreAction, sessionControls } from "@/modules/group-study/uiState";
+import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
 import { FINAL_ENTRY_CODES, fill, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -782,6 +782,14 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     void load();
   }
 
+  // Runs the entry request again in place, with every admission rule.
+  function retryEntry() {
+    setErrorCode("");
+    setBlocked(false);
+    setEntryDone(false);
+    setEntryAttempt((attempt) => attempt + 1);
+  }
+
   // Everything the page shows about a call goes with the call: a stale "turn
   // sound on" button after a disconnect did nothing when clicked (QA r4-N13-a),
   // and a hand raised in the old room is not raised in the next one.
@@ -873,8 +881,11 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       </>
     );
   }
-  if (!seated && (errorCode === "session_full" || errorCode === "course_access_required")) {
-    return <>{path()}<section className={styles.empty} role="alert"><h1>{errorCode === "session_full" ? copy.sessionFull : copy.errors.course_access_required}</h1><p>{session.title}</p>{errorCode === "course_access_required" && group ? <a className={styles.primary} href={`/${locale}/portal/courses/${group.courseSlug}`}>{copy.getCourseAccess}</a> : null}</section></>;
+  // A full session can free a seat at any moment, also for a member whose
+  // own seat lapsed and was taken: the page offers to enter again (QA3 F7).
+  const refusalOffer = seated ? null : seatRefusalOffer(errorCode);
+  if (refusalOffer) {
+    return <>{path()}<section className={styles.empty} role="alert"><h1>{refusalOffer === "retry" ? copy.sessionFull : copy.errors.course_access_required}</h1><p>{session.title}</p>{refusalOffer === "course-access" && group ? <a className={styles.primary} href={`/${locale}/portal/courses/${group.courseSlug}`}>{copy.getCourseAccess}</a> : null}{refusalOffer === "retry" ? <button className={styles.primary} type="button" onClick={retryEntry}>{copy.retry}</button> : null}</section></>;
   }
   if ((session.state === "starting_soon" || session.state === "live") && !seated && !entryDone) {
     return <p className={styles.panel} role="status">{copy.loading}</p>;
@@ -885,7 +896,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     // request in place instead of leaving the viewer stuck on Loading. A
     // refusal no retry fixes (signed out, not a member) points the way on.
     if (roomGateAction(errorCode) !== "retry") return <>{path()}{gate(errorCode)}</>;
-    return <>{path()}<section className={styles.empty} role="alert"><h1>{copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error}</h1><p>{session.title}</p><button className={styles.primary} type="button" onClick={() => { setErrorCode(""); setEntryDone(false); setEntryAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></section></>;
+    return <>{path()}<section className={styles.empty} role="alert"><h1>{copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error}</h1><p>{session.title}</p><button className={styles.primary} type="button" onClick={retryEntry}>{roomCopy.reconnect}</button></section></>;
   }
   if (session.state === "scheduled") {
     return <>{path()}<section className={styles.empty} role="status"><h1>{copy.errors.session_not_open}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{copy.enterWindow}</p></section></>;

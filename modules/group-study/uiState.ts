@@ -225,3 +225,15 @@ export function waitingDialogStep(result: { ok: boolean; code: string; data?: { 
 export function roomPageRestoreAction(input: { persisted: boolean; left: boolean }): "reload" | "keep" {
   return input.persisted && !input.left ? "reload" : "keep";
 }
+
+/**
+ * QA3 room review F7: what a page without a seat offers when its entry was
+ * refused. A full session can free a seat at any moment, so the page offers
+ * to try again; missing Course access points to getting it; anything else no
+ * offer here (the room's own gate handles it).
+ */
+export function seatRefusalOffer(code: string): "retry" | "course-access" | null {
+  if (code === "session_full") return "retry";
+  if (code === "course_access_required") return "course-access";
+  return null;
+}

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { liveKitDisconnectStep, transitionLiveKitClient, whileCurrentRoom } from "../../modules/group-study/liveKitClientRecovery";
 import { createSeatIntents, SEAT_INTENT_LEFT, type SeatAnswer, type SeatIntent } from "../../modules/group-study/seatIntents";
-import { roomPageRestoreAction } from "../../modules/group-study/uiState";
+import { roomPageRestoreAction, seatRefusalOffer } from "../../modules/group-study/uiState";
 
 // The room client fixes of the third QA review of the Live Session room
 // (QA3, 2026-10-20, F1-F10): behaviour of the pure helpers the room now decides with, plus
@@ -154,6 +154,15 @@ test("QA3 F4: a call that drops during a leave is let go, and only a terminal re
   // A leave the server refused reconnects a call that dropped meanwhile.
   const leave = between(room, "async function leaveSession() {", "function rejoin()");
   assert.match(leave, /leftRef\.current = false;\s*setLeaveError\(result\.code\);[\s\S]*?setConnectAttempt\(\(attempt\) => attempt \+ 1\);\s*return;/);
+});
+
+test("QA3 F7: a full session offers to try again; missing Course access points to it", () => {
+  assert.equal(seatRefusalOffer("session_full"), "retry");
+  assert.equal(seatRefusalOffer("course_access_required"), "course-access");
+  assert.equal(seatRefusalOffer("connect_failed"), null);
+  assert.equal(seatRefusalOffer(""), null);
+  const retry = between(room, "function retryEntry() {", "\n  }");
+  assert.match(retry, /setErrorCode\(""\);\s*setBlocked\(false\);\s*setEntryDone\(false\);\s*setEntryAttempt\(\(attempt\) => attempt \+ 1\);/);
 });
 
 test("QA3 F8: one connect at a time, and coming back online leaves a connect in flight alone", () => {
