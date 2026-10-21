@@ -43,7 +43,7 @@ after(async () => {
 async function signIn(label: string) {
   clearCookies();
   const email = uniqueEmail(label);
-  const response = await callRoute(register.POST, jsonRequest("POST", "http://localhost/api/auth/register", {
+  const response = await callRoute(register.POST, jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: PASSWORD,
     nickname: "IO Visitor",

@@ -67,6 +67,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     event.preventDefault();
     if (submitting.current) return;
     setError("");
+    if (!signIn && !termsAccepted) { setError(labels.registrationConsentRequired); return; }
     if (isEmailTooLong(email)) { setError(labels.emailTooLong); return; }
     if (!isBusinessEmail(email)) { setError(labels.emailInvalid); return; }
     if (!signIn && isNameTooLong(nickname)) { setError(labels.nameTooLong); return; }
@@ -74,10 +75,11 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     submitting.current = true;
     setBusy(true);
     try {
-      const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe }) });
+      const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe, ...(!signIn ? { termsAccepted } : {}) }) });
       const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
       if (!response.ok || !data.ok) {
-        const message = data.code === "AUTHENTICATION_FAILED" ? labels.authenticationFailed
+        const message = data.code === "REGISTRATION_CONSENT_REQUIRED" ? labels.registrationConsentRequired
+          : data.code === "AUTHENTICATION_FAILED" ? labels.authenticationFailed
           : data.code === "EMAIL_DELIVERY_NOT_CONFIGURED" ? labels.emailDeliveryNotConfigured
           : data.code === "REGISTRATION_FAILED" ? labels.registrationFailed
           : labels.requestFailed;
@@ -114,16 +116,16 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       <div className="auth-fields">
         {!signIn ? <label><span className="auth-field-label">{signupDesign ? copy.fullName : copy.nickname}</span><span className="auth-input"><User size={20} aria-hidden="true" /><input value={nickname} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setNickname(value); if (isNameTooLong(value)) setError(labels.nameTooLong); else if (error === labels.nameTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(labels.nameInvalid)} required minLength={1} autoComplete="name" placeholder={signupDesign ? copy.fullNamePlaceholder : undefined} /></span></label> : null}
         <label><span className="auth-field-label">{copy.email}</span><span className="auth-input"><Mail size={20} aria-hidden="true" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setEmail(value); if (isEmailTooLong(value)) setError(labels.emailTooLong); else if (error === labels.emailTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(isEmailTooLong(event.currentTarget.value) ? labels.emailTooLong : labels.emailInvalid)} required autoComplete="email" placeholder="you@example.com" />{emailIsConfirmed ? <span className="auth-email-confirmed" aria-hidden="true"><Check size={11} strokeWidth={3} /></span> : null}</span></label>
-        <label><span className="auth-field-label">{copy.password}</span>{signupDesign ? <span className="auth-password-hint">{copy.passwordHint}</span> : null}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={signIn ? 30 : 72} autoComplete={signIn ? "current-password" : "new-password"} placeholder={signupDesign ? copy.createPassword : undefined} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
+        <label><span className="auth-field-label">{copy.password}</span>{signupDesign ? <span className="auth-password-hint">{copy.passwordHint}</span> : null}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => { event.currentTarget.setCustomValidity(""); setPassword(event.target.value); }} onInvalid={event => { const input = event.currentTarget; input.setCustomValidity(input.validity.valueMissing ? labels.passwordRequired : input.validity.tooLong ? labels.passwordTooLong.replace("{max}", String(input.maxLength)) : labels.passwordTooShort); }} required minLength={8} maxLength={signIn ? 30 : 72} autoComplete={signIn ? "current-password" : "new-password"} placeholder={signupDesign ? copy.createPassword : undefined} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       </div>
       {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberCredentials(null); }} />{copy.keepSignedIn}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
-      {signupDesign ? <label className="auth-signup-terms"><input type="checkbox" checked={termsAccepted} onChange={event => setTermsAccepted(event.target.checked)} /><span>{copy.signUpTermsPrefix} <strong>{copy.termsOfUse}</strong> {copy.signUpTermsAnd} <strong>{copy.privacyNotice}</strong>.</span></label> : null}
+      {!signIn ? <label className="auth-signup-terms"><input type="checkbox" name="termsAccepted" required checked={termsAccepted} onInvalid={event => event.currentTarget.setCustomValidity(labels.registrationConsentRequired)} onChange={event => { event.currentTarget.setCustomValidity(""); setTermsAccepted(event.target.checked); if (error === labels.registrationConsentRequired) setError(""); }} /><span>{copy.signUpTermsPrefix} <strong>{copy.termsOfUse}</strong> {copy.signUpTermsAnd} <strong>{copy.privacyNotice}</strong>.</span></label> : null}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
       {existingNotice ? <div className="portal-success" role="status"><p>{existingNotice}</p><p>{labels.existingEmailCountdown.replace("{seconds}", String(existingSeconds))}</p></div> : null}
-      <button className="portal-button portal-button-primary auth-submit" disabled={busy}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
+      <button className="portal-button portal-button-primary auth-submit" disabled={busy || (!signIn && !termsAccepted)}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
       {signupDesign ? <div className="auth-signup-divider" /> : null}
-      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} wechatFirst={signIn} variant={signIn ? "signin" : signupDesign ? "buttons" : "icons"} />
+      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} disabled={!signIn && (!termsAccepted || busy)} wechatFirst={signIn} variant={signIn ? "signin" : signupDesign ? "buttons" : "icons"} />
       {showTitle ? <a href={`/${locale}/portal`}>{copy.backToPortal}</a> : null}
     </form>
   );

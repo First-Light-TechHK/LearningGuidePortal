@@ -35,7 +35,7 @@ export function LearningOverview({ display, locale, name, categoryLabels = {} }:
       {display.previewed.length ? <div className={styles.previewList} data-previewed-courses>{display.previewed.map((course, index) => <article className={`${styles.previewRow} ${index === display.previewed.length - 1 ? styles.lastRow : ""}`} key={course.courseId} data-course-id={course.courseId}>
         <div className={styles.previewCover}><CourseThumbnail slug={course.slug} title={course.title} src={course.cover}/></div>
         <div className={styles.previewIdentity}><span className={styles.category}>{category(course.category)}</span><h3>{course.title}</h3></div>
-        <Link prefetch={false} className={styles.detail} href={`/${locale}/portal/courses/${encodeURIComponent(course.courseId)}`} aria-label={`${copy.detail}: ${course.title}`}>{copy.detail}<span aria-hidden="true"> →</span></Link>
+        <Link prefetch={false} className={styles.detail} href={`/${locale}/portal/courses/${encodeURIComponent(course.courseId)}`} aria-label={`${copy.detail}: ${course.title}`}>{copy.detail}</Link>
       </article>)}</div> : <EmptyCourses locale={locale} text={copy.noPreviewed}/>}
     </section>
   </section>;

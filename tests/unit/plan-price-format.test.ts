@@ -12,9 +12,9 @@ test("whole-amount plan prices set minimumFractionDigits together with maximumFr
   const whole = planPriceFormatOptions({ amountMinor: 3900, currency: "USD" });
   assert.equal(whole.style, "currency");
   assert.equal(whole.currency, "USD");
-  assert.equal(whole.currencyDisplay, "narrowSymbol");
-  assert.equal(whole.maximumFractionDigits, 0);
-  assert.equal(whole.minimumFractionDigits, 0);
+  assert.equal(whole.currencyDisplay, "symbol");
+  assert.equal(whole.maximumFractionDigits, 2);
+  assert.equal(whole.minimumFractionDigits, 2);
   const cents = planPriceFormatOptions({ amountMinor: 3950, currency: "USD" });
   assert.equal(cents.maximumFractionDigits, 2);
   assert.equal(cents.minimumFractionDigits, 2);
@@ -34,11 +34,11 @@ test("plan price options survive an engine that defaults minimumFractionDigits t
   }
 });
 
-test("formatted plan prices keep the whole-dollar and cents display unchanged", () => {
-  assert.equal(formatPlanPrice("en-GB", { amountMinor: 3900, currency: "USD" }), "$39");
-  assert.equal(formatPlanPrice("en-GB", { amountMinor: 3950, currency: "USD" }), "$39.50");
-  assert.equal(formatPlanPrice("zh-CN", { amountMinor: 3900, currency: "USD" }), "$39");
-  assert.equal(formatPlanPrice("zh-CN", { amountMinor: 3950, currency: "USD" }), "$39.50");
+test("formatted plan prices match Stripe for whole dollars and cents in both locales", () => {
+  assert.equal(formatPlanPrice("en-GB", { amountMinor: 3900, currency: "USD" }), "US$39.00");
+  assert.equal(formatPlanPrice("en-GB", { amountMinor: 3950, currency: "USD" }), "US$39.50");
+  assert.equal(formatPlanPrice("zh-CN", { amountMinor: 3900, currency: "USD" }), "US$39.00");
+  assert.equal(formatPlanPrice("zh-CN", { amountMinor: 3950, currency: "USD" }), "US$39.50");
 });
 
 test("the pricing page and the course page format plan prices through the shared formatter", () => {

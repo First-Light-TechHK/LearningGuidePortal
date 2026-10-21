@@ -28,11 +28,11 @@ test("Stripe upgrade confirmation shows proration, unchanged term and renewal, l
     await page.evaluate(props => (window as any).mount(props), { locale, quote: { id: "quote-native", kind: "upgrade", amountMinor: 3586, currency: "usd", creditMinor: 3000, sourceSubscriptionId: "local-source", upgradeProration: { subscriptionId: "sub_original", customerId: "cus_original", itemId: "si_original", sourcePriceId: "price_category_6", periodStart: 1785542400, periodEnd: 1801353600, billingCycleAnchor: 1785542400, prorationDate: 1792195200, debitMinor: 6000, creditMinor: 3000, adjustmentsMinor: 586, invoiceTotalMinor: 3586, amountDueMinor: 3586 } }, plan: { id: "everything-pc-6", name: "Everything", termMonths: 6, device: "pc", amountMinor: 9900, currency: "usd" }, planHeading: "Everything", scopeDescription: "All categories", upgradeSource: { name: "Category", validTo: "2027-01-31T00:00:00Z" } });
     const dialog = page.getByRole("dialog"); await dialog.waitFor();
     const price = page.locator(".upgrade-price");
-    assert.match(await price.textContent() || "", /\$60\.00 USD/);
-    assert.match(await price.textContent() || "", /\$30\.00 USD/);
-    assert.match(await price.textContent() || "", /\$5\.86 USD/);
-    assert.match(await price.textContent() || "", /\$35\.86 USD/);
-    assert.match(await page.locator(".upgrade-renewal-note").textContent() || "", /\$99\.00 USD \/ 6/);
+    assert.match(await price.textContent() || "", /US\$60\.00/);
+    assert.match(await price.textContent() || "", /US\$30\.00/);
+    assert.match(await price.textContent() || "", /US\$5\.86/);
+    assert.match(await price.textContent() || "", /US\$35\.86/);
+    assert.match(await page.locator(".upgrade-renewal-note").textContent() || "", /US\$99\.00 \/ 6/);
     assert.ok((await page.locator(".upgrade-validity").textContent())?.includes("2027"));
     assert.ok((await price.textContent())?.includes(copy.upgradeConfirmation.remainingPrice));
     const submit = page.locator(".confirmation-actions button").last();

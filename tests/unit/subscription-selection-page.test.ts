@@ -48,9 +48,23 @@ test("five subscription designs retain bilingual responsive states, original ico
     for (let index = 0; index < fixtures.length; index++) {
       await mount(index); const kind = propsFor(index).selection.kind;
       if (index === 0) assert.equal(await page.locator(".pricing-design-card").count(), 2);
-      if (index === 1) { await page.locator(".pricing-upgrade-action button").waitFor({ state: "visible" }); await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".pricing-upgrade-action button")?.disabled); assert.equal(await page.locator(".pricing-upgrade-action button").isEnabled(), true); assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "$35.86"); }
+      if (index === 1) { await page.locator(".pricing-upgrade-action button").waitFor({ state: "visible" }); await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".pricing-upgrade-action button")?.disabled); assert.equal(await page.locator(".pricing-upgrade-action button").isEnabled(), true); assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "US$35.86"); }
       if (index === 2) { assert.equal(await page.locator(".pricing-upgrade-action").count(), 0); assert.equal(await page.locator(".pricing-design-card").count(), 1); assert.equal(await page.locator(".pricing-category-switch button").count(), 1); }
       if (index >= 3) { assert.equal(await page.locator(".pricing-design-card").count(), 0); assert.equal(await page.locator(".pricing-owned-benefits").count(), 1); assert.equal(await page.locator(".pricing-owned-status > a").getAttribute("href"), `/${locale}/account/my-learning/subscription`); }
+      if (index === 1) {
+        const upgrade = page.locator('.pricing-upgrade-card'), category = page.locator('.pricing-design-card--category');
+        assert.equal(await upgrade.getAttribute("data-selected"), "true");
+        const before = requests.length;
+        await category.locator('.pricing-category-switch button').first().click();
+        assert.equal(await category.getAttribute("data-selected"), "true");
+        assert.equal(await upgrade.getAttribute("data-selected"), "false");
+        assert.equal(await category.evaluate(e => getComputedStyle(e).borderTopColor), "rgb(36, 107, 253)");
+        await upgrade.locator('.pricing-upgrade-action button').focus();
+        assert.equal(await upgrade.getAttribute("data-selected"), "true");
+        assert.equal(await page.locator('.pricing-design-card[data-selected="true"]').count(), 1);
+        assert.equal(requests.length, before, "product selection alone must not request checkout or another quote");
+      }
+      if (index === 2) assert.equal(await page.locator('.pricing-design-card--category').getAttribute("data-selected"), "true");
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1024 });
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${locale}/${kind}/${width} overflow`);
@@ -62,16 +76,16 @@ test("five subscription designs retain bilingual responsive states, original ico
     }
     await page.setViewportSize({ width: 1440, height: 1024 }); await mount(2);
     await page.getByRole("button", { name: copy.pricingDesign.year, exact: true }).click();
-    assert.equal(await page.locator(".pricing-card-price strong").textContent(), "$78");
+    assert.equal(await page.locator(".pricing-card-price strong").textContent(), "US$78.00");
     mode = "error"; await page.locator(".purchase-actions button").click(); await page.getByRole("alert").waitFor(); assert.equal(requests.at(-1).planId, "European Humanities-12");
     mode = "error"; requests.length = 0; await mount(1);
     await page.getByRole("alert").waitFor(); assert.equal(requests.length, 1); assert.deepEqual(requests[0], { kind: "upgrade", subscriptionId: "sub-Chinese Humanities" });
     assert.equal(await page.locator(".pricing-upgrade-action button").last().isDisabled(), true);
     assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "—");
     mode = "success"; amountMinor = 1467; await page.getByRole("button", { name: copy.subscriptionSelection.quoteRetry, exact: true }).click();
-    await page.waitForFunction(() => document.querySelector(".pricing-upgrade-card .pricing-card-price strong")?.textContent === "$14.67");
-    assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "$14.67");
-    assert.ok((await page.locator(".pricing-upgrade-action button").last().textContent())?.includes("$14.67"));
+    await page.waitForFunction(() => document.querySelector(".pricing-upgrade-card .pricing-card-price strong")?.textContent === "US$14.67");
+    assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "US$14.67");
+    assert.ok((await page.locator(".pricing-upgrade-action button").last().textContent())?.includes("US$14.67"));
     const quoteRequests = requests.length;
     await page.locator(".pricing-upgrade-action button").last().click(); await page.waitForURL(`**/${locale}/portal/subscription/confirmation?quoteId=trusted-quote`);
     assert.equal(requests.length, quoteRequests, "the displayed Stripe quote is reused without replacing its price on click");

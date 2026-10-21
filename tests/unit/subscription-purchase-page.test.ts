@@ -32,7 +32,11 @@ test("owned categories and course terms cannot be selected or submitted in eithe
       for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       const props = { locale, key: "pricing", plans, selectedPlanId: "Science-12", categories: defaultPortalContent.categories, courseTitles: [] };
+      await page.evaluate(p => (window as unknown as { mount: (p: unknown) => void }).mount(p), { ...props, key: "category-return", selectedPlanId: "Chinese Humanities-12" });
+      assert.equal(await page.locator('.pricing-design-card--category').getAttribute("data-selected"), "true");
+      assert.equal(await page.getByRole("button", { name: getMessages(locale).pricingDesign.year, exact: true }).getAttribute("aria-pressed"), "true");
       await page.evaluate(p => (window as unknown as { mount: (p: unknown) => void }).mount(p), props);
+      assert.equal(await page.locator('.pricing-design-card--everything').getAttribute("data-selected"), "true", "an owned return plan cannot select the Category card");
       const categoryCard = page.locator(".pricing-design-card").nth(1);
       const categoryButtons = categoryCard.locator(".pricing-category-switch button");
       for (const term of [6, 12]) {

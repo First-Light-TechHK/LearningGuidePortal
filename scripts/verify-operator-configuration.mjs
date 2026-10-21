@@ -34,7 +34,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const api = context.request;
   assert.equal((await api.get(`${base}/api/backoffice/portal`)).status(), 403);
-  assert.equal((await api.post(`${base}/api/auth/register`, { data: { email, password: "TestPass123!", nickname: "Operator Test" } })).status(), 200);
+  assert.equal((await api.post(`${base}/api/auth/register`, { data: { termsAccepted: true, email, password: "TestPass123!", nickname: "Operator Test" } })).status(), 200);
   const page = await context.newPage();
   await page.goto(`${base}/en-GB/backoffice/portal`, { waitUntil: "networkidle" });
   const title = page.locator(".portal-content-editor fieldset").first().locator("input").nth(2);

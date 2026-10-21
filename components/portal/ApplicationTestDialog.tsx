@@ -87,8 +87,8 @@ export function ApplicationTestDialog({ locale, lessonNumber, lessonTitle, onBac
               <section className={styles.reference}><h3>{common.reference}</h3>{sample.reference.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>
             </div>
             <footer className={styles.resultFooter}>
-              {!knowledgeCompleted && onKnowledgeTest ? <><button type="button" className={styles.secondary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button><button type="button" className={styles.primary} onClick={onKnowledgeTest}>{copy.tryKnowledge} →</button></>
-                : <button type="button" className={styles.primary} onClick={next}>{onNextLesson ? `${copy.nextLesson} →` : common.done}</button>}
+              {!knowledgeCompleted && onKnowledgeTest ? <><button type="button" className={styles.secondary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button><button type="button" className={styles.primary} onClick={onKnowledgeTest}>{copy.tryKnowledge}</button></>
+                : <button type="button" className={styles.primary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button>}
             </footer>
           </> : <>
             <label className={styles.label} htmlFor="application-answer">{copy.yourAnswer}</label>

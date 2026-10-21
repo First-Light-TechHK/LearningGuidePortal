@@ -6,5 +6,5 @@ import { requireBackofficeOperator } from "@/services/productAuth";
 export default async function BackofficeOrdersPage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = localeFrom((await params).locale);
   await requireBackofficeOperator(locale);
-  return <OrderManager copy={getMessages(locale).backoffice.orders} />;
+  return <OrderManager locale={locale} copy={getMessages(locale).backoffice.orders} />;
 }

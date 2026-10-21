@@ -5,11 +5,14 @@ import { createSession, issueEmailVerificationToken, publicUser, registerUserAtt
 import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
 import { emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
 import { emailVerificationRequired, publicAppOrigin } from "@/services/runtimeConfig";
+import { RegistrationConsentError, type RegistrationRequest } from "@/contracts/registration";
+import { assertRegistrationConsent } from "@/services/registrationConsent";
 
 export async function POST(request: Request) {
   const requestId = randomUUID();
   try {
-    const body = await request.json() as { email?: string; password?: string; nickname?: string; locale?: "en-GB" | "zh-CN" };
+    const body = await request.json() as RegistrationRequest;
+    assertRegistrationConsent(body.termsAccepted);
     const verificationRequired = emailVerificationRequired();
     if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", requestId }, { status: 503 });
     const { user, created } = await registerUserAttempt({ email: body.email || "", password: body.password || "", nickname: body.nickname, locale: body.locale });
@@ -31,6 +34,7 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
     return response;
   } catch (error) {
+    if (error instanceof RegistrationConsentError) return NextResponse.json({ ok: false, code: error.code, requestId }, { status: 400 });
     const message = error instanceof Error ? error.message : "";
     const tooSoon = message.includes("wait before requesting");
     return NextResponse.json({ ok: false, code: tooSoon ? "VERIFICATION_RATE_LIMITED" : "REGISTRATION_FAILED", requestId }, { status: tooSoon ? 429 : 400 });

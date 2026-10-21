@@ -5,16 +5,27 @@ import { validateSubscriptionPrice } from "./stripePriceService";
 import { PaymentError } from "@/contracts/payment";
 import { appEnvironment, isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
 import { startStripeUpgradePayment } from "./stripeUpgradePayment";
+import type { OrderReceipt } from "@/contracts/order-receipt";
 
 export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
 
 // Resolve only identities recorded on the authenticated user's paid Order.
-export async function stripeOrderReceiptUrl(order: Pick<ProductOrder, "id" | "userId" | "status" | "kind" | "paymentMode" | "amountMinor" | "currency" | "stripeInvoiceId" | "stripePaymentIntentId" | "stripeCheckoutSessionId" | "stripeSubscriptionId">) {
+export async function stripeOrderReceipt(order: Pick<ProductOrder, "id" | "userId" | "status" | "kind" | "paymentMode" | "amountMinor" | "currency" | "stripeInvoiceId" | "stripePaymentIntentId" | "stripeCheckoutSessionId" | "stripeSubscriptionId"> & { plan?: { name: string } | null }): Promise<OrderReceipt | null> {
   if (order.status !== "paid" || order.kind === "trial_activation" || order.paymentMode !== "stripe") return null;
   const stripe = getStripe();
+  const receipt = (paidAt?: number | null): OrderReceipt => ({ orderId: order.id, planName: order.plan?.name || "", amountMinor: order.amountMinor, currency: order.currency, paidAt: paidAt ? new Date(paidAt * 1000).toISOString() : null, paymentMode: "stripe" });
+  const invoiceReceipt = (invoice: import("stripe").Stripe.Invoice) => {
+    const subscription = invoice.parent?.subscription_details?.subscription;
+    const subscriptionId = typeof subscription === "string" ? subscription : subscription?.id;
+    if (invoice.status !== "paid" || invoice.currency !== order.currency || invoice.amount_paid !== order.amountMinor
+      || order.stripeSubscriptionId && subscriptionId !== order.stripeSubscriptionId
+      || invoice.metadata?.orderId && invoice.metadata.orderId !== order.id
+      || invoice.metadata?.userId && invoice.metadata.userId !== order.userId) return null;
+    return receipt(invoice.status_transitions?.paid_at);
+  };
   if (order.stripeInvoiceId) {
     const invoice = await stripe.invoices.retrieve(order.stripeInvoiceId);
-    if (invoice.hosted_invoice_url) return invoice.hosted_invoice_url;
+    return invoice.id === order.stripeInvoiceId ? invoiceReceipt(invoice) : null;
   }
   let paymentIntentId = order.stripePaymentIntentId;
   // Subscription Checkout sessions have an Invoice, and normally no direct
@@ -29,16 +40,15 @@ export async function stripeOrderReceiptUrl(order: Pick<ProductOrder, "id" | "us
       || session.metadata?.userId && session.metadata.userId !== order.userId) return null;
     if (session.invoice) {
       const invoice = typeof session.invoice === "string" ? await stripe.invoices.retrieve(session.invoice) : session.invoice;
-      if (invoice.status !== "paid" || invoice.currency !== order.currency || invoice.amount_paid !== order.amountMinor) return null;
-      if (invoice.hosted_invoice_url) return invoice.hosted_invoice_url;
+      return invoiceReceipt(invoice);
     }
     paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
   }
   if (!paymentIntentId) return null;
   const payment = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] });
-  if (payment.status !== "succeeded" || !payment.latest_charge) return null;
+  if (payment.id !== paymentIntentId || payment.status !== "succeeded" || payment.amount_received !== order.amountMinor || payment.currency !== order.currency || !payment.latest_charge) return null;
   const charge = typeof payment.latest_charge === "string" ? await stripe.charges.retrieve(payment.latest_charge) : payment.latest_charge;
-  return charge.paid ? charge.receipt_url : null;
+  return charge.paid && !charge.refunded && charge.amount === order.amountMinor && charge.currency === order.currency ? receipt(charge.created) : null;
 }
 
 // Both HTTPS hosts serve the DEV Portal (see dev-deploy.yml). Keep this

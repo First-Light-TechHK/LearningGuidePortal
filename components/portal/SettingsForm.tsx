@@ -98,7 +98,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       <div className="settings-profile-grid">
         <div className="avatar-settings">
           <div className="avatar-preview">{avatar ? <img src={`/api/my-learning/avatar?v=${avatarVersion}`} alt={copy.avatar} /> : <span aria-hidden="true">{initial}</span>}</div>
-          <div><div className="backoffice-row-actions"><label className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p className="settings-hint">{design.avatarRules}</p></div>
+          <div><div className="backoffice-row-actions"><label hidden className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p className="settings-hint">{design.avatarRules}</p></div>
         </div>
         <div className="settings-profile-fields">
           <label>{copy.nickname}<input value={nickname} autoComplete="name" onChange={event => { event.currentTarget.setCustomValidity(""); setNickname(event.target.value); }} onInvalid={event => event.currentTarget.setCustomValidity(nameCopy.nameInvalid)} onPaste={event => {
@@ -128,14 +128,6 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
         <label>{copy.education}<select aria-label={copy.education} value={education} onChange={(event) => setEducation(event.target.value)}><option value="">{copy.educationPlaceholder}</option>{educationLevels.map((item, index) => <option key={item} value={item}>{design.educationLabels[index]}</option>)}</select></label>
       </div>
     </section>
-    <section className="settings-design-section settings-disabled-section" aria-labelledby="settings-device-heading">
-      <h2 id="settings-device-heading">{copy.deviceManagement}</h2>
-      <div className="settings-disabled-options"><label><input type="checkbox" disabled />{copy.deviceManagement}</label></div>
-    </section>
-    <section className="settings-design-section settings-disabled-section" aria-labelledby="settings-email-heading">
-      <h2 id="settings-email-heading">{copy.emailNotifications}</h2>
-      <div className="settings-disabled-options"><label><input type="checkbox" disabled />{copy.emailNotifications}</label></div>
-    </section>
     <section className="settings-design-section" aria-labelledby="settings-preferences-heading">
       <h2 id="settings-preferences-heading">{copy.language}</h2>
       <label><span className="sr-only">{copy.language}</span><select value={locale} onChange={(event) => setLocale(event.target.value as "en-GB" | "zh-CN")}><option value="en-GB">{copy.english}</option><option value="zh-CN">{copy.chinese}</option></select></label>
@@ -144,8 +136,8 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       <h2 id="settings-password-heading">{copy.newPassword}</h2>
       <div className="settings-details-grid">
         <label>{copy.currentPassword}<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" /></label>
-        <label>{copy.newPassword}<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} autoComplete="new-password" /></label>
-        <label>{copy.confirmPassword}<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} autoComplete="new-password" /></label>
+        <label>{copy.newPassword}<input type="password" value={newPassword} onChange={(event) => { event.currentTarget.setCustomValidity(""); setNewPassword(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(design.newPasswordTooShort)} minLength={8} autoComplete="new-password" /></label>
+        <label>{copy.confirmPassword}<input type="password" value={confirmPassword} onChange={(event) => { event.currentTarget.setCustomValidity(""); setConfirmPassword(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(design.newPasswordTooShort)} minLength={8} autoComplete="new-password" /></label>
       </div>
     </section>
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}{message ? <p className="portal-success" role="status">{message}</p> : null}

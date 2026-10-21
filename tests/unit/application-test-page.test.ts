@@ -63,7 +63,7 @@ test("Application Test matches the four page states and retains attempts across 
     assert.equal(await dialog.getByText(answer,{exact:true}).count(),1);
     const result=dialog.locator('div[aria-label]').filter({has:page.getByRole("heading",{name:app.feedback,exact:true})});
     const next=dialog.getByRole("button",{name:app.nextLesson,exact:true});
-    const knowledge=dialog.getByRole("button",{name:app.tryKnowledge+" →",exact:true});
+    const knowledge=dialog.getByRole("button",{name:app.tryKnowledge,exact:true});
     assert.equal(await next.isVisible(),true);assert.equal(await knowledge.isVisible(),true);
     assert.equal(await result.evaluate(e=>e.scrollHeight>e.clientHeight),true);
     await page.screenshot({path:`test-results/application-test/${locale}-result-knowledge-pending.png`});
@@ -78,20 +78,20 @@ test("Application Test matches the four page states and retains attempts across 
       await dialog.getByRole("radio",{name:common.right,exact:true}).check();
       await dialog.getByRole("button",{name:i===5?common.seeResults:common.next,exact:true}).click();
     }
-    await dialog.getByRole("button",{name:common.tryApplication+" →",exact:true}).click();
+    await dialog.getByRole("button",{name:common.tryApplication,exact:true}).click();
     await dialog.getByRole("heading",{name:app.feedback,exact:true}).waitFor();
     assert.equal(await dialog.getByText(answer,{exact:true}).count(),1);
     assert.equal(await knowledge.count(),0);
-    assert.equal(await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).isVisible(),true);
+    assert.equal(await dialog.getByRole("button",{name:app.nextLesson,exact:true}).isVisible(),true);
     await page.screenshot({path:`test-results/application-test/${locale}-result-knowledge-done.png`});
     for(const viewport of [{width:1024,height:600},{width:1440,height:450},{width:390,height:844}]) {
       await page.setViewportSize(viewport);
       assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth || e.getBoundingClientRect().right>innerWidth),false);
-      await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).scrollIntoViewIfNeeded();
-      assert.equal(await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).isVisible(),true);
+      await dialog.getByRole("button",{name:app.nextLesson,exact:true}).scrollIntoViewIfNeeded();
+      assert.equal(await dialog.getByRole("button",{name:app.nextLesson,exact:true}).isVisible(),true);
       await page.screenshot({path:`test-results/application-test/${locale}-result-${viewport.width}x${viewport.height}.png`});
     }
-    await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).click();
+    await dialog.getByRole("button",{name:app.nextLesson,exact:true}).click();
     assert.equal(await dialog.count(),0);assert.equal(await page.evaluate(()=>(window as unknown as {continued:boolean}).continued),true);
     await page.getByRole("button",{name:"Reopen"}).click();await openApplication();await input.fill("x".repeat(2000));
     assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false);

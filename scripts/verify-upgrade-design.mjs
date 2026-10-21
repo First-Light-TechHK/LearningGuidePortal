@@ -9,7 +9,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     const api = context.request;
     const config = await (await api.get(`${base}/api/health/config`)).json();
     assert.equal(config.environment, "DEV"); assert.equal(config.payment.mode, "demo");
-    assert.equal((await api.post(`${base}/api/auth/register`, { data: { email: `upgrade.${name}.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Upgrade Test" } })).status(), 200);
+    assert.equal((await api.post(`${base}/api/auth/register`, { data: { termsAccepted: true, email: `upgrade.${name}.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Upgrade Test" } })).status(), 200);
     const { quote: purchase } = await (await api.post(`${base}/api/purchase/quote`, { data: { planId: "european-humanities-pc-6" } })).json();
     const consents = { renewal: true, terms: true, refund: true };
     const { order } = await (await api.post(`${base}/api/purchase/checkout`, { data: { quoteId: purchase.id, consents } })).json();

@@ -118,7 +118,7 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     assert.ok(mobileLists[1].top >= mobileLists[0].bottom,"result groups never overlap on mobile");
     await page.screenshot({path:`test-results/knowledge-test/${locale}-mobile.png`});
     assert.equal(await dialog.evaluate(element=>element.scrollWidth>element.clientWidth || element.getBoundingClientRect().right>innerWidth),false);
-    await dialog.getByRole("button",{name:copy.tryApplication+" \u2192",exact:true}).click();
+    await dialog.getByRole("button",{name:copy.tryApplication,exact:true}).click();
     await dialog.getByRole("heading",{name:getMessages(locale).applicationTest.title,exact:true}).waitFor();
     await page.keyboard.press("Escape");
     await dialog.getByRole("button",{name:/Knowledge Test|\u77e5\u8bc6\u6d4b\u8bd5/}).click();await page.getByRole("textbox").waitFor();

@@ -20,7 +20,7 @@ function freshEmail(side: string) {
 async function registerAndEntitle(context: BrowserContext, side: string, nickname: string, appOrigin: string) {
   const email = freshEmail(side);
   const registered = await context.request.post("/api/auth/register", {
-    data: { email, password: PASSWORD, nickname, locale: "en-GB" },
+    data: { termsAccepted: true, email, password: PASSWORD, nickname, locale: "en-GB" },
   });
   expect(registered.status(), "register").toBe(200);
   const loggedIn = await context.request.post("/api/auth/login", {

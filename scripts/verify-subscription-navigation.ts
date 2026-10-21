@@ -65,6 +65,7 @@ async function main() {
         const response = await responsePromise;
         assert.equal(response.status(), 200);
         const serverHtml = await response.text();
+        assert.ok(!serverHtml.includes(`<p role="status">${getMessages(locale).subscriptionSelection.loading}</p>`), "Subscription must not stream a standalone loading page");
         if (kind === "none") {
           assert.equal(await page.locator(".pricing-owned-notice,.pricing-owned-status").count(), 0);
           await page.getByRole("heading", { name: getMessages(locale).pricingDesign.heading, exact: true }).waitFor();
@@ -87,9 +88,34 @@ async function main() {
       await page.locator("header nav").getByRole("link", { name: label, exact: true }).click();
       await studyNavigation;
       await page.locator('[data-subscription-state="everything"]').waitFor();
+      // Slow an actual client-side AccountNav request: keep the current Settings
+      // page usable until My Subscription is ready, with no blank/loading route.
+      await page.goto(`${origin}/${locale}/account/my-learning/settings`);
+      const settings = page.locator('.settings-design-form');
+      await settings.waitFor();
+      assert.equal(await page.locator('#settings-device-heading,#settings-email-heading').count(), 0);
+      let release: (() => void) | undefined;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const target = `${origin}/${locale}/account/my-learning/subscription`;
+      await page.route(`${target}*`, async route => { await gate; await route.continue(); });
+      try {
+        const started = page.waitForRequest(request => new URL(request.url()).pathname === `/${locale}/account/my-learning/subscription`);
+        await page.locator('.account-nav').getByRole('link', { name: getMessages(locale).account.subscription, exact: true }).click();
+        await started;
+        await page.waitForTimeout(500);
+        assert.equal(await settings.isVisible(), true, 'Settings stays visible during a slow transition');
+        assert.equal(await page.getByRole('status').filter({hasText:/Loading|加载/}).count(), 0);
+        await page.screenshot({ path: path.join(output, `${locale}-pending-account-navigation.png`), fullPage: true });
+      } finally { release?.(); }
+      await page.waitForURL(target);
+      await page.getByRole('heading', { name: getMessages(locale).account.subscription, exact: true }).waitFor();
+      assert.equal(await settings.count(), 0);
+      assert.equal(await page.getByRole('status').filter({hasText:/Loading|加载/}).count(), 0);
+      await page.unroute(`${target}*`);
+      await page.screenshot({ path: path.join(output, `${locale}-account-navigation-ready.png`), fullPage: true });
       await context.close();
     }
-    console.log("PASS: first Subscription document response selects all five current-user states; anonymous, account changes, same-page reentry and both navigation headers are fresh in both locales.");
+    console.log("PASS: first Subscription document response selects all five current-user states; both locales retain Settings during delayed account navigation, omit disabled settings and show no standalone loading page.");
   } finally {
     await browser?.close();
     if (server) {

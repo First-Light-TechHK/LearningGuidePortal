@@ -4,11 +4,14 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { build } from "esbuild";
 import { chromium } from "playwright";
+import sharp from "sharp";
 import { getMessages } from "../../lib/i18n/messages";
 import { buildSubscriptionConfirmationDisplay } from "../../services/subscriptionConfirmationDisplay";
 import type { ProductPlan, ProductQuote, ProductSubscription } from "../../services/productStore";
 
 test("Category, Everything and Upgrade confirmations match the design and retain consent, retry and checkout boundaries", async () => {
+  const emptyCheckbox = await sharp(await readFile("public/portal/subscription-confirmation/checkbox.svg")).ensureAlpha().extract({ left: 6, top: 6, width: 8, height: 8 }).raw().toBuffer();
+  assert.equal(emptyCheckbox.some((value, index) => index % 4 === 3 && value > 0), false, "Unchecked checkbox must have an empty centre");
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {SubscriptionConfirmation} from './components/portal/SubscriptionConfirmation';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(<SubscriptionConfirmation key={props.key} {...props} copy={getMessages(props.locale).portal.subscriptionConfirmation}/>));` },
     bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
@@ -54,6 +57,8 @@ test("Category, Everything and Upgrade confirmations match the design and retain
       assert.equal(await page.getByRole("checkbox").count(), 3);
       assert.equal(await page.locator('input:checked').count(), 0);
       assert.equal(await submit.isDisabled(), true);
+      assert.equal(await submit.textContent(), messages.portal.subscriptionConfirmation.continue);
+      assert.equal(await page.locator('img[src$="/checkbox.svg"]').count(), 3);
       await page.keyboard.press("Tab");
       assert.equal(await page.locator(".confirmation-close").evaluate(e => e === document.activeElement), true);
       await page.keyboard.press("Shift+Tab");
@@ -68,12 +73,14 @@ test("Category, Everything and Upgrade confirmations match the design and retain
       if (kind === "everything") assert.equal(await page.locator(".confirmation-plan-chip").textContent(), messages.confirmationDetails.allCategories.replace("{count}", "3"));
       if (kind !== "upgrade") {
         assert.match(await page.locator(".confirmation-payment").textContent() || "", /2027/);
-        assert.ok((await page.locator(".confirmation-payment-grid").textContent())?.includes(messages.confirmationDetails.estimatedDates.split("{dates}")[0]));
+        const termDates = await page.locator(".confirmation-payment-grid > div").nth(1).locator("p").textContent();
+        const dateLabel = (date: string) => new Date(date).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+        assert.equal(termDates, `${dateLabel("2026-10-13T00:00:00Z")} – ${dateLabel("2027-04-12T00:00:00Z")}`);
       } else {
         assert.match(await page.locator(".upgrade-price").textContent() || "", /110/);
-        assert.ok((await page.locator(".upgrade-price").textContent())?.includes("+ $59.18 USD"));
-        assert.ok((await page.locator(".upgrade-price").textContent())?.includes("− $23.32 USD"));
-        assert.match(await page.locator(".upgrade-total").textContent() || "", /\$35\.86 USD/);
+        assert.ok((await page.locator(".upgrade-price").textContent())?.includes("+ US$59.18"));
+        assert.ok((await page.locator(".upgrade-price").textContent())?.includes("− US$23.32"));
+        assert.match(await page.locator(".upgrade-total").textContent() || "", /US\$35\.86/);
       }
       await dialog.locator("img").evaluateAll(async images => Promise.all(images.map(image => (image as HTMLImageElement).decode())));
       for (const icon of await dialog.locator("img").all()) assert.equal(await icon.evaluate(e => { const img = e as HTMLImageElement, r = img.getBoundingClientRect(); return img.complete && img.naturalWidth > 0 && r.width === Number(img.width) && r.height === Number(img.height); }), true);
@@ -99,8 +106,8 @@ test("Category, Everything and Upgrade confirmations match the design and retain
       await page.keyboard.press("Escape");
       assert.equal(await page.evaluate(() => (window as any).dismissed), kind === "upgrade" ? `/${locale}/subscription?upgradeFrom=source` : `/${locale}/subscription?planId=${kind === "category" ? "category-pc-6" : "everything-pc-6"}`);
     }
-    await mount("upgrade", 586); assert.match(await page.locator(".upgrade-price").textContent() || "", /\$5\.86 USD/);
-    assert.match(await page.locator(".upgrade-total").textContent() || "", /\$41\.72 USD/);
+    await mount("upgrade", 586); assert.match(await page.locator(".upgrade-price").textContent() || "", /US\$5\.86/);
+    assert.match(await page.locator(".upgrade-total").textContent() || "", /US\$41\.72/);
     for (const input of await page.getByRole("checkbox").all()) await input.check();
     responseStatus = 202;
     const pendingRequest = page.waitForRequest(r => r.url().endsWith("/api/purchase/checkout"));

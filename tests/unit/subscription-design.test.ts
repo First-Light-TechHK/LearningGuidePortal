@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { defaultPortalContent } from "../../lib/portalContent";
+import { getMessages } from "../../lib/i18n/messages";
 
 test("Subscription Figma layout and shared full-width footer in both locales", async () => {
   const footerBundle = await build({ entryPoints:["components/portal/PortalFooter.tsx"],bundle:true,write:false,platform:"node",format:"cjs",jsx:"automatic",external:["react","react/jsx-runtime"],plugins:[{name:"server",setup(b){
@@ -32,6 +33,8 @@ test("Subscription Figma layout and shared full-width footer in both locales", a
     const footer=renderToStaticMarkup(await Footer({locale}));
     const props={locale,plans,categories,footer,courseTitles:categories.flatMap(c=>[1,2].map(n=>({category:c.id,title:`${c.labels[locale as 'en-GB']} ${n}`})))};
     await page.evaluate(p=>(window as any).mount(p),props);
+    assert.equal(await page.locator(".pricing-card-price strong").first().textContent(), "US$99.00");
+    assert.equal((await page.locator(".pricing-card-price").allTextContents()).some(text=>text.includes("USD")),false);
     for(const width of [1440,390,320]){
       await page.setViewportSize({width,height:1000});
       const layout=await page.locator('.pricing-comparison').evaluate(e=>({left:e.getBoundingClientRect().left,width:e.getBoundingClientRect().width,gap:getComputedStyle(e).gap}));
@@ -41,8 +44,31 @@ test("Subscription Figma layout and shared full-width footer in both locales", a
       assert.deepEqual(await page.locator('.portal-footer-social img').evaluateAll(images=>images.map(image=>({width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height}))),Array(3).fill({width:40,height:40}));
       const button=page.locator('.pricing-design-card--category .purchase-actions button');
       assert.equal(await button.evaluate(e=>getComputedStyle(e).color),"rgb(21, 93, 252)");
-      assert.equal(await page.locator('.pricing-card-price del').textContent(),"$117");
+      assert.equal(await page.locator('.pricing-card-price del').textContent(),"US$117.00");
       await page.screenshot({path:`test-results/subscription-design/${locale}-${width}.png`,fullPage:true});
+      const everything = page.locator('.pricing-design-card--everything'), category = page.locator('.pricing-design-card--category');
+      const assertSelected = async (scope: "everything" | "category") => {
+        assert.equal(await page.locator('.pricing-design-card[data-selected="true"]').count(), 1);
+        for (const [card, selected] of [[everything, scope === "everything"], [category, scope === "category"]] as const) {
+          assert.equal(await card.evaluate(e => getComputedStyle(e).borderTopColor), selected ? "rgb(36, 107, 253)" : "rgb(229, 231, 235)");
+        }
+      };
+      await assertSelected("everything");
+      const cardBox = () => category.evaluate(e => { const r = e.getBoundingClientRect(); return { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height }; });
+      const before = await cardBox();
+      await category.locator('.pricing-category-switch button').last().click();
+      await assertSelected("category");
+      assert.deepEqual(await cardBox(), before, "switching the border must not shift the card");
+      await page.getByRole("button", { name: getMessages(locale as "en-GB" | "zh-CN").pricingDesign.year, exact: true }).click();
+      await assertSelected("category");
+      await page.screenshot({path:`test-results/subscription-design/${locale}-${width}-category-selected.png`,fullPage:true});
+      await everything.locator('h2').click();
+      await assertSelected("everything");
+      await category.locator('.pricing-category-switch button').first().focus();
+      await assertSelected("category");
+      await everything.locator('.pricing-category-switch button').first().focus();
+      await assertSelected("everything");
+      await page.getByRole("button", { name: getMessages(locale as "en-GB" | "zh-CN").pricingDesign.sixMonths, exact: true }).click();
     }
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});await page.evaluate(p=>(window as any).mount({...p,account:true}),props);

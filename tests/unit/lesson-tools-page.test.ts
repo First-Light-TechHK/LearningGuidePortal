@@ -6,7 +6,7 @@ import { build } from "esbuild";
 import { chromium } from "playwright";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("lesson tools match the Figma column, describe enabled/disabled actions and keep text completion hidden", async () => {
+test("lesson tools show access hints only for unentitled previews and retain enabled actions and text completion behavior", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(<PreviewLessonView key={props.key} {...props}/>));` },
     bundle: true, write: false, outfile: "tools.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
@@ -71,7 +71,20 @@ test("lesson tools match the Figma column, describe enabled/disabled actions and
         assert.equal(styles.width, 160); assert.equal(styles.border, "rgb(228, 231, 237)");
         assert.equal(styles.loaded, true); assert.equal(styles.iconWidth, 16); assert.equal(styles.iconHeight, 16);
         if (!entitled) assert.equal(await control.isDisabled(), true);
-        const wrapper = control.locator(".."), tooltip = wrapper.getByRole("tooltip");
+        const wrapper = control.locator(".."), tooltip = wrapper.getByRole("tooltip", { includeHidden: true });
+        if (entitled) {
+          assert.equal(await tooltip.count(), 0);
+          assert.equal(await control.getAttribute("aria-describedby"), null);
+          assert.equal(await wrapper.getAttribute("aria-describedby"), null);
+          await wrapper.hover();
+          assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
+          if (index === 1) await page.screenshot({ path: `test-results/lesson-tools/${locale}-active.png`, fullPage: true });
+          await control.focus();
+          assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
+          await page.keyboard.press("Tab");
+          await page.locator("h1").click();
+          continue;
+        }
         await page.mouse.move(0, 0);
         assert.equal(await tooltip.isVisible(), false);
         await wrapper.hover();
@@ -95,19 +108,25 @@ test("lesson tools match the Figma column, describe enabled/disabled actions and
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         assert.ok((await tools.boundingBox())!.y >= (await page.locator("video").boundingBox())!.y + (await page.locator("video").boundingBox())!.height);
         const first = controls.first().locator(".."); await first.hover();
-        const tip = (await first.getByRole("tooltip").boundingBox())!;
-        assert.ok(tip.x >= 0 && tip.x + tip.width <= width);
+        if (entitled) assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
+        else {
+          const tip = (await first.getByRole("tooltip", { includeHidden: true }).boundingBox())!;
+          assert.ok(tip.x >= 0 && tip.x + tip.width <= width);
+        }
         if (width === 390) await page.screenshot({ path: `test-results/lesson-tools/${locale}-${entitled ? "active" : "locked"}-mobile.png`, fullPage: true });
       }
       await page.setViewportSize({ width: 1440, height: 1024 });
     }
     await mount("long-title", true, "video", "A long lesson title that wraps onto multiple lines to check alignment with the actual player below the heading");
     assert.equal((await tools.boundingBox())!.y - (await page.locator(".la-player").locator("..").boundingBox())!.y, 10);
+    await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 3);
+    await mount("access-change", true); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
+    await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 3);
     for (const type of ["text", "pdf", "legacy"]) {
       await mount(type, true, type);
       assert.equal(await page.getByRole("button", { name: messages.learning.completeLesson, exact: true }).count(), 0);
       assert.equal(await page.locator(".preview-progress button").count(), 0);
-      assert.equal(await page.getByRole("button", { name: `${messages.learning.nextLesson} →`, exact: true }).isVisible(), true);
+      assert.equal(await page.getByRole("button", { name: messages.learning.nextLesson, exact: true }).isVisible(), true);
       if (type === "text") await page.screenshot({ path: `test-results/lesson-tools/${locale}-text.png`, fullPage: true });
     }
     assert.deepEqual(errors, []);
