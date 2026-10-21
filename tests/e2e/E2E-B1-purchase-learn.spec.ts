@@ -22,7 +22,7 @@ test.describe("E2E-B1-004", () => {
     expect(await check.json()).toEqual({ ok: true });
 
     const registered = await request.post("/api/auth/register", {
-      data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
+      data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
     });
     expect(registered.status()).toBe(200);
     const registeredBody = await registered.json();
@@ -59,7 +59,7 @@ test.describe("E2E-B1-005", () => {
   test("trial quote, missing consents 400, cancel grants nothing, complete grants entitlement with empty cards", async ({ request }) => {
     const email = freshEmail("005");
     const registered = await request.post("/api/auth/register", {
-      data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
+      data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
     });
     expect(registered.status()).toBe(200);
 
@@ -107,7 +107,7 @@ test.describe("E2E-B1-006", () => {
   test("purchase complete replaces trial; receipt HTML is 200", async ({ request }) => {
     const email = freshEmail("006");
     expect((await request.post("/api/auth/register", {
-      data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
+      data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
     })).status()).toBe(200);
 
     const trialQuote = await request.post("/api/subscription/quote", { data: { planId: PLAN_ID, kind: "trial" } });
@@ -157,7 +157,7 @@ test.describe("E2E-B1-007", () => {
   test("LEARN-02: purchased entitlement exists but course cards stay empty until study/events", async ({ request }) => {
     const email = freshEmail("007");
     expect((await request.post("/api/auth/register", {
-      data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
+      data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
     })).status()).toBe(200);
 
     const trialQuote = await request.post("/api/subscription/quote", { data: { planId: PLAN_ID, kind: "trial" } });
@@ -185,7 +185,7 @@ test.describe("E2E-B1-008", () => {
   test("study/events after purchase creates a course card", async ({ request }) => {
     const email = freshEmail("008");
     expect((await request.post("/api/auth/register", {
-      data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
+      data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
     })).status()).toBe(200);
 
     const trialQuote = await request.post("/api/subscription/quote", { data: { planId: PLAN_ID, kind: "trial" } });

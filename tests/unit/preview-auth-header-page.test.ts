@@ -62,7 +62,7 @@ test("one Preview login returns to its course with current account navigation ev
     const user = await verifiedUser(store, "preview@example.test");
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    browser = await chromium.launch({ channel: "msedge" });
+    browser = await chromium.launch();
     for (const locale of ["en-GB", "zh-CN"] as const) {
       const context = await browser.newContext(); const page = await context.newPage();
       const copy = getMessages(locale), target = `/${locale}/portal/courses/epicureanism`;

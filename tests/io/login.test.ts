@@ -60,7 +60,7 @@ after(async () => {
 async function registerAccount(label: string, password = PASSWORD) {
   clearCookies();
   const email = uniqueEmail(label);
-  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password,
     nickname: "IO Learner",
@@ -134,14 +134,14 @@ test("AUTH-01 functional: check-email identifies known and unknown addresses", a
 
 test("AUTH-01 negative: registration requires a valid Unicode name", async () => {
   for (const nickname of ["", "Ada2", "Ada 😊", "Ada_"]) {
-    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
       email: uniqueEmail("auth01-invalid-name"), password: PASSWORD, nickname, locale: "en-GB"
     }));
     const body = await response.json() as { ok?: boolean; message?: string };
     assert.equal(response.status, 400);
     assert.equal(body.ok, false);
   }
-  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email: uniqueEmail("auth01-unicode-name"), password: PASSWORD, nickname: "张·伟", locale: "en-GB"
   }));
   assert.equal(response.status, 200);
@@ -175,13 +175,13 @@ test("AUTH-01 negative: verification resend rejects the persisted daily limit", 
 
 test("AUTH-01 negative: register copy does not say the address already exists", async () => {
   const email = uniqueEmail("auth01-register");
-  const first = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const first = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: PASSWORD,
     nickname: "IO Learner",
     locale: "en-GB"
   }));
-  const second = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const second = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: "attacker9",
     nickname: "Other Name",
@@ -342,7 +342,7 @@ test("AUTH-04 functional: registering the operator email stays a student", async
   const email = uniqueEmail("auth04-ops");
   process.env.BACKOFFICE_OPERATOR_EMAIL = email;
   try {
-    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
       email,
       password: PASSWORD,
       nickname: "IO Learner",
@@ -381,7 +381,7 @@ test("AUTH-04 edge: unauthenticated backoffice is 403", async () => {
 
 test("AUTH-05 functional: a second register does not take over the first password", async () => {
   const email = uniqueEmail("auth05-owner");
-  const first = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const first = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: PASSWORD,
     nickname: "First Owner",
@@ -389,7 +389,7 @@ test("AUTH-05 functional: a second register does not take over the first passwor
   }));
   assert.equal(first.status, 200);
   clearCookies();
-  const second = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const second = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: "attacker9",
     nickname: "Attacker",
@@ -421,7 +421,7 @@ test("AUTH-05 edge: concurrent same-email register keeps one working password", 
         { password: "password3", nickname: "Third Owner" }
       ].slice(0, count);
       const responses = await Promise.all(attempts.map((attempt, index) =>
-        register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+        register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
           ...attempt,
           email: index % 2 ? ` ${email.toUpperCase()} ` : email,
           locale: "en-GB"
@@ -469,7 +469,7 @@ test("AUTH-05 edge: pending duplicates cannot replace verification or create ses
       { password: "password3", nickname: "Third Owner" }
     ];
     const responses = await Promise.all(attempts.map((attempt) =>
-      register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+      register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
         ...attempt, email, locale: "en-GB"
       }))
     ));
@@ -502,7 +502,7 @@ test("AUTH-05 edge: pending duplicates cannot replace verification or create ses
       token.createdAt = new Date(Date.now() - 61_000).toISOString();
     }
     await atomicWriteJson(path.join(systemRoot(), "learning_guide", "product.json"), data);
-    const repeated = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+    const repeated = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
       email, password: "takeover9", nickname: "Another Owner", locale: "en-GB"
     }));
     assert.equal(repeated.status, 200);
@@ -536,7 +536,7 @@ test("AUTH-05 negative: duplicate pending registration preserves its token when 
   await atomicWriteJson(path.join(systemRoot(), "learning_guide", "product.json"), data);
   nodemailer.createTransport = () => { throw new Error("Simulated SMTP outage"); };
 
-  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email, password: "attacker9", nickname: "Other Owner", locale: "en-GB"
   }));
   assert.equal(response.status, 200);
@@ -553,7 +553,7 @@ test("AUTH-05 negative: verification required without mail delivery is 503", asy
   process.env.EMAIL_DELIVERY = "";
   delete process.env.SES_FROM_EMAIL;
   try {
-    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+    const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
       email: uniqueEmail("auth05-verify"),
       password: PASSWORD,
       locale: "en-GB"

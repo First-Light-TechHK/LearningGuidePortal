@@ -73,9 +73,9 @@ test("Overview route derives record ownership from session and redirects before 
     b.onResolve({filter:/next\/navigation|services\/(productAuth|overviewDisplay)$|components\/portal\/(OverviewDesign|AccountNav|PortalFooter|PortalHeader)$|overview-design\.module\.css$/},args=>({path:args.path,namespace:"mock"}));
     b.onLoad({filter:/.*/,namespace:"mock"},args=>({contents:args.path==="next/navigation"?"export function redirect(url){throw new Error('redirect:'+url)}":args.path.endsWith("productAuth")?"export async function currentProductUser(){return globalThis.realOverviewRoute.state.user}":args.path.endsWith("overviewDisplay")?"export async function getOverviewDisplay(...args){return globalThis.realOverviewRoute.load(...args)}":args.path.endsWith("css")?"export default {page:'page'}":"export const OverviewDesign=()=>null,AccountNav=()=>null,PortalFooter=()=>null,PortalHeader=()=>null;"}));
   }}]});
-  const routeModule={exports:{} as {default:(props:{params:Promise<{locale:string}>})=>Promise<{props:{children:Array<{props:{data:{name:string;courses:unknown[]}}}>}}>}};
-  new Function("require","module","exports",compiled.outputFiles[0].text)(createRequire(import.meta.url),routeModule,routeModule.exports);
-  const invoke=(locale="en-GB")=>routeModule.exports.default({params:Promise.resolve({locale})});
+  const pageModule={exports:{} as {default:(props:{params:Promise<{locale:string}>})=>Promise<{props:{children:Array<{props:{data:{name:string;courses:unknown[]}}}>}}>}};
+  new Function("require","module","exports",compiled.outputFiles[0].text)(createRequire(import.meta.url),pageModule,pageModule.exports);
+  const invoke=(locale="en-GB")=>pageModule.exports.default({params:Promise.resolve({locale})});
   for(const locale of ["en-GB","zh-CN"]){const page=await invoke(locale);assert.equal(page.props.children[2].props.data.name,"Current User");assert.deepEqual(page.props.children[2].props.data.courses,[]);}
   assert.deepEqual(state.calls,["session-owner","session-owner"]);
   state.user=null;state.calls=[];await assert.rejects(invoke(),/redirect:.*sign-in\?returnTo=/);assert.deepEqual(state.calls,[]);

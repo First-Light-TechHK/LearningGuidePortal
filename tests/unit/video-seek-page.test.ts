@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 
 test("video seek tracks mouse/touch drags without waiting for media timeupdate", async () => {
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {ControlledVideo} from './components/portal/ControlledVideo';window.mount=locale=>createRoot(document.getElementById('root')).render(<div className="la" style={{width:'100%'}}><ControlledVideo locale={locale}/></div>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,platform:"browser",jsx:"automatic"});
-  const browser=await chromium.launch({channel:"msedge"});
+  const browser=await chromium.launch();
   try{for(const locale of ["en-GB","zh-CN"]) for(const touch of [false,true]){
     const context=await browser.newContext({viewport:{width:touch?390:1100,height:800},hasTouch:touch});const page=await context.newPage();
     await page.setContent('<div id="root"></div>');await page.addScriptTag({content:'window.__name=value=>value'});await page.addStyleTag({content:await readFile("components/portal/lesson-authoring.css","utf8")});

@@ -50,7 +50,7 @@ test.describe("E2E-B1-009", () => {
   test("signed-in without entitlement: study 400 and tutor 403", async ({ request }) => {
     const email = `e2e-009-${Date.now()}@example.com`;
     const registered = await request.post("/api/auth/register", {
-      data: { email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
+      data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },
     });
     if (registered.status() !== 200) {
       test.skip(true, `live register returned ${registered.status()} (PROD verification / no SMTP); store path below covers the same rule`);

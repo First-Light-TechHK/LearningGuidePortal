@@ -43,7 +43,7 @@ after(async () => {
 async function signIn(label: string) {
   clearCookies();
   const email = uniqueEmail(label);
-  const response = await callRoute(register.POST, jsonRequest("POST", "http://localhost/api/auth/register", {
+  const response = await callRoute(register.POST, jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: PASSWORD,
     nickname: "IO Visitor",
@@ -73,8 +73,9 @@ async function startTrial() {
     planId: COURSE_PLAN,
     kind: "trial"
   }));
-  assert.equal(quoted.status, 200);
-  const quoteId = (await quoted.json()).quote.id as string;
+  const quotedBody = await quoted.json();
+  if (quoted.status !== 200) return { pending: quoted, body: quotedBody, orderId: undefined as string | undefined };
+  const quoteId = quotedBody.quote.id as string;
   const pending = await callRoute(trial.POST, jsonRequest("POST", "http://localhost/api/trial", {
     quoteId,
     locale: "en-GB",

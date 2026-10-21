@@ -16,7 +16,7 @@ export function CatalogueCourseCard({ course, category, locale, variant = "catal
       <Link prefetch={false} className="home-course-link" href={`/${locale}/portal/courses/${course.id}`} aria-label={`${copy.viewCourse}: ${course.title}`}>
         <div className="home-course-cover"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /><span className="home-course-category">{category}</span></div>
         <div className="home-course-body"><div className="home-course-heading"><h3>{course.title}</h3><p className="home-course-meta">{lessons.length} {copy.lessonCount} · {Math.floor(minutes / 60)}{homeCopy.hourShort} {minutes % 60}{homeCopy.minuteShort}</p></div>
-          <div className="home-course-description"><p title={course.description}>{course.description}</p><span className="home-course-arrow" aria-hidden="true">→</span></div>
+          <div className="home-course-description"><p title={course.description}>{course.description}</p></div>
         </div>
       </Link>
     </article>;
@@ -26,7 +26,7 @@ export function CatalogueCourseCard({ course, category, locale, variant = "catal
       <div className="portal-course-image-wrap"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /><span className="portal-course-category">{category}</span></div>
       <div className="portal-course-card-body">
         <div className="portal-course-heading"><h3>{course.title}</h3><div className="portal-course-meta">{lessons.length} {copy.lessonCount} · {Math.floor(minutes / 60)}{homeCopy.hourShort} {minutes % 60}{homeCopy.minuteShort}</div></div>
-        <div className="portal-course-card-bottom"><p title={course.description}>{course.description}</p><span className="portal-course-arrow" aria-hidden="true">→</span></div>
+        <div className="portal-course-card-bottom"><p title={course.description}>{course.description}</p></div>
       </div>
     </Link>
   </article>;

@@ -208,7 +208,7 @@ for (const locale of ["en-GB", "zh-CN"]) {
   test(`Preview first login returns to the original course detail (${locale})`, async ({ page, request }) => {
     test.skip(Boolean(process.env.CI), "Uses the local verified-account fixture without sending email.");
     const email = `preview-return-${locale.toLowerCase()}-${Date.now()}@example.test`;
-    const registered = await request.post("/api/auth/register", { data: { email, password: PASSWORD, nickname: "Preview Learner", locale } });
+    const registered = await request.post("/api/auth/register", { data: { termsAccepted: true, email, password: PASSWORD, nickname: "Preview Learner", locale } });
     expect(registered.ok()).toBe(true);
     expect((await registered.json()).data.verificationRequired).not.toBe(true);
     const destination = `/${locale}/portal/courses/epicureanism`;

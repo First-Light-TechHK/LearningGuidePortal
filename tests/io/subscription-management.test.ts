@@ -17,12 +17,12 @@ test("Stripe cancellation retains access/end date and recovers a lost response w
     const { getStripe } = await import("../../services/stripeClient"), stripe = getStripe();
     const remote = { id: "sub_cancel", customer: "cus_cancel", status: "active", cancel_at_period_end: false };
     let lost = true; const calls: { input: unknown; key?: string }[] = [];
-    stripe.subscriptions.retrieve = (async () => remote) as typeof stripe.subscriptions.retrieve;
-    stripe.subscriptions.update = (async (_id, input, options) => {
+    stripe.subscriptions.retrieve = (async () => remote) as unknown as typeof stripe.subscriptions.retrieve;
+    stripe.subscriptions.update = (async (_id: string, input: { cancel_at_period_end?: boolean }, options?: { idempotencyKey?: string }) => {
       calls.push({ input, key: options?.idempotencyKey }); remote.cancel_at_period_end = Boolean(input?.cancel_at_period_end);
       if (lost) { lost = false; throw new Error("Provider response lost"); }
       return remote;
-    }) as typeof stripe.subscriptions.update;
+    }) as unknown as typeof stripe.subscriptions.update;
     const { changeUserSubscription } = await import("../../services/subscriptionManagementService");
     const input = { subscriptionId: source.id, action: "cancel" as const, reasonCode: "other" as const, reasonText: "Optional feedback" };
     await assert.rejects(() => changeUserSubscription(buyer.id, input), { code: "provider_unavailable" });
@@ -66,8 +66,8 @@ test("wrong Stripe customer cannot be cancelled and the API localises failure wi
     Object.assign(data.subscriptions.find((s: { id: string }) => s.id === purchased.subscription.id), { stripeSubscriptionId: "sub_owner", stripeCustomerId: "cus_owner" }); await writeProductData(data);
     process.env.PAYMENT_MODE = "stripe"; process.env.STRIPE_SECRET_KEY = "sk_test_cancel_fixture";
     const { getStripe } = await import("../../services/stripeClient"), stripe = getStripe(); let calls = 0;
-    stripe.subscriptions.retrieve = (async () => ({ id: "sub_owner", customer: "cus_other", status: "active", cancel_at_period_end: false })) as typeof stripe.subscriptions.retrieve;
-    stripe.subscriptions.update = (async () => { calls++; throw new Error("Must not mutate another customer"); }) as typeof stripe.subscriptions.update;
+    stripe.subscriptions.retrieve = (async () => ({ id: "sub_owner", customer: "cus_other", status: "active", cancel_at_period_end: false })) as unknown as typeof stripe.subscriptions.retrieve;
+    stripe.subscriptions.update = (async () => { calls++; throw new Error("Must not mutate another customer"); }) as unknown as typeof stripe.subscriptions.update;
     const session = await store.createSession(buyer.id); setCookie(SESSION_COOKIE, session.token);
     const route = await import("../../app/api/subscription/route");
     process.env.PAYMENT_MODE = "disabled";

@@ -17,7 +17,7 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path === "next/navigation" ? "export function useRouter(){return {refresh(){window.refreshed=true},push(href){window.navigated=href}}}" : args.path === "next/dynamic" ? "export default function dynamic(){return ()=>null}" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>;}" : "import React from 'react';export default function Image({unoptimized,...props}){return <img {...props}/>;}"}));
     }}],
   });
-  const browser = await chromium.launch({channel:"msedge"});
+  const browser = await chromium.launch();
   await mkdir("test-results/video-completion",{recursive:true});
   const lesson = {id:"lesson",title:"Looking closely",body:"Public lesson.",durationMinutes:2,contents:[{id:"video",title:"Observe composition",type:"video",mode:"lecture",url:"/video-fixture.mp4",nodes:[]},{id:"video-2",title:"Second video",type:"video",mode:"lecture",url:"/video-other.mp4",nodes:[]},{id:"text",title:"Read visual cues",type:"text",mode:"lecture",html:"<p>Text lesson.</p>",nodes:[]}]};
   try {

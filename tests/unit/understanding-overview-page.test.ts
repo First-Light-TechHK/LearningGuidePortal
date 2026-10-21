@@ -45,7 +45,7 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
-  const browser=await chromium.launch({channel:'msedge'});
+  const browser=await chromium.launch();
   try{for(const locale of ['en-GB','zh-CN'] as const){
     const labels=getMessages(locale).understandingOverview, copy=getMessages(locale).knowledgeTest, records=getMessages(locale).assessmentRecords;
     const user=await verifiedUser(store,`browser-${locale.toLowerCase()}@example.test`,'Actual Learner');
@@ -117,8 +117,8 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     await page.reload();await application.getByRole('button',{name:labels.continue,exact:true}).click();
     await dialog.getByRole('heading',{name:app.feedback,exact:true}).waitFor();
     assert.equal(await dialog.getByText(app.strongResponse,{exact:true}).count(),1);
-    assert.equal(await dialog.getByRole('button',{name:app.tryKnowledge+' →',exact:true}).count(),0);
-    assert.equal(await dialog.getByRole('button',{name:app.nextLesson+' →',exact:true}).count(),1);
+    assert.equal(await dialog.getByRole('button',{name:app.tryKnowledge,exact:true}).count(),0);
+    assert.equal(await dialog.getByRole('button',{name:app.nextLesson,exact:true}).count(),1);
     const completedView=await (await context.request.get(base+`/api/courses/${COURSE_ID}/understanding`)).json();
     assert.equal(completedView.data.lessons[0].application.percent,100);assert.equal(completedView.data.completed,1);
     await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-application-result.png`)});
@@ -126,7 +126,7 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     await application.getByText(labels.completed,{exact:true}).waitFor();await page.reload();await application.getByRole('button',{name:labels.viewResult,exact:true}).waitFor();
     assert.equal(await lesson.getByText(labels.completed,{exact:true}).count(),3);
     await application.getByRole('button',{name:labels.viewResult,exact:true}).click();
-    await dialog.getByRole('button',{name:app.nextLesson+' →',exact:true}).click();
+    await dialog.getByRole('button',{name:app.nextLesson,exact:true}).click();
     await page.waitForURL(url=>url.pathname===`/${locale}/account/learn/${COURSE_ID}`&&url.searchParams.get('lessonId')===PRIVATE_LP);
     await page.goto(base+'/'+locale);await lesson.waitFor();
     const locked=page.locator(`section[data-lesson-id="${PRIVATE_LP}"]`);await locked.getByRole('button',{expanded:false}).click();assert.equal(await locked.locator('button:disabled').count(),2);
@@ -142,10 +142,10 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     assert.equal(await otherDialog.getByRole('heading',{name:app.feedback,exact:true}).count(),0);
     await otherDialog.getByRole('button',{name:records.retry,exact:true}).click();await otherDialog.getByRole('heading',{name:app.feedback,exact:true}).waitFor();
     assert.equal(await otherDialog.getByRole('button',{name:app.nextLesson,exact:true}).count(),1);
-    assert.equal(await otherDialog.getByRole('button',{name:app.tryKnowledge+' →',exact:true}).count(),1);
+    assert.equal(await otherDialog.getByRole('button',{name:app.tryKnowledge,exact:true}).count(),1);
     const independent=await (await otherContext.request.get(base+`/api/courses/${COURSE_ID}/understanding`)).json();
     assert.equal(independent.data.lessons[0].application.percent,100);assert.equal(independent.data.lessons[0].knowledge.answered,0);assert.equal(independent.data.completed,0);
-    await otherDialog.getByRole('button',{name:app.tryKnowledge+' →',exact:true}).click();
+    await otherDialog.getByRole('button',{name:app.tryKnowledge,exact:true}).click();
     await otherDialog.getByText('01/06',{exact:true}).waitFor();assert.equal(await otherDialog.getByRole('textbox').inputValue(),'');
     await otherContext.close();
   }}finally{releaseRead();await browser.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await restore();}

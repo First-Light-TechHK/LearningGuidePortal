@@ -9,7 +9,7 @@ import { getApplicationTestSample } from "../../services/applicationTestSample";
 
 test("Application Test matches the four page states and retains attempts across both Knowledge completion flows", async () => {
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';import previewStyles from './components/portal/preview-lesson.module.css';function Demo({locale}){const [open,setOpen]=React.useState(true);return open ? <div className="la"><header className={previewStyles.heading}><p>01</p><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>{window.continued=true;setOpen(false)}} onClose={()=>setOpen(false)}/></header></div> : <button onClick={()=>setOpen(true)}>Reopen</button>};window.mount=locale=>createRoot(document.getElementById('root')).render(<Demo locale={locale}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}]});
-  const browser=await chromium.launch({channel:"msedge"});
+  const browser=await chromium.launch();
   await mkdir("test-results/application-test",{recursive:true});
   try { for(const locale of ["en-GB","zh-CN"] as const) {
     const copy=getMessages(locale), app=copy.applicationTest, common=copy.knowledgeTest;
@@ -63,7 +63,7 @@ test("Application Test matches the four page states and retains attempts across 
     assert.equal(await dialog.getByText(answer,{exact:true}).count(),1);
     const result=dialog.locator('div[aria-label]').filter({has:page.getByRole("heading",{name:app.feedback,exact:true})});
     const next=dialog.getByRole("button",{name:app.nextLesson,exact:true});
-    const knowledge=dialog.getByRole("button",{name:app.tryKnowledge+" →",exact:true});
+    const knowledge=dialog.getByRole("button",{name:app.tryKnowledge,exact:true});
     assert.equal(await next.isVisible(),true);assert.equal(await knowledge.isVisible(),true);
     assert.equal(await result.evaluate(e=>e.scrollHeight>e.clientHeight),true);
     await page.screenshot({path:`test-results/application-test/${locale}-result-knowledge-pending.png`});
@@ -78,20 +78,20 @@ test("Application Test matches the four page states and retains attempts across 
       await dialog.getByRole("radio",{name:common.right,exact:true}).check();
       await dialog.getByRole("button",{name:i===5?common.seeResults:common.next,exact:true}).click();
     }
-    await dialog.getByRole("button",{name:common.tryApplication+" →",exact:true}).click();
+    await dialog.getByRole("button",{name:common.tryApplication,exact:true}).click();
     await dialog.getByRole("heading",{name:app.feedback,exact:true}).waitFor();
     assert.equal(await dialog.getByText(answer,{exact:true}).count(),1);
     assert.equal(await knowledge.count(),0);
-    assert.equal(await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).isVisible(),true);
+    assert.equal(await dialog.getByRole("button",{name:app.nextLesson,exact:true}).isVisible(),true);
     await page.screenshot({path:`test-results/application-test/${locale}-result-knowledge-done.png`});
     for(const viewport of [{width:1024,height:600},{width:1440,height:450},{width:390,height:844}]) {
       await page.setViewportSize(viewport);
       assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth || e.getBoundingClientRect().right>innerWidth),false);
-      await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).scrollIntoViewIfNeeded();
-      assert.equal(await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).isVisible(),true);
+      await dialog.getByRole("button",{name:app.nextLesson,exact:true}).scrollIntoViewIfNeeded();
+      assert.equal(await dialog.getByRole("button",{name:app.nextLesson,exact:true}).isVisible(),true);
       await page.screenshot({path:`test-results/application-test/${locale}-result-${viewport.width}x${viewport.height}.png`});
     }
-    await dialog.getByRole("button",{name:app.nextLesson+" →",exact:true}).click();
+    await dialog.getByRole("button",{name:app.nextLesson,exact:true}).click();
     assert.equal(await dialog.count(),0);assert.equal(await page.evaluate(()=>(window as unknown as {continued:boolean}).continued),true);
     await page.getByRole("button",{name:"Reopen"}).click();await openApplication();await input.fill("x".repeat(2000));
     assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false);

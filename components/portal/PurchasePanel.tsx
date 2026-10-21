@@ -1,5 +1,7 @@
 "use client";
 
+import { formatPlanPrice } from "@/lib/planPricing";
+
 import { useEffect, useId, useRef, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
 
@@ -61,7 +63,7 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
     <div className="purchase-panel">
       {!compact ? <><h2>{copy.choosePlan}</h2>
       <div className="purchase-plans">
-        {plans.map((plan) => <label className={`purchase-plan ${selectedPlan === plan.id ? "selected" : ""}`} key={plan.id}><input type="radio" name={groupId} disabled={!isSelectable(plan)} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} /><span><strong>{plan.name}</strong>{plan.alreadySubscribed && <small>{messages.pricingDesign.alreadySubscribed}</small>}<small>${(plan.amountMinor / 100).toFixed(2)} USD</small></span></label>)}
+        {plans.map((plan) => <label className={`purchase-plan ${selectedPlan === plan.id ? "selected" : ""}`} key={plan.id}><input type="radio" name={groupId} disabled={!isSelectable(plan)} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} /><span><strong>{plan.name}</strong>{plan.alreadySubscribed && <small>{messages.pricingDesign.alreadySubscribed}</small>}<small>{formatPlanPrice(locale, plan)}</small></span></label>)}
       </div></> : null}
       {subscribed && <p role="status">{messages.pricingDesign.alreadySubscribed}</p>}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}

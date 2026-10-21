@@ -7,7 +7,7 @@ import { getMessages } from "../../lib/i18n/messages";
 
 test("contact submits in-page, suppresses duplicate submits and retains data/key for retry in both locales",async()=>{
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {ContactForm} from './app/[locale]/contact/ContactForm';import {getMessages} from './lib/i18n/messages';window.mount=locale=>createRoot(document.getElementById('root')).render(<main className="portal-page contact-design-page"><ContactForm locale={locale} copy={getMessages(locale).contactPage}/></main>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,platform:"browser",jsx:"automatic"});
-  const browser=await chromium.launch({channel:"msedge"});await mkdir("test-results/contact",{recursive:true});
+  const browser=await chromium.launch();await mkdir("test-results/contact",{recursive:true});
   try{for(const locale of ["en-GB","zh-CN"] as const){
     const page=await browser.newPage();const requests:any[]=[];let success=false,code="CONTACT_UNAVAILABLE",release:()=>void=()=>{};
     await page.route("http://localhost:43123/**",route=>route.fulfill({body:'<div id="root"></div>',contentType:"text/html"}));

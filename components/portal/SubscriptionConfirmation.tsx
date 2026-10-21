@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { formatPlanPrice } from "@/lib/planPricing";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
 import { getMessages } from "@/lib/i18n/messages";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
@@ -31,7 +32,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
   const [error, setError] = useState("");
   const isTrial = quote.kind === "trial";
   const isUpgrade = quote.kind === "upgrade" && Boolean(upgradeSource);
-  const money = (amount: number) => `${new Intl.NumberFormat(locale, { style: "currency", currency: quote.currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: !isUpgrade && amount % 100 === 0 ? 0 : 2 }).format(amount / 100)} ${quote.currency.toUpperCase()}`;
+  const money = (amount: number) => formatPlanPrice(locale, { amountMinor: amount, currency: quote.currency });
   const dateLabel = (date: string) => new Date(date).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   const source = display?.upgrade;
   const sourceCategory = source?.sourceCategory || upgradeSource?.name || "";
@@ -110,7 +111,7 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
       <h2 id="confirmation-payment-heading">{copy.paymentRenewal}</h2>
       <dl className="confirmation-payment-grid">
         <div><dt>{details.payToday}</dt><dd>{isTrial ? copy.trialAmount : money(quote.amountMinor)}</dd><p>{isTrial ? details.trialPayment : details.termPayment.replace("{months}", String(plan.termMonths))}</p></div>
-        <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd><p>{isTrial ? details.trialDates : display?.schedule ? details.estimatedDates.replace("{dates}", `${dateLabel(display.schedule.startsAt)} – ${dateLabel(display.schedule.endsAt)}`) : details.datesAfterPayment}</p></div>
+        <div><dt>{copy.term}</dt><dd>{plan.termMonths} {copy.months}</dd><p>{isTrial ? details.trialDates : display?.schedule ? details.termDates.replace("{dates}", `${dateLabel(display.schedule.startsAt)} – ${dateLabel(display.schedule.endsAt)}`) : details.datesAfterPayment}</p></div>
       </dl>
       <dl className="confirmation-renewal-grid">
         <div><dt>{details.nextCharge}</dt><dd>{display?.schedule ? dateLabel(display.schedule.renewsAt) : details.billingSchedule}</dd><p>{details.automaticRenewal}</p></div>
@@ -122,6 +123,6 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
     </fieldset>
     {isUpgrade && <p className="upgrade-renewal-note">{upgrade.renewalNote.replace("{category}", sourceCategory).replace("{date}", renewalDate).replace("{price}", money(plan.amountMinor)).replace("{months}", String(plan.termMonths))}</p>}
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-    <footer className="confirmation-actions"><button className="portal-button portal-button-primary" type="button" disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}<span aria-hidden="true">→</span></button></footer>
+    <footer className="confirmation-actions"><button className="portal-button portal-button-primary" type="button" disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}</button></footer>
   </dialog>;
 }

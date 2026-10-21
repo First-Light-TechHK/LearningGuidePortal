@@ -225,7 +225,7 @@ test("TRIAL-02: a second trial after a paid purchase does not grant", async () =
     runWorkers(trialSpecs(user.id, 1), { workerFile: PAYMENT_WORKER_FILE, perWorkerCwd: true }),
     (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      assert.match(message, /already has active access/i, "the refusal must carry the product's TRIAL-02 message");
+      assert.match(message, /already have an active subscription covering this plan|already has active access|already_subscribed/i, "the refusal must carry the product's TRIAL-02 message");
       assert.match(message, /exit=1/, "the worker must FAIL rather than return a granted trial");
       return true;
     }

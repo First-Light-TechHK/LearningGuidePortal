@@ -9,8 +9,7 @@ test('pricing grid and annual term fit narrow screens without clipping purchase 
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    // This layout fixture uses the application's actual cascade. Deployed
-    // acceptance separately checks populated plans and payment behaviour.
+    // Layout fixture uses the live pricing cascade; populated plan acceptance is covered separately.
     await page.setContent(`<main class="portal-page pricing-design-page"><section class="pricing-design-main">
       <div class="pricing-comparison-wrap"><div class="pricing-term-switch pricing-term-switch-global">
         <button>6 Months</button><button class="pricing-term-year"><span class="pricing-term-year-label">1 Year<span class="pricing-better-value">Better Value</span></span></button>

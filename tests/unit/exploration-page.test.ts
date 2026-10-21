@@ -12,7 +12,7 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path==="next/dynamic"?"import React from 'react';export default function dynamic(factory){const Component=React.lazy(()=>factory().then(defaultExport=>({default:defaultExport})));return props=><React.Suspense fallback={null}><Component {...props}/></React.Suspense>}":args.path==="next/navigation"?"export function useRouter(){return {refresh(){},push(href){window.navigation=href}}}":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}":"import React from 'react';export default function Image({fill,unoptimized,...props}){return <img {...props} style={{...(fill?{position:'absolute',inset:0,width:'100%',height:'100%'}:{}),...props.style}}/>}"}));
     builder.onResolve({filter:/CoursePdfPreview$/},args=>({path:args.path,namespace:"pdf"}));builder.onLoad({filter:/.*/,namespace:"pdf"},()=>({contents:"export const CoursePdfPreview=()=>null"}));
   }}]});
-  const browser=await chromium.launch({channel:"msedge",args:["--use-angle=swiftshader","--enable-unsafe-swiftshader"]});await mkdir("test-results/exploration",{recursive:true});
+  const browser=await chromium.launch({args:["--use-angle=swiftshader","--enable-unsafe-swiftshader"]});await mkdir("test-results/exploration",{recursive:true});
   try{for(const locale of ["en-GB","zh-CN"] as const){
     const copy=getMessages(locale),labels=copy.exploration;
     const page=await browser.newPage({viewport:{width:1440,height:1024}});
