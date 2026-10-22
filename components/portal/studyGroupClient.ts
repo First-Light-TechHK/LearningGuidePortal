@@ -239,6 +239,17 @@ export function screenShareSupported(media: { getDisplayMedia?: unknown } | unde
   return typeof media?.getDisplayMedia === "function";
 }
 
+// Closing the browser's screen picker rejects getDisplayMedia with
+// NotAllowedError (AbortError in some browsers). That is the person's own
+// choice, so the room shows no failure for it (BUG-0199). A denial by the
+// operating system ("Permission denied by system") still needs the hint.
+export function screenShareCancelled(error: unknown) {
+  const name = error instanceof Error || error instanceof DOMException ? error.name : "";
+  const message = error instanceof Error || error instanceof DOMException ? error.message : "";
+  if (name === "AbortError") return true;
+  return name === "NotAllowedError" && !/system/i.test(message);
+}
+
 // The seat lease is renewed this often while the page holds a seat (the
 // server releases a seat 30 s after the last renewal, modules/group-study/presence.ts).
 export const SEAT_HEARTBEAT_MS = 10_000;

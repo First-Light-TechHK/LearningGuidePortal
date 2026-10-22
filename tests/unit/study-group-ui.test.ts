@@ -505,8 +505,9 @@ test("the Host Control frame pins the placeholder tile, name strip, hand badge, 
   assert.equal(room.includes('" · " + roomCopy.raiseHand'), false); // the caption no longer carries a Raise Hand suffix
   assert.match(room, /\{tile\.speaking \? <i className=\{styles\.speakingDot\} aria-hidden="true" \/> : null\}/);
   assert.match(room, /\{tile\.host \? <span className=\{styles\.tileHost\}> · \{roomCopy\.host\}<\/span> : ""\}/);
-  // The focus line moved from under the title to directly above the controls.
-  assert.match(room, /\{session\.focus \? <p>\{session\.focus\}<\/p> : null\}\s*<div className=\{styles\.controls\}>/);
+  // The focus sits directly above the controls under its own "Session Focus"
+  // label, so it never reads as a second title (BUG-0196).
+  assert.match(room, /\{session\.focus \? <section className=\{styles\.roomFocus\} aria-labelledby="study-session-focus"><h2 id="study-session-focus" className=\{styles\.waitingFocus\}>\{copy\.focus\}<\/h2><p>\{session\.focus\}<\/p><\/section> : null\}\s*<div className=\{styles\.controls\}>/);
   // One banner at a time: a reconnect in progress, then the error with its
   // retry. A poll that says this page may not stay (signed out, no longer a
   // member) replaces the room with its own page instead (QA M17).
@@ -576,7 +577,8 @@ test("the Live Session end card follows 599:1398 and its CTA never overlaps the 
 
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   // 599:1398 shows no focus row in the end card; only the live stage keeps one.
-  assert.equal(room.split("{session.focus ? <p>{session.focus}</p> : null}").length - 1, 1);
+  assert.equal(room.split("{session.focus ? <section className={styles.roomFocus}").length - 1, 1);
+  assert.equal(room.includes("{session.focus ? <p>{session.focus}</p> : null}"), false);
   assert.match(room, /endedParts\(roomCopy\.endedBody\)\.map\(\(line\) => <p className=\{styles\.endBody\} key=\{line\}>\{line\}<\/p>\)/);
   assert.match(room, /<div className=\{styles\.endActions\}>\{!ended && session\.state === "live" \? <button className=\{styles\.primary\} type="button" onClick=\{rejoin\}>\{roomCopy\.rejoin\}<\/button> : null\}<a className=\{styles\.primary\} href=\{group \?/);
 });

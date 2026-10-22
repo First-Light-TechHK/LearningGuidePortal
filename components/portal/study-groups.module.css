@@ -326,6 +326,31 @@
 .stageHead h1, .empty h1, .empty p, .endCard h1, .endCard p, .tile .tileCaption > span, .roster strong, .chatBody, .chatHead strong { min-width: 0; overflow-wrap: anywhere; }
 .stageHead h1 { flex: 1 1 12ch; }
 .endActions { flex-wrap: wrap; gap: 12px; }
+/* BUG-0196: the room's Session Focus is a labelled block (the waiting dialog's 599:755 type), not a second title line. */
+.roomFocus { margin: 16px 0 0; }
+.roomFocus .waitingFocus + p { margin: 0; color: #344054; }
+/* BUG-0198: the right panel keeps the design height (599:1277, 771px) and the chat scrolls inside it instead of stretching the page. */
+.side { height: min(771px, calc(100vh - 160px)); min-height: 520px; }
+.chatLog { min-height: 0; gap: 0; margin-right: -20px; padding-right: 20px; overflow-x: hidden; }
+/* BUG-0197: chat lines per 599:1366-1390 — 20px avatar, 12px/600 name, 10px time, 12px body at 40% black (tutor body blue), 1px rules between lines reaching the panel edge. */
+.chatLine { padding: 16px 0; border-bottom: 1px solid #e4e7ec; }
+.chatLine:first-child { padding-top: 4px; }
+.chatLine:last-child { border-bottom: 0; }
+.chatHead { min-height: 20px; }
+.chatHead .rosterInitial { width: 20px; height: 20px; border-radius: 10px; color: #1d6bff; font-size: 12px; }
+.chatHead strong { font-size: 12px; font-weight: 600; color: #000; }
+.chatHead time { font-size: 10px; color: rgba(107, 115, 128, .4); }
+.chatBody { margin-top: 9px; font-size: 12px; color: rgba(0, 0, 0, .4); }
+.tutorBody { color: #1d6bff; }
+.tutorBody .tutorLead { color: #1d6bff; font-weight: 400; }
+/* 599:1392: 266x100 input 12px from the panel's sides and bottom; the @AI Tutor entry sits on its bottom-left edge. */
+.chatForm { display: flex; flex-direction: column; flex: none; margin: 0 -8px -8px; padding: 12px 36px 8px 12px; }
+/* 599:1393 placeholder sits 12px inside the box: the global field padding and focus ring do not apply here (the box draws the focus). */
+.chatForm input { padding: 0; font-size: 13px; }
+.chatForm input:focus { box-shadow: none; }
+.chatForm input::placeholder { color: rgba(0, 0, 0, .2); }
+.chatForm .tutorEntry { align-self: flex-start; margin-top: auto; }
+.chatForm .tutorOffline { margin: 6px 0 0; color: #344054; }
 @media (max-width: 800px) {
   .header { padding: 0 16px; }
   .nav { display: none; }
@@ -358,4 +383,9 @@
   .controls button { padding: 6px 10px; }
   .endCard { box-sizing: border-box; }
   .shareMain { min-height: 200px; }
+}
+@media (max-width: 800px) {
+  /* BUG-0198 at phone width: the stacked chat panel keeps its own scroll. */
+  .side { height: 480px; min-height: 360px; }
+  .chatLog { margin-right: -14px; padding-right: 14px; }
 }
