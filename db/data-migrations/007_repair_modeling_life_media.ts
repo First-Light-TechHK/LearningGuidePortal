@@ -8,7 +8,15 @@ export const description = "Copy Modeling life media into course_media after the
 export const touches = ["courses", "media"] as const;
 
 export async function apply(orm: MigrationOrm, ctx: DataMigrationContext): Promise<DataChange[]> {
-  const changes = await syncModelingLifeMedia();
+  const changes: DataChange[] = [];
+  try {
+    changes.push(...await syncModelingLifeMedia());
+  } catch (error) {
+    // Same contract as 006: when the staging objects or storage credentials are
+    // unavailable (local, unit tests, CI) the repair reports a skip instead of
+    // failing the run. DEV republishes the media once the bucket is reachable.
+    changes.push({ action: "skip", kind: "course-media", id: "modeling-life", reason: error instanceof Error ? error.message : "staging-missing" });
+  }
   const courses = orm.table<ProductCourse>("courses");
   const next = modelingLifeCourse(ctx.now);
   const existing = courses.findById(next.id);

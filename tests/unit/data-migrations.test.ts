@@ -196,3 +196,21 @@ test("a production build never applies data migrations", async () => {
     else process.env.NEXT_PHASE = original;
   }
 });
+
+test("007 repairs media without failing when storage is not configured", async () => {
+  const previousBucket = process.env.DATA_S3_BUCKET;
+  delete process.env.DATA_S3_BUCKET;
+  try {
+    const orm = createMemoryOrm();
+    const report = await applyOrmMigrations(
+      orm,
+      dataMigrations.filter((item) => item.id === "007_repair_modeling_life_media"),
+      { store: "memory" },
+    );
+    const media = report.changes.find((change) => change.kind === "course-media");
+    assert.equal(media?.action, "skip");
+    assert.ok(orm.table<{ id: string }>("courses").findById("modeling-life"));
+  } finally {
+    if (previousBucket !== undefined) process.env.DATA_S3_BUCKET = previousBucket;
+  }
+});

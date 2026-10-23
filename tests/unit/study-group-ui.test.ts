@@ -357,7 +357,7 @@ test("the active navigation underline tracks the active link instead of a fixed 
 
 test("the join gate call-to-action centres its label for the sign-in link", () => {
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
-  assert.match(css, /\n\.primary \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;[^}]*text-decoration: none;[^}]*\}/);
+  assert.match(css, /\r?\n\.primary \{[^}]*display: inline-flex;[^}]*align-items: center;[^}]*justify-content: center;[^}]*text-decoration: none;[^}]*\}/);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /<a className=\{styles\.primary\} href=\{gate\.action === "get-course" \?/);
 });
@@ -675,7 +675,7 @@ test("the waiting dialog offers a Close control that releases the hold without b
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   // BUG-0107: the join/waiting popup had no way out; it now carries a Close button.
   assert.match(app, /function closeWaiting\(\) \{\s*setErrorCode\("idle"\);\s*setDialog\(null\);\s*setWaitingSession\(null\);\s*\}/);
-  assert.match(app, /\) : \(\n\s*<div className=\{styles\.dialogActions\}>\n\s*<button className=\{styles\.ghost\} type="button" onClick=\{closeWaiting\}>\{copy\.close\}<\/button>\n\s*<\/div>\n\s*\)\}/);
+  assert.match(app, /\) : \(\r?\n\s*<div className=\{styles\.dialogActions\}>\r?\n\s*<button className=\{styles\.ghost\} type="button" onClick=\{closeWaiting\}>\{copy\.close\}<\/button>\r?\n\s*<\/div>\r?\n\s*\)\}/);
   // The enter flow itself is untouched: the poll only follows a live waitingSession and
   // pushes into the room, so clearing it on close just stops the poll and releases the hold.
   assert.match(app, /if \(!waitingSession \|\| waitingSession\.state === "live"\) return;/);
@@ -785,7 +785,7 @@ test("Cancel Group confirms in the module's own dialog with cancel/confirm butto
   assert.match(app, /<button className=\{styles\.danger\} type="button" onClick=\{\(\) => setDialog\("cancel-group"\)\}>\{copy\.cancelGroup\}<\/button>/);
   assert.match(app, /async function submitCancelGroup\(\) \{\s*if \(!selected \|\| cancelling\) return;/);
   // L2: the confirm renders through the shared native modal (PortalDialog) with the module's centred overlay.
-  assert.match(app, /\{dialog === "cancel-group" \? \(\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{cancelling\}>/);
+  assert.match(app, /\{dialog === "cancel-group" \? \(\r?\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{cancelling\}>/);
   assert.match(app, /<h2 id="study-group-dialog-title">\{copy\.cancelGroupConfirmTitle\}<\/h2>/);
   assert.match(app, /<p className=\{styles\.confirmBody\}>\{copy\.confirmCancelGroup\}<\/p>/);
   // BUG-0099 follow-up: the two buttons no longer both read "Cancel" (取消 / 取消小组).
@@ -847,7 +847,7 @@ test("the Create Study Group dialog is centred on the viewport like the module's
   // BUG-0096: the create form was an inline page panel (160px top margin inside the
   // column right of the 460px sidebar), so it sat below/right of the viewport centre.
   // It now renders inside the shared native modal (PortalDialog) with the same fixed, centred overlay.
-  assert.match(app, /\{dialog === "create" \? \(\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{creating\}>/);
+  assert.match(app, /\{dialog === "create" \? \(\r?\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{creating\}>/);
   assert.match(app, /<form className=\{styles\.createForm\} noValidate onSubmit=\{\(event\) => \{ event\.preventDefault\(\); submitDialogForm\(event\.currentTarget, submitCreate\); \}\}>/);
   assert.equal(app.includes("<form className={styles.panel} onSubmit"), false);
   // Centring comes from the shared overlay: fixed full-viewport backdrop, grid centre.
@@ -900,7 +900,7 @@ test("a rejected list fetch lands the anonymous first screen on the error pane i
   assert.match(app, /\} finally \{\s*listRequests\.settle\(ticket\);\s*\}/);
   // Only a list that never loaded, a lost sign-in or a load the viewer asked for
   // shows its failure; a failed poll keeps the screen (QA N10, studyGroupListFailurePlace).
-  assert.match(app, /\} catch \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(!listRequests\.isLatest\(ticket\)\) return;\s*showFailure\("error"\);\s*\}/);
+  assert.match(app, /\} catch \{\r?\n(?:\s*\/\/[^\n]*\r?\n)*\s*if \(!listRequests\.isLatest\(ticket\)\) return;\s*showFailure\("error"\);\s*\}/);
   // The same landing covers the ?group= deep link: a rejected detail fetch must not
   // leave a silently empty pane with no way to retry (groupAnswerStep "error").
   assert.match(app, /if \(step === "error"\) setGroupError\(result\.code\);/);
@@ -993,7 +993,7 @@ test("the background group refresh and the unload release beacons never surface 
   // while the beacons, which run as the page unloads where no UI could ever render,
   // swallow their rejection explicitly instead of getting a feedback surface.
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /async function readOpenGroup\(id: string, poll: boolean\) \{\n\s*const ticket = groupRequests\.start\(\);\n\s*const result = await studyGroupRequest<StudyGroupDetail>\(studyGroupPath\(id\)\);/);
+  assert.match(app, /async function readOpenGroup\(id: string, poll: boolean\) \{\r?\n\s*const ticket = groupRequests\.start\(\);\r?\n\s*const result = await studyGroupRequest<StudyGroupDetail>\(studyGroupPath\(id\)\);/);
   // Closing the waiting popup is the one remaining release beacon; the room page
   // sends none (its seat lapses on the server, QA 2026-10-19 seat lease).
   assert.equal(app.split("keepalive: true }).catch(() => undefined)").length - 1, 1);
