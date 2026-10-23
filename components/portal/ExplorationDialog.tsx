@@ -9,6 +9,7 @@ import type { LessonNode } from "@/contracts/lesson-content";
 import { explorationCourseSamples, explorationLessonNumber } from "@/services/explorationSamples";
 import { PortalDialog } from "./PortalDialog";
 import { ExhibitDialog } from "./ExhibitDialog";
+import { LessonModal, SafeLessonHtml } from "./CourseMediaPreview";
 import styles from "./exploration-dialog.module.css";
 
 function LockedExploration({locale,tab}:{locale:Locale;tab:"reading"|"exhibits"}) {
@@ -41,7 +42,7 @@ export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,tut
   const numbers=[...new Set((tab==="reading"?readings:exhibits).map(item=>item.lessonNumber))];
   function changeTab(next:"reading"|"exhibits") {setTab(next);scroll.current?.scrollTo(0,0);}
   function changeScope(next:"lesson"|"course") {setScope(next);position.current=0;scroll.current?.scrollTo(0,0);}
-  if(selected)return <ExhibitDialog node={selected} locale={locale} onClose={()=>setSelected(null)}/>;
+  if(selected)return selected.type === "text" ? <LessonModal title={selected.title} locale={locale} onClose={()=>setSelected(null)}><SafeLessonHtml html={selected.html || ""}/></LessonModal> : <ExhibitDialog node={selected} locale={locale} onClose={()=>setSelected(null)}/>;
   return <PortalDialog className={styles.dialog} labelledBy="exploration-title" onClose={onClose}>
     <header className={styles.header}><div><h2 id="exploration-title">{copy.title}</h2></div><div className={styles.actions}>
       {tutorAvailable && <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>}

@@ -6,6 +6,9 @@ export type LessonNode = {
   html?: string;
   url?: string;
   triggerTime: number;
+  thumbnail?: string;
+  description?: string;
+  source?: string;
   question?: string;
   answer?: string;
   options?: string[];
@@ -21,6 +24,9 @@ export type LessonContent = {
   html?: string;
   url?: string;
   nodes: LessonNode[];
+  /** Absolute position in the shared source video, in seconds. */
+  startSeconds?: number;
+  exhibitMode?: "authored" | "samples";
 };
 
 export const LESSON_CONTENT_LIMITS = {

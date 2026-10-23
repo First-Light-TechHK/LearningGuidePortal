@@ -19,6 +19,10 @@ export function validateCourseMetadata(input: CourseMetadata, courseId?: string)
     if (!Array.isArray(input.tags) || input.tags.length > 30) throw new AuthoringError("invalid");
     output.tags = [...new Set(input.tags.map(tag => text(tag, 60)))];
   }
+  for (const key of ["outcomes", "features"] as const) if (input[key] !== undefined) {
+    if (!Array.isArray(input[key]) || input[key]!.length > 30) throw new AuthoringError("invalid");
+    output[key] = input[key]!.map(value => text(value, 1000));
+  }
   for (const key of ["categoryId", "subjectId"] as const) if (input[key] !== undefined) output[key] = input[key] === null ? null : text(input[key], 200);
   if (input.cover !== undefined) {
     const cover = input.cover === null ? null : text(input.cover, 2048, false);

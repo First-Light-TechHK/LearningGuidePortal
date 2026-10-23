@@ -8,7 +8,7 @@ import styles from "./video-exhibit-bar.module.css";
 
 export function VideoExhibitBar({ node, locale, onDismiss, onView, variant = "video", presentation = "inline" }: { node: LessonNode; locale: Locale; onDismiss?: () => void; onView: () => void; variant?: "video" | "text"; presentation?: "inline" | "fullscreen" }) {
   const copy = getMessages(locale).videoExhibit;
-  const thumbnail = node.type === "image" && safeMediaUrl(node.url) || "/portal/text-exhibits/thumbnail.png";
+  const thumbnail = safeMediaUrl(node.thumbnail) || node.type === "image" && safeMediaUrl(node.url) || "/portal/text-exhibits/thumbnail.png";
   if (variant === "video") return <section className={styles.bubble} data-video-exhibit={presentation} aria-label={copy.available} aria-live="polite">
     <div className={styles.bubbleHeader}><span className={styles.bubbleKind}>{copy.types[node.type]}</span>{presentation === "inline" && onDismiss && <button type="button" className={styles.close} aria-label={getMessages(locale).learning.close} onClick={onDismiss}><Image src="/portal/exhibit-prompt/close.svg" alt="" width={16} height={16}/></button>}</div>
     <Image className={styles.bubbleThumbnail} src={thumbnail} unoptimized width={140} height={140} alt=""/>

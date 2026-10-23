@@ -44,15 +44,20 @@ export async function s3Get(s3Key: string) {
 
 const COURSE_MEDIA_HOST = "aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com";
 const COURSE_MEDIA_PREFIX = "/learning-guide/dev/documents/mvp/";
+const MODELING_LIFE_VIDEO_PATHS = new Set([
+  "/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+  "/learning-guide/dev/staging/modeling-life/lesson2.mp4",
+]);
 
-/** Convert an approved migrated course-media URL into a short-lived private URL. */
+/** Sign approved course media after caller access checks; never expose AWS credentials. */
 export async function signCourseMediaUrl(value: string, expiresIn?: number) {
   // Prerender runs without runtime secrets or AWS credentials. Media URLs are
   // resolved per request; emit the stored value untouched during the build.
   if (process.env.NEXT_PHASE === "phase-production-build") return value;
   let parsed: URL;
   try { parsed = new URL(value); } catch { return value; }
-  if (parsed.protocol !== "https:" || parsed.host !== COURSE_MEDIA_HOST || !parsed.pathname.startsWith(COURSE_MEDIA_PREFIX)) return value;
+  if (parsed.protocol !== "https:" || parsed.host !== COURSE_MEDIA_HOST || parsed.username || parsed.password
+    || !(parsed.pathname.startsWith(COURSE_MEDIA_PREFIX) || MODELING_LIFE_VIDEO_PATHS.has(parsed.pathname))) return value;
   // URL.pathname retains percent escapes. Decode them once so the S3 SDK signs
   // the actual UTF-8 object key instead of double-encoding "%" as "%25".
   let key: string;

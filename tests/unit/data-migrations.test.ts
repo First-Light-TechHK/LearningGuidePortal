@@ -206,8 +206,10 @@ test("modeling life publishes its course when S3 staging is unavailable", async 
   delete process.env.DATA_S3_BUCKET;
   try {
     const report = await applyDataMigrations(current);
-    assert.ok(report.applied.includes("006_add_modeling_life_course"));
-    assert.ok(report.applied.includes("007_repair_modeling_life_media"));
+    assert.ok(report.applied.includes("008_upgrade_modeling_life"));
+    assert.ok(report.skipped.includes("006_add_modeling_life_course"));
+    assert.ok(report.skipped.includes("007_repair_modeling_life_media"));
+    assert.equal(report.objects,0,"repository images do not need staging copies");
     const course = current.courses.find((item) => item.slug === "modeling-life");
     assert.ok(course, "modeling-life course should be published without S3 credentials");
     assert.equal(course.status, "published");

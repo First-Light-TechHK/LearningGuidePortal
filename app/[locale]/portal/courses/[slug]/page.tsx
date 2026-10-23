@@ -103,7 +103,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                 <p className={styles.description}>{course?.description || ""}</p>
                 <div className={styles.outcomes}>
                   <h3>{detail.outcomesTitle}</h3>
-                  <ul>{detail.outcomes.map(outcome => <li key={outcome}>{outcome}</li>)}</ul>
+                  <ul>{(course?.outcomes || detail.outcomes).map(outcome => <li key={outcome}>{outcome}</li>)}</ul>
                 </div>
               </section>
               <section className={`${styles.card} ${styles.curriculum}`} data-syllabus="true">
@@ -137,7 +137,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
             <aside className={styles.aside}>
               <section className={`${styles.card} ${styles.provides}`}>
                 <h2>{detail.provides}</h2>
-                <ul>{detail.features.map((feature, index) => <li key={feature}><Image src={asset(["video", "exhibits", "assistant", "comprehension", "readings", "bilingual"][index])} alt="" width={20} height={20} />{feature}</li>)}</ul>
+                <ul>{(course?.features || detail.features).map((feature, index) => <li key={feature}><Image src={asset(["video", "exhibits", "assistant", "comprehension", "readings", "bilingual"][index % 6])} alt="" width={20} height={20} />{feature}</li>)}</ul>
               </section>
               {hasCourseAccess ? <section className={styles.planStatus} data-course-plan-status="included">
                 <h2><Image src={asset("plan-check")} alt="" width={24} height={24}/>{detail.includedInPlan}</h2>

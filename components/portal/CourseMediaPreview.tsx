@@ -61,8 +61,9 @@ export function sanitiseLessonHtml(html: string): string {
 
 export function SafeLessonHtml({ html, onNode, nodeTitles }: { html: string; onNode?: (id: string) => void; nodeTitles?: Record<string, string> }) {
   const [safe, setSafe] = useState('');
+  const [preparedHtml, setPreparedHtml] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => { setSafe(sanitiseLessonHtml(html)); }, [html]);
+  useEffect(() => { setSafe(sanitiseLessonHtml(html)); setPreparedHtml(html); }, [html]);
   useEffect(() => {
     root.current?.querySelectorAll<HTMLElement>('[data-node-id]').forEach(el => {
       const id = el.dataset.nodeId || '';
@@ -72,7 +73,7 @@ export function SafeLessonHtml({ html, onNode, nodeTitles }: { html: string; onN
     });
   }, [safe, nodeTitles]);
   function activate(target: EventTarget | null) { const el = target instanceof Element ? target.closest<HTMLElement>('[data-node-id]') : null; if (el && el.getAttribute('aria-disabled') !== 'true') { el.focus(); onNode?.(el.getAttribute('data-node-id') || ''); } return !!el; }
-  const markup = useMemo(() => <div ref={root} className="la-prose" dangerouslySetInnerHTML={{ __html: safe }}/>, [safe]);
+  const markup = useMemo(() => <div ref={root} className="la-prose" data-text-ready={preparedHtml === html ? "true" : undefined} dangerouslySetInnerHTML={{ __html: safe }}/>, [safe, preparedHtml, html]);
   return <div onClick={e => { if (activate(e.target)) e.preventDefault(); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && activate(e.target)) e.preventDefault(); }}>{markup}</div>;
 }
 

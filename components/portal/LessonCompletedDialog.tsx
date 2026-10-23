@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import type { AssessmentAvailability } from "@/contracts/lesson-resources";
 import type { Locale } from "@/lib/i18n/config";
 import type { ApplicationTestAttempt } from "@/contracts/application-test";
 import { getMessages } from "@/lib/i18n/messages";
@@ -11,7 +12,7 @@ import { ApplicationTestDialog } from "./ApplicationTestDialog";
 import { PersistedAssessmentDialog } from "./PersistedAssessmentDialog";
 import styles from "./lesson-completed-dialog.module.css";
 
-export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClose, onContinue = onClose, courseId, lessonId }: { locale: Locale; lessonNumber: string; lessonTitle?: string; onClose: () => void; onContinue?: () => void; courseId?: string; lessonId?: string }) {
+export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClose, onContinue = onClose, courseId, lessonId, assessmentAvailability }: { assessmentAvailability?: AssessmentAvailability; locale: Locale; lessonNumber: string; lessonTitle?: string; onClose: () => void; onContinue?: () => void; courseId?: string; lessonId?: string }) {
   const copy = getMessages(locale).lessonCompleted;
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [applicationOpen, setApplicationOpen] = useState(false);
@@ -23,13 +24,13 @@ export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClo
     onKnowledgeTest={() => { setApplicationOpen(false); setKnowledgeOpen(true); }}/>;
   if (knowledgeOpen) return <KnowledgeTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onComplete={() => setKnowledgeCompleted(true)} onNextLesson={onContinue} onApplicationTest={() => { setKnowledgeCompleted(true); setKnowledgeOpen(false); setApplicationOpen(true); }} onExit={() => setKnowledgeOpen(false)}/>;
   if (applicationOpen) return <ApplicationTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} initialAttempt={applicationAttempt} onAttemptChange={setApplicationAttempt} knowledgeCompleted={knowledgeCompleted} onKnowledgeTest={() => { setApplicationOpen(false); setKnowledgeOpen(true); }} onNextLesson={onContinue} onBack={() => setApplicationOpen(false)} onDone={onClose}/>;
-  const tests = [{ title:copy.knowledge, description:copy.cards, icon:"knowledge-v2", size:26, action:() => setKnowledgeOpen(true) }, { title:copy.application, description:copy.questionCount, icon:"application-v2", size:24, action:() => setApplicationOpen(true) }];
+  const tests = [{ title:copy.knowledge, description:assessmentAvailability ? copy.cards.replace(/\d+/, String(assessmentAvailability.knowledge)) : copy.cards, available: !assessmentAvailability || assessmentAvailability.knowledge > 0, icon:"knowledge-v2", size:26, action:() => setKnowledgeOpen(true) }, { title:copy.application, description:copy.questionCount, available: !assessmentAvailability || assessmentAvailability.application, icon:"application-v2", size:24, action:() => setApplicationOpen(true) }];
   return <PortalDialog className={styles.dialog} labelledBy="lesson-completed-title" describedBy="lesson-completed-description" onClose={onClose}>
     <button type="button" className={styles.close} aria-label={copy.close} onClick={onClose}><Image src="/portal/lesson-complete/close-v2.svg" width={18} height={18} alt=""/></button>
     <header className={styles.header}><Image className={styles.success} src="/portal/lesson-complete/success-v2.svg" width={64} height={64} alt=""/>
     <h2 id="lesson-completed-title">{copy.title.replace("{number}", String(Number(lessonNumber) || lessonNumber))}</h2>
     <p className={styles.description} id="lesson-completed-description">{copy.description}</p></header>
-    <div className={styles.tests}>{tests.map(test => <button type="button" className={styles.test} key={test.icon} onClick={test.action}>
+    <div className={styles.tests}>{tests.filter(test => test.available).map(test => <button type="button" className={styles.test} key={test.icon} onClick={test.action}>
       <span className={styles.icon}><Image src={`/portal/lesson-complete/${test.icon}.svg`} width={test.size} height={test.size} alt=""/></span>
       <span className={styles.testCopy}><strong>{test.title}</strong><span>{test.description}</span></span>
       <Image src="/portal/lesson-complete/arrow-right.svg" width={18} height={18} alt=""/>

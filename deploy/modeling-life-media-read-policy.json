@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadModelingLifeLessonVideos",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+        "arn:aws:s3:::aitutor-data-851987565851/learning-guide/dev/staging/modeling-life/lesson2.mp4"
+      ]
+    }
+  ]
+}

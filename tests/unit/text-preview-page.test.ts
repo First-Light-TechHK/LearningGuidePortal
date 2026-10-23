@@ -40,7 +40,7 @@ test("text previews stop inline, blur withheld material and open access plans on
     };
     const titleCta = page.locator("header").getByRole("button", { name: copy.choosePlan, exact: true }), dialog = page.getByRole("dialog"), end = page.locator("[data-text-preview-end]");
     await mount("points"); await titleCta.waitFor(); await page.evaluate(() => document.fonts.ready);
-    assert.equal(await end.count(), 0); assert.equal(await dialog.count(), 0);
+    assert.equal(await end.count(), 1, "continuous preview renders its boundary after all readable points"); assert.equal(await dialog.count(), 0);
     await titleCta.click(); await dialog.getByRole("heading", { name: copy.heroTitle }).waitFor(); await page.keyboard.press("Escape");
     assert.equal(await titleCta.evaluate(e => e === document.activeElement), true);
     await page.getByRole("button", { name: "1.2 Read visual cues", exact: true }).click();
@@ -55,11 +55,14 @@ test("text previews stop inline, blur withheld material and open access plans on
     await page.screenshot({ path: `${output}/${locale}-boundary.png`, fullPage: true });
     await end.getByRole("button", { name: copy.choosePlan }).click(); await dialog.waitFor();
     assert.equal(await dialog.getByRole("link", { name: copy.cta }).getAttribute("href"), props.trialGate.pricingHref);
+    await scroller.evaluate(element => { element.scrollTop = 0; });
+    await page.waitForFunction(() => document.querySelector('button[aria-current="step"]')?.textContent?.includes("Observe composition"));
+    assert.equal(await dialog.isVisible(), true, "scroll tracking cannot dismiss an explicitly opened access dialog");
     await page.keyboard.press("Escape");
     assert.equal(await end.getByRole("button", { name: copy.choosePlan }).evaluate(e => e === document.activeElement), true);
     await page.getByRole("button", { name: "1.3 Form your own interpretation", exact: true }).click();
     await end.waitFor(); assert.equal(await page.getByText("WITHHELD-SECRET-2", { exact: true }).count(), 0);
-    assert.equal(await dialog.count(), 0); assert.equal(await page.locator(".la-content-player").count(), 0);
+    assert.equal(await dialog.count(), 0); assert.equal(await page.locator(".la-content-player").count(), 2, "readable points stay mounted when jumping to a locked anchor");
     assert.equal(study.some(event => event.contentId === "text-3"), false, "locked point cannot advance preview progress");
     await page.getByRole("button", { name: "1.4 Continue in this Lesson", exact: true }).click(); assert.equal(await dialog.count(), 0);
     await mount("deep-link", props.lesson, false, "text-4"); await end.waitFor(); assert.equal(await dialog.count(), 0);

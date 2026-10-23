@@ -46,11 +46,12 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
               <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(id=>id!==lesson.id):[...current,lesson.id])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><span className={`${styles.badge} ${completed?styles.completeBadge:locked?styles.lockedBadge:""}`}>{completed?copy.completed:locked?(view.lessons.indexOf(lesson)>0?copy.unlocksAfter.replace("{number}",String(view.lessons.indexOf(lesson))):copy.locked):copy.current}</span>{!locked&&<span aria-hidden="true" className={styles.chevron}><Image src="/portal/understanding/lesson-chevron-up.png" alt="" width={11} height={7}/></span>}</button>
               {open && <div id={`assessment-${lesson.number}`}>{(["knowledge","application"] as const).map(kind=>{
                 const summary=lesson[kind], finished=summary.status==="completed"||summary.status==="submitted";
-                const status=locked?"—":summary.status==="not_started"?copy.available:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
+                const unavailable = summary.total === 0;
+                const status=locked||unavailable?"—":summary.status==="not_started"?copy.available:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
                 return <div className={`${styles.columns} ${styles.row}`} key={kind} data-assessment-kind={kind}>
                   <strong>{tests[kind]}</strong><span className={`${styles.status} ${finished?styles.green:summary.status==="not_started"||locked?styles.available:""} ${!locked&&summary.status!=="not_started"?styles.statusDot:""}`}>{status}</span>
                   <b data-latest-result>{locked||summary.latestResult==null?"—":typeof summary.latestResult==="number"?`${summary.latestResult}%`:copy.strong}</b>
-                  {locked?<span className={styles.dash}>—</span>:<button type="button" onClick={()=>setModal({kind,lessonId:lesson.id})}>{finished?copy.viewResult:summary.status==="in_progress"?copy.continue:copy.start}</button>}
+                  {locked||unavailable?<span className={styles.dash}>—</span>:<button type="button" onClick={()=>setModal({kind,lessonId:lesson.id})}>{finished?copy.viewResult:summary.status==="in_progress"?copy.continue:copy.start}</button>}
                 </div>;
               })}</div>}
             </section>;
