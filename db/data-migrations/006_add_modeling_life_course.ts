@@ -136,11 +136,13 @@ export async function ensureMedia(asset: MediaSpec, force = false): Promise<"add
   // copy from, and the migration still has to publish the course itself.
   if (!process.env.DATA_S3_BUCKET?.trim()) return "skip";
   const target = mediaAssetPath(asset.id);
-  try {
-    await vfsStat(systemRoot(), target);
-    return "skip";
-  } catch {
-    // fall through to copy
+  if (!force) {
+    try {
+      await vfsStat(systemRoot(), target);
+      return "skip";
+    } catch {
+      // fall through to copy
+    }
   }
   const bytes = await s3Get(toS3Key(`${STAGING_PREFIX}/${asset.staging}`));
   if (!bytes?.length) throw new Error(`Modeling life media is missing from staging: ${asset.staging}`);
