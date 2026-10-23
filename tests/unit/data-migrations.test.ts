@@ -181,3 +181,18 @@ test("git-to-dev RDS probe inserts once and skips on replay", async () => {
   assert.equal(orm.table<{ id: string; source: string }>("git_dev_rds_probes").findById("2026-09-20-full-rds")?.source, "git-dev");
   assert.deepEqual(second.applied, []);
 });
+
+test("a production build never applies data migrations", async () => {
+  const current = data();
+  const original = process.env.NEXT_PHASE;
+  process.env.NEXT_PHASE = "phase-production-build";
+  try {
+    const report = await applyDataMigrations(current, [backfillSettings]);
+    assert.deepEqual(report, { applied: [], skipped: [], changes: [], sql: 0, objects: 0 });
+    assert.equal(current.paymentSettings.name, "Stripe");
+    assert.equal(current.dataMigrations, undefined);
+  } finally {
+    if (original === undefined) delete process.env.NEXT_PHASE;
+    else process.env.NEXT_PHASE = original;
+  }
+});

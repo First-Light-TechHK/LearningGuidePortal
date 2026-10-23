@@ -147,6 +147,12 @@ export async function applyDataMigrations(
   migrations: DataMigration[] = dataMigrations,
   ctx: Partial<DataMigrationContext> = {},
 ): Promise<DataMigrationReport> {
+  // Prerender runs without runtime secrets or storage credentials, and data
+  // migrations may read S3/PostgreSQL. Migrations belong to boot and operator
+  // runs, so a production build must report an empty pass instead of applying.
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return { applied: [], skipped: [], changes: [], sql: 0, objects: 0 };
+  }
   return applyOrmMigrations(ormFromProductData(data), migrations, { store: "aggregate", ...ctx }, data);
 }
 
