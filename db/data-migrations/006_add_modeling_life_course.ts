@@ -128,7 +128,7 @@ function contentHash(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
 }
 
-async function ensureMedia(asset: MediaSpec): Promise<"add" | "skip"> {
+export async function ensureMedia(asset: MediaSpec): Promise<"add" | "skip"> {
   const target = assetPath(asset.id);
   try {
     await vfsStat(systemRoot(), target);
@@ -156,14 +156,20 @@ async function ensureMedia(asset: MediaSpec): Promise<"add" | "skip"> {
   return "add";
 }
 
-export async function apply(orm: MigrationOrm, ctx: DataMigrationContext): Promise<DataChange[]> {
+export async function syncModelingLifeMedia(): Promise<DataChange[]> {
   const changes: DataChange[] = [];
   for (const asset of MEDIA) {
-    try {
-      changes.push({ action: await ensureMedia(asset), kind: "course-media", id: asset.id });
-    } catch (error) {
-      changes.push({ action: "skip", kind: "course-media", id: asset.id, reason: error instanceof Error ? error.message : "staging-missing" });
-    }
+    changes.push({ action: await ensureMedia(asset), kind: "course-media", id: asset.id });
+  }
+  return changes;
+}
+
+export async function apply(orm: MigrationOrm, ctx: DataMigrationContext): Promise<DataChange[]> {
+  const changes: DataChange[] = [];
+  try {
+    changes.push(...await syncModelingLifeMedia());
+  } catch (error) {
+    changes.push({ action: "skip", kind: "course-media", id: "modeling-life", reason: error instanceof Error ? error.message : "staging-missing" });
   }
   const courses = orm.table<ProductCourse>("courses");
   const next = modelingLifeCourse(ctx.now);
