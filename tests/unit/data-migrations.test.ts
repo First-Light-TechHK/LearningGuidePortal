@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { test } from "node:test";
 import { applyDataMigrations, applyOrmMigrations, assertMigrationRegistry, createMemoryOrm, shouldPersistDataMigrationsOnBoot, validateDataMigrations } from "../../services/dataMigrations";
 import { dataMigrations } from "../../db/data-migrations";
+import { mediaAssetPath } from "../../db/data-migrations/006_add_modeling_life_course";
 import type { DataMigration } from "../../db/data-migrations/types";
+import { systemRoot } from "../../services/fileStore";
 import type { ProductData, ProductUser } from "../../services/productStore";
 
 function user(): ProductUser {
@@ -197,20 +200,27 @@ test("a production build never applies data migrations", async () => {
   }
 });
 
-test("007 repairs media without failing when storage is not configured", async () => {
-  const previousBucket = process.env.DATA_S3_BUCKET;
+test("modeling life publishes its course when S3 staging is unavailable", async () => {
+  const current = data();
+  const original = process.env.DATA_S3_BUCKET;
   delete process.env.DATA_S3_BUCKET;
   try {
-    const orm = createMemoryOrm();
-    const report = await applyOrmMigrations(
-      orm,
-      dataMigrations.filter((item) => item.id === "007_repair_modeling_life_media"),
-      { store: "memory" },
-    );
-    const media = report.changes.find((change) => change.kind === "course-media");
-    assert.equal(media?.action, "skip");
-    assert.ok(orm.table<{ id: string }>("courses").findById("modeling-life"));
+    const report = await applyDataMigrations(current);
+    assert.ok(report.applied.includes("008_upgrade_modeling_life"));
+    assert.ok(report.skipped.includes("006_add_modeling_life_course"));
+    assert.ok(report.skipped.includes("007_repair_modeling_life_media"));
+    assert.equal(report.objects,0,"repository images do not need staging copies");
+    const course = current.courses.find((item) => item.slug === "modeling-life");
+    assert.ok(course, "modeling-life course should be published without S3 credentials");
+    assert.equal(course.status, "published");
+    assert.equal(course.sections.flatMap((section) => section.lessons).length, 2);
   } finally {
-    if (previousBucket !== undefined) process.env.DATA_S3_BUCKET = previousBucket;
+    if (original !== undefined) process.env.DATA_S3_BUCKET = original;
   }
+});
+
+test("modeling life media target stays inside the knowledge system root", () => {
+  const target = mediaAssetPath("4c1b4ade-446a-46ac-8a40-2c3837118063");
+  assert.ok(path.isAbsolute(target), "course media paths must be absolute");
+  assert.ok(target.startsWith(`${path.resolve(systemRoot())}${path.sep}`), "course media must stay under the data root");
 });

@@ -33,6 +33,7 @@ import {
 import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/coursePage";
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
+import type { LessonResources } from "@/contracts/lesson-resources";
 import type { KnowledgePositions } from "@/contracts/knowledge-progress";
 import { knowledgeProgress, courseKnowledgePoints } from "@/lib/knowledgeProgress";
 import type { StudyProgressInput } from "@/contracts/knowledge-progress";
@@ -69,7 +70,7 @@ export type ProductUser = {
   createdAt: string;
 };
 
-export type ProductLesson = {
+export type ProductLesson = LessonResources & {
   contents?: LessonContent[];
   id: string;
   title: string;
@@ -2148,7 +2149,8 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     if (input.contentId !== undefined && !input.learningMode) throw new Error("A learning mode is required for a knowledge point.");
     if (input.learningMode && !courseKnowledgePoints(course, input.learningMode).some(point => point.lessonId === lesson.id && point.contentId === (input.contentId || null))) throw new Error("Knowledge point not found.");
     if (access === "preview" && publicFirstLesson(course)?.id !== lesson.id) throw new Error("This lesson is outside the preview range.");
-    if (access === "preview" && input.learningMode === "text" && input.contentId && textLessonPreviewPolicy(lesson.contents || []).points[input.contentId] === "locked") throw new Error("This point is outside the preview range.");
+    if (access === "preview" && input.learningMode === "text" && input.contentId && textLessonPreviewPolicy(lesson.contents || [], lesson.preview).points[input.contentId] === "locked") throw new Error("This point is outside the preview range.");
+    if (access === "preview" && input.contentId && lesson.contents?.some(point => point.id === input.contentId && point.type === "video" && (point.startSeconds || 0) >= (lesson.preview?.videoLimitSeconds ?? 60))) throw new Error("This point is outside the preview range.");
     const existingClientEvent = data.studyEvents.some((event) => event.userId === input.userId && event.clientEventId === input.clientEventId);
     if (existingClientEvent) {
       return data.studyRecords.find((record) => record.userId === input.userId && record.courseId === input.courseId) || null;

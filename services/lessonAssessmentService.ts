@@ -5,6 +5,7 @@ import { listLessonAssessments, saveLessonAssessment } from "@/repositories/less
 import { getKnowledgeTestSamples } from "@/lib/knowledgeTestSamples";
 import { reviewKnowledgeResponses } from "@/lib/knowledgeTest";
 import { APPLICATION_TEST_EVALUATION_MS } from "@/contracts/application-test";
+import { lessonAssessmentAvailability } from "@/lib/lessonResources";
 
 export async function assessmentContext(userId: string, courseId: string) {
   const course = await getProductCourse(courseId);
@@ -14,8 +15,7 @@ export async function assessmentContext(userId: string, courseId: string) {
   const completedLessons = new Set(overview.courses.find(item => item.courseId === course.id)?.completedLessonIds || []);
   return { course, completedLessons };
 }
-export function summariseAssessment(record: SavedAssessment | undefined, kind: AssessmentKind): AssessmentSummary {
-  const total = kind === "knowledge" ? getKnowledgeTestSamples("en-GB").length : 1;
+export function summariseAssessment(record: SavedAssessment | undefined, kind: AssessmentKind, total = kind === "knowledge" ? getKnowledgeTestSamples("en-GB").length : 1, authored = false): AssessmentSummary {
   if (!record) return { status: "not_started", answered: 0, total, percent: 0, score: null, latestResult: null };
   if (record.attempt.kind === "knowledge") {
     const result = reviewKnowledgeResponses(record.attempt.responses);
@@ -23,7 +23,7 @@ export function summariseAssessment(record: SavedAssessment | undefined, kind: A
     return { status: result.complete ? "completed" : "in_progress", answered, total, percent: Math.floor(answered / total * 100), score: result.complete ? result.percent : null, latestResult: result.complete ? result.percent : record.latestResult?.score ?? null };
   }
   const submitted = record.attempt.phase === "submitted";
-  return { status: submitted ? "completed" : "in_progress", answered: submitted ? 1 : 0, total, percent: submitted ? 100 : 0, score: null, latestResult: assessmentWasCompleted(record) ? "strong" : null };
+  return { status: submitted ? "completed" : "in_progress", answered: submitted ? 1 : 0, total, percent: submitted ? 100 : 0, score: null, latestResult: !authored && assessmentWasCompleted(record) ? "strong" : null };
 }
 
 export function assessmentWasCompleted(record: SavedAssessment | undefined) {
@@ -36,24 +36,33 @@ export function unlockedAssessmentLessons(lessons: readonly {id:string}[], compl
 }
 export async function readAssessment(userId: string, courseId: string, lessonId: string, kind: AssessmentKind) {
   const { course, completedLessons } = await assessmentContext(userId, courseId);
-  if (!course.sections.some(section => section.lessons.some(lesson => lesson.id === lessonId))) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
+  const lesson = course.sections.flatMap(section => section.lessons).find(lesson => lesson.id === lessonId);
+  if (!lesson || !lessonAssessmentAvailability(lesson)[kind]) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
   const records = await listLessonAssessments(userId, course.id);
   const record = records.find(item => item.lessonId === lessonId && item.kind === kind) || null;
   if (!unlockedAssessmentLessons(course.sections.flatMap(section=>section.lessons),completedLessons,records).has(lessonId) && !record) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
   return record;
 }
+
+export async function readAssessmentBundle(userId: string, courseId: string, lessonId: string, kind: AssessmentKind) {
+  const data = await readAssessment(userId, courseId, lessonId, kind);
+  const course = await getProductCourse(courseId);
+  const lesson = course?.sections.flatMap(section => section.lessons).find(lesson => lesson.id === lessonId);
+  return { data, ...(lesson?.assessments ? { definition: lesson.assessments } : {}) };
+}
 export async function writeAssessment(userId: string, courseId: string, lessonId: string, kind: AssessmentKind, value: unknown) {
   const input = parseAssessmentWrite(value);
   if (kind !== input.attempt.kind) throw new AssessmentError("ASSESSMENT_INVALID");
   const { course, completedLessons } = await assessmentContext(userId, courseId);
-  if (!course.sections.some(section => section.lessons.some(lesson => lesson.id === lessonId))) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
+  const lesson = course.sections.flatMap(section => section.lessons).find(lesson => lesson.id === lessonId);
+  if (!lesson || !lessonAssessmentAvailability(lesson)[kind]) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
   const records = await listLessonAssessments(userId, course.id);
   const existing = records.find(item => item.lessonId === lessonId && item.kind === kind);
   if (!unlockedAssessmentLessons(course.sections.flatMap(section=>section.lessons),completedLessons,records).has(lessonId) && !existing) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
   const attempt = input.attempt;
   let evaluationStartedAt: string | null = null;
   if (attempt.kind === "knowledge") {
-    const count = getKnowledgeTestSamples("en-GB").length;
+    const count = lessonAssessmentAvailability(lesson).knowledge;
     if (attempt.responses.length !== count || attempt.index < 0 || attempt.index >= count || (attempt.phase === "result" && !reviewKnowledgeResponses(attempt.responses).complete)) throw new AssessmentError("ASSESSMENT_INVALID");
   }
   if (attempt.kind === "application" && attempt.phase !== "answer") {

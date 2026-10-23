@@ -1,0 +1,141 @@
+import assert from "node:assert/strict";
+import {test} from "node:test";
+import {mkdir,readFile} from "node:fs/promises";
+import path from "node:path";
+import {build} from "esbuild";
+import {chromium} from "playwright";
+import {modelingLifeCourse} from "../../db/data-migrations/008_upgrade_modeling_life";
+import {buildTextLessonPreview} from "../../services/textLessonPreview";
+import {previewLessonOutline} from "../../lib/previewLessonPresentation";
+import {courseExploration,lessonAssessmentAvailability} from "../../lib/lessonResources";
+import {getMessages} from "../../lib/i18n/messages";
+import {isolate,jsonRequest,setCookie,SESSION_COOKIE} from "../io/harness";
+import {verifiedUser} from "./helpers/my-learning";
+
+test("Modeling life renders authored bilingual text, timed video points, resources and real eighteen-card saved tests",{timeout:120000},async()=>{
+  const cwd=process.cwd(),output=path.join(cwd,"test-results/modeling-life/browser");await mkdir(output,{recursive:true});
+  const bundle=await build({stdin:{resolveDir:cwd,loader:"tsx",contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {PersistedAssessmentDialog} from './components/portal/PersistedAssessmentDialog';import {UnderstandingOverview} from './components/portal/UnderstandingOverview';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(<main className="portal-page portal-public-lesson-page">{p.view==='assessment'?<PersistedAssessmentDialog key={p.key} {...p} onExit={()=>root.render(null)}/>:p.view==='overview'?<UnderstandingOverview key={p.key} {...p}/>:<PreviewLessonView key={p.key} {...p}/>}</main>));`},bundle:true,write:false,outfile:"modeling.js",platform:"browser",jsx:"automatic",external:["/portal/*"],loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){
+    b.onResolve({filter:/Course(Model|Pdf)Preview$/},args=>({path:args.path,namespace:"mock"}));
+    b.onResolve({filter:/^next\//},args=>({path:args.path,namespace:"mock"}));
+    b.onLoad({filter:/.*/,namespace:"mock"},args=>({resolveDir:cwd,loader:"tsx",contents:args.path.endsWith("Preview")?"export const CourseModelPreview=()=>null;export const CoursePdfPreview=()=>null":args.path==="next/navigation"?"export const useRouter=()=>({refresh(){},push(href){window.destination=href}})":args.path==="next/dynamic"?"export default ()=>()=>null":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}":"import React from 'react';export default function Image({unoptimized,fill,...p}){return <img {...p} style={{...p.style,...(fill?{width:'100%',height:'100%',objectFit:'contain'}:{})}}/>}"}));
+  }}]});
+  const {restore}=await isolate("lg-modeling-browser-");
+  const browser=await chromium.launch();
+  try{
+    const store=await import("../../services/productStore"),assessments=await import("../../services/lessonAssessmentService");
+    const routes=await import("../../app/api/courses/[courseId]/lessons/[lessonId]/assessments/[kind]/route");
+    const overview=await import("../../services/understandingOverview");
+    const course=modelingLifeCourse("2026-10-23T00:00:00Z"),[first,second]=course.sections[0].lessons;
+    for(const locale of ["en-GB","zh-CN"] as const){
+      const user=await verifiedUser(store,`modeling-browser-${locale}@example.test`),session=await store.createSession(user.id);setCookie(SESSION_COOKIE,session.token);
+      const {quote}=await store.createQuote(user.id,"science-pc-6");await store.completeDemoCheckout(user.id,quote.id);
+      await store.recordStudyEvent({userId:user.id,courseId:course.id,lessonId:first.id,event:"complete",seconds:0,learningMode:"text",completeLesson:true,clientEventId:"browser-completed-study"});
+      const page=await browser.newPage({viewport:{width:1440,height:1024}}),errors:string[]=[],traffic:string[]=[];page.on("pageerror",error=>errors.push(error.message));
+      await page.route("**/*",async route=>{
+        const request=route.request(),url=new URL(request.url());
+        if(url.pathname.startsWith("/portal/")||url.pathname.startsWith("/courses/"))return route.fulfill({body:await readFile(path.join(cwd,"public",url.pathname)),contentType:url.pathname.endsWith(".svg")?"image/svg+xml":"image/png"});
+        const match=url.pathname.match(/^\/api\/courses\/([^/]+)\/lessons\/([^/]+)\/assessments\/(knowledge|application)$/);
+        if(match){
+          const context={params:Promise.resolve({courseId:match[1],lessonId:match[2],kind:match[3]})};
+          const req=jsonRequest(request.method(),"http://localhost"+url.pathname,request.method()==="PUT"?request.postDataJSON():undefined);
+          const response=await (request.method()==="PUT"?routes.PUT(req,context):routes.GET(req,context));
+          traffic.push(`${request.method()} ${match[3]} ${response.status}`);
+          return route.fulfill({status:response.status,body:await response.text(),contentType:"application/json"});
+        }
+        if(url.pathname.startsWith("/api/study/"))return route.fulfill({json:{record:{}}});
+        if(url.hostname!=="modeling.test")return route.fulfill({status:204});
+        return route.fulfill({contentType:"text/html",body:'<!doctype html><div id="root"></div>'});
+      });
+      await page.goto("http://modeling.test");
+      for(const file of ["app/styles.css","app/portal-design.css","components/portal/lesson-authoring.css"])await page.addStyleTag({content:await readFile(path.join(cwd,file),"utf8")});
+      await page.addStyleTag({content:bundle.outputFiles.find(file=>file.path.endsWith("css"))!.text});
+      await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith("js"))!.text});
+      const messages=getMessages(locale),mount=(p:unknown)=>page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),p);
+      const preview=buildTextLessonPreview(first,course.id,false);
+      const base={locale,courseId:course.id,courseTitle:course.title,category:course.category,description:first.summary,poster:course.cover,lesson:{id:first.id,title:first.title,body:"",durationMinutes:first.durationMinutes,contents:first.contents},outline:previewLessonOutline(course,locale,true),assessmentAvailability:lessonAssessmentAvailability(first),initialCompleted:true,nextHref:null,entitled:true,preferredMode:"text"};
+      await mount({...base,key:"preview",entitled:false,initialCompleted:false,lesson:{...base.lesson,...preview},textPreview:preview.textPreview,trialGate:{pricingHref:`/${locale}/subscription`,recommendations:[],videoLimitSeconds:600}});
+      await page.locator('.la-prose img[src$="lesson-1-image1.png"]').waitFor();
+      assert.equal(await page.locator(".la-prose img").count(),5);
+      assert.equal(await page.locator('.la-prose').getByText(/状态变量/).count()>0,true);
+      assert.equal(await page.locator('[data-text-preview-end]').count(),1);
+      assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('.la-exhibit-float').count(),0);
+      assert.equal(await page.getByRole('region',{name:messages.videoExhibit.available}).count(),0,"authored text never inserts demo exhibits");
+      for(const image of await page.locator('.la-prose img').all())assert.equal(await image.evaluate(async element=>{await (element as HTMLImageElement).decode();return (element as HTMLImageElement).naturalWidth>0;}),true);
+      await page.screenshot({path:path.join(output,`${locale}-preview-desktop.png`),fullPage:true});
+      await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();assert.equal(await page.locator('.la-prose img').count(),5,"preview retains only the first readable point");assert.equal(await page.getByRole('dialog').count(),0);
+      await mount({...base,key:"full-text",explorationData:courseExploration(course)});
+      await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();await page.locator('.la-prose img[src$="lesson-1-image6.png"]').waitFor();
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<innerHeight*3),true,"all chapter content remains inside the reading panel");
+      await page.screenshot({path:path.join(output,`${locale}-text-desktop.png`),fullPage:true});
+      await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`${locale}-text-mobile.png`),fullPage:true});
+      await page.setViewportSize({width:1440,height:1024});
+      if(locale === "en-GB")for(const lesson of [first,second])for(const content of lesson.contents!.filter(point=>point.type === "text")){
+        await mount({...base,key:content.id,initialContentId:content.id,description:lesson.summary,assessmentAvailability:lessonAssessmentAvailability(lesson),lesson:{id:lesson.id,title:lesson.title,body:"",durationMinutes:lesson.durationMinutes,contents:lesson.contents}});
+        await page.locator(".la-prose").first().waitFor();
+        assert.equal(await page.locator(`[data-text-point-id="${content.id}"] .la-prose img`).count(),(content.html!.match(/<img\b/g)||[]).length);
+        for(const image of await page.locator(".la-prose img").all())assert.equal(await image.evaluate(async element=>{await (element as HTMLImageElement).decode();return (element as HTMLImageElement).naturalWidth>0;}),true);
+        await page.waitForFunction(id => {
+          const reader=document.querySelector('[data-text-reader]')!, point=reader.querySelector(`[data-text-point-id="${id}"]`)!;
+          const offset=point.getBoundingClientRect().top-reader.getBoundingClientRect().top;
+          return offset>=-1&&offset<reader.clientHeight;
+        },content.id,{timeout:5000});
+        if(lesson.id===second.id&&content===second.contents!.filter(point=>point.type==="text")[1]){
+          await page.locator(".la-prose img").first().scrollIntoViewIfNeeded();
+          await page.screenshot({path:path.join(output,"lesson-2-point-2-image.png"),fullPage:true});
+        }
+        await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.setViewportSize({width:1440,height:1024});
+      }
+      await mount({...base,key:"resources",explorationData:courseExploration(course)});
+      await page.getByRole('button',{name:messages.previewVideoDesign.explore,exact:true}).click();let dialog=page.getByRole('dialog');
+      assert.equal(await dialog.locator('article').count(),3);await dialog.getByText('Wikipedia, State Space Representation.',{exact:true}).waitFor();
+      await page.screenshot({path:path.join(output,`${locale}-reading-list.png`),fullPage:true});
+      await dialog.getByRole('tab',{name:messages.exploration.exhibits,exact:true}).click();assert.equal(await dialog.locator('article').count(),2);
+      await dialog.getByRole('button',{name:messages.exploration.wholeCourse,exact:true}).click();assert.equal(await dialog.locator('article').count(),2,"Whole course has only the two Lesson 1 exhibits");
+      assert.equal(await dialog.locator('[data-exhibit-id="modeling-life-exhibit-1-3"],[data-exhibit-id="modeling-life-exhibit-1-8"]').count(),0);
+      for(const [index,id] of ['modeling-life-exhibit-1-2','modeling-life-exhibit-1-4'].entries()){
+        const card=dialog.locator(`[data-exhibit-id="${id}"]`);
+        assert.equal(await card.locator(`img[src$="lesson1-exhibit-${index+1}-s.png"]`).count(),1);
+        await card.click();await dialog.locator(`img[src$="lesson1-exhibit-${index+1}.png"]`).waitFor();await page.keyboard.press('Escape');
+      }
+      await page.screenshot({path:path.join(output,`${locale}-exploration-two-exhibits.png`),fullPage:true});
+      await page.keyboard.press('Escape');
+      await mount({...base,key:"video",preferredMode:"video"});
+      const video=page.locator('video.la-lesson-video');await video.waitFor();
+      const metadata=async()=>video.evaluate(el=>{Object.defineProperty(el,"duration",{configurable:true,value:1469});Object.defineProperty(el,"currentTime",{configurable:true,writable:true,value:0});el.dispatchEvent(new Event("loadedmetadata"));});
+      const time=async(seconds:number)=>video.evaluate((el,seconds)=>{(el as HTMLVideoElement).currentTime=seconds;el.dispatchEvent(new Event("timeupdate"));},seconds);
+      await metadata();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),10);
+      const bar=page.getByRole('region',{name:messages.videoExhibit.available});await time(37);await bar.waitFor();assert.equal(await bar.locator('img[src$="lesson1-exhibit-1-s.png"]').count(),1);
+      await bar.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator('img[src$="lesson1-exhibit-1.png"]').waitFor();await page.getByText(first.contents!.find(c=>c.type==="video")!.nodes[0].description!,{exact:true}).waitFor();await page.screenshot({path:path.join(output,`${locale}-video-exhibit.png`),fullPage:true});await page.keyboard.press('Escape');
+      await time(160);await bar.getByText('Three examples of one-dimensional state spaces',{exact:true}).waitFor();assert.equal(await bar.locator('img[src$="lesson1-exhibit-2-s.png"]').count(),1);
+      await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();await metadata();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),412);assert.equal(await bar.count(),0);
+      await mount({...base,key:"video-preview",entitled:false,preferredMode:"video",lesson:{...base.lesson,...preview},textPreview:preview.textPreview,trialGate:{pricingHref:`/${locale}/subscription`,recommendations:[],videoLimitSeconds:600}});
+      await metadata();await time(599);assert.equal(await dialog.count(),0);await time(600);await dialog.waitFor();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),600);await page.keyboard.press('Escape');
+      await mount({view:"assessment",kind:"knowledge",key:"knowledge",locale,courseId:course.id,lessonId:first.id,lessonTitle:first.title,lessonNumber:"01"});
+      dialog=page.getByRole('dialog');await dialog.getByText(first.assessments!.knowledge[0].prompt,{exact:true}).waitFor();
+      assert.ok((await dialog.getByRole('progressbar').getAttribute('aria-valuemax'))==="18");
+      await dialog.locator('textarea').fill('Saved Modeling life note');await page.screenshot({path:path.join(output,`${locale}-knowledge-first.png`),fullPage:true});
+      for(let index=0;index<18;index++){
+        await dialog.getByRole('button',{name:messages.knowledgeTest.check,exact:true}).click();await dialog.getByRole('radio').nth(1).check();
+        await dialog.getByRole('button',{name:index===17?messages.knowledgeTest.seeResults:messages.knowledgeTest.next,exact:true}).click();
+      }
+      await dialog.getByText('100%',{exact:true}).waitFor();await page.waitForFunction(async()=>{const response=await fetch('/api/courses/modeling-life/lessons/modeling-life-lesson-1/assessments/knowledge');return Boolean((await response.json()).data?.completedAt);});
+      let saved=await assessments.readAssessment(user.id,course.id,first.id,'knowledge');
+      for(let i=0;i<100&&!saved?.completedAt;i++){await new Promise(resolve=>setTimeout(resolve,50));saved=await assessments.readAssessment(user.id,course.id,first.id,'knowledge');}
+      assert.equal(saved?.attempt.kind==='knowledge'&&saved.attempt.responses.length,18,JSON.stringify({userId:user.id,saved,traffic,alerts:await page.getByRole('alert').allTextContents()}));
+      assert.equal(saved?.attempt.kind==='knowledge'&&saved.attempt.responses[0].answer,'Saved Modeling life note');
+      assert.ok(saved?.completedAt);
+      await page.screenshot({path:path.join(output,`${locale}-knowledge-result.png`),fullPage:true});
+      await mount({view:"assessment",kind:"application",key:"application",locale,courseId:course.id,lessonId:first.id,lessonTitle:first.title,lessonNumber:"01"});
+      await dialog.locator('textarea').waitFor();await dialog.locator('textarea').fill('The mixed equilibrium consists of two thirds hawks and one third doves.');
+      await dialog.getByRole('button',{name:messages.applicationTest.submit,exact:true}).click();await dialog.getByRole('button',{name:messages.applicationTest.retake,exact:true}).waitFor();
+      await dialog.getByText(first.assessments!.application!.reference[0],{exact:true}).waitFor();
+      assert.equal(await dialog.getByRole('heading',{name:messages.applicationTest.feedback,exact:true}).count(),0,"authored references never fabricate sample feedback");
+      await page.screenshot({path:path.join(output,`${locale}-application-result.png`),fullPage:true});
+      const data=await overview.getUnderstandingOverview(user.id,course.id);assert.equal(data.total,2);assert.equal(data.completed,2);assert.equal(data.lessons[0].application.latestResult,null);
+      await mount({view:'overview',key:'overview',locale,courseId:course.id,courseTitle:course.title,category:'Science',backHref:`/${locale}/account/learn/${course.id}`,data});
+      assert.equal(await page.locator(`[data-lesson-id="${second.id}"] [data-assessment-kind] button`).count(),0);
+      await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`${locale}-understanding-mobile.png`),fullPage:true});
+      assert.deepEqual(errors,[]);await page.close();
+    }
+  }finally{await browser.close();await restore();}
+});

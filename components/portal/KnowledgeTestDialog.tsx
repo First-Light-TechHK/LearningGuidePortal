@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import type { KnowledgeRating, KnowledgeResponse, KnowledgeTestPhase } from "@/contracts/knowledge-test";
+import type { KnowledgeQuestion, KnowledgeRating, KnowledgeResponse, KnowledgeTestPhase } from "@/contracts/knowledge-test";
 import type { KnowledgeAttempt } from "@/contracts/lesson-assessment";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
@@ -12,11 +12,11 @@ import { reviewKnowledgeResponses } from "@/lib/knowledgeTest";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./knowledge-test-dialog-v2.module.css";
 
-export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit, onNextLesson, onApplicationTest, onComplete, initialView = "question", initialAttempt, onAttemptChange, saveMessage, saveFailed, onRetrySave, entrySource = "lesson" }: { locale: Locale; lessonNumber: string; lessonTitle?: string; onExit: () => void; onNextLesson?: () => void; onApplicationTest?: () => void; onComplete?: () => void; initialView?: "question" | "result"; initialAttempt?: KnowledgeAttempt; onAttemptChange?: (attempt: KnowledgeAttempt) => void; saveMessage?: string; saveFailed?: boolean; onRetrySave?: () => void; entrySource?: "lesson" | "overview" }) {
+export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit, onNextLesson, onApplicationTest, onComplete, initialView = "question", initialAttempt, onAttemptChange, saveMessage, saveFailed, onRetrySave, entrySource = "lesson", questions: authoredQuestions }: { questions?: KnowledgeQuestion[]; locale: Locale; lessonNumber: string; lessonTitle?: string; onExit: () => void; onNextLesson?: () => void; onApplicationTest?: () => void; onComplete?: () => void; initialView?: "question" | "result"; initialAttempt?: KnowledgeAttempt; onAttemptChange?: (attempt: KnowledgeAttempt) => void; saveMessage?: string; saveFailed?: boolean; onRetrySave?: () => void; entrySource?: "lesson" | "overview" }) {
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   useEffect(() => { setPortalTarget(document.body); }, []);
   const copy = getMessages(locale).knowledgeTest;
-  const questions = getKnowledgeTestSamples(locale);
+  const questions = authoredQuestions || getKnowledgeTestSamples(locale);
   const [responses, setResponses] = useState<KnowledgeResponse[]>(() => initialAttempt?.responses || questions.map((question, position) => ({ answer: initialView === "result" ? question.referenceAnswer : "", rating: initialView === "result" ? (position === 0 || position >= 4 ? "right" : "wrong") : null })));
   const [index, setIndex] = useState(initialAttempt?.index || 0);
   const [phase, setPhase] = useState<KnowledgeTestPhase>(initialAttempt?.phase || initialView);

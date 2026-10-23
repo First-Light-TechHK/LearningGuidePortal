@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import type { ProductCourse, ProductLesson } from "../../services/productStore";
 import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
@@ -19,7 +20,7 @@ type MediaSpec = { staging: string; id: string; fileType: "image" | "video"; mim
 // Deterministic ids so DEV and SIT share the same lesson URLs. The bytes are
 // staged under <prefix>/staging/modeling-life/ and copied into the course-media
 // store by this migration; nothing is hand-uploaded into course_media.
-const MEDIA: MediaSpec[] = [
+export const MEDIA: MediaSpec[] = [
   { staging: "cover.png", id: "4c1b4ade-446a-46ac-8a40-2c3837118063", fileType: "image", mimeType: "image/png", extension: "png", originalName: "课程封面.png" },
   { staging: "lesson1.mp4", id: "04f0039b-42c7-441b-85b7-fe6e21c6bbe6", fileType: "video", mimeType: "video/mp4", extension: "mp4", originalName: "Lesson 1视频课件.mp4" },
   { staging: "lesson2.mp4", id: "613a07b1-24e8-4123-ab10-5bd36875293e", fileType: "video", mimeType: "video/mp4", extension: "mp4", originalName: "Lesson 2视频课件.mp4" },
@@ -116,8 +117,10 @@ export function modelingLifeCourse(createdAt: string): ProductCourse {
   };
 }
 
-function assetPath(assetId: string) {
-  return `course_media/${COURSE_ID}/${assetId}.bin`;
+// The course-media store keeps one private object per asset under the data
+// root, the same layout services/courseMedia.ts reads and writes.
+export function mediaAssetPath(assetId: string) {
+  return path.join(systemRoot(), "course_media", COURSE_ID, `${assetId}.bin`);
 }
 
 function assetUrl(assetId: string) {
@@ -128,8 +131,11 @@ function contentHash(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
 }
 
-export async function ensureMedia(asset: MediaSpec): Promise<"add" | "skip"> {
-  const target = assetPath(asset.id);
+export async function ensureMedia(asset: MediaSpec, force = false): Promise<"add" | "skip"> {
+  // Staging lives in S3. Without a bucket (tests, local fs) there is nothing to
+  // copy from, and the migration still has to publish the course itself.
+  if (!process.env.DATA_S3_BUCKET?.trim()) return "skip";
+  const target = mediaAssetPath(asset.id);
   try {
     await vfsStat(systemRoot(), target);
     return "skip";

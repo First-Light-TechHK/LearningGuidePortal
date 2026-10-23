@@ -1,6 +1,7 @@
 import sanitizeHtml from "sanitize-html";
 import { createHash } from "node:crypto";
 import { LESSON_CONTENT_LIMITS as LIMITS, type CourseMediaAsset, type LessonContent, type LessonNode } from "@/contracts/lesson-content";
+import { isCourseStaticImage } from "@/lib/courseStaticMedia";
 
 export type { LessonContent, LessonNode } from "@/contracts/lesson-content";
 
@@ -93,7 +94,7 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
           else if (!safeHref(attribs.href || "", courseId)) delete attribs.href;
           attribs.rel = "noopener noreferrer";
         }
-        if (tagName === "img" && !courseMediaAssetId(attribs.src, courseId)) delete attribs.src;
+        if (tagName === "img" && !courseMediaAssetId(attribs.src, courseId) && !isCourseStaticImage(attribs.src, courseId)) delete attribs.src;
         for (const name of ["width", "height", "colspan", "rowspan", "start"]) {
           if (name in attribs && !/^[1-9][0-9]{0,3}$/.test(attribs[name])) delete attribs[name];
         }
@@ -128,8 +129,8 @@ export function validateLessonContents(value: unknown, courseId: string, options
     ids.add(id);
     return id;
   };
-  const url = (value: unknown) => {
-    if (!courseMediaAssetId(value, courseId) && !(options.allowExternalMedia && safeExternalMediaUrl(value))) throw new LessonContentError("Media must belong to this course.");
+  const url = (value: unknown, image = false) => {
+    if (!courseMediaAssetId(value, courseId) && !(image && isCourseStaticImage(value, courseId)) && !(options.allowExternalMedia && safeExternalMediaUrl(value))) throw new LessonContentError("Media must belong to this course.");
     return value as string;
   };
   const html = (value: unknown, nodes: string[]) => sanitiseRichHtml(text(value, LIMITS.htmlCharacters, false), courseId, nodes);
@@ -145,8 +146,11 @@ export function validateLessonContents(value: unknown, courseId: string, options
       const node = record(item);
       if (++nodeCount > LIMITS.nodesPerLesson || !["text", "video", "image", "audio", "model3d", "exercise"].includes(node.type as string) || typeof node.triggerTime !== "number" || !Number.isFinite(node.triggerTime) || node.triggerTime < 0 || node.triggerTime > LIMITS.triggerSeconds) throw new LessonContentError();
       const result: LessonNode = { id: identity(node.id), title: text(node.title, LIMITS.titleCharacters), type: node.type as LessonNode["type"], active: active(node.active), triggerTime: node.triggerTime };
-      if (["video", "image", "audio", "model3d"].includes(result.type)) result.url = url(node.url);
+      if (["video", "image", "audio", "model3d"].includes(result.type)) result.url = url(node.url, result.type === "image");
       else if (node.url) throw new LessonContentError();
+      if (node.thumbnail !== undefined) result.thumbnail = url(node.thumbnail, true);
+      if (node.description !== undefined) result.description = text(node.description, 5000, false);
+      if (node.source !== undefined) result.source = text(node.source, 2000, false);
       if (result.type === "exercise") {
         result.question = text(node.question, 10_000);
         if (node.options !== undefined) {
@@ -169,6 +173,14 @@ export function validateLessonContents(value: unknown, courseId: string, options
       if (raw[index].html !== undefined) node.html = html(raw[index].html, nodeIds);
     });
     const result: LessonContent = { id, title: text(input.title, LIMITS.titleCharacters), type: input.type as LessonContent["type"], mode: input.mode as LessonContent["mode"], active: active(input.active), nodes };
+    if (input.startSeconds !== undefined) {
+      if (result.type !== "video" || typeof input.startSeconds !== "number" || !Number.isFinite(input.startSeconds) || input.startSeconds < 0 || input.startSeconds > LIMITS.triggerSeconds) throw new LessonContentError("Invalid video start position.");
+      result.startSeconds = input.startSeconds;
+    }
+    if (input.exhibitMode !== undefined) {
+      if (input.exhibitMode !== "authored" && input.exhibitMode !== "samples") throw new LessonContentError("Invalid exhibit mode.");
+      result.exhibitMode = input.exhibitMode;
+    }
     if (result.type !== "text") result.url = url(input.url);
     else if (input.url) throw new LessonContentError();
     if (input.html !== undefined) result.html = html(input.html, nodeIds);

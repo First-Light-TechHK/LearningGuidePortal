@@ -3,6 +3,7 @@ import type { LessonContent } from "@/contracts/lesson-content";
 import type { TextLessonPreview } from "@/contracts/text-lesson-preview";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import { sanitiseLessonContents, sanitiseRichHtml } from "./lessonContent";
+import type { LessonPreviewConfiguration } from "@/contracts/lesson-resources";
 
 // Keep complete HTML entities and Unicode code points, rather than cutting markup
 // or an escaped entity in half. sanitize-html balances every retained element.
@@ -20,14 +21,14 @@ export function firstHalfTextHtml(html: string): string {
   });
 }
 
-export function buildTextLessonPreview(lesson: { contents?: LessonContent[]; body: string }, courseId: string, entitled: boolean): { contents: LessonContent[]; body: string; textPreview?: TextLessonPreview } {
+export function buildTextLessonPreview(lesson: { contents?: LessonContent[]; body: string; preview?: LessonPreviewConfiguration }, courseId: string, entitled: boolean): { contents: LessonContent[]; body: string; textPreview?: TextLessonPreview } {
   const contents = sanitiseLessonContents(lesson.contents || [], courseId);
   if (entitled) return { contents, body: lesson.body };
-  const textPreview = textLessonPreviewPolicy(contents);
+  const textPreview = textLessonPreviewPolicy(contents, lesson.preview);
   return {
     textPreview,
     // Legacy bodies are not an alternative route to an authored Lesson's text.
-    body: contents.length ? "" : Array.from(lesson.body).slice(0, Math.ceil(Array.from(lesson.body).length / 2)).join(""),
+    body: contents.length || lesson.preview ? "" : Array.from(lesson.body).slice(0, Math.ceil(Array.from(lesson.body).length / 2)).join(""),
     contents: contents.map(content => {
       const status = textPreview.points[content.id];
       if (!status || status === "full") return content;

@@ -12,6 +12,7 @@ import { buildTextLessonPreview } from "@/services/textLessonPreview";
 import { signCourseMediaReferences } from "@/services/courseMediaSigning";
 import { signCourseMediaUrl } from "@/services/persistence/s3";
 import { isCourseLearningMode } from "@/contracts/course-learning-mode";
+import { courseExploration, lessonAssessmentAvailability } from "@/lib/lessonResources";
 import { getTutorAvailability } from "@/services/ksTutorClient";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {
     pricingHref: `/${locale}/subscription?courseId=${encodeURIComponent(course.id)}`,
     recommendations,
-    videoLimitSeconds: 600
+    videoLimitSeconds: lesson.preview?.videoLimitSeconds ?? 600
   };
   const preview = buildTextLessonPreview(lesson, course.id, access.allowed);
   const contents = preview.contents.length ? await signCourseMediaReferences(preview.contents) : undefined;
@@ -56,6 +57,6 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }
