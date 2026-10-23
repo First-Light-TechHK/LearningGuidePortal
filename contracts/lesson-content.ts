@@ -34,7 +34,7 @@ export const LESSON_CONTENT_LIMITS = {
   options: 20,
 } as const;
 
-export const COURSE_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
+export const COURSE_MEDIA_MAX_BYTES = 200 * 1024 * 1024;
 
 export type CourseMediaAsset = {
   id: string;

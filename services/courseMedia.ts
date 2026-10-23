@@ -149,7 +149,7 @@ function matchesSignature(bytes: Buffer, extension: string): boolean {
 }
 
 export function validateCourseMediaFile(input: { name: string; type: string; bytes: Buffer }): Pick<CourseMediaAsset, "originalName" | "fileType" | "mimeType" | "extension" | "size"> {
-  if (!input.bytes.length || input.bytes.length > COURSE_MEDIA_MAX_BYTES) throw new CourseMediaError("tooLarge", 413, "Files must be non-empty and no larger than 25 MiB.");
+  if (!input.bytes.length || input.bytes.length > COURSE_MEDIA_MAX_BYTES) throw new CourseMediaError("tooLarge", 413, "Files must be non-empty and no larger than 200 MiB.");
   if (typeof input.name !== "string" || input.name.length > 255 || /[\u0000-\u001f\u007f/\\]/.test(input.name)) throw new CourseMediaError("invalid", 400, "Invalid filename.");
   const extension = path.extname(input.name).slice(1).toLowerCase();
   const format = FORMATS[extension];
@@ -314,7 +314,7 @@ export async function readCourseMediaUpload(request: Request): Promise<{ file: {
   if (!/^multipart\/form-data\s*;/i.test(type)) throw new CourseMediaError("invalid", 400, "A multipart file upload is required.");
   const limit = COURSE_MEDIA_MAX_BYTES + 64 * 1024;
   const declared = request.headers.get("content-length");
-  if (declared && (!/^\d+$/.test(declared) || Number(declared) > limit)) throw new CourseMediaError("tooLarge", 413, "Upload exceeds 25 MiB.");
+  if (declared && (!/^\d+$/.test(declared) || Number(declared) > limit)) throw new CourseMediaError("tooLarge", 413, "Upload exceeds 200 MiB.");
   if (!request.body) throw new CourseMediaError("invalid", 400, "A file is required.");
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -326,7 +326,7 @@ export async function readCourseMediaUpload(request: Request): Promise<{ file: {
       size += value.byteLength;
       if (size > limit) {
         await reader.cancel();
-        throw new CourseMediaError("tooLarge", 413, "Upload exceeds 25 MiB.");
+        throw new CourseMediaError("tooLarge", 413, "Upload exceeds 200 MiB.");
       }
       chunks.push(value);
     }
@@ -337,7 +337,7 @@ export async function readCourseMediaUpload(request: Request): Promise<{ file: {
   if ([...form.keys()].some(key => !["file", "usage"].includes(key)) || form.getAll("file").length !== 1 || form.getAll("usage").length > 1) throw new CourseMediaError("invalid", 400, "Exactly one file is required.");
   const file = form.get("file"), usage = form.get("usage");
   if (!file || typeof file === "string" || (usage !== null && typeof usage !== "string")) throw new CourseMediaError("invalid", 400, "Invalid upload fields.");
-  if (!file.size || file.size > COURSE_MEDIA_MAX_BYTES) throw new CourseMediaError("tooLarge", 413, "Files must be non-empty and no larger than 25 MiB.");
+  if (!file.size || file.size > COURSE_MEDIA_MAX_BYTES) throw new CourseMediaError("tooLarge", 413, "Files must be non-empty and no larger than 200 MiB.");
   return { file: { name: file.name, type: file.type, bytes: Buffer.from(await file.arrayBuffer()) }, ...(usage ? { usage } : {}) };
 }
 
