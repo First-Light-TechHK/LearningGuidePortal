@@ -87,9 +87,6 @@ test("course detail replaces purchase with the Figma included-plan card only for
       assert.equal(await action.textContent(), copy.continueLearning);
       assert.equal(await action.getAttribute("href"), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`);
       // Restore the fixture's no-record state for the next locale.
-<<<<<<< HEAD
-      const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: any) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: any) => row.userId !== owner.id);await writeProductData(data);
-=======
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
       const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;
       await page.route("http://course-card.test/courses/**", async route => route.fulfill({body:await readFile(path.join(root,"public",new URL(route.request().url()).pathname)),contentType:"image/png"}));
@@ -105,7 +102,6 @@ test("course detail replaces purchase with the Figma included-plan card only for
         await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
         await page.screenshot({path:path.join(output,`modeling-life-${locale}-${width}.png`),fullPage:true});
       }
->>>>>>> origin/dev
       await page.close();
     }
   } finally { delete (globalThis as any).courseCardTest;await browser.close();await restore(); }
