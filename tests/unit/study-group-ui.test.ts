@@ -32,12 +32,12 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.deepEqual(tutorQueueBody("Why did 1928 look stable?"), { message: "Why did 1928 look stable?" });
   assert.equal("prompt" in tutorQueueBody("Why did 1928 look stable?"), false);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /askTutor\(line\.id, \{ question: text\.slice\(prefix\.length\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
+  assert.match(room, /askTutor\(line\.id, \{ question: \(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
   assert.match(room, /JSON\.stringify\(tutorQueueBody\(ask\.question, ask\.clientEventId\)\)/);
   assert.match(room, /<time dateTime=\{line\.at\}>/);
-  // The room has no AI Tutor toggle: the "@AI Tutor " prefix addresses it.
-  assert.equal(room.includes("styles.tutorEntry"), false);
-  assert.match(room, /<textarea ref=\{chatInputRef\}/);
+  // The Tutor entry button toggles addressing; the "@AI Tutor " prefix still works.
+  assert.match(room, /session\.aiTutorEnabled \? <button className=\{styles\.tutorEntry\}/);
+  assert.match(room, /<input ref=\{chatInputRef\}/);
   assert.equal(room.includes("/api/ai-tutor"), false);
   assert.equal(room.includes("prompts/"), false);
   assert.equal(room.includes("You are"), false);
@@ -553,16 +553,16 @@ test("typing @ in the chat opens a mention list for AI Tutor and the present mem
   assert.match(room, /input\.setSelectionRange\(caretRef\.current, caretRef\.current\)/);
   assert.match(room, /onMouseDown=\{\(event\) => \{ event\.preventDefault\(\); chooseMention\(row\); \}\}/);
   // Keyboard: arrows move, Escape closes, Enter selects instead of sending.
-  assert.match(room, /if \(mention && mentionRows\.length > 0\) \{/);
+  assert.match(room, /if \(!mention \|\| mentionRows\.length === 0\) return;/);
   // IME composition (Chinese/Japanese input) must not lose Enter/Escape/arrows to the popup.
   assert.match(room, /if \(event\.nativeEvent\.isComposing \|\| event\.keyCode === 229\) return;/);
   assert.match(room, /event\.key === "ArrowDown"/);
   assert.match(room, /event\.key === "ArrowUp"/);
   assert.match(room, /event\.key === "Escape"/);
-  assert.match(room, /event\.key === "Enter"\) \{ event\.preventDefault\(\); chooseMention\(mentionRows\[mentionIndex\]\); return; \}/);
+  assert.match(room, /event\.key === "Enter"\) \{ event\.preventDefault\(\); chooseMention\(mentionRows\[mentionIndex\]\); \}/);
   // Submission: a typed "@AI Tutor " prefix queues the body without the prefix.
-  assert.match(room, /const mentionsTutor = hasPrefix && session\.aiTutorEnabled/);
-  assert.match(room, /askTutor\(line\.id, \{ question: text\.slice\(prefix\.length\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
+  assert.match(room, /const mentionsTutor = \(addressTutor \|\| hasPrefix\) && session\.aiTutorEnabled/);
+  assert.match(room, /askTutor\(line\.id, \{ question: \(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
   assert.match(room, /JSON\.stringify\(tutorQueueBody\(ask\.question, ask\.clientEventId\)\)/);
 
   assert.equal(en.studyGroupsPage.room.mentionList, "Mention AI Tutor or a participant");
