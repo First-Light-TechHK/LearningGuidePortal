@@ -60,6 +60,16 @@ if (environment.name === "UAT") {
   process.exit(result.ok ? 0 : 1);
 }
 
+function syncCourseMedia() {
+  const run = spawnSync(process.execPath, ["--import", "tsx", "--require", "./scripts/register-tsconfig-paths.cjs", "scripts/sync-course-media.ts"], {
+    stdio: "inherit",
+    env: process.env
+  });
+  if (run.status !== 0) console.error("course media sync failed; live smoke will report any 404");
+}
+
+syncCourseMedia();
+
 async function smokeWithRetry() {
   let result;
   for (let attempt = 0; attempt < 12; attempt++) {
