@@ -151,6 +151,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [sharing, setSharing] = useState(false);
   const [shareTrack, setShareTrack] = useState<AttachableTrack | null>(null);
   const [cameraTracks, setCameraTracks] = useState<Record<string, AttachableTrack>>({});
+  const [addressTutor, setAddressTutor] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
@@ -1180,9 +1181,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               chatPinnedRef.current = true;
               setChat((items) => [...items, line]);
               void sendChatLine(line);
-              if (mentionsTutor) void askTutor(line.id, { question: text.slice(prefix.length).trim(), clientEventId: tutorClientEventId() });
+              if (mentionsTutor) void askTutor(line.id, { question: (hasPrefix ? text.slice(prefix.length) : text).trim(), clientEventId: tutorClientEventId() });
               setMention(null);
               setDraft("");
+              setAddressTutor(false);
             }}>
 
               {mentionRows.length > 0 ? (
@@ -1195,19 +1197,15 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                   ))}
                 </div>
               ) : null}
-              <textarea ref={chatInputRef} rows={3} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
+              <input ref={chatInputRef} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
                 // IME composition (Chinese/Japanese input): Enter picks the candidate and
                 // Escape/arrows drive the IME — the mention popup must not steal those.
                 if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                if (mention && mentionRows.length > 0) {
-                  if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); return; }
-                  if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); return; }
-                  if (event.key === "Escape") { event.preventDefault(); setMention(null); return; }
-                  if (event.key === "Enter") { event.preventDefault(); chooseMention(mentionRows[mentionIndex]); return; }
-                }
-                // A textarea does not submit on Enter by itself: Enter sends and
-                // Shift+Enter starts a new line.
-                if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+                if (!mention || mentionRows.length === 0) return;
+                if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); }
+                else if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); }
+                else if (event.key === "Escape") { event.preventDefault(); setMention(null); }
+                else if (event.key === "Enter") { event.preventDefault(); chooseMention(mentionRows[mentionIndex]); }
               }} placeholder={roomCopy.chatPlaceholder} disabled={!connected} />
               {/* 599:1392: the box holds only the placeholder and the send control; the @AI Tutor entry sits on the box's bottom-left edge instead of a label above the text (BUG-0197). */}
               {tutorOffline ? <p className={`${styles.chatBody} ${styles.tutorOffline}`} role="status" data-testid="tutor-offline">{roomCopy[`tutorOff_${tutorOffline}`]}</p> : null}

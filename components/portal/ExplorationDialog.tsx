@@ -21,11 +21,7 @@ function LockedExploration({locale,tab}:{locale:Locale;tab:"reading"|"exhibits"}
   </div>;
 }
 
-<<<<<<< HEAD
-export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons=[],tutorAvailable=true,onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:{number:string;title:string}[];tutorAvailable?:boolean;onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
-=======
-export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:ExplorationLesson[];onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
->>>>>>> origin/dev
+export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,tutorAvailable=true,onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:ExplorationLesson[];tutorAvailable?:boolean;onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
   const messages=getMessages(locale),copy=messages.exploration;
   const courseLessons=lessons??[{number:lessonNumber,title:copy.lesson.replace("{number}",String(Number(lessonNumber)||lessonNumber)),unlocked:true}];
   const unlocked=new Set(courseLessons.filter(lesson=>lesson.unlocked).map(lesson=>explorationLessonNumber(lesson.number)));
@@ -48,13 +44,8 @@ export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,onC
   if(selected)return <ExhibitDialog node={selected} locale={locale} onClose={()=>setSelected(null)}/>;
   return <PortalDialog className={styles.dialog} labelledBy="exploration-title" onClose={onClose}>
     <header className={styles.header}><div><h2 id="exploration-title">{copy.title}</h2></div><div className={styles.actions}>
-<<<<<<< HEAD
       {tutorAvailable && <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>}
-      <div className={styles.scope} role="group" aria-label={copy.scope}>{(["lesson","course"] as const).map(value=><button type="button" key={value} aria-pressed={scope===value} onClick={()=>setScope(value)}>{value==="lesson"?copy.thisLesson:copy.wholeCourse}</button>)}</div>
-=======
-      <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>
       <div className={styles.scope} role="group" aria-label={copy.scope}>{(["lesson","course"] as const).map(value=><button type="button" key={value} aria-pressed={scope===value} onClick={()=>changeScope(value)}>{value==="lesson"?copy.thisLesson:copy.wholeCourse}</button>)}</div>
->>>>>>> origin/dev
       <button type="button" className={styles.close} aria-label={copy.close} onClick={onClose}>×</button>
     </div></header>
     <div className={styles.tabs} role="tablist" aria-label={copy.title}>{(["reading","exhibits"] as const).map(value=><button type="button" role="tab" id={`exploration-tab-${value}`} aria-controls={`exploration-panel-${value}`} aria-selected={tab===value} tabIndex={tab===value?0:-1} onClick={()=>changeTab(value)} onKeyDown={event=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const next=event.key==="Home"?"reading":event.key==="End"?"exhibits":tab==="reading"?"exhibits":"reading";changeTab(next);document.getElementById(`exploration-tab-${next}`)?.focus();}}} key={value}>{copy[value]}</button>)}</div>
