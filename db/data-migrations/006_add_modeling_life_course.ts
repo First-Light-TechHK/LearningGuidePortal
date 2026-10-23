@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import type { ProductCourse, ProductLesson } from "../../services/productStore";
 import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
@@ -116,8 +117,10 @@ export function modelingLifeCourse(createdAt: string): ProductCourse {
   };
 }
 
-function assetPath(assetId: string) {
-  return `course_media/${COURSE_ID}/${assetId}.bin`;
+// The course-media store keeps one private object per asset under the data
+// root, the same layout services/courseMedia.ts reads and writes.
+export function mediaAssetPath(assetId: string) {
+  return path.join(systemRoot(), "course_media", COURSE_ID, `${assetId}.bin`);
 }
 
 function assetUrl(assetId: string) {
@@ -129,7 +132,10 @@ function contentHash(bytes: Buffer) {
 }
 
 export async function ensureMedia(asset: MediaSpec): Promise<"add" | "skip"> {
-  const target = assetPath(asset.id);
+  // Staging lives in S3. Without a bucket (tests, local fs) there is nothing to
+  // copy from, and the migration still has to publish the course itself.
+  if (!process.env.DATA_S3_BUCKET?.trim()) return "skip";
+  const target = mediaAssetPath(asset.id);
   try {
     await vfsStat(systemRoot(), target);
     return "skip";
