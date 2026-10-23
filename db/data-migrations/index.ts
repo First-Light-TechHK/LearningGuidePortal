@@ -9,6 +9,7 @@ import * as repairModelingLifeMedia from "./007_repair_modeling_life_media";
 import * as repairModelingLifeMediaRows from "./009_repair_modeling_life_media_rows";
 import * as upgradeModelingLife from "./008_upgrade_modeling_life";
 import * as fixModelingLifeExhibits from "./009_fix_modeling_life_exhibits";
+import * as repairModelingLifeMediaRows from "./010_repair_modeling_life_media_rows";
 
 // Keep shipped ledger identities. Their pending media-copy work is superseded
 // by 008's repository images and supplied video URLs, including on fresh SIT.
