@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { TutorChat } from "./TutorChat";
+import { TutorDrawer } from "./TutorDrawer";
 import { ExplorationDialog } from "./ExplorationDialog";
 import { useEffect, useId, useRef, useState } from "react";
 import type { LessonContent } from "@/contracts/lesson-content";
@@ -23,12 +24,14 @@ import { createClientEventId } from "@/lib/clientEventId";
 import type { TextLessonPreview } from "@/contracts/text-lesson-preview";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 
-export function PreviewLessonView({ locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview" }: {
+export function PreviewLessonView({ locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview" }: {
   locale: Locale; courseId: string; courseTitle: string; category: string; description: string;
   lesson: { id: string; title: string; body: string; durationMinutes: number; contents?: LessonContent[] };
   outline: ReturnType<typeof previewLessonOutline>; poster: string; trialGate?: TrialGate;
   textPreview?: TextLessonPreview;
   initialCompleted: boolean; completedContentIds?: string[]; nextHref: string | null; entitled: boolean;
+  /** KS 课程级 Online 状态；false 时隐藏「询问 AI 导师」入口（2026-10-22）；页面必须显式传入 */
+  tutorOnline?: boolean;
   preferredMode?: CourseLearningMode | null;
   initialContentId?: string | null;
   studyEndpoint?: "/api/study/preview" | "/api/study/events";
@@ -59,6 +62,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const textPoints = contents.filter(content => content.type !== "video");
   const textEnd = Boolean(textPolicy && (textLocked || textPolicy.rule === "half-text" || selected?.id === textPoints[Math.min(1, textPoints.length - 1)]?.id));
   useEffect(() => { setAccessPlanOpen(false); }, [lesson.id, contentId, entitled]);
+  useEffect(() => { if (!tutorOnline) setTutorOpen(false); }, [tutorOnline]);
   useEffect(() => {
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     setContentId(presentation.contentId);
@@ -101,7 +105,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     } catch { continueLock.current = false; setContinuing(false); setContinueError(messages.overviewDesign.previewSaveError); }
   }
   const tools = [
-    { icon: "tutor", title: copy.tutor, action: "tutor" },
+    ...(tutorOnline ? [{ icon: "tutor", title: copy.tutor, action: "tutor" }] : []),
     { icon: "understanding", title: copy.understanding, href: entitled ? `/${locale}/portal/courses/${encodeURIComponent(courseId)}/understanding?lessonId=${encodeURIComponent(lesson.id)}${studyEndpoint === "/api/study/preview" ? "&from=preview" : ""}` : undefined },
     { icon: "explore", title: copy.explore, action: "explore" },
   ];
@@ -147,13 +151,13 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>
         </div>
-        {tutorOpen && entitled && <div className={styles.tutorPanel}><TutorChat locale={locale} courseId={courseId} lessonId={lesson.id} copy={messages.learning}/></div>}
+        {tutorOpen && entitled && tutorOnline && <TutorDrawer onClose={() => setTutorOpen(false)}><TutorChat locale={locale} courseId={courseId} lessonId={lesson.id} copy={messages.learning} onClose={() => setTutorOpen(false)}/></TutorDrawer>}
         <div className={styles.progress}>
           <PreviewProgress enabled={!textLocked && (mode !== "video" || playingId === selected?.id)} endpoint={studyEndpoint} courseId={courseId} lessonId={lesson.id} contentId={selected?.id || null} learningMode={selected ? selected.type === "video" ? "video" : "text" : !contents.length && lesson.body?.trim() ? "text" : undefined} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} canComplete={false} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
         </div>
       </article>
     </div>
-    {exploreOpen && <ExplorationDialog lessons={outline} locale={locale} courseId={courseId} lessonNumber={current?.number || "01"} onClose={() => setExploreOpen(false)} onAskTutor={() => { setExploreOpen(false); setTutorOpen(true); }}/> }
+    {exploreOpen && <ExplorationDialog lessons={outline} locale={locale} courseId={courseId} lessonNumber={current?.number || "01"} tutorAvailable={tutorOnline} onClose={() => setExploreOpen(false)} onAskTutor={() => { setExploreOpen(false); setTutorOpen(true); }}/> }
     {accessPlanOpen && !entitled && <TrialLimitModal gate={trialGate || { pricingHref, recommendations: [] }} locale={locale} onClose={() => setAccessPlanOpen(false)} />}
   </div>;
 }

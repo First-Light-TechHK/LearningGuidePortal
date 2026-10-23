@@ -11,6 +11,9 @@ import { signCourseMediaUrl } from "@/services/persistence/s3";
 import { sanitiseLessonContents } from "@/services/lessonContent";
 import { signCourseMediaReferences } from "@/services/courseMediaSigning";
 import { isCourseLearningMode } from "@/contracts/course-learning-mode";
+import { getTutorAvailability } from "@/services/ksTutorClient";
+
+export const dynamic = "force-dynamic";
 
 export default async function LearningPage({ params, searchParams }: { params: Promise<{ locale: string; courseId: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string }> }) {
   const { locale: rawLocale, courseId } = await params;
@@ -37,10 +40,11 @@ export default async function LearningPage({ params, searchParams }: { params: P
   const overview = await getLearningOverview(user.id);
   const study = overview.courses.find((item) => item.courseId === course.id);
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
+  const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
     <PreviewLessonView completedContentIds={study?.completedContentIds || []} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""}
-      lesson={lesson} outline={previewLessonOutline(course, locale, true)} poster={poster} preferredMode={preferredMode} initialContentId={contentId || (study?.currentLessonId === lesson.id ? study.currentContentId : null)} entitled
+      lesson={lesson} outline={previewLessonOutline(course, locale, true)} poster={poster} preferredMode={preferredMode} initialContentId={contentId || (study?.currentLessonId === lesson.id ? study.currentContentId : null)} entitled tutorOnline={tutorAvailability.online}
       studyEndpoint="/api/study/events" initialCompleted={study?.completedLessonIds.includes(lesson.id) || false} nextHref={nextLessonHref(locale, course.id, lessons, lesson.id)} />
   </main>;
 }

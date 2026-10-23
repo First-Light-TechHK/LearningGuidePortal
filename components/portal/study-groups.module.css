@@ -187,12 +187,19 @@
 .contextCard strong { display: block; font-size: 14px; font-weight: 600; }
 .contextCard span { display: block; margin-top: 6px; color: #6b7280; font-size: 12px; }
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 18px; font-size: 12px; font-weight: 600; }
+.switchLabel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .switchText { font-size: 12px; font-weight: 400; }
+.switchDisabled { color: #98a2b3; }
+.switchDisabled .switchText { color: #98a2b3; }
+.tutorInfo { display: inline-flex; align-items: center; flex-shrink: 0; color: #98a2b3; cursor: help; }
+.tutorInfo:focus-visible { outline: 2px solid #246bfd; outline-offset: 2px; border-radius: 50%; }
 /* 599:1823 AI Tutor switch: 32x16 knob track (global input padding/border otherwise inflates the checkbox past 34x30). */
 .switch input { appearance: none; width: 32px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: #d0d5dd; position: relative; cursor: pointer; }
 .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
 .switch input:checked { background: #1d6bff; }
 .switch input:checked::after { left: 18px; }
+.switch input:disabled { background: #d0d5dd; cursor: not-allowed; }
+.switch input:disabled::after { background: #fff; }
 .hint { margin-left: 8px; color: #111827; opacity: .35; font-size: 10px; font-weight: 400; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 20px; }
 .dialogActions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
@@ -279,7 +286,9 @@
 .roster li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .rosterInitial { width: 28px; height: 28px; border-radius: 14px; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
 .roster li span:last-child { color: #6b7280; font-size: 12px; }
-.chatLog { display: flex; flex-direction: column; gap: 14px; overflow: auto; flex: 1; }
+/* The conversation scrolls inside its own box: the list is capped and the
+   page around it stays still (2026-10-23). */
+.chatLog { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; min-height: 0; max-height: min(460px, 60vh); padding-right: 4px; }
 .chatLine { margin: 0; }
 .chatHead { display: flex; align-items: center; gap: 8px; }
 .chatHead time { margin-left: auto; color: #98a2b3; font-size: 12px; }
@@ -287,15 +296,19 @@
 .chatHost { background: #e8f1ff; color: #1d6bff; border-radius: 8px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
 .tutorAvatar { width: 20px; height: 20px; border-radius: 10px; background: #1d6bff; color: #fff; display: grid; place-items: center; flex: none; font-size: 11px; }
 .tutorName { color: #111827; }
-.tutorBody { color: #1d6bff; }
+/* One ink for the whole answer: the body used to be blue while its first line
+   was black, so a reply looked like two different colours (2026-10-23). */
+.tutorBody { color: #344054; }
 .tutorLead { color: #111827; }
 .tutorLead, .tutorRow, .tutorDisclosure { display: block; }
 .tutorDisclosure { color: #9a3412; font-size: 12px; font-weight: 600; }
-.chatForm { position: relative; display: block; min-height: 100px; padding: 12px 36px 12px 12px; border: 1px solid #e4e7ed; border-radius: 8px; }
-.chatForm input { width: 100%; border: 0; font: inherit; outline: none; background: transparent; }
+.chatForm { position: relative; display: flex; flex-direction: column; min-height: 100px; padding: 12px 44px 12px 12px; border: 1px solid #e4e7ed; border-radius: 8px; }
+/* The bordered box is the input: its textarea fills it edge to edge and keeps
+   clear of the send button in the bottom-right corner. */
+.chatForm textarea { width: 100%; flex: 1 1 auto; min-height: 72px; max-height: 160px; resize: none; border: 0; padding: 0; font: inherit; line-height: 1.5; outline: none; background: transparent; }
 /* QA M27: the input draws no outline of its own, so the box shows where the keyboard is. */
 .chatForm:focus-within { border-color: #1d6bff; box-shadow: 0 0 0 3px rgba(29, 107, 255, .2); }
-.chatForm input::placeholder { color: #98a2b3; }
+.chatForm textarea::placeholder { color: #98a2b3; }
 .sendButton { position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px; border: 0; border-radius: 12px; background: #1d6bff; color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; }
 .sendButton svg { width: 12px; height: 12px; }
 .sendButton:disabled { opacity: .45; cursor: default; }
@@ -317,9 +330,7 @@
 .meta { display: inline-flex; align-items: center; gap: 8px; }
 .endMark { width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 30px; background: #f6f9fd; color: #1d6bff; display: grid; place-items: center; font-size: 32px; font-weight: 600; }
 .endTitle { color: #1d6bff; font-weight: 600; }
-.tutorEntry { border: 0; background: transparent; color: #1d6bff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; }
-.tutorEntry[aria-pressed="true"] { text-decoration: underline; }
-.tutorMention { color: #1d6bff; font-weight: 600; }
+.tutorMention { color: #344054; font-weight: 600; }
 /* QA 2026-10-19 M1 (room): a long unbroken title or name wraps inside the
    room instead of pushing it wider than the screen. */
 .stageHead { flex-wrap: wrap; }

@@ -143,18 +143,45 @@ Authorised Lesson access includes all active `LessonContent` knowledge points be
 ## AI Tutor
 
 ```ts
-// POST /api/dialogue/send
+// GET /api/ai-tutor?courseId=&lessonId=&mode=&locale=zh-CN|en-GB
+// 返回当前模式的历史对话 + KS 配置的欢迎语（按 locale 取默认 welcome；为空字符串时不展示欢迎气泡）
+type TutorOpenResponse = {
+  ok: true;
+  conversation: { id: string; mode: 'lecture' | 'socratic'; messages: TutorMessage[] };
+  welcome: string;
+};
+
+// POST /api/ai-tutor
 type TutorRequest = {
-  courseId: string;
-  lessonId?: string;
+  courseId: string; // Portal course slug or id
+  lessonId?: string; // logging only; KS content is release-scoped
   mode: 'lecture' | 'socratic';
   message: string;
   conversationId?: string;
   locale: 'en-GB' | 'zh-CN';
 };
+
+// DELETE /api/ai-tutor?courseId=&lessonId=&mode=
+// New chat：仅删除当前 session user 在该 course/lesson/mode 下的对话记录（幂等）
+type TutorNewChatResponse = { ok: true };
 ```
 
-服务端顺序：session → `checkEntitlement` → 读取已发布 Course/Lesson 和 KS knowledge links → 读取版本化 prompt → 取最近六轮 conversation → 编译消息 → 调用 OpenRouter → 流式返回。浏览器不得上传 `knowledgePack`、`sources` 或完整 system prompt 作为可信输入。
+服务端顺序（2026-10-22 起为 KnowledgeSystem BFF）：session → `checkEntitlement` → 已发布 Course/Lesson 校验 → 实时读取 KS Online 状态（无缓存）→ 取最近 10 条 conversation → 以 `course.slug` 作为 `externalCourseId` 调用 `POST {KS}/api/user/ai/chat-stream` → 将 KS SSE `{delta}` 转为纯文本流 → 结束后写回 Portal conversation。KS 不可达或该课程 offline 时不展示入口，也不回退本地假回答。浏览器不得上传 `knowledgePack`、`sources`、`systemPrompt` 或 `releaseId` 作为可信输入。
+
+## Portal → KS catalogue
+
+```ts
+// GET /api/integration/catalogue  (X-API-Key: PORTAL_INTEGRATION_TOKEN)
+type PortalCatalogue = {
+  courses: Array<{
+    externalId: string; // Portal course.slug
+    title: string;
+    lessons: Array<{ externalId: string; title: string }>;
+  }>;
+};
+```
+
+仅返回已发布课程；KS 同步本期只消费标题（课程标题 + 课时标题），不读取 Portal 课时正文。
 
 ## Stripe lookup-key subscriptions
 

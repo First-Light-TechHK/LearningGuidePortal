@@ -103,7 +103,7 @@ async function fixture(extra: (base: Omit<Fixture, "service">) => Partial<StudyG
     liveKitGateway: gateway,
     tokenLogKey: () => tokenLogKey,
     operationalLog: (event) => { logs.push(event); },
-    tutorRetryWait: async () => undefined,
+    tutorKs: async ({ message }) => `Answer: ${message}`,
     ...extra(base)
   };
   return { ...base, service: createStudyGroupService(deps) };
@@ -588,8 +588,7 @@ test("M21: a drain stops claiming after its budget and hands the rest of the que
     tutorDrainBudgetMs: 30_000,
     scheduleRetry: (run) => { retries.push(run); },
     publishRoomChat: async (input) => { published.push(input); },
-    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
-    tutorCall: async ({ text }) => { base.advanceSeconds(40); return { outcome: "ok", latencyMs: 40_000, body: `Answer: ${text}` }; }
+    tutorKs: async ({ message }) => { base.advanceSeconds(40); return `Answer: ${message}`; }
   }));
   const session = await tutorRoom(f);
   for (const n of [1, 2]) await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: `Question ${n}`, clientEventId: `evt-${n}` });
@@ -609,8 +608,7 @@ test("M21: a drain waits for a running one only so long, and the running one ans
   const f = await fixture(() => ({
     tutorDrainWaitMs: 50,
     publishRoomChat: async (input) => { published.push(input); },
-    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
-    tutorCall: async ({ text }) => { await gate; return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` }; }
+    tutorKs: async ({ message }) => { await gate; return `Answer: ${message}`; }
   }));
   const session = await tutorRoom(f);
   await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "First", clientEventId: "evt-first" });
@@ -631,12 +629,10 @@ test("r3-ops / r3-B3: a failing profile, knowledge read or model call answers in
       if (userId === "m1" && profileDown.value) throw new Error("profile store down");
       return { id: userId, displayName: userId === "m2" ? "" : userId, email: null, locale: "en-GB" };
     },
-    courseKnowledge: async () => { throw new Error("knowledge unreadable"); },
     publishRoomChat: async (input) => { published.push(input); },
-    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
-    tutorCall: async ({ text, context }) => {
-      if (text.includes("explode")) throw new Error("socket hang up");
-      return { outcome: "ok", latencyMs: 1, body: `COURSE\nAnswer (${context ? "with" : "without"} material): ${text}` };
+    tutorKs: async ({ message }) => {
+      if (message.includes("explode")) throw new Error("socket hang up");
+      return `Answer: ${message}`;
     }
   }));
   const session = await tutorRoom(f);
@@ -647,7 +643,7 @@ test("r3-ops / r3-B3: a failing profile, knowledge read or model call answers in
   await f.service.deliverTutorAnswer({ sessionId: session.id });
   profileDown.value = false;
   assert.deepEqual(published.map((item) => [item.text, item.mode, item.replyTo?.name]), [
-    ["Answer (without material): Why 1933?", "general", ""],
+    ["Answer: Why 1933?", "course", ""],
     ["", "unavailable", ""]
   ]);
   const store = await f.repository.read();
@@ -669,8 +665,7 @@ test("M21: an answer whose publish dies queues one unavailable notice for the sa
       if (input.mode !== "unavailable") throw new Error("publish failed");
       published.push(input);
     },
-    tutorKeys: () => [{ id: "k", secret: "fake-key" }],
-    tutorCall: async ({ text }) => ({ outcome: "ok", latencyMs: 1, body: `Answer: ${text}` })
+    tutorKs: async ({ message }) => `Answer: ${message}`
   }));
   const session = await tutorRoom(f);
   const asked = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Lost answer", clientEventId: "evt-lost" });
@@ -891,54 +886,25 @@ test("r3 groups 3: a group whose Course is gone cannot be joined", async () => {
   }
 });
 
-test("r3 server 5: one question's keys share one deadline, so it settles inside its claim lease", async () => {
+test("r3 server 5: a KS call that outlives the answer budget settles as unavailable", async () => {
   const published: Published[] = [];
-  const calls: Array<{ secret: string; timeoutMs?: number }> = [];
+  const deadlines: number[] = [];
   const f = await fixture(() => ({
     tutorAnswerBudgetMs: 60,
     publishRoomChat: async (input) => { published.push(input); },
-    tutorKeys: () => [{ id: "a", secret: "key-a" }, { id: "b", secret: "key-b" }],
-    tutorCall: async ({ secret, timeoutMs }) => {
-      calls.push({ secret, timeoutMs });
+    tutorKs: async ({ deadline }) => {
+      deadlines.push(deadline);
       await new Promise((resolve) => setTimeout(resolve, 80));
-      return { outcome: "failed", latencyMs: 80 };
+      throw Object.assign(new Error("timed out"), { status: 504 });
     }
   }));
   const session = await tutorRoom(f);
   const asked = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Slow provider?", clientEventId: "evt-slow" });
   await f.service.deliverTutorAnswer({ sessionId: session.id });
-  assert.deepEqual(calls.map((item) => item.secret), ["key-a"], "no second key once the deadline has passed");
-  assert.ok(calls[0].timeoutMs !== undefined && calls[0].timeoutMs > 0 && calls[0].timeoutMs <= 60, "the call gets only the time left");
-  assert.deepEqual(published.map((item) => [item.messageId, item.mode]), [[asked.id, "unavailable"]]);
-
-  // A key that fails fast leaves time for the next one.
-  const g = await fixture(() => ({
-    tutorAnswerBudgetMs: 5_000,
-    publishRoomChat: async (input) => { published.push(input); },
-    tutorKeys: () => [{ id: "a", secret: "key-a" }, { id: "b", secret: "key-b" }],
-    tutorCall: async ({ secret, text }) => secret === "key-a" ? { outcome: "rate_limited", latencyMs: 1 } : { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` }
-  }));
-  const room = await tutorRoom(g);
-  await g.service.enqueueTutor({ actorUserId: "m1", sessionId: room.id, text: "Fast failover", clientEventId: "evt-fast" });
-  await g.service.deliverTutorAnswer({ sessionId: room.id });
-  assert.equal(published.at(-1)?.text, "Answer: Fast failover");
-});
-
-test("r3 server 5: a stalled key read is inside the same deadline (final review 3)", async () => {
-  const published: Array<{ messageId: string; mode: string }> = [];
-  let calls = 0;
-  const f = await fixture(() => ({
-    tutorAnswerBudgetMs: 60,
-    publishRoomChat: async (input) => { published.push(input); },
-    tutorKeys: () => new Promise<Array<{ id: string; secret: string }>>(() => undefined),
-    tutorCall: async () => { calls += 1; return { outcome: "ok", latencyMs: 1, body: "never" }; }
-  }));
-  const session = await tutorRoom(f);
-  const asked = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: session.id, text: "Stalled secret?", clientEventId: "evt-stalled" });
-  const started = Date.now();
-  await f.service.deliverTutorAnswer({ sessionId: session.id });
-  assert.ok(Date.now() - started < 2_000, "settled at the deadline, not when the read ends");
-  assert.equal(calls, 0);
+  // Portal hands KS the question's answer deadline; the KS client turns it
+  // into the abort signal, so a stalled provider cannot hold the claim lease.
+  assert.equal(deadlines.length, 1);
+  assert.ok(deadlines[0] > 0);
   assert.deepEqual(published.map((item) => [item.messageId, item.mode]), [[asked.id, "unavailable"]]);
 });
 

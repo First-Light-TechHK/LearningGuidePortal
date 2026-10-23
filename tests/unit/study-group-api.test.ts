@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { SESSION_COOKIE } from "../../services/productAuth";
-import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "../../modules/group-study/tutorPrompt";
 
 const cwd = process.cwd();
 const env = { ...process.env };
@@ -56,6 +55,20 @@ before(async () => {
   });
   process.env.LIVEKIT_FAKE_GATEWAY = "1";
   process.env.STUDY_GROUP_TOKEN_LOG_KEY = Buffer.alloc(32, 9).toString("base64");
+  // KS-owned room Tutor (2026-10-23): the API routes read the course's
+  // Online state through the KS client. Keep it online for these cases so the
+  // existing schedule/start/tutor flows remain testable without a KS server.
+  process.env.KS_TUTOR_BASE_URL = "http://ks.test";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/api/user/ai-tutors")) {
+      return new Response(JSON.stringify({ success: true, data: [{ externalId: "german-history", online: true, available: true }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
   const store = await import("../../services/productStore");
   const files = await import("../../services/fileStore");
   const data = await store.ensureProductData();
@@ -292,6 +305,12 @@ test("AI Tutor enqueue is idempotent and does not issue a token or call a model"
   const fetches: string[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input).includes("/api/user/ai-tutors")) {
+      return new Response(JSON.stringify({ success: true, data: [{ externalId: "german-history", online: true, available: true }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
     fetches.push(String(input));
     throw new Error("provider");
   }) as typeof fetch;
@@ -347,14 +366,15 @@ test("AI Tutor enqueue is idempotent and does not issue a token or call a model"
     assert.equal(stored.chat, undefined);
     assert.equal(stored.presences.filter((item) => item.sessionId === sessionId && !item.leftAt).length, beforeCount);
     assert.equal(fetches.some((url) => url.includes("openrouter.ai")), false);
-    assert.equal(fetches.every((url) => url.includes("livekit.example.test")), true);
+    // The room Tutor now asks KS's Lecture chat-stream; the fake LiveKit
+    // gateway and the KS availability/chat calls are the only network paths.
+    assert.equal(fetches.every((url) => url.includes("livekit.example.test") || url.includes("ks.test")), true);
     const log = await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "token-issuance.log"), "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? "" : Promise.reject(error));
     assert.equal(log.includes(body.data.text), false);
     const secret = "fake-tutor-secret-not-in-response";
     process.env.STUDY_GROUP_TUTOR_KEY_UNUSED = secret;
     const raw = JSON.stringify(body);
     assert.equal(raw.includes(secret), false);
-    assert.equal(raw.includes(STUDY_GROUP_TUTOR_SYSTEM_PROMPT), false);
     assert.equal(fetches.join("\n").includes(secret), false);
   } finally {
     globalThis.fetch = originalFetch;

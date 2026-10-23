@@ -162,10 +162,9 @@ export function compareTutorFairOrder(rows: TutorRequestRow[]) {
 // Who the AI Tutor answer replies to, so everyone in the room can tell which
 // question an answer belongs to (QA 2026-10-19 N6).
 export type TutorReplyTo = { name: string; question: string };
-// `kind` "quiz" marks an understanding-check question the Tutor asked the
-// group; `reason` is the failure class of an unavailable answer (tutor infra
-// 2026-10-20). Both ride in the JSON payload: no schema change.
-export type TutorOutboxPayload = { room: string; projectId: string; text: string; messageId: string; mode?: string; replyTo?: TutorReplyTo; kind?: "quiz"; reason?: string };
+// `reason` is the failure class of an unavailable answer. It rides in the JSON
+// payload: no schema change. The Tutor's reply format is KnowledgeSystem's.
+export type TutorOutboxPayload = { room: string; projectId: string; text: string; messageId: string; mode?: string; replyTo?: TutorReplyTo; reason?: string };
 
 export type OutboxKind = "room_message";
 export type OutboxStatus = "queued" | "sending" | "delivered" | "failed" | "dead";

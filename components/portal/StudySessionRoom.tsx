@@ -83,9 +83,8 @@ type ChatLine = {
   tutorAsk?: { question: string; clientEventId: string }; tutorError?: string;
   // The id of the answer line this question's latest ask is waiting on.
   tutorAnswerId?: string;
-  // An understanding-check question the AI Tutor asked the group; a question
-  // line its asker withdrew before the Tutor started on it.
-  kind?: "quiz"; tutorWithdrawn?: boolean;
+  // A question line its asker withdrew before the Tutor started on it.
+  tutorWithdrawn?: boolean;
 };
 
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
@@ -152,11 +151,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [sharing, setSharing] = useState(false);
   const [shareTrack, setShareTrack] = useState<AttachableTrack | null>(null);
   const [cameraTracks, setCameraTracks] = useState<Record<string, AttachableTrack>>({});
-  const [addressTutor, setAddressTutor] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
-  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const caretRef = useRef<number | null>(null);
   const chatSequence = useRef(0);
   const permissionWatchRef = useRef<PermissionStatus | null>(null);
@@ -339,8 +337,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           at: chatStamp(),
           tutor: true,
           mode: message.mode,
-          ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-          ...(message.kind ? { kind: message.kind } : {})
+          ...(message.replyTo ? { replyTo: message.replyTo } : {})
         }));
         setSideTab("chat");
         return;
@@ -1046,7 +1043,6 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     const next = `${draft.slice(0, mention.start)}@${row.name} ${draft.slice(mention.start + 1 + mention.query.length)}`;
     caretRef.current = mention.start + row.name.length + 2;
     setDraft(next);
-    if (row.tutor) setAddressTutor(true);
     setMention(null);
   }
 
@@ -1148,10 +1144,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                         return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
                     : <>
-                        {line.kind === "quiz" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorQuiz}</span> : null}
-                        {line.mode === "general" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorGeneral}</span> : null}
                         {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
-                          ? <strong key="lead" className={styles.tutorLead}>{row}</strong>
+                          ? <span key="lead" className={styles.tutorLead}>{row}</span>
                           : <span key={index} className={styles.tutorRow}>{row}</span>)}
                       </>}
                 </p>
@@ -1162,19 +1156,18 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               event.preventDefault();
               const text = draft.trim();
               if (!text || !connected) return;
+              // The room has no AI Tutor toggle: typing "@AI Tutor " (or picking
+              // it from the mention list) is the only way to address the Tutor.
               const prefix = `${roomCopy.aiTutor} `;
               const hasPrefix = text.startsWith(prefix);
-              const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled && !tutorOffline;
-              const chatText = mentionsTutor && !hasPrefix ? `${roomCopy.aiTutor} ${text}` : text;
-              const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" };
+              const mentionsTutor = hasPrefix && session.aiTutorEnabled && !tutorOffline;
+              const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text, at: chatStamp(), host: group?.role === "host" };
               setChat((items) => [...items, line]);
               void sendChatLine(line);
-              if (mentionsTutor) void askTutor(line.id, { question: (hasPrefix ? text.slice(prefix.length) : text).trim(), clientEventId: tutorClientEventId() });
+              if (mentionsTutor) void askTutor(line.id, { question: text.slice(prefix.length).trim(), clientEventId: tutorClientEventId() });
               setMention(null);
               setDraft("");
-              setAddressTutor(false);
             }}>
-              {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} disabled={Boolean(tutorOffline)} title={tutorOffline ? roomCopy[`tutorOff_${tutorOffline}`] : undefined} onClick={() => setAddressTutor((on) => !on)}>{roomCopy.aiTutor}</button> : null}
               {tutorOffline ? <p className={styles.chatBody} role="status" data-testid="tutor-offline">{roomCopy[`tutorOff_${tutorOffline}`]}</p> : null}
               {mentionRows.length > 0 ? (
                 <div className={styles.mentionMenu} role="listbox" aria-label={roomCopy.mentionList}>
@@ -1186,15 +1179,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                   ))}
                 </div>
               ) : null}
-              <input ref={chatInputRef} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
+              <textarea ref={chatInputRef} rows={3} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
                 // IME composition (Chinese/Japanese input): Enter picks the candidate and
                 // Escape/arrows drive the IME — the mention popup must not steal those.
                 if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                if (!mention || mentionRows.length === 0) return;
-                if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); }
-                else if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); }
-                else if (event.key === "Escape") { event.preventDefault(); setMention(null); }
-                else if (event.key === "Enter") { event.preventDefault(); chooseMention(mentionRows[mentionIndex]); }
+                if (mention && mentionRows.length > 0) {
+                  if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); return; }
+                  if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); return; }
+                  if (event.key === "Escape") { event.preventDefault(); setMention(null); return; }
+                  if (event.key === "Enter") { event.preventDefault(); chooseMention(mentionRows[mentionIndex]); return; }
+                }
+                // A textarea does not submit on Enter by itself: Enter sends and
+                // Shift+Enter starts a new line.
+                if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
               }} placeholder={roomCopy.chatPlaceholder} disabled={!connected} />
               <button className={styles.sendButton} type="submit" disabled={!connected} aria-label={roomCopy.send}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 8.5 14 2 9 14l-1.5-4.5L2 8.5Z" fill="currentColor" /></svg></button>
             </form>

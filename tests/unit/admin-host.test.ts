@@ -60,5 +60,7 @@ test("admin hosts keep backoffice and send portal traffic there", () => {
     assert.equal(portal.status, 307);
     assert.equal(portal.location, "/en-GB/backoffice");
     assert.equal(adminHostDecision(request("https://" + host + "/api/portal-media/media_aaaaaaaaaaaaaaaa", host)).allow, true);
+    // 2026-10-22: 服务间课程目录同步接口不能被 admin host 重定向
+    assert.equal(adminHostDecision(request("https://" + host + "/api/integration/catalogue", host)).allow, true);
   }
 });

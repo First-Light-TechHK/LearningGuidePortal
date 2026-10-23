@@ -7,9 +7,10 @@
 // comfortable margin under that and matches what a chat message needs.
 export const ROOM_CHAT_MAX_LENGTH = 2000;
 
-// `kind` "quiz" marks an understanding-check question to the group; `reason`
-// is the failure class of an unavailable answer (tutor infra 2026-10-20).
-export type RoomTutorMessage = { type: "tutor"; id?: string; text: string; mode: "course" | "general" | "unavailable"; replyTo?: { name: string; question: string }; kind?: "quiz"; reason?: string };
+// `reason` is the failure class of an unavailable answer. The Tutor's prompt
+// and reply format belong to KnowledgeSystem, so the room carries no quiz or
+// course/general tag (removed 2026-10-23).
+export type RoomTutorMessage = { type: "tutor"; id?: string; text: string; mode: "course" | "general" | "unavailable"; replyTo?: { name: string; question: string }; reason?: string };
 export type RoomChatMessage = { type: "chat"; text: string };
 export type RoomRaiseHandMessage = { type: "raise-hand"; raised: boolean };
 // A newcomer, once its own connection is up, asks who has a hand raised; each
@@ -65,7 +66,6 @@ export function parseRoomDataMessage(raw: Uint8Array, fromServer: boolean): Room
       text: message.text,
       mode: message.mode === "general" || message.mode === "unavailable" ? message.mode : "course",
       ...(tutorReplyTo(message.replyTo) ? { replyTo: tutorReplyTo(message.replyTo)! } : {}),
-      ...(message.kind === "quiz" && message.mode !== "unavailable" ? { kind: "quiz" as const } : {}),
       ...(typeof message.reason === "string" && /^[a-z_]{1,32}$/.test(message.reason) ? { reason: message.reason } : {})
     };
   }

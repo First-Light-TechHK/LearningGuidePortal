@@ -112,12 +112,10 @@ function serviceFor(
     liveKitGateway: gateway,
     liveKitIncidentReporter: (incident) => { stats.incidents.push(incident); },
     tokenLogKey: () => Buffer.alloc(32, 7),
-    courseKnowledge: async () => "The Weimar republic ended in 1933.",
     publishRoomChat: async ({ text }) => { stats.published.push(text); },
-    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
-    tutorCall: async () => {
+    tutorKs: async () => {
       stats.tutorCalls += 1;
-      return { outcome: "ok" as const, latencyMs: 1, body: "The republic ended in 1933." };
+      return "The republic ended in 1933.";
     }
   });
   return { service, stats };

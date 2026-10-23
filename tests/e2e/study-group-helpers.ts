@@ -119,8 +119,9 @@ export function tutorLine(page: Page) {
 
 // Asks the AI Tutor from the room's chat, the way a member does.
 export async function askTutor(page: Page, question: string) {
-  await page.getByRole("button", { name: "@AI Tutor", exact: true }).click();
-  await page.getByRole("textbox", { name: "Chat" }).fill(question);
+  // The room has no AI Tutor toggle any more: the "@AI Tutor " prefix in the
+  // message is what addresses the Tutor.
+  await page.getByRole("textbox", { name: "Chat" }).fill(`@AI Tutor ${question}`);
   await page.getByRole("button", { name: "Send", exact: true }).click();
 }
 

@@ -24,7 +24,7 @@ export type StudySession = {
   attendees: Array<{ userId: string; displayName: string }>;
   // Live sessions with the AI Tutor on: whether the room offers it right now
   // (and why not), and the viewer's own questions still waiting.
-  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "budget" };
+  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "budget" | "offline" };
   viewerTutorQuestions?: Array<{ id: string; position: number; answering: boolean }>;
 };
 export type StudyGroupDetail = {
@@ -36,6 +36,8 @@ export type StudyGroupDetail = {
   // False when the related Course is no longer published: its title and
   // slug are then empty and the page says so instead.
   courseAvailable?: boolean;
+  /** KS 课程级 AI Tutor Online 状态；false 时主持人不能开启房间 Tutor */
+  tutorOnline?: boolean;
   about: string;
   role: "host" | "member" | null;
   memberCount: number;

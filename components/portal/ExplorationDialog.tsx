@@ -21,7 +21,7 @@ function LockedExploration({locale,tab}:{locale:Locale;tab:"reading"|"exhibits"}
   </div>;
 }
 
-export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons=[],onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:{number:string;title:string}[];onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
+export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons=[],tutorAvailable=true,onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:{number:string;title:string}[];tutorAvailable?:boolean;onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
   const messages=getMessages(locale),copy=messages.exploration;
   const samples=data||explorationSamples(locale,courseId,lessonNumber);
   const [tab,setTab]=useState<"reading"|"exhibits">("reading"),[scope,setScope]=useState<"lesson"|"course">("lesson");
@@ -40,7 +40,7 @@ export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons=[],
   if(selected)return <ExhibitDialog node={selected} locale={locale} onClose={()=>setSelected(null)}/>;
   return <PortalDialog className={styles.dialog} labelledBy="exploration-title" onClose={onClose}>
     <header className={styles.header}><div><h2 id="exploration-title">{copy.title}</h2></div><div className={styles.actions}>
-      <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>
+      {tutorAvailable && <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>}
       <div className={styles.scope} role="group" aria-label={copy.scope}>{(["lesson","course"] as const).map(value=><button type="button" key={value} aria-pressed={scope===value} onClick={()=>setScope(value)}>{value==="lesson"?copy.thisLesson:copy.wholeCourse}</button>)}</div>
       <button type="button" className={styles.close} aria-label={copy.close} onClick={onClose}>×</button>
     </div></header>

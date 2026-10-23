@@ -38,6 +38,8 @@ export function isBackofficePath(pathname: string) {
 
 function isAdminAllowedPath(pathname: string) {
   if (isBackofficePath(pathname)) return true;
+  // 2026-10-22: 服务间课程目录同步接口，自带 PORTAL_INTEGRATION_TOKEN 校验
+  if (pathname.startsWith("/api/integration/")) return true;
   if (pathname.startsWith("/api/course-media/") || isKnowledgeAdminPath(pathname)) return true;
   if (pathname.startsWith("/api/auth/logout")) return true;
   if (pathname.startsWith("/api/auth/verify-email")) return true;

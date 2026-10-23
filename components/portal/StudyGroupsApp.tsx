@@ -448,6 +448,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const visibleMine = mine.filter((group) => mineFilter === "all" || group.role === "host");
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
   const timeOnly = dialog === "edit-session";
+  const tutorOffline = selected?.tutorOnline === false;
   const signInHref = studyGroupSignInHref(locale, studyGroupsPageHref(locale, selectedId));
   const mineEmpty = mineEmptyCopy({ signedIn, listsLoaded, filter: mineFilter, count: visibleMine.length });
   const discoverEmpty = discoverEmptyCopy({ listsLoaded, count: discover.length, filtered: Boolean(query || courseFilter) });
@@ -565,7 +566,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setSessionTime("");
     setSessionDuration("");
     setSessionMax("");
-    setSessionTutor(true);
+    setSessionTutor(selected?.tutorOnline !== false);
     setSessionLesson("");
     setDialog("schedule");
   }
@@ -580,7 +581,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setSessionTime(local.time);
     setSessionDuration(String(plannedMinutes(session)));
     setSessionMax(String(session.maxParticipants));
-    setSessionTutor(session.aiTutorEnabled);
+    setSessionTutor(session.aiTutorEnabled && selected?.tutorOnline !== false);
     setSessionLesson(session.relatedLessonId || "");
     setDialog("edit-session");
   }
@@ -635,8 +636,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       const startsAt = new Date(`${form.get("date")}T${form.get("time")}`).toISOString();
       const result = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${editingSession.id}`, {
         method: "PATCH",
-        // Only the Start Time of an upcoming Session can change (BUG-0157).
-        body: JSON.stringify({ groupId: selected.id, startsAt })
+        // Start Time and the room AI Tutor switch can change before the Session starts.
+        body: JSON.stringify({
+          groupId: selected.id,
+          startsAt,
+          aiTutorEnabled: form.get("aiTutor") === "on" && selected.tutorOnline !== false
+        })
       });
       if (!result.ok) {
         setErrorCode(result.code);
@@ -879,7 +884,20 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required disabled={timeOnly} value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
                 </div>
                 <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={50} placeholder={copy.enterFocus} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, 50))} /><span className={styles.counter}>{sessionFocus.length}/50</span></span></label>
-                <label className={styles.switch}><span>{copy.aiTutorLabel}</span><span className={styles.switchText}>{copy.enableAiTutor}</span><input name="aiTutor" type="checkbox" disabled={timeOnly} checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} /></label>
+                <label className={`${styles.switch} ${tutorOffline ? styles.switchDisabled : ""}`}>
+                  <span className={styles.switchLabel}>
+                    {copy.aiTutorLabel}
+                    {tutorOffline ? <span className={styles.tutorInfo} title={copy.aiTutorOfflineHint} aria-label={copy.aiTutorOfflineHint} tabIndex={0} role="img">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+                        <path d="M8 4.8v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                        <circle cx="8" cy="11.2" r="0.9" fill="currentColor" />
+                      </svg>
+                    </span> : null}
+                  </span>
+                  <span className={styles.switchText}>{copy.enableAiTutor}</span>
+                  <input name="aiTutor" type="checkbox" disabled={tutorOffline} checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} />
+                </label>
               </>
             ) : null}
             {errorPlace === "dialog" ? <p className={styles.alert} role="alert">{errorText}</p> : null}

@@ -1,4 +1,3 @@
-import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
@@ -13,79 +12,7 @@ import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHeal
 import { createHotLiveKitProjectRegistry, parseLiveKitProjects } from "./liveKitProjectRegistry";
 import { awsRegion } from "@/services/persistence/config";
 import { createAwsLiveKitCredentialResolver, createAwsSecretValueReader, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
-import { openRouterTutorCall } from "./tutorAnswer";
-import { studyGroupTutorKeySource } from "@/services/tutorKeySource";
-import { STUDY_GROUP_TUTOR_SYSTEM_PROMPT } from "./tutorPrompt";
-
-// Tutor model settings live here, in one place, so a later backoffice
-// knowledge base can become their source without touching call sites.
-// STUDY_GROUP_TUTOR_MAX_TOKENS is a runaway guard (see tutorAnswer.ts), and
-// STUDY_GROUP_TUTOR_REASONING pins an explicit reasoning effort; when unset,
-// the shared OpenRouter layer keeps its CoT default (off, auto-stripped on 400).
-function tutorMaxTokensFromEnv() {
-  const raw = Number.parseInt(process.env.STUDY_GROUP_TUTOR_MAX_TOKENS?.trim() || "", 10);
-  return Number.isFinite(raw) && raw >= 64 && raw <= 4096 ? raw : 700;
-}
-
-// The models the Live Session tutor asks, in order (tutor infra 2026-10-20).
-// STUDY_GROUP_TUTOR_MODELS is a comma list (primary first, then fallbacks);
-// STUDY_GROUP_TUTOR_MODEL alone is a one-model list. Unset, the tutor uses a
-// pinned, tested pair instead of "openrouter/auto", which picked a different
-// model per call in the 2026-10-20 real-model run (quality, latency and cost
-// out of our hands): the two fastest models that answered every test case
-// correctly there. A custom STUDY_GROUP_TUTOR_URL serves whatever model it
-// serves, so only the configured names are sent to it.
-export const DEFAULT_TUTOR_MODELS = ["anthropic/claude-haiku-5.5", "openai/gpt-5.4-mini"];
-export function tutorModelsFromEnv(env: Record<string, string | undefined> = process.env) {
-  const listed = (env.STUDY_GROUP_TUTOR_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean);
-  if (listed.length > 0) return [...new Set(listed)];
-  const single = env.STUDY_GROUP_TUTOR_MODEL?.trim();
-  if (single) return [single];
-  return DEFAULT_TUTOR_MODELS;
-}
-
-// Today's AI Tutor spend cap per instance, in US dollars (default 10; "off"
-// or "0" turns the cap off). The cost is what OpenRouter reports per call.
-export function tutorDailyBudgetFromEnv(env: Record<string, string | undefined> = process.env): number | null {
-  const raw = env.STUDY_GROUP_TUTOR_DAILY_BUDGET_USD?.trim().toLowerCase();
-  if (!raw) return 10;
-  if (raw === "off" || raw === "0") return null;
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : 10;
-}
-
-function tutorReasoningFromEnv(): { effort: string } | undefined {
-  const raw = process.env.STUDY_GROUP_TUTOR_REASONING?.trim().toLowerCase();
-  return raw === "none" || raw === "minimal" || raw === "low" || raw === "medium" || raw === "high" ? { effort: raw } : undefined;
-}
-
-async function readStoredCourseKnowledge(courseId: string) {
-  const course = await getProductCourse(courseId);
-  const lessons = (course?.sections ?? []).flatMap((section) => section.lessons).map((lesson) => `${lesson.title}\n${lesson.body}`.trim()).filter(Boolean);
-  const root = path.join(process.cwd(), "knowledge", course?.slug || courseId);
-  const parts = [...lessons];
-  // The whole Course Knowledge directory goes to the tutor verbatim (owner
-  // decision): every file, sorted by name, each headed by its filename so the
-  // model can tell the sources apart. No whitelist and no pre-filtering — the
-  // model itself fuzzy-matches a question against the raw material.
-  let names: string[] = [];
-  try {
-    names = (await readdir(root, { withFileTypes: true }))
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    // This course has no Course Knowledge directory: lessons only.
-  }
-  for (const name of names) {
-    try {
-      parts.push(`# ${name}\n${await readFile(path.join(root, name), "utf8")}`);
-    } catch {
-      // An unreadable file is skipped like a missing one.
-    }
-  }
-  return parts.join("\n\n");
-}
+import { getTutorAvailability, streamTutorText } from "@/services/ksTutorClient";
 
 // BUG-0109: a T-10 reminder row is a pending prompt only while the situation
 // that produced it still holds — the Live Session is still scheduled and
@@ -373,31 +300,38 @@ export function studyGroupService() {
     },
     tokenLogKey: tokenLogKeyFromEnv,
     operationalLog: (event) => console.info(JSON.stringify(event)),
-    courseKnowledge: readStoredCourseKnowledge,
-    tutorKeys: (options) => studyGroupTutorKeySource(awsRegion()).keys(options),
-    tutorModels: () => tutorModelsFromEnv(),
-    tutorToolsEnabled: process.env.STUDY_GROUP_TUTOR_TOOLS?.trim() !== "0",
-    tutorDailyBudgetUsd: tutorDailyBudgetFromEnv(),
-    tutorCall: (input) => openRouterTutorCall({
-      secret: input.secret,
-      model: input.model || tutorModelsFromEnv()[0],
-      system: STUDY_GROUP_TUTOR_SYSTEM_PROMPT,
-      context: input.context,
-      text: input.text,
-      roomContext: input.roomContext,
-      turns: input.turns,
-      tools: input.tools,
-      toolChoice: input.toolChoice,
-      maxTokens: tutorMaxTokensFromEnv(),
-      reasoning: tutorReasoningFromEnv(),
-      url: process.env.STUDY_GROUP_TUTOR_URL?.trim() || undefined,
-      timeoutMs: input.timeoutMs
-    }),
-    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, kind, reason }) => {
+    // KS Lecture proxy (2026-10-23): the room Tutor uses KnowledgeSystem's
+    // course AI Tutor (Lecture prompt/model/key); the welcome is not used.
+    tutorKs: async ({ courseId, message, locale, history, deadline }) => {
+      const course = await getProductCourse(courseId);
+      if (!course || course.status !== "published") throw new Error("Course is not available.");
+      let text = "";
+      const signal = AbortSignal.timeout(Math.max(1_000, deadline - Date.now()));
+      for await (const delta of streamTutorText({
+        externalCourseId: course.slug,
+        message,
+        mode: "lecture",
+        locale,
+        history,
+        signal
+      })) {
+        text += delta;
+      }
+      return text;
+    },
+    // The host switch follows the KS course-level Online state (no cache here;
+    // the service caches this read for 10 seconds).
+    tutorOnline: async (courseId) => {
+      const course = await getProductCourse(courseId);
+      if (!course || course.status !== "published") return false;
+      const availability = await getTutorAvailability(course.slug);
+      return availability.reachable && availability.online;
+    },
+    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, reason }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
       await liveKit.projects.refresh?.();
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, kind, reason });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, reason });
     }
   });
   services.set(key, service);

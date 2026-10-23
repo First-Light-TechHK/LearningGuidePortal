@@ -115,7 +115,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       }
       await page.setViewportSize({width:1440,height:1024});
       await page.getByRole("button",{name:new RegExp(locale==="en-GB"?"Ask AI Tutor":"AI")}).click();
-      await page.locator(".tutor-panel input").waitFor();
+      await page.locator(".tutor-panel textarea").waitFor();
       const sidebar=page.locator("aside").first();
       const titleBox=(await sidebar.locator("h2").boundingBox())!, switchBox=(await modeSwitch.boundingBox())!;
       const firstLessonBox=(await sidebar.locator("nav > div").first().boundingBox())!;
@@ -132,6 +132,9 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       assert.ok(Math.abs(iconBox.width-10.3923)<.05 && iconBox.height===9);
       assert.ok(iconBox.x>=switchBox.x&&iconBox.x+iconBox.width<=switchBox.x+96);
       await page.screenshot({path:`test-results/video-exhibit/${locale}-mode-switch.png`,fullPage:true});
+      // The AI Tutor is a modal drawer: close it before interacting with the page behind it.
+      await page.keyboard.press("Escape");
+      await page.locator(".tutor-panel").waitFor({state:"detached"});
       await page.setViewportSize({width:390,height:844});
       await modeSwitch.selectOption("text");
       assert.equal((await modeSwitch.boundingBox())!.width,96);

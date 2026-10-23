@@ -2204,6 +2204,15 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
+/** New chat：清除当前用户在该课程/课时/模式下的对话记录（幂等）。 */
+export async function deleteConversation(userId: string, courseId: string, lessonId: string | undefined, mode: "lecture" | "socratic") {
+  return editData((data) => {
+    const before = data.conversations.length;
+    data.conversations = data.conversations.filter((item) => !(item.userId === userId && item.courseId === courseId && item.lessonId === (lessonId || null) && item.mode === mode));
+    return before - data.conversations.length;
+  });
+}
+
 // The portal reminders strip (GET /api/study-groups?view=reminders): only
 // currently valid T-10 reminders are pending prompts (BUG-0109). The
 // cancellation notice ("Study Group cancelled" / "学习小组已取消") is a

@@ -32,10 +32,12 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.deepEqual(tutorQueueBody("Why did 1928 look stable?"), { message: "Why did 1928 look stable?" });
   assert.equal("prompt" in tutorQueueBody("Why did 1928 look stable?"), false);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /askTutor\(line\.id, \{ question: \(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
+  assert.match(room, /askTutor\(line\.id, \{ question: text\.slice\(prefix\.length\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
   assert.match(room, /JSON\.stringify\(tutorQueueBody\(ask\.question, ask\.clientEventId\)\)/);
   assert.match(room, /<time dateTime=\{line\.at\}>/);
-  assert.match(room, /session\.aiTutorEnabled \?/);
+  // The room has no AI Tutor toggle: the "@AI Tutor " prefix addresses it.
+  assert.equal(room.includes("styles.tutorEntry"), false);
+  assert.match(room, /<textarea ref=\{chatInputRef\}/);
   assert.equal(room.includes("/api/ai-tutor"), false);
   assert.equal(room.includes("prompts/"), false);
   assert.equal(room.includes("You are"), false);
@@ -172,6 +174,10 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.equal(en.studyGroupsPage.enableAiTutor, "Enable AI Tutor for this session");
   assert.equal(zh.studyGroupsPage.enableAiTutor, "为本节启用 AI Tutor");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /styles\.switchText\}>\{copy\.enableAiTutor\}/);
+  // Offline AI Tutor: the row is greyed and the hint moves to the info icon's hover title.
+  const scheduleSource = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(scheduleSource, /styles\.tutorInfo[\s\S]*title=\{copy\.aiTutorOfflineHint\}/);
+  assert.doesNotMatch(scheduleSource, /<p className=\{styles\.hint\}>\{copy\.aiTutorOfflineHint\}<\/p>/);
   assert.equal(en.studyGroupsPage.enterWindow, "You can enter from 10 minutes before the start.");
   assert.equal(en.studyGroupsPage.notStartedBody, "This Live Session was not started.");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /sessionNotStarted\(session\) \? copy\.notStartedBody/);
@@ -390,7 +396,7 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.equal(css.includes(".createdToast"), false);
   assert.match(css, /\.controls button \{ flex-direction: column;[^}]*min-height: 51px;[^}]*font-weight: 500; color: rgba\(0,0,0,\.4\); background: #fbfbfb/); // 599:1210-1234 51px #fbfbfb 12px Medium black/40
   assert.match(css, /\.controls \.shareControl svg \{ color: #f54649; \}/);
-  assert.match(css, /\.chatForm \{ position: relative; display: block; min-height: 100px;[^}]*border: 1px solid #e4e7ed; border-radius: 8px/); // 599:1392 266x100 r8 #e4e7ed
+  assert.match(css, /\.chatForm \{ position: relative; display: flex; flex-direction: column; min-height: 100px;[^}]*border: 1px solid #e4e7ed; border-radius: 8px/); // 599:1392 266x100 r8 #e4e7ed
   assert.match(css, /\.sendButton \{ position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px/); // 599:1394 24x24 inset 4/4
   assert.match(css, /\.participantBadge \{ width: 16px; height: 16px;/); // 599:1224-29 16x16 badge beside the 16px icon
   assert.match(css, /\.divider \{ display: inline-block; width: 1px; height: 10px; background: #d0d5dd/); // 599:503/475/516/1454 divider rules
@@ -455,7 +461,7 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   assert.equal(css.includes("margin: 4px 0 0 36px"), false);
   assert.match(css, /\.tutorAvatar \{ width: 20px; height: 20px; border-radius: 10px;[^}]*font-size: 11px; \}/);
   assert.match(css, /\.tutorName \{ color: #111827; \}/);
-  assert.match(css, /\.tutorBody \{ color: #1d6bff; \}/);
+  assert.match(css, /\.tutorBody \{ color: #344054; \}/);
   assert.match(css, /\.tutorLead \{ color: #111827; \}/);
   assert.match(css, /\.tutorDisclosure \{ color: #9a3412; font-size: 12px; font-weight: 600; \}/);
 
@@ -469,14 +475,16 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   assert.match(roomData, /if \(!message\.text && message\.mode !== "unavailable"\) return null;/);
   assert.match(roomData, /mode: message\.mode === "general" \|\| message\.mode === "unavailable" \? message\.mode : "course"/);
   assert.match(room, /line\.mode === "unavailable"\s*\?\s*roomCopy\.tutorUnavailable/);
-  assert.match(room, /line\.mode === "general" \? <span className=\{styles\.tutorDisclosure\}>\{roomCopy\.tutorGeneral\}<\/span>/);
-  assert.match(room, /index === 0\s*\?\s*<strong key="lead" className=\{styles\.tutorLead\}>\{row\}<\/strong>/);
+  // The Tutor's prompt and reply format live in KnowledgeSystem: the room no
+  // longer renders a quiz or course/general badge (2026-10-23).
+  assert.doesNotMatch(room, /line\.kind === "quiz"/);
+  assert.doesNotMatch(room, /roomCopy\.tutorGeneral/);
+  assert.match(room, /index === 0\s*\?\s*<span key="lead" className=\{styles\.tutorLead\}>\{row\}<\/span>/);
+  assert.doesNotMatch(room, /<strong key="lead"/);
   assert.match(room, /<span key=\{index\} className=\{styles\.tutorRow\}>\{row\}<\/span>/);
   assert.match(room, /line\.text\.split\("\\n"\)\.filter\(\(row\) => row\.trim\(\)\)/);
 
-  assert.equal(en.studyGroupsPage.room.tutorGeneral, "Not covered in the course material — a general answer:");
   assert.equal(en.studyGroupsPage.room.tutorUnavailable, "AI Tutor is temporarily unavailable. Please try again.");
-  assert.equal(zh.studyGroupsPage.room.tutorGeneral, "课程材料未覆盖此内容，以下为一般性解答。");
   assert.equal(zh.studyGroupsPage.room.tutorUnavailable, "AI Tutor 暂时不可用，请稍后重试。");
 });
 
@@ -517,7 +525,7 @@ test("the Host Control frame pins the placeholder tile, name strip, hand badge, 
 
 test("typing @ in the chat opens a mention list for AI Tutor and the present members", () => {
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.chatForm input::placeholder \{ color: #98a2b3; \}/);
+  assert.match(css, /\.chatForm textarea::placeholder \{ color: #98a2b3; \}/);
   assert.match(css, /\.mentionMenu \{ position: absolute; left: 0; right: 0; bottom: calc\(100% \+ 6px\);[^}]*background: #fff;[^}]*border-radius: 10px;[^}]*box-shadow: 0 10px 24px rgba\(16, 24, 40, \.14\); \}/);
   assert.match(css, /\.mentionMenu button \{ display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px;[^}]*\}/);
   assert.match(css, /\.mentionMenu button:hover, \.mentionMenu button\[aria-selected="true"\] \{ background: #f5f7fa; \}/);
@@ -538,23 +546,22 @@ test("typing @ in the chat opens a mention list for AI Tutor and the present mem
   assert.match(room, /styles\.mentionMenu\} role="listbox" aria-label=\{roomCopy\.mentionList\}/);
   assert.match(room, /role="option" aria-selected=\{index === mentionIndex\}/);
   assert.match(room, /row\.tutor \? styles\.tutorAvatar : styles\.rosterInitial/);
-  // Picking replaces the "@fragment" with "@name ", returns focus, and marks the tutor switch.
+  // Picking replaces the "@fragment" with "@name " and returns focus.
   assert.match(room, /const next = `\$\{draft\.slice\(0, mention\.start\)\}@\$\{row\.name\} \$\{draft\.slice\(mention\.start \+ 1 \+ mention\.query\.length\)\}`;/);
   assert.match(room, /caretRef\.current = mention\.start \+ row\.name\.length \+ 2;/);
   assert.match(room, /input\.setSelectionRange\(caretRef\.current, caretRef\.current\)/);
-  assert.match(room, /if \(row\.tutor\) setAddressTutor\(true\);/);
   assert.match(room, /onMouseDown=\{\(event\) => \{ event\.preventDefault\(\); chooseMention\(row\); \}\}/);
   // Keyboard: arrows move, Escape closes, Enter selects instead of sending.
-  assert.match(room, /if \(!mention \|\| mentionRows\.length === 0\) return;/);
+  assert.match(room, /if \(mention && mentionRows\.length > 0\) \{/);
   // IME composition (Chinese/Japanese input) must not lose Enter/Escape/arrows to the popup.
   assert.match(room, /if \(event\.nativeEvent\.isComposing \|\| event\.keyCode === 229\) return;/);
   assert.match(room, /event\.key === "ArrowDown"/);
   assert.match(room, /event\.key === "ArrowUp"/);
   assert.match(room, /event\.key === "Escape"/);
-  assert.match(room, /event\.key === "Enter"\) \{ event\.preventDefault\(\); chooseMention\(mentionRows\[mentionIndex\]\); \}/);
+  assert.match(room, /event\.key === "Enter"\) \{ event\.preventDefault\(\); chooseMention\(mentionRows\[mentionIndex\]\); return; \}/);
   // Submission: a typed "@AI Tutor " prefix queues the body without the prefix.
-  assert.match(room, /const mentionsTutor = \(addressTutor \|\| hasPrefix\) && session\.aiTutorEnabled/);
-  assert.match(room, /askTutor\(line\.id, \{ question: \(hasPrefix \? text\.slice\(prefix\.length\) : text\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
+  assert.match(room, /const mentionsTutor = hasPrefix && session\.aiTutorEnabled/);
+  assert.match(room, /askTutor\(line\.id, \{ question: text\.slice\(prefix\.length\)\.trim\(\), clientEventId: tutorClientEventId\(\) \}\)/);
   assert.match(room, /JSON\.stringify\(tutorQueueBody\(ask\.question, ask\.clientEventId\)\)/);
 
   assert.equal(en.studyGroupsPage.room.mentionList, "Mention AI Tutor or a participant");

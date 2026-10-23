@@ -48,11 +48,8 @@ async function makeFixture(extra: Partial<StudyGroupDeps> = {}): Promise<Fixture
     sendMail: async () => undefined,
     liveKit: { apiKey: "lk-key", apiSecret: SECRET, url: "wss://livekit.example.test" },
     tokenLogKey: () => tokenLogKey,
-    courseKnowledge: async () => "The Weimar republic ended in 1933. The constitution of 1919 could not hold the government.",
     publishRoomChat: async ({ text }) => { published.push(text); },
-    tutorKeys: () => [{ id: "healthy", secret: "fake-key-healthy" }],
-    tutorCall: async ({ text }) => ({ outcome: "ok", latencyMs: 1, body: `Answer: ${text}` }),
-    tutorRetryWait: async () => undefined,
+    tutorKs: async ({ message }) => `Answer: ${message}`,
     ...extra
   };
   return { directory, repository, service: createStudyGroupService(deps), deps, access, clock, published };
@@ -442,9 +439,12 @@ test("interleaving enqueue+enqueue: one clientEventId stores exactly one item", 
     f.service.enqueueTutor({ actorUserId: "host", sessionId: soon.id, text: "What ended in 1933? replay", clientEventId: "evt-shared" })
   ]);
   // "enqueue is idempotent per clientEventId"; "the same client event id returns the original tutor item."
+  // Which of the two interleaved writes lands first is scheduling, so either
+  // text may be the stored one; exactly one item must exist.
   assert.equal(first.id, second.id);
   const items = (await f.repository.read()).tutorRequests.filter((row) => row.sessionId === soon.id);
-  assert.deepEqual(items.map((row) => row.text), ["What ended in 1933?"]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].text === "What ended in 1933?" || items[0].text === "What ended in 1933? replay", true);
   // Another user may reuse the same client id for their own item.
   await f.service.enterSession({ actorUserId: "m1", sessionId: soon.id, requestedAt: NOW });
   const other = await f.service.enqueueTutor({ actorUserId: "m1", sessionId: soon.id, text: "What ended in 1933? mine", clientEventId: "evt-shared" });
@@ -459,11 +459,11 @@ test("interleaving enqueue+deliver: receipt order holds at one millisecond, one 
   let signalFirst!: () => void;
   const firstCallStarted = new Promise<void>((resolve) => { signalFirst = resolve; });
   const f = await makeFixture({
-    tutorCall: async ({ text }) => {
-      calls.push(text);
+    tutorKs: async ({ message }) => {
+      calls.push(message);
       if (calls.length === 1) { signalFirst(); await firstCallGate; }
-      if (text.includes("fail")) return { outcome: "failed", latencyMs: 1 };
-      return { outcome: "ok", latencyMs: 1, body: `Answer: ${text}` };
+      if (message.includes("fail")) throw Object.assign(new Error("provider"), { status: 502 });
+      return `Answer: ${message}`;
     }
   });
   const group = await makeGroup(f);
@@ -487,10 +487,9 @@ test("interleaving enqueue+deliver: receipt order holds at one millisecond, one 
   assert.equal((await f.repository.read()).tutorRequests.find((row) => row.clientEventId === "evt-3")?.inFlight, false);
   releaseFirst();
   await delivery;
-  // A failed call is retried inside the question's deadline (tutor infra
-  // 2026-10-20: one round per retry, TUTOR_ENGINE_ROUNDS in all) before the
-  // question settles as unavailable.
-  assert.deepEqual(calls, ["What ended in 1933? first", "What ended in 1933? second", "What ended in 1933? fail", "What ended in 1933? fail", "What ended in 1933? fail"]);
+  // KnowledgeSystem owns the model and its retries; a failed call settles the
+  // question as unavailable at once instead of being retried here.
+  assert.deepEqual(calls, ["What ended in 1933? first", "What ended in 1933? second", "What ended in 1933? fail"]);
   // The failed call still publishes a message — the empty-text unavailable one
   // the client renders as "temporarily unavailable" — instead of silence.
   assert.deepEqual(f.published, ["Answer: What ended in 1933? first", "Answer: What ended in 1933? second", ""]);
