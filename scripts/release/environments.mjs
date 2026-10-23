@@ -10,7 +10,7 @@ export const releaseEnvironments = {
     branch: "dev",
     serviceName: "learning-guide-portal",
     serviceArn: "arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad",
-    rollbackMode: "revert-commit",
+    rollbackMode: "force-branch",
     requireDependencyChecks: false,
     requireVersionMatch: false,
     provisioned: true
