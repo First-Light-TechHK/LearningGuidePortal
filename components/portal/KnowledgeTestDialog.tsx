@@ -12,7 +12,7 @@ import { reviewKnowledgeResponses } from "@/lib/knowledgeTest";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./knowledge-test-dialog-v2.module.css";
 
-export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit, onNextLesson, onApplicationTest, onComplete, initialView = "question", initialAttempt, onAttemptChange, saveMessage, saveFailed, onRetrySave }: { locale: Locale; lessonNumber: string; lessonTitle?: string; onExit: () => void; onNextLesson?: () => void; onApplicationTest?: () => void; onComplete?: () => void; initialView?: "question" | "result"; initialAttempt?: KnowledgeAttempt; onAttemptChange?: (attempt: KnowledgeAttempt) => void; saveMessage?: string; saveFailed?: boolean; onRetrySave?: () => void }) {
+export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit, onNextLesson, onApplicationTest, onComplete, initialView = "question", initialAttempt, onAttemptChange, saveMessage, saveFailed, onRetrySave, entrySource = "lesson" }: { locale: Locale; lessonNumber: string; lessonTitle?: string; onExit: () => void; onNextLesson?: () => void; onApplicationTest?: () => void; onComplete?: () => void; initialView?: "question" | "result"; initialAttempt?: KnowledgeAttempt; onAttemptChange?: (attempt: KnowledgeAttempt) => void; saveMessage?: string; saveFailed?: boolean; onRetrySave?: () => void; entrySource?: "lesson" | "overview" }) {
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   useEffect(() => { setPortalTarget(document.body); }, []);
   const copy = getMessages(locale).knowledgeTest;
@@ -57,7 +57,7 @@ export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit,
           {result[kind].map(position => <button type="button" id={`knowledge-card-${position}`} key={questions[position].id} className={styles.card} onClick={() => openCard(position)}>{badge(position, kind === "needsReview")}<span>{questions[position].prompt}</span><Image src={`/portal/knowledge-test/${position === 0 ? "chevron-v2" : "chevron-muted-v2"}.svg`} width={16} height={16} alt=""/></button>)}
         </div>
       </section>)}</div>
-      <footer className={styles.resultFooter}><button className={styles.exit} onClick={onNextLesson || onExit}>{onNextLesson ? copy.nextLesson : copy.done}</button>{onApplicationTest && <button className={styles.primary} onClick={onApplicationTest}>{copy.tryApplication}</button>}</footer>
+      <footer className={styles.resultFooter}>{entrySource === "overview" ? <button className={styles.primary} onClick={()=>{setResponses(questions.map(()=>({answer:"",rating:null})));setIndex(0);setPhase("question");resultScroll.current=[];}}>{getMessages(locale).applicationTest.retake}</button> : <><button className={styles.exit} onClick={onNextLesson || onExit}>{onNextLesson ? copy.nextLesson : copy.done}</button>{onApplicationTest && <button className={styles.primary} onClick={onApplicationTest}>{copy.tryApplication}</button>}</>}</footer>
     </> : <div className={styles.body}>
       {phase !== "detail" && <><div className={styles.progressLabel}><span>{copy.review}</span><span>{number(index)}/{String(questions.length).padStart(2, "0")}</span></div>
       <div className={styles.track} role="progressbar" aria-label={copy.review} aria-valuemin={0} aria-valuemax={questions.length} aria-valuenow={index + 1}><span style={{ width: `${(index + 1) / questions.length * 100}%` }}/></div></>}

@@ -24,7 +24,7 @@ test("five subscription designs retain bilingual responsive states, original ico
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path === "next/navigation" ? "export const useRouter=()=>({refresh(){}}),usePathname=()=>location.pathname,useSearchParams=()=>new URLSearchParams(location.search)" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}" : "import React from 'react';export default function Image({unoptimized,...p}){return <img {...p}/>}" }));
   } }] });
   const categories = defaultPortalContent.categories;
-  const plans: ProductPlan[] = ([6, 12] as const).flatMap(termMonths => [{ id: `everything-${termMonths}`, courseId: "*", name: "Everything", scope: "everything", scopeId: "*", termMonths, device: "pc", amountMinor: termMonths === 6 ? 9900 : 19800, currency: "usd", aiPoints: 1500 }, ...categories.map(category => ({ id: `${category.id}-${termMonths}`, courseId: "*", name: category.id, scope: "category" as const, scopeId: category.id, termMonths, device: "pc" as const, amountMinor: termMonths === 6 ? 3900 : 7800, currency: "usd" as const, aiPoints: 500 }))]);
+  const plans: ProductPlan[] = ([6, 12] as const).flatMap(termMonths => [{ id: `everything-${termMonths}`, courseId: "*", name: "Everything", scope: "everything", scopeId: "*", termMonths, device: "pc", amountMinor: termMonths === 6 ? 9900 : 19800, currency: "usd", aiPoints: termMonths === 6 ? 1500 : 3000 }, ...categories.map(category => ({ id: `${category.id}-${termMonths}`, courseId: "*", name: category.id, scope: "category" as const, scopeId: category.id, termMonths, device: "pc" as const, amountMinor: termMonths === 6 ? 3900 : 7800, currency: "usd" as const, aiPoints: termMonths === 6 ? 500 : 1000 }))]);
   const courseTitles = [{ category: "Chinese Humanities", title: "Chinese History" }, { category: "Chinese Humanities", title: "Chinese Literature" }, { category: "European Humanities", title: "The Art of Seeing" }, { category: "European Humanities", title: "Renaissance Thought" }, { category: "Science", title: "Physics" }, { category: "Science", title: "Chemistry" }];
   const subscription = (scopeId: string): ProductSubscription => ({ id: `sub-${scopeId}`, userId: "owner", planId: `${scopeId}-6`, courseId: "*", scope: scopeId === "everything" ? "everything" : "category", scopeId, device: "pc", stripeSubscriptionId: "sub_stripe", stripeCustomerId: "cus_owner", source: "purchase", state: "active", cancelAtPeriodEnd: false, validFrom: "2026-08-01T00:00:00Z", validTo: "2027-01-31T00:00:00Z" });
   const fixtures = [[], [subscription("Chinese Humanities")], [subscription("Chinese Humanities"), subscription("Science")], categories.map(c => subscription(c.id)), [subscription("everything")]];
@@ -53,18 +53,31 @@ test("five subscription designs retain bilingual responsive states, original ico
       if (index >= 3) { assert.equal(await page.locator(".pricing-design-card").count(), 0); assert.equal(await page.locator(".pricing-owned-benefits").count(), 1); assert.equal(await page.locator(".pricing-owned-status > a").getAttribute("href"), `/${locale}/account/my-learning/subscription`); }
       if (index === 1) {
         const upgrade = page.locator('.pricing-upgrade-card'), category = page.locator('.pricing-design-card--category');
+        const assertActions=async(selected:"everything"|"category")=>{
+          await page.waitForFunction(()=>Array.from(document.querySelectorAll('.pricing-design-card .purchase-actions button,.pricing-upgrade-action button')).every(button=>getComputedStyle(button).backgroundColor===(button.closest('[data-selected]')?.getAttribute('data-selected')==='true'?'rgb(36, 107, 253)':'rgb(255, 255, 255)')));
+          for(const [button,active] of [[upgrade.locator('.pricing-upgrade-action button'),selected==="everything"],[category.locator('.purchase-actions button'),selected==="category"]] as const){
+            assert.equal(await button.evaluate(e=>getComputedStyle(e).backgroundColor),active?"rgb(36, 107, 253)":"rgb(255, 255, 255)");
+            assert.equal(await button.evaluate(e=>getComputedStyle(e).color),active?"rgb(255, 255, 255)":"rgb(21, 93, 252)");
+          }
+        };
         assert.equal(await upgrade.getAttribute("data-selected"), "true");
+        await assertActions("everything");
         const before = requests.length;
         await category.locator('.pricing-category-switch button').first().click();
         assert.equal(await category.getAttribute("data-selected"), "true");
         assert.equal(await upgrade.getAttribute("data-selected"), "false");
         assert.equal(await category.evaluate(e => getComputedStyle(e).borderTopColor), "rgb(36, 107, 253)");
+        await assertActions("category");
         await upgrade.locator('.pricing-upgrade-action button').focus();
         assert.equal(await upgrade.getAttribute("data-selected"), "true");
+        await assertActions("everything");
         assert.equal(await page.locator('.pricing-design-card[data-selected="true"]').count(), 1);
         assert.equal(requests.length, before, "product selection alone must not request checkout or another quote");
       }
-      if (index === 2) assert.equal(await page.locator('.pricing-design-card--category').getAttribute("data-selected"), "true");
+      if (index === 2) {
+        assert.equal(await page.locator('.pricing-design-card--category').getAttribute("data-selected"), "true");
+        assert.equal(await page.locator('.purchase-actions button').evaluate(e=>getComputedStyle(e).backgroundColor),"rgb(36, 107, 253)");
+      }
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1024 });
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${locale}/${kind}/${width} overflow`);
@@ -77,10 +90,12 @@ test("five subscription designs retain bilingual responsive states, original ico
     await page.setViewportSize({ width: 1440, height: 1024 }); await mount(2);
     await page.getByRole("button", { name: copy.pricingDesign.year, exact: true }).click();
     assert.equal(await page.locator(".pricing-card-price strong").textContent(), "US$78.00");
+    assert.equal(await page.locator('.pricing-card-benefits strong').textContent(),'1,000');
     mode = "error"; await page.locator(".purchase-actions button").click(); await page.getByRole("alert").waitFor(); assert.equal(requests.at(-1).planId, "European Humanities-12");
     mode = "error"; requests.length = 0; await mount(1);
     await page.getByRole("alert").waitFor(); assert.equal(requests.length, 1); assert.deepEqual(requests[0], { kind: "upgrade", subscriptionId: "sub-Chinese Humanities" });
     assert.equal(await page.locator(".pricing-upgrade-action button").last().isDisabled(), true);
+    assert.equal(await page.locator(".pricing-upgrade-action button").last().evaluate(e=>getComputedStyle(e).backgroundColor),"rgb(152, 162, 179)");
     assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "—");
     mode = "success"; amountMinor = 1467; await page.getByRole("button", { name: copy.subscriptionSelection.quoteRetry, exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".pricing-upgrade-card .pricing-card-price strong")?.textContent === "US$14.67");

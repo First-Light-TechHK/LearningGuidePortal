@@ -44,7 +44,8 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     if (!video) return;
     setError('');
     if (!video.paused) video.pause();
-    else try { await video.play(); } catch { setError(t.playbackBlocked); }
+    // Interrupted play requests leave the player paused without an operation notice.
+    else await video.play().catch(() => undefined);
   }
   async function fullscreen() {
     try {

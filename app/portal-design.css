@@ -16,6 +16,7 @@
 .portal-auth-stage .auth-options label { display:flex; align-items:center; gap:8px; margin:0; }
 .portal-auth-stage .auth-options input[type=checkbox] { height:16px; width:16px; min-height:16px; margin:0; }
 .auth-credential-form .auth-submit { margin-top:24px; font-weight:500; border-radius:10px; background:#155dfc; box-shadow:0 1px 2px -1px rgb(0 0 0 / 10%),0 1px 3px rgb(0 0 0 / 10%); }
+.auth-credential-form .auth-submit:not(:disabled) { cursor:pointer; }
 .auth-credential-form .auth-options label,.auth-credential-form .auth-options a { font-weight:500; }
 .auth-credential-form .auth-provider-options { margin-top:24px; }
 .auth-provider-options.auth-provider-icons { display:block; padding-top:0; border-top:0; }
@@ -334,8 +335,8 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-card-benefits strong { color:#15233a; font-size:15px; font-weight:500; }
 .pricing-design-card .purchase-panel { min-width:0; display:block; margin-top:auto; border:0; padding:30px 0 0; background:transparent; box-shadow:none; }
 .pricing-design-card .purchase-actions { display:block; margin:0; }
-.pricing-design-card .purchase-actions button { width:100%; min-height:46px; padding:12px 20px; border-radius:8px; background:#246bfd; font-size:15px; font-weight:600; line-height:20px; }
-.pricing-design-card--category .purchase-actions button { border:1.5px solid #246bfd; background:#fff; color:#155dfc !important; }
+.pricing-design-card .purchase-actions button { width:100%; min-height:46px; padding:12px 20px; border:1.5px solid #246bfd; border-radius:8px; background:#fff; color:#155dfc !important; font-size:15px; font-weight:600; line-height:20px; }
+.pricing-design-card[data-selected="true"] .purchase-actions button { background:#246bfd; color:#fff !important; }
 .pricing-design-information { background:#f8fafc; padding:56px 40px 64px; }
 .pricing-design-information > div { max-width:1184px; margin:auto; }
 .pricing-design-information h2 { margin:0 0 32px; color:#15233a; font-size:24px; font-weight:600; line-height:32px; text-align:center; }
@@ -359,8 +360,9 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-selection--one_category .pricing-design-card { min-height:757px; }
 .pricing-upgrade-card { padding:32px; }
 .pricing-upgrade-action { margin-top:auto; padding-top:70px; }
-.pricing-upgrade-action button { display:block; width:100%; padding:13px 24px; border:0; border-radius:8px; background:#246bfd; color:#fff; font:600 15px/20px Inter,Arial,sans-serif; cursor:pointer; }
-.pricing-upgrade-action button:disabled { background:#98a2b3; cursor:not-allowed; }
+.pricing-upgrade-action button { display:block; width:100%; padding:12px 23px; border:1px solid #246bfd; border-radius:8px; background:#fff; color:#155dfc; font:600 15px/20px Inter,Arial,sans-serif; cursor:pointer; }
+.pricing-design-card[data-selected="true"] .pricing-upgrade-action button:not(:disabled) { background:#246bfd; color:#fff; }
+.pricing-upgrade-action button:disabled { border-color:#98a2b3; background:#98a2b3; color:#fff; cursor:not-allowed; }
 .pricing-upgrade-action p { font-size:13px; line-height:20px; }
 .pricing-upgrade-note { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:26px; }
 .pricing-upgrade-note p { margin:0; color:#64728b; font-size:13px; line-height:20px; }
@@ -368,7 +370,6 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-comparison--last { display:flex; justify-content:center; }
 .pricing-last-category { width:640px; max-width:100%; min-height:608px; border:2px solid #246bfd; padding:32px; }
 .pricing-last-category .pricing-selection-price { min-height:64px; }
-.pricing-last-category .purchase-actions button { background:#246bfd; color:#fff !important; border:0; }
 .pricing-ownership-summary { display:flex; flex-direction:column; gap:32px; }
 .pricing-owned-status { display:flex; align-items:center; gap:20px; padding:28px 32px; border:1px solid #e5e7eb; border-radius:16px; }
 .pricing-owned-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; }

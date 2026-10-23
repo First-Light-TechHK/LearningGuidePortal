@@ -25,7 +25,10 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     await page.goto("http://exploration.test");for(const file of ["app/styles.css","app/portal-design.css","components/portal/lesson-authoring.css"])await page.addStyleTag({content:await readFile(file,"utf8")});await page.addStyleTag({content:bundle.outputFiles.find(file=>file.path.endsWith("css"))!.text});
     for(const weight of [400,500,600,700]){const font=(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64");await page.addStyleTag({content:`@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font});font-weight:${weight}}`});}await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith("js"))!.text});
     const lesson={id:"lesson",title:"Looking closely",body:"",durationMinutes:2,contents:[{id:"video",title:"Observe",type:"video",mode:"lecture",url:"/lesson.webm",nodes:[]}]};
-    const mount=(room=false,entitled=true)=>page.evaluate(p=>(window as unknown as {mount:(p:unknown)=>void}).mount(p),{key:`${locale}-${room}-${entitled}`,room,locale,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe",lesson,outline:[{id:"lesson",number:"01",title:"Looking closely",href:"/lesson"}],poster:"/portal/course-study.jpg",initialCompleted:true,nextHref:null,entitled});
+    const mount=(room=false,entitled=true,current="01",unlockThird=false)=>{
+      const outline=[{id:"lesson",number:"01",title:"Looking closely",href:"/lesson",modes:["video"]},{id:"lesson-2",number:"02",title:"Looking again",href:"/lesson-2",modes:["text"]},{id:"lesson-3",number:"03",title:"Further observations",href:unlockThird?"/lesson-3":null,modes:["video"]}];
+      return page.evaluate(p=>(window as unknown as {mount:(p:unknown)=>void}).mount(p),{key:`${locale}-${room}-${entitled}-${current}-${unlockThird}`,room,locale,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe",lesson:current==="01"?lesson:{...lesson,id:"lesson-2",title:"Looking again",contents:[{id:"reading",title:"Reading",type:"text",mode:"lecture",html:"<p>Looking again.</p>",nodes:[]}]},outline,explorationLessons:outline.map(item=>({number:item.number,title:item.title,unlocked:Boolean(item.href)})),lessonNumber:current,poster:"/portal/course-study.jpg",initialCompleted:true,nextHref:null,entitled});
+    };
     await mount();const original=page.locator("video").first();await original.evaluate(async(video:HTMLVideoElement)=>{video.loop=true;await video.play();});await original.evaluate(video=>{(window as unknown as {lessonVideo:HTMLVideoElement}).lessonVideo=video as HTMLVideoElement;});
     const explore=page.getByRole("button",{name:new RegExp(copy.previewVideoDesign.explore)});await explore.click();const dialog=page.getByRole("dialog");await dialog.waitFor();assert.equal(await original.evaluate((v:HTMLVideoElement)=>v.paused),true);
     assert.equal(await dialog.getByRole("tab",{name:labels.reading,exact:true}).getAttribute("aria-selected"),"true");assert.equal(await dialog.locator("article").count(),4);
@@ -41,7 +44,10 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     await page.screenshot({path:`test-results/exploration/${locale}-lesson-exhibits.png`});
     const row=dialog.locator("[data-exhibit-id]").first();
     assert.deepEqual(await row.locator("img").first().evaluate(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,radius:getComputedStyle(e).borderRadius})),{width:56,height:56,radius:"8px"});
-    await courseScope.click();assert.equal(await dialog.locator("article").count(),5);
+    await courseScope.click();assert.equal(await dialog.locator("article").count(),10);
+    assert.equal(await dialog.getByRole("heading",{name:/02\s*Looking again/}).count(),1,"Whole course includes the unlocked text lesson from the video lesson");
+    assert.equal(await dialog.getByRole("heading",{name:/Further observations/}).count(),0,"locked lessons have no sample payload rows");
+    assert.equal(new Set(await dialog.locator('[data-exhibit-id]').evaluateAll(elements=>elements.map(e=>e.getAttribute('data-exhibit-id')))).size,10);
     const verifyLocked=async(tab:"reading"|"exhibits")=>{
       const locked=dialog.locator(`[data-exploration-locked="${tab}"]`);
       assert.equal(await locked.count(),1);
@@ -56,8 +62,9 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     };
     await verifyLocked("exhibits");
     await dialog.getByRole("tab",{name:labels.reading,exact:true}).click();await verifyLocked("reading");
+    assert.equal(await dialog.locator("article").count(),8);
     await page.screenshot({path:`test-results/exploration/${locale}-reading-locked.png`});
-    await dialog.getByRole("tab",{name:labels.reading,exact:true}).focus();await page.keyboard.press("End");assert.equal(await courseScope.getAttribute("aria-pressed"),"true");assert.equal(await dialog.locator("article").count(),5,"keyboard switching also retains the course filter");
+    await dialog.getByRole("tab",{name:labels.reading,exact:true}).focus();await page.keyboard.press("End");assert.equal(await courseScope.getAttribute("aria-pressed"),"true");assert.equal(await dialog.locator("article").count(),10,"keyboard switching also retains the course filter");
     await dialog.locator("img").evaluateAll(images=>Promise.all(images.map(image=>(image as HTMLImageElement).decode())));
     assert.equal(await dialog.locator("img").evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete&&(image as HTMLImageElement).naturalWidth>0)),true);
     await page.screenshot({path:`test-results/exploration/${locale}-exhibits.png`});
@@ -74,11 +81,21 @@ test("Explore Further opens in place, scrolls reading and reuses working image/v
     await page.setViewportSize({width:390,height:650});await dialog.getByRole("tab",{name:labels.reading,exact:true}).click();await page.screenshot({path:`test-results/exploration/${locale}-mobile-reading.png`});assert.equal(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollHeight>e.clientHeight),true);
     await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop=e.scrollHeight);assert.ok(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop)>0);
     await verifyLocked("reading");await page.screenshot({path:`test-results/exploration/${locale}-mobile-reading-locked.png`});
-    await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();await page.screenshot({path:`test-results/exploration/${locale}-mobile-exhibits.png`});assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false);
+    await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();await dialog.locator("img").evaluateAll(images=>Promise.all(images.map(image=>(image as HTMLImageElement).decode())));await page.screenshot({path:`test-results/exploration/${locale}-mobile-exhibits.png`});assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false);
     await verifyLocked("exhibits");await page.screenshot({path:`test-results/exploration/${locale}-mobile-exhibits-locked.png`});
     await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop=100);await dialog.locator("[data-exhibit-id]").nth(1).click();await page.keyboard.press("Escape");await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).waitFor();assert.ok(await dialog.getByRole("tabpanel").evaluate(e=>e.scrollTop)>=90);
     await dialog.getByRole("button",{name:labels.close,exact:true}).click();assert.equal(await dialog.count(),0);assert.equal(await original.evaluate((v:HTMLVideoElement)=>v.paused),true);
-    await mount(true);await explore.click();await dialog.getByRole("tab",{name:labels.reading,exact:true}).waitFor();await page.keyboard.press("Escape");assert.equal(await dialog.count(),0);
+    await page.setViewportSize({width:1440,height:1024});await mount(false,true,"02");await explore.click();
+    assert.equal(await dialog.locator("article").count(),4);assert.equal(await dialog.getByRole("heading",{name:/02\s*Looking again/}).count(),1);
+    await courseScope.click();assert.equal(await dialog.locator("article").count(),8);
+    assert.equal(await dialog.getByRole("heading",{name:/01\s*Looking closely/}).count(),1,"previous lessons are included when entering from a later lesson");
+    await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();assert.equal(await dialog.locator("article").count(),10);
+    await lessonScope.click();assert.equal(await dialog.locator("article").count(),5);await page.keyboard.press("Escape");
+    await mount(false,true,"02",true);await explore.click();await courseScope.click();assert.equal(await dialog.locator("article").count(),12);
+    assert.equal(await dialog.locator('[data-exploration-locked]').count(),0,"fully unlocked courses have no locked upsell");
+    await dialog.getByRole("tab",{name:labels.exhibits,exact:true}).click();assert.equal(await dialog.locator("article").count(),15);
+    await page.screenshot({path:`test-results/exploration/${locale}-all-unlocked.png`});await page.keyboard.press("Escape");
+    await mount(true);await explore.click();await dialog.getByRole("tab",{name:labels.reading,exact:true}).waitFor();await courseScope.click();assert.equal(await dialog.locator("article").count(),8,"the shared LearningRoom also aggregates its authorised Lesson metadata");await page.keyboard.press("Escape");assert.equal(await dialog.count(),0);
     await mount(false,false);assert.equal(await explore.isDisabled(),true);await page.close();
   }}finally{await browser.close();}
 });

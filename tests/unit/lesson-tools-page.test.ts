@@ -62,6 +62,10 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       assert.equal(column.x - (card.x + card.width), 24, "column is beside the player card");
       assert.equal(column.y - card.y, 10, "column follows the actual player position");
       await page.screenshot({ path: `test-results/lesson-tools/${locale}-${entitled ? "active" : "locked"}-layout.png`, fullPage: true });
+      const tooltip = tools.getByRole("tooltip", { includeHidden: true });
+      assert.equal(await tooltip.count(), entitled ? 0 : 1);
+      assert.equal(await tools.getAttribute("aria-describedby"), entitled ? null : await tooltip.getAttribute("id"));
+      assert.equal(await tools.getAttribute("tabindex"), entitled ? null : "0");
       for (const [index, control] of (await controls.all()).entries()) {
         const styles = await control.evaluate(element => {
           const css = getComputedStyle(element), icon = element.querySelector("img") as HTMLImageElement;
@@ -71,7 +75,11 @@ test("lesson tools show access hints only for unentitled previews and retain ena
         assert.equal(styles.width, 160); assert.equal(styles.border, "rgb(228, 231, 237)");
         assert.equal(styles.loaded, true); assert.equal(styles.iconWidth, 16); assert.equal(styles.iconHeight, 16);
         if (!entitled) assert.equal(await control.isDisabled(), true);
-        const wrapper = control.locator(".."), tooltip = wrapper.getByRole("tooltip", { includeHidden: true });
+        const wrapper = control.locator("..");
+        assert.equal(await wrapper.getByRole("tooltip", { includeHidden: true }).count(), 0);
+        assert.equal(await wrapper.getAttribute("tabindex"), null);
+        assert.equal(await control.getAttribute("aria-describedby"), null);
+        assert.equal(await wrapper.getAttribute("aria-describedby"), null);
         if (entitled) {
           assert.equal(await tooltip.count(), 0);
           assert.equal(await control.getAttribute("aria-describedby"), null);
@@ -90,14 +98,19 @@ test("lesson tools show access hints only for unentitled previews and retain ena
         await wrapper.hover();
         assert.equal(await tooltip.isVisible(), true);
         assert.equal(await tooltip.textContent(), copy.includedWithFullAccess);
-        assert.equal(await control.getAttribute("aria-describedby"), await tooltip.getAttribute("id"));
         if (index === 1) await page.screenshot({ path: `test-results/lesson-tools/${locale}-${entitled ? "active" : "locked"}.png`, fullPage: true });
         await page.mouse.move(0, 0);
-        await (entitled ? control : wrapper).focus();
-        assert.equal(await tooltip.isVisible(), true, "keyboard focus describes disabled tools too");
+        await tools.focus();
+        assert.equal(await tooltip.isVisible(), true, "keyboard focus describes the whole disabled area once");
         await page.keyboard.press("Tab");
         await page.locator("h1").click();
       }
+      await page.mouse.move(0, 0);await page.locator("h1").click();
+      await tools.getByRole("heading").hover();
+      if (!entitled) assert.equal(await tooltip.isVisible(), true, "the heading is part of the area trigger");
+      const bounds=(await tools.boundingBox())!;
+      await tools.hover({position:{x:bounds.width/2,y:29}});
+      if (!entitled) assert.equal(await tooltip.isVisible(), true, "the gap between heading and buttons keeps the shared hint open");
       if (entitled) {
         assert.equal(await controls.nth(1).getAttribute("href"), `/${locale}/portal/courses/course/understanding?lessonId=lesson`);
         await controls.nth(2).click(); await page.getByRole("dialog").waitFor(); await page.keyboard.press("Escape");
@@ -110,7 +123,7 @@ test("lesson tools show access hints only for unentitled previews and retain ena
         const first = controls.first().locator(".."); await first.hover();
         if (entitled) assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
         else {
-          const tip = (await first.getByRole("tooltip", { includeHidden: true }).boundingBox())!;
+          const tip = (await tooltip.boundingBox())!;
           assert.ok(tip.x >= 0 && tip.x + tip.width <= width);
         }
         if (width === 390) await page.screenshot({ path: `test-results/lesson-tools/${locale}-${entitled ? "active" : "locked"}-mobile.png`, fullPage: true });
@@ -119,9 +132,10 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     }
     await mount("long-title", true, "video", "A long lesson title that wraps onto multiple lines to check alignment with the actual player below the heading");
     assert.equal((await tools.boundingBox())!.y - (await page.locator(".la-player").locator("..").boundingBox())!.y, 10);
-    await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 3);
+    await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 1);
     await mount("access-change", true); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
-    await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 3);
+    assert.equal(await tools.getAttribute("aria-describedby"), null);assert.equal(await tools.getAttribute("tabindex"), null);
+    await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 1);
     for (const type of ["text", "pdf", "legacy"]) {
       await mount(type, true, type);
       assert.equal(await page.getByRole("button", { name: messages.learning.completeLesson, exact: true }).count(), 0);

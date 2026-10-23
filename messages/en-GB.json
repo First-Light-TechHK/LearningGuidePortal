@@ -108,6 +108,7 @@
     "inProgress": "In progress",
     "available": "Available",
     "locked": "Available after lesson completion",
+    "unlocksAfter": "Unlocks after Lesson {number}",
     "answered": "3 of 20 answered",
     "strong": "Strong",
     "viewResult": "View result",
@@ -377,6 +378,9 @@
       "Bilingual: Chinese / English"
     ],
     "included": "INCLUDED WITH A CATEGORY PLAN",
+    "includedInPlan": "Included in your plan",
+    "startLearning": "Start learning",
+    "continueLearning": "Continue learning",
     "months": "months",
     "benefits": "View all benefits"
   },
@@ -526,7 +530,7 @@
     "passwordTooShort": "Password must contain at least 8 characters.",
     "passwordTooLong": "Password must contain no more than {max} characters.",
     "nickname": "Name",
-    "nameInvalid": "Enter a name with 1-50 letters. You may use spaces, hyphens (-), apostrophes (') or middle dots (·).",
+    "nameInvalid": "Enter a name with 1-50 letters or numbers. You may use spaces, hyphens (-), apostrophes (') or middle dots (·).",
     "nameTooLong": "Name must be 50 characters or fewer.",
     "submitSignIn": "Sign in",
     "submitSignUp": "Create account",

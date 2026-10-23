@@ -108,6 +108,7 @@
     "inProgress": "进行中",
     "available": "可开始",
     "locked": "完成课时后可开始",
+    "unlocksAfter": "完成第 {number} 课时的两个测试后解锁",
     "answered": "已回答 3 / 20 题",
     "strong": "掌握良好",
     "viewResult": "查看结果",
@@ -377,6 +378,9 @@
       "双语：中文 / 英文"
     ],
     "included": "包含在分类订阅计划中",
+    "includedInPlan": "已包含在你的方案中",
+    "startLearning": "开始学习",
+    "continueLearning": "继续学习",
     "months": "个月",
     "benefits": "查看所有权益"
   },
@@ -526,7 +530,7 @@
     "passwordTooShort": "密码至少需要 8 个字符。",
     "passwordTooLong": "密码最多只能包含 {max} 个字符。",
     "nickname": "姓名",
-    "nameInvalid": "请输入 1–50 个文字字符的姓名；可使用空格、连字符 (-)、撇号 (') 或间隔号 (·)。",
+    "nameInvalid": "请输入 1–50 个文字或数字字符的姓名；可使用空格、连字符 (-)、撇号 (') 或间隔号 (·)。",
     "nameTooLong": "姓名不能超过 50 个字符。",
     "submitSignIn": "登录",
     "submitSignUp": "创建账号",

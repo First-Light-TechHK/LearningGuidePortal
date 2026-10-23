@@ -18,8 +18,7 @@ import { PreviewProgress } from "./PreviewProgress";
 import styles from "./preview-lesson.module.css";
 import type { CourseLearningMode } from "@/contracts/course-learning-mode";
 import { resolveLessonPresentation, modeLessonDestination } from "@/lib/courseLearningMode";
-import { completeLessonOutline } from "@/lib/completeLessonOutline";
-import { createClientEventId } from "@/lib/clientEventId";
+import { TextLessonCompletion } from "./TextLessonCompletion";
 import type { TextLessonPreview } from "@/contracts/text-lesson-preview";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 
@@ -49,8 +48,6 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const [ended, setEnded] = useState<{ contentId: string; request: number } | null>(null);
   const [nodeRequest, setNodeRequest] = useState<{ id: string; request: number }>();
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const [continuing, setContinuing] = useState(false), [continueError, setContinueError] = useState("");
-  const continueRequest = useRef<string | null>(null), continueLock = useRef(false);
   const selected = contents.find(content => content.id === contentId);
   useEffect(() => { setPlayingId(null); }, [lesson.id, contentId]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
@@ -91,15 +88,6 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
     setAccessPlanOpen(true);
   }
-  async function nextTextLesson() {
-    if (!nextHref || !entitled || continueLock.current) return;
-    continueLock.current = true; setContinuing(true); setContinueError("");
-    continueRequest.current ||= createClientEventId();
-    try {
-      await completeLessonOutline(studyEndpoint, courseId, lesson.id, "text", continueRequest.current);
-      router.push(nextHref);
-    } catch { continueLock.current = false; setContinuing(false); setContinueError(messages.overviewDesign.previewSaveError); }
-  }
   const tools = [
     { icon: "tutor", title: copy.tutor, action: "tutor" },
     { icon: "understanding", title: copy.understanding, href: entitled ? `/${locale}/portal/courses/${encodeURIComponent(courseId)}/understanding?lessonId=${encodeURIComponent(lesson.id)}${studyEndpoint === "/api/study/preview" ? "&from=preview" : ""}` : undefined },
@@ -134,16 +122,15 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
             {!textLocked && !(textPolicy && selected?.type === "text" && !selected.html?.trim()) && (contents.length ? <LessonContentPlayer exhibitContainer={exhibitContainer} contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={entitled ? undefined : trialGate} onPreviewAccess={!entitled ? () => void chooseAccessPlan() : undefined} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} onVideoStart={setPlayingId} onVideoProgress={setVideoProgress} onVideoEnded={progress => setEnded(previous => ({ contentId: progress.contentId, request: (previous?.request || 0) + 1 }))} videoPresentation={{ poster, playLabel: copy.play }} /> : lesson.body.trim() ? <LegacyLessonBody body={lesson.body} locale={locale} /> : null)}
             {textEnd && <div className={styles.previewEnd} data-text-preview-end><div className={styles.lockedText} aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index}/>)}</div><div className={styles.previewFade}/><section className={styles.previewNotice} aria-label={messages.previewAccess.previewEnds}><h2><Image src="/portal/text-preview/lock.svg" alt="" width={16} height={16}/>{messages.previewAccess.previewEnds}</h2><button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button></section></div>}
           </div>
-          {mode === "text" && entitled && nextHref && <div className={styles.nextLessonRow}><button type="button" className={styles.nextLesson} disabled={continuing} onClick={() => void nextTextLesson()}>{continuing ? messages.learning.processing : messages.learning.nextLesson}</button>{continueError && <p role="alert">{continueError}</p>}</div>}
-          <aside className={styles.tools} aria-label={copy.deepLearning}><h2>{copy.deepLearning}</h2>
+          {entitled && <TextLessonCompletion key={lesson.id} visible={mode === "text"} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} initialCompleted={completedContentIds && textPoints.length ? textPoints.every(point => completedContentIds.includes(point.id)) : initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}
+          <aside className={styles.tools} aria-label={copy.deepLearning} tabIndex={!entitled ? 0 : undefined} aria-describedby={!entitled ? toolId : undefined}><h2>{copy.deepLearning}</h2>
             {tools.map(tool => {
-              const tooltipId = !entitled ? `${toolId}-${tool.icon}` : undefined;
               const body = <><span className={styles.toolIcon} aria-hidden="true"><Image src={`/portal/study/${tool.icon}.svg`} alt="" width={16} height={16}/></span><span className={styles.toolLabel}>{tool.title}</span></>;
-              return <div key={tool.icon} className={styles.toolItem} tabIndex={!entitled ? 0 : undefined} aria-label={!entitled ? tool.title : undefined} aria-describedby={!entitled ? tooltipId : undefined}>
-                {tool.href ? <Link className={styles.tool} href={tool.href} aria-describedby={tooltipId}>{body}</Link> : <button type="button" className={styles.tool} disabled={!entitled} aria-describedby={tooltipId} aria-expanded={tool.action === "tutor" ? tutorOpen : undefined} onClick={tool.action === "tutor" ? () => setTutorOpen(value => !value) : openExploration}>{body}</button>}
-                {!entitled && <span id={tooltipId} className={styles.toolTooltip} role="tooltip">{copy.includedWithFullAccess}</span>}
+              return <div key={tool.icon} className={styles.toolItem}>
+                {tool.href ? <Link className={styles.tool} href={tool.href}>{body}</Link> : <button type="button" className={styles.tool} disabled={!entitled} aria-expanded={tool.action === "tutor" ? tutorOpen : undefined} onClick={tool.action === "tutor" ? () => setTutorOpen(value => !value) : openExploration}>{body}</button>}
               </div>;
             })}
+            {!entitled && <span id={toolId} className={styles.toolTooltip} role="tooltip">{copy.includedWithFullAccess}</span>}
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>
         </div>
@@ -153,7 +140,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </div>
       </article>
     </div>
-    {exploreOpen && <ExplorationDialog lessons={outline} locale={locale} courseId={courseId} lessonNumber={current?.number || "01"} onClose={() => setExploreOpen(false)} onAskTutor={() => { setExploreOpen(false); setTutorOpen(true); }}/> }
+    {exploreOpen && <ExplorationDialog lessons={outline.map(lesson=>({number:lesson.number,title:lesson.title,unlocked:Boolean(lesson.href)}))} locale={locale} courseId={courseId} lessonNumber={current?.number || "01"} onClose={() => setExploreOpen(false)} onAskTutor={() => { setExploreOpen(false); setTutorOpen(true); }}/> }
     {accessPlanOpen && !entitled && <TrialLimitModal gate={trialGate || { pricingHref, recommendations: [] }} locale={locale} onClose={() => setAccessPlanOpen(false)} />}
   </div>;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isNameTooLong, isValidName, validateName, normalisePastedName } from "../../lib/nameValidation";
+import { isNameTooLong, isValidName, validateName, normalisePastedName, isValidAccountName, validateAccountName } from "../../lib/nameValidation";
 
 test("name validation accepts Unicode letters and common name separators", () => {
   for (const name of ["Ada Lovelace", "Jean-Luc", "O'Connor", "张·伟", "Élodie", "Алексей Иванов"]) {
@@ -18,6 +18,15 @@ test("name validation requires 1-50 Unicode letters and rejects digits, emoji an
 test("name length is measured in Unicode characters", () => {
   assert.equal(isNameTooLong("A".repeat(50)), false);
   assert.equal(isNameTooLong("A".repeat(51)), true);
+});
+
+test("account names accept test001 and keep Unicode, length and symbol validation", () => {
+  for (const name of ["test001", "001", "用户001", "Ada 2", "Jean-Luc2", "J.R.R. Tolkien", "A".repeat(49)+"1"]) assert.equal(isValidAccountName(name),true,name);
+  assert.equal(validateAccountName("  test001  "),"test001");
+  for (const name of ["", "  ", "test_001", "test😊", "<script>", "-test001", "test001-", "A".repeat(50)+"1"]) {
+    assert.equal(isValidAccountName(name),false,name);assert.throws(()=>validateAccountName(name));
+  }
+  assert.equal(isValidName("test001"),false,"contact-person names retain their existing rule");
 });
 
 test("name validation accepts full stops in English names", () => {

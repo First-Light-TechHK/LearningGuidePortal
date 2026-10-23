@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AvatarCropper } from './AvatarCropper';
-import { isNameTooLong, isValidName, normaliseName, normalisePastedName } from "@/lib/nameValidation";
+import { isNameTooLong, isValidAccountName, normaliseName, normalisePastedName } from "@/lib/nameValidation";
 
 type Copy = {
   avatar: string; uploadAvatar: string; removeAvatar: string; nickname: string; email: string; language: string; english: string; chinese: string;
@@ -75,7 +75,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setMessage(""); setError("");
-    if (!isValidName(nickname)) { setError(isNameTooLong(nickname) ? nameCopy.nameTooLong : nameCopy.nameInvalid); return; }
+    if (!isValidAccountName(nickname)) { setError(isNameTooLong(nickname) ? nameCopy.nameTooLong : nameCopy.nameInvalid); return; }
     if (newPassword !== confirmPassword) { setError(design.passwordMismatch); return; }
     if (!country) { setError(design.countryRequired); return; }
     setBusy(true);
@@ -98,7 +98,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       <div className="settings-profile-grid">
         <div className="avatar-settings">
           <div className="avatar-preview">{avatar ? <img src={`/api/my-learning/avatar?v=${avatarVersion}`} alt={copy.avatar} /> : <span aria-hidden="true">{initial}</span>}</div>
-          <div><div className="backoffice-row-actions"><label hidden className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p className="settings-hint">{design.avatarRules}</p></div>
+          <div><div className="backoffice-row-actions"><label hidden className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p hidden className="settings-hint">{design.avatarRules}</p></div>
         </div>
         <div className="settings-profile-fields">
           <label>{copy.nickname}<input value={nickname} autoComplete="name" onChange={event => { event.currentTarget.setCustomValidity(""); setNickname(event.target.value); }} onInvalid={event => event.currentTarget.setCustomValidity(nameCopy.nameInvalid)} onPaste={event => {

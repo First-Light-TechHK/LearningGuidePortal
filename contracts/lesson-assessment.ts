@@ -4,9 +4,9 @@ export type AssessmentKind = "knowledge" | "application";
 export type KnowledgeAttempt = { kind: "knowledge"; responses: KnowledgeResponse[]; index: number; phase: "question" | "answer" | "result" };
 export type ApplicationAttempt = { kind: "application"; answer: string; phase: "answer" | "evaluating" | "submitted" };
 export type AssessmentAttempt = KnowledgeAttempt | ApplicationAttempt;
-export type SavedAssessment = { lessonId: string; kind: AssessmentKind; version: number; attempt: AssessmentAttempt; completedAt: string | null; updatedAt: string; evaluationStartedAt?: string | null };
+export type SavedAssessment = { lessonId: string; kind: AssessmentKind; version: number; attempt: AssessmentAttempt; completedAt: string | null; updatedAt: string; evaluationStartedAt?: string | null; latestResult?: { completedAt: string; score: number | null } };
 export type AssessmentWrite = { clientEventId: string; expectedVersion: number; attempt: AssessmentAttempt };
-export type AssessmentSummary = { status: "not_started" | "in_progress" | "completed" | "submitted"; answered: number; total: number; percent: number; score: number | null };
+export type AssessmentSummary = { status: "not_started" | "in_progress" | "completed" | "submitted"; answered: number; total: number; percent: number; score: number | null; latestResult: number | "strong" | null };
 export class AssessmentError extends Error {
   constructor(public code: "ASSESSMENT_INVALID" | "ASSESSMENT_UNAUTHORISED" | "ASSESSMENT_FORBIDDEN" | "ASSESSMENT_NOT_FOUND" | "ASSESSMENT_CONFLICT" | "ASSESSMENT_UNAVAILABLE", public status = 400) { super(code); }
 }

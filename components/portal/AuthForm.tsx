@@ -1,11 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Check, Eye, EyeOff, Lock, Mail, User, X } from "lucide-react";
 import { getMessages } from "@/lib/i18n/messages";
 import { AuthProviders } from "@/components/portal/AuthProviders";
 import { isBusinessEmail, isEmailTooLong } from "@/lib/emailValidation";
-import { isNameTooLong, isValidName } from "@/lib/nameValidation";
+import { isNameTooLong, isValidAccountName } from "@/lib/nameValidation";
 
 const REMEMBERED_CREDENTIALS_KEY = "learning-guide.remembered-credentials";
 const REMEMBERED_CREDENTIALS_MAX_AGE_MS = 30 * 60 * 1000;
@@ -35,6 +35,7 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const termsCheckbox = useRef<HTMLInputElement>(null), errorId = useId();
   const labels = getMessages(locale).auth;
   const signIn = mode === "sign-in";
   const verifiedEmail = initialEmail.trim().toLowerCase();
@@ -63,15 +64,22 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     }
   }, [signIn, initialEmail]);
 
+  function hasRegistrationConsent() {
+    if (signIn || termsAccepted) return true;
+    setError(labels.registrationConsentRequired);
+    termsCheckbox.current?.focus();
+    return false;
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting.current) return;
     setError("");
-    if (!signIn && !termsAccepted) { setError(labels.registrationConsentRequired); return; }
+    if (!hasRegistrationConsent()) return;
     if (isEmailTooLong(email)) { setError(labels.emailTooLong); return; }
     if (!isBusinessEmail(email)) { setError(labels.emailInvalid); return; }
     if (!signIn && isNameTooLong(nickname)) { setError(labels.nameTooLong); return; }
-    if (!signIn && !isValidName(nickname)) { setError(labels.nameInvalid); return; }
+    if (!signIn && !isValidAccountName(nickname)) { setError(labels.nameInvalid); return; }
     submitting.current = true;
     setBusy(true);
     try {
@@ -119,10 +127,10 @@ export function AuthForm({ locale, mode, copy, returnTo, googleEnabled, wechatEn
         <label><span className="auth-field-label">{copy.password}</span>{signupDesign ? <span className="auth-password-hint">{copy.passwordHint}</span> : null}<span className="auth-input"><Lock size={20} aria-hidden="true" /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => { event.currentTarget.setCustomValidity(""); setPassword(event.target.value); }} onInvalid={event => { const input = event.currentTarget; input.setCustomValidity(input.validity.valueMissing ? labels.passwordRequired : input.validity.tooLong ? labels.passwordTooLong.replace("{max}", String(input.maxLength)) : labels.passwordTooShort); }} required minLength={8} maxLength={signIn ? 30 : 72} autoComplete={signIn ? "current-password" : "new-password"} placeholder={signupDesign ? copy.createPassword : undefined} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? labels.hidePassword : labels.showPassword} title={showPassword ? labels.hidePassword : labels.showPassword} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></span></label>
       </div>
       {signIn ? <div className="auth-options"><label><input type="checkbox" checked={rememberMe} onChange={event => { setRememberMe(event.target.checked); if (!event.target.checked) rememberCredentials(null); }} />{copy.keepSignedIn}</label><a href={`/${locale}/portal/forgot-password?${new URLSearchParams({ email, returnTo })}`}>{copy.forgotPassword}</a></div> : null}
-      {!signIn ? <label className="auth-signup-terms"><input type="checkbox" name="termsAccepted" required checked={termsAccepted} onInvalid={event => event.currentTarget.setCustomValidity(labels.registrationConsentRequired)} onChange={event => { event.currentTarget.setCustomValidity(""); setTermsAccepted(event.target.checked); if (error === labels.registrationConsentRequired) setError(""); }} /><span>{copy.signUpTermsPrefix} <strong>{copy.termsOfUse}</strong> {copy.signUpTermsAnd} <strong>{copy.privacyNotice}</strong>.</span></label> : null}
-      {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+      {!signIn ? <label className="auth-signup-terms"><input ref={termsCheckbox} type="checkbox" name="termsAccepted" required checked={termsAccepted} aria-invalid={error === labels.registrationConsentRequired || undefined} aria-describedby={error === labels.registrationConsentRequired ? errorId : undefined} onInvalid={event => { event.currentTarget.setCustomValidity(labels.registrationConsentRequired); setError(labels.registrationConsentRequired); }} onChange={event => { event.currentTarget.setCustomValidity(""); setTermsAccepted(event.target.checked); if (error === labels.registrationConsentRequired) setError(""); }} /><span>{copy.signUpTermsPrefix} <strong>{copy.termsOfUse}</strong> {copy.signUpTermsAnd} <strong>{copy.privacyNotice}</strong>.</span></label> : null}
+      {error ? <p id={errorId} className="portal-form-error" role="alert">{error}</p> : null}
       {existingNotice ? <div className="portal-success" role="status"><p>{existingNotice}</p><p>{labels.existingEmailCountdown.replace("{seconds}", String(existingSeconds))}</p></div> : null}
-      <button className="portal-button portal-button-primary auth-submit" disabled={busy || (!signIn && !termsAccepted)}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
+      <button className="portal-button portal-button-primary auth-submit" disabled={busy} onClick={event => { if (!hasRegistrationConsent()) event.preventDefault(); }}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</button>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
       {signupDesign ? <div className="auth-signup-divider" /> : null}
       <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} disabled={!signIn && (!termsAccepted || busy)} wechatFirst={signIn} variant={signIn ? "signin" : signupDesign ? "buttons" : "icons"} />

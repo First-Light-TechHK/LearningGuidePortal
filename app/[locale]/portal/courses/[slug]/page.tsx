@@ -45,7 +45,12 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const detail = messages.courseDetailDesign;
   const identity = page.identity;
   const catalogHref = `/${locale}/portal/courses`;
-  const plans = page.pageState === "available" ? await listPlans() : [];
+  const hasCourseAccess = page.cta === "continue_learning";
+  const actionLesson = page.syllabus.find(lesson => lesson.lessonId === page.actionLessonId && lesson.openable && lesson.access === "entitled");
+  const learningHref = course && actionLesson ? needsMode
+    ? `${courseDetailHref}?lessonEntry=${encodeURIComponent(actionLesson.lessonId)}`
+    : `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${encodeURIComponent(actionLesson.lessonId)}` : null;
+  const plans = page.pageState === "available" && !hasCourseAccess ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
   const pricingHref = `/${locale}/subscription?courseId=${encodeURIComponent(course?.id || slug)}${plan ? `&planId=${encodeURIComponent(plan.id)}` : ""}`;
   const price = plan ? formatPlanPrice(locale, plan) : null;
@@ -134,11 +139,14 @@ export default async function CourseDetailPage({ params, searchParams }: {
                 <h2>{detail.provides}</h2>
                 <ul>{detail.features.map((feature, index) => <li key={feature}><Image src={asset(["video", "exhibits", "assistant", "comprehension", "readings", "bilingual"][index])} alt="" width={20} height={20} />{feature}</li>)}</ul>
               </section>
-              <section className={styles.subscription}>
+              {hasCourseAccess ? <section className={styles.planStatus} data-course-plan-status="included">
+                <h2><Image src={asset("plan-check")} alt="" width={24} height={24}/>{detail.includedInPlan}</h2>
+                {learningHref && <Link className={styles.learningAction} href={learningHref}>{page.openedLearningPointCount > 0 ? detail.continueLearning : detail.startLearning}</Link>}
+              </section> : <section className={styles.subscription} data-course-plan-status="purchase">
                 <h2>{detail.included}</h2>
                 <p className={styles.price}>{price && plan ? <><strong>{price} /</strong><span>{plan.termMonths} {detail.months}</span></> : <span>{messages.pricingDesign.unavailable}</span>}</p>
                 <Link className={styles.benefits} href={pricingHref} data-course-cta-link={page.cta === "view_plans" ? "view_plans" : undefined} data-course-secondary-cta={page.secondaryCta || undefined}>{detail.benefits}</Link>
-              </section>
+              </section>}
             </aside>
           </section>
         )}

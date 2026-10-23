@@ -36,12 +36,21 @@ test("registration requires explicit terms/privacy consent for submit and social
       for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(locale => (window as any).mount(locale), locale);
-      await page.locator('input[autocomplete="name"]').fill("Consent Learner");
+      await page.locator('.auth-submit').click();
+      assert.equal(await page.getByRole('alert').textContent(),copy.registrationConsentRequired,"an empty form still explains missing consent on click");
+      assert.equal(requests.length,0);
+      await page.locator('input[autocomplete="name"]').fill("test001");
       await page.locator('input[type="email"]').fill("consent@example.test");
       await page.locator('input[autocomplete="new-password"]').fill("ConsentPassword123!");
       const checkbox = page.locator('[name="termsAccepted"]'), submit = page.locator('.auth-submit'), providers = page.locator('.auth-provider-links a');
       assert.equal(await checkbox.isChecked(), false); assert.equal(await checkbox.getAttribute('required'), "");
-      assert.equal(await submit.isDisabled(), true);
+      assert.equal(await submit.isEnabled(), true);
+      await submit.hover();assert.equal(await submit.evaluate(e=>getComputedStyle(e).cursor),'pointer');
+      await submit.click();
+      assert.equal(await page.getByRole('alert').textContent(), copy.registrationConsentRequired);
+      assert.equal(await checkbox.evaluate(e=>e===document.activeElement),true);
+      assert.equal(await checkbox.getAttribute('aria-describedby'),await page.getByRole('alert').getAttribute('id'));
+      assert.equal(requests.length,0);
       for (const provider of await providers.all()) { assert.equal(await provider.getAttribute('href'), null); assert.equal(await provider.getAttribute('aria-disabled'), 'true'); assert.equal(await provider.getAttribute('tabindex'), '-1'); await provider.evaluate(e => (e as HTMLAnchorElement).click()); }
       assert.equal(new URL(page.url()).pathname, `/${locale}/portal/sign-up`);
       await page.locator('input[autocomplete="new-password"]').press('Enter');
@@ -54,8 +63,10 @@ test("registration requires explicit terms/privacy consent for submit and social
       await checkbox.check(); assert.equal(await submit.isEnabled(), true);
       assert.equal(await checkbox.evaluate(e => (e as HTMLInputElement).validationMessage), "");
       assert.equal(await page.getByRole('alert').count(), 0);
+      assert.equal(await checkbox.getAttribute('aria-invalid'),null);assert.equal(await checkbox.getAttribute('aria-describedby'),null);
       for (const provider of await providers.all()) assert.ok((await provider.getAttribute('href'))?.includes('/api/auth/'));
-      await checkbox.uncheck(); assert.equal(await submit.isDisabled(), true);
+      await checkbox.uncheck(); assert.equal(await submit.isEnabled(), true);
+      await submit.click();assert.equal(await page.getByRole('alert').textContent(),copy.registrationConsentRequired);assert.equal(requests.length,0);
       await page.screenshot({ path: `test-results/registration-consent/${locale}-unchecked.png`, fullPage: true });
       await checkbox.check();
       for (const width of [390, 320]) {
@@ -68,6 +79,7 @@ test("registration requires explicit terms/privacy consent for submit and social
       await submit.click(); await page.getByRole('alert').waitFor();
       assert.equal(await page.getByRole('alert').textContent(), copy.registrationConsentRequired);
       assert.equal(requests.length, 1); assert.equal(requests[0].termsAccepted, true);
+      assert.equal(requests[0].nickname,"test001");
       assert.equal(await checkbox.isChecked(), true); assert.equal(await submit.isEnabled(), true);
       hold = true; code = "OK";
       const requestEntered = new Promise<void>(resolve => { entered = resolve; });

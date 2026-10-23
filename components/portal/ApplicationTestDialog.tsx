@@ -87,7 +87,7 @@ export function ApplicationTestDialog({ locale, lessonNumber, lessonTitle, onBac
               <section className={styles.reference}><h3>{common.reference}</h3>{sample.reference.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>
             </div>
             <footer className={styles.resultFooter}>
-              {!knowledgeCompleted && onKnowledgeTest ? <><button type="button" className={styles.secondary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button><button type="button" className={styles.primary} onClick={onKnowledgeTest}>{copy.tryKnowledge}</button></>
+              {fromOverview ? <button type="button" className={styles.primary} onClick={()=>{setAttempt({answer:"",phase:"answer",startedAt:null});setProgress(0);setSubmitError("");submitLock.current=false;finishLock.current=false;}}>{copy.retake}</button> : !knowledgeCompleted && onKnowledgeTest ? <><button type="button" className={styles.secondary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button><button type="button" className={styles.primary} onClick={onKnowledgeTest}>{copy.tryKnowledge}</button></>
                 : <button type="button" className={styles.primary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button>}
             </footer>
           </> : <>

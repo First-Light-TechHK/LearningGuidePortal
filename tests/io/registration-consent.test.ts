@@ -31,8 +31,12 @@ test("both public registration routes reject missing/forged consent without crea
       }
     }
     for (const [index, route] of routes.entries()) {
-      const response = await route.POST(new Request("http://localhost/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `accepted-${index}@example.test`, password: PASSWORD, nickname: "Consent Learner", locale: "en-GB", termsAccepted: true }) }));
+      const response = await route.POST(new Request("http://localhost/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `accepted-${index}@example.test`, password: PASSWORD, nickname: "test001", locale: "en-GB", termsAccepted: true }) }));
       assert.equal(response.status, 200); assert.equal((await response.json()).ok, true);
+      const account=(await readProductData()).users.find(user=>user.email===`accepted-${index}@example.test`);
+      assert.equal(account.nickname,"test001");
+      assert.equal((await store.updateUserProfile({userId:account.id,nickname:"test001",locale:index===0?"en-GB":"zh-CN"})).nickname,"test001");
+      await assert.rejects(()=>store.updateUserProfile({userId:account.id,nickname:"test_001",locale:"en-GB"}));
     }
   } finally { await stop(); await restore(); }
 });

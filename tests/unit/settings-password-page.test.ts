@@ -23,6 +23,8 @@ test("password validation follows the UI locale across browser languages and ret
     assert.equal(await page.locator('.avatar-upload').isVisible(), false);
     assert.equal(await page.getByLabel(getMessages(locale).settingsPage.uploadAvatar).isVisible(), false);
     assert.equal(await page.locator('.avatar-upload input[type="file"]').count(), 1);
+    assert.equal(await page.getByText(getMessages(locale).settingsDesign.avatarRules,{exact:true}).isVisible(), false);
+    await name.fill('test001');await submit();await page.getByRole('status').waitFor();assert.equal(requests.at(-1).nickname,'test001');
     await name.fill('张伟');await submit();await page.getByRole('status').waitFor();assert.equal(requests.at(-1).nickname,'张伟');
     await name.fill('');await submit();assert.equal(await name.evaluate(e=>(e as HTMLInputElement).validationMessage),getMessages(locale).auth.nameInvalid);
     await name.evaluate(e=>{const data=new DataTransfer();data.setData('text','  **Ada Lovelace**  ');e.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));});

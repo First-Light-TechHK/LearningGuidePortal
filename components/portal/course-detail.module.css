@@ -33,6 +33,10 @@
 .price strong { font-size: 36px; line-height: 42px; font-weight: 700; }
 .price span { font-size: 14px; line-height: 24px; }
 .page .benefits { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 46px; padding: 12px 18px; border: 1px solid #155dfc; border-radius: 8px; background: linear-gradient(90deg, #e3f0ff, #b0d1fb); color: #135bc7; font-size: 14px; font-weight: 600; line-height: 20px; text-decoration: none; }
+.planStatus { display:flex; flex-direction:column; gap:16px; padding:24px; border:1px solid #d6e3f7; border-radius:12px; background:#f0f7ff; }
+.page .planStatus h2 { display:flex; align-items:center; gap:10px; margin:0; color:#15233a; font:600 18px/22px Inter,Arial,sans-serif; }
+.planStatus h2 img { flex:none; width:24px; height:24px; }
+.page .learningAction { display:flex; align-items:center; justify-content:center; box-sizing:border-box; width:100%; padding:13px 12px; border-radius:8px; background:#1d6bff; color:#fff; font:600 15px/18px Inter,Arial,sans-serif; text-align:center; text-decoration:none; }
 .curriculum details { margin-top: 8px; }
 .curriculum summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; list-style: none; cursor: pointer; }
 .curriculum summary::-webkit-details-marker { display: none; }

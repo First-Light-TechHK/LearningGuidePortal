@@ -5,6 +5,7 @@ import path from "node:path";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 import { getMessages } from "../../lib/i18n/messages";
+import { lessonMessages } from "../../messages/lesson-authoring";
 
 test("video exhibits appear at configured times, dismiss, reopen and respect seek/trial boundaries", async () => {
   const bundle = await build({
@@ -142,6 +143,22 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       lesson.contents.pop();
       const time=async(seconds:number,event="timeupdate")=>{await page.locator("video").waitFor();await page.locator("video").evaluate((element,{seconds,event})=>{Object.defineProperty(element,"duration",{configurable:true,value:120});Object.defineProperty(element,"currentTime",{configurable:true,writable:true,value:seconds});element.dispatchEvent(new Event(event));},{seconds,event});};
       const bar=page.getByRole("region",{name:locale==="en-GB"?"Exhibit Available":"\u53ef\u67e5\u770b\u5c55\u793a\u5185\u5bb9"});
+      await mount("interrupted-playback");
+      await page.locator("video.la-lesson-video").waitFor();
+      await page.addScriptTag({content:`(video=>{
+        video.play=async()=>{throw new DOMException("Interrupted by pause","AbortError");};
+        let paused=false;
+        Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});
+        video.pause=()=>{paused=true;};
+      })(document.querySelector('video.la-lesson-video'));`});
+      await page.locator(".la-video-play").click();
+      assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"cover play interruption has no operation notice");
+      await time(20);await bar.waitFor();
+      await bar.getByRole("button",{name:getMessages(locale).videoExhibit.view,exact:true}).click();
+      await page.getByRole("dialog").waitFor();await page.keyboard.press("Escape");
+      assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"interrupted resume has no operation notice");
+      await page.locator("video.la-lesson-video").evaluate(video=>video.dispatchEvent(new Event("error")));
+      await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).waitFor();
       await mount("normal");await time(9.99);assert.equal(await bar.count(),0);
       assert.equal(await modeSwitch.count(),0,"a single-mode course has no dropdown");
       await time(10);await bar.waitFor();assert.equal(await page.getByRole("dialog").count(),0,"time point offers an exhibit without opening a modal");
