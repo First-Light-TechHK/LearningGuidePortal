@@ -9,11 +9,8 @@ export function persistenceEnabled() {
 
 export function dataS3Bucket() {
   const bucket = process.env.DATA_S3_BUCKET?.trim();
-  if (bucket) return bucket;
-  // `next build` prerenders pages without runtime secrets. Media resolution is
-  // request-time only; a build placeholder keeps prerender from failing.
-  if (process.env.NEXT_PHASE === "phase-production-build") return "build-placeholder";
-  throw new Error("DATA_S3_BUCKET is not configured");
+  if (!bucket) throw new Error("DATA_S3_BUCKET is not configured");
+  return bucket;
 }
 
 export function dataS3Prefix() {
