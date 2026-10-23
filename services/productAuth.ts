@@ -1,10 +1,11 @@
 import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import type { Locale } from "@/lib/i18n/config";
 import { adminHosts, isAdminHost, isKnowledgeAdminPath, requestOriginMatches } from "./adminHost";
 import { getUserBySessionToken, isOperator, type ProductUser } from "./productStore";
-import { canAuthorCourses } from "./backofficeAccess";
+import { canAuthorCourses, canManageBackofficeEmployees, canUseBackofficeMenu } from "./backofficeAccess";
+import { menuForBackofficePath, type BackofficeMenu } from "@/lib/backofficeRbac";
 
 export const SESSION_COOKIE = "learning_guide_session";
 export const ADMIN_SESSION_COOKIE = "learning_guide_admin_session";
@@ -42,6 +43,21 @@ export async function requireBackofficeOperator(locale: Locale): Promise<Product
   if (operator) return operator;
   if (await currentBackofficeAuthor()) redirect(`/${locale}/backoffice/courses`);
   redirect(`/${locale}/backoffice/sign-in`);
+}
+
+/** Page guard for a BackOffice menu: signed out goes to Sign In; a hidden menu is a 404. */
+export async function requireBackofficeMenu(locale: Locale, menu: BackofficeMenu): Promise<ProductUser> {
+  const user = await currentBackofficeAuthor();
+  if (!user) redirect(`/${locale}/backoffice/sign-in`);
+  if (!canUseBackofficeMenu(user, menu)) notFound();
+  return user;
+}
+
+/** Settings -> Employee Account is Admin-only (PRD §3.3). */
+export async function requireBackofficeEmployeeAdmin(locale: Locale): Promise<ProductUser> {
+  const user = await requireBackofficeMenu(locale, "settings");
+  if (!canManageBackofficeEmployees(user)) notFound();
+  return user;
 }
 
 function requestCookie(request: Request, name: string) {
@@ -85,6 +101,8 @@ export async function currentEmailBindingUser() {
 export async function rejectIfUnauthenticated(request: Request) {
   if (isAdminHost(request) && isKnowledgeAdminPath(new URL(request.url).pathname)) {
     const user = await currentAuthorRequest(request);
+    const menu = menuForBackofficePath(new URL(request.url).pathname) || "knowledge";
+    if (user && isOperator(user) && !canUseBackofficeMenu(user, menu)) return NextResponse.json({ ok: false, error: "Not found." }, { status: 404, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
     if (user && isOperator(user) && (["GET", "HEAD", "OPTIONS"].includes(request.method) || requestOriginMatches(request))) return null;
     return NextResponse.json({ ok: false, error: "Operator access is required." }, { status: user ? 403 : 401, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   }

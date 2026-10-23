@@ -1,0 +1,59 @@
+{
+  "brand": "Learning Guide BackOffice",
+  "collapse": "Collapse sidebar",
+  "expand": "Expand sidebar",
+  "language": "Language",
+  "languages": { "en-GB": "English", "zh-CN": "简体中文" },
+  "languageShort": { "en-GB": "EN", "zh-CN": "中文" },
+  "accountMenu": "Account menu",
+  "changePassword": "Change Password",
+  "signOut": "Sign Out",
+  "menus": {
+    "course": "Course",
+    "knowledge": "Knowledge",
+    "aiTutor": "AI Tutor",
+    "order": "Order",
+    "reporting": "Reporting",
+    "student": "Student",
+    "helpdesk": "HelpDesk",
+    "settings": "Settings"
+  },
+  "roles": {
+    "admin": "Admin",
+    "course_creator": "Course Creator",
+    "graphic_designer": "Graphic Designer",
+    "finance": "Finance",
+    "operation_admin": "Operation Admin",
+    "operation_ai": "Operation AI",
+    "author": "Course Author"
+  },
+  "settings": {
+    "employees": "Employee Account",
+    "paymentGateway": "Payment Gateway",
+    "notifications": "Notification Configuration",
+    "portalContent": "Portal Content"
+  },
+  "placeholders": {
+    "reporting": { "title": "Reporting", "subtitle": "Business reports and metrics." },
+    "student": { "title": "Student", "subtitle": "Student accounts and profiles." },
+    "helpdesk": { "title": "HelpDesk", "subtitle": "Student enquiries and support requests." },
+    "employees": { "title": "Employee Account", "subtitle": "Manage backoffice employee accounts, roles and access permissions." },
+    "notifications": { "title": "Notification Configuration", "subtitle": "Email and notification settings." },
+    "comingSoon": "This module is not available yet."
+  },
+  "password": {
+    "title": "Change Password",
+    "current": "Current password",
+    "next": "New password",
+    "confirm": "Confirm new password",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Password changed. Please sign in again.",
+    "errors": {
+      "mismatch": "The new passwords do not match.",
+      "NEW_PASSWORD_TOO_SHORT": "New password must contain at least 8 characters.",
+      "CURRENT_PASSWORD_INCORRECT": "Current password is incorrect.",
+      "failed": "Password could not be changed. Try again."
+    }
+  }
+}

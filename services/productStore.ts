@@ -35,6 +35,7 @@ import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } 
 import type { LessonContent } from "@/contracts/lesson-content";
 import type { LessonResources } from "@/contracts/lesson-resources";
 import type { KnowledgePositions } from "@/contracts/knowledge-progress";
+import { isBackofficeRole, type BackofficeRole } from "@/lib/backofficeRbac";
 import { knowledgeProgress, courseKnowledgePoints } from "@/lib/knowledgeProgress";
 import type { StudyProgressInput } from "@/contracts/knowledge-progress";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
@@ -59,6 +60,8 @@ export type ProductUser = {
   nickname: string;
   locale: Locale;
   role: "student" | "teacher" | "operator";
+  /** BackOffice employee role (PRD §3.1); only meaningful for operators. */
+  backofficeRole?: BackofficeRole;
   status: "pending" | "active" | "disabled";
   emailVerifiedAt: string | null;
   avatarPath?: string | null;
@@ -618,6 +621,19 @@ export function publicUser(user: ProductUser) {
   return { id: user.id, email: user.email, nickname: user.nickname, locale: user.locale, role: user.role || "student", status: user.status, emailVerifiedAt: user.emailVerifiedAt, country: user.country || null, ageRange: user.ageRange || null, education: user.education || null, areasOfInterest: user.areasOfInterest || [] };
 }
 
+/** Assign a BackOffice employee role to an operator account (PRD §3.1). */
+export async function setBackofficeRole(emailValue: string, role: BackofficeRole) {
+  if (!isBackofficeRole(role)) throw new Error("Unknown BackOffice role.");
+  const email = normaliseEmail(emailValue);
+  return editData((data) => {
+    const user = data.users.find((item) => item.email === email);
+    if (!user) throw new Error("User not found.");
+    if (user.role !== "operator") throw new Error("Only BackOffice operator accounts take an employee role.");
+    user.backofficeRole = role;
+    return user;
+  });
+}
+
 export function isOperator(user: ProductUser) {
   return canOperateBackoffice(user);
 }
@@ -932,6 +948,28 @@ export async function updateUserProfile(input: { userId: string; nickname: strin
       user.passwordHash = await passwordHash(input.newPassword);
       data.sessions = data.sessions.filter((session) => session.userId !== user.id);
     }
+    return user;
+  });
+}
+
+/** Signed-in password change; every session of the user is revoked afterwards. */
+export async function changeUserPassword(userId: string, currentPassword: string, newPassword: string) {
+  return editData(async (data) => {
+    const user = data.users.find((item) => item.id === userId && item.status === "active");
+    if (!user) throw new Error("User not found.");
+    if (newPassword.length < 8) throw new ProfileError("NEW_PASSWORD_TOO_SHORT", "New password must contain at least 8 characters.");
+    if (!(await passwordMatches(currentPassword, user.passwordHash))) throw new ProfileError("CURRENT_PASSWORD_INCORRECT", "Current password is incorrect.");
+    user.passwordHash = await passwordHash(newPassword);
+    data.sessions = data.sessions.filter((session) => session.userId !== user.id);
+    return user;
+  });
+}
+
+export async function saveUserLocale(userId: string, locale: Locale) {
+  return editData((data) => {
+    const user = data.users.find((item) => item.id === userId);
+    if (!user) throw new Error("User not found.");
+    user.locale = locale === "zh-CN" ? "zh-CN" : "en-GB";
     return user;
   });
 }
