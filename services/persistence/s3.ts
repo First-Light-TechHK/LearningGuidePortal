@@ -47,6 +47,9 @@ const COURSE_MEDIA_PREFIX = "/learning-guide/dev/documents/mvp/";
 
 /** Convert an approved migrated course-media URL into a short-lived private URL. */
 export async function signCourseMediaUrl(value: string, expiresIn?: number) {
+  // Prerender runs without runtime secrets or AWS credentials. Media URLs are
+  // resolved per request; emit the stored value untouched during the build.
+  if (process.env.NEXT_PHASE === "phase-production-build") return value;
   let parsed: URL;
   try { parsed = new URL(value); } catch { return value; }
   if (parsed.protocol !== "https:" || parsed.host !== COURSE_MEDIA_HOST || !parsed.pathname.startsWith(COURSE_MEDIA_PREFIX)) return value;
