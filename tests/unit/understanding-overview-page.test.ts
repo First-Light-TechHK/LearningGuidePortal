@@ -15,7 +15,7 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
   await mkdir(path.join(originalCwd,'test-results/understanding-real'),{recursive:true});
   const {restore}=await isolate('lg-understanding-browser-');
   const store=await import('../../services/productStore');
-  await store.ensureProductData();const catalogue=await readProductData();catalogue.courses.find(course=>course.id===COURSE_ID).sections.push({id:'extra-section',title:'Further lessons',lessons:[3,4,5].map(number=>({id:`lesson-${number}`,title:`Actual Lesson ${number}`,body:'Reading',durationMinutes:1,isPublic:false}))});await writeProductData(catalogue);
+  await store.ensureProductData();const catalogue=await readProductData();catalogue.courses.find((course: any)=>course.id===COURSE_ID).sections.push({id:'extra-section',title:'Further lessons',lessons:[3,4,5].map(number=>({id:`lesson-${number}`,title:`Actual Lesson ${number}`,body:'Reading',durationMinutes:1,isPublic:false}))});await writeProductData(catalogue);
   const routes=await import('../../app/api/courses/[courseId]/lessons/[lessonId]/assessments/[kind]/route');
   const overview=await import('../../app/api/courses/[courseId]/understanding/route');
   let failNextWrite=false, failNextRead=false, holdNextRead=false;let releaseRead:()=>void=()=>{};

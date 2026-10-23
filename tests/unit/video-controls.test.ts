@@ -30,7 +30,7 @@ test('shared video toolbar changes speed and localises picture-in-picture states
       assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), 1.5);
       await page.locator('video').evaluate(video => { Object.defineProperty(video, 'duration', { value: 120 }); video.dispatchEvent(new Event('loadedmetadata')); });
       const play = page.getByRole('button', { name: locale === 'zh-CN' ? '播放' : 'Play', exact: true });
-      await page.locator('video').evaluate(video => { video.play = async () => { throw new DOMException('Interrupted by pause', 'AbortError'); }; });
+      await page.locator('video').evaluate(video => { (video as HTMLVideoElement).play = async () => { throw new DOMException('Interrupted by pause', 'AbortError'); }; });
       await play.click();
       assert.equal(await page.getByRole('status').count(), 0, 'interrupted playback has no operation notice');
       await page.addScriptTag({ content: `(video => {
