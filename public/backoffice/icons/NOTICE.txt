@@ -1,2 +1,0 @@
-Menu icons from Remix Icon v4.6.0 (https://remixicon.com), Apache License 2.0.
-File names match the icon layers in the Figma BackOffice frames.

@@ -26,7 +26,7 @@ export function AdminSignInForm({ locale }: { locale: "en-GB" | "zh-CN" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, nickname, locale, rememberMe: true })
       });
-      const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean; user?: { locale?: string } } };
+      const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean } };
       if (!response.ok || !data.ok) {
         const message = data.code === "OPERATOR_REQUIRED" ? copy.backoffice.operatorRequired
           : data.code === "AUTHOR_REQUIRED" ? copy.backoffice.authorRequired
@@ -40,9 +40,7 @@ export function AdminSignInForm({ locale }: { locale: "en-GB" | "zh-CN" }) {
         setBusy(false);
         return;
       }
-      // PORT-NAV-006/007: land on Course in the employee's saved language.
-      const saved = data.data?.user?.locale;
-      window.location.assign(`/${saved === "zh-CN" || saved === "en-GB" ? saved : locale}/backoffice/courses`);
+      window.location.assign(`/${locale}/backoffice/courses`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : copy.backoffice.signInFailed);
       setBusy(false);

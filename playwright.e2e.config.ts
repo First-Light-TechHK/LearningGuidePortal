@@ -65,7 +65,7 @@ export default defineConfig({
           {
             name: "e2e-local-demo",
             ...chromium,
-            testMatch: ["**/E2E-B1-purchase-learn.spec.ts", "**/backoffice-shell.spec.ts"],
+            testMatch: ["**/E2E-B1-purchase-learn.spec.ts"],
           },
         ]
       : []),

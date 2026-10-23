@@ -18,12 +18,7 @@ export function middleware(request: NextRequest) {
     }
   }
   const decision = adminHostDecision(request);
-  if (decision.allow) {
-    // Server components read the path to resolve the BackOffice menu; never trust a client copy.
-    const forwarded = new Headers(request.headers);
-    forwarded.set("x-lg-pathname", request.nextUrl.pathname);
-    return NextResponse.next({ request: { headers: forwarded } });
-  }
+  if (decision.allow) return NextResponse.next();
   if (decision.status === 404) return new NextResponse("Not Found", { status: 404 });
   if (decision.status === 307 && decision.location) {
     return NextResponse.redirect(new URL(decision.location, request.url), 307);
