@@ -131,7 +131,7 @@ function contentHash(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
 }
 
-export async function ensureMedia(asset: MediaSpec): Promise<"add" | "skip"> {
+export async function ensureMedia(asset: MediaSpec, force = false): Promise<"add" | "skip"> {
   // Staging lives in S3. Without a bucket (tests, local fs) there is nothing to
   // copy from, and the migration still has to publish the course itself.
   if (!process.env.DATA_S3_BUCKET?.trim()) return "skip";
