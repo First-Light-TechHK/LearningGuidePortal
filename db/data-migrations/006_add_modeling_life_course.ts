@@ -20,7 +20,7 @@ type MediaSpec = { staging: string; id: string; fileType: "image" | "video"; mim
 // Deterministic ids so DEV and SIT share the same lesson URLs. The bytes are
 // staged under <prefix>/staging/modeling-life/ and copied into the course-media
 // store by this migration; nothing is hand-uploaded into course_media.
-const MEDIA: MediaSpec[] = [
+export const MEDIA: MediaSpec[] = [
   { staging: "cover.png", id: "4c1b4ade-446a-46ac-8a40-2c3837118063", fileType: "image", mimeType: "image/png", extension: "png", originalName: "课程封面.png" },
   { staging: "lesson1.mp4", id: "04f0039b-42c7-441b-85b7-fe6e21c6bbe6", fileType: "video", mimeType: "video/mp4", extension: "mp4", originalName: "Lesson 1视频课件.mp4" },
   { staging: "lesson2.mp4", id: "613a07b1-24e8-4123-ab10-5bd36875293e", fileType: "video", mimeType: "video/mp4", extension: "mp4", originalName: "Lesson 2视频课件.mp4" },

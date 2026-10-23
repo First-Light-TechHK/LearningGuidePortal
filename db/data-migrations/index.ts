@@ -6,6 +6,7 @@ import * as migrateMvpMediaToAws from "./004_migrate_mvp_media_to_aws";
 import * as backfillLessonSummaries from "./005_backfill_lesson_summaries";
 import * as addModelingLifeCourse from "./006_add_modeling_life_course";
 import * as repairModelingLifeMedia from "./007_repair_modeling_life_media";
+import * as repairModelingLifeMediaRows from "./009_repair_modeling_life_media_rows";
 import * as upgradeModelingLife from "./008_upgrade_modeling_life";
 import * as fixModelingLifeExhibits from "./009_fix_modeling_life_exhibits";
 
