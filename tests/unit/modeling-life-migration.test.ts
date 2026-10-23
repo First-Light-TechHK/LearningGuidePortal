@@ -45,7 +45,8 @@ test("Modeling life is a registered idempotent ORM course-only migration with po
 
 test("shipped whole-Lesson courses upgrade without user writes and fresh registries retire old media-copy operations",async()=>{
   const old=legacyModelingLifeCourse(createdAt);old.title="Operator title";
-  const orm=createMemoryOrm({tables:{courses:[old],studyRecords:[{id:"keep-study",currentContentId:"modeling-life-lesson-1-text"}],users:[{id:"keep-user"}]}});
+  const keptStudy={id:"keep-study",currentContentId:"modeling-life-lesson-1-text"};
+  const orm=createMemoryOrm({tables:{courses:[old],studyRecords:[keptStudy],users:[{id:"keep-user"}]}});
   const study=orm.snapshot("studyRecords"),users=orm.snapshot("users");
   assert.equal(migration.apply(orm,{now:createdAt,store:"memory",dryRun:true})[0].action,"update");
   const next=orm.table<ProductCourse>("courses").findById(course.id)!;
