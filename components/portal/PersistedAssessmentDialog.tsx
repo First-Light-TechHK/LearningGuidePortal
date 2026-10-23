@@ -34,7 +34,7 @@ export function PersistedAssessmentDialog({ locale, courseId, lessonId, lessonNu
         const knowledgeResponse = await fetch(endpoint.replace(/application$/, "knowledge"), { cache: "no-store" });
         if (knowledgeResponse.ok) {
           const knowledge = await knowledgeResponse.json();
-          if (mounted.current) setKnowledgeCompleted(Boolean(knowledge.data?.completedAt));
+          if (mounted.current) setKnowledgeCompleted(Boolean(knowledge.data?.completedAt||knowledge.data?.latestResult));
         }
       }
       if (!mounted.current) return;
@@ -100,7 +100,7 @@ export function PersistedAssessmentDialog({ locale, courseId, lessonId, lessonNu
   const leave = async (action = onExit) => { if (await flush()) action(); };
   const persistence = { saveMessage: message, saveFailed: failed, onRetrySave: () => { void flush(); } };
   if (!loaded) return <PortalDialog labelledBy="assessment-loading" onClose={onExit}><h2 id="assessment-loading">{copy.loading}</h2>{failed ? <p role="alert">{message}</p> : <div role="status" aria-label={copy.loading}><span aria-hidden="true" className="portal-dialog-spinner"/></div>}<footer>{failed && <button onClick={() => void load()}>{copy.retry}</button>}<button onClick={onExit}>{getMessages(locale).learning.close}</button></footer></PortalDialog>;
-  if (kind === "knowledge") return <KnowledgeTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle}
+  if (kind === "knowledge") return <KnowledgeTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} entrySource={entrySource}
     initialAttempt={record?.attempt.kind === "knowledge" ? { ...record.attempt, phase: record.completedAt ? "result" : record.attempt.phase } : undefined} onAttemptChange={update} {...persistence}
     onExit={() => void leave()} onApplicationTest={onApplicationTest ? () => void leave(onApplicationTest) : undefined} onNextLesson={onNextLesson ? () => void leave(onNextLesson) : undefined}/>;
   const application = record?.attempt.kind === "application" ? record.attempt : null;

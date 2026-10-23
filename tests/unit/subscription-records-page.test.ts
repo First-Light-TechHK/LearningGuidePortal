@@ -18,7 +18,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
       builder.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ resolveDir: process.cwd(), contents: args.path === "next/navigation" ? `export function usePathname(){return location.pathname};export const useSearchParams=()=>new URLSearchParams(location.search);` : args.path === "next/link" ? `import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/ >}` : `import React from 'react';export default function Image({unoptimized,...props}){return <img {...props}/ >}`, loader: "tsx" }));
     } }],
   });
-  const browser = await chromium.launch({ channel: "msedge" });
+  const browser = await chromium.launch();
   const output = "test-results/subscription-records"; await mkdir(output, { recursive: true });
   (globalThis as any).subscriptionFooter = defaultPortalContent;
   const footerBundle = await build({ entryPoints: ["components/portal/PortalFooter.tsx"], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], plugins: [{ name: "footer", setup(b) {
@@ -68,13 +68,17 @@ test("Subscription products start collapsed, expand independently, preserve bill
     assert.equal(await card("science").locator('td[data-status="paid"]').count(), 2);
     assert.equal(await card("science").locator('td[data-status="failed"]').count(), 1);
     assert.equal(await card("science").locator('a[href*="/receipt"]').count(), 2);
+    for (const href of await card("science").locator('a[href*="/receipt"]').evaluateAll(links => links.map(link => link.getAttribute("href")!))) {
+      assert.equal(new URL(href, page.url()).searchParams.get("locale"), locale);
+    }
+    assert.equal(await card("science").locator("tbody tr").first().locator("td").nth(1).textContent(), "US$39.00");
     assert.equal(await card("chinese").getByRole("table").count(), 0);
     assert.equal(await card("science").locator('div[data-colour="science"]').evaluate(e => e.getBoundingClientRect().width), 120);
     assert.equal(await card("science").evaluate(e => e.getBoundingClientRect().x), 344);
     await page.locator('img[src*="/subscriptions/design/"]').evaluateAll(async images => Promise.all(images.map(img => (img as HTMLImageElement).decode())));
     for (const icon of await page.locator('img[src*="/subscriptions/design/"]:visible').all()) assert.equal(await icon.evaluate(e => e.getBoundingClientRect().width), 16);
     await page.screenshot({ path: `${output}/${locale}-current-v4.png`, fullPage: true });
-    await card("chinese").getByRole("button", { name: copy.learning.payNow + " →", exact: true }).click();
+    await card("chinese").getByRole("button", { name: copy.learning.payNow , exact: true }).click();
     await page.getByRole("alert").waitFor(); assert.equal(await page.getByRole("alert").textContent(), "Fixture billing failure");
     const cancel = card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true });
     await cancel.click(); const dialog = page.getByRole("dialog"); await dialog.waitFor();
@@ -106,7 +110,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
     assert.deepEqual(requests[0], requests[1]); assert.deepEqual(requests[1], { subscriptionId: science.id, action: "cancel", reasonCode: "other", reasonText: "Optional feedback" });
     assert.equal(await card("science").getByText(copy.subscriptionDesign.renewalCanceled, { exact: true }).count(), 1);
     assert.equal(await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal }).count(), 0);
-    await card("science").getByRole("button", { name: copy.subscriptionDesign.turnOnRenewal + " →", exact: true }).click();
+    await card("science").getByRole("button", { name: copy.subscriptionDesign.turnOnRenewal , exact: true }).click();
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
     assert.equal(requests.at(-1).action, "resume");
     for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({ path: `${output}/${locale}-current-v4-${width}.png`, fullPage: true }); }
@@ -129,7 +133,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await page.screenshot({ path: `${output}/${locale}-past-v4.png`, fullPage: true });
     await mount("legacy-checkout", [everything], [{ ...order(everything, "legacy-everything", "paid", "2026-10-11"), amountMinor: 9900, stripeInvoiceId: null, stripeCheckoutSessionId: "cs-original" }]);
     await card("everything").getByRole("button", { name: copy.subscriptionDesign.paymentHistory }).click();
-    assert.equal(await card("everything").locator('a[href="/api/my-learning/orders/legacy-everything/receipt"]').count(), 1);
+    assert.equal(await card("everything").locator(`a[href="/api/my-learning/orders/legacy-everything/receipt?locale=${locale}"]`).count(), 1);
     // Supplied Stripe product images remain dynamic.
     await mount("dynamic", [everything], [{ ...order(everything, "dynamic-order"), presentation: { name: "Everything", image: "/test-product.png", termMonths: 6 } }]);
     await card("everything").locator('img[src="/test-product.png"]').waitFor();

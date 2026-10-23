@@ -10,7 +10,7 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
-import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -154,7 +154,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
-  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatLogRef = useRef<HTMLDivElement>(null);
+  const chatPinnedRef = useRef(true);
   const caretRef = useRef<number | null>(null);
   const chatSequence = useRef(0);
   const permissionWatchRef = useRef<PermissionStatus | null>(null);
@@ -574,8 +576,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     sideTabRef.current = sideTab;
-    if (sideTab === "chat") setUnread(0);
+    if (sideTab === "chat") { setUnread(0); chatPinnedRef.current = true; }
   }, [sideTab]);
+
+  // BUG-0198: the chat scrolls inside the fixed-height panel (599:1276) instead
+  // of stretching the page, and follows the newest line while the reader is at
+  // the bottom; someone reading back up is not pulled down.
+  useEffect(() => {
+    const log = chatLogRef.current;
+    if (log && chatPinnedRef.current) log.scrollTop = log.scrollHeight;
+  }, [chat, sideTab]);
 
   useEffect(() => {
     void load();
@@ -1078,16 +1088,17 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         </div>
         {mediaNotice ? <p className={styles.alert} role="alert">{mediaNotice.device ? roomCopy.mediaDeviceBlocked : mediaNotice.kind === "camera" ? roomCopy.mediaBlockedCamera : roomCopy.mediaBlockedMic} <button className={styles.textButton} type="button" onClick={() => setMediaNotice(null)}>{copy.close}</button></p> : null}
         {shareFailed ? <p className={styles.alert} role="alert">{roomCopy.shareFailed} <button className={styles.textButton} type="button" onClick={() => setShareFailed(false)}>{copy.close}</button></p> : null}
-        {session.focus ? <p>{session.focus}</p> : null}
+        {/* BUG-0196: the focus carries the same "Session Focus" label and 12px body as the waiting dialog (599:755), so it never reads as a second title. */}
+        {session.focus ? <section className={styles.roomFocus} aria-labelledby="study-session-focus"><h2 id="study-session-focus" className={styles.waitingFocus}>{copy.focus}</h2><p>{session.focus}</p></section> : null}
         <div className={styles.controls}>
           {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
           {controls.includes("share") && canShare ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => {
             const start = !sharing;
             setShareFailed(false);
-            void setMedia("share", start).catch(() => {
+            void setMedia("share", start).catch((error: unknown) => {
               setSharing(false);
-              if (start) setShareFailed(true);
+              if (start && !screenShareCancelled(error)) setShareFailed(true);
             });
           }}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
           {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
@@ -1132,7 +1143,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           </div>
         ) : (
           <>
-            <div className={styles.chatLog} role="tabpanel" aria-live="polite">
+            <div ref={chatLogRef} className={styles.chatLog} role="tabpanel" aria-live="polite" onScroll={(event) => {
+              const log = event.currentTarget;
+              chatPinnedRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+            }}>
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
                 <p className={`${styles.chatBody} ${styles.tutorBody}`}>
                   {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participant, question: line.replyTo.question })}</span> : null}
@@ -1160,15 +1174,17 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               // it from the mention list) is the only way to address the Tutor.
               const prefix = `${roomCopy.aiTutor} `;
               const hasPrefix = text.startsWith(prefix);
-              const mentionsTutor = hasPrefix && session.aiTutorEnabled && !tutorOffline;
-              const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text, at: chatStamp(), host: group?.role === "host" };
+              const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled && !tutorOffline;
+              const chatText = mentionsTutor && !hasPrefix ? `${roomCopy.aiTutor} ${text}` : text;
+              const line: ChatLine = { id: `local-${chatSequence.current++}`, from: roomCopy.you, text: chatText, at: chatStamp(), host: group?.role === "host" };
+              chatPinnedRef.current = true;
               setChat((items) => [...items, line]);
               void sendChatLine(line);
               if (mentionsTutor) void askTutor(line.id, { question: text.slice(prefix.length).trim(), clientEventId: tutorClientEventId() });
               setMention(null);
               setDraft("");
             }}>
-              {tutorOffline ? <p className={styles.chatBody} role="status" data-testid="tutor-offline">{roomCopy[`tutorOff_${tutorOffline}`]}</p> : null}
+
               {mentionRows.length > 0 ? (
                 <div className={styles.mentionMenu} role="listbox" aria-label={roomCopy.mentionList}>
                   {mentionRows.map((row, index) => (
@@ -1193,6 +1209,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                 // Shift+Enter starts a new line.
                 if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
               }} placeholder={roomCopy.chatPlaceholder} disabled={!connected} />
+              {/* 599:1392: the box holds only the placeholder and the send control; the @AI Tutor entry sits on the box's bottom-left edge instead of a label above the text (BUG-0197). */}
+              {tutorOffline ? <p className={`${styles.chatBody} ${styles.tutorOffline}`} role="status" data-testid="tutor-offline">{roomCopy[`tutorOff_${tutorOffline}`]}</p> : null}
+              {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} disabled={Boolean(tutorOffline)} title={tutorOffline ? roomCopy[`tutorOff_${tutorOffline}`] : undefined} onClick={() => setAddressTutor((on) => !on)}>{roomCopy.aiTutor}</button> : null}
               <button className={styles.sendButton} type="submit" disabled={!connected} aria-label={roomCopy.send}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 8.5 14 2 9 14l-1.5-4.5L2 8.5Z" fill="currentColor" /></svg></button>
             </form>
           </>

@@ -60,7 +60,7 @@ test.describe("live release e2e", () => {
     const email = process.env.LIVE_TEST_EMAIL;
     expect(email, "LIVE_TEST_EMAIL is required").toBeTruthy();
     const response = await request.post("/api/auth/register", {
-      data: { email, password: "SitSmoke-Passw0rd!", nickname: "SIT smoke", locale: "en-GB" }
+      data: { termsAccepted: true, email, password: "SitSmoke-Passw0rd!", nickname: "SIT smoke", locale: "en-GB" }
     });
     const body = await response.json();
     expect(JSON.stringify(body)).not.toMatch(/ses:SendEmail|assumed-role|not authorized to perform/i);
@@ -74,7 +74,7 @@ test.describe("live release e2e", () => {
       expect(resend.status()).toBe(200);
     }
     const probe = await request.post("/api/auth/register", {
-      data: { email: "sit-ses-probe@example.test", password: "SitSmoke-Passw0rd!", nickname: "SES probe", locale: "en-GB" }
+      data: { termsAccepted: true, email: "sit-ses-probe@example.test", password: "SitSmoke-Passw0rd!", nickname: "SES probe", locale: "en-GB" }
     });
     expect(JSON.stringify(await probe.json())).not.toMatch(/ses:SendEmail|assumed-role|not authorized to perform/i);
   });

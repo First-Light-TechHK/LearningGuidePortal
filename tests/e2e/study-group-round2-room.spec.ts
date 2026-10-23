@@ -121,8 +121,10 @@ function removeScreenCapture() {
 }
 
 // Screen capture that the browser refuses.
+// A refusal by the operating system. A plain "Permission denied" is what
+// closing the browser's picker gives, and that shows no failure (BUG-0199).
 function refuseScreenCapture() {
-  MediaDevices.prototype.getDisplayMedia = () => Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
+  MediaDevices.prototype.getDisplayMedia = () => Promise.reject(new DOMException("Permission denied by system", "NotAllowedError"));
 }
 
 test("r2-B4 / r1-F-4: the room renews its seat at once when the tab is visible again or back online", async ({ browser, baseURL }) => {

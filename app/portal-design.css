@@ -16,6 +16,7 @@
 .portal-auth-stage .auth-options label { display:flex; align-items:center; gap:8px; margin:0; }
 .portal-auth-stage .auth-options input[type=checkbox] { height:16px; width:16px; min-height:16px; margin:0; }
 .auth-credential-form .auth-submit { margin-top:24px; font-weight:500; border-radius:10px; background:#155dfc; box-shadow:0 1px 2px -1px rgb(0 0 0 / 10%),0 1px 3px rgb(0 0 0 / 10%); }
+.auth-credential-form .auth-submit:not(:disabled) { cursor:pointer; }
 .auth-credential-form .auth-options label,.auth-credential-form .auth-options a { font-weight:500; }
 .auth-credential-form .auth-provider-options { margin-top:24px; }
 .auth-provider-options.auth-provider-icons { display:block; padding-top:0; border-top:0; }
@@ -83,6 +84,7 @@
 .auth-signup-terms { display:flex !important; align-items:flex-start; gap:10px !important; margin:0; color:#374151 !important; font-size:13px !important; line-height:16px !important; font-weight:400 !important; }
 .portal-auth-stage .auth-signup-terms input[type=checkbox] { width:18px; height:18px; min-height:18px; margin:0; flex:0 0 18px; border:1.5px solid #d1d5db; border-radius:3px; accent-color:#1d6bff; }
 .auth-signup-terms strong { color:#1d6bff; font-weight:500; }
+.auth-provider-icon[aria-disabled="true"] { opacity:0.5; cursor:not-allowed; }
 .auth-signup-design .auth-submit { width:100%; min-height:48px; height:48px; margin:0; border-radius:8px; background:#1d6bff; box-shadow:none; font-size:16px; font-weight:700; }
 .auth-signup-design .auth-provider-options { width:100%; margin:0; padding:0; border:0; }
 .auth-provider-buttons .auth-provider-divider { justify-content:center; color:#6b7280; font-size:13px; line-height:18px; }
@@ -239,6 +241,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .settings-design-form .avatar-settings { flex-wrap:nowrap; gap:24px; align-items:flex-start; padding:26px 0 0; border:0; }
 .settings-design-form .avatar-preview { width:82px; height:82px; flex-shrink:0; font-size:23px; font-weight:600; background:#e8f1ff; color:#1660d8; }
 .settings-design-form .avatar-settings > div:last-child { padding-top:4px; gap:0; }
+.settings-design-form .avatar-upload[hidden] { display:none; }
 .settings-design-form .avatar-upload { min-width:148px; min-height:42px; font-size:13px; }
 .settings-design-form .settings-hint { margin-top:7px; line-height:20px; }
 .settings-profile-fields { display:grid; gap:34px; }
@@ -302,12 +305,13 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-design-main { width:min(1184px,calc(100% - 80px)); margin:0 auto; padding:48px 0 80px; }
 .pricing-title-row { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:32px; }
 .pricing-title-row h1 { margin:0; color:#15233a; font-size:28px; font-weight:600; line-height:36px; }
+.pricing-term-year-label { position:relative; display:inline-block; white-space:nowrap; transform:translateY(6px); }
 .pricing-term-switch { display:flex; gap:4px; padding:4px; border:1px solid #e5e7eb; border-radius:22px; background:#fff; flex:none; }
 .pricing-term-switch button { padding:8px 20px; border:0; border-radius:18px; font-size:13px; line-height:18px; font-weight:600; background:transparent; color:#155dfc; cursor:pointer; }
 .pricing-term-switch button[aria-pressed=true] { background:#155dfc; color:#fff; }
 .pricing-comparison { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; align-items:stretch; }
 .pricing-design-card { min-width:0; padding:32px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; color:#15233a; display:flex; flex-direction:column; gap:28px; }
-.pricing-design-card--everything { border:2px solid #246bfd; padding:31px; }
+.pricing-design-card[data-selected="true"] { border:2px solid #246bfd; padding:31px; }
 .pricing-card-tags { display:flex; align-items:center; gap:8px; min-height:24px; }
 .pricing-card-tags span { padding:5px 10px; border-radius:13px; background:#246bfd; color:#fff; font-size:10px; font-weight:600; line-height:14px; }
 .pricing-card-tags .pricing-saving { background:#e8faed; color:#168c52; font-size:11px; }
@@ -331,8 +335,8 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-card-benefits strong { color:#15233a; font-size:15px; font-weight:500; }
 .pricing-design-card .purchase-panel { min-width:0; display:block; margin-top:auto; border:0; padding:30px 0 0; background:transparent; box-shadow:none; }
 .pricing-design-card .purchase-actions { display:block; margin:0; }
-.pricing-design-card .purchase-actions button { width:100%; min-height:46px; padding:12px 20px; border-radius:8px; background:#246bfd; font-size:15px; font-weight:600; line-height:20px; }
-.pricing-design-card--category .purchase-actions button { border:1.5px solid #246bfd; background:#fff; color:#155dfc !important; }
+.pricing-design-card .purchase-actions button { width:100%; min-height:46px; padding:12px 20px; border:1.5px solid #246bfd; border-radius:8px; background:#fff; color:#155dfc !important; font-size:15px; font-weight:600; line-height:20px; }
+.pricing-design-card[data-selected="true"] .purchase-actions button { background:#246bfd; color:#fff !important; }
 .pricing-design-information { background:#f8fafc; padding:56px 40px 64px; }
 .pricing-design-information > div { max-width:1184px; margin:auto; }
 .pricing-design-information h2 { margin:0 0 32px; color:#15233a; font-size:24px; font-weight:600; line-height:32px; text-align:center; }
@@ -356,8 +360,9 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-selection--one_category .pricing-design-card { min-height:757px; }
 .pricing-upgrade-card { padding:32px; }
 .pricing-upgrade-action { margin-top:auto; padding-top:70px; }
-.pricing-upgrade-action button { display:block; width:100%; padding:13px 24px; border:0; border-radius:8px; background:#246bfd; color:#fff; font:600 15px/20px Inter,Arial,sans-serif; cursor:pointer; }
-.pricing-upgrade-action button:disabled { background:#98a2b3; cursor:not-allowed; }
+.pricing-upgrade-action button { display:block; width:100%; padding:12px 23px; border:1px solid #246bfd; border-radius:8px; background:#fff; color:#155dfc; font:600 15px/20px Inter,Arial,sans-serif; cursor:pointer; }
+.pricing-design-card[data-selected="true"] .pricing-upgrade-action button:not(:disabled) { background:#246bfd; color:#fff; }
+.pricing-upgrade-action button:disabled { border-color:#98a2b3; background:#98a2b3; color:#fff; cursor:not-allowed; }
 .pricing-upgrade-action p { font-size:13px; line-height:20px; }
 .pricing-upgrade-note { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:26px; }
 .pricing-upgrade-note p { margin:0; color:#64728b; font-size:13px; line-height:20px; }
@@ -365,7 +370,6 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-comparison--last { display:flex; justify-content:center; }
 .pricing-last-category { width:640px; max-width:100%; min-height:608px; border:2px solid #246bfd; padding:32px; }
 .pricing-last-category .pricing-selection-price { min-height:64px; }
-.pricing-last-category .purchase-actions button { background:#246bfd; color:#fff !important; border:0; }
 .pricing-ownership-summary { display:flex; flex-direction:column; gap:32px; }
 .pricing-owned-status { display:flex; align-items:center; gap:20px; padding:28px 32px; border:1px solid #e5e7eb; border-radius:16px; }
 .pricing-owned-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; }
@@ -381,7 +385,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-design-page a:focus-visible,.pricing-design-page button:focus-visible { outline:2px solid #155dfc; outline-offset:3px; }
 @media(max-width:1100px) { .pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
 @media(max-width:800px) { .pricing-selection--one_category .pricing-design-card { min-height:0; }.pricing-upgrade-action { padding-top:30px; }.pricing-owned-notice { padding:12px; }.pricing-owned-notice > a { flex-basis:100%; margin-left:0; }.pricing-owned-status { flex-wrap:wrap; padding:24px; }.pricing-owned-status > a { flex-basis:100%; }.pricing-owned-copy { flex-basis:calc(100% - 68px); }.pricing-owned-chips { width:100%; }.pricing-owned-benefits { grid-template-columns:1fr; }.pricing-owned-chip { overflow-wrap:anywhere; }.pricing-selection-price { min-height:0; }.pricing-selection-price-row .pricing-term-switch { margin-left:0; } }
-@media(max-width:800px) { .pricing-design-main { width:calc(100% - 40px); padding:32px 0 48px; }.pricing-title-row { flex-wrap:wrap; }.pricing-comparison { grid-template-columns:minmax(0,1fr); gap:24px; }.pricing-design-card { padding:24px; }.pricing-design-card--everything { padding:23px; }.pricing-card-price strong { font-size:48px; }.pricing-design-information { padding:40px 20px; }.pricing-information-grid { grid-template-columns:1fr; gap:24px; } }
+@media(max-width:800px) { .pricing-design-main { width:calc(100% - 40px); padding:32px 0 48px; }.pricing-title-row { flex-wrap:wrap; }.pricing-comparison { grid-template-columns:minmax(0,1fr); gap:24px; }.pricing-design-card { padding:24px; }.pricing-design-card[data-selected="true"] { padding:23px; }.pricing-card-price strong { font-size:48px; }.pricing-design-information { padding:40px 20px; }.pricing-information-grid { grid-template-columns:1fr; gap:24px; } }
 dialog.subscription-confirmation { box-sizing:border-box; width:856px; max-width:calc(100vw - 32px); min-height:850px; max-height:calc(100dvh - 144px); margin:120px auto 24px; padding:40px 100px 32px; border:0; border-radius:20px; color:#15233a; background:#fff; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; font-family:Inter,Arial,sans-serif; }
 dialog.subscription-confirmation::backdrop { background:rgba(0,0,0,.4); }
 dialog.subscription-confirmation:focus { outline:0; }

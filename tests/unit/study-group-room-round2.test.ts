@@ -105,7 +105,8 @@ test("M18: the sharer never sees their own share in the main view; failure says 
   assert.doesNotMatch(share, /localParticipant/);
   assert.match(room, /controls\.includes\("share"\) && canShare \?/);
   assert.match(room, /setCanShare\(screenShareSupported\(navigator\.mediaDevices\)\);/);
-  assert.match(room, /if \(start\) setShareFailed\(true\);/);
+  // Closing the picker is the person's choice, not a failure (BUG-0199).
+  assert.match(room, /if \(start && !screenShareCancelled\(error\)\) setShareFailed\(true\);/);
   assert.match(room, /\{shareFailed \? <p className=\{styles\.alert\} role="alert">\{roomCopy\.shareFailed\}/);
 });
 

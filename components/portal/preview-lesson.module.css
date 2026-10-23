@@ -49,13 +49,6 @@
 .textPlayer > .previewEnd:only-child .previewNotice { margin-top:49px; }
 @media(max-width:700px) { .previewEnd { margin-inline:-16px; margin-bottom:-20px; }.lockedText { padding-inline:16px; }.previewNotice { padding:20px 16px; }.previewNotice h2 { font-size:16px; }.textPlayer > .previewEnd:only-child { min-height:calc(100% + 20px); } }
 .textLayout { min-height:0; }
-.nextLessonRow { display:flex; justify-content:flex-end; padding-top:10px; }
-.nextLesson { color:#246bfc; font-size:18px; line-height:26px; font-weight:600; text-decoration:none; }
-.nextLesson:hover { text-decoration:underline; }
-.nextLessonRow { flex-wrap:wrap; gap:8px; }
-button.nextLesson { padding:0; border:0; background:transparent; font-family:inherit; cursor:pointer; }
-.nextLesson:disabled { color:#94a3b8; cursor:wait; }
-.nextLessonRow p { flex-basis:100%; margin:0; text-align:right; color:#b42318; font-size:14px; }
 .textPlayer :global(.la-player) { margin:0; }
 .player :global(.la-content-player) { padding:0; border:0; }
 .player :global(.la-content-player) > h3 { display:none; }
@@ -67,8 +60,8 @@ button.nextLesson { padding:0; border:0; background:transparent; font-family:inh
 .toolItem { position:relative; min-width:0; width:100%; }
 .tool { display:flex; gap:10px; align-items:center; box-sizing:border-box; width:100%; min-height:52px; padding:9px 10px; border:1px solid #e4e7ed; border-radius:12px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.04); text-align:left; color:#15233a; text-decoration:none; cursor:pointer; font:inherit; }
 .toolTooltip { position:absolute; z-index:5; right:0; bottom:calc(100% + 8px); box-sizing:border-box; width:max-content; max-width:100%; padding:8px 10px; border-radius:6px; background:#15233a; color:#fff; font-size:12px; line-height:16px; text-align:center; pointer-events:none; visibility:hidden; }
-.toolItem:hover .toolTooltip,.toolItem:focus-within .toolTooltip { visibility:visible; }
-.toolItem:focus-visible { outline:2px solid #246bfd; outline-offset:3px; border-radius:12px; }
+.tools:hover > .toolTooltip,.tools:focus-within > .toolTooltip { visibility:visible; }
+.tools:focus-visible { outline:2px solid #246bfd; outline-offset:3px; border-radius:12px; }
 .exhibitSlot { width:164px; margin:2px 0 0 -2px; }
 .exhibitSlot:empty { display:none; }
 .exhibitSlot > section { margin:0; }
@@ -90,7 +83,7 @@ button.nextLesson { padding:0; border:0; background:transparent; font-family:inh
 .progress > a { color:#1660d8; font-size:14px; }
 .page a:focus-visible,.page button:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
 @media(max-width:700px) { .player.textPlayer { height:max(240px,calc(100dvh - 320px)); padding:20px 16px; } }
-@media(max-width:1200px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.tools { position:static; width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; margin-top:20px; }.tools h2 { flex-basis:100%; }.toolItem { width:160px; }.banner { padding-right:20px; flex-wrap:wrap; } }
+@media(max-width:1200px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.tools { position:relative; top:auto; right:auto; width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; margin-top:20px; }.tools h2 { flex-basis:100%; }.toolItem { width:160px; }.banner { padding-right:20px; flex-wrap:wrap; } }
 @media(max-width:700px) { .breadcrumb { padding:16px 20px; }.layout { display:flex; flex-direction:column; min-height:0; }.sidebar { padding:20px; }.outline { max-height:260px; overflow:auto; }.main { padding:24px 20px 40px; }.heading { padding:16px; }.heading h1 { font-size:24px; line-height:32px; }.player { padding:12px; }.tools { gap:10px; }.toolItem { flex:1 1 150px; }.banner h2 { font-size:22px; }.unlock { width:100%; }.player :global(.la-video-play) { width:54px; height:54px; font-size:22px; } }
 .heading { grid-template-columns:auto minmax(0,1fr) auto; }
 .heading > .introduction { grid-column:1 / -1; }

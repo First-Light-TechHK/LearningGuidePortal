@@ -8,6 +8,7 @@ import { keepFocusInDialog } from "@/lib/dialogFocus";
 import type { SubscriptionRecordSubscription as Subscription, SubscriptionRecordOrder as Order } from "@/contracts/subscription-records";
 import type { SubscriptionCancelReason } from "@/contracts/subscription-management";
 import { canViewSubscriptionReceipt } from "@/contracts/subscription-records";
+import { formatPlanPrice } from "@/lib/planPricing";
 import { subscriptionListRecords } from "@/services/subscriptionRecords";
 import { localSubscriptionProductImage } from "@/lib/subscriptionProductImages";
 import { subscriptionCategoryLabel } from "@/lib/subscriptionCategoryLabel";
@@ -115,8 +116,8 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
         <div className={styles.product}><h2>{name}</h2>{image ? <Image className={styles.cover} src={image} alt={name} width={120} height={120} unoptimized/> : <div className={styles.coverArtwork} data-colour={colour} aria-hidden="true"><span>{coverLabel}</span><small>Learning Guide</small></div>}</div>
         <div className={styles.state} data-state={state}><strong aria-live="polite">{status}</strong><div className={styles.actions}>
           {subscription && state === "active" ? <button type="button" disabled={Boolean(busyId)} onClick={() => { setReason(undefined); setReasonText(""); setError(""); setCancelTarget(subscription); }}>{subscription.source === "trial" ? copy.cancel : view.cancelRenewal}</button> : null}
-          {subscription && state === "grace" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void pay(subscription.id)}>{copy.payNow} →</button> : null}
-          {subscription && state === "cancel_at_period_end" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void resume(subscription)}>{view.turnOnRenewal} →</button> : null}
+          {subscription && state === "grace" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void pay(subscription.id)}>{copy.payNow}</button> : null}
+          {subscription && state === "cancel_at_period_end" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void resume(subscription)}>{view.turnOnRenewal}</button> : null}
           {pendingUpgrade ? <Link href={`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(pendingUpgrade.quoteId!)}`}>{copy.payNow}</Link> : subscription && allowCategoryUpgrade && state === "active" && subscription.scope === "category" && subscription.device !== "mobile" && subscription.stripeSubscriptionId ? <Link href={`/${locale}/subscription?upgradeFrom=${encodeURIComponent(subscription.id)}`}>{copy.upgrade}</Link> : null}
         </div></div>
         <div className={styles.time} data-state={state}><strong>{state === "grace" ? view.gracePeriod : record.past ? state === "unavailable" ? copy.validPeriod : view.expiredOn : copy.validUntil}</strong><span>{until ? date(until) : view.periodUnavailable}</span></div>
@@ -125,7 +126,7 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
       {expanded[record.id] ? <div className={styles.history} id={`payments-${record.id}`}>
         {record.orders.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{view.paymentDate}</th><th>{copy.amount}</th><th>{view.status}</th><th>{copy.validPeriod}</th><th>{copy.receipt}</th></tr></thead><tbody>{record.orders.map(payment => {
           const note = payment.kind === "upgrade" ? payment.upgradeProration ? view.proratedUpgrade : view.upgradeType : payment.plan?.id !== subscription?.plan?.id ? payment.presentation?.name || payment.plan?.name : null;
-          return <tr key={payment.id}><td>{date(payment.createdAt)}</td><td>{new Intl.NumberFormat(locale, { style: "currency", currency: payment.currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(payment.amountMinor / 100)} {payment.currency.toUpperCase()}{note && <small>{note}</small>}</td><td data-status={payment.status}>{paymentStatus(payment)}</td><td>{payment.servicePeriodStart && payment.servicePeriodEnd ? `${date(payment.servicePeriodStart)} – ${date(payment.servicePeriodEnd)}` : "—"}</td><td>{canViewSubscriptionReceipt(payment) ? <a href={`/api/my-learning/orders/${encodeURIComponent(payment.id)}/receipt`} target="_blank" rel="noreferrer">{view.viewReceipt}</a> : "—"}</td></tr>;
+          return <tr key={payment.id}><td>{date(payment.createdAt)}</td><td>{formatPlanPrice(locale, payment)}{note && <small>{note}</small>}</td><td data-status={payment.status}>{paymentStatus(payment)}</td><td>{payment.servicePeriodStart && payment.servicePeriodEnd ? `${date(payment.servicePeriodStart)} – ${date(payment.servicePeriodEnd)}` : "—"}</td><td>{canViewSubscriptionReceipt(payment) ? <a href={`/api/my-learning/orders/${encodeURIComponent(payment.id)}/receipt?locale=${locale}`} target="_blank" rel="noreferrer">{view.viewReceipt}</a> : "—"}</td></tr>;
         })}</tbody></table></div> : <p>{view.noHistory}</p>}
       </div> : null}
     </article>;

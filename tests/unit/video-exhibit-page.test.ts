@@ -5,6 +5,7 @@ import path from "node:path";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 import { getMessages } from "../../lib/i18n/messages";
+import { lessonMessages } from "../../messages/lesson-authoring";
 
 test("video exhibits appear at configured times, dismiss, reopen and respect seek/trial boundaries", async () => {
   const bundle = await build({
@@ -17,7 +18,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path === "next/navigation" ? "export function useRouter(){return {refresh(){window.refreshed=true},push(href){window.modeDestination=href}}}" : args.path === "next/dynamic" ? "export default function dynamic(){return ()=>null}" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>;}" : "import React from 'react';export default function Image({unoptimized,...props}){return <img {...props}/>;}"}));
     }}],
   });
-  const browser = await chromium.launch({channel:"msedge"});
+  const browser = await chromium.launch();
   await mkdir("test-results/video-exhibit",{recursive:true});
   try {
     for(const locale of ["en-GB","zh-CN"] as const) {
@@ -145,6 +146,22 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       lesson.contents.pop();
       const time=async(seconds:number,event="timeupdate")=>{await page.locator("video").waitFor();await page.locator("video").evaluate((element,{seconds,event})=>{Object.defineProperty(element,"duration",{configurable:true,value:120});Object.defineProperty(element,"currentTime",{configurable:true,writable:true,value:seconds});element.dispatchEvent(new Event(event));},{seconds,event});};
       const bar=page.getByRole("region",{name:locale==="en-GB"?"Exhibit Available":"\u53ef\u67e5\u770b\u5c55\u793a\u5185\u5bb9"});
+      await mount("interrupted-playback");
+      await page.locator("video.la-lesson-video").waitFor();
+      await page.addScriptTag({content:`(video=>{
+        video.play=async()=>{throw new DOMException("Interrupted by pause","AbortError");};
+        let paused=false;
+        Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});
+        video.pause=()=>{paused=true;};
+      })(document.querySelector('video.la-lesson-video'));`});
+      await page.locator(".la-video-play").click();
+      assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"cover play interruption has no operation notice");
+      await time(20);await bar.waitFor();
+      await bar.getByRole("button",{name:getMessages(locale).videoExhibit.view,exact:true}).click();
+      await page.getByRole("dialog").waitFor();await page.keyboard.press("Escape");
+      assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"interrupted resume has no operation notice");
+      await page.locator("video.la-lesson-video").evaluate(video=>video.dispatchEvent(new Event("error")));
+      await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).waitFor();
       await mount("normal");await time(9.99);assert.equal(await bar.count(),0);
       assert.equal(await modeSwitch.count(),0,"a single-mode course has no dropdown");
       await time(10);await bar.waitFor();assert.equal(await page.getByRole("dialog").count(),0,"time point offers an exhibit without opening a modal");
@@ -164,7 +181,8 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.locator("video").evaluate(`video=>{let paused=false;Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});video.pause=()=>{paused=true;};video.play=()=>{paused=false;return Promise.resolve();};}`);
       await bar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click(); await page.getByRole("dialog").waitFor(); await page.getByRole("dialog").locator('img[alt="Image exhibit"]').waitFor();
       assert.equal(await page.locator("video").evaluate(video=>(video as HTMLVideoElement).paused),true); await page.keyboard.press("Escape");
-      assert.equal(await page.locator("video").evaluate(video=>(video as HTMLVideoElement).paused && (video as HTMLVideoElement).currentTime===25),true,"closing the exhibit leaves lesson paused at the same point");
+      assert.equal(await page.locator("video").evaluate(video=>{ const media = video as HTMLVideoElement; return media.paused && media.currentTime===25; }),true,"closing the exhibit leaves lesson paused at the same point");
+
       await time(9,"seeked");await time(10);await bar.waitFor();await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/video-exhibit/${locale}-mobile.png`,fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       const mobileBubble=(await bar.boundingBox())!;for(const element of await bar.locator('h2,button').all()){const bounds=(await element.boundingBox())!;assert.ok(bounds.y>=mobileBubble.y&&bounds.y+bounds.height<=mobileBubble.y+mobileBubble.height,"mobile bubble contains its title and actions");}
       await time(30,"seeked");assert.equal(await bar.count(),0,"forward seek clears prompt and skips prior nodes");
@@ -173,31 +191,33 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       lesson.contents[0].url="/portal/text-exhibits/flowers.webm";
       await page.setViewportSize({width:1440,height:900});
       await mount("timed-samples");
+      const fullscreenBar=page.locator('[data-video-exhibit="fullscreen"]');
       for(const [seconds,kind] of [[20,"image"],[40,"video"],[60,"model3d"]] as const) {
         await page.locator('.la-controlled-video .la-video-controls').getByRole('button').last().click();
         await page.waitForFunction(()=>document.fullscreenElement?.classList.contains('la-controlled-video'));
-        await time(seconds-.01);assert.equal(await bar.count(),0);
-        await time(seconds);await page.locator('[data-video-exhibit="inline"]').waitFor({state:"detached"});await bar.waitFor();
-        assert.equal(await bar.evaluate(e=>document.fullscreenElement?.contains(e)),true,"prompt is inside the native fullscreen container");
-        assert.equal(await bar.locator("[data-exhibit-pointer]").count(),0,"fullscreen bubble has no upward pointer");
-        const promptBox=(await bar.boundingBox())!;assert.equal(promptBox.width,164);assert.equal(promptBox.height,335);assert.ok(promptBox.x>await page.evaluate(()=>innerWidth/2));assert.ok(promptBox.y>=0&&promptBox.y+promptBox.height<=await page.evaluate(()=>innerHeight));
-        assert.equal(await bar.getByText(locale==="en-GB"?(kind==="model3d"?"3D Model":kind==="image"?"Image":"Video"):(kind==="model3d"?"3D 模型":kind==="image"?"图片":"视频"),{exact:true}).count(),1);
+        await time(seconds-.01);assert.equal(await fullscreenBar.count(),0);
+        await time(seconds);await fullscreenBar.waitFor();
+        assert.equal(await fullscreenBar.evaluate(e=>document.fullscreenElement?.contains(e)),true,"prompt is inside the native fullscreen container");
+        assert.equal(await fullscreenBar.locator("[data-exhibit-pointer]").count(),0,"fullscreen bubble has no upward pointer");
+        const promptBox=(await fullscreenBar.boundingBox())!;assert.equal(promptBox.width,164);assert.equal(promptBox.height,335);assert.ok(promptBox.x>await page.evaluate(()=>innerWidth/2));assert.ok(promptBox.y>=0&&promptBox.y+promptBox.height<=await page.evaluate(()=>innerHeight));
+        assert.equal(await fullscreenBar.getByText(locale==="en-GB"?(kind==="model3d"?"3D Model":kind==="image"?"Image":"Video"):(kind==="model3d"?"3D 模型":kind==="image"?"图片":"视频"),{exact:true}).count(),1);
         await page.screenshot({path:`test-results/video-exhibit/${locale}-${seconds}s-${kind}.png`,fullPage:true});
-        await bar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole("dialog").waitFor();
+        await fullscreenBar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole("dialog").waitFor();
         assert.equal(await page.evaluate(()=>document.fullscreenElement===null),true);
         if(kind==="image")await page.getByRole("dialog").locator('img[alt]:not([alt=""])').waitFor();
         if(kind==="video")await page.getByRole("dialog").locator("video").waitFor();
-        await page.keyboard.press("Escape");assert.equal(await bar.count(),0);
+        await page.keyboard.press("Escape");assert.equal(await fullscreenBar.count(),0);
         assert.equal(await page.locator('video.la-lesson-video').evaluate((v,seconds)=>(v as HTMLVideoElement).paused && (v as HTMLVideoElement).currentTime===seconds,seconds),true);
-        await time(seconds+1);assert.equal(await bar.count(),0,"viewed samples do not immediately repeat");
+        await time(seconds+1);assert.equal(await fullscreenBar.count(),0,"viewed samples do not immediately repeat");
       }
       await time(19,"seeked");await time(20);await bar.waitFor();await bar.getByRole("button").first().click();
       await time(39,"seeked");
       await page.locator('.la-controlled-video').evaluate(container=>{Object.defineProperty(container,"requestFullscreen",{value:undefined,configurable:true});});
       await page.locator('.la-controlled-video .la-video-controls').getByRole('button').last().click();await page.locator('.la-video-expanded').waitFor();
-      await time(40);await bar.waitFor();assert.equal(await bar.evaluate(e=>!!e.closest('.la-video-expanded')),true);
-      await page.setViewportSize({width:844,height:390});assert.equal(await bar.locator('[data-exhibit-pointer]').count(),0);const shortBox=(await bar.boundingBox())!;assert.ok(shortBox.y>=0&&shortBox.y+shortBox.height<390);await page.screenshot({path:`test-results/video-exhibit/${locale}-fullscreen-landscape.png`,fullPage:true});
-      await bar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole('dialog').waitFor();assert.equal(await page.locator('.la-video-expanded').count(),0);await page.keyboard.press('Escape');
+      const expandedBar=page.locator('.la-video-expanded [data-video-exhibit="fullscreen"]');
+      await time(40);await expandedBar.waitFor();assert.equal(await expandedBar.evaluate(e=>!!e.closest('.la-video-expanded')),true);
+      await page.setViewportSize({width:844,height:390});assert.equal(await expandedBar.locator('[data-exhibit-pointer]').count(),0);const shortBox=(await expandedBar.boundingBox())!;assert.ok(shortBox.y>=0&&shortBox.y+shortBox.height<390);await page.screenshot({path:`test-results/video-exhibit/${locale}-fullscreen-landscape.png`,fullPage:true});
+      await expandedBar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole('dialog').waitFor();assert.equal(await page.locator('.la-video-expanded').count(),0);await page.keyboard.press('Escape');
       await mount("sample-trial",false);await time(60);assert.equal(await bar.count(),0,"sample model cannot bypass the trial limit");
       lesson.contents[0].nodes=configuredNodes;
       await page.close();

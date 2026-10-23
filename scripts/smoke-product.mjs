@@ -50,7 +50,7 @@ assert(result.status === 200 && result.body.ok, "logout after local WeChat sign-
 result = await request("/api/auth/check-email", { method: "POST", headers: json, body: JSON.stringify({ email: `new-${stamp}@example.com` }) });
 assert(result.status === 200 && result.body.ok === true && result.body.exists === undefined, "email-first auth entry must not disclose whether an email is new");
 
-result = await request("/api/auth/register", { method: "POST", headers: json, body: JSON.stringify({ email, password: "Passw0rd!123", nickname: "Smoke User", locale: "en-GB" }) });
+result = await request("/api/auth/register", { method: "POST", headers: json, body: JSON.stringify({ termsAccepted: true, email, password: "Passw0rd!123", nickname: "Smoke User", locale: "en-GB" }) });
 assert(result.status === 200 && result.body.ok, "registration failed");
 result = await request("/api/auth/check-email", { method: "POST", headers: json, body: JSON.stringify({ email }) });
 assert(result.status === 200 && result.body.ok === true && result.body.exists === undefined, "email-first auth entry must not disclose whether an email already exists");

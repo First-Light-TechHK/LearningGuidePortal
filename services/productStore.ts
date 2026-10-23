@@ -2,6 +2,7 @@ import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type Verifi
 import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
+import { withAnnualAiPoints } from "./planAiPoints";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
@@ -38,7 +39,7 @@ import type { StudyProgressInput } from "@/contracts/knowledge-progress";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 import { applyDataMigrations } from "./dataMigrations";
-import { isValidName, normaliseName, validateName } from "@/lib/nameValidation";
+import { isValidAccountName, normaliseName, validateAccountName } from "@/lib/nameValidation";
 import { CourseLearningModeError, isCourseLearningMode, type CourseLearningMode, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
 
 const scrypt = promisify(scryptCallback);
@@ -594,7 +595,7 @@ function hashToken(token: string) {
 }
 
 function validateNickname(value: string) {
-  return validateName(value);
+  return validateAccountName(value);
 }
 
 async function passwordHash(password: string) {
@@ -771,7 +772,7 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
     // Google is the explicit exception to the normal Name rule: its verified
     // email prefix identifies the first-created account. Existing Names stay put.
     const googleEmailPrefix = input.provider === "google" && email ? email.slice(0, email.indexOf("@")) : "";
-    const nickname = googleEmailPrefix || (input.nickname && isValidName(input.nickname) ? normaliseName(input.nickname) : "Learner");
+    const nickname = googleEmailPrefix || (input.nickname && isValidAccountName(input.nickname) ? normaliseName(input.nickname) : "Learner");
     const user: ProductUser = { id: id("user"), email, passwordHash: null, nickname, locale: input.locale === "zh-CN" ? "zh-CN" : "en-GB", role: "student", status: "active", emailVerifiedAt: email ? now() : null, createdAt: now() };
     data.users.push(user);
     data.accounts.push({ id: id("account"), userId: user.id, provider: input.provider, providerSubject: input.providerSubject, wechatAppId: input.wechat?.appId, wechatOpenId: input.wechat?.openId, wechatUnionId: input.wechat?.unionId, createdAt: now() });
@@ -1124,7 +1125,7 @@ export function publicFirstLesson(course: ProductCourse) {
 
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
-  const plans = data.plans.filter((plan) => {
+  const plans = withAnnualAiPoints(data.plans).filter((plan) => {
     if (paymentMode() === "stripe" && process.env.STRIPE_SANDBOX === "1" && !configuredStripePrice(plan.id)) return false;
     const scope = planScope(plan);
     if (courseId) return plan.device === "pc" && scope.scope === "course" && scope.scopeId === courseId;
@@ -1270,9 +1271,10 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
     assertPlanPurchaseAllowed(data, userId, plan);
-    const quote: ProductQuote = { price, planSnapshot: { ...plan }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
+    const offer = withAnnualAiPoints(data.plans).find(item => item.id === planId)!;
+    const quote: ProductQuote = { price, planSnapshot: { ...offer }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
-    return { quote, plan };
+    return { quote, plan: offer };
   });
 }
 
@@ -1284,9 +1286,10 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
     || source.cancelAtPeriodEnd && !allowCanceledRenewal || new Date(source.validTo) <= new Date()) {
     throw new Error("Only an active PC category subscription can be upgraded.");
   }
-  const sourcePlan = data.plans.find((item) => item.id === source.planId);
+  const plans = withAnnualAiPoints(data.plans);
+  const sourcePlan = plans.find((item) => item.id === source.planId);
   if (!sourcePlan) throw new Error("The current subscription plan could not be found.");
-  const target = data.plans.find((item) => item.scope === "everything" && item.device === "pc" && item.termMonths === sourcePlan.termMonths);
+  const target = plans.find((item) => item.scope === "everything" && item.device === "pc" && item.termMonths === sourcePlan.termMonths);
   if (!target) throw new Error("The matching PC Everything plan could not be found.");
   if (subscriptionCoverage(data.subscriptions, data.plans, userId).everything) {
     throw new Error("You already have PC Everything access.");
@@ -1353,9 +1356,9 @@ export async function getQuoteForUser(userId: string, quoteId: string) {
   if (!quote) return null;
   const resumable = quote.upgradeProration && data.orders.some(order => order.userId === userId && order.quoteId === quote.id && order.upgradeProration && ["pending", "paid"].includes(order.status));
   if (new Date(quote.expiresAt) <= new Date() && !resumable) return null;
-  const plan = quote.planSnapshot || data.plans.find((item) => item.id === quote.planId);
+  const plan = quote.planSnapshot || withAnnualAiPoints(data.plans).find((item) => item.id === quote.planId);
   const source = quote.kind === "upgrade" ? data.subscriptions.find(item => item.id === quote.sourceSubscriptionId && item.userId === userId) : undefined;
-  const sourcePlan = source ? data.plans.find(item => item.id === source.planId) : undefined;
+  const sourcePlan = source ? withAnnualAiPoints(data.plans).find(item => item.id === source.planId) : undefined;
   const upgradeOrder = quote.upgradeProration ? data.orders.find(order => order.userId === userId && order.quoteId === quote.id && order.paymentMode === "stripe" && order.upgradeProration) : undefined;
   return plan ? { quote, plan, sourceSubscription: source, sourcePlan, upgradeOrder } : null;
 }

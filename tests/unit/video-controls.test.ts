@@ -29,6 +29,20 @@ test('shared video toolbar changes speed and localises picture-in-picture states
       await speed.selectOption('1.5');
       assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), 1.5);
       await page.locator('video').evaluate(video => { Object.defineProperty(video, 'duration', { value: 120 }); video.dispatchEvent(new Event('loadedmetadata')); });
+      const play = page.getByRole('button', { name: locale === 'zh-CN' ? '播放' : 'Play', exact: true });
+      await page.locator('video').evaluate(video => { (video as HTMLVideoElement).play = async () => { throw new DOMException('Interrupted by pause', 'AbortError'); }; });
+      await play.click();
+      assert.equal(await page.getByRole('status').count(), 0, 'interrupted playback has no operation notice');
+      await page.addScriptTag({ content: `(video => {
+        let paused = true;
+        Object.defineProperty(video, 'paused', { configurable: true, get: () => paused });
+        video.play = async () => { paused = false; video.dispatchEvent(new Event('play')); };
+        video.pause = () => { paused = true; video.dispatchEvent(new Event('pause')); };
+      })(document.querySelector('video'));` });
+      await play.click();
+      await page.getByRole('button', { name: locale === 'zh-CN' ? '暂停' : 'Pause', exact: true }).click();
+      await play.waitFor();
+      assert.equal(await page.getByRole('status').count(), 0, 'play and pause remain usable without notices');
       const enter = locale === 'zh-CN' ? '进入画中画' : 'Enter picture-in-picture';
       const exit = locale === 'zh-CN' ? '退出画中画' : 'Exit picture-in-picture';
       await page.getByRole('button', { name: enter, exact: true }).click();

@@ -9,7 +9,7 @@ try {
   const config = await (await api.get(`${base}/api/health/config`)).json();
   assert.equal(config.environment, "DEV"); assert.equal(config.payment.mode, "demo");
   assert.equal((await api.post(`${base}/api/study/preview`, { data: { courseId: "epicureanism", lessonId: "pleasure-and-the-good-life", event: "open" } })).status(), 401);
-  assert.equal((await api.post(`${base}/api/auth/register`, { data: { email: `preview.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Preview Test" } })).status(), 200);
+  assert.equal((await api.post(`${base}/api/auth/register`, { data: { termsAccepted: true, email: `preview.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Preview Test" } })).status(), 200);
   const page = await context.newPage();
   await page.goto(`${base}/en-GB/portal/courses/epicureanism/public-lesson`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Use essential cookies only" }).click();

@@ -9,7 +9,7 @@ try {
   const config = await (await api.get(base + "/api/health/config")).json();
   assert.equal(config.environment, "DEV", "This test creates local test orders only.");
   assert.equal(config.payment.mode, "demo");
-  const register = await api.post(base + "/api/auth/register", { data: {
+  const register = await api.post(base + "/api/auth/register", { data: { termsAccepted: true,
     email: `payment-return.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Payment Test"
   } });
   assert.equal(register.status(), 200);

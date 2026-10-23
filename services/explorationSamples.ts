@@ -1,8 +1,21 @@
-import type { ExplorationDisplay } from "@/contracts/exploration";
+import type { ExplorationDisplay, ExplorationLesson } from "@/contracts/exploration";
 import type { Locale } from "@/lib/i18n/config";
+
+export function explorationLessonNumber(number:string) {
+  const value=Number(number);
+  return Number.isSafeInteger(value)&&value>0?String(value).padStart(2,"0"):number;
+}
+
+/** One sample set for each server-authorised lesson, in course outline order. */
+export function explorationCourseSamples(locale:Locale, courseId:string, lessons:readonly ExplorationLesson[]):ExplorationDisplay {
+  const numbers=[...new Set(lessons.filter(lesson=>lesson.unlocked).map(lesson=>explorationLessonNumber(lesson.number)))];
+  const samples=numbers.map(number=>explorationSamples(locale,courseId,number));
+  return {readings:samples.flatMap(sample=>sample.readings),exhibits:samples.flatMap(sample=>sample.exhibits)};
+}
 
 /** Course-scoped display samples; never persisted as published course content. */
 export function explorationSamples(locale:Locale, courseId:string, lessonNumber="01"):ExplorationDisplay {
+  lessonNumber=explorationLessonNumber(lessonNumber);
   const zh=locale==="zh-CN";
   const readings=[
     ["book","Ways of Seeing","John Berger · 1972",zh?"介绍文化背景如何影响我们解读视觉图像的基础读物。":"A foundational introduction to how cultural context shapes the way we interpret visual images."],
@@ -14,7 +27,7 @@ export function explorationSamples(locale:Locale, courseId:string, lessonNumber=
   const types=["image","video","model3d","image","image"] as const;
   const urls=["/portal/exh2.jpg","/portal/text-exhibits/flowers.webm","/portal/text-exhibits/vase.obj","/portal/exh.jpg","/portal/exh2.jpg"];
   return {
-    readings:readings.map(([kind,title,author,description],index)=>({id:`${courseId}-reading-${index}`,kind:kind as "book"|"article",title,author,description,lessonNumber})),
-    exhibits:titles.map((title,index)=>({node:{id:`${courseId}-exhibit-${index}`,title,type:types[index],url:urls[index],triggerTime:0},lessonNumber,thumbnail:"/portal/exploration/thumbnail-v2.png"}))
+    readings:readings.map(([kind,title,author,description],index)=>({id:`${courseId}-lesson-${lessonNumber}-reading-${index}`,kind:kind as "book"|"article",title,author,description,lessonNumber})),
+    exhibits:titles.map((title,index)=>({node:{id:`${courseId}-lesson-${lessonNumber}-exhibit-${index}`,title,type:types[index],url:urls[index],triggerTime:0},lessonNumber,thumbnail:"/portal/exploration/thumbnail-v2.png"}))
   };
 }

@@ -21,7 +21,7 @@ function freshEmail(side: string) {
 export async function register(context: BrowserContext, side: string, nickname: string) {
   const email = freshEmail(side);
   const registered = await context.request.post("/api/auth/register", {
-    data: { email, password: PASSWORD, nickname, locale: "en-GB" },
+    data: { termsAccepted: true, email, password: PASSWORD, nickname, locale: "en-GB" },
   });
   expect(registered.status(), "register").toBe(200);
   const loggedIn = await context.request.post("/api/auth/login", {
@@ -70,7 +70,7 @@ export async function joinGroup(member: Member, groupId: string) {
   expect(joined.status(), "join group").toBe(200);
 }
 
-export async function scheduleSession(host: Member, groupId: string, input: { title: string; startsInMs: number; maxParticipants?: number; aiTutorEnabled?: boolean }) {
+export async function scheduleSession(host: Member, groupId: string, input: { title: string; startsInMs: number; maxParticipants?: number; aiTutorEnabled?: boolean; focus?: string }) {
   const scheduled = await host.context.request.post(`/api/study-groups/${encodeURIComponent(groupId)}/sessions`, {
     data: {
       title: input.title,
@@ -78,6 +78,7 @@ export async function scheduleSession(host: Member, groupId: string, input: { ti
       durationSeconds: 1800,
       maxParticipants: input.maxParticipants ?? 4,
       aiTutorEnabled: input.aiTutorEnabled ?? true,
+      ...(input.focus ? { focus: input.focus } : {}),
     },
   });
   expect(scheduled.status(), "schedule session").toBe(200);
@@ -140,12 +141,12 @@ export type LiveRoom = { host: Member; member: Member; pageA: Page; pageB: Page;
 
 // A live session with the Host (A) and one member (B) both connected to the
 // LiveKit room: the starting point of every in-room regression.
-export async function openLiveRoom(browser: Browser, appOrigin: string, label: string, options: { memberInitScript?: () => void; maxParticipants?: number; sessionTitle?: string } = {}): Promise<LiveRoom> {
+export async function openLiveRoom(browser: Browser, appOrigin: string, label: string, options: { memberInitScript?: () => void; maxParticipants?: number; sessionTitle?: string; focus?: string } = {}): Promise<LiveRoom> {
   const host = await newMember(browser, appOrigin, `${label}-a`, "Study Host");
   const member = await newMember(browser, appOrigin, `${label}-b`, "Study Guest", { initScript: options.memberInitScript });
   const groupId = await createGroup(host, `E2E ${label}`);
   await joinGroup(member, groupId);
-  const sessionId = await scheduleSession(host, groupId, { title: options.sessionTitle ?? `E2E ${label} session`, startsInMs: 90_000, maxParticipants: options.maxParticipants });
+  const sessionId = await scheduleSession(host, groupId, { title: options.sessionTitle ?? `E2E ${label} session`, startsInMs: 90_000, maxParticipants: options.maxParticipants, focus: options.focus });
   for (const [who, person] of [["b", member], ["a", host]] as const) {
     expect((await enterSession(person, sessionId)).status(), `enter ${who}`).toBe(200);
   }

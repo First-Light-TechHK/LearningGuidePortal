@@ -11,7 +11,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     assert.equal(config.environment, "DEV"); assert.equal(config.authentication.emailVerification, "disabled");
     const email = `auth-layout.${name}.${Date.now()}@example.test`;
     const password = "TestPass123!";
-    assert.equal((await api.post(`${base}/api/auth/register`, { data: { email, password, nickname: "Auth Test" } })).status(), 200);
+    assert.equal((await api.post(`${base}/api/auth/register`, { data: { termsAccepted: true, email, password, nickname: "Auth Test" } })).status(), 200);
     await api.post(`${base}/api/auth/logout`);
     const page = await context.newPage();
     const errors = []; page.on("pageerror", error => errors.push(error.message));

@@ -49,7 +49,7 @@ after(async () => {
 async function signIn(label: string) {
   clearCookies();
   const email = uniqueEmail(label);
-  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", {
+  const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
     email,
     password: PASSWORD,
     nickname: "IO Buyer",
@@ -435,6 +435,7 @@ test("PAY-09 negative: the same plan cannot be quoted again while access is acti
   const quoted = await quotePlan(PLAN_ID);
   assert.equal(quoted.response.status, 400);
   assert.equal(quoted.body.code, "already_subscribed");
+  assert.match(quoted.body.error, /already have an active subscription covering this plan|already has active access/i);
 });
 
 test("PAY-09 edge: a signed-in user without purchase is not entitled", async () => {

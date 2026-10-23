@@ -10,7 +10,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     const config = await (await api.get(`${base}/api/health/config`)).json();
     assert.equal(config.environment, "DEV");
     assert.equal(config.payment.mode, "demo");
-    assert.equal((await api.post(`${base}/api/auth/register`, { data: {
+    assert.equal((await api.post(`${base}/api/auth/register`, { data: { termsAccepted: true,
       email: `records.${name}.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Records Test",
     } })).status(), 200);
     const page = await context.newPage();

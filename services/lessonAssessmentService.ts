@@ -16,20 +16,30 @@ export async function assessmentContext(userId: string, courseId: string) {
 }
 export function summariseAssessment(record: SavedAssessment | undefined, kind: AssessmentKind): AssessmentSummary {
   const total = kind === "knowledge" ? getKnowledgeTestSamples("en-GB").length : 1;
-  if (!record) return { status: "not_started", answered: 0, total, percent: 0, score: null };
+  if (!record) return { status: "not_started", answered: 0, total, percent: 0, score: null, latestResult: null };
   if (record.attempt.kind === "knowledge") {
     const result = reviewKnowledgeResponses(record.attempt.responses);
     const answered = record.attempt.responses.filter(response => response.rating !== null).length;
-    return { status: result.complete ? "completed" : "in_progress", answered, total, percent: Math.floor(answered / total * 100), score: result.complete ? result.percent : null };
+    return { status: result.complete ? "completed" : "in_progress", answered, total, percent: Math.floor(answered / total * 100), score: result.complete ? result.percent : null, latestResult: result.complete ? result.percent : record.latestResult?.score ?? null };
   }
   const submitted = record.attempt.phase === "submitted";
-  return { status: submitted ? "completed" : "in_progress", answered: submitted ? 1 : 0, total, percent: submitted ? 100 : 0, score: null };
+  return { status: submitted ? "completed" : "in_progress", answered: submitted ? 1 : 0, total, percent: submitted ? 100 : 0, score: null, latestResult: assessmentWasCompleted(record) ? "strong" : null };
+}
+
+export function assessmentWasCompleted(record: SavedAssessment | undefined) {
+  return Boolean(record && (record.latestResult || record.completedAt || (record.attempt.kind === "knowledge" ? reviewKnowledgeResponses(record.attempt.responses).complete : record.attempt.phase === "submitted")));
+}
+
+export function unlockedAssessmentLessons(lessons: readonly {id:string}[], completedStudyLessons: ReadonlySet<string>, records: readonly SavedAssessment[]) {
+  const bothCompleted=(lessonId:string)=> (["knowledge","application"] as const).every(kind=>assessmentWasCompleted(records.find(record=>record.lessonId===lessonId&&record.kind===kind)));
+  return new Set(lessons.filter((lesson,index)=>index===0?completedStudyLessons.has(lesson.id):bothCompleted(lessons[index-1].id)).map(lesson=>lesson.id));
 }
 export async function readAssessment(userId: string, courseId: string, lessonId: string, kind: AssessmentKind) {
   const { course, completedLessons } = await assessmentContext(userId, courseId);
   if (!course.sections.some(section => section.lessons.some(lesson => lesson.id === lessonId))) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
-  const record = (await listLessonAssessments(userId, course.id)).find(item => item.lessonId === lessonId && item.kind === kind) || null;
-  if (!completedLessons.has(lessonId) && !record) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
+  const records = await listLessonAssessments(userId, course.id);
+  const record = records.find(item => item.lessonId === lessonId && item.kind === kind) || null;
+  if (!unlockedAssessmentLessons(course.sections.flatMap(section=>section.lessons),completedLessons,records).has(lessonId) && !record) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
   return record;
 }
 export async function writeAssessment(userId: string, courseId: string, lessonId: string, kind: AssessmentKind, value: unknown) {
@@ -37,8 +47,9 @@ export async function writeAssessment(userId: string, courseId: string, lessonId
   if (kind !== input.attempt.kind) throw new AssessmentError("ASSESSMENT_INVALID");
   const { course, completedLessons } = await assessmentContext(userId, courseId);
   if (!course.sections.some(section => section.lessons.some(lesson => lesson.id === lessonId))) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
-  const existing = (await listLessonAssessments(userId, course.id)).find(item => item.lessonId === lessonId && item.kind === kind);
-  if (!completedLessons.has(lessonId) && !existing) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
+  const records = await listLessonAssessments(userId, course.id);
+  const existing = records.find(item => item.lessonId === lessonId && item.kind === kind);
+  if (!unlockedAssessmentLessons(course.sections.flatMap(section=>section.lessons),completedLessons,records).has(lessonId) && !existing) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
   const attempt = input.attempt;
   let evaluationStartedAt: string | null = null;
   if (attempt.kind === "knowledge") {
@@ -60,6 +71,8 @@ export async function writeAssessment(userId: string, courseId: string, lessonId
   }
   const finished = attempt.kind === "knowledge" ? reviewKnowledgeResponses(attempt.responses).complete : attempt.phase === "submitted";
   const timestamp = new Date().toISOString();
-  const record: SavedAssessment = { lessonId, kind, version: input.expectedVersion + 1, attempt, updatedAt: timestamp, completedAt: finished ? existing?.completedAt || timestamp : null, ...(kind === "application" ? { evaluationStartedAt } : {}) };
+  const latestResult = finished ? {completedAt:timestamp,score:attempt.kind==="knowledge"?reviewKnowledgeResponses(attempt.responses).percent:null}
+    : existing?.latestResult || (existing?.completedAt ? {completedAt:existing.completedAt,score:summariseAssessment(existing,kind).score} : undefined);
+  const record: SavedAssessment = { lessonId, kind, version: input.expectedVersion + 1, attempt, updatedAt: timestamp, completedAt: finished ? existing?.completedAt || timestamp : null, ...(latestResult ? {latestResult} : {}), ...(kind === "application" ? { evaluationStartedAt } : {}) };
   return saveLessonAssessment(userId, course.id, lessonId, kind, input.expectedVersion, input.clientEventId, createHash("sha256").update(JSON.stringify(input)).digest("hex"), record);
 }

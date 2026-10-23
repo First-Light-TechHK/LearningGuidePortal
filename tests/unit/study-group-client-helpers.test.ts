@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DisconnectReason } from "livekit-client";
 import { readFileSync } from "node:fs";
-import { reconnectDelayMs, roomGateAction, roomSignInHref, screenShareSupported, seatReentryAction, studyGroupFormProblem, tutorAskAgain, tutorChatLines, TUTOR_REFUSAL_CODES, tutorQueueBody, tutorRefusalReason } from "../../components/portal/studyGroupClient";
+import { reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, seatReentryAction, studyGroupFormProblem, tutorAskAgain, tutorChatLines, TUTOR_REFUSAL_CODES, tutorQueueBody, tutorRefusalReason } from "../../components/portal/studyGroupClient";
 import { liveKitDisconnectReasonName, transitionLiveKitClient } from "../../modules/group-study/liveKitClientRecovery";
 
 // The client helpers the room page and the group dialogs build on (QA 2026-10-19).
@@ -110,4 +110,13 @@ test("Share shows only where the browser can capture a screen (QA M18)", () => {
   assert.equal(screenShareSupported({ getDisplayMedia: () => undefined }), true);
   assert.equal(screenShareSupported({}), false);
   assert.equal(screenShareSupported(undefined), false);
+});
+
+test("closing the screen picker is not a share failure, a system denial is (BUG-0199)", () => {
+  const named = (name: string, message: string) => Object.assign(new Error(message), { name });
+  assert.equal(screenShareCancelled(named("NotAllowedError", "Permission denied")), true);
+  assert.equal(screenShareCancelled(named("AbortError", "The operation was aborted.")), true);
+  assert.equal(screenShareCancelled(named("NotAllowedError", "Permission denied by system")), false);
+  assert.equal(screenShareCancelled(named("NotReadableError", "Could not start video source")), false);
+  assert.equal(screenShareCancelled(undefined), false);
 });

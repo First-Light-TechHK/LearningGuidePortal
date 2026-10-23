@@ -1,8 +1,11 @@
 const NAME_SEPARATOR = "[ '\\-·]";
 const NAME_PART = "[\\p{L}\\p{M}]";
 const NAME_PATTERN = new RegExp(`^${NAME_PART}+(?:${NAME_SEPARATOR}+${NAME_PART}+)*$`, "u");
+const ACCOUNT_NAME_PART = "[\\p{L}\\p{M}\\p{N}]";
+const ACCOUNT_NAME_PATTERN = new RegExp(`^${ACCOUNT_NAME_PART}+(?:${NAME_SEPARATOR}+${ACCOUNT_NAME_PART}+)*$`, "u");
 
 export const NAME_INVALID_MESSAGE = "Name must contain 1-50 letters and may use spaces, hyphens (-), apostrophes (') or middle dots (·).";
+export const ACCOUNT_NAME_INVALID_MESSAGE = "Name must contain 1-50 letters or numbers and may use spaces, hyphens (-), apostrophes (') or middle dots (·).";
 
 export function normaliseName(value: string) {
   return value.trim().normalize("NFC");
@@ -25,5 +28,16 @@ export function isValidName(value: string) {
 export function validateName(value: string) {
   const name = normaliseName(value);
   if (!isValidName(name)) throw new Error(NAME_INVALID_MESSAGE);
+  return name;
+}
+
+export function isValidAccountName(value: string) {
+  const name = normaliseName(value);
+  return Array.from(name).length >= 1 && Array.from(name).length <= 50 && ACCOUNT_NAME_PATTERN.test(name.replaceAll(".", "'"));
+}
+
+export function validateAccountName(value: string) {
+  const name = normaliseName(value);
+  if (!isValidAccountName(name)) throw new Error(ACCOUNT_NAME_INVALID_MESSAGE);
   return name;
 }

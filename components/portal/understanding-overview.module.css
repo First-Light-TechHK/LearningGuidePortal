@@ -18,7 +18,8 @@
 .lessonHeader[aria-expanded="false"] .chevron { transform:rotate(180deg); }
 .breadcrumb { padding-inline:max(40px,calc((100% - 1360px) / 2)); }
 @media(max-width:600px) { .breadcrumb { padding-inline:20px; } }
-.row b { min-width:0; font-size:12px; line-height:18px; }
-.row b small { display:block; font-size:11px; font-weight:400; color:#637594; }
-.rowProgress { display:block; color:#1768f2; }
+.row b { min-width:0; font-size:14px; line-height:18px; }
+.row .dash { text-align:center; color:#0006; }
+.row .statusDot::before { content:"● "; font-size:12px; }
+.lockedBadge { padding:0; background:transparent; color:#0006; font-size:14px; white-space:normal; }
 .row button:disabled { color:#94a3b8; cursor:default; text-decoration:none; }

@@ -9,7 +9,7 @@ try {
     const api=context.request;
     const config=await (await api.get(`${base}/api/health/config`)).json();
     assert.equal(config.environment,"DEV"); assert.equal(config.payment.mode,"demo");
-    assert.equal((await api.post(`${base}/api/auth/register`,{data:{email:`cancel.${locale}.${Date.now()}@example.test`,password:"TestPass123!",nickname:"Cancel Test"}})).status(),200);
+    assert.equal((await api.post(`${base}/api/auth/register`,{data:{ termsAccepted: true,email:`cancel.${locale}.${Date.now()}@example.test`,password:"TestPass123!",nickname:"Cancel Test"}})).status(),200);
     const {quote}=await (await api.post(`${base}/api/purchase/quote`,{data:{planId:"epicureanism-pc-6"}})).json();
     const {order}=await (await api.post(`${base}/api/purchase/checkout`,{data:{quoteId:quote.id,consents:{renewal:true,terms:true,refund:true}}})).json();
     assert.equal((await api.post(`${base}/api/purchase/demo/confirm`,{data:{orderId:order.id,action:"complete"}})).status(),200);

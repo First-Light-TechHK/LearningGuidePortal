@@ -34,6 +34,6 @@ export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClo
       <span className={styles.testCopy}><strong>{test.title}</strong><span>{test.description}</span></span>
       <Image src="/portal/lesson-complete/arrow-right.svg" width={18} height={18} alt=""/>
     </button>)}</div>
-    <button type="button" className={styles.continue} onClick={onContinue}>{copy.nextLesson} {"\u2192"}</button>
+    <button type="button" className={styles.continue} onClick={onContinue}>{copy.nextLesson}</button>
   </PortalDialog>;
 }

@@ -22,7 +22,8 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
     try {
       const response=await fetch(`/api/courses/${encodeURIComponent(courseId)}/understanding`,{cache:"no-store"});
       const body=await response.json();if(!response.ok||!body.ok)throw new Error();
-      setView(body.data);setError("");
+      const newlyUnlocked=(body.data as UnderstandingOverviewDisplay).lessons.filter(lesson=>lesson.state!=="locked"&&view.lessons.find(previous=>previous.id===lesson.id)?.state==="locked").map(lesson=>lesson.id);
+      setExpanded(current=>[...new Set([...current,...newlyUnlocked])]);setView(body.data);setError("");
     }catch{setError(records.refreshError);}
   };
   const close=()=>{setModal(null);void refresh();};
@@ -37,19 +38,19 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
         <section className={styles.progressSection} aria-label={copy.progress}><h2>{copy.progress}</h2><div className={styles.progressLabel}><strong>{copy.completedCount.replace("{completed}",String(view.completed)).replace("{total}",String(view.total))}</strong><span>{view.percent}%</span></div><div className={styles.progress} role="progressbar" aria-label={copy.progress} aria-valuemin={0} aria-valuemax={Math.max(1,view.total)} aria-valuenow={view.completed}><span style={{width:`${view.percent}%`}}/></div></section>
         <section className={styles.courseAssessment}><h2>{copy.courseAssessment}</h2><div><strong>{tests.fluency}</strong><button type="button" disabled>{tests.comingSoon}</button></div></section>
         <section className={styles.lessonAssessments} aria-label={copy.lessonAssessments}><h2>{copy.lessonAssessments}</h2>
-          <div className={`${styles.columns} ${styles.tableHeader}`} aria-hidden="true"><span>{copy.lessonAssessment}</span><span>{copy.status}</span><span>{records.progressResult}</span><span>{copy.action}</span></div>
+          <div className={`${styles.columns} ${styles.tableHeader}`} aria-hidden="true"><span>{copy.lessonAssessment}</span><span>{copy.status}</span><span>{copy.latestResult}</span><span>{copy.action}</span></div>
           {!view.lessons.length&&<p role="status">{records.empty}</p>}
           <div className={styles.lessons}>{view.lessons.map(lesson=>{
             const open=expanded.includes(lesson.id), locked=lesson.state==="locked", completed=lesson.state==="completed";
             return <section className={`${styles.lesson} ${completed?styles.completedLesson:""}`} key={lesson.id} data-lesson-id={lesson.id}>
-              <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(id=>id!==lesson.id):[...current,lesson.id])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><span className={`${styles.badge} ${completed?styles.completeBadge:""}`}>{completed?copy.completed:locked?copy.locked:copy.available}</span><span aria-hidden="true" className={styles.chevron}><Image src="/portal/understanding/lesson-chevron-up.png" alt="" width={11} height={7}/></span></button>
+              <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(id=>id!==lesson.id):[...current,lesson.id])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><span className={`${styles.badge} ${completed?styles.completeBadge:locked?styles.lockedBadge:""}`}>{completed?copy.completed:locked?(view.lessons.indexOf(lesson)>0?copy.unlocksAfter.replace("{number}",String(view.lessons.indexOf(lesson))):copy.locked):copy.current}</span>{!locked&&<span aria-hidden="true" className={styles.chevron}><Image src="/portal/understanding/lesson-chevron-up.png" alt="" width={11} height={7}/></span>}</button>
               {open && <div id={`assessment-${lesson.number}`}>{(["knowledge","application"] as const).map(kind=>{
                 const summary=lesson[kind], finished=summary.status==="completed"||summary.status==="submitted";
-                const status=locked?copy.locked:summary.status==="not_started"?records.notStarted:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
+                const status=locked?"—":summary.status==="not_started"?copy.available:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
                 return <div className={`${styles.columns} ${styles.row}`} key={kind} data-assessment-kind={kind}>
-                  <strong>{tests[kind]}</strong><span className={`${styles.status} ${finished?styles.green:""}`}>{status}</span>
-                  <b>{records.answered.replace("{answered}",String(summary.answered)).replace("{total}",String(summary.total))} <span className={styles.rowProgress}>{summary.percent}%</span>{summary.score!==null&&<small>{records.selfAssessment.replace("{score}",String(summary.score))}</small>}</b>
-                  <button type="button" disabled={locked} onClick={()=>setModal({kind,lessonId:lesson.id})}>{finished?copy.viewResult:summary.status==="in_progress"?copy.continue:copy.start}</button>
+                  <strong>{tests[kind]}</strong><span className={`${styles.status} ${finished?styles.green:summary.status==="not_started"||locked?styles.available:""} ${!locked&&summary.status!=="not_started"?styles.statusDot:""}`}>{status}</span>
+                  <b data-latest-result>{locked||summary.latestResult==null?"—":typeof summary.latestResult==="number"?`${summary.latestResult}%`:copy.strong}</b>
+                  {locked?<span className={styles.dash}>—</span>:<button type="button" onClick={()=>setModal({kind,lessonId:lesson.id})}>{finished?copy.viewResult:summary.status==="in_progress"?copy.continue:copy.start}</button>}
                 </div>;
               })}</div>}
             </section>;

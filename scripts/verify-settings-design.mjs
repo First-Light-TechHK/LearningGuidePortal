@@ -12,7 +12,7 @@ for (const [engineName, engine] of Object.entries({ chromium, firefox, webkit })
     const api = context.request;
     assert.equal((await (await api.get(`${base}/api/health/config`)).json()).environment, "DEV");
     const email = `settings.${engineName}.${Date.now()}@example.test`;
-    assert.equal((await api.post(`${base}/api/auth/register`, { data:{ email, password:"TestPass123!", nickname:"Settings Test" } })).status(),200);
+    assert.equal((await api.post(`${base}/api/auth/register`, { data:{ termsAccepted: true, email, password:"TestPass123!", nickname:"Settings Test" } })).status(),200);
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -24,6 +24,8 @@ for (const [engineName, engine] of Object.entries({ chromium, firefox, webkit })
     matchesBox(profile,{x:344,y:214,width:946,height:300});
     matchesBox(details,{x:344,y:534,width:946,height:337});
     assert.ok(await page.getByLabel("Email", {exact:true}).isDisabled());
+    assert.equal(await page.locator('#settings-device-heading,#settings-email-heading').count(), 0);
+    assert.equal(await page.locator(".avatar-upload").isVisible(), false);
     await page.locator('input[type="file"]').setInputFiles({name:"invalid.txt",mimeType:"text/plain",buffer:Buffer.from("invalid image")});
     assert.equal(await page.locator(".settings-profile-section").getByRole("alert").textContent(),"Use a JPG or PNG image.");
     await page.getByLabel("Name", {exact:true}).fill("Updated Name");

@@ -1,34 +1,33 @@
 import { getMessages } from "@/lib/i18n/messages";
 import { currentProductUser } from "@/services/productAuth";
 import { getOrderForUser } from "@/services/productStore";
-import { stripeOrderReceiptUrl } from "@/services/paymentService";
+import { stripeOrderReceipt } from "@/services/paymentService";
+import { orderReceiptHtml } from "@/lib/orderReceiptHtml";
+import type { OrderReceipt } from "@/contracts/order-receipt";
+import { isLocale, localeFrom } from "@/lib/i18n/config";
 
 export const runtime = "nodejs";
 
-function escapeHtml(value: string) {
-  return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character] || character);
-}
-
-export async function GET(_request: Request, { params }: { params: Promise<{ orderId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   const user = await currentProductUser();
-  if (!user) return new Response("Sign in is required.", { status: 401 });
+  const requestedLocale = new URL(request.url).searchParams.get("locale");
+  const locale = requestedLocale && isLocale(requestedLocale) ? requestedLocale : localeFrom(user?.locale);
+  const copy = getMessages(locale).orderReceipt;
+  const headers = { "Cache-Control": "private, no-store", "Vary": "Cookie" };
+  if (!user) return new Response(copy.signIn, { status: 401, headers });
   const order = await getOrderForUser(user.id, (await params).orderId);
-  if (!order || order.status !== "paid" || order.kind === "trial_activation") return new Response("Receipt is not available for this order.", { status: 404 });
+  if (!order || order.status !== "paid" || order.kind === "trial_activation") return new Response(copy.unavailable, { status: 404, headers });
 
+  let receipt: OrderReceipt | null;
   if (order.paymentMode === "stripe") {
     try {
-      const url = await stripeOrderReceiptUrl(order);
-      if (url) return Response.redirect(url, 302);
+      receipt = await stripeOrderReceipt(order);
     } catch {
-      return new Response("The Stripe receipt could not be loaded. Please retry.", { status: 503 });
+      return new Response(copy.providerError, { status: 503, headers });
     }
-    return new Response("The Stripe receipt is not available yet.", { status: 404 });
+  } else {
+    receipt = { orderId: order.id, planName: order.plan?.name || "", amountMinor: order.amountMinor, currency: order.currency, paidAt: null, paymentMode: "demo" };
   }
-
-  const locale = user.locale === "zh-CN" ? "zh-CN" : "en-GB";
-  const title = escapeHtml(order.plan?.name || "Learning Guide course");
-  const date = new Date(order.createdAt).toLocaleString(locale);
-  const amount = `${(order.amountMinor / 100).toFixed(2)} ${order.currency.toUpperCase()}`;
-  const html = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><title>Learning Guide receipt</title><style>body{font-family:Arial,sans-serif;max-width:680px;margin:48px auto;color:#17324d}h1{font-size:28px}dl{display:grid;grid-template-columns:170px 1fr;gap:12px;padding:24px;border:1px solid #d6e1e9}dt{font-weight:700}dd{margin:0}</style></head><body><h1>Learning Guide receipt</h1><dl><dt>Course plan</dt><dd>${title}</dd><dt>Order</dt><dd>${escapeHtml(order.id)}</dd><dt>Date</dt><dd>${escapeHtml(date)}</dd><dt>Amount</dt><dd>${escapeHtml(amount)}</dd><dt>Payment</dt><dd>Demo payment</dd></dl></body></html>`;
-  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Disposition": `inline; filename="learning-guide-receipt-${order.id}.html"` } });
+  if (!receipt) return new Response(copy.unavailable, { status: 404, headers });
+  return new Response(orderReceiptHtml(receipt, locale), { headers: { ...headers, "Content-Type": "text/html; charset=utf-8", "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff" } });
 }

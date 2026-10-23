@@ -190,7 +190,7 @@ export async function runLiveSmoke(input, request) {
   if (input.checkMail !== false && ["DEV", "SIT", "UAT", "PPE", "PPE/PROD", "PROD"].includes(appEnv) && !testEmail) {
     fail(failures, "registration", "LIVE_TEST_EMAIL is required so registration is actually mailed");
   } else if (input.checkMail !== false && testEmail) {
-    const registered = await postJson(http, "/api/auth/register", {
+    const registered = await postJson(http, "/api/auth/register", { termsAccepted: true,
       email: testEmail,
       password: "SitSmoke-Passw0rd!",
       nickname: "SIT smoke",
@@ -219,7 +219,7 @@ export async function runLiveSmoke(input, request) {
       locale: "en-GB"
     });
     if (awsErrorLeak(probe.body)) fail(failures, "registration.iam", "SES IAM still denies the recipient identity");
-    const probeRegister = await postJson(http, "/api/auth/register", {
+    const probeRegister = await postJson(http, "/api/auth/register", { termsAccepted: true,
       email: "sit-ses-probe@example.test",
       password: "SitSmoke-Passw0rd!",
       nickname: "SES probe",

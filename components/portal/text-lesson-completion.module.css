@@ -1,0 +1,7 @@
+.row { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:12px; padding-top:10px; }
+.completed { color:#16803c; font-size:14px; }
+.next { padding:0; border:0; background:transparent; color:#246bfc; font:600 18px/26px Inter,Arial,sans-serif; cursor:pointer; }
+.next:hover { text-decoration:underline; }
+.next:disabled { color:#94a3b8; cursor:wait; }
+.next:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
+.row > p { flex-basis:100%; margin:0; text-align:right; color:#b42318; font-size:14px; }

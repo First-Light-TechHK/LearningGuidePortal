@@ -9,7 +9,7 @@ try {
   const config = await (await api.get(`${base}/api/health/config`)).json();
   assert.equal(config.environment, "DEV");
   assert.equal(config.payment.mode, "demo");
-  const registered = await api.post(`${base}/api/auth/register`, { data: { email: `overview.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Design Test" } });
+  const registered = await api.post(`${base}/api/auth/register`, { data: { termsAccepted: true, email: `overview.${Date.now()}@example.test`, password: "TestPass123!", nickname: "Design Test" } });
   assert.equal(registered.status(), 200);
   const page = await context.newPage();
   await page.goto(`${base}/en-GB/account/my-learning`);
