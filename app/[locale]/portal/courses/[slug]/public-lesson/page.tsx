@@ -48,7 +48,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {
     pricingHref: `/${locale}/subscription?courseId=${encodeURIComponent(course.id)}`,
     recommendations,
-    videoLimitSeconds: 60
+    videoLimitSeconds: 600
   };
   const preview = buildTextLessonPreview(lesson, course.id, access.allowed);
   const contents = preview.contents.length ? await signCourseMediaReferences(preview.contents) : undefined;
