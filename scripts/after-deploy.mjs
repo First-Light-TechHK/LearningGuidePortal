@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolveReleaseEnvironment } from "./release/environments.mjs";
 import { runLiveSmoke } from "./release/liveSmoke.mjs";
 import { notifyRelease } from "./release/notify.mjs";
@@ -11,18 +12,57 @@ const previousSha = (process.env.RELEASE_PREVIOUS_SHA || "").trim();
 const origin = process.env.RELEASE_ORIGIN || environment.origin;
 const adminOrigin = process.env.RELEASE_ADMIN_ORIGIN || environment.adminOrigin;
 const testEmail = process.env.LIVE_TEST_EMAIL || (environment.name === "DEV" || environment.name === "SIT" ? "yongthelaoma@gmail.com" : "");
+
+// The post-deploy job uploads test-results/ with if-no-files-found=error. Live
+// smoke can pass without Playwright writing that directory, so always leave a
+// machine-readable acceptance record behind.
+const evidenceDir = process.env.RELEASE_EVIDENCE_DIR || "test-results";
+const evidenceFile = `${evidenceDir}/live-acceptance.json`;
+mkdirSync(evidenceDir, { recursive: true });
+function recordAcceptance(patch) {
+  try {
+    writeFileSync(
+      evidenceFile,
+      JSON.stringify(
+        {
+          environment: environment.name,
+          sha,
+          previousSha,
+          origin,
+          updatedAt: new Date().toISOString(),
+          ...patch
+        },
+        null,
+        2
+      )
+    );
+  } catch {
+    // Evidence must never fail the release on its own.
+  }
+}
+recordAcceptance({ status: "running" });
+
 if (!environment.provisioned && !process.env.APP_RUNNER_SERVICE_ARN && !environment.serviceArn) {
+  recordAcceptance({ status: "failed", failures: ["App Runner is not provisioned"] });
   throw new Error(`${environment.name} App Runner is not provisioned; set the service ARN secret before deploying`);
 }
-if (!origin) throw new Error(`${environment.name} origin is not configured`);
+if (!origin) {
+  recordAcceptance({ status: "failed", failures: ["origin is not configured"] });
+  throw new Error(`${environment.name} origin is not configured`);
+}
 
 if (environment.name === "UAT") {
   const result = await verifyUatAcceptance({ sha, outputDir: process.env.RELEASE_EVIDENCE_DIR });
+  recordAcceptance({ status: result.ok ? "success" : "failed", failures: result.failures, receiptFile: result.receiptFile });
   await notifyRelease({ environment: environment.name, sha, previousSha, status: result.ok ? 'success' : 'failed', origin, failures: result.failures });
   console.log(JSON.stringify({ ok: result.ok, receiptFile: result.receiptFile, failures: result.failures }));
   // A data/permission failure is not repaired by force-pushing a code branch backwards.
   process.exit(result.ok ? 0 : 1);
 }
+
+// Modeling life now uses repository images and approved signed video URLs.
+// Historical course_media copies remain available through the explicit repair
+// script; they are no longer a prerequisite for post-deploy smoke.
 
 async function smokeWithRetry() {
   let result;
@@ -62,11 +102,13 @@ if (process.env.SKIP_PLAYWRIGHT !== "1") {
 }
 
 if (smoke.ok) {
+  recordAcceptance({ status: "success", catalogue: smoke.catalogue });
   await notifyRelease({ environment: environment.name, sha, previousSha, status: "success", origin, catalogue: smoke.catalogue });
   console.log(JSON.stringify({ ok: true, environment: environment.name, sha, catalogue: smoke.catalogue }));
   process.exit(0);
 }
 
+recordAcceptance({ status: "failed", failures: smoke.failures });
 await notifyRelease({ environment: environment.name, sha, previousSha, status: "failed", origin, failures: smoke.failures });
 console.error(JSON.stringify({ ok: false, failures: smoke.failures }));
 

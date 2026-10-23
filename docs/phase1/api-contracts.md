@@ -1,5 +1,7 @@
 # Phase 1：API contract
 
+Authored course content contract (Modeling life): existing authenticated assessment GET adds optional top-level definition:LessonAssessments alongside unchanged data:SavedAssessment|null. It is supplied only after the existing current Entitlement, Lesson identity and Study/sequencing checks. PUT never accepts question definitions, answers-to-compare or completion evidence from the client; Knowledge response count/index are checked against the server-owned 18-card definition. Explicit absent tests return ASSESSMENT_NOT_FOUND/404 and summary total=0; old Courses keep the six-card sample contract. Understanding totals available tests only; authored Application submission has no fabricated Strong/AI grade. Public/learning page props carry preview metadata and counts only, never authored assessment references. Preview projection supports configured-points (first 1.1 only) and public video uses 600 seconds; Study rejects locked text identities and video identities starting beyond the cutoff. Authored Exploration data is sent only with live Course access. Local seed image URLs are canonical /courses/<courseId>/<filename> raster paths; cross-course, traversal, encoded and external inline images remain rejected. No new endpoint, request schema, payment change or DDL.
+
 Understanding revision (2026-10-23): GET /api/courses/:courseId/understanding returns completed Tests, total=2 × actual Lesson count and floor(completed/total × 100), or zero for no Tests. Each summary adds latestResult:number|"strong"|null for the single design result cell; answered/percent/score retain existing current-attempt meanings. New assessment GET/PUT for the first Lesson retain its Study-completion prerequisite; following Lessons require the preceding Lesson's Knowledge and Application completion evidence. Existing owned attempts remain readable/editable; Session, Course ownership and current Entitlement are always rechecked. A new current-attempt draft after Retake retains server-derived optional SavedAssessment.latestResult in existing JSONB, so prior completion, score and downstream unlocks persist. Client latestResult/completion/timestamps cannot create completion evidence. Overview result Retake uses the same version/event-safe PUT and does not navigate to the next Lesson. No request schema, HTTP endpoint, DDL or payment/access grant change. This supersedes the older lesson-count progress and independent per-Lesson Study gate for subsequent assessments.
 
 Exploration Whole course sample contract (2026-10-23): no new HTTP endpoint. ExplorationLesson is {number,title,unlocked}; unlocked is projected from the existing server-authorised outline href, never from client Study completion or progress. explorationCourseSamples generates 4 readings + 5 exhibits per unique unlocked Lesson, normalizes numeric Lesson labels and includes course/Lesson identity in every sample ID. Whole course aggregates those groups across all course modes; This lesson restricts to the current group. Supplied ExplorationDisplay data is also filtered against the allowed Lesson set. This remains presentation-only sample content and grants no access or persisted content/progress.
@@ -157,18 +159,45 @@ Authorised Lesson access includes all active `LessonContent` knowledge points be
 ## AI Tutor
 
 ```ts
-// POST /api/dialogue/send
+// GET /api/ai-tutor?courseId=&lessonId=&mode=&locale=zh-CN|en-GB
+// 返回当前模式的历史对话 + KS 配置的欢迎语（按 locale 取默认 welcome；为空字符串时不展示欢迎气泡）
+type TutorOpenResponse = {
+  ok: true;
+  conversation: { id: string; mode: 'lecture' | 'socratic'; messages: TutorMessage[] };
+  welcome: string;
+};
+
+// POST /api/ai-tutor
 type TutorRequest = {
-  courseId: string;
-  lessonId?: string;
+  courseId: string; // Portal course slug or id
+  lessonId?: string; // logging only; KS content is release-scoped
   mode: 'lecture' | 'socratic';
   message: string;
   conversationId?: string;
   locale: 'en-GB' | 'zh-CN';
 };
+
+// DELETE /api/ai-tutor?courseId=&lessonId=&mode=
+// New chat：仅删除当前 session user 在该 course/lesson/mode 下的对话记录（幂等）
+type TutorNewChatResponse = { ok: true };
 ```
 
-服务端顺序：session → `checkEntitlement` → 读取已发布 Course/Lesson 和 KS knowledge links → 读取版本化 prompt → 取最近六轮 conversation → 编译消息 → 调用 OpenRouter → 流式返回。浏览器不得上传 `knowledgePack`、`sources` 或完整 system prompt 作为可信输入。
+服务端顺序（2026-10-22 起为 KnowledgeSystem BFF）：session → `checkEntitlement` → 已发布 Course/Lesson 校验 → 实时读取 KS Online 状态（无缓存）→ 取最近 10 条 conversation → 以 `course.slug` 作为 `externalCourseId` 调用 `POST {KS}/api/user/ai/chat-stream` → 将 KS SSE `{delta}` 转为纯文本流 → 结束后写回 Portal conversation。KS 不可达或该课程 offline 时不展示入口，也不回退本地假回答。浏览器不得上传 `knowledgePack`、`sources`、`systemPrompt` 或 `releaseId` 作为可信输入。
+
+## Portal → KS catalogue
+
+```ts
+// GET /api/integration/catalogue  (X-API-Key: PORTAL_INTEGRATION_TOKEN)
+type PortalCatalogue = {
+  courses: Array<{
+    externalId: string; // Portal course.slug
+    title: string;
+    lessons: Array<{ externalId: string; title: string }>;
+  }>;
+};
+```
+
+仅返回已发布课程；KS 同步本期只消费标题（课程标题 + 课时标题），不读取 Portal 课时正文。
 
 ## Stripe lookup-key subscriptions
 

@@ -37,6 +37,7 @@ function serviceWith(liveKit: StudyGroupDeps["liveKit"]) {
     sendMail: async (input) => { mails.push(input.subject); },
     liveKit,
     tokenLogKey: () => tokenLogKey,
+    tutorKs: async ({ message }) => `Answer: ${message}`,
   });
 }
 

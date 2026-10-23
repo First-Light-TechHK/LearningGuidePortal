@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { test } from "node:test";
 import { applyDataMigrations, applyOrmMigrations, assertMigrationRegistry, createMemoryOrm, shouldPersistDataMigrationsOnBoot, validateDataMigrations } from "../../services/dataMigrations";
 import { dataMigrations } from "../../db/data-migrations";
+import { mediaAssetPath } from "../../db/data-migrations/006_add_modeling_life_course";
 import type { DataMigration } from "../../db/data-migrations/types";
+import { systemRoot } from "../../services/fileStore";
 import type { ProductData, ProductUser } from "../../services/productStore";
 
 function user(): ProductUser {
@@ -180,4 +183,44 @@ test("git-to-dev RDS probe inserts once and skips on replay", async () => {
   assert.deepEqual(first.applied, ["002_git_dev_rds_probe"]);
   assert.equal(orm.table<{ id: string; source: string }>("git_dev_rds_probes").findById("2026-09-20-full-rds")?.source, "git-dev");
   assert.deepEqual(second.applied, []);
+});
+
+test("a production build never applies data migrations", async () => {
+  const current = data();
+  const original = process.env.NEXT_PHASE;
+  process.env.NEXT_PHASE = "phase-production-build";
+  try {
+    const report = await applyDataMigrations(current, [backfillSettings]);
+    assert.deepEqual(report, { applied: [], skipped: [], changes: [], sql: 0, objects: 0 });
+    assert.equal(current.paymentSettings.name, "Stripe");
+    assert.equal(current.dataMigrations, undefined);
+  } finally {
+    if (original === undefined) delete process.env.NEXT_PHASE;
+    else process.env.NEXT_PHASE = original;
+  }
+});
+
+test("modeling life publishes its course when S3 staging is unavailable", async () => {
+  const current = data();
+  const original = process.env.DATA_S3_BUCKET;
+  delete process.env.DATA_S3_BUCKET;
+  try {
+    const report = await applyDataMigrations(current);
+    assert.ok(report.applied.includes("008_upgrade_modeling_life"));
+    assert.ok(report.skipped.includes("006_add_modeling_life_course"));
+    assert.ok(report.skipped.includes("007_repair_modeling_life_media"));
+    assert.equal(report.objects,0,"repository images do not need staging copies");
+    const course = current.courses.find((item) => item.slug === "modeling-life");
+    assert.ok(course, "modeling-life course should be published without S3 credentials");
+    assert.equal(course.status, "published");
+    assert.equal(course.sections.flatMap((section) => section.lessons).length, 2);
+  } finally {
+    if (original !== undefined) process.env.DATA_S3_BUCKET = original;
+  }
+});
+
+test("modeling life media target stays inside the knowledge system root", () => {
+  const target = mediaAssetPath("4c1b4ade-446a-46ac-8a40-2c3837118063");
+  assert.ok(path.isAbsolute(target), "course media paths must be absolute");
+  assert.ok(target.startsWith(`${path.resolve(systemRoot())}${path.sep}`), "course media must stay under the data root");
 });

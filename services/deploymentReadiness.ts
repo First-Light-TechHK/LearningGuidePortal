@@ -2,7 +2,6 @@ import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getPool } from "./persistence/db";
 import { awsRegion, dataS3Bucket, dataS3Prefix } from "./persistence/config";
 import { isManagedEnvironment, runtimeConfiguration } from "./runtimeConfig";
-import { studyGroupTutorKeySource } from "./tutorKeySource";
 
 let cached: { expires: number; result: Awaited<ReturnType<typeof checkDependencies>> } | undefined;
 let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
@@ -14,30 +13,16 @@ let pending: Promise<Awaited<ReturnType<typeof checkDependencies>>> | undefined;
 //
 // The extra fields answer "is the deployed environment wired the honest way?"
 // without AWS access:
-// - tutorKeys: mirrors the acceptance rule of readTutorKeys
-//   (modules/group-study/tutorAnswer.ts) so readiness never claims a pool the
-//   runtime would ignore; `invalid` means the variable exists but yields no
-//   usable key.
-// - tutorKeySource: which LLM key pool the Live Session tutor actually uses:
-//   `secret` (read hot from STUDY_GROUP_TUTOR_KEYS_SECRET_ID), `own`
-//   (STUDY_GROUP_TUTOR_KEYS), `shared` (the site's OpenRouter key) or `none`
-//   (every question answers "unavailable"). See services/tutorKeySource.ts.
+// - tutorSource: the Live Session Tutor is KnowledgeSystem's (2026-10-23), so
+//   `ks` means KS_TUTOR_BASE_URL is present and room questions are forwarded;
+//   `none` means every room question answers "unavailable". Prompt, model and
+//   LLM keys are configured in KS, never here.
 // - credentialSource: `local` means LIVEKIT_LOCAL_CREDENTIALS_JSON is set on a
 //   DEV deployment, where it silently shadows Secrets Manager.
 // - simulated: LIVEKIT_FAKE_GATEWAY=1 is honored only on DEV; it disables
 //   webhook verification and reconciliation.
-// Reads the hot pool once (cached for a minute) so a fresh instance reports
-// `secret` before its first question; a failed read reports the fallback.
-// The health checks never wait on Secrets Manager for more than a second: a
-// slow read reports what is cached now and finishes in the background.
-async function tutorKeySource() {
-  const source = studyGroupTutorKeySource(awsRegion());
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([
-    source.keys().catch(() => []),
-    new Promise((resolve) => { timer = setTimeout(resolve, 1_000); })
-  ]).finally(() => clearTimeout(timer));
-  return source.source();
+function tutorSource(): "ks" | "none" {
+  return process.env.KS_TUTOR_BASE_URL?.trim() ? "ks" : "none";
 }
 
 // - liveKitProjectsSource: where the LiveKit project list comes from, as the
@@ -50,28 +35,10 @@ function liveKitProjectsSource(): "secret" | "env" | "none" {
   return process.env.LIVEKIT_PROJECTS_JSON?.trim() ? "env" : "none";
 }
 
-function tutorKeyState(): "configured" | "missing" | "invalid" {
-  const raw = process.env.STUDY_GROUP_TUTOR_KEYS?.trim();
-  if (!raw) return "missing";
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return "invalid";
-    const usable = parsed.some((item) => {
-      if (!item || typeof item !== "object") return false;
-      const record = item as { id?: unknown; secret?: unknown };
-      return typeof record.id === "string" && record.id.trim() !== "" && typeof record.secret === "string" && record.secret.trim() !== "";
-    });
-    return usable ? "configured" : "invalid";
-  } catch {
-    return "invalid";
-  }
-}
-
 async function studyGroupReadiness(): Promise<{
   store: "postgresql" | "file";
   configured: boolean;
-  tutorKeys: "configured" | "missing" | "invalid";
-  tutorKeySource: "secret" | "own" | "shared" | "none";
+  tutorSource: "ks" | "none";
   credentialSource: "secrets-manager" | "local";
   simulated: boolean;
   liveKitProjectsSource: "secret" | "env" | "none";
@@ -87,8 +54,7 @@ async function studyGroupReadiness(): Promise<{
   return {
     store,
     configured: projectsSource !== "none" && Boolean(process.env.STUDY_GROUP_TOKEN_LOG_KEY?.trim()),
-    tutorKeys: tutorKeyState(),
-    tutorKeySource: await tutorKeySource(),
+    tutorSource: tutorSource(),
     credentialSource: onDev && Boolean(process.env.LIVEKIT_LOCAL_CREDENTIALS_JSON?.trim()) ? "local" : "secrets-manager",
     simulated: onDev && process.env.LIVEKIT_FAKE_GATEWAY === "1",
     liveKitProjectsSource: projectsSource

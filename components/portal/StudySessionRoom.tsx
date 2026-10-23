@@ -83,9 +83,8 @@ type ChatLine = {
   tutorAsk?: { question: string; clientEventId: string }; tutorError?: string;
   // The id of the answer line this question's latest ask is waiting on.
   tutorAnswerId?: string;
-  // An understanding-check question the AI Tutor asked the group; a question
-  // line its asker withdrew before the Tutor started on it.
-  kind?: "quiz"; tutorWithdrawn?: boolean;
+  // A question line its asker withdrew before the Tutor started on it.
+  tutorWithdrawn?: boolean;
 };
 
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
@@ -341,8 +340,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           at: chatStamp(),
           tutor: true,
           mode: message.mode,
-          ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-          ...(message.kind ? { kind: message.kind } : {})
+          ...(message.replyTo ? { replyTo: message.replyTo } : {})
         }));
         setSideTab("chat");
         return;
@@ -1056,7 +1054,6 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     const next = `${draft.slice(0, mention.start)}@${row.name} ${draft.slice(mention.start + 1 + mention.query.length)}`;
     caretRef.current = mention.start + row.name.length + 2;
     setDraft(next);
-    if (row.tutor) setAddressTutor(true);
     setMention(null);
   }
 
@@ -1162,10 +1159,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                         return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
                     : <>
-                        {line.kind === "quiz" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorQuiz}</span> : null}
-                        {line.mode === "general" ? <span className={styles.tutorDisclosure}>{roomCopy.tutorGeneral}</span> : null}
                         {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
-                          ? <strong key="lead" className={styles.tutorLead}>{row}</strong>
+                          ? <span key="lead" className={styles.tutorLead}>{row}</span>
                           : <span key={index} className={styles.tutorRow}>{row}</span>)}
                       </>}
                 </p>
@@ -1176,6 +1171,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               event.preventDefault();
               const text = draft.trim();
               if (!text || !connected) return;
+              // The room has no AI Tutor toggle: typing "@AI Tutor " (or picking
+              // it from the mention list) is the only way to address the Tutor.
               const prefix = `${roomCopy.aiTutor} `;
               const hasPrefix = text.startsWith(prefix);
               const mentionsTutor = (addressTutor || hasPrefix) && session.aiTutorEnabled && !tutorOffline;
@@ -1189,6 +1186,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               setDraft("");
               setAddressTutor(false);
             }}>
+
               {mentionRows.length > 0 ? (
                 <div className={styles.mentionMenu} role="listbox" aria-label={roomCopy.mentionList}>
                   {mentionRows.map((row, index) => (

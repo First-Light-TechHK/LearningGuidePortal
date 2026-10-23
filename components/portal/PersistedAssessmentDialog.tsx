@@ -9,6 +9,7 @@ import type { ApplicationTestAttempt, ApplicationTestEntrySource } from "@/contr
 import { KnowledgeTestDialog } from "./KnowledgeTestDialog";
 import { ApplicationTestDialog } from "./ApplicationTestDialog";
 import { PortalDialog } from "./PortalDialog";
+import type { LessonAssessments } from "@/contracts/lesson-resources";
 
 export function PersistedAssessmentDialog({ locale, courseId, lessonId, lessonNumber, lessonTitle, kind, onExit, onApplicationTest, onKnowledgeTest, knowledgeCompleted = false, onNextLesson, entrySource = "overview" }: {
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle?: string; kind: AssessmentKind;
@@ -17,6 +18,7 @@ export function PersistedAssessmentDialog({ locale, courseId, lessonId, lessonNu
   const copy = getMessages(locale).assessmentRecords;
   const endpoint = `/api/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/assessments/${kind}`;
   const [loaded, setLoaded] = useState(false), [record, setRecord] = useState<SavedAssessment | null>(null);
+  const [definition, setDefinition] = useState<LessonAssessments>();
   const [message, setMessage] = useState(copy.loading), [failed, setFailed] = useState(false);
   const [hasKnowledgeCompleted, setKnowledgeCompleted] = useState(knowledgeCompleted);
   const version = useRef(0), pending = useRef<AssessmentAttempt | null>(null), last = useRef("");
@@ -40,7 +42,7 @@ export function PersistedAssessmentDialog({ locale, courseId, lessonId, lessonNu
       if (!mounted.current) return;
       version.current = body.data?.version || 0;
       last.current = body.data ? JSON.stringify(body.data.attempt) : "";
-      setRecord(body.data); setLoaded(true); setMessage(copy.saved);
+      setRecord(body.data); setDefinition(body.definition); setLoaded(true); setMessage(copy.saved);
     } catch { if (mounted.current) { setFailed(true); setMessage(copy.loadError); } }
   }, [endpoint, kind, copy.loading, copy.saved, copy.loadError]);
   useEffect(() => { void load(); }, [load]);
@@ -100,11 +102,11 @@ export function PersistedAssessmentDialog({ locale, courseId, lessonId, lessonNu
   const leave = async (action = onExit) => { if (await flush()) action(); };
   const persistence = { saveMessage: message, saveFailed: failed, onRetrySave: () => { void flush(); } };
   if (!loaded) return <PortalDialog labelledBy="assessment-loading" onClose={onExit}><h2 id="assessment-loading">{copy.loading}</h2>{failed ? <p role="alert">{message}</p> : <div role="status" aria-label={copy.loading}><span aria-hidden="true" className="portal-dialog-spinner"/></div>}<footer>{failed && <button onClick={() => void load()}>{copy.retry}</button>}<button onClick={onExit}>{getMessages(locale).learning.close}</button></footer></PortalDialog>;
-  if (kind === "knowledge") return <KnowledgeTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} entrySource={entrySource}
+  if (kind === "knowledge") return <KnowledgeTestDialog questions={definition?.knowledge} locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} entrySource={entrySource}
     initialAttempt={record?.attempt.kind === "knowledge" ? { ...record.attempt, phase: record.completedAt ? "result" : record.attempt.phase } : undefined} onAttemptChange={update} {...persistence}
     onExit={() => void leave()} onApplicationTest={onApplicationTest ? () => void leave(onApplicationTest) : undefined} onNextLesson={onNextLesson ? () => void leave(onNextLesson) : undefined}/>;
   const application = record?.attempt.kind === "application" ? record.attempt : null;
-  return <ApplicationTestDialog locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} entrySource={entrySource} knowledgeCompleted={hasKnowledgeCompleted}
+  return <ApplicationTestDialog question={definition?.application || undefined} locale={locale} lessonNumber={lessonNumber} lessonTitle={lessonTitle} entrySource={entrySource} knowledgeCompleted={hasKnowledgeCompleted}
     initialAttempt={application ? { answer: application.answer, phase: application.phase === "submitted" ? "result" : application.phase, startedAt: record?.evaluationStartedAt ? Date.parse(record.evaluationStartedAt) : null } : undefined}
     onAttemptChange={updateApplication}
     onSubmitAnswer={startReview} onEvaluationComplete={finishReview}

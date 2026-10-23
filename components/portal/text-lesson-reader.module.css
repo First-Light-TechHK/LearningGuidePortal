@@ -1,0 +1,5 @@
+.point { position:relative; min-width:0; scroll-margin-top:12px; }
+.point + .point { margin-top:32px; padding-top:24px; border-top:1px solid #e5e7eb; }
+.point > h2 { margin:0 0 20px; color:#15233a; font:600 22px/30px Inter,Arial,sans-serif; overflow-wrap:anywhere; }
+.point > .sourceTitle { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+@media(max-width:700px) { .point > h2 { font-size:20px; line-height:28px; }.point + .point { margin-top:24px; padding-top:20px; } }

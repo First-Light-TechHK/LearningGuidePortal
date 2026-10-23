@@ -16,7 +16,7 @@ export class LiveKitGatewayError extends Error {
   }
 }
 
-export type LiveKitTutorMessage = Readonly<{ project: LiveKitProjectRef; room: string; messageId: string; text: string; mode: string; replyTo?: { name: string; question: string }; kind?: "quiz"; reason?: string }>;
+export type LiveKitTutorMessage = Readonly<{ project: LiveKitProjectRef; room: string; messageId: string; text: string; mode: string; replyTo?: { name: string; question: string }; reason?: string }>;
 
 export type LiveKitWebhookEvent = Readonly<{
   eventId: string;

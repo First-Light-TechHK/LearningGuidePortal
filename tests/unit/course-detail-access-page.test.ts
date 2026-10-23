@@ -18,7 +18,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
     b.onLoad({ filter: /.*/, namespace: "context" }, args => ({ loader: "tsx", resolveDir: root, contents:
       args.path.endsWith("productStore") ? "export const getCoursePage=(...a)=>globalThis.courseCardTest.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.courseCardTest.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.courseCardTest.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.courseCardTest.store.listPlans(...a);"
       : args.path.endsWith("productAuth") ? "export const currentProductUser=async()=>globalThis.courseCardTest.user;"
-      : args.path.endsWith("/s3") ? "export const signCourseMediaUrl=async()=>'/portal/course-study.jpg';"
+      : args.path.endsWith("/s3") ? "export const signCourseMediaUrl=async value=>value?.startsWith('/courses/')?value:'/portal/course-study.jpg';"
       : args.path === "next/navigation" ? "export function redirect(href){throw new Error('redirect:'+href)}"
       : args.path === "next/image" ? "import React from 'react';export default function Image({unoptimized,...p}){return <img {...p}/>;}"
       : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>;}"
@@ -87,7 +87,25 @@ test("course detail replaces purchase with the Figma included-plan card only for
       assert.equal(await action.textContent(), copy.continueLearning);
       assert.equal(await action.getAttribute("href"), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`);
       // Restore the fixture's no-record state for the next locale.
+<<<<<<< HEAD
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: any) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: any) => row.userId !== owner.id);await writeProductData(data);
+=======
+      const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
+      const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;
+      await page.route("http://course-card.test/courses/**", async route => route.fulfill({body:await readFile(path.join(root,"public",new URL(route.request().url()).pathname)),contentType:"image/png"}));
+      await page.locator("#root").evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
+      await page.getByRole("heading",{name:"Modeling life",exact:true}).waitFor();
+      assert.equal(await page.getByText(modeling.description,{exact:true}).count(),1);
+      for(const outcome of modeling.outcomes!)assert.equal(await page.getByText(outcome,{exact:true}).count(),1);
+      for(const feature of modeling.features!)assert.equal(await page.getByText(feature,{exact:true}).count(),1);
+      assert.equal(await page.locator("[data-syllabus] article").count(),2);
+      for(const lesson of modeling.sections[0].lessons)assert.equal(await page.getByText(lesson.summary!,{exact:true}).count(),1);
+      await page.locator('img[src="/courses/modeling-life/cover.png"]').evaluate(image=>(image as HTMLImageElement).decode());
+      for(const width of [1440,390]){
+        await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+        await page.screenshot({path:path.join(output,`modeling-life-${locale}-${width}.png`),fullPage:true});
+      }
+>>>>>>> origin/dev
       await page.close();
     }
   } finally { delete (globalThis as any).courseCardTest;await browser.close();await restore(); }

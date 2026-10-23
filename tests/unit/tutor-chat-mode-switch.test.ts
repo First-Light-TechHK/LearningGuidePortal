@@ -9,7 +9,7 @@ import { chromium } from "playwright";
 // mode or the lesson must invalidate the old stream — its late headers and chunks may not
 // write into the new conversation — and the mode switches must be disabled while busy.
 
-const copy = { tutor: "AI Tutor", lecture: "Lecture", socratic: "Socratic", send: "Send", askTutor: "Ask the tutor", you: "You" } as const;
+const copy = { tutor: "AI Tutor", lecture: "Lecture", socratic: "Socratic", send: "Send", askTutor: "Ask the tutor", you: "You", newChat: "New chat", closeTutor: "Close AI Tutor", askTutorPlaceholder: "Ask about this lesson..." } as const;
 type MountProps = { locale: "en-GB" | "zh-CN"; courseId: string; lessonId: string; copy: typeof copy };
 
 function tutorBundle() {
@@ -33,6 +33,7 @@ function tutorBundle() {
 
 function startTutorServer() {
   const postBodies: Array<{ conversationId?: string; message?: string }> = [];
+  const deletes: Array<{ lessonId: string | null; mode: string | null }> = [];
   let releaseHeaders: () => void = () => {};
   const headersGate = new Promise<void>((resolve) => { releaseHeaders = resolve; });
   let releaseTail: () => void = () => {};
@@ -46,12 +47,28 @@ function startTutorServer() {
     if (url.pathname === "/api/ai-tutor" && request.method === "GET") {
       const lessonId = url.searchParams.get("lessonId");
       const mode = url.searchParams.get("mode");
+      if (lessonId === "lesson-no-welcome") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ conversation: { id: "conversation-empty", messages: [] }, welcome: "" }));
+        return;
+      }
+      if (lessonId === "lesson-empty") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ conversation: { id: "conversation-empty", messages: [] }, welcome: "Welcome from KS." }));
+        return;
+      }
       const conversation = lessonId === "lesson-two"
         ? (mode === "socratic" ? { id: "conversation-two-socratic", messages: [{ role: "assistant", content: "Lesson two socratic history" }] }
           : { id: "conversation-two", messages: [{ role: "assistant", content: "Lesson two history" }] })
         : { id: `conversation-${mode}`, messages: [{ role: "assistant", content: `${mode} history` }] };
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ conversation }));
+      response.end(JSON.stringify({ conversation, welcome: "Welcome from KS." }));
+      return;
+    }
+    if (url.pathname === "/api/ai-tutor" && request.method === "DELETE") {
+      deletes.push({ lessonId: url.searchParams.get("lessonId"), mode: url.searchParams.get("mode") });
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
       return;
     }
     if (url.pathname === "/api/ai-tutor" && request.method === "POST") {
@@ -88,6 +105,7 @@ function startTutorServer() {
   return new Promise<{
     origin: string;
     postBodies: Array<{ conversationId?: string; message?: string }>;
+    deletes: Array<{ lessonId: string | null; mode: string | null }>;
     releaseHeaders: () => void;
     releaseTail: () => void;
     firstStreamDone: Promise<void>;
@@ -96,7 +114,7 @@ function startTutorServer() {
     server.listen(0, "127.0.0.1", () => {
       resolve({
         origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-        postBodies, releaseHeaders, releaseTail, firstStreamDone,
+        postBodies, deletes, releaseHeaders, releaseTail, firstStreamDone,
         close: () => { server.closeAllConnections(); return new Promise<void>((done) => server.close(() => done())); },
       });
     });
@@ -127,7 +145,7 @@ test("mode switching is disabled while an answer is streaming", async () => {
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
     await mountTutorChat(page)("lesson-one");
     await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("lecture history"));
-    await page.locator(".tutor-composer input").fill("What is virtue?");
+    await page.locator(".tutor-composer textarea").fill("What is virtue?");
     await page.locator(".tutor-composer button").click();
     await until(() => harness.postBodies.length === 1, "the streaming request was never sent");
     await page.waitForFunction(
@@ -157,7 +175,7 @@ test("a stream from the previous lesson never writes into the new conversation",
 
     await mount("lesson-one");
     await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("lecture history"));
-    await page.locator(".tutor-composer input").fill("What is virtue?");
+    await page.locator(".tutor-composer textarea").fill("What is virtue?");
     await page.locator(".tutor-composer button").click();
     await until(() => harness.postBodies.length === 1, "the streaming request was never sent");
 
@@ -170,7 +188,7 @@ test("a stream from the previous lesson never writes into the new conversation",
     await harness.firstStreamDone;
 
     // The new conversation stays usable; its follow-up must not surface the replaced stream.
-    await page.locator(".tutor-composer input").fill("Second question");
+    await page.locator(".tutor-composer textarea").fill("Second question");
     await page.waitForFunction(() => !(document.querySelector(".tutor-composer button") as HTMLButtonElement).disabled);
     await page.locator(".tutor-composer button").click();
     await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Fresh answer."));
@@ -186,6 +204,54 @@ test("a stream from the previous lesson never writes into the new conversation",
     // Switching modes once the answer has settled still loads that mode's conversation.
     await page.locator(".mode-switch button").nth(1).click();
     await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Lesson two socratic history"));
+  } finally {
+    harness.releaseHeaders();
+    harness.releaseTail();
+    await browser.close();
+    await harness.close();
+  }
+});
+
+test("welcome comes from KS, timestamps render above messages, and New chat clears both UI and stored conversation", async () => {
+  const harness = await startTutorServer();
+  const bundle = await tutorBundle();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(harness.origin);
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const mount = mountTutorChat(page);
+
+    await mount("lesson-empty");
+    await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Welcome from KS."));
+    assert.equal(await page.locator(".tutor-message.assistant").count(), 1, "the KS welcome is rendered as an assistant bubble");
+    assert.equal(await page.locator(".tutor-message-time").count(), 1, "the welcome bubble carries a timestamp");
+
+    harness.releaseHeaders();
+    harness.releaseTail();
+    await page.locator(".tutor-composer textarea").fill("What should I notice first?");
+    await page.locator(".tutor-composer button").click();
+    await until(() => harness.postBodies.length === 1, "the streaming request was never sent");
+    await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Stale first half."));
+    assert.equal(harness.postBodies[0].conversationId, "conversation-empty", "the first answer continues the loaded conversation");
+    const timeCount = await page.locator(".tutor-message-time").count();
+    assert.equal(timeCount, 3, "welcome, user and assistant rows each carry a timestamp above them");
+    assert.equal(await page.locator(".tutor-message.assistant").count(), 2, "the KS welcome stays above the conversation after sending");
+
+    await page.getByRole("button", { name: "New chat" }).click();
+    await until(() => harness.deletes.length === 1, "New chat never deleted the stored conversation");
+    assert.deepEqual(harness.deletes[0], { lessonId: "lesson-empty", mode: "lecture" });
+    await page.waitForFunction(() => !document.querySelector(".tutor-messages")?.textContent?.includes("Stale"));
+    await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Welcome from KS."));
+
+    await page.locator(".tutor-composer textarea").fill("Start again");
+    await page.locator(".tutor-composer button").click();
+    await until(() => harness.postBodies.length === 2, "the follow-up request was never sent");
+    assert.ok(String(harness.postBodies[1].conversationId).startsWith("tutor-new-"), "a new chat must not reuse the deleted conversation id");
+
+    await mount("lesson-no-welcome");
+    await page.waitForFunction(() => document.querySelector(".tutor-empty")?.textContent?.includes("Ask the tutor"));
+    assert.equal(await page.locator(".tutor-message.assistant").count(), 0, "an empty KS welcome shows no bubble");
   } finally {
     harness.releaseHeaders();
     harness.releaseTail();

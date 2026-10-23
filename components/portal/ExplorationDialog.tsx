@@ -9,6 +9,7 @@ import type { LessonNode } from "@/contracts/lesson-content";
 import { explorationCourseSamples, explorationLessonNumber } from "@/services/explorationSamples";
 import { PortalDialog } from "./PortalDialog";
 import { ExhibitDialog } from "./ExhibitDialog";
+import { LessonModal, SafeLessonHtml } from "./CourseMediaPreview";
 import styles from "./exploration-dialog.module.css";
 
 function LockedExploration({locale,tab}:{locale:Locale;tab:"reading"|"exhibits"}) {
@@ -21,7 +22,7 @@ function LockedExploration({locale,tab}:{locale:Locale;tab:"reading"|"exhibits"}
   </div>;
 }
 
-export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:ExplorationLesson[];onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
+export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,tutorAvailable=true,onClose,onAskTutor,data}: {locale:Locale;courseId:string;lessonNumber?:string;lessons?:ExplorationLesson[];tutorAvailable?:boolean;onClose:()=>void;onAskTutor:()=>void;data?:ExplorationDisplay}) {
   const messages=getMessages(locale),copy=messages.exploration;
   const courseLessons=lessons??[{number:lessonNumber,title:copy.lesson.replace("{number}",String(Number(lessonNumber)||lessonNumber)),unlocked:true}];
   const unlocked=new Set(courseLessons.filter(lesson=>lesson.unlocked).map(lesson=>explorationLessonNumber(lesson.number)));
@@ -41,10 +42,10 @@ export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,onC
   const numbers=[...new Set((tab==="reading"?readings:exhibits).map(item=>item.lessonNumber))];
   function changeTab(next:"reading"|"exhibits") {setTab(next);scroll.current?.scrollTo(0,0);}
   function changeScope(next:"lesson"|"course") {setScope(next);position.current=0;scroll.current?.scrollTo(0,0);}
-  if(selected)return <ExhibitDialog node={selected} locale={locale} onClose={()=>setSelected(null)}/>;
+  if(selected)return selected.type === "text" ? <LessonModal title={selected.title} locale={locale} onClose={()=>setSelected(null)}><SafeLessonHtml html={selected.html || ""}/></LessonModal> : <ExhibitDialog node={selected} locale={locale} onClose={()=>setSelected(null)}/>;
   return <PortalDialog className={styles.dialog} labelledBy="exploration-title" onClose={onClose}>
     <header className={styles.header}><div><h2 id="exploration-title">{copy.title}</h2></div><div className={styles.actions}>
-      <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>
+      {tutorAvailable && <button type="button" className={styles.tutor} onClick={onAskTutor}><span><Image src="/portal/exploration/tutor.svg" width={14} height={14} alt=""/></span>{messages.previewVideoDesign.tutor}</button>}
       <div className={styles.scope} role="group" aria-label={copy.scope}>{(["lesson","course"] as const).map(value=><button type="button" key={value} aria-pressed={scope===value} onClick={()=>changeScope(value)}>{value==="lesson"?copy.thisLesson:copy.wholeCourse}</button>)}</div>
       <button type="button" className={styles.close} aria-label={copy.close} onClick={onClose}>×</button>
     </div></header>

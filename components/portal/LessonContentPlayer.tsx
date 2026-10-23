@@ -65,6 +65,18 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
   const [videoFullscreen,setVideoFullscreen] = useState(false);
   const nodes = videoExhibitNodes(content, locale), titles = Object.fromEntries(nodes.map(node => [node.id, node.title || t.newNode]));
   const contentTrialGate = content.type === 'video' ? trialGate : undefined;
+  const startApplied = useRef(false);
+  function initialiseVideo() {
+    const media = video.current;
+    if (!startApplied.current && media) {
+      const start = content.startSeconds || 0;
+      seen.current = new Set(nodes.filter(node => node.triggerTime < start).map(node => node.id));
+      lastTime.current = start - 0.01;
+      if (start > 0) media.currentTime = start;
+      startApplied.current = true;
+    }
+    reportProgress();
+  }
   useEffect(() => {
     if (!nodeRequest || contentTrialGate) return;
     const node = nodes.find(item => item.id === nodeRequest.id);
@@ -108,9 +120,9 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
     else lastTime.current = now;
   }
   return <section className="la-content-player"><h3>{content.title}</h3>
-    {content.type === 'text' && <TextExhibitContent html={content.html || ''} locale={locale}/>}
+    {content.type === 'text' && <TextExhibitContent html={content.html || ''} locale={locale} exhibitMode={content.exhibitMode}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
-    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} exitFullscreenRequested={!!active} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload="metadata" onLoadedMetadata={reportProgress} onDurationChange={reportProgress} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else { onVideoStart?.(content.id); reportProgress(); tick(); } }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
+    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} exitFullscreenRequested={!!active} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload="metadata" onLoadedMetadata={initialiseVideo} onDurationChange={reportProgress} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else { onVideoStart?.(content.id); reportProgress(); tick(); } }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
       if (enforceVideoTrial()) { seeking.current = false; return; }
       // A forward seek skips earlier instances; seeking backwards rearms later ones.

@@ -8,7 +8,7 @@ import { build } from "esbuild";
 test("subscribed learning renders the shared preview player after session and Entitlement checks", async () => {
   const course = { id:"course", slug:"course", title:"Actual Course", description:"Course description", category:"Science", status:"published", cover:"/cover.jpg", sections:[{lessons:[
     {id:"public",title:"First",body:"Public",isPublic:true,durationMinutes:1},
-    {id:"private",title:"Second",summary:"Current lesson summary",body:"Protected",isPublic:false,durationMinutes:2,contents:[
+    {id:"private",title:"Second",summary:"Current lesson summary",body:"Protected",isPublic:false,durationMinutes:2,assessments:{knowledge:[{id:"authored",prompt:"Authored prompt",referenceAnswer:"ASSESSMENT-REFERENCE-SECRET"}],application:null},contents:[
       {id:"point-one",title:"2.1",type:"video",url:"/point-one.mp4",nodes:[]},
       {id:"point-two",title:"2.2",type:"video",url:"/point-two.mp4",nodes:[]},
       {id:"text",title:"2.3",type:"text",html:"Protected content",nodes:[]},
@@ -37,6 +37,7 @@ test("subscribed learning renders the shared preview player after session and En
     const props=element.props.children[1].props;
     assert.equal(props.lesson.id,"private");assert.equal(props.courseTitle,"Actual Course");assert.equal(props.entitled,true);
     assert.equal(props.description,"Current lesson summary");
+    assert.doesNotMatch(JSON.stringify(props),/ASSESSMENT-REFERENCE-SECRET/);assert.equal(props.assessmentAvailability.knowledge,1,"pages carry availability only, never test reference answers");
     assert.equal(props.studyEndpoint,"/api/study/events");assert.equal(props.preferredMode,"text");assert.equal(props.initialCompleted,true);assert.deepEqual(props.completedContentIds,[]);
     assert.equal(props.trialGate,undefined);assert.equal(props.poster,"/cover.jpg");
     assert.deepEqual(props.lesson.contents.map((content:{id:string})=>content.id),["point-one","point-two","text"],"lesson access includes every knowledge point without completion gates");

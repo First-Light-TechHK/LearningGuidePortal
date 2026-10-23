@@ -1,5 +1,16 @@
 # Study Group decisions
 
+## 2026-10-23 Room Tutor follows KnowledgeSystem's Lecture configuration (owner decision)
+
+The Live Session Tutor now proxies KnowledgeSystem's learner chat-stream in `LECTURE` mode instead of calling OpenRouter with a Study Group key pool and its own system prompt. The related course's Lecture model, prompt and provider key are therefore exactly the ones configured in the KS AI Tutor page. The welcome message is not used.
+
+- **Context**: only the `@AI Tutor` message and earlier `@AI Tutor` exchanges in the same room are sent to the model. Ordinary room chat is never included.
+- **Answer**: the room shows the native Lecture answer. The earlier `COURSE` / `GENERAL` first-line tags, bullet-only reply format, room tools and quiz/understanding-check flow from the local-key implementation are no longer used.
+- **Availability**: the room follows the related course's KS Online switch. The Host cannot turn the AI Tutor switch on while the course is offline; Start rechecks it and refuses to start with the switch on if the course has gone offline. The Host may turn the switch on or off in the Schedule/Edit Session dialog until the Session starts.
+- **Local development**: use a local LiveKit server (`livekit-server --dev`) plus the KS learner API; no `STUDY_GROUP_TUTOR_*` key is needed for the room Tutor.
+
+The earlier Tutor/key-pool sections below describe the superseded local-key implementation and are retained for history. The production release gate (RDS-backed Study Group store, signed webhook, non-production room smoke) is unchanged.
+
 PRD v0.10 section 8.1 lists the records and fields. Target production architecture (release gate, not yet implemented): Production Study Group must use the product's selected RDS PostgreSQL store, as required by `AGENTS.md` and the release runbook. Current implementation status: the code still uses the file repository in `modules/group-study/repository.ts` in every environment. It is temporary local/test compatibility only; it is not a production deployment option, and production Study Group stays disabled until the RDS repository and the remaining release-gate items exist. When implemented, that repository will enforce the same idempotency facts with database constraints and transactions — a second join does not add a member, the same client event id returns the original tutor item, and a session has one meeting row; none of those constraints exist in the file repository today.
 
 Where `study-group-architecture.md`, `study-group-tech-selection.md`, or `study-group-ai-tutor-plan.md` left a point open, this file is the choice.

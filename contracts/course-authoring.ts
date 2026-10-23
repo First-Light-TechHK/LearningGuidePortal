@@ -9,6 +9,8 @@ export type CourseMetadata = {
   subjectId?: string | null;
   referencePrice?: number | null;
   discount?: number | null;
+  outcomes?: string[];
+  features?: string[];
 };
 
 export type AuthoringLesson = {

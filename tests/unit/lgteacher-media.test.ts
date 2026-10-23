@@ -24,7 +24,7 @@ test("LGTeacher: MIME mismatches, renamed scripts, path filenames and external O
 });
 
 test("LGTeacher: multipart parser rejects oversize declarations before reading large fixture data", async () => {
-  assert.equal(COURSE_MEDIA_MAX_BYTES, 25 * 1024 * 1024);
+  assert.equal(COURSE_MEDIA_MAX_BYTES, 200 * 1024 * 1024);
   const request = new Request("http://127.0.0.1:3016/upload", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=fixture", "content-length": String(COURSE_MEDIA_MAX_BYTES + 65537) }, body: "small local fixture" });
   await assert.rejects(readCourseMediaUpload(request), error => error instanceof CourseMediaError && error.status === 413);
   const form = new FormData();

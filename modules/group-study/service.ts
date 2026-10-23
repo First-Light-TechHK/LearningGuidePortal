@@ -23,11 +23,13 @@ import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
 import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
-import { createTutorKeyPool, type TutorCallResult } from "./tutorKeyPool";
-import type { TutorToolSpec, TutorTurn } from "./tutorAnswer";
-import { answerTutorQuestion, type TutorEngineResult } from "./tutorEngine";
-import { createTutorHealth, publicTutorReason, type TutorAvailability, type TutorFailureReason, type TutorHealth } from "./tutorHealth";
-import { renderRoomContext, roomTutorTools, type TutorExchange } from "./tutorTools";
+
+// The room Tutor is KnowledgeSystem's (2026-10-23): Portal keeps only the
+// question queue and the room message. No prompt, model, key or provider call
+// lives here; the room's answer is whatever KS streams back.
+type TutorExchange = { question: string; answer: string; answeredAt: string };
+type TutorAvailability = { available: true } | { available: false; reason: "offline" };
+type TutorAnswerFailure = "busy" | "provider" | "offline";
 
 export type CourseSummary = { id: string; title: string; slug: string };
 export type UserProfile = { id: string; displayName: string; email: string | null; locale: "en-GB" | "zh-CN" };
@@ -58,27 +60,14 @@ export type StudyGroupDeps = {
   // environment where the key is not configured yet (managed environments get
   // it injected from Secrets Manager; DEV resolves it on first real issuance).
   tokenLogKey: () => Buffer | null;
-  courseKnowledge?: (courseId: string) => Promise<string>;
-  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo; kind?: "quiz"; reason?: string }) => Promise<void>;
-  // Sync or async: the runtime reads a hot pool from Secrets Manager.
-  // `forceRefresh` re-reads it when every key the drain had was refused.
-  tutorKeys?: (options?: { forceRefresh?: boolean }) => Array<{ id: string; secret: string }> | Promise<Array<{ id: string; secret: string }>>;
-  // One provider request. `timeoutMs` is how long this call may take (what is
-  // left of the answer deadline); the call must give up by then. `model` is
-  // the model the engine picked from tutorModels, `roomContext` the room's
-  // recent Tutor exchanges, and `turns`/`tools` the tool-calling loop.
-  tutorCall?: (input: { secret: string; text: string; context: string; timeoutMs?: number; model?: string; roomContext?: string; turns?: TutorTurn[]; tools?: TutorToolSpec[]; toolChoice?: "none" }) => Promise<TutorCallResult>;
-  // The models to ask, in order: the first is the primary, the rest the
-  // fallbacks for a retired or failing one. Absent: one provider default.
-  tutorModels?: () => string[];
-  // Whether the Tutor may call its room tools (default on).
-  tutorToolsEnabled?: boolean;
-  // Today's spend cap for this instance, in US dollars; null means no cap.
-  tutorDailyBudgetUsd?: number | null;
-  // Per-process Tutor health (test seam; the service makes its own).
-  tutorHealth?: TutorHealth;
-  // The engine's wait between retry rounds (test seam; default setTimeout).
-  tutorRetryWait?: (ms: number) => Promise<void>;
+  // KS Lecture proxy (2026-10-23): the room Tutor asks KnowledgeSystem's
+  // learner chat-stream, so the model/prompt/key stay the course AI Tutor's.
+  // Absent (unit fixtures) means the room answers unavailable.
+  tutorKs?: (input: { courseId: string; message: string; locale: "en-GB" | "zh-CN"; history: Array<{ role: "user" | "assistant"; content: string }>; deadline: number }) => Promise<string>;
+  // KS course-level Online switch; checked before the host enables the Tutor
+  // and again when the Host starts the Live Session.
+  tutorOnline?: (courseId: string) => Promise<boolean>;
+  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo; reason?: string }) => Promise<void>;
   // One redacted operational line (a fixed type and counts, never an id or
   // a name); the runtime writes it to the log stream.
   operationalLog?: (event: Record<string, unknown>) => void;
@@ -104,6 +93,8 @@ export type GroupView = StudyGroupRow & {
   // and slug are then empty, and Discover leaves the group out.
   courseAvailable: boolean;
   live: boolean;
+  /** KS 课程级 AI Tutor Online 状态（群详情页用于主持人开关） */
+  tutorOnline?: boolean;
 };
 
 export type StudyGroupWebhookOutcome = Readonly<{ status: "processed" | "ignored" | "duplicate" }>;
@@ -166,8 +157,6 @@ function tutorHistory(store: StudyGroupStore, sessionId: string, excludeId: stri
       return [{
         question: row.text.slice(0, TUTOR_HISTORY_QUESTION_MAX),
         answer: payload.text,
-        kind: payload.kind === "quiz" ? "quiz" as const : "answer" as const,
-        mode: payload.mode === "general" ? "general" as const : "course" as const,
         answeredAt: row.answeredAt!
       }];
     })
@@ -190,6 +179,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number) {
     timer = setTimeout(() => reject(new Error("timed out")), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// KS answers every failure with a typed HTTP status; the room is told a coarse
+// class only, never provider internals. 429 is the live-room quota, 403/409
+// mean the course Tutor is closed or has no published version.
+function ksFailure(error: unknown): TutorAnswerFailure {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (status === 429) return "busy";
+  if (status === 403 || status === 409) return "offline";
+  return "provider";
 }
 
 // A provider failure the next try may not hit (QA M12): rate limiting or a
@@ -276,45 +275,54 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   const roomReads = new Map<string, { at: number; read: Promise<RoomRead | null> }>();
   const roomCheckedAt = new Map<string, number>();
   const tutorDraining = new Set<string>();
-  const tutorPools = new Map<string, ReturnType<typeof createTutorKeyPool>>();
-  const tutorHealth = deps.tutorHealth ?? createTutorHealth();
   // Whether the room should offer the Tutor, cached briefly: every room page
-  // polls the session, and a hot key read per poll would be wasteful.
+  // polls the session, and a KS status read per poll would be wasteful.
   // One read at a time (concurrent room polls share it), and a generation
   // so an answer settling meanwhile invalidates a read already under way.
-  let tutorAvailabilityCache: { at: number; value: TutorAvailability } | null = null;
-  let tutorAvailabilityRead: Promise<TutorAvailability> | null = null;
+  const tutorAvailabilityCache = new Map<string, { at: number; value: TutorAvailability }>();
+  const tutorAvailabilityReads = new Map<string, Promise<TutorAvailability>>();
   let tutorAvailabilityGeneration = 0;
   function invalidateTutorAvailability() {
-    tutorAvailabilityCache = null;
-    tutorAvailabilityRead = null;
+    tutorAvailabilityCache.clear();
+    tutorAvailabilityReads.clear();
     tutorAvailabilityGeneration += 1;
   }
-  async function tutorAvailability(): Promise<TutorAvailability> {
+  async function tutorAvailability(courseId?: string, options: { fresh?: boolean } = {}): Promise<TutorAvailability> {
+    const key = courseId ?? "";
+    // Only the course's KS Online switch decides. A fixture without that switch
+    // (no course-level check wired) treats a configured KS proxy as available
+    // and lets the answer path report any failure.
+    if (!courseId) return { available: false, reason: "offline" };
+    if (!deps.tutorOnline) return deps.tutorKs ? { available: true } : { available: false, reason: "offline" };
     const current = Date.now();
-    if (tutorAvailabilityCache && current - tutorAvailabilityCache.at < TUTOR_AVAILABILITY_CACHE_MS) return tutorAvailabilityCache.value;
-    if (tutorAvailabilityRead) return tutorAvailabilityRead;
+    const useCache = !options.fresh;
+    if (useCache) {
+      const cached = tutorAvailabilityCache.get(key);
+      if (cached && current - cached.at < TUTOR_AVAILABILITY_CACHE_MS) return cached.value;
+      const pending = tutorAvailabilityReads.get(key);
+      if (pending) return pending;
+    }
     const generation = tutorAvailabilityGeneration;
     const read = (async () => {
-      let keysConfigured = false;
-      let readFailed = false;
-      if (deps.tutorCall) {
-        try {
-          keysConfigured = (await withTimeout(Promise.resolve(deps.tutorKeys?.() ?? []), 2_000)).length > 0;
-        } catch {
-          // A slow or failing key read is not "no key": keep offering the
-          // Tutor and let the answer path report what really happens.
-          readFailed = true;
-        }
+      let online = false;
+      try {
+        online = await withTimeout(deps.tutorOnline!(courseId), 2_500);
+      } catch {
+        online = false;
       }
-      const value = tutorHealth.availability({ keysConfigured: keysConfigured || readFailed, dailyBudgetUsd: deps.tutorDailyBudgetUsd ?? null });
-      if (generation === tutorAvailabilityGeneration) {
-        if (!readFailed) tutorAvailabilityCache = { at: current, value };
-        tutorAvailabilityRead = null;
+      const value: TutorAvailability = online ? { available: true } : { available: false, reason: "offline" };
+      if (useCache && generation === tutorAvailabilityGeneration) {
+        tutorAvailabilityCache.set(key, { at: current, value });
       }
       return value;
     })();
-    tutorAvailabilityRead = read;
+    if (useCache) {
+      tutorAvailabilityReads.set(key, read);
+      read.then(
+        () => { if (tutorAvailabilityReads.get(key) === read) tutorAvailabilityReads.delete(key); },
+        () => { if (tutorAvailabilityReads.get(key) === read) tutorAvailabilityReads.delete(key); }
+      );
+    }
     return read;
   }
   // One pending re-drain per session: a failed publish schedules its own
@@ -339,19 +347,6 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // acceptable for the alarm). Only invalid/missing signatures increment it —
   // never provider or store failures — and the runtime metrics timer drains it.
   let webhookRejectionCount = 0;
-
-  function tutorPoolFor(keys: Array<{ id: string; secret: string }>) {
-    const keySet = JSON.stringify(keys);
-    const existing = tutorPools.get(keySet);
-    if (existing) return existing;
-    const pool = createTutorKeyPool({
-      keys,
-      call: async () => ({ outcome: "failed", latencyMs: 0 })
-    });
-    tutorPools.clear();
-    tutorPools.set(keySet, pool);
-    return pool;
-  }
 
   // Shared drain body: deliverTutorAnswer is the inbound-ask path and
   // recoverTutorWork the stranded-work path; both run this same durable
@@ -396,7 +391,6 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             messageId: message.payload.messageId,
             mode,
             ...(message.payload.replyTo ? { replyTo: message.payload.replyTo } : {}),
-            ...(message.payload.kind === "quiz" ? { kind: "quiz" as const } : {}),
             ...(message.payload.reason ? { reason: message.payload.reason } : {})
           });
           await deps.repository.markOutboxDelivered({ id: message.id, leaseOwner });
@@ -450,83 +444,63 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           await deps.repository.settleTutorRequest({ id: item.id, leaseOwner, outcome: { status: "dead_letter", terminalReason: "session_ended" } });
           continue;
         }
-        // A failing profile or knowledge read must not strand the item in
-        // flight until its lease runs out, holding the asker's pending slot
-        // and the questions behind it (QA r3-ops): the answer goes out without
-        // a name, or without course material, instead. A nameless asker is
-        // answered with name "" (r3-B3), which the room shows as "a participant".
+        // A failing profile read must not strand the item in flight until its
+        // lease runs out, holding the asker's pending slot and the questions
+        // behind it (QA r3-ops): the answer goes out without a name.
         const asker = await deps.userProfile(item.userId).catch(() => null);
         const question = item.text.length > TUTOR_REPLY_QUOTE_MAX ? `${item.text.slice(0, TUTOR_REPLY_QUOTE_MAX - 1)}…` : item.text;
         const replyTo: TutorReplyTo = { name: asker?.displayName || "", question };
-        // Grounding and the model call run outside every transaction and
-        // lock; the claim lease, not the process, guards the window. The whole
-        // course material goes to the model verbatim (owner decision): the
-        // model itself fuzzy-matches a question against it, across languages,
-        // so no server-side retrieval or threshold may short-circuit the call.
-        // (Course knowledge stays as it is until the Knowledge System module,
-        // owned by another team, is integrated — owner, 2026-10-20.)
+        // The answer comes from KnowledgeSystem's course AI Tutor (2026-10-23):
+        // Portal holds no prompt, model, key or course corpus. Only the @AI
+        // Tutor question and earlier @AI Tutor exchanges reach KS; ordinary
+        // room chat is never included. The call runs outside every transaction
+        // and lock; the claim lease guards the window.
         const group = snapshot.groups.find((entry) => entry.id === session.groupId);
-        const corpus = group && deps.courseKnowledge ? await deps.courseKnowledge(group.courseId).catch(() => "") : "";
-        const context = corpus.trim();
-        const nowMs = deps.now().getTime();
         const history = tutorHistory(snapshot, session.id, item.id);
-        // The key read is inside the answer deadline too (a stalled secret
-        // read must not outlast the claim lease and invite a second call).
-        const readKeys = (options?: { forceRefresh?: boolean }) => withTimeout(Promise.resolve(deps.tutorKeys?.(options) ?? []), Math.max(0, answerBy - Date.now())).catch(() => []);
-        const tutorCall = deps.tutorCall;
-        const keys = tutorCall ? await readKeys() : [];
-        const budget = deps.tutorDailyBudgetUsd ?? null;
-        const refused = (reason: TutorFailureReason): TutorEngineResult => ({ status: "failed", reason, attempts: 0, toolCalls: 0, latencyMs: 0, usage: { promptTokens: 0, completionTokens: 0 } });
-        const result: TutorEngineResult = !tutorCall
-          ? refused("no_key")
-          : budget !== null && tutorHealth.spendTodayUsd() >= budget
-            ? refused("budget")
-            // A call that throws (rather than reporting a failed outcome) is an
-            // unavailable answer like any other failure, never a stranded item.
-            : await answerTutorQuestion({
-              question: item.text,
-              context,
-              roomContext: renderRoomContext(history, nowMs),
-              keys,
-              models: deps.tutorModels?.().filter(Boolean) ?? [""],
-              pool: tutorPoolFor,
-              call: (input) => tutorCall(input),
-              tools: deps.tutorToolsEnabled === false ? undefined : roomTutorTools({ history, nowMs }),
-              health: tutorHealth,
-              deadline: answerBy,
-              refreshKeys: () => readKeys({ forceRefresh: true }),
-              ...(deps.tutorRetryWait ? { sleep: deps.tutorRetryWait } : {})
-            }).catch(() => refused("network"));
-        tutorHealth.addSpend(result.usage.costUsd);
-        tutorHealth.record(result.status === "answered"
-          ? { ok: true, model: result.model, latencyMs: result.latencyMs, attempts: result.attempts }
-          : { ok: false, reason: result.reason, latencyMs: result.latencyMs, attempts: result.attempts });
+        const ksTutor = deps.tutorKs;
+        const startedAt = deps.now().getTime();
+        let text = "";
+        let failure: TutorAnswerFailure | null = null;
+        if (!ksTutor || !group) {
+          failure = "offline";
+        } else {
+          try {
+            text = (await ksTutor({
+              courseId: group.courseId,
+              message: item.text,
+              locale: asker?.locale ?? "en-GB",
+              history: history.flatMap((exchange) => [
+                { role: "user" as const, content: exchange.question },
+                { role: "assistant" as const, content: exchange.answer }
+              ]).slice(-10),
+              deadline: answerBy
+            })).trim();
+            if (!text) failure = "provider";
+          } catch (error) {
+            failure = ksFailure(error);
+          }
+        }
+        const latencyMs = deps.now().getTime() - startedAt;
         invalidateTutorAvailability();
-        // One redacted line per question: classes, counts and the model name,
-        // never an id, a name, the question or a key.
+        // One redacted line per question: the outcome class and the answer's
+        // length, never an id, a name, the question or any answer text.
         deps.operationalLog?.({
           type: "study_group.tutor_answer",
-          outcome: result.status,
-          ...(result.status === "answered" ? { model: result.model, kind: result.kind, mode: result.mode } : { reason: result.reason }),
-          attempts: result.attempts,
-          toolCalls: result.toolCalls,
-          latencyMs: result.latencyMs,
-          promptTokens: result.usage.promptTokens,
-          completionTokens: result.usage.completionTokens,
-          ...(typeof result.usage.costUsd === "number" ? { costUsd: result.usage.costUsd } : {})
+          outcome: failure ? "failed" : "answered",
+          ...(failure ? { reason: failure } : { characters: text.length }),
+          latencyMs
         });
-        const reply: { text: string; mode: "course" | "general" | "unavailable" } = result.status === "answered" ? { text: result.text, mode: result.mode } : { text: "", mode: "unavailable" };
+        const reply: { text: string; mode: "course" | "unavailable" } = failure ? { text: "", mode: "unavailable" } : { text, mode: "course" };
         // Settle with the outbox row in one transaction; the publish below is
         // at-least-once and retried on a later drain if it fails. Every item
         // settles as answered and produces exactly one room message — an
         // unavailable one (empty text, mode "unavailable", and the failure
-        // class as `reason`) when no usable tutor key or call produced a
-        // reply, so the client can show its own "temporarily unavailable"
-        // copy instead of nothing.
+        // class as `reason`) when KS could not answer, so the client can show
+        // its own "temporarily unavailable" copy instead of nothing.
         await deps.repository.settleTutorRequest({
           id: item.id,
           leaseOwner,
-          outcome: { status: "answered", terminalReason: reply.mode === "unavailable" ? "model_failed" : "answered" },
+          outcome: { status: "answered", terminalReason: failure ? "model_failed" : "answered" },
           outbox: {
             room: session.id,
             projectId: session.liveKitProjectId ?? "",
@@ -534,8 +508,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             messageId: item.id,
             mode: reply.mode,
             replyTo,
-            ...(result.status === "answered" && result.kind === "quiz" ? { kind: "quiz" as const } : {}),
-            ...(result.status === "failed" ? { reason: publicTutorReason(result.reason) } : {})
+            ...(failure ? { reason: failure } : {})
           }
         });
         if (!deps.publishRoomChat) last = { text: reply.text, mode: reply.mode };
@@ -646,6 +619,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const profile = await deps.userProfile(person.userId);
       attendees.push({ userId: person.userId, displayName: profile?.displayName || person.userId });
     }
+    const tutorGroup = store.groups.find((item) => item.id === session.groupId);
     return {
       id: session.id,
       groupId: session.groupId,
@@ -671,7 +645,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // infra 2026-10-20): decided here, so the room only renders it. Only a
       // live session with the Tutor enabled carries it.
       ...(state === "live" && session.aiTutorEnabled ? {
-        tutor: await tutorAvailability(),
+        tutor: await tutorAvailability(tutorGroup?.courseId ?? ""),
         // The viewer's own questions still waiting, each with how many the
         // Tutor answers first (0 = being answered or next).
         viewerTutorQuestions: store.tutorRequests
@@ -1168,7 +1142,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // same rule that keeps it out of Discover.
       const canJoin = !mine && Boolean(input.actorUserId) && view.courseAvailable && await deps.hasCourseAccess(input.actorUserId || "", group.courseId);
       const lessons = deps.courseLessons ? await deps.courseLessons(group.courseId) : [];
-      return { ...view, members, sessions, canJoin, lessons };
+      // KS-owned Tutor (2026-10-23): the Host's schedule dialog disables the
+      // AI Tutor switch when the related course's Tutor is offline.
+      const tutorOnline = deps.tutorOnline && mine?.role === "host" ? (await tutorAvailability(group.courseId, { fresh: true })).available : undefined;
+      return { ...view, members, sessions, canJoin, lessons, ...(tutorOnline === undefined ? {} : { tutorOnline }) };
     },
 
     async joinGroup(input: { actorUserId: string; groupId: string }) {
@@ -1346,7 +1323,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const focus = clean(input.focus || "");
       if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long.");
       const relatedLessonId = clean(input.relatedLessonId || "") || null;
-      const aiTutorEnabled = input.aiTutorEnabled !== false;
+      let aiTutorEnabled = input.aiTutorEnabled !== false;
+      if (aiTutorEnabled && deps.tutorOnline) {
+        const pre = await deps.repository.read();
+        const group = pre.groups.find((item) => item.id === input.groupId && item.status === "active");
+        if (group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
+          // An explicit "on" is the Host asking for something the course does
+          // not offer; an omitted field (legacy clients) simply defaults off.
+          if (input.aiTutorEnabled === true) {
+            throw new StudyGroupError("tutor_unavailable", "AI Tutor is offline for this course.");
+          }
+          aiTutorEnabled = false;
+        }
+      }
       const now = deps.now().toISOString();
       const session = await deps.repository.update((store) => {
         const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
@@ -1393,6 +1382,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long.");
         focus = focus || null;
       }
+      if (input.aiTutorEnabled !== undefined && deps.tutorOnline) {
+        const pre = await deps.repository.read();
+        const current = pre.sessions.find((item) => item.id === input.sessionId && item.groupId === input.groupId);
+        const group = current ? pre.groups.find((item) => item.id === current.groupId) : undefined;
+        if (input.aiTutorEnabled && group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
+          throw new StudyGroupError("tutor_unavailable", "AI Tutor is offline for this course.");
+        }
+      }
       const now = deps.now().toISOString();
       const session = await deps.repository.update((store) => {
         const current = store.sessions.find((item) => item.id === input.sessionId && item.groupId === input.groupId);
@@ -1406,9 +1403,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           (input.relatedLessonId !== undefined && (clean(input.relatedLessonId || "") || null) !== (current.relatedLessonId || null)) ||
           (input.durationSeconds !== undefined && input.durationSeconds !== current.durationSeconds) ||
           (input.maxParticipants !== undefined && input.maxParticipants !== current.maxParticipants) ||
-          (focus !== undefined && focus !== (current.focus || null)) ||
-          (input.aiTutorEnabled !== undefined && input.aiTutorEnabled !== current.aiTutorEnabled);
-        if (changesOtherThanTime) throw new StudyGroupError("session_time_only", "Only the Start Time of an upcoming Live Session can be changed.");
+          (focus !== undefined && focus !== (current.focus || null));
+        if (changesOtherThanTime) throw new StudyGroupError("session_time_only", "Only the Start Time and the AI Tutor switch of an upcoming Live Session can be changed.");
+        // The Host may turn the room AI Tutor on or off until the Session starts.
+        if (input.aiTutorEnabled !== undefined) current.aiTutorEnabled = input.aiTutorEnabled;
         const previousStartsAt = current.startsAt;
         if (input.startsAt !== undefined) current.startsAt = new Date(input.startsAt).toISOString();
         current.updatedAt = now;
@@ -1499,6 +1497,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const operation = (async () => {
       const pending = await deps.repository.read();
       const pendingSession = pending.sessions.find((item) => item.id === input.sessionId);
+      // KS-owned Tutor (2026-10-23): the Host set the switch earlier, but the
+      // course may have gone offline since. Refuse to start with it on so the
+      // room never opens promising a Tutor it cannot offer.
+      if (pendingSession && pendingSession.status !== "live" && pendingSession.aiTutorEnabled && deps.tutorOnline) {
+        const membership = activeMembership(pending, pendingSession.groupId, input.actorUserId);
+        const group = pending.groups.find((item) => item.id === pendingSession.groupId);
+        if (membership?.role === "host" && group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
+          throw new StudyGroupError("tutor_unavailable", "AI Tutor is offline for this course. Turn it off before starting the Live Session.");
+        }
+      }
       let assignedProjectId: string | null = null;
       if (pendingSession && pendingSession.status !== "live" && deps.liveKitProjects && deps.liveKitGateway) {
         const { session: current, membership } = requireOpenSession(pending, input.sessionId, input.actorUserId);
@@ -1707,7 +1715,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // failing) or over its daily budget; the room shows why. A missing key
       // is still taken and answered "unavailable" (QA N4: the question line
       // must not block), and the room greys the entry out for it.
-      const availability = await tutorAvailability();
+      // KS-owned Tutor (2026-10-23): availability follows the related Course.
+      const availabilityStore = await deps.repository.read();
+      const availabilitySession = availabilityStore.sessions.find((item) => item.id === input.sessionId);
+      const availabilityGroup = availabilitySession ? availabilityStore.groups.find((item) => item.id === availabilitySession.groupId) : undefined;
+      const availability: TutorAvailability = availabilityGroup
+        ? await tutorAvailability(availabilityGroup.courseId)
+        : { available: false, reason: "offline" };
       return deps.repository.update((store) => {
         const existing = store.tutorRequests.find((item) => item.sessionId === input.sessionId && item.userId === input.actorUserId && item.clientEventId === clientEventId);
         // A replay of a question no longer waiting carries no position.
@@ -1717,7 +1731,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (session.status === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
         if (session.status !== "live") throw new StudyGroupError("session_not_open", "AI Tutor is available only while the Live Session is live.");
         if (!session.aiTutorEnabled) throw new StudyGroupError("forbidden", "AI Tutor is not enabled for this Live Session.");
-        if (!availability.available && availability.reason !== "no_key") throw new StudyGroupError("tutor_unavailable", `AI Tutor is unavailable (${availability.reason}).`);
+        if (!availability.available) throw new StudyGroupError("tutor_unavailable", `AI Tutor is unavailable (${availability.reason}).`);
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
         if (!presence || !seatHeld(presence, deps.now())) {
           // A seat that ran out (the page's heartbeats did not get through)
@@ -1762,9 +1776,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return { id: requestId, withdrawn: outcome === "withdrawn" || (tutorRequestState(row) === "dead_letter" && row.terminalReason === "withdrawn") };
     },
 
-    // The per-process AI Tutor health for the operations view.
+    // The room Tutor's readiness: KnowledgeSystem owns the model, prompt, key
+    // and budget, so this instance reports only the course-level Online state.
     async tutorHealthSnapshot() {
-      return { availability: await tutorAvailability(), ...tutorHealth.snapshot() };
+      return { availability: await tutorAvailability(), source: "ks" as const };
     },
 
     deliverTutorAnswer(input: { sessionId: string }) {

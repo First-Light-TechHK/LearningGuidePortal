@@ -12,7 +12,7 @@ import { roomPageRestoreAction, seatRefusalOffer } from "../../modules/group-stu
 // (QA3, 2026-10-20, F1-F10): behaviour of the pure helpers the room now decides with, plus
 // source locks for the wiring that has no helper to call.
 
-const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 function between(source: string, start: string, end: string) {
   const from = source.indexOf(start);

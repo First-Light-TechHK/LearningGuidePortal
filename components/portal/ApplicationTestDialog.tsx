@@ -4,13 +4,14 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApplicationTestAttempt, ApplicationTestEntrySource } from "@/contracts/application-test";
 import { APPLICATION_TEST_ANSWER_LIMIT } from "@/contracts/application-test";
+import type { ApplicationQuestion } from "@/contracts/lesson-resources";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { applicationEvaluationProgress, canSubmitApplicationAnswer, getApplicationTestSample, resolveApplicationAttempt } from "@/services/applicationTestSample";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./application-test-dialog.module.css";
 
-export function ApplicationTestDialog({ locale, lessonNumber, lessonTitle, onBack, onDone, onNextLesson, onKnowledgeTest, knowledgeCompleted = false, entrySource = "lesson", initialAnswer = "", initialView = "answer", initialAttempt, onAttemptChange, onSubmitAnswer, onEvaluationComplete, saveMessage, saveFailed, onRetrySave }: {
+export function ApplicationTestDialog({ locale, lessonNumber, lessonTitle, onBack, onDone, onNextLesson, onKnowledgeTest, knowledgeCompleted = false, entrySource = "lesson", initialAnswer = "", initialView = "answer", initialAttempt, onAttemptChange, onSubmitAnswer, onEvaluationComplete, saveMessage, saveFailed, onRetrySave, question }: { question?: ApplicationQuestion;
   locale: Locale; lessonNumber: string; lessonTitle?: string; onBack: () => void; onDone: () => void;
   onNextLesson?: () => void; onKnowledgeTest?: () => void; knowledgeCompleted?: boolean;
   entrySource?: ApplicationTestEntrySource;
@@ -19,7 +20,7 @@ export function ApplicationTestDialog({ locale, lessonNumber, lessonTitle, onBac
   onSubmitAnswer?: (answer: string) => Promise<void>; onEvaluationComplete?: (answer: string) => Promise<void>; saveMessage?: string; saveFailed?: boolean; onRetrySave?: () => void;
 }) {
   const copy = getMessages(locale).applicationTest, common = getMessages(locale).knowledgeTest;
-  const sample = getApplicationTestSample(locale);
+  const sample = question ? { ...question, strengths: "", improvement: "" } : getApplicationTestSample(locale);
   const [attempt, setAttempt] = useState<ApplicationTestAttempt>(() => {
     const initial = initialAttempt || { answer: initialAnswer, phase: initialView, startedAt: null };
     return onEvaluationComplete ? initial : resolveApplicationAttempt(initial, Date.now());
@@ -79,12 +80,13 @@ export function ApplicationTestDialog({ locale, lessonNumber, lessonTitle, onBac
         <div className={styles.right}>
           {phase === "result" ? <>
             <div className={styles.resultScroll} tabIndex={0} aria-label={copy.feedback}>
-              <section className={styles.feedback}><h3>{copy.feedback}</h3><strong>{copy.strongResponse}</strong>
+              {!question && <section className={styles.feedback}><h3>{copy.feedback}</h3><strong>{copy.strongResponse}</strong>
                 <div className={styles.strengths}><h4>{copy.strengths}</h4><p>{sample.strengths}</p></div>
                 <div className={styles.improvement}><h4>{copy.improvement}</h4><p>{sample.improvement}</p></div>
-              </section>
+              </section>}
+              {question && <p role="status">{getMessages(locale).assessmentRecords.submitted}</p>}
               <section className={styles.response}><h3>{copy.yourAnswer}</h3><p>{answer}</p></section>
-              <section className={styles.reference}><h3>{common.reference}</h3>{sample.reference.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>
+              <section className={styles.reference}><h3>{common.reference}</h3>{sample.reference.map((paragraph, index) => <p key={index} style={question ? {whiteSpace:"pre-wrap",tabSize:8} : undefined}>{paragraph}</p>)}</section>
             </div>
             <footer className={styles.resultFooter}>
               {fromOverview ? <button type="button" className={styles.primary} onClick={()=>{setAttempt({answer:"",phase:"answer",startedAt:null});setProgress(0);setSubmitError("");submitLock.current=false;finishLock.current=false;}}>{copy.retake}</button> : !knowledgeCompleted && onKnowledgeTest ? <><button type="button" className={styles.secondary} onClick={next}>{onNextLesson ? copy.nextLesson : common.done}</button><button type="button" className={styles.primary} onClick={onKnowledgeTest}>{copy.tryKnowledge}</button></>
