@@ -31,15 +31,15 @@ test("catalogue/API, new quote confirmation and upgrade source use the same annu
     const { GET } = await import("../../app/api/portal/plans/route");
     const response = await GET(new Request("http://localhost/api/portal/plans"));
     assert.equal(response.status,200);
-    const body = await response.json();assert.equal(body.plans.find(plan => plan.id === "everything-pc-12").aiPoints,2468);
+    const body = await response.json();assert.equal(body.plans.find((plan: any) => plan.id === "everything-pc-12").aiPoints,2468);
     const user = await verifiedUser(store,"annual-points@example.test");
     const quote = await store.createQuote(user.id,"european-humanities-pc-12");
     assert.equal(quote.plan.aiPoints,912);assert.equal(quote.quote.planSnapshot?.aiPoints,912);
     assert.equal((await store.getQuoteForUser(user.id,quote.quote.id))?.plan.aiPoints,912);
     await store.completeDemoCheckout(user.id,quote.quote.id);
     assert.equal((await store.getSubscriptionSelection(user.id)).categorySubscription?.aiPoints,912);
-    const updated = await readProductData();updated.plans.find(plan=>plan.id==="european-humanities-pc-6").aiPoints=1000;await writeProductData(updated);
-    assert.equal((await store.listPlans()).find(plan=>plan.id==="european-humanities-pc-12")?.aiPoints,2000);
+    const updated = await readProductData();updated.plans.find((plan: any)=>plan.id==="european-humanities-pc-6").aiPoints=1000;await writeProductData(updated);
+    assert.equal((await store.listPlans()).find((plan: any)=>plan.id==="european-humanities-pc-12")?.aiPoints,2000);
     assert.equal((await store.getQuoteForUser(user.id,quote.quote.id))?.plan.aiPoints,912,"existing quote snapshots retain their promised allowance");
   } finally { await restore(); }
 });
