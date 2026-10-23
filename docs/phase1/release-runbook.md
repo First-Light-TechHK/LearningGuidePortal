@@ -148,7 +148,7 @@ The integration extends the existing backoffice and learner routes; do not deplo
 4. Promote through the existing CI/CD workflow and verify the actual target environment: operator and assigned-teacher access, save/reload, private upload/preview, publish, public lesson, entitled playback, and archive/restore. Operator-only account assignment grants teacher status only to a verified active existing account. Payment/order permissions do not change.
 5. If rollback is necessary, retain the full aggregate and media objects. Older code cannot edit structured content safely; suspend authoring until the compatible version is restored. Do not flatten rich content or discard archived IDs to make an older build work.
 
-The merge's local browser tests do not verify the live AWS IAM/S3 configuration or external login/payment providers. Multipart media is limited to 25 MiB; large-file tickets, transcoding and malware scanning are not included.
+The merge's local browser tests do not verify the live AWS IAM/S3 configuration or external login/payment providers. Course media is limited to 200 MiB per file; large-file tickets, transcoding and malware scanning are not included.
 
 邮箱注册在 PPE/PROD 必须配置 `EMAIL_VERIFICATION_REQUIRED=1`、`SES_FROM_EMAIL`、`AWS_REGION` 和使用 HTTPS 的 `NEXT_PUBLIC_APP_URL`。冒烟测试必须确认待激活账号不能登录、验证链接只能成功使用一次，并且重新发送后旧链接失效。
 
