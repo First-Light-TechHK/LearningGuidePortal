@@ -133,7 +133,8 @@ test("AUTH-01 functional: check-email identifies known and unknown addresses", a
 });
 
 test("AUTH-01 negative: registration requires a valid Unicode name", async () => {
-  for (const nickname of ["", "Ada2", "Ada 😊", "Ada_"]) {
+  // Sit 2026-10-23: nicknames follow ACCOUNT_NAME (letters or numbers).
+  for (const nickname of ["", "Ada 😊", "Ada_"]) {
     const response = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
       email: uniqueEmail("auth01-invalid-name"), password: PASSWORD, nickname, locale: "en-GB"
     }));
@@ -145,6 +146,10 @@ test("AUTH-01 negative: registration requires a valid Unicode name", async () =>
     email: uniqueEmail("auth01-unicode-name"), password: PASSWORD, nickname: "张·伟", locale: "en-GB"
   }));
   assert.equal(response.status, 200);
+  const digits = await register.POST(jsonRequest("POST", "http://localhost/api/auth/register", { termsAccepted: true,
+    email: uniqueEmail("auth01-digit-name"), password: PASSWORD, nickname: "Ada2", locale: "en-GB"
+  }));
+  assert.equal(digits.status, 200);
 });
 
 test("AUTH-01 negative: verification resend rejects the persisted daily limit", async () => {
