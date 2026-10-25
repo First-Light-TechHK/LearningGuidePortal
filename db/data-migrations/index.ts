@@ -8,7 +8,6 @@ import * as addModelingLifeCourse from "./006_add_modeling_life_course";
 import * as repairModelingLifeMedia from "./007_repair_modeling_life_media";
 import * as fixModelingLifeMediaUrls from "./011_fix_modeling_life_media_urls";
 import * as repairModelingLifeMediaRemaining from "./012_repair_modeling_life_media_remaining";
-import * as repairModelingLifeMediaRows from "./010_repair_modeling_life_media_rows";
 import * as upgradeModelingLife from "./008_upgrade_modeling_life";
 import * as fixModelingLifeExhibits from "./009_fix_modeling_life_exhibits";
 
@@ -18,5 +17,5 @@ function supersededMediaImport(migration: DataMigration): DataMigration {
   return { ...migration, touches: ["courses"], apply: () => [{ action: "skip", kind: "course", id: "modeling-life", reason: "superseded-by-008_upgrade_modeling_life" }] };
 }
 
-export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, fixModelingLifeMediaUrls, repairModelingLifeMediaRows];
+export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, fixModelingLifeMediaUrls];
 export { type DataChange, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "./types";
