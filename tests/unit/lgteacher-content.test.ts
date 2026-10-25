@@ -6,6 +6,7 @@ import type { LessonContent, LessonNode } from "../../contracts/lesson-content";
 import { LESSON_CONTENT_LIMITS as LIMITS } from "../../contracts/lesson-content";
 import { courseMediaAssetId, LessonContentError, lessonContentAssetIds, lessonContentsText, sanitiseLessonContents, sanitiseRichHtml, validateLessonContents } from "../../services/lessonContent";
 import { applyCourseDraft, AuthoringError } from "../../services/courseAuthoring";
+import { materializeMvpMediaPlaceholder } from "../../services/mvpMediaUrl";
 import type { ProductCourse } from "../../services/productStore";
 import type { CourseDraftInput } from "../../contracts/course-authoring";
 
@@ -191,7 +192,7 @@ test("LGTeacher: the actual imported Horace lesson retains its audio and reflect
   const source = ts.createSourceFile('migration.ts', readFileSync('db/data-migrations/003_add_quintus_horatius_flaccus.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   let imported: ProductCourse | undefined;
   function visit(node: ts.Node) {
-    if (ts.isCallExpression(node) && node.expression.getText(source) === 'JSON.parse' && ts.isStringLiteral(node.arguments[0])) imported = JSON.parse(node.arguments[0].text);
+    if (ts.isCallExpression(node) && node.expression.getText(source) === 'JSON.parse' && ts.isStringLiteral(node.arguments[0])) imported = materializeMvpMediaPlaceholder(JSON.parse(node.arguments[0].text));
     ts.forEachChild(node, visit);
   }
   visit(source);

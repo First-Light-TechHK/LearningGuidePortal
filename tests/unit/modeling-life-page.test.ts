@@ -34,6 +34,13 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await page.route("**/*",async route=>{
         const request=route.request(),url=new URL(request.url());
         if(url.pathname.startsWith("/portal/")||url.pathname.startsWith("/courses/"))return route.fulfill({body:await readFile(path.join(cwd,"public",url.pathname)),contentType:url.pathname.endsWith(".svg")?"image/svg+xml":"image/png"});
+        const media=url.pathname.match(/^\/api\/course-media\/modeling-life\/([0-9a-f-]+)$/);
+        if(media){
+          const files:Record<string,string>={"9a88e350-e44f-47b1-9518-ed8b50cc4d36":"lesson1-exhibit-1.png","3d1a37f4-6535-450c-879a-22c3cad48b08":"lesson1-exhibit-2.png","1b00006f-08ed-4f77-8285-a4685e3237de":"lesson1-exhibit-1-s.png","1d1e5a63-48ef-47b9-aeaf-b4a41b065515":"lesson1-exhibit-2-s.png"};
+          const file=files[media[1]];
+          if(!file)return route.fulfill({status:404});
+          return route.fulfill({body:await readFile(path.join(cwd,"public/courses/modeling-life",file)),contentType:"image/png"});
+        }
         const match=url.pathname.match(/^\/api\/courses\/([^/]+)\/lessons\/([^/]+)\/assessments\/(knowledge|application)$/);
         if(match){
           const context={params:Promise.resolve({courseId:match[1],lessonId:match[2],kind:match[3]})};
@@ -92,10 +99,11 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await dialog.getByRole('tab',{name:messages.exploration.exhibits,exact:true}).click();assert.equal(await dialog.locator('article').count(),2);
       await dialog.getByRole('button',{name:messages.exploration.wholeCourse,exact:true}).click();assert.equal(await dialog.locator('article').count(),2,"Whole course has only the two Lesson 1 exhibits");
       assert.equal(await dialog.locator('[data-exhibit-id="modeling-life-exhibit-1-3"],[data-exhibit-id="modeling-life-exhibit-1-8"]').count(),0);
-      for(const [index,id] of ['modeling-life-exhibit-1-2','modeling-life-exhibit-1-4'].entries()){
+      const exhibits=[['modeling-life-exhibit-1-2','1b00006f-08ed-4f77-8285-a4685e3237de','9a88e350-e44f-47b1-9518-ed8b50cc4d36'],['modeling-life-exhibit-1-4','1d1e5a63-48ef-47b9-aeaf-b4a41b065515','3d1a37f4-6535-450c-879a-22c3cad48b08']] as const;
+      for(const [id,thumb,full] of exhibits){
         const card=dialog.locator(`[data-exhibit-id="${id}"]`);
-        assert.equal(await card.locator(`img[src$="lesson1-exhibit-${index+1}-s.png"]`).count(),1);
-        await card.click();await dialog.locator(`img[src$="lesson1-exhibit-${index+1}.png"]`).waitFor();await page.keyboard.press('Escape');
+        assert.equal(await card.locator(`img[src$="${thumb}"]`).count(),1);
+        await card.click();await dialog.locator(`img[src$="${full}"]`).waitFor();await page.keyboard.press('Escape');
       }
       await page.screenshot({path:path.join(output,`${locale}-exploration-two-exhibits.png`),fullPage:true});
       await page.keyboard.press('Escape');
@@ -104,9 +112,9 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       const metadata=async()=>video.evaluate(el=>{Object.defineProperty(el,"duration",{configurable:true,value:1469});Object.defineProperty(el,"currentTime",{configurable:true,writable:true,value:0});el.dispatchEvent(new Event("loadedmetadata"));});
       const time=async(seconds:number)=>video.evaluate((el,seconds)=>{(el as HTMLVideoElement).currentTime=seconds;el.dispatchEvent(new Event("timeupdate"));},seconds);
       await metadata();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),10);
-      const bar=page.getByRole('region',{name:messages.videoExhibit.available});await time(37);await bar.waitFor();assert.equal(await bar.locator('img[src$="lesson1-exhibit-1-s.png"]').count(),1);
-      await bar.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator('img[src$="lesson1-exhibit-1.png"]').waitFor();await page.getByText(first.contents!.find(c=>c.type==="video")!.nodes[0].description!,{exact:true}).waitFor();await page.screenshot({path:path.join(output,`${locale}-video-exhibit.png`),fullPage:true});await page.keyboard.press('Escape');
-      await time(160);await bar.getByText('Three examples of one-dimensional state spaces',{exact:true}).waitFor();assert.equal(await bar.locator('img[src$="lesson1-exhibit-2-s.png"]').count(),1);
+      const bar=page.getByRole('region',{name:messages.videoExhibit.available});await time(37);await bar.waitFor();assert.equal(await bar.locator('img[src$="1b00006f-08ed-4f77-8285-a4685e3237de"]').count(),1);
+      await bar.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator('img[src$="9a88e350-e44f-47b1-9518-ed8b50cc4d36"]').waitFor();await page.getByText(first.contents!.find(c=>c.type==="video")!.nodes[0].description!,{exact:true}).waitFor();await page.screenshot({path:path.join(output,`${locale}-video-exhibit.png`),fullPage:true});await page.keyboard.press('Escape');
+      await time(160);await bar.getByText('Three examples of one-dimensional state spaces',{exact:true}).waitFor();assert.equal(await bar.locator('img[src$="1d1e5a63-48ef-47b9-aeaf-b4a41b065515"]').count(),1);
       await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();await metadata();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),412);assert.equal(await bar.count(),0);
       await mount({...base,key:"video-preview",entitled:false,preferredMode:"video",lesson:{...base.lesson,...preview},textPreview:preview.textPreview,trialGate:{pricingHref:`/${locale}/subscription`,recommendations:[],videoLimitSeconds:600}});
       await metadata();await time(599);assert.equal(await dialog.count(),0);await time(600);await dialog.waitFor();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),600);await page.keyboard.press('Escape');
