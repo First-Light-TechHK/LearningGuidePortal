@@ -1,5 +1,8 @@
-import { syncModelingLifeMedia } from "../db/data-migrations/006_add_modeling_life_course";
+import { MEDIA, ensureMedia } from "../db/data-migrations/006_add_modeling_life_course";
 
-const changes = await syncModelingLifeMedia();
-const copied = changes.filter((change) => change.action === "add").length;
-console.log(JSON.stringify({ ok: true, copied, total: changes.length }));
+let copied = 0;
+for (const asset of MEDIA) {
+  const result = await ensureMedia(asset, true);
+  if (result === "add") copied += 1;
+}
+console.log(JSON.stringify({ ok: true, copied, total: MEDIA.length }));

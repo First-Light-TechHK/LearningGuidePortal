@@ -64,6 +64,13 @@ if (environment.name === "UAT") {
 // Historical course_media copies remain available through the explicit repair
 // script; they are no longer a prerequisite for post-deploy smoke.
 
+function syncCourseMedia() {
+  const run = spawnSync(process.execPath, ["--import", "tsx", "--require", "./scripts/register-tsconfig-paths.cjs", "scripts/sync-course-media.ts"], { stdio: "inherit", env: process.env });
+  if (run.status !== 0) console.error("course media sync failed; live smoke will report any 404");
+}
+
+syncCourseMedia();
+
 async function smokeWithRetry() {
   let result;
   for (let attempt = 0; attempt < 12; attempt++) {
