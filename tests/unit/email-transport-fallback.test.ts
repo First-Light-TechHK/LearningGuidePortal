@@ -3,7 +3,7 @@ import { mock, test } from "node:test";
 import { createServer, type AddressInfo } from "node:net";
 import nodemailer from "nodemailer";
 
-test("SMTP is used whenever host, user and pass are set", async () => {
+test("163 SMTP carries verification mail when host, user and pass are set", async () => {
   const received: string[] = [];
   const server = createServer((socket) => {
     let pending = "", data = false;
@@ -46,6 +46,27 @@ test("SMTP is used whenever host, user and pass are set", async () => {
   } finally {
     process.env = env;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("an incomplete SMTP config fails closed instead of reporting a send", async () => {
+  const env = { ...process.env };
+  try {
+    Object.assign(process.env, {
+      APP_ENV: "SIT",
+      SMTP_HOST: "smtp.163.com",
+      SMTP_USER: "learningguide@163.com",
+      SES_FROM_EMAIL: "learningguide@163.com"
+    });
+    delete process.env.SMTP_PASS;
+    const { emailDeliveryConfigured, sendVerificationEmail, EmailDeliveryError } = await import("../../services/emailService");
+    assert.equal(emailDeliveryConfigured(), false, "SES_FROM_EMAIL alone must not count as configured");
+    await assert.rejects(
+      () => sendVerificationEmail({ to: "learner@qq.com", url: "https://sit.example.test/verify?token=x" }),
+      (error: unknown) => error instanceof EmailDeliveryError
+    );
+  } finally {
+    process.env = env;
   }
 });
 
