@@ -1,18 +1,16 @@
 import type { ProductCourse } from "../../services/productStore";
 import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
+import { replaceLegacyMvpHost } from "../../services/mvpMediaUrl";
 
 export const id = "004_migrate_mvp_media_to_aws";
-export const description = "Replace legacy MVP COS media URLs in course data with the migrated AWS S3 URLs.";
+export const description = "Replace legacy MVP COS media URLs in course data with the migrated AWS object URLs.";
 export const touches = ["courses"] as const;
-
-const LEGACY_PREFIX = "https://learningguide-1380131816.cos.ap-hongkong.myqcloud.com/mvp/";
-const AWS_PREFIX = "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/documents/mvp/";
 
 function replaceUrls<T>(value: T): { value: T; changed: boolean } {
   if (typeof value === "string") {
-    const replaced = value.split(LEGACY_PREFIX).join(AWS_PREFIX);
-    return { value: replaced as T, changed: replaced !== value };
+    const replaced = replaceLegacyMvpHost(value);
+    return { value: replaced, changed: replaced !== value };
   }
   if (Array.isArray(value)) {
     let changed = false;

@@ -12,6 +12,17 @@ import { buildTextLessonPreview } from "./textLessonPreview";
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
 import { s3HeadRaw, s3PresignRaw } from "@/services/persistence/s3";
 
+const RAW_MEDIA_EXTENSIONS = ["mp4", "webm", "mov", "png", "jpg", "jpeg", "pdf", "mp3", "m4a"] as const;
+
+async function findRawCourseMedia(courseId: string, assetId: string): Promise<string | null> {
+  const matches = await Promise.all(RAW_MEDIA_EXTENSIONS.map(async (extension) => {
+    const key = `course-media/${courseId}/${assetId}.${extension}`;
+    return (await s3HeadRaw(key)) ? key : null;
+  }));
+  const key = matches.find((item): item is string => Boolean(item));
+  return key ? s3PresignRaw(key) : null;
+}
+
 export { COURSE_MEDIA_MAX_BYTES } from "@/contracts/lesson-content";
 
 export class CourseMediaError extends Error {
@@ -278,15 +289,9 @@ export async function serveCourseMedia(request: Request, user: ProductUser | nul
   assetPath(courseId, assetId);
   const course = await getProductCourse(courseId);
   if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId, allowAuthor)) throw new CourseMediaError("notFound", 404, "Media not found.");
-  // Raw media objects (uploaded outside the legacy .bin container) stream from S3
-  // through a short-lived URL: Range, caching and seeking work without the app
-  // copying bytes. Falls back to the legacy container for older assets.
-  for (const extension of ["mp4", "webm", "mov", "png", "jpg", "jpeg", "pdf", "mp3", "m4a"]) {
-    const rawKey = `course-media/${courseId}/${assetId}.${extension}`;
-    if (await s3HeadRaw(rawKey)) {
-      const signed = await s3PresignRaw(rawKey);
-      return new Response(null, { status: 307, headers: { Location: signed, "Cache-Control": "private, no-store", "Vary": "Cookie" } });
-    }
+  const raw = persistenceEnabled() ? await findRawCourseMedia(courseId, assetId) : null;
+  if (raw) {
+    return new Response(null, { status: 307, headers: { Location: raw, "Cache-Control": "private, no-store", "Vary": "Cookie" } });
   }
   const { asset, bytes } = await readStoredAsset(courseId, assetId);
   const headers = new Headers({

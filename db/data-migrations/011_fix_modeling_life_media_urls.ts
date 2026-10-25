@@ -28,7 +28,8 @@ export function apply(orm: MigrationOrm, ctx: DataMigrationContext): DataChange[
     lessons: section.lessons.map((lesson) => ({
       ...lesson,
       contents: lesson.contents?.map((content) => {
-        const next = rewrite(content.url || "");
+        if (!content.url) return content;
+        const next = rewrite(content.url);
         if (next !== content.url) changed = true;
         return next === content.url ? content : { ...content, url: next };
       })

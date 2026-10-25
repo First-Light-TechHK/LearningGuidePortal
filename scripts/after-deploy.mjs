@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolveReleaseEnvironment } from "./release/environments.mjs";
 import { runLiveSmoke } from "./release/liveSmoke.mjs";
@@ -59,17 +58,6 @@ if (environment.name === "UAT") {
   // A data/permission failure is not repaired by force-pushing a code branch backwards.
   process.exit(result.ok ? 0 : 1);
 }
-
-// Modeling life now uses repository images and approved signed video URLs.
-// Historical course_media copies remain available through the explicit repair
-// script; they are no longer a prerequisite for post-deploy smoke.
-
-function syncCourseMedia() {
-  const run = spawnSync(process.execPath, ["--import", "tsx", "--require", "./scripts/register-tsconfig-paths.cjs", "scripts/sync-course-media.ts"], { stdio: "inherit", env: process.env });
-  if (run.status !== 0) console.error("course media sync failed; live smoke will report any 404");
-}
-
-syncCourseMedia();
 
 async function smokeWithRetry() {
   let result;

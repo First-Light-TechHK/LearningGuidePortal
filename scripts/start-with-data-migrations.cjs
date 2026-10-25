@@ -10,25 +10,18 @@ const migrate = path.join(__dirname, "migrate-data.ts");
 function runMigrate() {
   const env = { ...process.env };
   const args = ["--require", register, migrate, "--apply", "--boot"];
+  // tsx resolves extensionless TypeScript imports. Node's type stripper does not,
+  // so it is only a fallback and must never keep the process from starting.
   const viaTsx = spawnSync(process.execPath, ["--import", "tsx", ...args], { cwd: root, env, stdio: "inherit" });
   if (viaTsx.status === 0) return;
   const viaStrip = spawnSync(process.execPath, ["--experimental-strip-types", ...args], { cwd: root, env, stdio: "inherit" });
   if (viaStrip.status !== 0) {
-    // A migration tooling failure must not keep the service from starting; the
-    // app reports readiness and the failure is visible in the logs.
     console.error(JSON.stringify({ warning: "data migrations did not run", tsx: viaTsx.status, stripTypes: viaStrip.status }));
   }
 }
 
 runMigrate();
 
-function syncCourseMedia() {
-  if (!process.env.DATA_S3_BUCKET || !["SIT", "DEV", "UAT"].includes(String(process.env.APP_ENV || "").toUpperCase())) return;
-  const sync = spawnSync(process.execPath, ["--import", "tsx", "--require", register, path.join(root, "scripts/sync-course-media.ts")], { cwd: root, env: process.env, stdio: "inherit" });
-  if (sync.status !== 0) console.error("course media sync failed; media requests will report their own status");
-}
-
-syncCourseMedia();
 const child = spawn(
   process.execPath,
   ["--dns-result-order=ipv4first", "--require", path.join(__dirname, "install-access-log.cjs"), path.join(root, "node_modules/next/dist/bin/next"), "start", ...process.argv.slice(2)],
