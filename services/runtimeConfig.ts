@@ -142,3 +142,24 @@ export function safeReturnTo(value: string | null | undefined, fallback: string)
     return parsed.origin === base ? `${parsed.pathname}${parsed.search}${parsed.hash}` : fallback;
   } catch { return fallback; }
 }
+
+/**
+ * The site is served on both `ilovelearningguide.com` and
+ * `www.ilovelearningguide.com`, but NEXT_PUBLIC_APP_URL names only one of
+ * them. A request from the other apex is the same site, not a cross-origin
+ * request, so compare hostnames with the `www.` prefix removed.
+ */
+export function isTrustedRequestOrigin(request: Request, configuredOrigin: string) {
+  const supplied = request.headers.get("origin");
+  if (!supplied) return true;
+  const hostname = (value: string) => {
+    try {
+      return new URL(value).hostname.replace(/^www\./i, "").toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+  const expected = hostname(supplied);
+  if (!expected) return false;
+  return [configuredOrigin, request.url].some((value) => hostname(value) === expected);
+}
