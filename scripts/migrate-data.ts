@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { applyDataMigrations, applyOrmMigrationsWithPlan, assertCloudDataConfirm, shouldPersistDataMigrationsOnBoot } from "../services/dataMigrations";
+import { applyDataMigrations, applyOrmMigrationsWithPlan, assertCloudDataConfirm, shouldPersistDataMigrationsOnBoot } from "../services/dataMigrations.ts";
 import { exportCatalogueSlice } from "../services/catalogueMigrations";
 import { persistDataMigrations, readProductAggregate } from "../services/productStore";
 import { dataS3Prefix, persistenceEnabled } from "../services/persistence/config";
