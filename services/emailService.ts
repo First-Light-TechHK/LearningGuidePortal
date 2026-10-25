@@ -95,7 +95,21 @@ async function sendViaSes(input: { to: string; subject: string; text: string; ht
 }
 
 async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
-  if (smtpConfigured()) return sendViaSmtp(input);
+  const hostSet = Boolean(process.env.SMTP_HOST?.trim());
+  logMail("send_start", {
+    smtp: smtpConfigured(),
+    smtpHostSet: hostSet,
+    smtpUserSet: Boolean(process.env.SMTP_USER?.trim()),
+    smtpPassSet: Boolean(process.env.SMTP_PASS?.trim())
+  });
+  // If SMTP is the intended transport, never fall through to SES sandbox.
+  if (hostSet) {
+    if (!smtpConfigured()) {
+      logMail("smtp_incomplete", { smtpHostSet: true, smtpUserSet: Boolean(process.env.SMTP_USER?.trim()), smtpPassSet: Boolean(process.env.SMTP_PASS?.trim()) });
+      throw new EmailDeliveryError();
+    }
+    return sendViaSmtp(input);
+  }
   return sendViaSes(input);
 }
 
