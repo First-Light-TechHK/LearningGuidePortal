@@ -20,8 +20,9 @@ runMigrate();
 
 function syncCourseMedia() {
   if (!process.env.DATA_S3_BUCKET || !["SIT", "DEV", "UAT"].includes(String(process.env.APP_ENV || "").toUpperCase())) return;
-  const sync = spawnSync(process.execPath, ["--import", "tsx", "--require", register, path.join(root, "scripts/sync-course-media.ts")], { cwd: root, env: process.env, stdio: "inherit" });
-  if (sync.status !== 0) console.error("course media sync failed; media requests will report their own status");
+  // Never block the port opening on a media copy; health checks must pass first.
+  const sync = spawn(process.execPath, ["--import", "tsx", "--require", register, path.join(root, "scripts/sync-course-media.ts")], { cwd: root, env: process.env, stdio: "ignore", detached: true });
+  sync.unref();
 }
 
 syncCourseMedia();
