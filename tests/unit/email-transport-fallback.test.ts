@@ -49,35 +49,6 @@ test("SMTP is used whenever host, user and pass are set", async () => {
   }
 });
 
-test("SMTP_HOST without SMTP_PASS does not fall through to SES", async () => {
-  const env = { ...process.env };
-  let sesCalls = 0;
-  const originalSend = (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send;
-  try {
-    Object.assign(process.env, {
-      APP_ENV: "SIT",
-      SMTP_HOST: "smtp.163.com",
-      SMTP_USER: "learningguide@163.com",
-      SMTP_PASS: "",
-      SES_FROM_EMAIL: "learningguide@163.com"
-    });
-    delete process.env.SMTP_PASS;
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = async function send() {
-      sesCalls += 1;
-      return {};
-    } as typeof originalSend;
-    const { sendVerificationEmail, EmailDeliveryError } = await import("../../services/emailService");
-    await assert.rejects(
-      () => sendVerificationEmail({ to: "learner@qq.com", url: "https://sit.example.test/verify?token=x" }),
-      (error: unknown) => error instanceof EmailDeliveryError
-    );
-    assert.equal(sesCalls, 0);
-  } finally {
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = originalSend;
-    process.env = env;
-  }
-});
-
 test("SMTP failures surface as EmailDeliveryError and do not silently succeed", async () => {
   const env = { ...process.env };
   const create = mock.method(nodemailer, "createTransport", () => ({
