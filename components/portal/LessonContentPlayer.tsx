@@ -83,6 +83,20 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
     if (node) open(node);
     // Each explicit request opens once, including repeated requests for the same node.
   }, [nodeRequest, contentTrialGate]);
+  useEffect(() => {
+    const media = video.current;
+    if (!media) return;
+    const wasPlaying = !media.paused && !media.ended;
+    const start = content.startSeconds || 0;
+    startApplied.current = false;
+    seen.current = new Set(nodes.filter(node => node.triggerTime < start).map(node => node.id));
+    lastTime.current = start - 0.01;
+    setExhibitPrompt(null);
+    if (start > 0) media.currentTime = start;
+    if (media.readyState >= 1) startApplied.current = true;
+    reportProgress();
+    if (wasPlaying) void media.play().catch(() => undefined);
+  }, [content.id, content.startSeconds]);
   function showTrial() {
     video.current?.pause();
     if (onPreviewAccess) { onPreviewAccess(); return; }
@@ -144,7 +158,7 @@ export function LessonContentPlayer({ contents, locale, trialGate, selectedConte
   contents = contents.filter(content => content.active !== false);
   const [selectedId, setSelectedId] = useState(initialContentId || contents[0]?.id || '');
   const selected = contents.find(content => content.id === (selectedContentId ?? selectedId)) || contents[0];
-  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={`${selected.id}:${selected.url || ''}`} content={selected} locale={locale} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest} onVideoProgress={onVideoProgress} onVideoEnded={onVideoEnded} onVideoStart={onVideoStart} exhibitContainer={exhibitContainer} onPreviewAccess={onPreviewAccess}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
+  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={selected.url || selected.id} content={selected} locale={locale} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest} onVideoProgress={onVideoProgress} onVideoEnded={onVideoEnded} onVideoStart={onVideoStart} exhibitContainer={exhibitContainer} onPreviewAccess={onPreviewAccess}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
 }
 
 export function LegacyLessonBody({ body, locale }: { body: string; locale: LessonLocale }) {

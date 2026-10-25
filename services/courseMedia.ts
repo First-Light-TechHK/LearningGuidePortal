@@ -13,13 +13,19 @@ import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAs
 import { s3HeadRaw, s3PresignRaw } from "@/services/persistence/s3";
 
 const RAW_MEDIA_EXTENSIONS = ["mp4", "webm", "mov", "png", "jpg", "jpeg", "pdf", "mp3", "m4a"] as const;
+const rawMediaKeys = new Map<string, string | null>();
 
 async function findRawCourseMedia(courseId: string, assetId: string): Promise<string | null> {
-  const matches = await Promise.all(RAW_MEDIA_EXTENSIONS.map(async (extension) => {
-    const key = `course-media/${courseId}/${assetId}.${extension}`;
-    return (await s3HeadRaw(key)) ? key : null;
-  }));
-  const key = matches.find((item): item is string => Boolean(item));
+  const cacheKey = `${courseId}/${assetId}`;
+  if (!rawMediaKeys.has(cacheKey)) {
+    let found: string | null = null;
+    for (const extension of RAW_MEDIA_EXTENSIONS) {
+      const key = `course-media/${courseId}/${assetId}.${extension}`;
+      if (await s3HeadRaw(key)) { found = key; break; }
+    }
+    rawMediaKeys.set(cacheKey, found);
+  }
+  const key = rawMediaKeys.get(cacheKey);
   return key ? s3PresignRaw(key) : null;
 }
 
