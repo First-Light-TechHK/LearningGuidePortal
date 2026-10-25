@@ -892,8 +892,11 @@ export async function requestPasswordReset(emailValue: string, enforceCooldown =
   const data = await ensureProductData();
   // A Google-created account has no password initially. Its verified provider
   // email is sufficient to request a reset and establish email/password login.
-  const user = data.users.find((item) => item.email === email && item.status === "active" && item.emailVerifiedAt);
-  if (!user) return { accepted: true, token: null };
+  // A pending account is included too: the reset link only goes to the mailbox
+  // itself, so completing it proves ownership and activates the account. Without
+  // this, a learner who never opened the activation mail gets a 200 and no email.
+  const user = data.users.find((item) => item.email === email && (item.status === "active" || item.status === "pending"));
+  if (!user?.email) return { accepted: true, token: null };
   try {
     return { accepted: true, token: await issueToken("passwordResetTokens", user.id, enforceCooldown) };
   } catch (error) {
@@ -911,6 +914,10 @@ export async function resetPassword(rawToken: string, newPassword: string) {
     if (!user) throw new Error("User not found.");
     token.usedAt = now();
     user.passwordHash = await passwordHash(newPassword);
+    // Opening the reset link proves control of the mailbox, so a pending
+    // account becomes active instead of staying unusable after the reset.
+    if (!user.emailVerifiedAt) user.emailVerifiedAt = now();
+    if (user.status === "pending") user.status = "active";
     data.sessions = data.sessions.filter((session) => session.userId !== user.id);
     return user;
   });
