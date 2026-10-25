@@ -3,133 +3,7 @@ import { mock, test } from "node:test";
 import { createServer, type AddressInfo } from "node:net";
 import nodemailer from "nodemailer";
 
-test("managed environments try SES before SMTP so VPC SMTP hangs do not block mail", async () => {
-  const env = { ...process.env };
-  const sesCalls: unknown[] = [];
-  const originalSend = (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send;
-  try {
-    Object.assign(process.env, {
-      APP_ENV: "SIT",
-      SMTP_HOST: "127.0.0.1",
-      SMTP_PORT: "9",
-      SMTP_USER: "smtp@test.invalid",
-      SMTP_PASS: "smtp-pass",
-      SMTP_FROM: "Learning Guide <learningguide@163.com>",
-      SES_FROM_EMAIL: "learningguide@163.com",
-      EMAIL_TRANSPORT: ""
-    });
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = async function send(command: unknown) {
-      sesCalls.push(command);
-      return {};
-    } as typeof originalSend;
-    const { sendVerificationEmail } = await import("../../services/emailService");
-    await sendVerificationEmail({ to: "learner@example.test", url: "https://sit.example.test/verify?token=x", locale: "en-GB" });
-    assert.equal(sesCalls.length, 1);
-  } finally {
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = originalSend;
-    process.env = env;
-  }
-});
-
-test("Microsoft mailboxes prefer SES before SMTP on DEV", async () => {
-  const env = { ...process.env };
-  const sesCalls: unknown[] = [];
-  let smtpCalls = 0;
-  const originalSend = (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send;
-  const create = mock.method(nodemailer, "createTransport", () => {
-    smtpCalls += 1;
-    return { sendMail: async () => undefined };
-  });
-  try {
-    Object.assign(process.env, {
-      APP_ENV: "DEV",
-      EMAIL_TRANSPORT: "",
-      SMTP_HOST: "smtp.test",
-      SMTP_USER: "smtp@test.invalid",
-      SMTP_PASS: "pass",
-      SES_FROM_EMAIL: "learningguide@163.com"
-    });
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = async function send(command: unknown) {
-      sesCalls.push(command);
-      return {};
-    } as typeof originalSend;
-    const { sendVerificationEmail } = await import("../../services/emailService");
-    await sendVerificationEmail({ to: "yongthelaoma@outlook.com", url: "https://www.example.test/verify?token=x" });
-    assert.equal(sesCalls.length, 1);
-    assert.equal(smtpCalls, 0);
-  } finally {
-    create.mock.restore();
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = originalSend;
-    process.env = env;
-  }
-});
-
-test("DEV falls back to SES when SMTP is configured but rejects the send", async () => {
-  const env = { ...process.env };
-  const sesCalls: unknown[] = [];
-  const originalSend = (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send;
-  const create = mock.method(nodemailer, "createTransport", () => ({
-    sendMail: async () => { throw Object.assign(new Error("Invalid login"), { code: "EAUTH", responseCode: 535 }); }
-  }));
-  try {
-    Object.assign(process.env, {
-      APP_ENV: "DEV",
-      SMTP_HOST: "smtp.test",
-      SMTP_PORT: "465",
-      SMTP_USER: "smtp@test.invalid",
-      SMTP_PASS: "bad",
-      SMTP_FROM: "Learning Guide <learningguide@163.com>",
-      SES_FROM_EMAIL: "learningguide@163.com",
-      EMAIL_TRANSPORT: ""
-    });
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = async function send(command: unknown) {
-      sesCalls.push(command);
-      return {};
-    } as typeof originalSend;
-    const { sendPasswordResetEmail } = await import("../../services/emailService");
-    await sendPasswordResetEmail({ to: "learner@example.test", url: "https://www.example.test/reset?token=x", locale: "en-GB" });
-    assert.equal(sesCalls.length, 1);
-  } finally {
-    create.mock.restore();
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = originalSend;
-    process.env = env;
-  }
-});
-
-test("EMAIL_TRANSPORT=ses skips SMTP even when it is configured", async () => {
-  const env = { ...process.env };
-  const sesCalls: unknown[] = [];
-  let smtpCalls = 0;
-  const originalSend = (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send;
-  const create = mock.method(nodemailer, "createTransport", () => {
-    smtpCalls += 1;
-    return { sendMail: async () => undefined };
-  });
-  try {
-    Object.assign(process.env, {
-      APP_ENV: "DEV",
-      EMAIL_TRANSPORT: "ses",
-      SMTP_HOST: "smtp.test",
-      SMTP_USER: "smtp@test.invalid",
-      SMTP_PASS: "pass",
-      SES_FROM_EMAIL: "learningguide@163.com"
-    });
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = async function send(command: unknown) {
-      sesCalls.push(command);
-      return {};
-    } as typeof originalSend;
-    const { sendVerificationEmail } = await import("../../services/emailService");
-    await sendVerificationEmail({ to: "learner@example.test", url: "https://dev.example.test/verify?token=x" });
-    assert.equal(smtpCalls, 0);
-    assert.equal(sesCalls.length, 1);
-  } finally {
-    create.mock.restore();
-    (await import("@aws-sdk/client-sesv2")).SESv2Client.prototype.send = originalSend;
-    process.env = env;
-  }
-});
-
-test("SMTP still delivers when it is the working path", async () => {
+test("SMTP is used whenever host, user and pass are set", async () => {
   const received: string[] = [];
   const server = createServer((socket) => {
     let pending = "", data = false;
@@ -157,22 +31,46 @@ test("SMTP still delivers when it is the working path", async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     Object.assign(process.env, {
-      APP_ENV: "DEV",
-      EMAIL_TRANSPORT: "smtp",
+      APP_ENV: "SIT",
       SMTP_HOST: "127.0.0.1",
       SMTP_PORT: String((server.address() as AddressInfo).port),
       SMTP_SECURE: "0",
       SMTP_USER: "local-test",
       SMTP_PASS: "local-test",
       SMTP_FROM: "sender@example.test",
-      SES_FROM_EMAIL: ""
+      SES_FROM_EMAIL: "learningguide@163.com"
     });
-    delete process.env.SES_FROM_EMAIL;
     const { sendVerificationEmail } = await import("../../services/emailService");
-    await sendVerificationEmail({ to: "learner@example.test", url: "https://dev.example.test/verify?token=x" });
+    await sendVerificationEmail({ to: "learner@example.test", url: "https://sit.example.test/verify?token=x" });
     assert.equal(received.length, 1);
   } finally {
     process.env = env;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("SMTP failures surface as EmailDeliveryError and do not silently succeed", async () => {
+  const env = { ...process.env };
+  const create = mock.method(nodemailer, "createTransport", () => ({
+    sendMail: async () => { throw Object.assign(new Error("Invalid login"), { code: "EAUTH", responseCode: 535 }); }
+  }));
+  try {
+    Object.assign(process.env, {
+      APP_ENV: "DEV",
+      SMTP_HOST: "smtp.test",
+      SMTP_PORT: "465",
+      SMTP_USER: "smtp@test.invalid",
+      SMTP_PASS: "bad",
+      SMTP_FROM: "Learning Guide <learningguide@163.com>",
+      SES_FROM_EMAIL: "learningguide@163.com"
+    });
+    const { sendPasswordResetEmail, EmailDeliveryError } = await import("../../services/emailService");
+    await assert.rejects(
+      () => sendPasswordResetEmail({ to: "learner@outlook.com", url: "https://www.example.test/reset?token=x" }),
+      (error: unknown) => error instanceof EmailDeliveryError
+    );
+  } finally {
+    create.mock.restore();
+    process.env = env;
   }
 });

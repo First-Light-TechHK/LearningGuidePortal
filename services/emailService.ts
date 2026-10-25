@@ -1,7 +1,6 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import nodemailer from "nodemailer";
 import { awsRegion } from "./persistence/config";
-import { appEnvironment } from "./runtimeConfig";
 
 let client: SESv2Client | null = null;
 
@@ -14,39 +13,12 @@ function smtpConfigured() {
   return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim());
 }
 
-function sesConfigured() {
-  return Boolean(process.env.SES_FROM_EMAIL?.trim());
-}
-
 function fromAddress() {
   return process.env.SMTP_FROM?.trim() || process.env.SES_FROM_EMAIL?.trim() || process.env.SMTP_USER?.trim() || "";
 }
 
-/** SES accepts a bare address; strip a display-name wrapper when present. */
-function sesFromAddress() {
-  const raw = fromAddress();
-  const match = raw.match(/<([^>]+)>/);
-  return (match?.[1] || raw).trim();
-}
-
 export function emailDeliveryConfigured() {
-  return smtpConfigured() || sesConfigured();
-}
-
-function microsoftMailbox(to: string) {
-  const domain = (to.split("@")[1] || "").toLowerCase();
-  return ["outlook.com", "hotmail.com", "live.com", "msn.com"].includes(domain);
-}
-
-function transportOrder(to: string): Array<"smtp" | "ses"> {
-  const forced = (process.env.EMAIL_TRANSPORT || "").trim().toLowerCase();
-  if (forced === "smtp") return ["smtp"];
-  if (forced === "ses") return ["ses"];
-  // Managed VPC environments reach SES on 443 reliably; 163 SMTP often hangs from NAT.
-  // Microsoft mailboxes also junk 163.com, so prefer SES there when configured.
-  const managed = ["SIT", "UAT", "PROD", "PPE/PROD", "PRODUCTION"].includes(appEnvironment());
-  if (managed || microsoftMailbox(to)) return ["ses", "smtp"];
-  return ["smtp", "ses"];
+  return smtpConfigured() || Boolean(process.env.SES_FROM_EMAIL?.trim());
 }
 
 function logMail(event: string, detail: Record<string, unknown>) {
@@ -65,34 +37,43 @@ async function sendViaSmtp(input: { to: string; subject: string; text: string; h
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
     },
-    connectionTimeout: 8_000,
-    greetingTimeout: 8_000,
-    socketTimeout: 15_000
+    connectionTimeout: 12_000,
+    greetingTimeout: 12_000,
+    socketTimeout: 20_000
   });
-  const info = await transporter.sendMail({
-    from,
-    to: input.to,
-    subject: input.subject,
-    text: input.text,
-    html: input.html
-  }) || {};
-  logMail("smtp_sent", {
-    toDomain: input.to.split("@")[1] || "",
-    accepted: Array.isArray(info.accepted) ? info.accepted.length : 0,
-    rejected: Array.isArray(info.rejected) ? info.rejected.length : 0,
-    response: typeof info.response === "string" ? info.response.slice(0, 160) : undefined
-  });
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html
+    }) || {};
+    logMail("smtp_sent", {
+      toDomain: input.to.split("@")[1] || "",
+      accepted: Array.isArray(info.accepted) ? info.accepted.length : 0,
+      rejected: Array.isArray(info.rejected) ? info.rejected.length : 0,
+      response: typeof info.response === "string" ? info.response.slice(0, 160) : undefined
+    });
+  } catch (error) {
+    logMail("smtp_failed", {
+      toDomain: input.to.split("@")[1] || "",
+      code: error instanceof Error ? (error as { code?: string }).code || error.name : "Error",
+      message: error instanceof Error ? error.message.slice(0, 160) : "unknown"
+    });
+    throw new EmailDeliveryError();
+  }
 }
 
 export class EmailDeliveryError extends Error {
-  constructor(message = "Verification email could not be sent. Use a mailbox that this environment is allowed to mail.") {
-    super(message);
+  constructor() {
+    super("Verification email could not be sent. Use a mailbox that this environment is allowed to mail.");
     this.name = "EmailDeliveryError";
   }
 }
 
 async function sendViaSes(input: { to: string; subject: string; text: string; html: string }) {
-  const from = sesFromAddress();
+  const from = fromAddress();
   if (!from) throw new Error("SES_FROM_EMAIL is not configured.");
   try {
     await getClient().send(new SendEmailCommand({
@@ -108,35 +89,14 @@ async function sendViaSes(input: { to: string; subject: string; text: string; ht
         }
       }
     }));
-    logMail("ses_sent", { toDomain: input.to.split("@")[1] || "", from });
-  } catch (error) {
-    const code = error && typeof error === "object" && "name" in error ? String((error as { name?: string }).name) : "SES_ERROR";
-    logMail("ses_failed", { toDomain: input.to.split("@")[1] || "", code });
+  } catch {
     throw new EmailDeliveryError();
   }
 }
 
 async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
-  const order = transportOrder(input.to).filter((name) => (name === "smtp" ? smtpConfigured() : sesConfigured()));
-  if (!order.length) throw new EmailDeliveryError("Email delivery is not configured.");
-  let lastError: unknown;
-  for (const transport of order) {
-    try {
-      if (transport === "smtp") await sendViaSmtp(input);
-      else await sendViaSes(input);
-      return;
-    } catch (error) {
-      lastError = error;
-      logMail("transport_failed", {
-        transport,
-        toDomain: input.to.split("@")[1] || "",
-        code: error instanceof Error ? error.name : "Error",
-        message: error instanceof Error ? error.message.slice(0, 160) : "unknown"
-      });
-    }
-  }
-  if (lastError instanceof EmailDeliveryError) throw lastError;
-  throw new EmailDeliveryError();
+  if (smtpConfigured()) return sendViaSmtp(input);
+  return sendViaSes(input);
 }
 
 export function sendVerificationEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
