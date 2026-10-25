@@ -17,6 +17,14 @@ function runMigrate() {
 }
 
 runMigrate();
+
+function syncCourseMedia() {
+  if (!process.env.DATA_S3_BUCKET || !["SIT", "DEV", "UAT"].includes(String(process.env.APP_ENV || "").toUpperCase())) return;
+  const sync = spawnSync(process.execPath, ["--import", "tsx", "--require", register, path.join(root, "scripts/sync-course-media.ts")], { cwd: root, env: process.env, stdio: "inherit" });
+  if (sync.status !== 0) console.error("course media sync failed; media requests will report their own status");
+}
+
+syncCourseMedia();
 const child = spawn(
   process.execPath,
   ["--dns-result-order=ipv4first", "--require", path.join(__dirname, "install-access-log.cjs"), path.join(root, "node_modules/next/dist/bin/next"), "start", ...process.argv.slice(2)],
