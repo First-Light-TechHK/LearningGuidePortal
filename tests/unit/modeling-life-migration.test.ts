@@ -5,6 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import * as migration from "../../db/data-migrations/008_upgrade_modeling_life";
 import * as fixExhibits from "../../db/data-migrations/009_fix_modeling_life_exhibits";
+import * as logicalMedia from "../../db/data-migrations/013_logical_modeling_life_media";
 import { modelingLifeCourse as legacyModelingLifeCourse } from "../../db/data-migrations/006_add_modeling_life_course";
 import { dataMigrations } from "../../db/data-migrations";
 import { applyOrmMigrations, createMemoryOrm, assertMigrationRegistry } from "../../services/dataMigrations";
@@ -43,6 +44,13 @@ test("Modeling life is a registered idempotent ORM course-only migration with po
   assert.ok(course.subtitle?.startsWith("See how mathematics models life"));
 });
 
+test("013 rewrites staging video URLs to course-media ids and then skips", () => {
+  const orm = createMemoryOrm({ tables: { courses: [{ id: "modeling-life", sections: [{ lessons: [{ contents: [{ url: "https://example.test/staging/modeling-life/lesson1.mp4?X-Amz-Signature=secret" }] }] }] }] } });
+  assert.deepEqual(logicalMedia.apply(orm, { now: createdAt, store: "memory", dryRun: true }).map(item => item.action), ["update"]);
+  assert.equal(orm.table<ProductCourse>("courses").findById("modeling-life")?.sections[0].lessons[0].contents![0].url, "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6");
+  assert.equal(logicalMedia.apply(orm, { now: createdAt, store: "memory", dryRun: true })[0].action, "skip");
+});
+
 test("shipped whole-Lesson courses upgrade without user writes and fresh registries retire old media-copy operations",async()=>{
   const old=legacyModelingLifeCourse(createdAt);old.title="Operator title";
   const keptStudy={id:"keep-study",currentContentId:"modeling-life-lesson-1-text"};
@@ -58,7 +66,7 @@ test("shipped whole-Lesson courses upgrade without user writes and fresh registr
   assert.equal(migration.apply(orm,{now:createdAt,store:"memory",dryRun:true})[0].action,"skip");
   const fresh=createMemoryOrm(),recorded=recordOrm(fresh);
   const report=await applyOrmMigrations(recorded.orm,dataMigrations.filter(item=>Number(item.id.slice(0,3))>=6),{now:createdAt});
-  assert.deepEqual(report.applied,[migration.id]);assert.ok(report.skipped.includes("006_add_modeling_life_course"));assert.ok(report.skipped.includes("007_repair_modeling_life_media"));
+  assert.deepEqual(report.applied,[migration.id, logicalMedia.id]);assert.ok(report.skipped.includes("006_add_modeling_life_course"));assert.ok(report.skipped.includes("007_repair_modeling_life_media"));
   assert.equal(compileOrmOps(recorded.ops).objects.length,0,"fresh DEV/SIT needs no legacy S3 media copy");
   assert.equal(fresh.table<ProductCourse>("courses").findById(course.id)!.sections[0].lessons[0].contents!.length,10);
 });

@@ -9,6 +9,7 @@ import * as repairModelingLifeMedia from "./007_repair_modeling_life_media";
 import * as repairModelingLifeMediaRows from "./010_repair_modeling_life_media_rows";
 import * as upgradeModelingLife from "./008_upgrade_modeling_life";
 import * as fixModelingLifeExhibits from "./009_fix_modeling_life_exhibits";
+import * as logicalModelingLifeMedia from "./013_logical_modeling_life_media";
 
 // Keep shipped ledger identities. Their pending media-copy work is superseded
 // by 008's repository images and supplied video URLs, including on fresh SIT.
@@ -16,5 +17,5 @@ function supersededMediaImport(migration: DataMigration): DataMigration {
   return { ...migration, touches: ["courses"], apply: () => [{ action: "skip", kind: "course", id: "modeling-life", reason: "superseded-by-008_upgrade_modeling_life" }] };
 }
 
-export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, repairModelingLifeMediaRows];
+export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, repairModelingLifeMediaRows, logicalModelingLifeMedia];
 export { type DataChange, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "./types";
