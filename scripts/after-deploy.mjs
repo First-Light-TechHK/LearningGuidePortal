@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { resolveReleaseEnvironment } from "./release/environments.mjs";
 import { runLiveSmoke } from "./release/liveSmoke.mjs";
 import { notifyRelease } from "./release/notify.mjs";
