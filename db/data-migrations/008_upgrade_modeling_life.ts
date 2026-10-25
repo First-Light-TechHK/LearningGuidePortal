@@ -204,8 +204,8 @@ export const modelingLifeImport = {
     }
   ],
   "videoUrls": {
-    "lesson1": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
-    "lesson2": "/api/course-media/modeling-life/613a07b1-24e8-4123-ab10-5bd36875293e"
+    "lesson1": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+    "lesson2": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson2.mp4"
   },
   "videoIsTemporary": false,
   "sourceVideos": [
@@ -317,7 +317,7 @@ const sourceCourse = {
               "title": "State Variables and State Spaces",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
               "startSeconds": 10,
               "exhibitMode": "authored",
               "nodes": [
@@ -348,7 +348,7 @@ const sourceCourse = {
               "title": "Defining Vectors",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
               "startSeconds": 412,
               "exhibitMode": "authored",
               "nodes": []
@@ -358,7 +358,7 @@ const sourceCourse = {
               "title": "State Space Rules for Operating with Vectors",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
               "startSeconds": 587,
               "exhibitMode": "authored",
               "nodes": []
@@ -368,7 +368,7 @@ const sourceCourse = {
               "title": "Vectors And Vector Spaces",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
               "startSeconds": 1026,
               "exhibitMode": "authored",
               "nodes": []
@@ -378,7 +378,7 @@ const sourceCourse = {
               "title": "Vectors and Trajectories Change in State Space, Time Series Translation",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
               "startSeconds": 1175,
               "exhibitMode": "authored",
               "nodes": []
@@ -611,7 +611,7 @@ const sourceCourse = {
               "title": "Pitchfork Bifurcation in a Model of Public Opinion",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/613a07b1-24e8-4123-ab10-5bd36875293e",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson2.mp4",
               "startSeconds": 10,
               "exhibitMode": "authored",
               "nodes": []
@@ -621,7 +621,7 @@ const sourceCourse = {
               "title": "Transcritical Bifurcation",
               "type": "video",
               "mode": "lecture",
-              "url": "/api/course-media/modeling-life/613a07b1-24e8-4123-ab10-5bd36875293e",
+              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson2.mp4",
               "startSeconds": 1204,
               "exhibitMode": "authored",
               "nodes": []
