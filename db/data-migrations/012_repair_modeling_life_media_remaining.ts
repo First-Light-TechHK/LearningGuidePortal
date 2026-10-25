@@ -11,7 +11,7 @@ export async function apply(_orm: MigrationOrm, ctx: DataMigrationContext): Prom
   if (ctx.store !== "sql") return [{ action: "skip", kind: "course-media", id: "modeling-life", reason: "not-managed-store" }];
   for (const asset of MEDIA) {
     try {
-      changes.push({ action: await ensureMedia(asset, true), kind: "course-media", id: asset.id });
+      changes.push({ action: await ensureMedia(asset), kind: "course-media", id: asset.id });
     } catch (error) {
       changes.push({ action: "skip", kind: "course-media", id: asset.id, reason: error instanceof Error ? error.message : "failed" });
     }
