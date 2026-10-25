@@ -151,4 +151,7 @@ jobs:
       admin_origin: https://admin.ilovelearningguide.com
       service_arn: arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-portal/73f7ec76f1884c5f936544916a2607ad
       previous_sha: ${{ needs.deploy.outputs.previous_sha }}
-      rollback_mode: force-branch
+      # Never rewrite dev history: a force-branch rollback deleted the very fix
+      # that would have made this gate pass (2026-10-25). Revert commits keep
+      # every change visible and re-appliable.
+      rollback_mode: revert-commit

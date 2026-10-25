@@ -238,10 +238,14 @@ export async function runLiveSmoke(input, request) {
     const admin = await adminHttp("/en-GB/backoffice", { redirect: "manual" });
     if (admin.status === 404) fail(failures, "admin.backoffice", "admin host returned 404");
     else if (![200, 302, 303, 307, 308].includes(admin.status)) fail(failures, "admin.backoffice", `HTTP ${admin.status}`);
-    const adminOrders = await adminHttp("/api/backoffice/orders");
-    if (adminOrders.status !== 403 || adminOrders.body?.ok === true) fail(failures, "admin.orders", `anonymous admin orders must be rejected, got ${adminOrders.status}`);
-    const adminCourses = await adminHttp("/api/backoffice/courses");
-    if (adminCourses.status !== 403 || adminCourses.body?.ok === true) fail(failures, "admin.courses", `anonymous admin course management must be rejected, got ${adminCourses.status}`);
+    // Admin is a separate service now: anonymous calls must be 401 (employee
+    // session required), not the retired Portal /api/backoffice 403 shape.
+    const adminEmployees = await adminHttp("/api/admin/employees");
+    if (adminEmployees.status !== 401) fail(failures, "admin.employees", `anonymous employee list must be 401, got ${adminEmployees.status}`);
+    const adminCourses = await adminHttp("/api/courses");
+    if (adminCourses.status !== 401) fail(failures, "admin.courses", `anonymous admin course management must be 401, got ${adminCourses.status}`);
+    const retiredBackoffice = await adminHttp("/api/backoffice/orders");
+    if (retiredBackoffice.status !== 404) fail(failures, "admin.retired", `retired /api/backoffice route must be gone, got ${retiredBackoffice.status}`);
   }
 
   return { ok: failures.length === 0, failures, catalogue: published.map((course) => course.slug || course.id), oauth };

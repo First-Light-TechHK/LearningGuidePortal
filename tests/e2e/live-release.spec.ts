@@ -43,8 +43,11 @@ test.describe("live release e2e", () => {
     expect([403, 404]).toContain((await request.get("/api/backoffice/courses")).status());
     const admin = process.env.LIVE_ADMIN_ORIGIN;
     if (admin) {
-      expect((await request.get(new URL("/api/backoffice/orders", admin).toString())).status()).toBe(403);
-      expect((await request.get(new URL("/api/backoffice/courses", admin).toString())).status()).toBe(403);
+      // Admin is a separate service: anonymous calls are 401, and the old
+      // Portal /api/backoffice route no longer exists.
+      expect((await request.get(new URL("/api/admin/employees", admin).toString())).status()).toBe(401);
+      expect((await request.get(new URL("/api/courses", admin).toString())).status()).toBe(401);
+      expect((await request.get(new URL("/api/backoffice/orders", admin).toString())).status()).toBe(404);
     }
     expect((await request.post("/api/ai-tutor", { data: { courseId: slug, message: "smoke" } })).status()).toBe(401);
     expect((await request.post("/api/study/events", { data: { courseId: slug, lessonId: "public", event: "complete", seconds: 1, clientEventId: "live-playwright" } })).status()).not.toBe(200);
