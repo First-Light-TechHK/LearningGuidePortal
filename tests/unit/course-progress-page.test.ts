@@ -138,10 +138,13 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     const afterPlay = requests.length;
     await page.locator("video").evaluate(video => { for (let i = 0; i < 10; i++) { video.dispatchEvent(new Event("play")); video.dispatchEvent(new Event("timeupdate")); } });
     await page.waitForTimeout(100); assert.equal(requests.length, afterPlay, "repeated playback ticks do not save the same point repeatedly");
-    await page.getByRole("button", { name: "1.2 Video 2", exact: true }).click();
-    await page.waitForTimeout(100); assert.equal(requests.length, afterPlay);
-    await Promise.all([waitFor(body => body.contentId === "v2"), page.locator("video").evaluate(video => video.dispatchEvent(new Event("play")))]);
+    await Promise.all([waitFor(body => body.contentId === "v2"), page.getByRole("button", { name: "1.2 Video 2", exact: true }).click()]);
     assert.equal(requests.at(-1).learningMode, "video");
+    assert.equal(requests.at(-1).contentId, "v2", "a playing chapter jump records the new point immediately");
+    const afterChapter = requests.length;
+    await page.locator("video").evaluate(video => video.dispatchEvent(new Event("play")));
+    await page.waitForTimeout(100);
+    assert.equal(requests.length, afterChapter, "play after a chapter jump does not write again");
     await page.close();
   } } finally { await browser.close(); }
 });
