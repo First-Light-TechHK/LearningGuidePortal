@@ -23,7 +23,7 @@ export async function deliverPasswordReset(input: PasswordResetRequest, request:
     }
     if (request.headers.get("origin") && ![origin, new URL(request.url).origin].includes(request.headers.get("origin")!)) throw new Error("invalid_request");
     try { await sendPasswordResetEmail({ to: email, url: origin + resetUrl, locale }); }
-    catch { if (managed) throw new Error("email_unavailable"); }
+    catch { throw new Error("email_unavailable"); }
   }
   return { accepted: true, retryAfter: 60, resetUrl: null };
 }
