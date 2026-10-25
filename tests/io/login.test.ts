@@ -711,3 +711,26 @@ test("AUTH-06 edge: subscription portal without a session is 401", async () => {
   assert.equal(body.ok, false);
   assert.equal(body.url, undefined);
 });
+
+test("AUTH-02 edge: a pending account receives a reset mail and becomes active", async () => withMockVerificationMail(async (mails) => {
+  const { email } = await registerPending("auth02-pending-reset", mails);
+  const beforeReset = mails.length;
+  const requested = await resetRequest.POST(jsonRequest("POST", "http://localhost/api/auth/password-reset/request", {
+    email,
+    locale: "en-GB"
+  }));
+  assert.equal(requested.status, 200);
+  assert.equal(mails.length, beforeReset + 1, "a pending account must receive the reset mail");
+  const link = mails[mails.length - 1].text.match(/https?:\/\/\S+/)?.[0];
+  assert.ok(link);
+  const token = new URL(link).searchParams.get("token");
+  assert.ok(token);
+  const newPassword = "Reset-Passw0rd!";
+  const confirmed = await resetConfirm.POST(jsonRequest("POST", "http://localhost/api/auth/password-reset/confirm", {
+    token,
+    newPassword
+  }));
+  assert.equal(confirmed.status, 200);
+  const signIn = await login.POST(jsonRequest("POST", "http://localhost/api/auth/sign-in", { email, password: newPassword }));
+  assert.equal(signIn.status, 200, "the reset proves mailbox ownership and activates the account");
+}));
