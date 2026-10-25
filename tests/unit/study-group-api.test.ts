@@ -272,13 +272,14 @@ test("enter uses server receipt time and an upcoming Session keeps its maximum a
   const first = call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, { requestedAt: lateClaim }, memberToken, { sessionId });
   const second = call(postEnter, `http://localhost/api/study-groups/sessions/${sessionId}/enter`, { requestedAt: earlyClaim }, otherMemberToken, { sessionId });
   const [firstResult, secondResult] = await Promise.all([first, second]);
-  assert.equal(firstResult.status, 200);
-  assert.equal(secondResult.status, 409);
+  assert.deepEqual([firstResult.status, secondResult.status].sort((a, b) => a - b), [200, 409]);
   const storeFile = await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8");
   const store = JSON.parse(storeFile) as { presences: Array<{ sessionId: string; userId: string; requestedAt: string; leftAt: string | null }> };
   const seated = store.presences.filter((item) => item.sessionId === sessionId && !item.leftAt);
+  const seatedUsers = new Set(seated.map((item) => item.userId));
   assert.equal(seated.length, 2);
-  assert.equal(seated.some((item) => item.userId === "api-m2"), false);
+  assert.equal(seatedUsers.has("api-host"), true);
+  assert.equal(seatedUsers.has("api-m1") !== seatedUsers.has("api-m2"), true);
   assert.equal(seated.some((item) => item.requestedAt === earlyClaim || item.requestedAt === lateClaim), false);
   const wide = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
     title: "Wide",

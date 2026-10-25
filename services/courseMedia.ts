@@ -10,6 +10,24 @@ import { requestOriginMatches } from "@/services/adminHost";
 import { checkEntitlement, getProductCourse, publicFirstLesson, type ProductCourse, type ProductUser } from "@/services/productStore";
 import { buildTextLessonPreview } from "./textLessonPreview";
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
+import { s3HeadRaw, s3PresignRaw } from "@/services/persistence/s3";
+
+const RAW_MEDIA_EXTENSIONS = ["mp4", "webm", "mov", "png", "jpg", "jpeg", "pdf", "mp3", "m4a"] as const;
+const rawMediaKeys = new Map<string, string | null>();
+
+async function findRawCourseMedia(courseId: string, assetId: string): Promise<string | null> {
+  const cacheKey = `${courseId}/${assetId}`;
+  if (!rawMediaKeys.has(cacheKey)) {
+    let found: string | null = null;
+    for (const extension of RAW_MEDIA_EXTENSIONS) {
+      const key = `course-media/${courseId}/${assetId}.${extension}`;
+      if (await s3HeadRaw(key)) { found = key; break; }
+    }
+    rawMediaKeys.set(cacheKey, found);
+  }
+  const key = rawMediaKeys.get(cacheKey);
+  return key ? s3PresignRaw(key) : null;
+}
 
 export { COURSE_MEDIA_MAX_BYTES } from "@/contracts/lesson-content";
 
@@ -277,6 +295,10 @@ export async function serveCourseMedia(request: Request, user: ProductUser | nul
   assetPath(courseId, assetId);
   const course = await getProductCourse(courseId);
   if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId, allowAuthor)) throw new CourseMediaError("notFound", 404, "Media not found.");
+  const raw = persistenceEnabled() ? await findRawCourseMedia(courseId, assetId) : null;
+  if (raw) {
+    return new Response(null, { status: 307, headers: { Location: raw, "Cache-Control": "private, no-store", "Vary": "Cookie" } });
+  }
   const { asset, bytes } = await readStoredAsset(courseId, assetId);
   const headers = new Headers({
     "Content-Type": asset.mimeType,

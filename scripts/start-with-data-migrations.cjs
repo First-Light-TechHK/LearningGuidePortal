@@ -10,13 +10,18 @@ const migrate = path.join(__dirname, "migrate-data.ts");
 function runMigrate() {
   const env = { ...process.env };
   const args = ["--require", register, migrate, "--apply", "--boot"];
+  // tsx resolves extensionless TypeScript imports. Node's type stripper does not,
+  // so it is only a fallback and must never keep the process from starting.
   const viaTsx = spawnSync(process.execPath, ["--import", "tsx", ...args], { cwd: root, env, stdio: "inherit" });
   if (viaTsx.status === 0) return;
   const viaStrip = spawnSync(process.execPath, ["--experimental-strip-types", ...args], { cwd: root, env, stdio: "inherit" });
-  if (viaStrip.status !== 0) process.exit(viaStrip.status || viaTsx.status || 1);
+  if (viaStrip.status !== 0) {
+    console.error(JSON.stringify({ warning: "data migrations did not run", tsx: viaTsx.status, stripTypes: viaStrip.status }));
+  }
 }
 
 runMigrate();
+
 const child = spawn(
   process.execPath,
   ["--dns-result-order=ipv4first", "--require", path.join(__dirname, "install-access-log.cjs"), path.join(root, "node_modules/next/dist/bin/next"), "start", ...process.argv.slice(2)],

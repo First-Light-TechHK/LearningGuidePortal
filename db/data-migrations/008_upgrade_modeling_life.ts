@@ -204,8 +204,8 @@ export const modelingLifeImport = {
     }
   ],
   "videoUrls": {
-    "lesson1": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
-    "lesson2": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson2.mp4"
+    "lesson1": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
+    "lesson2": "/api/course-media/modeling-life/613a07b1-24e8-4123-ab10-5bd36875293e"
   },
   "videoIsTemporary": false,
   "sourceVideos": [
@@ -317,7 +317,7 @@ const sourceCourse = {
               "title": "State Variables and State Spaces",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
               "startSeconds": 10,
               "exhibitMode": "authored",
               "nodes": [
@@ -325,8 +325,8 @@ const sourceCourse = {
                   "id": "modeling-life-l1-exhibit-1",
                   "title": "T, W, V, C",
                   "type": "image",
-                  "url": "/courses/modeling-life/lesson1-exhibit-1.png",
-                  "thumbnail": "/courses/modeling-life/lesson1-exhibit-1-s.png",
+                  "url": "/api/course-media/modeling-life/9a88e350-e44f-47b1-9518-ed8b50cc4d36",
+                  "thumbnail": "/api/course-media/modeling-life/1b00006f-08ed-4f77-8285-a4685e3237de",
                   "description": "A cup of coffee described by four state variables (T, W, V, C): temperature = 63.1 °C, weight = 128 g, volume = 470 ml, caffeine concentration = 20 mg/oz",
                   "source": "-",
                   "triggerTime": 37
@@ -335,8 +335,8 @@ const sourceCourse = {
                   "id": "modeling-life-l1-exhibit-2",
                   "title": "Three examples of one-dimensional state spaces",
                   "type": "image",
-                  "url": "/courses/modeling-life/lesson1-exhibit-2.png",
-                  "thumbnail": "/courses/modeling-life/lesson1-exhibit-2-s.png",
+                  "url": "/api/course-media/modeling-life/3d1a37f4-6535-450c-879a-22c3cad48b08",
+                  "thumbnail": "/api/course-media/modeling-life/1d1e5a63-48ef-47b9-aeaf-b4a41b065515",
                   "description": "Three examples of one-dimensional state spaces: voltage, population size, and the fraction of a wolf population that has black fur",
                   "source": "-",
                   "triggerTime": 160
@@ -348,7 +348,7 @@ const sourceCourse = {
               "title": "Defining Vectors",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
               "startSeconds": 412,
               "exhibitMode": "authored",
               "nodes": []
@@ -358,7 +358,7 @@ const sourceCourse = {
               "title": "State Space Rules for Operating with Vectors",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
               "startSeconds": 587,
               "exhibitMode": "authored",
               "nodes": []
@@ -368,7 +368,7 @@ const sourceCourse = {
               "title": "Vectors And Vector Spaces",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
               "startSeconds": 1026,
               "exhibitMode": "authored",
               "nodes": []
@@ -378,7 +378,7 @@ const sourceCourse = {
               "title": "Vectors and Trajectories Change in State Space, Time Series Translation",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson1.mp4",
+              "url": "/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6",
               "startSeconds": 1175,
               "exhibitMode": "authored",
               "nodes": []
@@ -547,30 +547,30 @@ const sourceCourse = {
                   "id": "modeling-life-exhibit-1-2",
                   "title": "T, W, V, C",
                   "type": "image",
-                  "url": "/courses/modeling-life/lesson1-exhibit-1.png",
-                  "thumbnail": "/courses/modeling-life/lesson1-exhibit-1-s.png",
+                  "url": "/api/course-media/modeling-life/9a88e350-e44f-47b1-9518-ed8b50cc4d36",
+                  "thumbnail": "/api/course-media/modeling-life/1b00006f-08ed-4f77-8285-a4685e3237de",
                   "description": "A cup of coffee described by four state variables (T, W, V, C): temperature = 63.1 °C, weight = 128 g, volume = 470 ml, caffeine concentration = 20 mg/oz",
                   "source": "-",
                   "triggerTime": 37,
                   "active": true
                 },
                 "lessonNumber": "01",
-                "thumbnail": "/courses/modeling-life/lesson1-exhibit-1-s.png"
+                "thumbnail": "/api/course-media/modeling-life/1b00006f-08ed-4f77-8285-a4685e3237de"
               },
               {
                 "node": {
                   "id": "modeling-life-exhibit-1-4",
                   "title": "Three examples of one-dimensional state spaces",
                   "type": "image",
-                  "url": "/courses/modeling-life/lesson1-exhibit-2.png",
-                  "thumbnail": "/courses/modeling-life/lesson1-exhibit-2-s.png",
+                  "url": "/api/course-media/modeling-life/3d1a37f4-6535-450c-879a-22c3cad48b08",
+                  "thumbnail": "/api/course-media/modeling-life/1d1e5a63-48ef-47b9-aeaf-b4a41b065515",
                   "description": "Three examples of one-dimensional state spaces: voltage, population size, and the fraction of a wolf population that has black fur",
                   "source": "-",
                   "triggerTime": 160,
                   "active": true
                 },
                 "lessonNumber": "01",
-                "thumbnail": "/courses/modeling-life/lesson1-exhibit-2-s.png"
+                "thumbnail": "/api/course-media/modeling-life/1d1e5a63-48ef-47b9-aeaf-b4a41b065515"
               }
             ]
           }
@@ -611,7 +611,7 @@ const sourceCourse = {
               "title": "Pitchfork Bifurcation in a Model of Public Opinion",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson2.mp4",
+              "url": "/api/course-media/modeling-life/613a07b1-24e8-4123-ab10-5bd36875293e",
               "startSeconds": 10,
               "exhibitMode": "authored",
               "nodes": []
@@ -621,7 +621,7 @@ const sourceCourse = {
               "title": "Transcritical Bifurcation",
               "type": "video",
               "mode": "lecture",
-              "url": "https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson2.mp4",
+              "url": "/api/course-media/modeling-life/613a07b1-24e8-4123-ab10-5bd36875293e",
               "startSeconds": 1204,
               "exhibitMode": "authored",
               "nodes": []

@@ -1,25 +1,20 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ProductCourse, ProductLesson } from "../../services/productStore";
 import type { MigrationOrm } from "../../services/migrationOrm";
 import type { DataChange, DataMigrationContext } from "./types";
 import { systemRoot } from "../../services/fileStore";
-import { s3Get, toS3Key } from "../../services/persistence/s3";
-import { vfsStat, vfsWriteBuffer } from "../../services/persistence/vfs";
 
 export const id = "006_add_modeling_life_course";
 export const description = "Publish the Science course Modeling life with bilingual text, video and exhibits.";
-export const touches = ["courses", "media"] as const;
+export const touches = ["courses"] as const;
 
 const COURSE_ID = "modeling-life";
-const COURSE_URL = "/api/course-media/modeling-life";
-const STAGING_PREFIX = "staging/modeling-life";
 
 type MediaSpec = { staging: string; id: string; fileType: "image" | "video"; mimeType: string; extension: string; originalName: string };
 
-// Deterministic ids so DEV and SIT share the same lesson URLs. The bytes are
-// staged under <prefix>/staging/modeling-life/ and copied into the course-media
-// store by this migration; nothing is hand-uploaded into course_media.
+// Deterministic ids so DEV and SIT share the same lesson URLs. Media bytes are
+// published with aws s3 cp to course-media/<courseId>/<assetId>.<ext>, never by
+// this migration.
 export const MEDIA: MediaSpec[] = [
   { staging: "cover.png", id: "4c1b4ade-446a-46ac-8a40-2c3837118063", fileType: "image", mimeType: "image/png", extension: "png", originalName: "课程封面.png" },
   { staging: "lesson1.mp4", id: "04f0039b-42c7-441b-85b7-fe6e21c6bbe6", fileType: "video", mimeType: "video/mp4", extension: "mp4", originalName: "Lesson 1视频课件.mp4" },
@@ -123,71 +118,14 @@ export function mediaAssetPath(assetId: string) {
   return path.join(systemRoot(), "course_media", COURSE_ID, `${assetId}.bin`);
 }
 
-function assetUrl(assetId: string) {
-  return `${COURSE_URL}/${assetId}`;
-}
-
-function contentHash(bytes: Buffer) {
-  return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-}
-
-export async function ensureMedia(asset: MediaSpec, force = false): Promise<"add" | "skip"> {
-  // Staging lives in S3. Without a bucket (tests, local fs) there is nothing to
-  // copy from, and the migration still has to publish the course itself.
-  if (!process.env.DATA_S3_BUCKET?.trim()) return "skip";
-  const target = mediaAssetPath(asset.id);
-  if (!force) {
-    try {
-      await vfsStat(systemRoot(), target);
-      return "skip";
-    } catch {
-      // fall through to copy
-    }
-  }
-  const bytes = await s3Get(toS3Key(`${STAGING_PREFIX}/${asset.staging}`));
-  if (!bytes?.length) throw new Error(`Modeling life media is missing from staging: ${asset.staging}`);
-  const header = Buffer.from(JSON.stringify({
-    id: asset.id,
-    courseId: COURSE_ID,
-    url: assetUrl(asset.id),
-    originalName: asset.originalName,
-    mimeType: asset.mimeType,
-    fileType: asset.fileType,
-    extension: asset.extension,
-    size: bytes.length,
-    createdAt: new Date().toISOString(),
-    uploadedBy: `data-migration:${contentHash(bytes)}`
-  }));
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(header.length);
-  await vfsWriteBuffer(systemRoot(), target, Buffer.concat([length, header, bytes]));
-  return "add";
-}
-
-export async function syncModelingLifeMedia(): Promise<DataChange[]> {
-  const changes: DataChange[] = [];
-  for (const asset of MEDIA) {
-    changes.push({ action: await ensureMedia(asset), kind: "course-media", id: asset.id });
-  }
-  return changes;
-}
-
 export async function apply(orm: MigrationOrm, ctx: DataMigrationContext): Promise<DataChange[]> {
-  const changes: DataChange[] = [];
-  try {
-    changes.push(...await syncModelingLifeMedia());
-  } catch (error) {
-    changes.push({ action: "skip", kind: "course-media", id: "modeling-life", reason: error instanceof Error ? error.message : "staging-missing" });
-  }
   const courses = orm.table<ProductCourse>("courses");
   const next = modelingLifeCourse(ctx.now);
   const existing = courses.findById(COURSE_ID);
   if (!existing) {
     courses.insert(next);
-    changes.push({ action: "add", kind: "course", id: COURSE_ID });
-    return changes;
+    return [{ action: "add", kind: "course", id: COURSE_ID }];
   }
   courses.update(COURSE_ID, { ...existing, ...next, id: COURSE_ID, createdAt: existing.createdAt || ctx.now, updatedAt: ctx.now });
-  changes.push({ action: "update", kind: "course", id: COURSE_ID });
-  return changes;
+  return [{ action: "update", kind: "course", id: COURSE_ID }];
 }

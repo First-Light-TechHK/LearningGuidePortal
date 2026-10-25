@@ -28,12 +28,12 @@ test("check-email reports whether an address exists", async () => {
   const known = await checkEmail(new Request("http://localhost/api/auth/check-email", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "known@example.test" }),
+    body: JSON.stringify({ email: "known@example.com" }),
   }));
   const unknown = await checkEmail(new Request("http://localhost/api/auth/check-email", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "unknown@example.test" }),
+    body: JSON.stringify({ email: "unknown@example.com" }),
   }));
   const knownBody = await known.json() as { ok?: boolean; data?: { exists?: boolean } };
   const unknownBody = await unknown.json() as { ok?: boolean; data?: { exists?: boolean } };
