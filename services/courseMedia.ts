@@ -10,6 +10,7 @@ import { requestOriginMatches } from "@/services/adminHost";
 import { checkEntitlement, getProductCourse, publicFirstLesson, type ProductCourse, type ProductUser } from "@/services/productStore";
 import { buildTextLessonPreview } from "./textLessonPreview";
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
+import { s3HeadRaw, s3PresignRaw } from "@/services/persistence/s3";
 
 export { COURSE_MEDIA_MAX_BYTES } from "@/contracts/lesson-content";
 
@@ -277,6 +278,16 @@ export async function serveCourseMedia(request: Request, user: ProductUser | nul
   assetPath(courseId, assetId);
   const course = await getProductCourse(courseId);
   if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId, allowAuthor)) throw new CourseMediaError("notFound", 404, "Media not found.");
+  // Raw media objects (uploaded outside the legacy .bin container) stream from S3
+  // through a short-lived URL: Range, caching and seeking work without the app
+  // copying bytes. Falls back to the legacy container for older assets.
+  for (const extension of ["mp4", "webm", "mov", "png", "jpg", "jpeg", "pdf", "mp3", "m4a"]) {
+    const rawKey = `course-media/${courseId}/${assetId}.${extension}`;
+    if (await s3HeadRaw(rawKey)) {
+      const signed = await s3PresignRaw(rawKey);
+      return new Response(null, { status: 307, headers: { Location: signed, "Cache-Control": "private, no-store", "Vary": "Cookie" } });
+    }
+  }
   const { asset, bytes } = await readStoredAsset(courseId, assetId);
   const headers = new Headers({
     "Content-Type": asset.mimeType,
