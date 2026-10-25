@@ -6,11 +6,8 @@ export const id = "010_repair_modeling_life_media_rows";
 export const description = "Rewrite Modeling life media so app_files rows and S3 objects exist together.";
 export const touches = ["media"] as const;
 
-export async function apply(_orm: MigrationOrm, ctx: DataMigrationContext): Promise<DataChange[]> {
+export async function apply(_orm: MigrationOrm, _ctx: DataMigrationContext): Promise<DataChange[]> {
   const changes: DataChange[] = [];
-  // Media rows only exist in the managed (SQL/S3) store. A memory or local run
-  // must not perform a legacy S3 media copy.
-  if (ctx.store !== "sql") return [{ action: "skip", kind: "course-media", id: "modeling-life", reason: "not-managed-store" }];
   try {
     for (const asset of MEDIA) changes.push({ action: await ensureMedia(asset, true), kind: "course-media", id: asset.id });
   } catch (error) {
