@@ -7,7 +7,6 @@ import * as backfillLessonSummaries from "./005_backfill_lesson_summaries";
 import * as addModelingLifeCourse from "./006_add_modeling_life_course";
 import * as repairModelingLifeMedia from "./007_repair_modeling_life_media";
 import * as fixModelingLifeMediaUrls from "./011_fix_modeling_life_media_urls";
-import * as repairModelingLifeMediaRemaining from "./012_repair_modeling_life_media_remaining";
 import * as upgradeModelingLife from "./008_upgrade_modeling_life";
 import * as fixModelingLifeExhibits from "./009_fix_modeling_life_exhibits";
 
