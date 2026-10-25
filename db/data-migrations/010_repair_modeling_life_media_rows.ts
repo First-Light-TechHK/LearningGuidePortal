@@ -9,7 +9,13 @@ export const touches = ["media"] as const;
 export async function apply(_orm: MigrationOrm, _ctx: DataMigrationContext): Promise<DataChange[]> {
   const changes: DataChange[] = [];
   try {
-    for (const asset of MEDIA) changes.push({ action: await ensureMedia(asset, true), kind: "course-media", id: asset.id });
+    for (const asset of MEDIA) {
+    try {
+      changes.push({ action: await ensureMedia(asset, true), kind: "course-media", id: asset.id });
+    } catch (error) {
+      changes.push({ action: "skip", kind: "course-media", id: asset.id, reason: error instanceof Error ? error.message : "failed" });
+    }
+  }
   } catch (error) {
     // Same contract as 006/007: a staging or credentials problem must not block
     // boot or the course itself; record the skip and let the next run retry.
