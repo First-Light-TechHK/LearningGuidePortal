@@ -62,8 +62,8 @@ test("video sub-chapters on the same file seek in place and keep playing", async
       body: "",
       durationMinutes: 24,
       contents: [
-        { id: "v1", title: "State Spaces", type: "video", mode: "lecture", url: "/api/course-media/modeling-life/video", startSeconds: 10, nodes: [] },
-        { id: "v2", title: "Defining Vectors", type: "video", mode: "lecture", url: "/api/course-media/modeling-life/video", startSeconds: 412, nodes: [] },
+        { id: "v1", title: "State Spaces", type: "video", mode: "lecture", url: "/api/course-media/modeling-life/video?sig=a", startSeconds: 10, nodes: [] },
+        { id: "v2", title: "Defining Vectors", type: "video", mode: "lecture", url: "/api/course-media/modeling-life/video?sig=b", startSeconds: 412, nodes: [] },
       ],
     };
     await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), {
