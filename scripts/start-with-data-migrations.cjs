@@ -13,7 +13,11 @@ function runMigrate() {
   const viaTsx = spawnSync(process.execPath, ["--import", "tsx", ...args], { cwd: root, env, stdio: "inherit" });
   if (viaTsx.status === 0) return;
   const viaStrip = spawnSync(process.execPath, ["--experimental-strip-types", ...args], { cwd: root, env, stdio: "inherit" });
-  if (viaStrip.status !== 0) process.exit(viaStrip.status || viaTsx.status || 1);
+  if (viaStrip.status !== 0) {
+    // A migration tooling failure must not keep the service from starting; the
+    // app reports readiness and the failure is visible in the logs.
+    console.error(JSON.stringify({ warning: "data migrations did not run", tsx: viaTsx.status, stripTypes: viaStrip.status }));
+  }
 }
 
 runMigrate();
