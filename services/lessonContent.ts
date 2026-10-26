@@ -265,6 +265,8 @@ export function lessonContentAssetReferences(value: unknown, courseId: string, i
   for (const content of contents) {
     for (const item of [content, ...content.nodes]) {
       if (item.type !== "text" && item.type !== "exercise") add(item.url, item.type);
+      // Exhibit thumbnails are rendered media and inherit the owning node's access.
+      if ("thumbnail" in item) add(item.thumbnail, "image");
       if (item.html) sanitizeHtml(item.html, {
         allowedTags: ["img", "a"], allowedAttributes: { img: ["src"], a: ["href"] },
         transformTags: { "*": (tagName, attribs) => { if (tagName === "img") add(attribs.src, "image"); if (tagName === "a") add(attribs.href); return { tagName, attribs }; } },

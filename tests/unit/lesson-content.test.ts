@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LESSON_CONTENT_LIMITS } from "../../contracts/lesson-content";
-import { courseMediaAssetId, LessonContentError, lessonContentAssetIds, lessonContentsText, sanitiseLessonContents, sanitiseRichHtml, validateLessonContents } from "../../services/lessonContent";
+import { courseMediaAssetId, LessonContentError, lessonContentAssetIds, lessonContentAssetReferences, lessonContentsText, sanitiseLessonContents, sanitiseRichHtml, validateLessonContents } from "../../services/lessonContent";
 
 const courseId = "course_123";
 const assetId = "7c831ab8-cc01-4d15-8d71-ef3524d08e09";
@@ -64,6 +64,17 @@ test("asset extraction only includes sanitised renderable HTML and structured UR
   assert.deepEqual([...lessonContentAssetIds([value], courseId)], [assetId]);
   value.html = `<a href="${url}">Download</a>`;
   assert.deepEqual([...lessonContentAssetIds([value], courseId)], [assetId]);
+});
+
+test("exhibit thumbnail references are images and follow their owning node visibility", () => {
+  const thumbnailId = "1b00006f-08ed-4f77-8285-a4685e3237de";
+  const value = { ...content(), nodes: [{ id: "image", title: "Exhibit", type: "image", triggerTime: 37, url, thumbnail: `/api/course-media/${courseId}/${thumbnailId}` }] };
+  assert.deepEqual(lessonContentAssetReferences([value], courseId), [{ assetId, fileType: "image" }, { assetId: thumbnailId, fileType: "image" }]);
+  const hidden = { ...value, nodes: [{ ...value.nodes[0], active: false }] };
+  assert.equal(lessonContentAssetIds([hidden], courseId).size, 0);
+  assert.equal(lessonContentAssetIds([{ ...value, active: false }], courseId).size, 0);
+  assert.equal(lessonContentAssetReferences([hidden], courseId, true).length, 2);
+  assert.equal(lessonContentAssetIds([{ ...value, nodes: [{ ...value.nodes[0], thumbnail: `/api/course-media/other/${thumbnailId}` }] }], courseId).size, 0);
 });
 
 test("IDs, node limits, malformed collections and trigger times fail closed", () => {
