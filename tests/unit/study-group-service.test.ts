@@ -980,19 +980,21 @@ test("tutor requests stay one asker per item and follow server receipt order", a
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   await service.enterSession({ actorUserId: "queue-member", sessionId: session.id, requestedAt: NOW });
   await service.startSession({ actorUserId: "host", sessionId: session.id });
-  const first = service.enqueueTutor({
+  // Receipt order is only defined when the calls reach the server in order.
+  // Firing both concurrently made this test depend on scheduler order and it
+  // flaked under the parallel unit run.
+  const hostItem = await service.enqueueTutor({
     actorUserId: "host",
     sessionId: session.id,
     text: "alpha from host",
     clientEventId: "shared-event"
   });
-  const second = service.enqueueTutor({
+  const memberItem = await service.enqueueTutor({
     actorUserId: "queue-member",
     sessionId: session.id,
     text: "beta from member",
     clientEventId: "shared-event"
   });
-  const [hostItem, memberItem] = await Promise.all([first, second]);
   assert.equal(hostItem.userId, "host");
   assert.equal(hostItem.text, "alpha from host");
   assert.equal(memberItem.userId, "queue-member");

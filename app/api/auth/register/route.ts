@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createSession, issueEmailVerificationToken, publicUser, registerUserAttempt, verifyEmailToken } from "@/services/productStore";
 import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
-import { emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
+import { EmailDeliveryError, emailDeliveryConfigured, sendVerificationEmail } from "@/services/emailService";
 import { emailVerificationRequired, publicAppOrigin } from "@/services/runtimeConfig";
 import { RegistrationConsentError, type RegistrationRequest } from "@/contracts/registration";
 import { assertRegistrationConsent } from "@/services/registrationConsent";
@@ -16,18 +16,30 @@ export async function POST(request: Request) {
     const verificationRequired = emailVerificationRequired();
     if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", requestId }, { status: 503 });
     const { user, created } = await registerUserAttempt({ email: body.email || "", password: body.password || "", nickname: body.nickname, locale: body.locale });
-    if (!created) {
-      if (user.status === "active" && user.emailVerifiedAt) return NextResponse.json({ ok: true, data: { existingActiveEmail: true, email: user.email }, requestId });
-      // A duplicate registration must not reissue the creator's token or grant a session.
-      return NextResponse.json({ ok: true, data: { verificationRequired: true }, requestId });
-    }
-    const verificationToken = await issueEmailVerificationToken(user.id, true);
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
-    if (verificationRequired) {
+    const deliverVerification = async () => {
+      const verificationToken = await issueEmailVerificationToken(user.id, true);
       const verificationUrl = `${publicAppOrigin(request)}/${locale}/portal/verify-email?token=${encodeURIComponent(verificationToken)}`;
       await sendVerificationEmail({ to: user.email, url: verificationUrl, locale });
+    };
+    if (!created) {
+      if (user.status === "active" && user.emailVerifiedAt) return NextResponse.json({ ok: true, data: { existingActiveEmail: true, email: user.email }, requestId });
+      // A duplicate registration must not reissue the creator's token, grant a
+      // session, or act as an implicit resend (AUTH-05). Learners who lost the
+      // first mail use POST /api/auth/resend-verification.
+      return NextResponse.json({ ok: true, data: { verificationRequired: true }, requestId });
+    }
+    if (verificationRequired) {
+      try { await deliverVerification(); }
+      catch (error) {
+        // The account exists, so do not claim the registration failed; tell the
+        // caller that only the mail is missing and let them retry.
+        if (error instanceof EmailDeliveryError) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_FAILED", requestId }, { status: 503 });
+        throw error;
+      }
       return NextResponse.json({ ok: true, data: { user: publicUser(user), verificationRequired: true }, requestId });
     }
+    const verificationToken = await issueEmailVerificationToken(user.id, true);
     const activatedUser = await verifyEmailToken(verificationToken);
     const session = await createSession(user.id);
     const response = NextResponse.json({ ok: true, data: { user: publicUser(activatedUser), verificationRequired: false }, requestId });

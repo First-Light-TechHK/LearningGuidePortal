@@ -5,6 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import * as migration from "../../db/data-migrations/008_upgrade_modeling_life";
 import * as fixExhibits from "../../db/data-migrations/009_fix_modeling_life_exhibits";
+import * as logicalMedia from "../../db/data-migrations/013_logical_modeling_life_media";
 import { modelingLifeCourse as legacyModelingLifeCourse } from "../../db/data-migrations/006_add_modeling_life_course";
 import { dataMigrations } from "../../db/data-migrations";
 import { applyOrmMigrations, createMemoryOrm, assertMigrationRegistry } from "../../services/dataMigrations";
@@ -58,9 +59,24 @@ test("shipped whole-Lesson courses upgrade without user writes and fresh registr
   assert.equal(migration.apply(orm,{now:createdAt,store:"memory",dryRun:true})[0].action,"skip");
   const fresh=createMemoryOrm(),recorded=recordOrm(fresh);
   const report=await applyOrmMigrations(recorded.orm,dataMigrations.filter(item=>Number(item.id.slice(0,3))>=6),{now:createdAt});
-  assert.deepEqual(report.applied,[migration.id]);assert.ok(report.skipped.includes("006_add_modeling_life_course"));assert.ok(report.skipped.includes("007_repair_modeling_life_media"));
+  assert.deepEqual(report.applied,[migration.id]);assert.ok(report.skipped.includes("006_add_modeling_life_course"));assert.ok(report.skipped.includes("007_repair_modeling_life_media"));assert.ok(report.skipped.includes("013_logical_modeling_life_media"));
   assert.equal(compileOrmOps(recorded.ops).objects.length,0,"fresh DEV/SIT needs no legacy S3 media copy");
   assert.equal(fresh.table<ProductCourse>("courses").findById(course.id)!.sections[0].lessons[0].contents!.length,10);
+});
+
+test("013 rewrites leftover staging and exhibit files to course-media ids without touching users",async()=>{
+  const existing=structuredClone(course);
+  existing.sections[0].lessons[0].contents!.find(item=>item.type==="video")!.url="https://example.invalid/staging/modeling-life/lesson1.mp4";
+  existing.sections[0].lessons[0].contents!.find(item=>item.type==="video")!.nodes[0].url="/courses/modeling-life/lesson1-exhibit-1.png";
+  const orm=createMemoryOrm({tables:{courses:[existing],users:[{id:"keep-user"}]}});
+  const users=orm.snapshot("users");
+  const report=await applyOrmMigrations(orm,[logicalMedia],{now:createdAt});
+  assert.deepEqual(report.applied,[logicalMedia.id]);
+  const updated=orm.table<ProductCourse>("courses").findById(course.id)!;
+  assert.equal(updated.sections[0].lessons[0].contents!.find(item=>item.type==="video")!.url,"/api/course-media/modeling-life/04f0039b-42c7-441b-85b7-fe6e21c6bbe6");
+  assert.equal(updated.sections[0].lessons[0].contents!.find(item=>item.type==="video")!.nodes[0].url,"/api/course-media/modeling-life/9a88e350-e44f-47b1-9518-ed8b50cc4d36");
+  assert.equal(orm.snapshot("users"),users);
+  assert.deepEqual((await applyOrmMigrations(orm,[logicalMedia])).applied,[]);
 });
 
 test("exhibit correction migrates existing four-item imports without changing readings, text, other Lessons or user data",async()=>{
@@ -109,14 +125,16 @@ test("authored points, source video starts, thumbnail pairs, readings and questi
   const videos=course.sections.flatMap(s=>s.lessons.flatMap(l=>l.contents!.filter(c=>c.type==="video")));
   assert.equal(new Set(videos.map(v=>v.url)).size,2);
   for(const [lessonNumber,lesson] of [first,second].entries()) {
-    const expected=`https://aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com/learning-guide/dev/staging/modeling-life/lesson${lessonNumber+1}.mp4`;
+    const expected=`/api/course-media/modeling-life/${lessonNumber===0?"04f0039b-42c7-441b-85b7-fe6e21c6bbe6":"613a07b1-24e8-4123-ab10-5bd36875293e"}`;
     assert.ok(lesson.contents!.filter(content=>content.type==="video").every(content=>content.url===expected));
     assert.equal(migration.modelingLifeImport.videoUrls[lessonNumber===0?"lesson1":"lesson2"],expected);
   }
   assert.equal(migration.modelingLifeImport.videoIsTemporary,false);
   const nodes=first.contents!.find(c=>c.type==="video")!.nodes;
   assert.deepEqual(nodes.map(n=>[n.title,n.triggerTime]),[["T, W, V, C",37],["Three examples of one-dimensional state spaces",160]]);
-  assert.ok(nodes.every((node,i)=>node.url===`/courses/modeling-life/lesson1-exhibit-${i+1}.png`&&node.thumbnail?.endsWith(`-${i+1}-s.png`)));
+  const exhibits=["/api/course-media/modeling-life/9a88e350-e44f-47b1-9518-ed8b50cc4d36","/api/course-media/modeling-life/3d1a37f4-6535-450c-879a-22c3cad48b08"];
+  const thumbs=["/api/course-media/modeling-life/1b00006f-08ed-4f77-8285-a4685e3237de","/api/course-media/modeling-life/1d1e5a63-48ef-47b9-aeaf-b4a41b065515"];
+  assert.ok(nodes.every((node,i)=>node.url===exhibits[i]&&node.thumbnail===thumbs[i]));
   const exploration=courseExploration(course)!;assert.equal(exploration.readings.length,3);assert.equal(exploration.exhibits.length,2);
   assert.deepEqual(exploration.exhibits.map(exhibit=>({...exhibit.node,id:undefined})),nodes.map(node=>({...node,id:undefined})),"Exploration uses the two confirmed video exhibit titles and original images");
   assert.deepEqual(exploration.exhibits.map(exhibit=>exhibit.thumbnail),nodes.map(node=>node.thumbnail));

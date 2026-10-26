@@ -34,3 +34,40 @@ test('SIT emails reset links on its trusted origin and never returns a token', a
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+test('the apex host is the same site as www and can request a reset', async () => {
+  const env = { ...process.env };
+  const cwd = process.cwd();
+  const temp = await mkdtemp(path.join(tmpdir(), 'lg-reset-apex-'));
+  const mails: Array<{ text: string }> = [];
+  const transport = mock.method(nodemailer, 'createTransport', () => ({ sendMail: async (mail: { text: string }) => { mails.push(mail); } }));
+  try {
+    process.chdir(temp);
+    Object.assign(process.env, {
+      APP_ENV: 'PROD', STORAGE_BACKEND: 'local', SMTP_HOST: 'smtp.test',
+      SMTP_USER: 'sender@test.invalid', SMTP_PASS: 'test-only',
+      NEXT_PUBLIC_APP_URL: 'https://www.ilovelearningguide.com'
+    });
+    const store = await import('../../services/productStore');
+    const user = await store.registerUser({ email: 'apex@example.test', password: 'test-password-123', locale: 'en-GB' });
+    await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
+    const { POST } = await import('../../app/api/auth/password-reset/request/route');
+    const request = (origin: string) => new Request('https://ilovelearningguide.com/api/auth/password-reset/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', origin },
+      body: JSON.stringify({ email: user.email })
+    });
+    const apex = await POST(request('https://ilovelearningguide.com'));
+    assert.equal(apex.status, 200);
+    assert.equal(mails.length, 1);
+    assert.ok(mails[0].text.includes('https://www.ilovelearningguide.com/en-GB/portal/reset-password?token='));
+    const foreign = await POST(request('https://evil.invalid'));
+    assert.equal(foreign.status, 400);
+    assert.equal(mails.length, 1);
+  } finally {
+    transport.mock.restore();
+    process.env = env;
+    process.chdir(cwd);
+    await rm(temp, { recursive: true, force: true });
+  }
+});

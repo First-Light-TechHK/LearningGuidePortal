@@ -32,7 +32,7 @@ export type DataChange = {
 };
 
 export type DataMigrationContext = {
-  /** CI uses memory. Laptop persist uses aggregate. App Runner DEV/SIT compile+execute SQL/S3. */
+  /** CI uses memory. Laptop persist uses aggregate. App Runner DEV/SIT compile and execute SQL. */
   store: "memory" | "aggregate" | "sql";
   dryRun: boolean;
   now: string;

@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { awsRegion, dataS3Bucket, dataS3Prefix } from "./config";
 import { courseMediaVersion } from './courseMediaRelease';
@@ -90,4 +90,26 @@ export async function s3DeleteMany(s3Keys: string[]) {
       })
     );
   }
+}
+
+/**
+ * Raw (header-free) media objects: stored as plain files under the environment
+ * data prefix and served straight from S3. Callers pass the environment-neutral
+ * key (`course-media/<courseId>/<assetId>.<ext>`); the prefix is applied here.
+ */
+export function rawMediaKey(key: string) {
+  return toS3Key(key);
+}
+
+export async function s3HeadRaw(key: string) {
+  try {
+    await getClient().send(new HeadObjectCommand({ Bucket: dataS3Bucket(), Key: rawMediaKey(key) }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function s3PresignRaw(key: string, expiresIn = 6 * 60 * 60) {
+  return getSignedUrl(getClient(), new GetObjectCommand({ Bucket: dataS3Bucket(), Key: rawMediaKey(key) }), { expiresIn });
 }

@@ -26,10 +26,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
   const [ageRange, setAgeRange] = useState(initialAgeRange || "");
   const [education, setEducation] = useState(initialEducation || "");
   const [areasOfInterest, setAreasOfInterest] = useState(initialAreasOfInterest || []);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [message, setMessage] = useState("");
+        const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [avatar, setAvatar] = useState(hasAvatar);
@@ -76,14 +73,13 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
   async function submit(event: FormEvent) {
     event.preventDefault(); setMessage(""); setError("");
     if (!isValidAccountName(nickname)) { setError(isNameTooLong(nickname) ? nameCopy.nameTooLong : nameCopy.nameInvalid); return; }
-    if (newPassword !== confirmPassword) { setError(design.passwordMismatch); return; }
     if (!country) { setError(design.countryRequired); return; }
     setBusy(true);
     try {
-      const response = await fetch("/api/me/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname: normaliseName(nickname), locale, country, ageRange, education, areasOfInterest, currentPassword, newPassword }) });
+      const response = await fetch("/api/me/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nickname: normaliseName(nickname), locale, country, ageRange, education, areasOfInterest }) });
       const data = await response.json() as { ok?: boolean; code?: string };
       if (!response.ok || !data.ok) throw new Error(data.code === "CURRENT_PASSWORD_INCORRECT" ? design.currentPasswordIncorrect : data.code === "NEW_PASSWORD_TOO_SHORT" ? design.newPasswordTooShort : design.saveError);
-      setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setMessage(copy.saved);
+      setMessage(copy.saved);
       if (locale !== initialLocale) window.location.assign(`/${locale}/account/my-learning/settings`);
     } catch (requestError) { setError(requestError instanceof Error && [design.currentPasswordIncorrect, design.newPasswordTooShort, design.saveError].includes(requestError.message) ? requestError.message : design.saveError); }
     finally { setBusy(false); }
@@ -132,14 +128,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       <h2 id="settings-preferences-heading">{copy.language}</h2>
       <label><span className="sr-only">{copy.language}</span><select value={locale} onChange={(event) => setLocale(event.target.value as "en-GB" | "zh-CN")}><option value="en-GB">{copy.english}</option><option value="zh-CN">{copy.chinese}</option></select></label>
     </section>
-    <section className="settings-design-section settings-password" aria-labelledby="settings-password-heading">
-      <h2 id="settings-password-heading">{copy.newPassword}</h2>
-      <div className="settings-details-grid">
-        <label>{copy.currentPassword}<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" /></label>
-        <label>{copy.newPassword}<input type="password" value={newPassword} onChange={(event) => { event.currentTarget.setCustomValidity(""); setNewPassword(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(design.newPasswordTooShort)} minLength={8} autoComplete="new-password" /></label>
-        <label>{copy.confirmPassword}<input type="password" value={confirmPassword} onChange={(event) => { event.currentTarget.setCustomValidity(""); setConfirmPassword(event.target.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity(design.newPasswordTooShort)} minLength={8} autoComplete="new-password" /></label>
-      </div>
-    </section>
+
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}{message ? <p className="portal-success" role="status">{message}</p> : null}
     <div className="settings-save-row"><button className="portal-button portal-button-primary" disabled={busy}>{copy.save}</button></div>
   </form>;

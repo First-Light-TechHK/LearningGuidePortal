@@ -1,29 +1,24 @@
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import nodemailer from "nodemailer";
-import { awsRegion } from "./persistence/config";
-
-let client: SESv2Client | null = null;
-
-function getClient() {
-  if (!client) client = new SESv2Client({ region: awsRegion() });
-  return client;
-}
 
 function smtpConfigured() {
   return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim());
 }
 
 function fromAddress() {
-  return process.env.SMTP_FROM?.trim() || process.env.SES_FROM_EMAIL?.trim() || process.env.SMTP_USER?.trim() || "";
+  return process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim() || "";
 }
 
 export function emailDeliveryConfigured() {
-  return smtpConfigured() || Boolean(process.env.SES_FROM_EMAIL?.trim());
+  return smtpConfigured();
+}
+
+function logMail(event: string, detail: Record<string, unknown>) {
+  console.info(JSON.stringify({ type: "mail", event, ...detail }));
 }
 
 async function sendViaSmtp(input: { to: string; subject: string; text: string; html: string }) {
   const from = fromAddress();
-  if (!from) throw new Error("SMTP_FROM or SES_FROM_EMAIL is not configured.");
+  if (!from) throw new Error("SMTP_FROM or SMTP_USER is not configured.");
   const port = Number(process.env.SMTP_PORT || "465");
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -32,49 +27,59 @@ async function sendViaSmtp(input: { to: string; subject: string; text: string; h
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
-    }
+    },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
+    tls: { minVersion: "TLSv1.2" }
   });
-  await transporter.sendMail({
-    from,
-    to: input.to,
-    subject: input.subject,
-    text: input.text,
-    html: input.html
-  });
-}
-
-export class EmailDeliveryError extends Error {
-  constructor() {
-    super("Verification email could not be sent. Use a mailbox that this environment is allowed to mail.");
-    this.name = "EmailDeliveryError";
-  }
-}
-
-async function sendViaSes(input: { to: string; subject: string; text: string; html: string }) {
-  const from = fromAddress();
-  if (!from) throw new Error("SES_FROM_EMAIL is not configured.");
   try {
-    await getClient().send(new SendEmailCommand({
-      FromEmailAddress: from,
-      Destination: { ToAddresses: [input.to] },
-      Content: {
-        Simple: {
-          Subject: { Data: input.subject, Charset: "UTF-8" },
-          Body: {
-            Text: { Data: input.text, Charset: "UTF-8" },
-            Html: { Data: input.html, Charset: "UTF-8" }
-          }
-        }
-      }
-    }));
-  } catch {
+    const info = await transporter.sendMail({
+      from,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html
+    }) || {};
+    const accepted = Array.isArray(info.accepted) ? info.accepted.length : 0;
+    const rejected = Array.isArray(info.rejected) ? info.rejected.length : 0;
+    logMail("smtp_sent", {
+      toDomain: input.to.split("@")[1] || "",
+      accepted,
+      rejected,
+      messageId: info.messageId,
+      response: typeof info.response === "string" ? info.response.slice(0, 160) : undefined
+    });
+    if (accepted === 0 && rejected > 0) throw new Error("SMTP rejected every recipient.");
+  } catch (error) {
+    logMail("smtp_failed", {
+      toDomain: input.to.split("@")[1] || "",
+      code: error instanceof Error ? (error as { code?: string }).code || error.name : "Error",
+      message: error instanceof Error ? error.message.slice(0, 160) : "unknown"
+    });
     throw new EmailDeliveryError();
   }
 }
 
+export class EmailDeliveryError extends Error {
+  constructor(message = "Verification email could not be sent. Use a mailbox that this environment is allowed to mail.") {
+    super(message);
+    this.name = "EmailDeliveryError";
+  }
+}
+
 async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
-  if (smtpConfigured()) return sendViaSmtp(input);
-  return sendViaSes(input);
+  // 163 SMTP is the only delivery path. SES stays out of the app because the
+  // account is still in the sandbox and cannot reach learner mailboxes.
+  if (!smtpConfigured()) {
+    logMail("smtp_not_configured", {
+      smtpHostSet: Boolean(process.env.SMTP_HOST?.trim()),
+      smtpUserSet: Boolean(process.env.SMTP_USER?.trim()),
+      smtpPassSet: Boolean(process.env.SMTP_PASS?.trim())
+    });
+    throw new EmailDeliveryError("Email delivery is not configured.");
+  }
+  return sendViaSmtp(input);
 }
 
 export function sendVerificationEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
