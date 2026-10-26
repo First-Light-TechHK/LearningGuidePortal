@@ -39,13 +39,15 @@ test("the installed mail transport delivers activation, reset and binding messag
     await sendEmailBindingEmail(input);
     assert.equal(received.length, 3);
     for (const message of received) {
+      // quoted-printable soft-wraps long links; decode the line breaks first
+      const body = message.body.replace(/=\r\n/g, "");
       assert.equal(message.recipient, "RCPT TO:<learner@example.test>");
-      assert.match(message.body, /From: sender@example.test/);
-      assert.match(message.body, /Content-Type: multipart\/alternative/);
-      assert.match(message.body, /uat\.example\.test\/confirm/);
+      assert.match(body, /From: sender@example.test/);
+      assert.match(body, /Content-Type: text\/plain; charset=utf-8/i);
+      assert.match(body, /uat\.example\.test\/confirm/);
     }
-    assert.match(received[0].body, /Subject: Verify your Learning Guide account/);
-    assert.match(received[1].body, /Subject: Reset your Learning Guide password/);
+    assert.match(received[0].body, /Subject: Learning Guide account confirmation/);
+    assert.match(received[1].body, /Subject: Learning Guide password reset/);
     assert.match(received[2].body, /Subject: Verify and bind your email/);
     const chinese = { ...input, locale: "zh-CN" as const };
     await sendVerificationEmail(chinese);
@@ -53,10 +55,14 @@ test("the installed mail transport delivers activation, reset and binding messag
     await sendEmailBindingEmail(chinese);
     assert.equal(received.length, 6);
     for (const message of received.slice(3)) {
+      const [head, ...rest] = message.body.split("\r\n\r\n");
+      const body = /Content-Transfer-Encoding: base64/i.test(head)
+        ? Buffer.from(rest.join("").replace(/\r\n/g, ""), "base64").toString("utf8")
+        : rest.join("\r\n");
       assert.equal(message.recipient, "RCPT TO:<learner@example.test>");
       assert.match(message.body, /^Subject: =\?UTF-8\?[BQ]\?/im);
-      assert.match(message.body, /Content-Type: text\/html; charset=utf-8/i);
-      assert.match(message.body, /uat\.example\.test\/confirm/);
+      assert.match(message.body, /Content-Type: text\/plain; charset=utf-8/i);
+      assert.match(body, /uat\.example\.test\/confirm/);
     }
   } finally {
     for (const [name, value] of Object.entries(original)) {

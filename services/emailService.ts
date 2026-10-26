@@ -39,7 +39,13 @@ async function sendViaSmtp(input: { to: string; subject: string; text: string; h
       to: input.to,
       subject: input.subject,
       text: input.text,
-      html: input.html
+      // Plain text only: a single-link HTML body from a free mailbox is a
+      // classic spam signature and Outlook rejects it outright.
+      replyTo: from,
+      headers: {
+        "Auto-Submitted": "auto-generated",
+        "X-Auto-Response-Suppress": "All"
+      }
     }) || {};
     const accepted = Array.isArray(info.accepted) ? info.accepted.length : 0;
     const rejected = Array.isArray(info.rejected) ? info.rejected.length : 0;
@@ -86,8 +92,10 @@ export function sendVerificationEmail(input: { to: string; url: string; locale?:
   const chinese = input.locale === "zh-CN";
   return sendEmail({
     to: input.to,
-    subject: chinese ? "激活您的 Learning Guide 账号" : "Verify your Learning Guide account",
-    text: chinese ? `请打开以下链接激活您的 Learning Guide 账号：\n\n${input.url}\n\n此链接将在 24 小时后失效。` : `Verify your Learning Guide account by opening this link:\n\n${input.url}\n\nThis link expires in 24 hours.`,
+    subject: chinese ? "Learning Guide 账号确认" : "Learning Guide account confirmation",
+    text: chinese
+      ? `您好：\n\n有人使用这个邮箱注册了 Learning Guide 账号。请打开下面的链接完成确认：\n\n${input.url}\n\n链接 24 小时内有效。如果这不是您本人的操作，可以忽略此邮件，账号不会被激活。\n\nLearning Guide`
+      : `Hello,\n\nSomeone used this address to create a Learning Guide account. Open the link below to confirm it:\n\n${input.url}\n\nThe link expires in 24 hours. If this was not you, ignore this message and the account will stay inactive.\n\nLearning Guide`,
     html: chinese ? `<p>请点击下面的链接激活您的 Learning Guide 账号：</p><p><a href="${input.url}">激活账号</a></p><p>此链接将在 24 小时后失效。</p>` : `<p>Verify your Learning Guide account by opening this link:</p><p><a href="${input.url}">Verify email address</a></p><p>This link expires in 24 hours.</p>`
   });
 }
@@ -110,8 +118,10 @@ export function sendPasswordResetEmail(input: { to: string; url: string; locale?
   const htmlUrl = input.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   return sendEmail({
     to: input.to,
-    subject: chinese ? "重置您的 Learning Guide 密码" : "Reset your Learning Guide password",
-    text: chinese ? `请打开以下链接重置密码：\n\n${input.url}\n\n链接将在一小时后失效，只能使用一次。` : `Reset your Learning Guide password:\n\n${input.url}\n\nThis link expires in one hour and can only be used once.`,
+    subject: chinese ? "Learning Guide 密码重置" : "Learning Guide password reset",
+    text: chinese
+      ? `您好：\n\n有人请求重置这个 Learning Guide 账号的密码。请打开下面的链接设置新密码：\n\n${input.url}\n\n链接一小时内有效，只能使用一次。如果这不是您本人的操作，可以忽略此邮件，原密码保持不变。\n\nLearning Guide`
+      : `Hello,\n\nSomeone asked to reset the password for this Learning Guide account. Open the link below to choose a new password:\n\n${input.url}\n\nThe link expires in one hour and can be used once. If this was not you, ignore this message and the current password stays unchanged.\n\nLearning Guide`,
     html: chinese ? `<p>请点击链接重置密码：</p><p><a href="${htmlUrl}">重置密码</a></p><p>链接将在一小时后失效，只能使用一次。</p>` : `<p><a href="${htmlUrl}">Reset password</a></p><p>This link expires in one hour and can only be used once.</p>`
   });
 }
