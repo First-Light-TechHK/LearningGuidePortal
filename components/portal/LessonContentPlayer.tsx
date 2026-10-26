@@ -56,8 +56,9 @@ function Exercise({ node, locale }: { node: LessonNode; locale: LessonLocale }) 
 }
 
 type VideoPresentation = { poster?: string; badge?: string; playLabel: string };
+type VideoNavigationRequest = { id: string; request: number };
 
-function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { content: LessonContent; locale: LessonLocale; trialGate?: TrialGate; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
+function ContentPlayer({ content, locale, trialGate, videoNavigationRequest, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { content: LessonContent; videoNavigationRequest?: number; locale: LessonLocale; trialGate?: TrialGate; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
   const t = lessonMessages(locale), video = useRef<HTMLVideoElement>(null), seen = useRef(new Set<string>()), lastTime = useRef(-0.01), resume = useRef(false), seeking = useRef(false);
   const [active, setActive] = useState<LessonNode | null>(null), activeRef = useRef<LessonNode | null>(null);
   const [trialOpen, setTrialOpen] = useState(false);
@@ -89,22 +90,38 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
   useEffect(() => {
     const media = video.current;
     if (!media) return;
-    const wasPlaying = !media.paused && !media.ended;
+    let shouldResume = videoNavigationRequest !== undefined || (!media.paused && !media.ended);
     const start = content.startSeconds || 0;
     startApplied.current = false;
     seen.current = new Set(nodes.filter(node => node.triggerTime < start).map(node => node.id));
     lastTime.current = start - 0.01;
     setExhibitPrompt(null);
-    const resume = () => { if (wasPlaying) void media.play().catch(() => undefined); };
+    let disposed = false;
+    const resumePlayback = () => {
+      if (disposed || !shouldResume || activeRef.current || enforceVideoTrial()) return;
+      void media.play().then(() => {
+        if (disposed) return;
+        shouldResume = false;
+        if (!media.paused && !media.ended) { onVideoStart?.(content.id); reportProgress(); }
+      }).catch(() => { /* Retry interrupted loads/seeks when the media becomes ready. */ });
+    };
+    const resumed = () => { shouldResume = false; };
+    media.addEventListener("loadedmetadata", resumePlayback);
+    media.addEventListener("seeked", resumePlayback);
+    media.addEventListener("canplay", resumePlayback);
+    media.addEventListener("playing", resumed);
     media.currentTime = start;
     if (media.readyState >= 1) startApplied.current = true;
     reportProgress();
-    resume();
-    if (!wasPlaying) return;
-    const onSeeked = () => { media.removeEventListener("seeked", onSeeked); resume(); };
-    media.addEventListener("seeked", onSeeked);
-    return () => media.removeEventListener("seeked", onSeeked);
-  }, [content.id, content.startSeconds]);
+    resumePlayback();
+    return () => {
+      disposed = true;
+      media.removeEventListener("loadedmetadata", resumePlayback);
+      media.removeEventListener("seeked", resumePlayback);
+      media.removeEventListener("canplay", resumePlayback);
+      media.removeEventListener("playing", resumed);
+    };
+  }, [content.id, content.startSeconds, videoNavigationRequest]);
   function showTrial() {
     video.current?.pause();
     if (onPreviewAccess) { onPreviewAccess(); return; }
@@ -161,11 +178,13 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
   </section>;
 }
 
-export function LessonContentPlayer({ contents, locale, trialGate, selectedContentId, initialContentId, onContentChange, hideNavigation = false, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { contents: LessonContent[]; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; selectedContentId?: string; initialContentId?: string; onContentChange?: (id: string) => void; hideNavigation?: boolean; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
+export function LessonContentPlayer({ contents, locale, trialGate, videoNavigationRequest, selectedContentId, initialContentId, onContentChange, hideNavigation = false, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { contents: LessonContent[]; videoNavigationRequest?: VideoNavigationRequest; locale: LessonLocale; fallbackImageUrl?: string | null; trialGate?: TrialGate; selectedContentId?: string; initialContentId?: string; onContentChange?: (id: string) => void; hideNavigation?: boolean; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
   contents = contents.filter(content => content.active !== false);
   const [selectedId, setSelectedId] = useState(initialContentId || contents[0]?.id || '');
   const selected = contents.find(content => content.id === (selectedContentId ?? selectedId)) || contents[0];
-  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={selected.url || selected.id} content={selected} locale={locale} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest} onVideoProgress={onVideoProgress} onVideoEnded={onVideoEnded} onVideoStart={onVideoStart} exhibitContainer={exhibitContainer} onPreviewAccess={onPreviewAccess}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
+  const [navigation, setNavigation] = useState<VideoNavigationRequest>();
+  const request = videoNavigationRequest || navigation;
+  return <div className="la la-player">{!hideNavigation && contents.length > 1 && <nav className="la-content-nav" aria-label={lessonMessages(locale).contents}>{contents.map((content, index) => <button type="button" key={content.id} aria-current={content.id === selected?.id ? 'step' : undefined} onClick={() => { setSelectedId(content.id); onContentChange?.(content.id); if (content.type === "video") setNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); }}><span>{index + 1}</span>{content.title}</button>)}</nav>}{selected ? <ContentPlayer key={selected.url || selected.id} videoNavigationRequest={selected.type === "video" && request?.id === selected.id ? request.request : undefined} content={selected} locale={locale} trialGate={trialGate} videoPresentation={videoPresentation} nodeRequest={nodeRequest} onVideoProgress={onVideoProgress} onVideoEnded={onVideoEnded} onVideoStart={onVideoStart} exhibitContainer={exhibitContainer} onPreviewAccess={onPreviewAccess}/> : <p>{lessonMessages(locale).empty}</p>}</div>;
 }
 
 export function LegacyLessonBody({ body, locale }: { body: string; locale: LessonLocale }) {

@@ -90,6 +90,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     assert.equal(await page.evaluate(() => (window as any).destination), undefined, "navigation waits for successful save");
     assert.equal(await page.getByRole("dialog").count(),0,"completion cannot appear before the save succeeds");
     release!();hold=false;await page.getByRole("dialog").waitFor();
+    await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
     assert.equal(await page.evaluate(() => (window as any).destination),undefined,"successful save opens the dialog before navigation");
     assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0,"text completion has no inline progress or completion status");
     assert.equal(requests.filter(body=>body.completeLesson).at(-1).learningMode,"text");
@@ -106,9 +107,12 @@ test("text points share continuous anchors, track scroll and resume, and preserv
       await page.evaluate(props=>{delete (window as any).destination;(window as any).mount(props);},{key:`${room}-${type}`,room,locale,entitled:true,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:2,body:"Legacy reading",contents:type==="legacy"?undefined:[{id:"reading",type,title:"Reading",mode:"lecture",html:"<p>Text content</p>",url:"/reading.pdf",nodes:[]}]},outline:[{id:"lesson",title:"Lesson",number:"01",href:"/lesson"}],initialCompleted:false,poster:"",nextHref:null});
       assert.equal(await page.getByRole("button",{name:getMessages(locale).learning.completeLesson,exact:true}).count(),0);
       await page.getByRole("button",{name:getMessages(locale).learning.nextLesson,exact:true}).click();await page.getByRole("dialog").waitFor();
+      await page.getByRole("dialog").getByRole("heading",{name:locale==="en-GB"?"Complete Course":"完成课程",exact:true}).waitFor();
+      assert.equal(await page.getByRole("dialog").getByText(getMessages(locale).lessonCompleted.courseDescription,{exact:true}).count(),1);
+      assert.equal(await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),0,"final Lesson never offers an unavailable next Lesson in the completion dialog");
       assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0,"text completion has no inline progress or completion status");
       if(type==="text"&&!room){await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/text-completion/${locale}-mobile.png`,fullPage:true});assert.equal(await page.getByRole("dialog").evaluate(e=>e.getBoundingClientRect().right>innerWidth),false);await page.setViewportSize({width:1440,height:1100});}
-      await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).click();
+      await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.completeCourse,exact:true}).click();
       await page.waitForFunction(expected=>(window as any).destination===expected,`/${locale}/account/my-learning`);
     }
     const restoredProps={key:"restored",locale,entitled:true,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:2,body:"",contents:[{id:"reading",type:"text",title:"Reading",mode:"lecture",html:"<p>Saved text</p>",nodes:[]}]},outline:[{id:"lesson",title:"Lesson",number:"01",href:"/lesson"}],initialCompleted:true,completedContentIds:["reading"],poster:"",nextHref:"/next"};

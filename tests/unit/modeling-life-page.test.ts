@@ -6,6 +6,7 @@ import {build} from "esbuild";
 import {chromium} from "playwright";
 import {modelingLifeCourse} from "../../db/data-migrations/008_upgrade_modeling_life";
 import * as textExhibits from "../../db/data-migrations/016_add_modeling_life_lesson1_text_exhibits";
+import * as videoStarts from "../../db/data-migrations/017_fix_modeling_life_video_starts";
 import {createMemoryOrm} from "../../services/dataMigrations";
 import type {ProductCourse} from "../../services/productStore";
 import {buildTextLessonPreview} from "../../services/textLessonPreview";
@@ -30,6 +31,7 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
     const overview=await import("../../services/understandingOverview");
     const fixture=modelingLifeCourse("2026-10-23T00:00:00Z"),orm=createMemoryOrm({tables:{courses:[fixture]}});
     textExhibits.apply(orm,{store:"memory",dryRun:true,now:"2026-10-26T12:00:00Z"});
+    videoStarts.apply(orm,{store:"memory",dryRun:true,now:"2026-10-26T12:00:00Z"});
     const course=orm.table<ProductCourse>("courses").findById(fixture.id)!,[first,second]=course.sections[0].lessons;
     for(const locale of ["en-GB","zh-CN"] as const){
       const user=await verifiedUser(store,`modeling-browser-${locale}@example.test`),session=await store.createSession(user.id);setCookie(SESSION_COOKIE,session.token);
@@ -138,7 +140,7 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       const video=page.locator('video.la-lesson-video');await video.waitFor();
       const metadata=async()=>video.evaluate(el=>{Object.defineProperty(el,"duration",{configurable:true,value:1469});Object.defineProperty(el,"currentTime",{configurable:true,writable:true,value:0});el.dispatchEvent(new Event("loadedmetadata"));});
       const time=async(seconds:number)=>video.evaluate((el,seconds)=>{(el as HTMLVideoElement).currentTime=seconds;el.dispatchEvent(new Event("timeupdate"));},seconds);
-      await metadata();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),10);
+      await metadata();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0);
       const bar=page.getByRole('region',{name:messages.videoExhibit.available});await time(37);await bar.waitFor();assert.equal(await bar.locator('img[src$="1b00006f-08ed-4f77-8285-a4685e3237de"]').count(),1);
       await bar.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator('img[src$="9a88e350-e44f-47b1-9518-ed8b50cc4d36"]').waitFor();await page.getByText(first.contents!.find(c=>c.type==="video")!.nodes[0].description!,{exact:true}).waitFor();await page.screenshot({path:path.join(output,`${locale}-video-exhibit.png`),fullPage:true});await page.keyboard.press('Escape');
       await time(160);await bar.getByText('Three examples of one-dimensional state spaces',{exact:true}).waitFor();assert.equal(await bar.locator('img[src$="1d1e5a63-48ef-47b9-aeaf-b4a41b065515"]').count(),1);

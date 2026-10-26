@@ -180,6 +180,8 @@
     "tryApplication": "Try Application Test"
   },
   "lessonCompleted": {
+    "completeCourse": "Complete Course",
+    "courseDescription": "Check your understanding, or return to My Learning.",
     "cards": "20 cards",
     "questionCount": "1 question",
     "nextLesson": "Next lesson",

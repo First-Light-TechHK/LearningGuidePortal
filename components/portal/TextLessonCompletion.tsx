@@ -35,6 +35,6 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
   return <div className={styles.row}>
     <button type="button" className={styles.next} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : messages.learning.nextLesson}</button>
     {error && <p role="alert">{error}</p>}
-    {dialogOpen && <LessonCompletedDialog assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}
+    {dialogOpen && <LessonCompletedDialog isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}
   </div>;
 }

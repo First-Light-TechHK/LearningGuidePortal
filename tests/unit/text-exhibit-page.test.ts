@@ -42,6 +42,22 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     await page.setViewportSize({width:1440,height:1024});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),viewProps);
     await bars.nth(2).waitFor();await assertInertReferences();
+    const breadcrumb=page.locator('nav').first();
+    async function assertFullWidthBreadcrumb(width:number) {
+      const bounds=await breadcrumb.evaluate(element=>{
+        const box=element.getBoundingClientRect(),first=element.querySelector('a')!.getBoundingClientRect(),style=getComputedStyle(element);
+        return {left:box.left,right:box.right,textLeft:first.left,background:style.backgroundColor};
+      });
+      assert.equal(bounds.left,0);assert.equal(bounds.right,width,"breadcrumb background reaches both viewport edges");
+      assert.equal(bounds.background,'rgb(255, 255, 255)');
+      assert.equal(bounds.textLeft,width<=700?20:Math.max(40,(width-1360)/2),"breadcrumb text retains the centred content alignment");
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    }
+    for(const width of [1920,2560]) {
+      await page.setViewportSize({width,height:1024});await assertFullWidthBreadcrumb(width);
+      if(width===1920)await page.screenshot({path:`test-results/text-exhibit/${locale}-breadcrumb-wide.png`,fullPage:true});
+    }
+    await page.setViewportSize({width:1440,height:1024});await assertFullWidthBreadcrumb(1440);
     const scroller=page.locator('[tabindex="0"]').filter({has:bars});
     const next=page.getByRole('button',{name:locale==='en-GB'?'Next lesson':'\u4e0b\u4e00\u8bfe\u65f6',exact:true});
     assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);
@@ -51,7 +67,7 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-desktop.png`,fullPage:true});
     await scroller.focus();await page.keyboard.press('PageDown');await page.waitForFunction(()=>Array.from(document.querySelectorAll('[tabindex="0"]')).some(element=>element.scrollTop>0));
     assert.equal(await next.isVisible(),true);
-    await page.setViewportSize({width:390,height:844});assert.equal(await scroller.evaluate(element=>element.getBoundingClientRect().height),674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.setViewportSize({width:390,height:844});await assertFullWidthBreadcrumb(390);assert.equal(await scroller.evaluate(element=>element.getBoundingClientRect().height),674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-mobile.png`,fullPage:true});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:'legacy',nextHref:null,lesson:{...viewProps.lesson,contents:[],body:'<Exh 1>\n\n'+'Legacy reading paragraph.\n\n'.repeat(60)}});
     await page.getByText('Legacy reading paragraph.',{exact:true}).first().waitFor();assert.equal(await next.count(),1,'final legacy Lesson retains its completion action');

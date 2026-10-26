@@ -180,6 +180,8 @@
     "tryApplication": "尝试应用测试"
   },
   "lessonCompleted": {
+    "completeCourse": "完成课程",
+    "courseDescription": "选择测试来检验您的理解，或返回我的学习。",
     "cards": "20 张卡片",
     "questionCount": "1 道题",
     "nextLesson": "下一课时",

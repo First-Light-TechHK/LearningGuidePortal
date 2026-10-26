@@ -1,5 +1,7 @@
 # Phase 1：数据设计
 
+Modeling life first video offsets (2026-10-26): registered course-only migration 017 changes existing LessonContent.startSeconds from the shipped value 10 to 0 only for modeling-life-l1-video-1 and modeling-life-l2-video-1, preserving other offsets and author changes. Playback requests are transient client interaction state, not persisted progress or access facts. No schema or learner-history migration.
+
 Authored text Exhibit cards (2026-10-26): existing LessonContent.html can carry top-level div data-exhibit-card markers referencing active LessonNode ids in that same content. Image nodes reuse existing url/thumbnail/description/source fields; text and video nodes have separate ids. Migration 016 adds two text cards from the current Lesson 01 video definitions, touching only courses and its update timestamp. No DDL, learner history or access facts change.
 
 Modeling life Lesson 02 assessment content (2026-10-26): migration 015 uses the existing LessonResources.assessments shape for eight KnowledgeQuestion rows and one ApplicationQuestion, with stable Lesson-scoped ids and original workbook paragraphs. It only fills missing definitions in the Course JSONB payload. Existing authored data, learner lesson_assessments, Study and payment/access records remain untouched; no DDL or backfill of answers/completion. Course content stays in supplied English independently of UI locale.

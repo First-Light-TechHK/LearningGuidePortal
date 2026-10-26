@@ -12,7 +12,7 @@ import { ApplicationTestDialog } from "./ApplicationTestDialog";
 import { PersistedAssessmentDialog } from "./PersistedAssessmentDialog";
 import styles from "./lesson-completed-dialog.module.css";
 
-export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClose, onContinue = onClose, courseId, lessonId, assessmentAvailability }: { assessmentAvailability?: AssessmentAvailability; locale: Locale; lessonNumber: string; lessonTitle?: string; onClose: () => void; onContinue?: () => void; courseId?: string; lessonId?: string }) {
+export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClose, onContinue = onClose, courseId, lessonId, assessmentAvailability, isLastLesson = false }: { assessmentAvailability?: AssessmentAvailability; locale: Locale; lessonNumber: string; lessonTitle?: string; onClose: () => void; onContinue?: () => void; courseId?: string; lessonId?: string; isLastLesson?: boolean }) {
   const copy = getMessages(locale).lessonCompleted;
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [applicationOpen, setApplicationOpen] = useState(false);
@@ -28,13 +28,13 @@ export function LessonCompletedDialog({ locale, lessonNumber, lessonTitle, onClo
   return <PortalDialog className={styles.dialog} labelledBy="lesson-completed-title" describedBy="lesson-completed-description" onClose={onClose}>
     <button type="button" className={styles.close} aria-label={copy.close} onClick={onClose}><Image src="/portal/lesson-complete/close-v2.svg" width={18} height={18} alt=""/></button>
     <header className={styles.header}><Image className={styles.success} src="/portal/lesson-complete/success-v2.svg" width={64} height={64} alt=""/>
-    <h2 id="lesson-completed-title">{copy.title.replace("{number}", String(Number(lessonNumber) || lessonNumber))}</h2>
-    <p className={styles.description} id="lesson-completed-description">{copy.description}</p></header>
+    <h2 id="lesson-completed-title">{isLastLesson ? copy.completeCourse : copy.title.replace("{number}", String(Number(lessonNumber) || lessonNumber))}</h2>
+    <p className={styles.description} id="lesson-completed-description">{isLastLesson ? copy.courseDescription : copy.description}</p></header>
     <div className={styles.tests}>{tests.filter(test => test.available).map(test => <button type="button" className={styles.test} key={test.icon} onClick={test.action}>
       <span className={styles.icon}><Image src={`/portal/lesson-complete/${test.icon}.svg`} width={test.size} height={test.size} alt=""/></span>
       <span className={styles.testCopy}><strong>{test.title}</strong><span>{test.description}</span></span>
       <Image src="/portal/lesson-complete/arrow-right.svg" width={18} height={18} alt=""/>
     </button>)}</div>
-    <button type="button" className={styles.continue} onClick={onContinue}>{copy.nextLesson}</button>
+    <button type="button" className={styles.continue} onClick={onContinue}>{isLastLesson ? copy.completeCourse : copy.nextLesson}</button>
   </PortalDialog>;
 }
