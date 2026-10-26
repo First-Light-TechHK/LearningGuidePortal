@@ -21,6 +21,7 @@ export type LessonContent = {
   type: "text" | "video" | "pdf";
   mode: "lecture" | "interactive";
   active?: boolean;
+  /** Authored text can place top-level div[data-exhibit-card] markers for its own nodes. */
   html?: string;
   url?: string;
   nodes: LessonNode[];

@@ -34,7 +34,7 @@ export function buildTextLessonPreview(lesson: { contents?: LessonContent[]; bod
       if (!status || status === "full") return content;
       if (status === "locked") return { id: content.id, title: content.title, type: content.type, mode: content.mode, nodes: [] };
       const html = firstHalfTextHtml(content.html || "");
-      const visibleNodes = content.nodes.filter(node => new RegExp(`data-node-id=["']${node.id}["']`).test(html));
+      const visibleNodes = content.nodes.filter(node => new RegExp(`data-(?:node-id|exhibit-card)=["']${node.id}["']`).test(html));
       return { ...content, html: sanitiseRichHtml(html, courseId, visibleNodes.map(node => node.id)), nodes: visibleNodes };
     }),
   };

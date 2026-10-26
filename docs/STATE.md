@@ -27,6 +27,7 @@
 - `Typecheck`
 - `Lint`
 - `Build and test`
+- `Ensure AI Tutor runtime configuration`
 - `Start DEV App Runner deployment`
 - `Live e2e / fallback / notify`
 - `forge-check`

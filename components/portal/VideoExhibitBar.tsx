@@ -17,7 +17,7 @@ export function VideoExhibitBar({ node, locale, onDismiss, onView, variant = "vi
     {presentation === "inline" && <Image className={styles.pointer} data-exhibit-pointer src="/portal/exhibit-prompt/pointer.svg" width={20} height={10} alt=""/>}
   </section>;
   const thumbnailSize = 104;
-  return <section className={`${styles.bar} ${styles.text}`} aria-label={copy.available} aria-live="polite">
+  return <section className={`${styles.bar} ${styles.text}`} data-text-exhibit={node.id} aria-label={copy.available} aria-live="polite">
     <Image className={styles.thumbnail} src={thumbnail} unoptimized width={thumbnailSize} height={thumbnailSize} alt=""/>
     <div className={styles.copy}><div className={styles.metadata}><span className={styles.kind}>{copy.types[node.type]}</span></div><h2>{node.title || copy.untitled}</h2></div>
     <button type="button" className={styles.view} onClick={onView}>{copy.view}</button>

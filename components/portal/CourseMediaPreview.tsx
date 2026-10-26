@@ -30,6 +30,8 @@ export function sanitiseLessonHtml(html: string): string {
     if (!(node instanceof Element) || blocked.has(node.localName)) return;
     if (!allowed.has(node.localName)) { node.childNodes.forEach(child => copy(child, parent)); return; }
     const el = target.createElement(node.localName);
+    const cardId = node.getAttribute('data-exhibit-card');
+    if (node.localName === 'div' && cardId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(cardId)) el.setAttribute('data-exhibit-card', cardId);
     for (const name of ['title', 'alt', 'data-node-id', 'data-caption', 'data-instance-answer-result']) if (node.hasAttribute(name)) el.setAttribute(name, (node.getAttribute(name) || '').slice(0, name === 'data-instance-answer-result' ? 10000 : 2000));
     for (const name of ['class', 'data-instance-type', 'data-instance-answer-type']) if (node.hasAttribute(name)) el.setAttribute(name, (node.getAttribute(name) || '').slice(0, 80));
     for (const name of ['width', 'height', 'colspan', 'rowspan', 'start']) {

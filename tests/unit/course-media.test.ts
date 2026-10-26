@@ -171,6 +171,41 @@ test("public HTML references are parsed after sanitisation, not substring-matche
   assert.equal((await fetchAsset(asset)).status, 404);
 });
 
+test("exhibit thumbnails serve through the real media API with the same publication, preview and entitlement policy", async () => {
+  const id = "exhibit-thumbnail-course";
+  await editFixture(data => { data.courses.push({ id, slug: id, title: "Exhibit thumbnails", description: "Test", status: "published", authorIds: [teacher.id], sections: [{ id: "thumbnail-section", title: "Section", lessons: [
+    { id: "public-thumbnail", title: "Preview", body: "", isPublic: true, durationMinutes: 5, preview: { textPointCount: 1, videoLimitSeconds: 600 }, contents: [] },
+    { id: "paid-thumbnail", title: "Paid", body: "", isPublic: false, durationMinutes: 5, contents: [] },
+  ] }], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); });
+  const original = await media.uploadCourseMedia(teacher, id, input());
+  const thumbnail = await media.uploadCourseMedia(teacher, id, input());
+  const lockedThumbnail = await media.uploadCourseMedia(teacher, id, input());
+  const unrelated = await media.uploadCourseMedia(teacher, id, input());
+  const document = await media.uploadCourseMedia(teacher, id, input(obj, "mesh.obj", ""));
+  const withThumbnail = (asset: CourseMediaAsset) => [{ ...contents(original)[0], nodes: [{ ...contents(original)[0].nodes[0], thumbnail: asset.url }] }];
+  await editFixture(data => {
+    const lessons = data.courses.find(course => course.id === id)!.sections[0].lessons;
+    lessons[0].contents = withThumbnail(thumbnail);
+    lessons[1].contents = withThumbnail(lockedThumbnail);
+  });
+  await media.assertLessonMediaReferences(id, withThumbnail(thumbnail));
+  assert.equal((await fetchAsset(thumbnail)).status, 200);
+  await assert.rejects(media.assertLessonMediaReferences(id, withThumbnail(document)), { code: "invalid", status: 400 });
+  assert.equal((await fetchAsset(thumbnail, "", {}, id, "HEAD")).headers.get("content-type"), "image/png");
+  assert.equal((await fetchAsset(thumbnail, "", { range: "bytes=0-7" })).status, 206);
+  assert.equal((await fetchAsset(lockedThumbnail)).status, 404);
+  assert.equal((await fetchAsset(lockedThumbnail, studentToken)).status, 404);
+  await editFixture(data => { data.entitlements.push({ id: "thumbnail-access", userId: student.id, courseId: id, scope: "course", scopeId: id, device: "pc", source: "purchase", state: "active", validTo: new Date(Date.now() + 3600_000).toISOString() }); });
+  assert.equal((await fetchAsset(lockedThumbnail, studentToken)).status, 200);
+  assert.equal((await fetchAsset(unrelated, studentToken)).status, 404);
+  await editFixture(data => { data.entitlements.find(item => item.id === "thumbnail-access")!.validTo = new Date(0).toISOString(); });
+  assert.equal((await fetchAsset(lockedThumbnail, studentToken)).status, 404);
+  await editFixture(data => { data.courses.find(course => course.id === id)!.sections[0].lessons[0].contents![0].nodes[0].active = false; });
+  assert.equal((await fetchAsset(thumbnail)).status, 404);
+  await editFixture(data => { const course = data.courses.find(course => course.id === id)!; course.sections[0].lessons[0].contents![0].nodes[0].active = true; course.status = "draft"; });
+  assert.equal((await fetchAsset(thumbnail, studentToken)).status, 404);
+});
+
 test("asset integrity checks reject missing, cross-course and mismatched structured media", async () => {
   const asset = await media.uploadCourseMedia(teacher, courseId, input());
   await media.assertLessonMediaReferences(courseId, contents(asset));

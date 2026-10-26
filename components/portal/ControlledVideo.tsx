@@ -11,7 +11,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   const scrubbing = useRef(false);
   useImperativeHandle(ref, () => media.current!);
   const t = lessonMessages(locale);
-  const [playing, setPlaying] = useState(false), [time, setTime] = useState(0), [duration, setDuration] = useState(0), [muted, setMuted] = useState(false), [error, setError] = useState('');
+  const [playing, setPlaying] = useState(false), [time, setTime] = useState(0), [duration, setDuration] = useState(0), [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1), [pipSupported, setPipSupported] = useState(false), [pipActive, setPipActive] = useState(false);
   useEffect(() => {
     const video = media.current;
@@ -29,11 +29,10 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   async function pictureInPicture() {
     const video = media.current;
     if (!video) return;
-    setError('');
     try {
       if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
       else await video.requestPictureInPicture();
-    } catch { setError(t.videoPipFailed); }
+    } catch { /* Keep playback feedback out of the player. */ }
   }
   const clock = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
   function updateDuration(video: HTMLVideoElement) {
@@ -42,7 +41,6 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   async function toggle() {
     const video = media.current;
     if (!video) return;
-    setError('');
     if (!video.paused) video.pause();
     // Interrupted play requests leave the player paused without an operation notice.
     else await video.play().catch(() => undefined);
@@ -61,7 +59,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     return () => document.removeEventListener('fullscreenchange',update);
   }, [expanded,onFullscreenChange]);
   useLayoutEffect(() => { if(exitFullscreenRequested)setExpanded(false); }, [exitFullscreenRequested]);
-  return <div ref={container} className={`la-controlled-video${expanded ? ' la-video-expanded' : ''}`}>
+  return <div ref={container} className={`la-controlled-video${expanded ? ' la-video-expanded' : ''}`} data-playing={playing}>
     <video {...props} ref={media} controls={false} playsInline onContextMenu={event => event.preventDefault()}
       onPlay={event => { setPlaying(true); onPlay?.(event); }}
       onPause={event => { setPlaying(false); onPause?.(event); }}
@@ -71,7 +69,6 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       onDurationChange={event => { updateDuration(event.currentTarget); onDurationChange?.(event); }}
       onVolumeChange={event => { setMuted(event.currentTarget.muted); onVolumeChange?.(event); }}
       onRateChange={event => { setRate(event.currentTarget.playbackRate); onRateChange?.(event); }}/>
-    {pipActive && <div className="la-video-pip-status" role="status">{t.videoPipActive}</div>}
     {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
@@ -90,6 +87,5 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       <button type="button" aria-label={pipActive ? t.videoPipExit : t.videoPipEnter} title={!pipSupported ? t.videoPipUnsupported : pipActive ? t.videoPipExit : t.videoPipEnter} aria-pressed={pipActive} disabled={!pipSupported || !duration} onClick={() => void pictureInPicture()}><PictureInPicture2 size={18}/></button>
       <button type="button" aria-label={t.videoFullscreen} onClick={() => void fullscreen()}><Maximize size={18}/></button>
     </div>
-    {error && <p role="status">{error}</p>}
   </div>;
 });

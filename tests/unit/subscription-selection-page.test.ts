@@ -21,11 +21,11 @@ test("five subscription designs retain bilingual responsive states, original ico
   const Footer = createRequire(import.meta.url)(filename).PortalFooter;
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {SubscriptionSelection} from './components/portal/SubscriptionSelection';import {PortalHeader} from './components/portal/PortalHeader';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=p=>{const copy=getMessages(p.locale).pricingDesign;flushSync(()=>root.render(<main className="portal-page pricing-design-page"><PortalHeader locale={p.locale} signedIn active="subscription" displayName="M"/><section className="pricing-design-main"><SubscriptionSelection key={p.key} {...p} copy={copy}/></section><section className="pricing-design-information"><div><h2>{copy.information}</h2><div className="pricing-information-grid">{copy.rules.map(r=><div key={r.title}><h3>{r.title}</h3><p>{r.text}</p></div>)}</div></div></section><div dangerouslySetInnerHTML={{__html:p.footer}}/></main>))}`, resolveDir: process.cwd(), loader: "tsx" }, bundle: true, write: false, outfile: "selection.js", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "next", setup(b) {
     b.onResolve({ filter: /^next\/(image|link|navigation)$/ }, args => ({ path: args.path, namespace: "mock" }));
-    b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path === "next/navigation" ? "export const useRouter=()=>({refresh(){}}),usePathname=()=>location.pathname,useSearchParams=()=>new URLSearchParams(location.search)" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}" : "import React from 'react';export default function Image({unoptimized,...p}){return <img {...p}/>}" }));
+    b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path === "next/navigation" ? "const router={refresh(){}};export const useRouter=()=>router,usePathname=()=>location.pathname,useSearchParams=()=>new URLSearchParams(location.search)" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}" : "import React from 'react';export default function Image({unoptimized,...p}){return <img {...p}/>}" }));
   } }] });
   const categories = defaultPortalContent.categories;
   const plans: ProductPlan[] = ([6, 12] as const).flatMap(termMonths => [{ id: `everything-${termMonths}`, courseId: "*", name: "Everything", scope: "everything", scopeId: "*", termMonths, device: "pc", amountMinor: termMonths === 6 ? 9900 : 19800, currency: "usd", aiPoints: termMonths === 6 ? 1500 : 3000 }, ...categories.map(category => ({ id: `${category.id}-${termMonths}`, courseId: "*", name: category.id, scope: "category" as const, scopeId: category.id, termMonths, device: "pc" as const, amountMinor: termMonths === 6 ? 3900 : 7800, currency: "usd" as const, aiPoints: termMonths === 6 ? 500 : 1000 }))]);
-  const courseTitles = [{ category: "Chinese Humanities", title: "Chinese History" }, { category: "Chinese Humanities", title: "Chinese Literature" }, { category: "European Humanities", title: "The Art of Seeing" }, { category: "European Humanities", title: "Renaissance Thought" }, { category: "Science", title: "Physics" }, { category: "Science", title: "Chemistry" }];
+  const courseTitles = [{ category: "Chinese Humanities", title: "Chinese History" }, { category: "Chinese Humanities", title: "Chinese Literature" }, { category: "European Humanities", title: "The Art of Seeing" }, { category: "European Humanities", title: "Renaissance Thought" }, { category: "Science", title: "Physics" }, { category: "Science", title: "Chemistry" }, ...Array.from({length:8},(_,index)=>({category:"European Humanities",title:`European Art and Philosophy ${index+1}`}))];
   const subscription = (scopeId: string): ProductSubscription => ({ id: `sub-${scopeId}`, userId: "owner", planId: `${scopeId}-6`, courseId: "*", scope: scopeId === "everything" ? "everything" : "category", scopeId, device: "pc", stripeSubscriptionId: "sub_stripe", stripeCustomerId: "cus_owner", source: "purchase", state: "active", cancelAtPeriodEnd: false, validFrom: "2026-08-01T00:00:00Z", validTo: "2027-01-31T00:00:00Z" });
   const fixtures = [[], [subscription("Chinese Humanities")], [subscription("Chinese Humanities"), subscription("Science")], categories.map(c => subscription(c.id)), [subscription("everything")]];
   const browser = await chromium.launch();
@@ -80,6 +80,18 @@ test("five subscription designs retain bilingual responsive states, original ico
       }
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1024 });
+        const categoryCard=page.locator('.pricing-design-card--category');
+        if(await categoryCard.count()) {
+          const courseList=categoryCard.locator('.pricing-card-course-list > p');
+          const summaryBox=()=>categoryCard.locator('.pricing-card-course-list').evaluate(e=>{const r=e.getBoundingClientRect();return {y:r.y+scrollY,height:r.height};});
+          const before=await summaryBox();
+          for(const button of await categoryCard.locator('.pricing-category-switch button:enabled').all()) {
+            await button.click();
+            assert.equal(await courseList.evaluate(e=>e.getBoundingClientRect().height),44,`${kind}/${width}: course lists reserve exactly two lines`);
+            assert.equal(await courseList.evaluate(e=>getComputedStyle(e).webkitLineClamp),"2");
+            assert.deepEqual(await summaryBox(),before,`${kind}/${width}: category changes retain the Course area height and note position`);
+          }
+        }
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${locale}/${kind}/${width} overflow`);
         await page.evaluate(() => document.fonts.ready);
         const icons = page.locator('img[src*="/subscription-selection/"]'); await icons.evaluateAll(async images => Promise.all(images.map(img => (img as HTMLImageElement).decode())));

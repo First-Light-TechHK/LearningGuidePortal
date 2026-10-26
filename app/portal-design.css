@@ -328,6 +328,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-category-switch button[aria-pressed=true] { border:2px solid #246bfd; padding:8px 13px; color:#155dfc; background:#eef3ff; font-weight:600; }
 .pricing-category-switch button:disabled { opacity:.5; cursor:not-allowed; }
 .pricing-card-course-list p { margin:0 0 4px; font-size:15px; line-height:22px; font-weight:500; }
+.pricing-design-card--category .pricing-card-course-list > p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; height:44px; overflow:hidden; overflow-wrap:anywhere; }
 .pricing-card-course-list a { color:#155dfc; text-decoration:none; font-weight:600; }
 .pricing-card-course-list small { display:block; color:#64728b; font-size:13px; line-height:20px; }
 .pricing-card-benefits { margin:0; padding:0; list-style:none; }
