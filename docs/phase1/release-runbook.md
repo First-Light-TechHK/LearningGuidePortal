@@ -229,6 +229,7 @@ Regression coverage: `tests/unit/oauth-preflight.test.ts` and `tests/unit/live-s
 - **Security Strategy**：Secrets Manager 保存 `DATABASE_URL`、`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、OAuth secrets、`OPENROUTER_API_KEY`、session secret；代码仓库和浏览器不保存 secret。
 - **Monitor**：CloudWatch 记录 request error、latency、App Runner instance、database connection、payment webhook failure；不记录密码、卡信息、OAuth code 或完整 prompt/学生隐私内容。
 - **Message Queue**：Phase 1 不单独部署队列；只有确有异步需求的邮件/通知才使用 database outbox，发送失败可重试。
+- **AI Tutor（KS）**：Portal 不直连 LLM。App Runner 服务必须设置 `KS_TUTOR_BASE_URL`，值为 KS 的公网 HTTPS origin（443，不带 `:3000`，不能是 localhost）；`KS_TUTOR_TIMEOUT_MS` 可选。若 KS 开启 `AUTH_ENABLED=true`，Portal 的 `KS_TUTOR_API_KEY` 必须引用与 KS `AUTH_TOKEN` 相同的 Secrets Manager ARN。GitHub 源码部署只重建代码、保留服务配置，因此这些值由仓库变量 `KS_TUTOR_BASE_URL` / `KS_TUTOR_TIMEOUT_MS` / `KS_TUTOR_API_KEY_SECRET_ARN` 在部署前经 `scripts/apprunner-set-env.mjs` 合并进服务；变量为空时该步骤跳过。缺失时 `/api/health/config` 的 `studyGroup.tutorSource` 为 `none`，Portal 会隐藏 AI Tutor 入口。
 
 ## 3. CI/CD
 
