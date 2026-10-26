@@ -42,6 +42,20 @@ export async function s3Get(s3Key: string) {
   return Buffer.from(bytes);
 }
 
+/** Fetch one inclusive byte range without downloading the rest of the object. */
+export async function s3GetRange(s3Key: string, start: number, end: number) {
+  const response = await getClient().send(
+    new GetObjectCommand({
+      Bucket: dataS3Bucket(),
+      Key: s3Key,
+      Range: `bytes=${start}-${end}`
+    })
+  );
+  const bytes = await response.Body?.transformToByteArray();
+  if (!bytes) throw new Error(`S3 object empty: ${s3Key}`);
+  return Buffer.from(bytes);
+}
+
 const COURSE_MEDIA_HOST = "aitutor-data-851987565851.s3.ap-southeast-1.amazonaws.com";
 const COURSE_MEDIA_PREFIX = "/learning-guide/dev/documents/mvp/";
 const MODELING_LIFE_VIDEO_PATHS = new Set([
