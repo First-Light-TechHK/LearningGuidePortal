@@ -8,6 +8,14 @@ const assetId = "7c831ab8-cc01-4d15-8d71-ef3524d08e09";
 const url = `/api/course-media/${courseId}/${assetId}`;
 const content = () => ({ id: "content-1", title: "Lesson content", type: "text", mode: "interactive", html: "<p>Hello</p>", nodes: [{ id: "node-1", title: "Detail", type: "text", html: "<p>Detail</p>", triggerTime: 1.25 }] });
 
+test("authored exhibit cards retain only known active node references and remove executable attributes", () => {
+  const value = { ...content(), html: '<div onclick="alert(1)" data-exhibit-card="node-1"></div><div data-exhibit-card="unknown"></div><span data-exhibit-card="node-1">Text</span>', nodes: [{ id: "node-1", title: "Image", type: "image", url, triggerTime: 0 }] };
+  const saved = validateLessonContents([value], courseId);
+  assert.equal(saved[0].html, '<div data-exhibit-card="node-1"></div><div></div><span>Text</span>');
+  saved[0].nodes[0].active = false;
+  assert.doesNotMatch(sanitiseLessonContents(saved, courseId)[0].html!, /data-exhibit-card/);
+});
+
 test("strict validation preserves IDs, ordering, timing and supported rich text", () => {
   const value = content();
   value.html = '<h2 style="text-align:center">Title</h2><p><strong>Text</strong><sup>2</sup><a data-node-id="node-1">Open</a></p>';

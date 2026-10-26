@@ -46,12 +46,12 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     const next=page.getByRole('button',{name:locale==='en-GB'?'Next lesson':'\u4e0b\u4e00\u8bfe\u65f6',exact:true});
     assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);
     const geometry=await scroller.evaluate(element=>({height:element.getBoundingClientRect().height,client:element.clientHeight,scroll:element.scrollHeight,overflow:getComputedStyle(element).overflowY,bottom:element.getBoundingClientRect().bottom}));
-    assert.equal(geometry.height,704);assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
+    assert.equal(geometry.height,674);assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
     assert.ok((await next.boundingBox())!.y>=geometry.bottom,'next lesson remains outside the scroll area');
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-desktop.png`,fullPage:true});
     await scroller.focus();await page.keyboard.press('PageDown');await page.waitForFunction(()=>Array.from(document.querySelectorAll('[tabindex="0"]')).some(element=>element.scrollTop>0));
     assert.equal(await next.isVisible(),true);
-    await page.setViewportSize({width:390,height:844});assert.equal(await scroller.evaluate(element=>element.getBoundingClientRect().height),524);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.setViewportSize({width:390,height:844});assert.equal(await scroller.evaluate(element=>element.getBoundingClientRect().height),674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-mobile.png`,fullPage:true});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:'legacy',nextHref:null,lesson:{...viewProps.lesson,contents:[],body:'<Exh 1>\n\n'+'Legacy reading paragraph.\n\n'.repeat(60)}});
     await page.getByText('Legacy reading paragraph.',{exact:true}).first().waitFor();assert.equal(await next.count(),1,'final legacy Lesson retains its completion action');

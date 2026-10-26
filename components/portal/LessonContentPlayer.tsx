@@ -15,6 +15,7 @@ import { TextExhibitContent } from './TextExhibitContent';
 import { dueVideoNodes } from '@/lib/videoExhibitPrompt';
 import { videoExhibitNodes } from '@/lib/videoExhibitSamples';
 import { playbackDuration } from '@/lib/videoLessonCompletion';
+import { textExhibitCardIds } from '@/lib/textExhibitLayout';
 import { getMessages } from '@/lib/i18n/messages';
 import { PortalDialog } from './PortalDialog';
 
@@ -64,6 +65,8 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
   const [exhibitPrompt, setExhibitPrompt] = useState<LessonNode | null>(null);
   const [videoFullscreen,setVideoFullscreen] = useState(false);
   const nodes = videoExhibitNodes(content, locale), titles = Object.fromEntries(nodes.map(node => [node.id, node.title || t.newNode]));
+  const inlineCards = content.type === 'text' ? textExhibitCardIds(content.html || '') : new Set<string>();
+  const linkedNodes = nodes.filter(node => !inlineCards.has(node.id) || !["image", "video", "model3d"].includes(node.type));
   const contentTrialGate = content.type === 'video' ? trialGate : undefined;
   const startApplied = useRef(false);
   function initialiseVideo() {
@@ -139,7 +142,7 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
     else lastTime.current = now;
   }
   return <section className="la-content-player"><h3>{content.title}</h3>
-    {content.type === 'text' && <TextExhibitContent html={content.html || ''} locale={locale} exhibitMode={content.exhibitMode}/>}
+    {content.type === 'text' && <TextExhibitContent html={content.html || ''} locale={locale} exhibitMode={content.exhibitMode} nodes={content.nodes}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
     {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} exitFullscreenRequested={!!active} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload={contentTrialGate ? "metadata" : "auto"} onLoadedMetadata={initialiseVideo} onDurationChange={reportProgress} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else { onVideoStart?.(content.id); reportProgress(); tick(); } }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
@@ -149,7 +152,7 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
       setExhibitPrompt(null); lastTime.current = now - 0.05; seeking.current = false; reportProgress(); tick();
     }} onEnded={() => { resume.current = false; reportProgress(); const media = video.current; if (media && Number.isFinite(media.duration) && media.duration > 0) { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); onVideoEnded?.({ contentId: content.id, currentTime: media.currentTime, duration: media.duration }); } }}/>{videoPresentation?.badge && <span className="la-video-badge">{videoPresentation.badge}</span>}{videoPresentation && !started && <button type="button" className="la-video-play" aria-label={videoPresentation.playLabel} onClick={() => { void video.current?.play().catch(() => undefined); }}><span aria-hidden="true">▶</span></button>}</div> : null)}
     {content.type === "video" && !videoFullscreen && exhibitPrompt && (exhibitContainer ? createPortal(<VideoExhibitBar node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => open(exhibitPrompt)}/>, exhibitContainer) : <VideoExhibitBar node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => open(exhibitPrompt)}/>) }
-    {content.type !== 'video' && nodes.length > 0 && <div className="la-node-links" aria-label={t.nodes}>{nodes.map(node => <button type="button" key={node.id} onClick={() => open(node)}>{node.title || t.newNode}</button>)}</div>}
+    {content.type !== 'video' && linkedNodes.length > 0 && <div className="la-node-links" aria-label={t.nodes}>{linkedNodes.map(node => <button type="button" key={node.id} onClick={() => open(node)}>{node.title || t.newNode}</button>)}</div>}
     {active && (["image", "video", "model3d"].includes(active.type) ? <ExhibitDialog key={active.id} node={active} locale={locale} onClose={() => { resume.current = false; close(); }}/> : <LessonModal title={active.title || t.newNode} locale={locale} onClose={close}>
       {active.type === 'text' ? <SafeLessonHtml html={active.html || ''} nodeTitles={titles} onNode={id => { const node = nodes.find(n => n.id === id); if (node) open(node); }}/ > : active.type === 'exercise' ? <Exercise key={active.id} node={active} locale={locale}/> : <CourseMediaPreview key={active.id} type={active.type} url={active.url} title={active.title} locale={locale}/>}
       <div className="la-actions"><button type="button" onClick={close}>{t.resume}</button></div>

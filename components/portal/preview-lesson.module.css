@@ -34,7 +34,7 @@
 .heading { overflow:hidden; }
 .mediaRow { position:relative; display:block; }
 .player { min-width:0; padding:20px; border-radius:0 0 12px 12px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1); }
-.textPlayer { box-sizing:border-box; height:max(220px,calc(100dvh - 320px)); padding:30px 28px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#e8edf5 transparent; }
+.textPlayer { box-sizing:border-box; height:674px; padding:30px 28px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#e8edf5 transparent; }
 .textPlayer:focus-visible { outline:2px solid #246bfd; outline-offset:2px; }
 .previewEnd { position:relative; min-height:199px; margin:12px -28px -30px; overflow:hidden; border-radius:0 0 12px 12px; }
 .lockedText { display:flex; flex-direction:column; gap:15px; padding:12px 28px; filter:blur(3px); user-select:none; pointer-events:none; }
@@ -82,7 +82,7 @@
 .progress { display:flex; flex-wrap:wrap; align-items:center; gap:20px; margin-top:24px; }
 .progress > a { color:#1660d8; font-size:14px; }
 .page a:focus-visible,.page button:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
-@media(max-width:700px) { .player.textPlayer { height:max(240px,calc(100dvh - 320px)); padding:20px 16px; } }
+@media(max-width:700px) { .player.textPlayer { padding:20px 16px; } }
 @media(max-width:1200px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.tools { position:relative; top:auto; right:auto; width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; margin-top:20px; }.tools h2 { flex-basis:100%; }.toolItem { width:160px; }.banner { padding-right:20px; flex-wrap:wrap; } }
 @media(max-width:700px) { .breadcrumb { padding:16px 20px; }.layout { display:flex; flex-direction:column; min-height:0; }.sidebar { padding:20px; }.outline { max-height:260px; overflow:auto; }.main { padding:24px 20px 40px; }.heading { padding:16px; }.heading h1 { font-size:24px; line-height:32px; }.player { padding:12px; }.tools { gap:10px; }.toolItem { flex:1 1 150px; }.banner h2 { font-size:22px; }.unlock { width:100%; }.player :global(.la-video-play) { width:54px; height:54px; font-size:22px; } }
 .heading { grid-template-columns:auto minmax(0,1fr) auto; }

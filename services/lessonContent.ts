@@ -54,6 +54,7 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
       img: ["src", "alt", "title", "width", "height", "data-align", "data-inline", "data-image-align", "data-image-inline", "data-caption"],
       ul: ["data-type"], li: ["data-type", "data-checked"], input: ["type", "checked", "disabled"],
       p: ["style"], h1: ["style"], h2: ["style"], h3: ["style"], h4: ["style"], h5: ["style"], h6: ["style"], mark: ["style"],
+      div: ["data-exhibit-card"],
       th: ["colspan", "rowspan"], td: ["colspan", "rowspan"], ol: ["start"],
     },
     allowedStyles: { "*": { "text-align": [/^(left|right|center|justify)$/], color: [/^#[0-9a-f]{3,8}$/i], "background-color": [/^#[0-9a-f]{3,8}$/i] } },
@@ -89,6 +90,7 @@ export function sanitiseRichHtml(value: unknown, courseId: string, nodeIds: Iter
         delete attribs["data-instance-content"];
         const nodeId = attribs["data-node-id"];
         if (!nodes.has(nodeId)) delete attribs["data-node-id"];
+        if (tagName !== "div" || !nodes.has(attribs["data-exhibit-card"])) delete attribs["data-exhibit-card"];
         if (tagName === "a") {
           if (nodes.has(nodeId)) attribs.href = `#node-${nodeId}`;
           else if (!safeHref(attribs.href || "", courseId)) delete attribs.href;

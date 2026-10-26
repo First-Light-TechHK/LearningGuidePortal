@@ -7,6 +7,15 @@ import { verifiedUser, readProductData, writeProductData, COURSE_ID, PREVIEW_LP 
 
 const points: LessonContent[] = [1, 2, 3, 4].map(index => ({ id: `text-${index}`, title: `Point ${index}`, type: "text", mode: "lecture", html: `<p>SECRET-${index}</p>`, nodes: [] }));
 
+test("half-text preview includes explicit exhibit cards only in the delivered half", () => {
+  const html = '<div data-exhibit-card="visible"></div><p>ABCDEFGHIJ</p><div data-exhibit-card="hidden"></div><p>KLMNOPQRST</p>';
+  const contents: LessonContent[] = [{ ...points[0], exhibitMode: "authored", html, nodes: ["visible", "hidden"].map(id => ({ id, title: id, type: "image", url: `https://media.test/${id}.png`, triggerTime: 0 })) }];
+  const preview = buildTextLessonPreview({ body: "", contents }, "course", false);
+  assert.match(preview.contents[0].html!, /data-exhibit-card="visible"/);
+  assert.deepEqual(preview.contents[0].nodes.map(node => node.id), ["visible"]);
+  assert.doesNotMatch(JSON.stringify(preview), /hidden\.png|data-exhibit-card=\\"hidden/);
+});
+
 test("text preview withholds point three onwards, counts active text points, and preserves entitled material", () => {
   const source = { body: "ALTERNATIVE-SECRET", contents: [points[0], { ...points[0], id: "inactive", active: false }, { id: "video", title: "Video", type: "video", mode: "lecture", url: "https://media.test/video.mp4", nodes: [] } as LessonContent, ...points.slice(1)] };
   const projection = buildTextLessonPreview(source, "course", false);

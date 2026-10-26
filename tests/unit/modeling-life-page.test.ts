@@ -5,6 +5,9 @@ import path from "node:path";
 import {build} from "esbuild";
 import {chromium} from "playwright";
 import {modelingLifeCourse} from "../../db/data-migrations/008_upgrade_modeling_life";
+import * as textExhibits from "../../db/data-migrations/016_add_modeling_life_lesson1_text_exhibits";
+import {createMemoryOrm} from "../../services/dataMigrations";
+import type {ProductCourse} from "../../services/productStore";
 import {buildTextLessonPreview} from "../../services/textLessonPreview";
 import {previewLessonOutline} from "../../lib/previewLessonPresentation";
 import {courseExploration,lessonAssessmentAvailability} from "../../lib/lessonResources";
@@ -25,7 +28,9 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
     const store=await import("../../services/productStore"),assessments=await import("../../services/lessonAssessmentService");
     const routes=await import("../../app/api/courses/[courseId]/lessons/[lessonId]/assessments/[kind]/route");
     const overview=await import("../../services/understandingOverview");
-    const course=modelingLifeCourse("2026-10-23T00:00:00Z"),[first,second]=course.sections[0].lessons;
+    const fixture=modelingLifeCourse("2026-10-23T00:00:00Z"),orm=createMemoryOrm({tables:{courses:[fixture]}});
+    textExhibits.apply(orm,{store:"memory",dryRun:true,now:"2026-10-26T12:00:00Z"});
+    const course=orm.table<ProductCourse>("courses").findById(fixture.id)!,[first,second]=course.sections[0].lessons;
     for(const locale of ["en-GB","zh-CN"] as const){
       const user=await verifiedUser(store,`modeling-browser-${locale}@example.test`),session=await store.createSession(user.id);setCookie(SESSION_COOKIE,session.token);
       const {quote}=await store.createQuote(user.id,"science-pc-6");await store.completeDemoCheckout(user.id,quote.id);
@@ -66,7 +71,29 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       assert.equal(await page.locator('.la-prose').getByText(/状态变量/).count()>0,true);
       assert.equal(await page.locator('[data-text-preview-end]').count(),1);
       assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('.la-exhibit-float').count(),0);
-      assert.equal(await page.getByRole('region',{name:messages.videoExhibit.available}).count(),0,"authored text never inserts demo exhibits");
+      assert.equal(await page.getByRole('region',{name:messages.videoExhibit.available}).count(),2,"authored text displays exactly the two requested exhibits");
+      assert.equal(await page.locator('.la-node-links button').count(),0,"inline cards do not duplicate bottom exhibit links");
+      for(const [index,anchor] of ["Our first example is going to be a single number.","T: Yes, that is the case. With electricity, the state variable might be voltage."].entries()){
+        const card=page.locator(`[data-text-exhibit="modeling-life-l1-text-exhibit-${index+1}"]`),source=first.contents!.find(content=>content.type==='video')!.nodes[index];
+        assert.equal(await card.evaluate((element,anchor)=>element.nextElementSibling?.textContent?.trim().startsWith(anchor),anchor),true);
+        assert.equal(await card.locator(`img[src="${source.thumbnail}"]`).count(),1);
+        await card.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();
+        await page.getByRole('dialog').locator(`img[src="${source.url}"]`).waitFor();
+        await page.getByText(source.description!,{exact:true}).waitFor();
+        await page.screenshot({path:path.join(output,`${locale}-text-exhibit-${index+1}.png`),fullPage:true});
+        await page.keyboard.press('Escape');
+        await card.scrollIntoViewIfNeeded();
+        await page.screenshot({path:path.join(output,`${locale}-text-card-${index+1}-desktop.png`),fullPage:true});
+        await page.setViewportSize({width:390,height:844});
+        await card.scrollIntoViewIfNeeded();
+        assert.equal(await card.evaluate(element=>element.scrollWidth<=element.clientWidth),true,"mobile card contains its full title and action");
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+        await page.screenshot({path:path.join(output,`${locale}-text-card-${index+1}-mobile.png`),fullPage:true});
+        await card.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();
+        await page.getByRole('dialog').locator(`img[src="${source.url}"]`).waitFor();
+        await page.keyboard.press('Escape');
+        await page.setViewportSize({width:1440,height:1024});
+      }
       for(const image of await page.locator('.la-prose img').all())assert.equal(await image.evaluate(async element=>{await (element as HTMLImageElement).decode();return (element as HTMLImageElement).naturalWidth>0;}),true);
       await page.screenshot({path:path.join(output,`${locale}-preview-desktop.png`),fullPage:true});
       await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();assert.equal(await page.locator('.la-prose img').count(),5,"preview retains only the first readable point");assert.equal(await page.getByRole('dialog').count(),0);
@@ -139,9 +166,9 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await dialog.getByText(first.assessments!.application!.reference[0],{exact:true}).waitFor();
       assert.equal(await dialog.getByRole('heading',{name:messages.applicationTest.feedback,exact:true}).count(),0,"authored references never fabricate sample feedback");
       await page.screenshot({path:path.join(output,`${locale}-application-result.png`),fullPage:true});
-      const data=await overview.getUnderstandingOverview(user.id,course.id);assert.equal(data.total,2);assert.equal(data.completed,2);assert.equal(data.lessons[0].application.latestResult,null);
+      const data=await overview.getUnderstandingOverview(user.id,course.id);assert.equal(data.total,4);assert.equal(data.completed,2);assert.equal(data.lessons[0].application.latestResult,null);assert.equal(data.lessons[1].knowledge.total,8);
       await mount({view:'overview',key:'overview',locale,courseId:course.id,courseTitle:course.title,category:'Science',backHref:`/${locale}/account/learn/${course.id}`,data});
-      assert.equal(await page.locator(`[data-lesson-id="${second.id}"] [data-assessment-kind] button`).count(),0);
+      assert.equal(await page.locator(`[data-lesson-id="${second.id}"] [data-assessment-kind] button`).count(),2,"both authored Lesson 2 tests unlock after Lesson 1 tests complete");
       await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`${locale}-understanding-mobile.png`),fullPage:true});
       assert.deepEqual(errors,[]);await page.close();
     }
