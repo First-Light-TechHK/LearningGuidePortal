@@ -67,7 +67,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
       <StreamedContent>
-      <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
+      <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} serverUserId={user?.id ?? null} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
           <h1>{copy.courseUnavailable}</h1>

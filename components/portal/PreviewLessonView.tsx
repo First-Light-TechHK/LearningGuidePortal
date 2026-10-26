@@ -144,7 +144,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </div>
         {tutorOpen && entitled && tutorOnline && <TutorDrawer onClose={() => setTutorOpen(false)}><TutorChat locale={locale} courseId={courseId} lessonId={lesson.id} copy={messages.learning} onClose={() => setTutorOpen(false)}/></TutorDrawer>}
         <div className={styles.progress}>
-          <PreviewProgress enabled={!textLocked && (mode !== "video" || playingId === selected?.id)} endpoint={studyEndpoint} courseId={courseId} lessonId={lesson.id} contentId={selected?.id || null} learningMode={selected ? selected.type === "video" ? "video" : "text" : !contents.length && lesson.body?.trim() ? "text" : undefined} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} canComplete={false} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
+          <PreviewProgress enabled={!textLocked && (mode !== "video" || playingId === selected?.id)} showError={mode !== "video"} endpoint={studyEndpoint} courseId={courseId} lessonId={lesson.id} contentId={selected?.id || null} learningMode={selected ? selected.type === "video" ? "video" : "text" : !contents.length && lesson.body?.trim() ? "text" : undefined} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} canComplete={false} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
         </div>
       </article>
     </div>

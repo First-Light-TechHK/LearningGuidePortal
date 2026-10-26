@@ -58,7 +58,7 @@ type VideoPresentation = { poster?: string; badge?: string; playLabel: string };
 
 function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequest, onVideoProgress, onVideoEnded, onVideoStart, exhibitContainer, onPreviewAccess }: { content: LessonContent; locale: LessonLocale; trialGate?: TrialGate; videoPresentation?: VideoPresentation; nodeRequest?: { id: string; request: number }; onVideoProgress?: (progress: VideoPlaybackProgress) => void; onVideoEnded?: (progress: VideoPlaybackProgress) => void; onVideoStart?: (contentId: string) => void; exhibitContainer?: HTMLElement | null; onPreviewAccess?: () => void }) {
   const t = lessonMessages(locale), video = useRef<HTMLVideoElement>(null), seen = useRef(new Set<string>()), lastTime = useRef(-0.01), resume = useRef(false), seeking = useRef(false);
-  const [active, setActive] = useState<LessonNode | null>(null), activeRef = useRef<LessonNode | null>(null), [notice, setNotice] = useState('');
+  const [active, setActive] = useState<LessonNode | null>(null), activeRef = useRef<LessonNode | null>(null);
   const [trialOpen, setTrialOpen] = useState(false);
   const [started, setStarted] = useState(false);
   const [exhibitPrompt, setExhibitPrompt] = useState<LessonNode | null>(null);
@@ -105,7 +105,7 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
     if (!activeRef.current) resume.current = !!video.current && !video.current.paused && !video.current.ended;
     video.current?.pause();
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
-    activeRef.current = node; setActive(node); setNotice('');
+    activeRef.current = node; setActive(node);
   }
   function close() { activeRef.current = null; setActive(null); if (resume.current && video.current) { resume.current = false; void video.current.play().catch(() => undefined); } }
   function reportProgress() {
@@ -128,10 +128,9 @@ function ContentPlayer({ content, locale, trialGate, videoPresentation, nodeRequ
       // A forward seek skips earlier instances; seeking backwards rearms later ones.
       seen.current = new Set(nodes.filter(node => node.triggerTime < now - 0.05).map(node => node.id));
       setExhibitPrompt(null); lastTime.current = now - 0.05; seeking.current = false; reportProgress(); tick();
-    }} onEnded={() => { resume.current = false; reportProgress(); const media = video.current; if (media && Number.isFinite(media.duration) && media.duration > 0) { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); onVideoEnded?.({ contentId: content.id, currentTime: media.currentTime, duration: media.duration }); } }} onError={() => setNotice(t.mediaFailed)}/>{videoPresentation?.badge && <span className="la-video-badge">{videoPresentation.badge}</span>}{videoPresentation && !started && <button type="button" className="la-video-play" aria-label={videoPresentation.playLabel} onClick={() => { void video.current?.play().catch(() => undefined); }}><span aria-hidden="true">▶</span></button>}</div> : <p role="alert">{t.invalidUrl}</p>)}
+    }} onEnded={() => { resume.current = false; reportProgress(); const media = video.current; if (media && Number.isFinite(media.duration) && media.duration > 0) { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); onVideoEnded?.({ contentId: content.id, currentTime: media.currentTime, duration: media.duration }); } }}/>{videoPresentation?.badge && <span className="la-video-badge">{videoPresentation.badge}</span>}{videoPresentation && !started && <button type="button" className="la-video-play" aria-label={videoPresentation.playLabel} onClick={() => { void video.current?.play().catch(() => undefined); }}><span aria-hidden="true">▶</span></button>}</div> : null)}
     {content.type === "video" && !videoFullscreen && exhibitPrompt && (exhibitContainer ? createPortal(<VideoExhibitBar node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => open(exhibitPrompt)}/>, exhibitContainer) : <VideoExhibitBar node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => open(exhibitPrompt)}/>) }
     {content.type !== 'video' && nodes.length > 0 && <div className="la-node-links" aria-label={t.nodes}>{nodes.map(node => <button type="button" key={node.id} onClick={() => open(node)}>{node.title || t.newNode}</button>)}</div>}
-    {notice && <p role="status">{notice}</p>}
     {active && (["image", "video", "model3d"].includes(active.type) ? <ExhibitDialog key={active.id} node={active} locale={locale} onClose={() => { resume.current = false; close(); }}/> : <LessonModal title={active.title || t.newNode} locale={locale} onClose={close}>
       {active.type === 'text' ? <SafeLessonHtml html={active.html || ''} nodeTitles={titles} onNode={id => { const node = nodes.find(n => n.id === id); if (node) open(node); }}/ > : active.type === 'exercise' ? <Exercise key={active.id} node={active} locale={locale}/> : <CourseMediaPreview key={active.id} type={active.type} url={active.url} title={active.title} locale={locale}/>}
       <div className="la-actions"><button type="button" onClick={close}>{t.resume}</button></div>

@@ -24,10 +24,18 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
     for(const locale of ["en-GB","zh-CN"] as const) {
       const page = await browser.newPage({viewport:{width:1440,height:1024}});
       const studyEvents: {path:string; body:{event:string;clientEventId?:string;contentId?:string;learningMode?:string}}[]=[];
+      let openFailure: "http" | "network" | null = null;
       await page.route("http://exhibit.test/**",async route=>{
         const url=new URL(route.request().url());
         if(url.pathname.startsWith("/portal/")) return route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:url.pathname.endsWith(".svg")?"image/svg+xml":url.pathname.endsWith(".webm")?"video/webm":url.pathname.endsWith(".obj")?"text/plain":"image/png"});
-        if(url.pathname.startsWith("/api/")) { if(url.pathname.startsWith("/api/study/"))studyEvents.push({path:url.pathname,body:route.request().postDataJSON()});return route.fulfill({contentType:"application/json",body:'{"record":{}}'}); }
+        if(url.pathname.startsWith("/api/")) {
+          if(url.pathname.startsWith("/api/study/")) {
+            const body=route.request().postDataJSON();
+            studyEvents.push({path:url.pathname,body});
+            if(body.event==="open" && openFailure) return openFailure==="network" ? route.abort("failed") : route.fulfill({status:503,json:{error:"unavailable"}});
+          }
+          return route.fulfill({contentType:"application/json",body:'{"record":{}}'});
+        }
         if(url.pathname.endsWith("mp4"))return route.fulfill({status:404,body:""});
         return route.fulfill({contentType:"text/html",body:'<div id="root"></div>'});
       });
@@ -146,6 +154,43 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       lesson.contents.pop();
       const time=async(seconds:number,event="timeupdate")=>{await page.locator("video").waitFor();await page.locator("video").evaluate((element,{seconds,event})=>{Object.defineProperty(element,"duration",{configurable:true,value:120});Object.defineProperty(element,"currentTime",{configurable:true,writable:true,value:seconds});element.dispatchEvent(new Event(event));},{seconds,event});};
       const bar=page.getByRole("region",{name:locale==="en-GB"?"Exhibit Available":"\u53ef\u67e5\u770b\u5c55\u793a\u5185\u5bb9"});
+      for (const entitled of [false,true]) {
+        for (const failure of ["http","network"] as const) {
+          openFailure=failure;
+          await mount(`silent-${entitled}-${failure}`,entitled);
+          await page.locator("video.la-lesson-video").waitFor();
+          const saved=failure==="http"
+            ? page.waitForEvent("response",event=>event.url().endsWith("/api/study/preview"))
+            : page.waitForEvent("requestfailed",event=>event.url().endsWith("/api/study/preview"));
+          await page.locator("video.la-lesson-video").evaluate(video=>{
+            video.dispatchEvent(new Event("error"));
+            video.dispatchEvent(new Event("play"));
+          });
+          await saved;await page.waitForLoadState("networkidle");
+          assert.equal(await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).count(),0,"unavailable media has no notice");
+          assert.equal(await page.getByText(getMessages(locale).overviewDesign.previewSaveError,{exact:true}).count(),0,"failed background progress saves have no notice");
+          assert.equal(await page.locator(".la-content-player [role=status],.la-content-player [role=alert],.preview-progress").count(),0,"no feedback block is rendered in or below the player");
+          assert.ok(studyEvents.some(event=>event.body.event==="open" && event.body.contentId==="video"),"progress still saves in the background");
+        }
+      }
+      const controls=page.locator(".la-video-controls");
+      await page.mouse.move(0,0);
+      assert.equal(await controls.evaluate(element=>getComputedStyle(element).opacity),"0","playing video hides controls when the pointer leaves");
+      await page.screenshot({path:`test-results/video-exhibit/${locale}-playing-controls-hidden.png`,fullPage:true});
+      await page.locator("video.la-lesson-video").hover();
+      assert.equal(await controls.evaluate(element=>getComputedStyle(element).opacity),"1","hovering over the player shows its controls");
+      await page.screenshot({path:`test-results/video-exhibit/${locale}-playing-controls-hover.png`,fullPage:true});
+      await page.screenshot({path:`test-results/video-exhibit/${locale}-silent-video-desktop.png`,fullPage:true});
+      await page.setViewportSize({width:390,height:844});
+      await page.screenshot({path:`test-results/video-exhibit/${locale}-silent-video-mobile.png`,fullPage:true});
+      await page.setViewportSize({width:1440,height:1024});
+      openFailure=null;
+      const validVideoUrl=lesson.contents[0].url;
+      lesson.contents[0].url="javascript:invalid";
+      await mount("invalid-video-url");
+      assert.equal(await page.getByText(lessonMessages(locale).invalidUrl,{exact:true}).count(),0);
+      assert.equal(await page.locator("video.la-lesson-video").count(),0,"invalid video URLs remain blocked without feedback");
+      lesson.contents[0].url=validVideoUrl;
       await mount("interrupted-playback");
       await page.locator("video.la-lesson-video").waitFor();
       await page.addScriptTag({content:`(video=>{
@@ -161,7 +206,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.getByRole("dialog").waitFor();await page.keyboard.press("Escape");
       assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"interrupted resume has no operation notice");
       await page.locator("video.la-lesson-video").evaluate(video=>video.dispatchEvent(new Event("error")));
-      await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).waitFor();
+      assert.equal(await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).count(),0,"media errors have no playback notice");
       await mount("normal");await time(9.99);assert.equal(await bar.count(),0);
       assert.equal(await modeSwitch.count(),0,"a single-mode course has no dropdown");
       await time(10);await bar.waitFor();assert.equal(await page.getByRole("dialog").count(),0,"time point offers an exhibit without opening a modal");
