@@ -1,5 +1,5 @@
 import { PortalFooter } from "@/components/portal/PortalFooter";
-import { StudyGroupHeader } from "@/components/portal/StudyGroupHeader";
+import { PortalHeader } from "@/components/portal/PortalHeader";
 import { StudyGroupsApp } from "@/components/portal/StudyGroupsApp";
 import { currentProductUser } from "@/services/productAuth";
 import { localeFrom } from "@/lib/i18n/config";
@@ -10,7 +10,7 @@ export default async function StudyGroupsPage({ params }: { params: Promise<{ lo
   const user = await currentProductUser();
   return (
     <main className={styles.page}>
-      <StudyGroupHeader locale={locale} signedIn={Boolean(user)} displayName={user?.nickname} />
+      <PortalHeader locale={locale} active="study-groups" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
       <StudyGroupsApp locale={locale} signedIn={Boolean(user)} />
       <PortalFooter locale={locale} />
     </main>
