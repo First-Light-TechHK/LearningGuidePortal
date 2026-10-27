@@ -136,11 +136,18 @@ export async function seatUser(repository: StudyGroupRepository, sessionId: stri
 }
 
 export async function seedTutorRequest(repository: StudyGroupRepository, input: { id: string; sessionId: string; userId?: string; text?: string; receivedAt?: string }) {
+  const userId = input.userId ?? "u-1";
   await repository.update((store) => {
+    // Only a current member's question is answered (QA 2026-10-27 S4), so the
+    // asker is seeded as a member of the session's group.
+    const session = store.sessions.find((item) => item.id === input.sessionId);
+    if (session && !store.memberships.some((item) => item.groupId === session.groupId && item.userId === userId && !item.leftAt)) {
+      store.memberships.push({ id: `m-${session.groupId}-${userId}`, groupId: session.groupId, userId, role: "member", joinedAt: TEST_NOW, leftAt: null });
+    }
     store.tutorRequests.push({
       id: input.id,
       sessionId: input.sessionId,
-      userId: input.userId ?? "u-1",
+      userId,
       clientEventId: `evt-${input.id}`,
       text: input.text ?? `Question ${input.id}`,
       receivedAt: input.receivedAt ?? TEST_NOW,
