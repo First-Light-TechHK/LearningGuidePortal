@@ -220,6 +220,17 @@ export class StudyGroupWebhookError extends Error {
 
 // Request bodies are untrusted JSON: a field that is not text (a number, an
 // object) is a validation failure, never a TypeError surfacing as a 500.
+type ReminderJob = { userId: string; sessionId: string; sessionTitle: string; groupTitle: string; startsAt: string };
+
+// The row title is localised at write time and doubles as the reminders
+// view's marker (hunt L1): the en-GB title must stay exactly this string.
+function reminderCopy(job: ReminderJob, locale: string | undefined, now: Date) {
+  const minutes = Math.max(1, Math.ceil((Date.parse(job.startsAt) - now.getTime()) / 60_000));
+  return locale === "zh-CN"
+    ? { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` }
+    : { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` };
+}
+
 function clean(value: unknown) {
   if (value === undefined || value === null) return "";
   if (typeof value !== "string") throw new StudyGroupError("validation", "Invalid request.");
@@ -853,7 +864,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   async function dispatchDueReminders(snapshot?: StudyGroupStore, onlySessionId?: string) {
     const now = deps.now();
     const dueJobs = (store: StudyGroupStore, record: boolean) => {
-      const jobs: Array<{ userId: string; sessionId: string; sessionTitle: string; groupTitle: string; startsAt: string }> = [];
+      const jobs: ReminderJob[] = [];
       for (const session of store.sessions) {
         if (session.status !== "scheduled" || (onlySessionId && session.id !== onlySessionId)) continue;
         const startsAt = new Date(session.startsAt).getTime();
@@ -909,10 +920,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // zh-CN title is its Chinese counterpart. Both match the email subject.
         // The body names the group and the minutes really left (QA M10-a): a
         // reminder sent again after a reschedule rarely lands at T-10.
-        const minutes = Math.max(1, Math.ceil((Date.parse(job.startsAt) - now.getTime()) / 60_000));
-        const copy = profile?.locale === "zh-CN"
-          ? { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` }
-          : { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` };
+        const copy = reminderCopy(job, profile?.locale, now);
         await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
       } catch {
@@ -1212,7 +1220,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
       if (!group) throw new StudyGroupError("not_found", "Study Group was not found.");
       const membership = store.memberships.find((item) => item.groupId === input.groupId && item.userId === input.actorUserId && !item.leftAt);
-      if (!membership) throw new StudyGroupError("forbidden", "Join the Study Group first.");
+      if (!membership) {
+        // A repeated Leave (a retry after a lost response) answers like the
+        // first one; only someone who never joined is refused.
+        if (store.memberships.some((item) => item.groupId === input.groupId && item.userId === input.actorUserId && item.leftAt)) return;
+        throw new StudyGroupError("forbidden", "Join the Study Group first.");
+      }
       if (membership.role === "host") throw new StudyGroupError("forbidden", "The Host cancels the Study Group instead of leaving it.");
       const now = deps.now().toISOString();
       const { sessionIds, liveRooms } = await deps.repository.update((current) => {
@@ -1225,10 +1238,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         for (const intent of current.intents) {
           if (intent.userId === input.actorUserId && sessionIds.has(intent.sessionId) && !intent.cancelledAt) intent.cancelledAt = now;
         }
-        // Their reminders go too, so rejoining and planning again reminds again.
-        for (const row of current.reminders) {
-          if (row.userId === input.actorUserId && sessionIds.has(row.sessionId)) row.sentAt = new Date(0).toISOString();
-        }
+        // Their reminder rows stay sent: rejoining and planning again brings
+        // the in-site card back (planToAttend) without mailing it twice.
         // The member's AI Tutor questions still waiting go with them; one
         // already being answered is settled by the drain's membership check.
         const groupSessions = new Set(current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id));
@@ -1306,7 +1317,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const now = deps.now().toISOString();
       const { title, notified, sessionIds, liveRooms } = await deps.repository.update((store) => {
         const row = store.groups.find((item) => item.id === input.groupId && item.status === "active");
-        if (!row) throw new StudyGroupError("not_found", "Study Group was not found.");
+        if (!row) {
+          // The Host retrying a cancel that already went through gets the same
+          // answer, and nobody is notified or removed twice.
+          const cancelled = store.groups.find((item) => item.id === input.groupId && item.status === "cancelled");
+          if (cancelled && cancelled.hostUserId === input.actorUserId) return { title: cancelled.title, notified: [], sessionIds: [], liveRooms: [] };
+          throw new StudyGroupError("not_found", "Study Group was not found.");
+        }
         if (activeMembership(store, row.id, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can cancel the Study Group.");
         row.status = "cancelled";
         row.updatedAt = now;
@@ -1488,7 +1505,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const now = deps.now().toISOString();
       const { title, planned } = await deps.repository.update((store) => {
         const current = store.sessions.find((item) => item.id === input.sessionId);
-        if (!current || current.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
+        if (!current) throw new StudyGroupError("not_found", "Live Session was not found.");
+        // The Host retrying a cancel that already went through gets the same
+        // answer; only the call that cancelled notifies the planned members.
+        if (current.status === "removed") {
+          if (activeMembership(store, current.groupId, input.actorUserId)?.role === "host") return { title: current.title, planned: [] as string[] };
+          throw new StudyGroupError("not_found", "Live Session was not found.");
+        }
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can cancel a Live Session.");
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Cancel Session is available only before the Session starts.");
         current.status = "removed";
@@ -1532,24 +1555,41 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async planToAttend(input: { actorUserId: string; sessionId: string }) {
       const now = deps.now().toISOString();
-      await deps.repository.update((store) => {
+      const restored = await deps.repository.update((store): ReminderJob | null => {
         const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
         if (session.status !== "scheduled") throw new StudyGroupError("forbidden", "Plan to Attend is only for an unstarted Session.");
         // A session whose planned end passed without a start is over (the
         // list shows it with the ended ones); nobody can plan for it.
         if (missedUnstarted(session, deps.now(), seatCount(store, session.id, deps.now()))) throw new StudyGroupError("forbidden", "Plan to Attend is only for an unstarted Session.");
         // The Host is always reminded and is not one of the planned attendees.
-        if (input.actorUserId === group.hostUserId) return;
+        if (input.actorUserId === group.hostUserId) return null;
         const existing = store.intents.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
-        if (existing && !existing.cancelledAt) return;
+        if (existing && !existing.cancelledAt) return null;
         if (existing) {
           existing.cancelledAt = null;
           existing.plannedAt = now;
-          return;
+          // Cancelling withdrew the in-site reminder this plan already got
+          // for the current Start Time; planning again brings that card back.
+          // The row stays sent, so cancel / plan cycles never mail it again.
+          const sent = store.reminders.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
+          if (sent && Date.parse(sent.sentAt) >= Date.parse(session.startsAt) - STARTING_SOON_MS) {
+            return { userId: input.actorUserId, sessionId: session.id, sessionTitle: session.title, groupTitle: group.title, startsAt: session.startsAt };
+          }
+          return null;
         }
         const row: AttendanceIntentRow = { id: randomUUID(), sessionId: session.id, userId: input.actorUserId, plannedAt: now, cancelledAt: null };
         store.intents.push(row);
+        return null;
       });
+      if (restored) {
+        try {
+          const profile = await deps.userProfile(restored.userId);
+          const copy = reminderCopy(restored, profile?.locale, deps.now());
+          await deps.notify({ userId: restored.userId, title: copy.title, body: copy.body, sessionId: restored.sessionId });
+        } catch {
+          // Best effort: the plan is saved; the reminders view still lists the Session.
+        }
+      }
     },
 
     async cancelAttendance(input: { actorUserId: string; sessionId: string }) {
@@ -1557,14 +1597,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const cancelled = await deps.repository.update((store) => {
         requireOpenSession(store, input.sessionId, input.actorUserId);
         const existing = store.intents.find((item) => item.sessionId === input.sessionId && item.userId === input.actorUserId && !item.cancelledAt);
-        if (existing) {
-          existing.cancelledAt = now;
-          // The reminder already sent goes with the plan, so planning again
-          // reminds again (the row is reused; PostgreSQL keeps it UNIQUE).
-          for (const row of store.reminders) {
-            if (row.sessionId === input.sessionId && row.userId === input.actorUserId) row.sentAt = new Date(0).toISOString();
-          }
-        }
+        if (existing) existing.cancelledAt = now;
         return Boolean(existing);
       });
       // Cancelling attendance removes the member's reminder (BR-019): withdraw

@@ -297,7 +297,8 @@ test("cancel matrix: cancel before start removes and releases; cancel after live
   await f.service.startSession({ actorUserId: "host", sessionId: live.id });
   // TC-017: "Edit and cancel unavailable after Live start."
   await rejectsCode(() => f.service.cancelSession({ actorUserId: "host", sessionId: live.id }), "forbidden");
-  await rejectsCode(() => f.service.cancelSession({ actorUserId: "host", sessionId: soon.id }), "not_found");
+  // A repeated cancel by the Host answers like the first one (idempotent retry).
+  await f.service.cancelSession({ actorUserId: "host", sessionId: soon.id });
 });
 
 test("token matrix: issued only when live and seated; failures surface as unavailable and write no log", async () => {

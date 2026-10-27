@@ -146,19 +146,48 @@ test("S8: a Start Time needs a time zone and lies within a year", async () => {
   assert.equal(await code(service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-10-01T10:00" })), "validation");
 });
 
-test("S9: planning again after cancelling sends the reminder again", async () => {
-  const service = make();
+test("S9: planning again after cancelling brings the reminder back without mailing it twice", async () => {
+  const mails: string[] = [];
+  const service = make({
+    userProfile: async (userId) => ({ id: userId, displayName: "", email: `${userId}@example.com`, locale: "en-GB" }),
+    sendMail: async (input) => { mails.push(input.to); }
+  });
   const group = await service.createGroup({ actorUserId: "host", title: "G", courseId: "course-1", about: "a" });
   await service.joinGroup({ actorUserId: "m1", groupId: group.id });
   const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "S", startsAt: T(20), durationSeconds: 1800, maxParticipants: 3 });
   await service.planToAttend({ actorUserId: "m1", sessionId: session.id });
   clock += 11 * 60_000;
   await service.dispatchDueReminders();
-  await service.cancelAttendance({ actorUserId: "m1", sessionId: session.id });
-  clock += 60_000;
+  for (let round = 0; round < 3; round += 1) {
+    await service.cancelAttendance({ actorUserId: "m1", sessionId: session.id });
+    await service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+    await service.dispatchDueReminders();
+  }
+  assert.equal(notes.filter((note) => note.userId === "m1" && note.title === "Live Session reminder").length, 4);
+  assert.deepEqual(mails.filter((to) => to === "m1@example.com"), ["m1@example.com"]);
+});
+
+test("Idempotency: repeated Leave, Cancel Session and Cancel Group answer like the first call", async () => {
+  const service = make();
+  const group = await service.createGroup({ actorUserId: "host", title: "G", courseId: "course-1", about: "a" });
+  await service.joinGroup({ actorUserId: "m1", groupId: group.id });
+  await service.joinGroup({ actorUserId: "m1", groupId: group.id });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Poetry", startsAt: T(60), durationSeconds: 1800, maxParticipants: 3 });
   await service.planToAttend({ actorUserId: "m1", sessionId: session.id });
-  await service.dispatchDueReminders();
-  assert.equal(notes.filter((note) => note.userId === "m1" && note.title === "Live Session reminder").length, 2);
+  await service.planToAttend({ actorUserId: "m1", sessionId: session.id });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: session.id })).plannedCount, 1);
+  await service.cancelSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(await code(service.cancelSession({ actorUserId: "host", sessionId: session.id })), "ok");
+  assert.equal(await code(service.cancelSession({ actorUserId: "m1", sessionId: session.id })), "not_found");
+  assert.equal(notes.filter((note) => note.title === "Live Session cancelled").length, 1);
+  await service.leaveGroup({ actorUserId: "m1", groupId: group.id });
+  assert.equal(await code(service.leaveGroup({ actorUserId: "m1", groupId: group.id })), "ok");
+  assert.equal(await code(service.leaveGroup({ actorUserId: "stranger", groupId: group.id })), "forbidden");
+  await service.joinGroup({ actorUserId: "m1", groupId: group.id });
+  await service.cancelGroup({ actorUserId: "host", groupId: group.id });
+  assert.equal(await code(service.cancelGroup({ actorUserId: "host", groupId: group.id })), "ok");
+  assert.equal(await code(service.cancelGroup({ actorUserId: "m1", groupId: group.id })), "not_found");
+  assert.equal(notes.filter((note) => note.title === "Study Group cancelled").length, 1);
 });
 
 test("S10: a missed session cannot be planned for, and the Host is not a planned attendee", async () => {
