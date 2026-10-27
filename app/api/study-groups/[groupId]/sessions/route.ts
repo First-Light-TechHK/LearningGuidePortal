@@ -1,4 +1,4 @@
-import { signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
+import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
 import { studyGroupService } from "@/modules/group-study/runtime";
 
 export async function POST(request: Request, context: { params: Promise<{ groupId: string }> }) {
@@ -6,7 +6,7 @@ export async function POST(request: Request, context: { params: Promise<{ groupI
   if (!user) return unauthenticated();
   const { groupId } = await context.params;
   try {
-    const body = await request.json() as {
+    const body = await readJsonObject<{
       title?: string;
       startsAt?: string;
       durationSeconds?: number;
@@ -14,7 +14,7 @@ export async function POST(request: Request, context: { params: Promise<{ groupI
       relatedLessonId?: string | null;
       focus?: string | null;
       aiTutorEnabled?: boolean;
-    };
+    }>(request);
     return studyGroupData(await studyGroupService().scheduleSession({
       actorUserId: user.id,
       groupId,

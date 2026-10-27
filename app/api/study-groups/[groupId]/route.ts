@@ -1,4 +1,4 @@
-import { signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
+import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
 import { studyGroupService } from "@/modules/group-study/runtime";
 
 export async function GET(request: Request, context: { params: Promise<{ groupId: string }> }) {
@@ -18,7 +18,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ group
   if (!user) return unauthenticated();
   const { groupId } = await context.params;
   try {
-    const body = await request.json() as { title?: string; about?: string; courseId?: string };
+    const body = await readJsonObject<{ title?: string; about?: string; courseId?: string }>(request);
     return studyGroupData(await studyGroupService().editGroup({
       actorUserId: user.id,
       groupId,

@@ -2,7 +2,7 @@
 
 Diagrams for PRD v0.10, the locked decisions, and branch `cursor/study-group-backend-7481` at `18a1046ec71853f77d1b73eda545526c58964826`. Layer names match the architecture note.
 
-Session Title is required and is at most 20 characters. That limit is the Figma counter `7/20`. It is not drawn below, because none of these sequences edit the title string.
+Session Title is required and is at most 50 characters (owner ruling 2026-10-15, BUG-0128; the Figma counter showed `7/20`). It is not drawn below, because none of these sequences edit the title string.
 
 ## Class diagram
 
