@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import {
   getTutorAvailability,
@@ -152,6 +153,20 @@ test("streamTutorText 解析被任意切分的 SSE 帧并拼接纯文本", async
   assert.equal(requestBody.mode, "SOCRATIC");
   assert.equal(requestBody.locale, "en-GB");
   assert.deepEqual(requestBody.history, [{ role: "user", content: "Earlier" }]);
+});
+
+test("streamTutorText 按渠道选 KS 限流桶：学习页默认 portal，直播间传 study-group", async () => {
+  const channels: unknown[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    channels.push((JSON.parse(String(init?.body)) as Record<string, unknown>).channel);
+    return sseResponse(['data: {"done":true}\n\n'], 5);
+  }) as typeof fetch;
+  const input = { externalCourseId: "c", message: "q", mode: "lecture" as const, locale: "en-GB" as const, history: [] };
+  await collect(streamTutorText(input));
+  await collect(streamTutorText({ ...input, channel: "study-group" }));
+  assert.deepEqual(channels, ["portal", "study-group"]);
+  const runtime = readFileSync(new URL("../../modules/group-study/runtime.ts", import.meta.url), "utf8");
+  assert.match(runtime, /channel: "study-group"/);
 });
 
 test("streamTutorText 遇到 error 帧抛出 KsTutorError", async () => {

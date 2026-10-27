@@ -313,7 +313,9 @@ export function studyGroupService() {
         mode: "lecture",
         locale,
         history,
-        signal
+        signal,
+        // The room is its own KS quota bucket, apart from the 1:1 Tutor's.
+        channel: "study-group"
       })) {
         text += delta;
       }

@@ -138,6 +138,9 @@ export async function* streamTutorText(input: {
   locale: Locale;
   history: TutorHistoryMessage[];
   signal?: AbortSignal;
+  // KS quota bucket: the learning page's 1:1 Tutor ("portal", the default)
+  // and the Live Session room ("study-group") never spend each other's budget.
+  channel?: "portal" | "study-group";
 }): AsyncGenerator<string> {
   const { baseUrl, apiKey, timeoutMs } = config();
   if (!baseUrl) {
@@ -162,9 +165,7 @@ export async function* streamTutorText(input: {
         mode: ksMode(input.mode),
         locale: input.locale,
         history: input.history.slice(-10),
-        // The Live Session room is its own quota bucket on the KS side: its
-        // traffic must not spend the course's 1:1 question budget.
-        channel: "study-group"
+        channel: input.channel ?? "portal"
       }),
     });
   } catch (error) {
