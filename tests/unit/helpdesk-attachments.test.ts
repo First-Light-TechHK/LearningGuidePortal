@@ -226,6 +226,17 @@ test("readMultipart streams the body into the multipart parser instead of first 
   assert.ok(heldWhenParsingStarts < 4 * chunkSize, `held ${Math.round(heldWhenParsingStarts / chunkSize)} MB of the ${3 * perFile} MB body before parsing`);
 });
 
+test("readMultipart reads text fields as typed: the CRLF a browser's multipart encoding writes for each line break counts once", async () => {
+  // Byte for byte what Chromium sends for FormData body "a\nb\rc" (HTML multipart/form-data newline normalization).
+  const boundary = "----WebKitFormBoundary95LCFeBkaR6DaflW";
+  const body = `--${boundary}\r\nContent-Disposition: form-data; name="body"\r\n\r\na\r\nb\r\nc\r\n--${boundary}--\r\n`;
+  const { fields } = await readMultipart(multipartRequest(body, { "content-type": `multipart/form-data; boundary=${boundary}` }));
+  assert.equal(fields.body, "a\nb\nc");
+  const lines = `--${boundary}\r\nContent-Disposition: form-data; name="body"\r\n\r\n${Array.from({ length: 50 }, () => "x".repeat(99)).join("\r\n")}\r\n--${boundary}--\r\n`;
+  const read = await readMultipart(multipartRequest(lines, { "content-type": `multipart/form-data; boundary=${boundary}` }));
+  assert.equal([...String(read.fields.body)].length, 50 * 99 + 49, "4999 code points as typed, not 5048");
+});
+
 test("readMultipart still reads fields and files under the bound, and refuses a body that is not multipart", async () => {
   const form = new FormData();
   form.set("subject", "Cannot log in");
