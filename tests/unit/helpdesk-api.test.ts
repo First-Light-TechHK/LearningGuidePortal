@@ -163,6 +163,48 @@ test("integration endpoints: 503 when the token is unset, 401 Bearer challenge w
   process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
 });
 
+test("every learner POST (messages, actions, suggestion outcome) needs a session and a same-origin request", async () => {
+  const id = randomUUID();
+  const posts: Array<[string, (request: Request) => Promise<Response>, Record<string, unknown>]> = [
+    [`/api/helpdesk/tickets/${id}/messages`, (request) => routes.messages.POST(request, ctx({ id })), { body: "Hello", expectedSequence: 1 }],
+    [`/api/helpdesk/tickets/${id}/actions`, (request) => routes.actions.POST(request, ctx({ id })), { action: "cancel", expectedSequence: 1 }],
+    [`/api/helpdesk/suggestions/${id}/outcome`, (request) => routes.outcome.POST(request, ctx({ id })), { outcome: "solved" }]
+  ];
+  for (const [url, call, json] of posts) {
+    await problem(await call(learnerRequest(url, { json, key: randomUUID() })), 401, "unauthenticated");
+    await problem(await call(learnerRequest(url, { json, key: randomUUID(), cookie: learnerCookie, origin: "https://evil.example" })), 403, "forbidden_origin");
+  }
+});
+
+test("all five integration routes refuse a missing or wrong Bearer token, and answer 503 while the token is unset", async () => {
+  const id = randomUUID();
+  const agent = { id: "emp-1", name: "Amy Agent" };
+  const calls: Array<[string, (token: string | null) => Promise<Response>]> = [
+    ["list", (token) => routes.agentTickets.GET(agentRequest("/api/integration/helpdesk/tickets", { token }), ctx())],
+    ["detail", (token) => routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${id}`, { token }), ctx({ id }))],
+    ["actions", (token) => routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${id}/actions`, { token, key: randomUUID(), json: { action: "claim", agent, expectedSequence: 1 } }), ctx({ id }))],
+    ["messages", (token) => routes.agentMessages.POST(agentRequest(`/api/integration/helpdesk/tickets/${id}/messages`, { token, key: randomUUID(), json: { body: "Hi", agent, internal: false, expectedSequence: 1 } }), ctx({ id }))],
+    ["attachment", (token) => routes.agentAttachment.GET(agentRequest(`/api/integration/helpdesk/attachments/${id}`, { token }), ctx({ id }))]
+  ];
+  try {
+    delete process.env.PORTAL_HELPDESK_TOKEN;
+    for (const [name, call] of calls) await problem(await call(TOKEN), 503, "integration_disabled").catch((error) => { throw new Error(`${name}: ${error}`); });
+    process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+    for (const [name, call] of calls) {
+      for (const token of [null, "nope", `${TOKEN}x`, TOKEN.slice(0, -1)]) {
+        const response = await call(token);
+        assert.match(response.headers.get("www-authenticate") || "", /^Bearer /, `${name} ${token}`);
+        await problem(response, 401, "invalid_token");
+      }
+      // With the right token the request gets past auth: the list answers, the unknown ticket does not exist.
+      if (name === "list") assert.equal((await call(TOKEN)).status, 200);
+      else await problem(await call(TOKEN), 404, "not_found");
+    }
+  } finally {
+    process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  }
+});
+
 test("submit with a screenshot -> card -> agent reply -> learner reply -> resolution -> confirm -> rating", async () => {
   process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
   await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm(createFields), cookie: learnerCookie }), ctx()), 400, "idempotency_key_required");

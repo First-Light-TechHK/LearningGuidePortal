@@ -29,14 +29,15 @@ function harness(startAt = "2026-10-28T06:00:00.000Z") {
   const blobs = new Map<string, Buffer>();
   const notifications: HelpdeskNotification[] = [];
   const logs: Array<Record<string, unknown>> = [];
+  const repository = createLocalHelpdeskRepository(path.join(root, randomUUID()));
   const service = createHelpdeskService({
-    repository: createLocalHelpdeskRepository(path.join(root, randomUUID())),
+    repository,
     blobs: { async put(key, bytes) { blobs.set(key, Buffer.from(bytes)); }, async get(key) { const value = blobs.get(key); if (!value) throw new Error("missing blob"); return value; } },
     notify: async (notification) => { notifications.push(notification); },
     now: () => new Date(clock),
     log: (line) => logs.push(line)
   });
-  return { service, blobs, notifications, logs, advance(ms: number) { clock += ms; }, now: () => new Date(clock).toISOString() };
+  return { service, repository, blobs, notifications, logs, advance(ms: number) { clock += ms; }, now: () => new Date(clock).toISOString() };
 }
 
 const file = (bytes: Buffer, fileName = "screen.png", declaredType = "image/png"): UploadInput => ({ fileName, declaredType, bytes: new Uint8Array(bytes) });
@@ -357,6 +358,46 @@ test("auto-confirm is applied lazily on read after 72 hours, then the 7-day foll
   assert.equal(followUp.ticket.status, "ASSIGNED");
   assert.equal(followUp.ticket.timeline.at(-1)?.type, "reopened");
   assert.equal(followUp.ticket.closedAt, null);
+});
+
+test("auto-confirm noticed days late is backdated: closedAt is the due time, and the 7-day window runs from it", async () => {
+  const h = harness();
+  const { ticket } = await h.service.createTicket(learner, ticketInput(), randomUUID());
+  await h.service.agentAction(ticket.id, { action: "claim", agent, expectedSequence: 1 }, randomUUID());
+  const proposed = await h.service.agentAction(ticket.id, { action: "propose_resolution", agent, expectedSequence: 2 }, randomUUID());
+  const dueAt = proposed.ticket.confirmDueAt as string;
+  // Nobody reads the ticket until two days after it was due.
+  h.advance(72 * HOUR + 2 * DAY);
+  const view = await h.service.getLearnerTicket(learner, ticket.id);
+  assert.equal(view.status, "CLOSED");
+  assert.equal(view.closeReason, "auto_confirmed");
+  assert.equal(view.closedAt, dueAt, "closed when it was due, not when it was noticed");
+  assert.equal(view.followUpUntil, new Date(Date.parse(dueAt) + 7 * DAY).toISOString());
+  const event = (await h.service.getAgentTicket(ticket.id)).events.at(-1);
+  assert.equal(event?.type, "com.ilovelearningguide.helpdesk.ticket.auto_confirmed");
+  // Exactly 7 days after the due time a follow-up still reopens; the rating window closes 1 ms later.
+  h.advance(5 * DAY);
+  assert.deepEqual(new Set((await h.service.getLearnerTicket(learner, ticket.id)).allowedActions), new Set(["reply", "rate"]));
+  h.advance(1);
+  await rejects(h.service.learnerAction(learner, ticket.id, { action: "rate", rating: 5, expectedSequence: view.sequence }, randomUUID()), "rating_window_passed");
+});
+
+test("a learner's list applies due auto-confirms to that learner's tickets only", async () => {
+  const h = harness();
+  const mine = (await h.service.createTicket(learner, ticketInput(), randomUUID())).ticket;
+  const theirs = (await h.service.createTicket(stranger, ticketInput({ subject: "Theirs" }), randomUUID())).ticket;
+  for (const ticket of [mine, theirs]) {
+    await h.service.agentAction(ticket.id, { action: "claim", agent, expectedSequence: 1 }, randomUUID());
+    await h.service.agentAction(ticket.id, { action: "propose_resolution", agent, expectedSequence: 2 }, randomUUID());
+  }
+  h.advance(72 * HOUR);
+  await h.service.listLearnerTickets(learner);
+  // Read the stored rows directly: getAgentTicket would itself apply the due auto-confirm.
+  const stored = async (id: string) => (await h.repository.findTicket(id))?.ticket;
+  assert.equal((await stored(mine.id))?.status, "CLOSED");
+  assert.equal((await stored(mine.id))?.closeReason, "auto_confirmed");
+  assert.equal((await stored(theirs.id))?.status, "PENDING_CONFIRM", "the stranger's ticket was not auto-confirmed by my list");
+  assert.equal((await stored(theirs.id))?.sequence, 3);
 });
 
 test("follow-up after 7 days is refused with reopen_window_passed", async () => {

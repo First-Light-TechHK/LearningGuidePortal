@@ -118,6 +118,45 @@ test("racing writers on the same expectedSequence: exactly one commits, the rest
   assert.equal(stored.messages[1].authorId, stored.ticket.assigneeId);
 });
 
+test("the same learner message sent twice at once with one Idempotency-Key lands once; the other call replays it", async () => {
+  const { ticket } = await service().createTicket(learner, input(), randomUUID());
+  const key = randomUUID();
+  const send = () => service().learnerMessage(learner, ticket.id, { body: "Still on Basic after signing out.", expectedSequence: ticket.sequence, files: [] }, key);
+  const results = await Promise.all([send(), send()]);
+  assert.deepEqual(results.map((item) => item.replayed).sort(), [false, true]);
+  assert.equal(results[0].ticket.sequence, results[1].ticket.sequence);
+  const messages = await rows<{ n: string }>("SELECT count(*)::text AS n FROM helpdesk_ticket_messages WHERE ticket_id = $1 AND client_event_id = $2", [ticket.id, key]);
+  assert.deepEqual(messages, [{ n: "1" }]);
+  const events = await rows<{ sequence: number }>("SELECT sequence FROM helpdesk_ticket_events WHERE subject = $1 ORDER BY sequence", [ticket.id]);
+  assert.deepEqual(events.map((item) => item.sequence), [1, 2]);
+});
+
+test("a due auto-confirm racing the learner's own confirm closes the ticket exactly once", async () => {
+  for (let round = 0; round < 5; round += 1) {
+    await getPool().query(`TRUNCATE ${TABLES.join(", ")} CASCADE`);
+    let clock = Date.parse("2026-10-28T06:00:00.000Z");
+    const at = () => new Date(clock);
+    const { ticket } = await service(at).createTicket(learner, input(), randomUUID());
+    await service(at).agentAction(ticket.id, { action: "claim", agent, expectedSequence: 1 }, randomUUID());
+    await service(at).agentAction(ticket.id, { action: "propose_resolution", agent, expectedSequence: 2 }, randomUUID());
+    clock += 72 * 3_600_000 + 1;
+    const outcomes = await Promise.allSettled([
+      service(at).learnerAction(learner, ticket.id, { action: "confirm", expectedSequence: 3 }, randomUUID()),
+      service(at).listLearnerTickets(learner),
+      service(at).getAgentTicket(ticket.id)
+    ]);
+    for (const outcome of outcomes) {
+      // The learner's confirm may lose to the sweep: then it is a clean 409, never a 500.
+      if (outcome.status === "rejected") assert.ok(["stale_ticket", "invalid_transition"].includes((outcome.reason as { code?: string }).code ?? ""), String(outcome.reason));
+    }
+    const events = await rows<{ type: string; sequence: number }>("SELECT type, sequence FROM helpdesk_ticket_events WHERE subject = $1 ORDER BY sequence", [ticket.id]);
+    assert.deepEqual(events.map((item) => item.sequence), [1, 2, 3, 4], `round ${round}`);
+    assert.ok([eventType("confirmed"), eventType("auto_confirmed")].includes(events[3].type as ReturnType<typeof eventType>));
+    const stored = await rows<{ status: string; sequence: number }>("SELECT status, sequence FROM helpdesk_tickets WHERE id = $1", [ticket.id]);
+    assert.deepEqual(stored, [{ status: "CLOSED", sequence: 4 }]);
+  }
+});
+
 test("full lifecycle round-trips through PostgreSQL with RFC 3339 times, arrays and JSONB event data", async () => {
   let clock = Date.parse("2026-10-28T06:00:00.000Z");
   const hd = service(() => new Date(clock));

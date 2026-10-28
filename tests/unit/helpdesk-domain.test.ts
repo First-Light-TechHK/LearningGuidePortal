@@ -155,6 +155,18 @@ test("7-day reopen and rating window after close", () => {
   assert.ok(!twice.ok && twice.code === "already_rated");
 });
 
+test("the 7-day window includes its last millisecond: reopen and rate at exactly closedAt + 7 days, refused 1 ms later", () => {
+  const closedAt = new Date(NOW.getTime() - 7 * DAY).toISOString();
+  const atDeadline = decide(state("CLOSED", { closedAt }), "learner_reply", "learner", NOW);
+  assert.ok(atDeadline.ok && atDeadline.transition.event === "reopened");
+  assert.ok(decide(state("CLOSED", { closedAt }), "rate", "learner", NOW).ok);
+  const after = new Date(NOW.getTime() + 1);
+  const late = decide(state("CLOSED", { closedAt }), "learner_reply", "learner", after);
+  assert.ok(!late.ok && late.code === "reopen_window_passed");
+  const lateRate = decide(state("CLOSED", { closedAt }), "rate", "learner", after);
+  assert.ok(!lateRate.ok && lateRate.code === "rating_window_passed");
+});
+
 test("ticket numbers use the UTC day and a zero-padded per-day counter", () => {
   assert.equal(ticketDayKey(new Date("2026-10-28T23:59:59.999Z")), "261028");
   assert.equal(ticketDayKey(new Date("2026-10-28T16:30:00.000-08:00")), "261029");

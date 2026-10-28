@@ -3,7 +3,8 @@ import { after, before, test } from "node:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { SESSION_COOKIE } from "../../services/productAuth";
 import {
   AGENT_ACTIONS, BILLING_CYCLES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
@@ -80,6 +81,19 @@ after(async () => {
   for (const key of Object.keys(process.env)) if (!(key in env)) delete process.env[key];
   Object.assign(process.env, env);
   if (directory && path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true });
+});
+
+// The fixture is copied byte for byte into the Admin repo (server and client
+// tests). Any edit here must be copied there and this pin updated together.
+const FIXTURE_SHA256 = "2412c1d696355ad06c0ca80e6cdcb73390551900fe00ff5e6beed45f75ca2a22";
+const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
+
+test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
+  const bytes = await readFile(path.join(cwd, "tests/fixtures/helpdesk-contract.json"));
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), FIXTURE_SHA256);
+  const admin = path.resolve(cwd, process.env.LEARNINGGUIDE_ADMIN_DIR || "../learningguideadmin");
+  if (!existsSync(path.join(admin, ADMIN_COPIES[0]))) { t.diagnostic(`Admin repo not found at ${admin}; checked the pin only`); return; }
+  for (const copy of ADMIN_COPIES) assert.ok(bytes.equals(await readFile(path.join(admin, copy))), `${copy} differs from Portal's fixture`);
 });
 
 test("contract enums match Portal's own constants", () => {
