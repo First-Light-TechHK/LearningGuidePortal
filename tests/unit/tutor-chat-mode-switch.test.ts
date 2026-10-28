@@ -215,7 +215,7 @@ test("a stream from the previous lesson never writes into the new conversation",
   }
 });
 
-test("welcome comes from KS, timestamps render above messages, and New chat clears both UI and stored conversation", async () => {
+test("welcome comes from KS, timestamps sit in the bubble corner, and New chat clears both UI and stored conversation", async () => {
   const harness = await startTutorServer();
   const bundle = await tutorBundle();
   const browser = await chromium.launch({ headless: true });
@@ -238,7 +238,7 @@ test("welcome comes from KS, timestamps render above messages, and New chat clea
     await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Stale first half."));
     assert.equal(harness.postBodies[0].conversationId, "conversation-empty", "the first answer continues the loaded conversation");
     const timeCount = await page.locator(".tutor-message-time").count();
-    assert.equal(timeCount, 3, "welcome, user and assistant rows each carry a timestamp above them");
+    assert.equal(timeCount, 3, "welcome, user and assistant rows each carry a timestamp cornered inside their bubble");
     assert.equal(await page.locator(".tutor-message.assistant").count(), 2, "the KS welcome stays above the conversation after sending");
 
     await page.getByRole("button", { name: "New chat" }).click();
