@@ -107,10 +107,217 @@ Code map: `contracts/helpdesk.ts` (types, `HELPDESK_LIMITS`, parsing, RFC 9457 p
 - Check order for every command: ownership (404) → Idempotency-Key replay/conflict → lazy auto-confirm → `expectedSequence` (409 `stale_ticket`, body carries `currentSequence`) → transition table (409 `invalid_transition` / `reopen_window_passed` / `rating_window_passed` / `already_rated`) → one transaction (ticket UPDATE guarded by `sequence = expected`, message, attachments, event).
 - Idempotency: the key must be a UUID (bare or as an sf-string `"…"`); missing → 400 `idempotency_key_required`. The payload hash covers actor, ticket and content (file SHA-256s), not `expectedSequence`, so a retry replays with 200 + `Idempotent-Replayed: true` and the current ticket view. The key is stored on the ticket (create), on the message (if any) and on the event (every command); all three columns are UNIQUE.
 - Learner POSTs additionally require a same-origin `Origin` header (403 `forbidden_origin`), as `app/api/courses/[courseId]/learning-mode` does.
-- Internal notes advance `sequence` (they are events) but not `updated_at` / `last_message_*`; a learner whose page predates an internal note gets one 409 `stale_ticket` and reloads.
+- Internal notes advance `sequence` (they are events) but not `updated_at` / `last_message_*`; a learner whose page predates an internal note gets one 409 `stale_ticket` and reloads (superseded in §12: agent-private events no longer make a learner stale).
 - Auto-confirm (`closed_at = confirm_due_at`, actor `system`) is applied lazily on every learner/agent read and list (no scheduler); the follow-up and rating windows start at `closed_at`.
-- Attachments: magic bytes via `sniffImage` (services/portalMedia.ts); bytes stored with `services/fileStore` `writeBinary` (local file in DEV, S3 + `app_files` with persistence) at `learning_guide/helpdesk_attachments/<ticketId>/<attachmentId>.bin`. Bytes are written before the DB transaction; a failed transaction can leave an unreferenced object (no learner-visible effect).
+- Attachments (types and limits superseded in §12): magic bytes via `sniffImage` (services/portalMedia.ts); bytes stored with `services/fileStore` `writeBinary` (local file in DEV, S3 + `app_files` with persistence) at `learning_guide/helpdesk_attachments/<ticketId>/<attachmentId>.bin`. Bytes are written before the DB transaction; a failed transaction can leave an unreferenced object (no learner-visible effect).
 - Notifications: agent public reply and propose_resolution call `recordUserNotification` (services/productStore.ts) with a locale title and body `<number> · <subject>`. TODO: Notification Center rows have no link field and `/api/my-learning/notifications` is still the ML-FR-019 placeholder, so the row is stored but not yet shown and cannot link to the ticket; adding an optional link field is a separate change. Notification failures are logged (`notification_failed`) and never fail the agent's command.
 - Schema: `db/migrations/017_helpdesk_tickets.sql` is mirrored in the `ensureSchema()` bootstrap batch and freshness probe (`services/persistence/db.ts`, pinned by `tests/unit/helpdesk-migration.test.ts`), so the normal startup path self-heals; `npm run helpdesk:migrate` (dry run) / `-- --apply` applies it explicitly. Deviation from §3: `helpdesk_ticket_events` also carries `client_event_id UUID UNIQUE` + `payload_hash` so actions without a message are idempotent.
 - Tests: `tests/unit/helpdesk-{domain,contract,service,migration,api}.test.ts`, `tests/io/postgres/helpdesk-repository.test.ts` (`DATABASE_URL=… DATABASE_SSL=0 npm run test:io:pg`). The browser e2e in §8 belongs to the page slice.
 - UI status: pages not part of this slice; when built they need 待视觉验收 (no Figma frame).
+
+## 11. Figma alignment addendum (2026-10-28, copied word for word; it overrides §1–9 where they differ)
+
+Original title: Helpdesk v1: Figma alignment addendum (2026-10-28)
+
+Source: Figma file sxro3x6YXENJvjhGExmlQ7, page 1180:2 "后台（Reporting+HelpDesk）". The owner said on 2026-10-28T06:45Z that the pages will still change somewhat, so build them to be easy to adjust.
+
+| Frame | Node | Screenshot |
+|---|---|---|
+| 2.0 Learner entry (Personal settings → "Contact us" card → Contact support) | 1214:5 | /mnt/project-files/lg-helpdesk/figma/student-entry-1214-5.png |
+| 2.1 Learner Contact Support form + Common Questions | 1216:6 | /mnt/project-files/lg-helpdesk/figma/student-contact-support-1216-6.png |
+| 2.1 Learner AI Support Assistant modal | 1333:249 | /mnt/project-files/lg-helpdesk/figma/student-ai-assistant-1333-249.png |
+| 2.2 BackOffice HelpDesk, Enquiries tab | 1324:2 | /mnt/project-files/lg-helpdesk/figma/backoffice-enquiries-1324-2.png |
+
+The "废除" frame (1260:2) is obsolete. Ignore it.
+
+Agents can call the Figma MCP tools for exact values: create_session with that fileKey, then get_design_context or get_screenshot on the nodes above.
+
+This addendum OVERRIDES tickets-v1-spec.md wherever the two differ. The parts that stay unchanged are:
+- Ownership: Portal is the single writer of tickets.
+- The state machine.
+- Concurrency: sequence plus 409 stale_ticket, idempotency, the per-day counter.
+- Events, integration auth and the standards.
+
+Visible UI follows Figma. When a needed state has no frame, reuse existing styles and list it under "待视觉验收" in the final report.
+
+### A. QA knowledge-base data layer ("Common Questions"): Admin owns it
+
+Admin owns Common Questions; Portal only reads the published ones. This follows the 4-component rule: one writer per dataset.
+
+Admin Prisma migration with two tables:
+
+- **helpdesk_questions**:
+  - `id uuid` (UUIDv7)
+  - `locale` ('en-GB' | 'zh-CN')
+  - `category` (enquiry type, §B)
+  - `question` (≤200)
+  - `answer` (plain text with line breaks, ≤4000; URLs auto-linked at render)
+  - `keywords text[]`
+  - `status` ('draft' | 'published' | 'archived')
+  - `featured bool`: shown in the Portal right column
+  - `sort_order int`
+  - `version int`: optimistic concurrency. Each update is `WHERE id AND version`, and a mismatch returns 409.
+  - `created_by`, `updated_by` (employee id), `created_at`, `updated_at`
+- **helpdesk_question_revisions** (append-only): `id`, `question_id`, `version`, `snapshot jsonb`, `action` (create | update | publish | unpublish | archive), `employee_id`, `at`. Written in the same transaction as the change.
+
+BackOffice UI: the HelpDesk page has two tabs, "Enquiries" and "Common Questions" (Figma 1324:2).
+- The "+ Add Question" button in the header opens a create/edit modal. Fields: locale, category, question, answer, keywords, featured, publish now.
+- The Common Questions tab is a list/table with filters (locale, category, status), edit, publish/unpublish, archive and sort order. There is no Figma frame for this tab: reuse the existing Knowledge/AI Tutor table and modal styles, flagged 待视觉验收.
+- RBAC: helpDesk FULL can write, VIEW is read-only.
+
+Admin integration API for Portal (§E auth):
+- `GET /api/integration/helpdesk/questions?locale=en-GB&featured=true` returns `{ questions: [{id, category, question, answer}], etag }`. It returns published questions only, ordered by sort_order, and supports `ETag` / `If-None-Match`.
+
+### B. Learner (Portal)
+
+**Entry.** The AccountNav sidebar "Contact us" card has a "Contact support" link (Figma 1214:5). It goes to the support page `/{locale}/account/my-learning/support`.
+
+**Contact Support page** (Figma 1216:6). It is a full-width white card under the normal top nav, not inside the account sidebar layout. Left column, the form:
+- Enquiry Type* is a select with "Select a topic" and four options. Store these four values as the ticket `category` and replace the old category list:
+
+  | Stored value | Label |
+  |---|---|
+  | `technical_support` | Technical Support |
+  | `course_content` | Course Content |
+  | `payments_subscriptions` | Payments & Subscriptions |
+  | `other` | Other Enquiries |
+
+- Subject* (≤120) and Message* (≤5000).
+- Attachment drop zone: "Paste screenshots here or upload attachments", "Upload files" button, "max 10 MB each".
+  - Allow up to 5 files, 10 MB each. Allowed types: png, jpeg, webp, gif, pdf, txt, csv, docx, xlsx.
+  - Validate by magic bytes or structure, not only the extension.
+  - Serve images inline and everything else as a download. Always send `X-Content-Type-Options: nosniff`.
+  - Never serve html or svg.
+- Your Email* is the contact email. It defaults to the account email, can be edited, and is validated. Store it on the ticket as `contact_email`.
+- The note "Our support team will review your enquiry and reply to you by email…", then Cancel (back) and Submit Enquiry.
+
+Right column: "Common Questions". It shows the featured published questions for the locale, fetched server-side from Admin (§A) with a 60 s cache. On error it serves stale data, or hides the column if there is nothing cached. Clicking a row expands the answer inline (accordion, chevron rotates; 待视觉验收).
+
+**Submit flow**, with the agent from §C:
+1. Submit Enquiry first validates on the client, then calls `POST /api/helpdesk/suggestions {category, subject, message, locale}`. This creates no ticket and sends no attachments to the model.
+2. If it returns a suggestion, show the AI Support Assistant modal (Figma 1333:249):
+   - Top: the learner's enquiry (initials avatar, subject, type tag, email · time, body, attachment chips).
+   - Middle: the answer block, "Hi {first name}! Here's a possible solution to your issue:" followed by the approved QA answer verbatim.
+   - Footer: "Was this helpful?" with three buttons:
+     - "Yes, this solved my issue": report outcome `solved` and create no ticket. Show a small thank-you state (待视觉验收), then go back to the account page.
+     - "No, still submit to support team": create the ticket, with `suggestionId` recorded as event `ticket.suggestion_declined`. Report outcome `declined`.
+     - "Edit my enquiry": close the modal and keep the form filled. Report outcome `edited`.
+3. If there is no suggestion, or on any error or a 4 s timeout, create the ticket directly. The suggestion step must never block submitting.
+4. After the ticket is created, show a success state with the ticket number and a link to "My enquiries" (待视觉验收).
+
+**My enquiries.** The list, the detail view and the confirm-end flow have no Figma frame yet. Keep them minimal, reuse existing account styles, and flag them 待视觉验收. The owner asked for the Taobao-style confirm, so keep it:
+- PENDING_CONFIRM shows a short prompt (owner asked 06:50Z to keep it short): zh-CN "问题解决了吗？" with buttons "已解决" / "没解决"; en-GB "Is it solved?" with "Solved" / "Not yet". In emails and notifications use the same short wording.
+- Self-close, follow-up within 7 days, and the rating stay as in the spec.
+
+**Email.** Figma says replies come by email. When an agent replies or marks the ticket handled, Portal sends an email to `contact_email` through the existing services/emailService.ts, with a link to the ticket. The in-site notification also stays. Email failure must not fail the action.
+
+### C. Agent (suggestions): Admin's agent role
+
+Admin already has an OpenRouter provider (server/src/ai/providers/openrouter.provider.ts, provider.registry.ts) and a DB rate limit (ai_rate_limit_hits). Reuse them, behind the existing ModelGateway/provider interface.
+
+`POST /api/integration/helpdesk/suggest` takes `{learnerId, locale, category, subject, message}` and returns `{ suggestion: {id, qaId, question, answer} | null }`. Steps:
+1. Retrieve candidates from published questions in that locale: PostgreSQL full-text search plus keyword match, with a boost for the same category. Keep the top 8. If there are none, return null without calling the model.
+2. Call the model through OpenRouter with structured output `{qaId: string|null}`. The model may only choose one of the candidate ids or null; the server rejects anything else.
+   - The model is `HELPDESK_SUGGEST_MODEL`, defaulting to the first cheap model in AI_AVAILABLE_MODELS.
+   - Timeout is 3 s.
+   - With no API key, or on any error, return null.
+3. Return the stored answer verbatim. The model never writes text shown to the learner.
+4. Rate limit is 10 per learner per hour; over the limit, return null.
+5. Log each suggestion to **helpdesk_suggestions**:
+   - Columns: `id` (UUIDv7), `learner_id`, `locale`, `category`, `query_text`, `candidate_ids`, `qa_id|null`, `model`, `latency_ms`, `outcome` (null | solved | declined | edited), `created_at`.
+   - `query_text` is kept 90 days.
+   - Clean-up is a delete in the existing scheduled path if one exists; otherwise document it as an ops note.
+
+`POST /api/integration/helpdesk/suggestions/{id}/outcome {outcome}` is idempotent: the first value wins, and the same value repeated is OK.
+
+The Common Questions tab shows per-question counters derived from helpdesk_suggestions: shown, solved, declined.
+
+### D. BackOffice Enquiries tab (Figma 1324:2): replaces the card board
+
+The layout has three columns inside the normal AppShell content card. The page header is "Help Desk" with the subtitle "Manage student enquiries and common questions", the "+ Add Question" button, and the tabs.
+
+**Left (340 px)**
+- Search: "Search students or enquiries…" matches name, email, subject or ticket number. The filter button opens filters for status, enquiry type and tag.
+- Rows show:
+  - an initials avatar, colour picked deterministically from the learner id
+  - the name, and the time ("HH:mm" for today, else "16 May")
+  - the subject (bold) and a one-line preview
+  - an unread dot when `unreadByAgent` is set
+- The selected row is highlighted with a left blue bar. Paged with a cursor; scrolling loads more.
+
+**Middle**
+- A date separator, then the enquiry card: subject, enquiry-type tag, "contact email · time", body, attachment chips (name + size, opens through the Admin proxy) and "Mark as reviewed".
+- Below the card are later messages (learner and agent), then a reply composer. The composer has no Figma frame yet (待视觉验收).
+- Internal notes are visually distinct and never shown to learners.
+- "Mark as reviewed" maps to the existing `propose_resolution` action: the ticket goes to PENDING_CONFIRM and the learner is asked to confirm. This mapping is an assumption; report it as an open question.
+- Replying auto-claims the ticket if it is unassigned.
+
+**Right (387 px)**
+- Name and email, then "Student Information": Account Email, Contact Email, Joined Date, Student ID, Total Enquiries, Current Course.
+- "Current Subscription Plan" (calendar icon): Plan Name, Billing Cycle, Status pill (Active in green), Renewal Date. If there is no plan, show "—".
+- "Tags" with "+ Add Tag": coloured chips, colour deterministic from the tag text; click × to remove (FULL only).
+
+VIEW users see everything but no write controls.
+
+Portal integration API changes (Portal stays the single writer):
+- Agent summary adds `contactEmail`, `preview` (first 120 chars of the first message), `unreadByAgent` and `tags`.
+- Agent detail adds:
+  - `student {id, name, accountEmail, contactEmail, joinedAt, totalEnquiries, currentCourse:{id,title}|null}`: Student ID shows Portal's user id. Read-only from existing Portal data; no new writes to productStore.
+  - `subscription {planName, billingCycle, status, renewalDate}|null`: read-only. Order/subscription logic belongs to the order/payment owner, so only read what already exists.
+  - `tags`.
+- New actions on `POST .../tickets/{id}/actions`: `add_tag {tag}`, `remove_tag {tag}` (tag ≤32 chars, ≤10 per ticket, idempotent, event `ticket.tag_added` / `ticket.tag_removed`) and `mark_read` (clears unreadByAgent).
+  - Tags live in a new table `helpdesk_ticket_tags(ticket_id, tag, created_at, PRIMARY KEY(ticket_id, tag))` in a new migration `018_helpdesk_ticket_tags.sql`, or folded into 017 if 017 is not yet on any shared branch (it isn't).
+  - `unread_by_agent bool` goes on helpdesk_tickets. It is set when a learner creates a ticket or posts a message, and cleared by `mark_read`, which the BackOffice calls when an agent opens the ticket.
+- Learner create accepts `contactEmail` and `suggestionId`.
+
+### E. Service-to-service auth
+
+| Direction | Portal side | Admin side |
+|---|---|---|
+| Admin calls Portal (tickets) | `PORTAL_HELPDESK_TOKEN` | `PORTAL_HELPDESK_BASE_URL` + `PORTAL_HELPDESK_TOKEN` |
+| Portal calls Admin (questions, suggest, outcome) | `ADMIN_HELPDESK_BASE_URL` + `ADMIN_HELPDESK_TOKEN` | `ADMIN_HELPDESK_TOKEN` |
+
+Both directions read the env per request, compare with timingSafeEqual and return RFC 9457 errors.
+
+The Admin integration routes must bypass the employee-login guard and use only the Bearer check. Make that exemption explicit in route-access, with a test.
+
+### F. Tests (TDD, as in the spec)
+
+**Admin**
+- Questions repository/service: version conflict 409, revision rows, publish filter, ETag.
+- Suggest:
+  - no candidates → no model call
+  - model returns a non-candidate id → null
+  - timeout → null
+  - rate limit → null
+- Outcome idempotency.
+- Integration auth: missing or wrong token → 401, empty env → 503.
+- RBAC for the questions endpoints.
+
+**Portal**
+- Create with contactEmail and suggestionId.
+- Attachment type and size limits (10 MB, 5 files, magic bytes).
+- Tags and mark_read actions.
+- Unread flag transitions.
+- Student/subscription projection.
+- Email sent on reply and on propose_resolution (mock the email service).
+- e2e: form → suggestion modal (stub Admin via env base URL to a local stub server) → each of the three buttons → ticket created or not as expected.
+
+## 12. Portal backend notes for the addendum (2026-10-28)
+
+Scope of this slice: §B data/API, §D Portal integration changes, §E Portal→Admin client and the learner Route Handlers. Pages, the Admin side and the browser e2e are other slices.
+
+- Schema: folded into `017_helpdesk_tickets.sql` (not on any shared branch yet): categories `technical_support | course_content | payments_subscriptions | other`; `contact_email` (3–254), `suggestion_id`, `unread_by_agent`; attachments ≤ 5 per message, ≤ 10 MB, nine content types; new `helpdesk_ticket_tags` (PK ticket_id + tag, tag 1–32) with a tag index. The bootstrap/probe mirror is updated and pinned by `tests/unit/helpdesk-migration.test.ts`. A database that already ran the earlier 017 (only local scratch databases) must drop the five helpdesk tables once; the io suite does this itself.
+- Contact email: optional multipart field `contactEmail`; blank means the account email; an account without an email (WeChat) must send one (`validation_failed`, field `contactEmail`). Plain addresses only (no display name, no header characters).
+- Declined suggestion: optional `suggestionId` (UUID). The ticket then has two events: `created` (sequence 1, carries the Idempotency-Key) and `suggestion_declined` (sequence 2, `data.suggestion_id`). The learner timeline hides it; agents see it and `suggestionId` on the detail.
+- Attachments (`modules/helpdesk/attachments.ts`): PNG/JPEG/WebP (existing `sniffImage`), GIF and PDF by magic bytes; DOCX/XLSX by their ZIP central directory (`[Content_Types].xml` plus `word/document.xml` or `xl/workbook.xml`; macro documents with `vbaProject.bin` are refused); TXT/CSV need the extension plus strict UTF-8 with no NUL/control bytes and no markup start (`<html`, `<svg`, `<?xml`, …). Stored names always end with an extension of the detected type. Serving: images `inline`, everything else `attachment`; always `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cache-Control: private, no-store`; text types add `; charset=utf-8`.
+- Request size: `middleware.ts` matches every path and Next 15 truncates bodies above `experimental.middlewareClientMaxBodySize` (default 10 MB) before Route Handlers read them, so `next.config.ts` sets it to `52mb` (5 × 10 MB plus form overhead). Route Handlers still enforce their own limits; any proxy in front of App Runner must allow the same size.
+- Tags: `add_tag` / `remove_tag` with `{ tag }` (trimmed, inner spaces collapsed, NFKC, lower case, ≤ 32), at most 10 per ticket (409 `tag_limit_reached`). Adding a present tag or removing a missing one is a no-op (no event). Each real change is an event (`tag_added` / `tag_removed`, `data.tag`) that does not move `updatedAt`. `expectedSequence` is optional; tags apply to the current sequence and a lost race is retried (up to 6 times with jitter).
+- Stale check refinement: tag events never make anyone stale, and agent-private events (internal notes, tags) never make a learner stale (`ignoredByStaleCheck` in `domain.ts`). This removes the §10 side effect where a learner's page went stale after an internal note.
+- Unread flag: set on create and whenever a learner posts a message (reply, follow-up, "not solved" with a message); cleared only by `mark_read`, which is not an event and does not change `sequence`. In SQL the flag is only ever raised by `appendChange` (`unread_by_agent OR $markUnread`) and cleared by `markRead`, so a stale snapshot cannot undo either.
+- Agent list: `q` also matches the learner name and the contact email; new filters `category` and `tag`; `counts` follow `q`, `category` and `tag` but not `status`. Summaries add `contactEmail`, `preview` (first message, whitespace collapsed, 120 characters), `unreadByAgent`, `tags`.
+- Student / subscription projection (`modules/helpdesk/studentDirectory.ts`, wired in `runtime.ts` to `ensureProductData()` — the same read `getUserById` uses; nothing is written): `student {id (Portal user id), name, accountEmail, contactEmail, joinedAt, totalEnquiries (count of the learner's tickets), currentCourse (most recently updated study record whose course exists)}`; `subscription {planName, billingCycle ("annual" for 12-month plans, "semiannual" for 6-month, null if the plan is gone), status (active | cancel_at_period_end | grace), trial, renewalDate (validTo while active and renewing, else null), validTo}` from the live subscription (state active / cancel_at_period_end / grace and not past its end; latest end wins), else null. If the read fails, the detail still answers with the ticket's own learner fields and `subscription: null` (logged `student_directory_failed`).
+- Email (`sendHelpdeskUpdateEmail`, existing SMTP path): agent public reply → subject `[<number>] Support replied to your enquiry` / `[<number>] 客服回复了你的咨询`, body with the reply text and a link; "handled" (propose_resolution) → subject `[<number>] Is it solved?` / `[<number>] 问题解决了吗？` (the owner's short wording) with a link and the 72-hour note. Link: `NEXT_PUBLIC_APP_URL` (via `publicAppOrigin()`) + `/{locale}/account/my-learning/support/{ticketId}`; without a public origin the link line is left out. Sent in the background; failures are logged as `email_failed` with ticket id only (no address) and never fail the action. The in-site notification title for "handled" is now the short "Is it solved?" / "问题解决了吗？".
+- Portal→Admin client (`modules/helpdesk/adminClient.ts`): reads `ADMIN_HELPDESK_BASE_URL` + `ADMIN_HELPDESK_TOKEN` per call (http/https only; unset → questions hidden, no suggestion, outcome not delivered). Questions: `GET {ADMIN}/api/integration/helpdesk/questions?locale=&featured=true`, 60 s in-process cache per base URL + locale, revalidation with `If-None-Match`, a 304 restarts the 60 s window, stale data on any error, `null` (hide) when nothing is cached, 3 s timeout, malformed rows dropped. Suggest: `POST {ADMIN}/api/integration/helpdesk/suggest {learnerId, locale, category, subject, message}` with a 4 s timeout; any error, non-200, malformed body or timeout → `null`. Outcome: `POST {ADMIN}/api/integration/helpdesk/suggestions/{id}/outcome {outcome}`, 4 s timeout, 2xx → delivered. The token is never logged.
+- Learner routes (thin): `GET /api/helpdesk/common-questions?locale=` (signed in) → `{ questions }` (`[]` = hide the column); `POST /api/helpdesk/suggestions` (signed in, same origin, JSON; no Idempotency-Key because nothing is created on Portal) → `{ suggestion | null }`; `POST /api/helpdesk/suggestions/{id}/outcome` (signed in, same origin) → 204, or 503 `assistant_unavailable` when Admin could not be told (pages ignore it).
+- Open question kept from §D: "Mark as reviewed" maps to `propose_resolution` (the learner is asked "Is it solved?").
