@@ -14,7 +14,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
   const root = process.cwd(), output = path.join(root, "test-results/course-detail-access");
   await mkdir(output, { recursive: true });
   const bundle = await build({ entryPoints: ["app/[locale]/portal/courses/[slug]/page.tsx"], bundle: true, write: false, outfile: path.join(output, "page.cjs"), platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], loader: { ".css": "local-css" }, plugins: [{ name: "page-context", setup(b) {
-    b.onResolve({ filter: /^(next\/|@\/services\/|@\/components\/portal\/(PortalHeader|PortalFooter|StreamedContent|CourseThumbnail|CourseLearningModeDialog)$)/ }, args => ({ path: args.path, namespace: "context" }));
+    b.onResolve({ filter: /^(next\/|@\/services\/|@\/components\/portal\/(PortalHeader|PortalFooter|StreamedContent|CourseThumbnail|CourseLearningModeDialog|CourseDetailSync)$)/ }, args => ({ path: args.path, namespace: "context" }));
     b.onLoad({ filter: /.*/, namespace: "context" }, args => ({ loader: "tsx", resolveDir: root, contents:
       args.path.endsWith("productStore") ? "export const getCoursePage=(...a)=>globalThis.courseCardTest.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.courseCardTest.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.courseCardTest.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.courseCardTest.store.listPlans(...a);"
       : args.path.endsWith("productAuth") ? "export const currentProductUser=async()=>globalThis.courseCardTest.user;"

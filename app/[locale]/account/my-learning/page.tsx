@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AccountNav } from "@/components/portal/AccountNav";
 import { OverviewDesign } from "@/components/portal/OverviewDesign";
+import { OverviewModeSync } from "@/components/portal/OverviewModeSync";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { localeFrom } from "@/lib/i18n/config";
@@ -20,5 +21,6 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
     <AccountNav locale={locale} copy={messages.account}/>
     <OverviewDesign data={data} locale={locale}/>
     <PortalFooter locale={locale}/>
+    <OverviewModeSync userId={user.id} courses={data.courses.map(course => ({ courseId: course.courseId, mode: course.mode }))}/>
   </main>;
 }

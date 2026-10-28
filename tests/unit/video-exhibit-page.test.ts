@@ -25,10 +25,12 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       const page = await browser.newPage({viewport:{width:1440,height:1024}});
       const studyEvents: {path:string; body:{event:string;clientEventId?:string;contentId?:string;learningMode?:string}}[]=[];
       let openFailure: "http" | "network" | null = null;
+      let modeFailure = false;
       await page.route("http://exhibit.test/**",async route=>{
         const url=new URL(route.request().url());
         if(url.pathname.startsWith("/portal/")) return route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:url.pathname.endsWith(".svg")?"image/svg+xml":url.pathname.endsWith(".webm")?"video/webm":url.pathname.endsWith(".obj")?"text/plain":"image/png"});
         if(url.pathname.startsWith("/api/")) {
+          if(url.pathname.endsWith("/learning-mode")) return route.fulfill({ status: modeFailure ? 503 : 200, json: { ok: !modeFailure } });
           if(url.pathname.startsWith("/api/study/")) {
             const body=route.request().postDataJSON();
             studyEvents.push({path:url.pathname,body});
@@ -84,6 +86,10 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await Promise.all([page.waitForResponse(response=>response.url().endsWith('/api/study/events')&&response.request().postDataJSON()?.contentId==='video'),page.locator('video').evaluate(video=>video.dispatchEvent(new Event('play')))]);
       assert.ok(studyEvents.some(event=>event.path==="/api/study/events" && event.body.event==="open" && event.body.contentId==="video" && event.body.learningMode==="video" && event.body.clientEventId?.startsWith("open_")));
       assert.equal(await modeSwitch.inputValue(),"video");
+      modeFailure=true;await modeSwitch.selectOption("text");
+      await page.getByRole("alert").filter({hasText:getMessages(locale).courseLearningMode.saveError}).waitFor();
+      assert.equal(await modeSwitch.inputValue(),"video","failed mode saves retain the current presentation for retry");
+      modeFailure=false;
       const textSaved=page.waitForRequest(request=>request.url().endsWith("/api/study/events")&&request.postDataJSON()?.contentId==="text");
       await modeSwitch.selectOption("text");
       await textSaved;
@@ -94,6 +100,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.getByText("Mode switch reading content.",{exact:true}).waitFor();
       assert.equal(await page.locator("video.la-lesson-video").count(),0);
       await modeSwitch.selectOption("video");
+      await page.locator("video.la-lesson-video").waitFor();
       assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).count(),0);
       assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).count(),1);
       await page.locator("video.la-lesson-video").waitFor();
