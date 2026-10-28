@@ -3,6 +3,7 @@ import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
 import { withPlanAiPoints } from "./planAiPoints";
+import { highestProgressLesson } from "./courseProgressAction";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
@@ -34,7 +35,7 @@ import { buildCoursePage, emptyFailedCoursePage, type CoursePage } from "@/lib/c
 import type { CourseMetadata, CatalogueEntry, CatalogueInput, CourseListQuery } from "@/contracts/course-authoring";
 import type { LessonContent } from "@/contracts/lesson-content";
 import type { LessonResources } from "@/contracts/lesson-resources";
-import type { KnowledgePositions } from "@/contracts/knowledge-progress";
+import type { HighestCourseProgress, KnowledgePositions } from "@/contracts/knowledge-progress";
 import { knowledgeProgress, courseKnowledgePoints } from "@/lib/knowledgeProgress";
 import type { StudyProgressInput } from "@/contracts/knowledge-progress";
 import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backofficeAccess";
@@ -193,6 +194,7 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  highestProgress?: HighestCourseProgress;
   knowledgePositions?: KnowledgePositions;
   currentMode?: CourseLearningMode;
   id: string;
@@ -1114,15 +1116,12 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = data.studyRecords.find(item => item.userId === userId && item.courseId === course.id);
-    const lessons = course.sections.flatMap(section => section.lessons);
-    const currentLessonId = lessons.find(lesson => lesson.id === record?.currentLessonId)?.id || lessons[0]?.id || null;
-    const actionLessonId = page.pageState !== "available" ? null : record?.completedAt
-      ? lessons.at(-1)?.id || null : currentLessonId;
+    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? highestProgressLesson(course, record, courseEvents) : null;
     if (record?.knowledgePositions && record.currentMode) {
       const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, actionLessonId: !entitlement ? page.actionLessonId : page.pageState !== "available" ? null : record.completedAt || record.progress === 100 ? lessons.at(-1)?.id || null : position.lessonId || actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
+      return { ...page, actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
     }
-    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId: !entitlement ? page.actionLessonId : page.pageState === "available" && (record?.progress === 100 || page.progress === 100) ? lessons.at(-1)?.id || null : actionLessonId };
+    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId };
   });
 }
 
@@ -2190,7 +2189,11 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
       : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
     // Only a greater outline percentage updates progress. Cursor and study
     // telemetry remain independent, so revisiting earlier points is safe.
-    if ((computed.progress ?? 0) > record.progress) record.progress = computed.progress!;
+    if ((computed.progress ?? 0) > record.progress) {
+      record.progress = computed.progress!;
+      record.highestProgress = { progress: record.progress, mode: pointProgress ? record.currentMode! : null,
+        lessonId: pointProgress?.lessonId || input.lessonId, contentId: pointProgress ? pointProgress.contentId : input.contentId || null };
+    }
     record.completedAt = record.completedAt || (computed.completed ? now() : null);
     record.updatedAt = now();
     return record;

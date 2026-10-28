@@ -60,8 +60,13 @@ async function main() {
       await page.waitForLoadState("networkidle");
       const saved = await context.request.post(`${origin}/api/study/events`, { data: { courseId: course.id, lessonId: second.id, contentId: point.id, learningMode: "video", event: "open", seconds: 0, clientEventId: randomUUID() } });
       assert.equal(saved.status(), 200);assert.equal((await saved.json()).record.progress, 86);
+      const firstPoint = lessons[0].contents!.find(content => content.type === "video")!;
+      const reviewed = await context.request.post(`${origin}/api/study/events`, { data: { courseId: course.id, lessonId: lessons[0].id, contentId: firstPoint.id, learningMode: "video", event: "open", seconds: 0, clientEventId: randomUUID() } });
+      const reviewRecord = (await reviewed.json()).record;
+      assert.equal(reviewed.status(), 200);assert.equal(reviewRecord.progress, 86);assert.equal(reviewRecord.currentLessonId, lessons[0].id);
+      assert.equal(reviewRecord.highestProgress.lessonId, second.id);assert.equal(reviewRecord.highestProgress.progress, 86);
       const current = await context.request.get(`${origin}/api/portal/courses/${course.slug}`);
-      assert.equal((await current.json()).page.actionLessonId, second.id, "server already knows the current Lesson");
+      assert.equal((await current.json()).page.actionLessonId, second.id, "Start follows the highest progress despite reviewing Lesson 1");
       assert.equal(current.headers()["cache-control"], "private, no-store");assert.ok(current.headers().vary.split(/,\s*/).includes("Cookie"));
       await page.goBack();await start.waitFor();await page.waitForLoadState("networkidle");
       await page.waitForFunction(expected => document.querySelector('[data-syllabus] [data-course-cta-link="continue_learning"]')?.getAttribute("href") === expected, expected, { timeout: 10000 });
@@ -76,7 +81,7 @@ async function main() {
       await page.getByRole("heading", { name: second.title, exact: true }).waitFor();
       await context.close();
     }
-    console.log("PASS: Modeling life 86% resumes Lesson 2 after actual Next history restoration in both locales.");
+    console.log("PASS: Modeling life highest 86% keeps Start on Lesson 2 after reviewing Lesson 1 and restoring Next history in both locales.");
   } finally {
     await browser?.close();
     if (server && server.exitCode === null) { const stopped = new Promise<void>(resolve => server!.once("exit", () => resolve()));server.kill();await stopped; }
