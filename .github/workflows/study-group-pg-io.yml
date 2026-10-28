@@ -4,6 +4,9 @@
 # against a real PostgreSQL. This is deliberately a separate job from Verify,
 # which excludes database-backed io tests. The proof step runs scripts/studygroup-io-postgres.sh,
 # shared with the Overlay study-group suite, so local and CI entrypoints stay identical.
+# The same job also runs the Helpdesk Tickets PostgreSQL proofs (gap-free ticket
+# numbers, idempotency, optimistic concurrency, rate limits, unread flag) through
+# scripts/pg-io-postgres.sh against the same service database.
 name: Study Group PG I/O
 
 on:
@@ -54,3 +57,6 @@ jobs:
 
       - name: Run the PostgreSQL io proofs
         run: bash scripts/studygroup-io-postgres.sh
+
+      - name: Run the Helpdesk PostgreSQL io tests
+        run: bash scripts/pg-io-postgres.sh tests/io/postgres/helpdesk-repository.test.ts
