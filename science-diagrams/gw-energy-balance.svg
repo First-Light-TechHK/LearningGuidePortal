@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" width="480" height="320">
+  <rect width="480" height="320" fill="#f8f9fa"/>
+  <text x="240" y="160" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#666">Planetary Energy Balance Diagram</text>
+  <text x="240" y="185" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#999">F = forcing (W m⁻²), κ = feedback (W m⁻² K⁻¹), ΔT = temperature</text>
+  <line x1="80" y1="80" x2="80" y2="260" stroke="#333" stroke-width="1"/>
+  <line x1="80" y1="260" x2="420" y2="260" stroke="#333" stroke-width="1"/>
+  <path d="M 120 220 L 200 180 L 280 160 L 360 150" fill="none" stroke="#2563eb" stroke-width="2"/>
+  <path d="M 120 220 L 200 200 L 280 195 L 360 194" fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="4,3"/>
+  <defs>
+    <marker id="red-arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+      <path d="M 0 0 L 8 4 L 0 8 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+  <line x1="260" y1="100" x2="260" y2="155" stroke="#dc2626" stroke-width="2.5" marker-end="url(#red-arrow)"/>
+  <text x="275" y="130" font-family="sans-serif" font-size="13" fill="#dc2626" font-weight="bold">F (forcing)</text>
+  <text x="200" y="70" font-family="sans-serif" font-size="12" fill="#2563eb">transient T(t)</text>
+  <text x="280" y="280" font-family="sans-serif" font-size="12" fill="#666">time →</text>
+</svg>
