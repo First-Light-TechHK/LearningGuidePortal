@@ -110,6 +110,7 @@ export async function POST(request: Request) {
       locale,
       history: history.map((item) => ({ role: item.role, content: item.content })),
       signal: request.signal,
+      userId: user.id,
     });
     // 首字节前失败仍可返回标准错误状态；流开始后只能结束响应。
     const first = await generator.next();

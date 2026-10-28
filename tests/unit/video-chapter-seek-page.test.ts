@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
 import { chromium } from "playwright";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 
 test("video point selection plays real media across same/different sources while preserving chapter starts and trial limits", {timeout:120000}, async () => {
   const bundle = await build({
@@ -41,6 +41,7 @@ test("video point selection plays real media across same/different sources while
     }],
   });
   const browser = await chromium.launch();
+  await mkdir("test-results/video-point-tracking", { recursive: true });
   try {
     for (const locale of ["en-GB", "zh-CN"] as const) for (const player of [false, true]) {
       const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
@@ -80,6 +81,28 @@ test("video point selection plays real media across same/different sources while
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0,"first entry starts at zero without starting playback");
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
       await video.evaluate(el=>{el.setAttribute("data-identity","same-video");(el as HTMLVideoElement).loop=true;});
+      const naturallyOpened=!player?page.waitForRequest(request=>request.url().includes("/api/study/")&&request.postDataJSON()?.contentId==="v2"):undefined;
+      await video.evaluate(el=>(el as HTMLVideoElement).play());
+      await point(1).and(page.locator('[aria-current="step"]')).waitFor();
+      await naturallyOpened;
+      await page.waitForFunction(()=>document.querySelector<HTMLVideoElement>("video.la-lesson-video")!.currentTime>0.7);
+      await video.evaluate(el=>(el as HTMLVideoElement).pause());
+      assert.equal(await point(1).getAttribute("aria-current"),"step","natural playback follows the current authored point");
+      assert.equal(await point(2).getAttribute("aria-current"),null,"timestamps in another source cannot select that source");
+      assert.equal(await video.getAttribute("data-identity"),"same-video");
+      await page.screenshot({path:`test-results/video-point-tracking/${locale}-${player?"shared":"outline"}-desktop.png`,fullPage:true});
+      await page.setViewportSize({width:390,height:844});
+      await page.screenshot({path:`test-results/video-point-tracking/${locale}-${player?"shared":"outline"}-mobile.png`,fullPage:true});
+      await page.setViewportSize({width:1440,height:1024});
+      // Paused scrubbing follows points too, without seeking back or starting playback.
+      await video.evaluate(el=>{(el as HTMLVideoElement).currentTime=0.1;});
+      await point(0).and(page.locator('[aria-current="step"]')).waitFor();
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+      assert.ok(Math.abs(await video.evaluate(el=>(el as HTMLVideoElement).currentTime)-0.1)<0.01);
+      await video.evaluate(el=>{(el as HTMLVideoElement).currentTime=0.8;});
+      await point(1).and(page.locator('[aria-current="step"]')).waitFor();
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+      assert.ok(Math.abs(await video.evaluate(el=>(el as HTMLVideoElement).currentTime)-0.8)<0.01,"following a seek must retain its exact position");
       const openedPoint=!player?page.waitForRequest(request=>request.url().includes("/api/study/")&&request.postDataJSON()?.contentId==="v2"):undefined;
       await point(1).click();await playing();await openedPoint;
       assert.equal(await video.getAttribute("data-identity"),"same-video","same-source navigation retains the video element");

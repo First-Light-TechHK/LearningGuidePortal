@@ -37,6 +37,7 @@ export function PreviewProgress({ courseId, lessonId, contentId, learningMode, s
     } catch { setError(copy.saveError); }
     finally { setBusy(false); }
   }
-  if (!canComplete && !showError) return null;
+  // Video progress is background-only regardless of the caller's display defaults.
+  if (learningMode === "video" || (!canComplete && !showError)) return null;
   return <div className="preview-progress">{canComplete && <button type="button" className="portal-button portal-button-primary" disabled={completed || busy} onClick={complete}>{completed ? copy.completed : copy.completeLesson}</button>}{showError && error ? <p role="alert" className="portal-form-error">{error}</p> : null}</div>;
 }

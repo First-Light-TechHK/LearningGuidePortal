@@ -1,0 +1,94 @@
+# AI Tutor 可用性审计（2026-10-28 复盘 A5）
+#
+# 为什么需要它：日志只能发现"调用失败"。若后台把课程设为 Online，但 KS 里没有
+# 该课程或没有上线版本，Portal 的调用每次都是 200，只是 available=false，
+# 学员端永远没有入口，而日志看起来一切正常。
+#
+# 本工作流按学员视角调用 KS 的 /api/user/ai-tutors，把不一致数量发布为
+# CloudWatch 指标 TutorMismatch，由配套告警负责通知。
+#
+# 只读：仅调用 KS 的查询接口并写一条自定义指标，不改动任何业务数据。
+name: Tutor availability audit
+
+on:
+  schedule:
+    # 每天 02:00 UTC（10:00 UTC+8），早于工作日开始
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'First-Light-TechHK/LearningGuidePortal'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: DEV
+            admin_origin: https://admin.ilovelearningguide.com
+            secret_id: learning-guide/admin/dev/auth_token
+          - environment: SIT
+            admin_origin: https://admin.sit.ilovelearningguide.com
+            secret_id: learning-guide/admin/sit/auth_token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      - name: Read the KS service token
+        id: token
+        run: |
+          token="$(aws secretsmanager get-secret-value \
+            --secret-id "${{ matrix.secret_id }}" \
+            --query SecretString --output text)"
+          # 只暴露是否为空，绝不打印令牌内容
+          if [ -z "$token" ]; then
+            echo "::error::KS service token secret is empty for ${{ matrix.environment }}"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "value=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Audit learner-visible AI Tutors
+        id: audit
+        env:
+          KS_TUTOR_BASE_URL: ${{ matrix.admin_origin }}
+          KS_TUTOR_API_KEY: ${{ steps.token.outputs.value }}
+        run: |
+          set +e
+          out="$(node scripts/audit-tutor-availability.mjs)"
+          code=$?
+          echo "$out"
+          echo "mismatch=$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).mismatch ?? 0)}catch{console.log(0)}})')" >> "$GITHUB_OUTPUT"
+          echo "ok=$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).ok === true ? "1" : "0")}catch{console.log(0)}})')" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::audit could not complete (exit $code) — check KS_TUTOR_API_KEY/HOST for ${{ matrix.environment }}"
+          fi
+          exit "$code"
+
+      - name: Publish audit metrics
+        if: always()
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          MISMATCH: ${{ steps.audit.outputs.mismatch }}
+          AUDIT_OK: ${{ steps.audit.outputs.ok }}
+        run: |
+          # 审计本身失败（401/超时）时 ok=0，单独计数，避免被当成"零不一致"而静默通过
+          aws cloudwatch put-metric-data --region ap-southeast-1 \
+            --namespace LearningGuide/Tutor \
+            --metric-data "MetricName=TutorMismatch,Value=${MISMATCH:-0},Unit=Count,Dimensions=[{Name=Environment,Value=$ENVIRONMENT}]" \
+            "MetricName=TutorAuditFailed,Value=$([ "${AUDIT_OK:-0}" = "1" ] && echo 0 || echo 1),Unit=Count,Dimensions=[{Name=Environment,Value=$ENVIRONMENT}]"
