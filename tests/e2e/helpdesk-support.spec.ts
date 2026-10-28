@@ -1,7 +1,9 @@
-// Helpdesk Tickets v1, learner side (spec §6/§8 + Figma addendum §B):
-// AccountNav entry, Contact Support form (Figma 1216:6), AI Support Assistant
-// modal (Figma 1333:249) with its three outcomes, My enquiries and every
-// learner action on the ticket page, ownership, and attachment rejection.
+// Helpdesk Tickets v1 + v2, learner side (spec §6/§8, Figma addendum §B,
+// tickets-v2-figma-addendum §4): AccountNav entry, Contact Support form and
+// the AI Support Assistant chat panel (Figma 1216:6), the submit-time modal
+// (Figma 1333:249) with its three outcomes, the public Help Centre (Figma
+// 1387:2), the agent's view of the AI answers and the flag, My enquiries and
+// every learner action on the ticket page, ownership, and attachment rejection.
 // Admin is played by tests/e2e/helpdesk-admin-stub.mjs (see playwright.helpdesk.config.ts);
 // agents act through Portal's integration API with a local test token.
 import { expect, test, type APIRequestContext, type Browser, type Page } from "playwright/test";
@@ -9,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { crc32, deflateSync } from "node:zlib";
 import { getMessages } from "../../lib/i18n/messages";
+import { fillTemplate } from "../../modules/helpdesk/learnerUi";
 import { HELPDESK_E2E, helpdeskAdminStubUrl } from "./helpdesk-e2e-env";
 
 type Locale = "en-GB" | "zh-CN";
@@ -73,7 +76,20 @@ const bearer = { Authorization: `Bearer ${HELPDESK_E2E.portalToken}` };
 async function agentTicket(request: APIRequestContext, id: string) {
   const response = await request.get(`/api/integration/helpdesk/tickets/${id}`, { headers: bearer });
   expect(response.status()).toBe(200);
-  return await response.json() as { sequence: number; status: string; suggestionId: string | null; events: { type: string }[] };
+  return await response.json() as { sequence: number; status: string; suggestionId: string | null; flagged: boolean; events: { type: string }[]; aiAssist: { id: string; source: string; question: string; faqId: string | null; faqQuestion: string | null; answer: string | null; feedback: string | null }[] };
+}
+
+async function agentAction(request: APIRequestContext, id: string, action: "flag" | "unflag") {
+  const { sequence } = await agentTicket(request, id);
+  const response = await request.post(`/api/integration/helpdesk/tickets/${id}/actions`, { headers: { ...bearer, "Idempotency-Key": randomUUID() }, data: { action, agent: AGENT, expectedSequence: sequence } });
+  expect(response.status()).toBe(200);
+  return await response.json() as { flagged: boolean };
+}
+
+async function agentList(request: APIRequestContext, query: string) {
+  const response = await request.get(`/api/integration/helpdesk/tickets?${query}`, { headers: bearer });
+  expect(response.status()).toBe(200);
+  return (await response.json() as { tickets: { id: string; flagged: boolean }[] }).tickets;
 }
 
 async function agentReply(request: APIRequestContext, id: string, body: string) {
@@ -131,7 +147,7 @@ async function pasteImage(page: Page, name: string, png: Buffer = PNG) {
   }, { base64: png.toString("base64"), name });
 }
 
-test("AccountNav Contact support opens the support page with Common Questions", async ({ browser }) => {
+test("AccountNav Contact support opens the support page with the AI Support Assistant; a chip answers from the FAQ", async ({ browser }) => {
   const { context, page, email } = await newLearner(browser);
   const text = copy("en-GB");
   await page.goto("/en-GB/account/my-learning/settings");
@@ -142,13 +158,104 @@ test("AccountNav Contact support opens the support page with Common Questions", 
   await page.waitForURL("**/en-GB/account/my-learning/support");
   await expect(page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
   await expect(page.getByLabel(text.email)).toHaveValue(email);
-  await expect(page.getByRole("heading", { name: text.commonQuestions })).toBeVisible();
-  const question = page.getByRole("button", { name: "How do I access my course materials?" });
-  await expect(question).toHaveAttribute("aria-expanded", "false");
-  await question.click();
-  await expect(question).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText("Open My Learning and choose your course.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "https://www.ilovelearningguide.com/help" })).toHaveAttribute("href", "https://www.ilovelearningguide.com/help");
+  const panel = page.getByRole("region", { name: text.chat.title });
+  await expect(panel.getByText(text.chat.greetingTitle)).toBeVisible();
+  await expect(panel.locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?"]);
+  await panel.locator(".helpdesk-chat-chip").nth(1).click();
+  const answer = panel.locator(".helpdesk-chat-answer").first();
+  await expect(answer).toContainText("Find your enrolled courses and open the available lessons and resources.");
+  await expect(answer.locator("strong")).toHaveText("My Learning");
+  await expect(answer.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "How can I access my course materials?" }) })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
+  await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
+  await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(answer.getByRole("button", { name: text.chat.no, exact: true })).toBeDisabled();
+  const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { source: string; faqId?: string; learnerId: string }; suggestion: { id: string } | null }[] };
+  const chip = suggestions.filter((entry) => entry.request.source === "chip").at(-1)!;
+  expect(chip.request.faqId).toBe("0192f000-0000-7000-8000-000000000002");
+  expect(await outcomeOf(page.request, chip.suggestion!.id)).toBe("helpful");
+  await page.reload();
+  await expect(panel.locator(".helpdesk-chat-question")).toHaveText(["How can I access my course materials?"]);
+  await context.close();
+});
+
+test("chat answers and the declined suggestion reach the agent as AI blocks; the agent flags and unflags the enquiry", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "en-GB", "Daniel Wu");
+  const text = copy("en-GB");
+  await openSupport(page);
+  const panel = page.getByRole("region", { name: text.chat.title });
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("Where can I find my invoice?");
+  await input.press("Enter");
+  await expect(panel.locator(".helpdesk-chat-answer").first().locator("li")).toHaveText(["Open My Subscription", "Choose Records"]);
+  await input.fill("Can I pay with crypto?");
+  await input.press("Enter");
+  await expect(panel.locator(".helpdesk-chat-answer").nth(1)).toHaveText(text.chat.fallback);
+  const subject = `Password and invoice ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "en-GB", { category: "payments_subscriptions", subject, message: "The password reset email never arrives." });
+  await page.getByRole("button", { name: text.submit }).click();
+  await page.getByRole("dialog", { name: text.assistant.title }).getByRole("button", { name: text.assistant.no }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  const [ticket] = await learnerTickets(page);
+  const seen = await agentTicket(page.request, ticket.id);
+  expect(seen.aiAssist.map((item) => [item.source, item.question, item.faqQuestion, item.feedback])).toEqual([
+    ["chat", "Where can I find my invoice?", "Where can I find my invoice?", null],
+    ["chat", "Can I pay with crypto?", null, null],
+    ["submit", subject, "How do I reset my password?", "declined"]
+  ]);
+  expect(seen.aiAssist[0].answer).toContain("Open **My Subscription**");
+  expect(seen.flagged).toBe(false);
+  expect((await agentAction(page.request, ticket.id, "flag")).flagged).toBe(true);
+  expect((await agentList(page.request, "flagged=true")).map((item) => item.id)).toContain(ticket.id);
+  const learnerId = (await (await page.request.get("/api/auth/me")).json() as { user: { id: string } }).user.id;
+  expect((await agentList(page.request, `learnerId=${encodeURIComponent(learnerId)}`)).map((item) => item.id), "the student timeline lists this learner's enquiries only").toEqual([ticket.id]);
+  expect((await agentAction(page.request, ticket.id, "unflag")).flagged).toBe(false);
+  expect((await agentList(page.request, "flagged=true")).map((item) => item.id)).not.toContain(ticket.id);
+  const events = (await agentTicket(page.request, ticket.id)).events.map((event) => event.type);
+  expect(events.filter((type) => type.endsWith("flagged"))).toEqual(["com.ilovelearningguide.helpdesk.ticket.flagged", "com.ilovelearningguide.helpdesk.ticket.unflagged"]);
+  await context.close();
+});
+
+test("Help Centre: public, searchable, by topic, deep-linkable; Contact Support goes through sign-in; old help URLs redirect", async ({ browser }) => {
+  const visitor = await browser.newContext({ viewport: { width: 1440, height: 1024 }, locale: "en-GB" });
+  const page = await visitor.newPage();
+  const help = getMessages("en-GB").helpCentre;
+  await page.goto("/en-GB/help");
+  await expect(page.getByRole("heading", { level: 1, name: help.title })).toBeVisible();
+  const questions = page.locator(".help-centre-article-question");
+  await expect(questions).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?", "Where can I find my invoice?", "Why did my payment fail?", "How do I join a live session?"]);
+  await expect(page.locator(".help-centre-article-summary").first()).toHaveText("Follow the steps to regain access to your Learning Guide account.");
+  await questions.first().click();
+  await expect(page.locator(".help-centre-answer ol > li")).toHaveCount(3);
+  await page.getByRole("searchbox", { name: help.searchLabel }).fill("invoice");
+  await page.waitForURL("**/en-GB/help?q=invoice");
+  await expect(page.getByRole("heading", { level: 2, name: help.searchTitle })).toBeVisible();
+  await expect(questions).toHaveText(["Where can I find my invoice?"]);
+  await page.getByRole("searchbox", { name: help.searchLabel }).fill("zzzz");
+  await page.waitForURL("**/en-GB/help?q=zzzz");
+  await expect(page.locator(".help-centre-empty")).toHaveText(fillTemplate(help.searchEmpty, { q: "zzzz" }));
+  await page.getByRole("navigation", { name: help.topicsTitle }).getByRole("link", { name: help.categories.courses_learning }).click();
+  await page.waitForURL("**/en-GB/help?category=courses_learning");
+  await expect(page.getByRole("heading", { level: 2, name: help.categories.courses_learning })).toBeVisible();
+  await expect(questions).toHaveText(["How can I access my course materials?", "How do I join a live session?", "How do I access my courses?"]);
+  await page.goto("/en-GB/help?faq=0192f000-0000-7000-8000-000000000008");
+  await expect(questions.first()).toHaveText("Can I suggest a new feature?");
+  await expect(questions.first()).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("link", { name: help.contactButton, exact: true }).click();
+  await page.waitForURL(/\/en-GB\/portal\/sign-in\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/en-GB/account/my-learning/support");
+  await visitor.close();
+
+  const { context, page: learnerPage } = await newLearner(browser, "zh-CN");
+  await learnerPage.goto("/zh-CN/account/my-learning/settings");
+  const nav = learnerPage.locator("nav.account-nav").getByRole("link", { name: getMessages("zh-CN").account.help });
+  await expect(nav).toHaveAttribute("href", "/zh-CN/help");
+  await learnerPage.goto("/zh-CN/account/my-learning/help");
+  await learnerPage.waitForURL("**/zh-CN/help");
+  await learnerPage.goto("/zh-CN/my-learning/help");
+  await learnerPage.waitForURL("**/zh-CN/help");
+  await expect(learnerPage.locator(".help-centre-article-question").first()).toHaveText("如何重置密码？");
+  await learnerPage.getByRole("link", { name: getMessages("zh-CN").helpCentre.contactButton, exact: true }).click();
+  await learnerPage.waitForURL("**/zh-CN/account/my-learning/support");
   await context.close();
 });
 
@@ -194,7 +301,8 @@ test("assistant suggestion: Yes reports solved and creates no ticket", async ({ 
   const modal = page.getByRole("dialog", { name: text.assistant.title });
   await expect(modal).toBeVisible();
   await expect(modal).toContainText("Hi Emily! Here's a possible solution to your issue:");
-  await expect(modal.locator(".helpdesk-answer-heading").first()).toHaveText("1. Check your spam folder");
+  await expect(modal.locator(".helpdesk-answer-markdown ol > li strong").first()).toHaveText("Check your spam folder");
+  await expect(modal.getByRole("link", { name: "sign-in page" })).toHaveAttribute("rel", "noopener noreferrer");
   await expect(modal).toContainText(subject);
   await expect(modal).toContainText(text.categories.technical_support);
   await expect(modal.locator(".helpdesk-avatar")).toHaveText("EC");
@@ -526,7 +634,7 @@ test("visual capture for Figma comparison (en-GB and zh-CN)", async ({ browser }
     const text = copy(locale);
     const { context, page } = await newLearner(browser, locale, locale === "en-GB" ? "Emily Carter" : "陈艾米");
     await openSupport(page, locale);
-    await expect(page.getByRole("heading", { name: text.commonQuestions })).toBeVisible();
+    await expect(page.getByRole("region", { name: text.chat.title })).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/portal-${locale}-contact-support.png` });
     await page.getByRole("combobox", { name: text.enquiryType }).click();
     await page.screenshot({ path: `${SHOTS}/portal-${locale}-contact-support-open-select.png` });
@@ -557,6 +665,32 @@ test("visual capture for Figma comparison (en-GB and zh-CN)", async ({ browser }
     await page.goto(`/${locale}/account/my-learning/support`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
     await page.screenshot({ path: `${SHOTS}/portal-${locale}-contact-support-mobile.png`, fullPage: true });
+    await context.close();
+  }
+});
+
+test("visual capture v2: Contact Support with the chat panel (1216:6) and the Help Centre (1387:2), en-GB and zh-CN", async ({ browser }) => {
+  await mkdir(SHOTS, { recursive: true });
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const text = copy(locale);
+    // Figma example data: the learner Daniel Wu asks how to access course materials and finds the answer helpful.
+    const { context, page } = await newLearner(browser, locale, locale === "en-GB" ? "Daniel Wu" : "吴丹尼");
+    await openSupport(page, locale);
+    await page.getByLabel(text.email).fill("daniel.wu@example.com");
+    const panel = page.getByRole("region", { name: text.chat.title });
+    const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+    await input.fill(locale === "en-GB" ? "How can I access course materials?" : "如何访问课程资料？");
+    await input.press("Enter");
+    const answer = panel.locator(".helpdesk-chat-answer").first();
+    await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
+    await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("combobox", { name: text.enquiryType }).click();
+    await page.mouse.move(0, 0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: `${SHOTS}/app-1216-6-${locale}.png` });
+    await page.goto(`/${locale}/help`);
+    await expect(page.locator(".help-centre-article")).toHaveCount(6);
+    await page.screenshot({ path: `${SHOTS}/app-1387-2-${locale}.png` });
     await context.close();
   }
 });

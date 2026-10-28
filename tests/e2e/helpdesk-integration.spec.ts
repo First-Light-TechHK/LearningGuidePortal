@@ -127,8 +127,9 @@ test("employee creates and publishes three Common Questions; the learner sees on
 
   const { context: learnerContext, page: learnerPage } = await learner(browser, "Emily Carter");
   await learnerPage.goto("/en-GB/account/my-learning/support");
-  await expect(learnerPage.getByRole("heading", { name: copy("en-GB").commonQuestions })).toBeVisible();
-  await expect(learnerPage.getByRole("button", { name: QUESTIONS[0].question })).toBeVisible();
+  // v2: popular FAQs are the chat panel's starter chips (tickets-v2-figma-addendum §4c).
+  const chat = learnerPage.getByRole("region", { name: copy("en-GB").chat.title });
+  await expect(chat.getByRole("button", { name: QUESTIONS[0].question })).toBeVisible();
   for (const hidden of QUESTIONS.slice(1)) await expect(learnerPage.getByText(hidden.question)).toHaveCount(0);
   await learnerContext.close();
 });
