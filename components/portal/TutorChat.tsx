@@ -77,7 +77,9 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
       requestRef.current?.abort();
       requestRef.current = null;
     };
-  }, [courseId, lessonId, mode, locale]);
+    // 2026-10-27：mode 不再作为依赖 —— 切换 Lecture / Socratic 只影响后续请求的提示词注入，
+    // 不重置当前聊天会话（对话已按 course+lesson 共享，不再按 mode 隔离）。
+  }, [courseId, lessonId, locale]);
 
   useEffect(() => {
     const node = listRef.current;

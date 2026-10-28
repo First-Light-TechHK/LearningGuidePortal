@@ -10,8 +10,8 @@ export type TutorAvailability = {
 
 export type TutorHistoryMessage = { role: "user" | "assistant"; content: string };
 
-/** KS 课程 AI Tutor 欢迎语（按模式区分；空字符串表示未配置） */
-export type TutorWelcome = { lecture: string; socratic: string };
+/** KS 课程 AI Tutor 欢迎语（2026-10-27：课程级统一，不再按模式区分；空字符串表示未配置） */
+export type TutorWelcome = { welcome: string };
 
 export class KsTutorError extends Error {
   constructor(
@@ -93,15 +93,15 @@ export async function getTutorAvailability(
 }
 
 /**
- * 读取某 Portal 课程（slug）在两种模式下的欢迎语。KS 不可达/未配置时返回空字符串，
- * 前端据此不展示欢迎气泡（不编造本地文案）。
+ * 读取某 Portal 课程（slug）的欢迎语（2026-10-27：课程级统一，不再按模式区分）。
+ * KS 不可达/未配置时返回空字符串，前端据此不展示欢迎气泡（不编造本地文案）。
  */
 export async function getTutorWelcome(
   externalCourseId: string,
   locale: Locale,
   signal?: AbortSignal,
 ): Promise<TutorWelcome> {
-  const empty: TutorWelcome = { lecture: "", socratic: "" };
+  const empty: TutorWelcome = { welcome: "" };
   const { baseUrl, apiKey } = config();
   if (!baseUrl) return empty;
 
@@ -114,11 +114,10 @@ export async function getTutorWelcome(
     });
     if (!response.ok) return empty;
     const payload = (await response.json()) as {
-      data?: { lecture?: unknown; socratic?: unknown };
+      data?: { welcome?: unknown };
     };
     return {
-      lecture: typeof payload.data?.lecture === "string" ? payload.data.lecture : "",
-      socratic: typeof payload.data?.socratic === "string" ? payload.data.socratic : "",
+      welcome: typeof payload.data?.welcome === "string" ? payload.data.welcome : "",
     };
   } catch {
     return empty;

@@ -96,18 +96,17 @@ test("getTutorAvailability 在 KS 不可达时按 offline 处理", async () => {
   });
 });
 
-test("getTutorWelcome 读取并规范化 KS 两种模式的欢迎语", async () => {
+test("getTutorWelcome 读取并规范化 KS 课程级统一欢迎语", async () => {
   let requestedUrl = "";
   let requestedKey = "";
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requestedUrl = String(url);
     requestedKey = String((init?.headers as Record<string, string> | undefined)?.["X-API-Key"] || "");
-    return jsonResponse({ success: true, data: { lecture: "Welcome (L)", socratic: "Welcome (S)" } });
+    return jsonResponse({ success: true, data: { welcome: "Welcome from KS." } });
   }) as typeof fetch;
 
   assert.deepEqual(await getTutorWelcome("epicureanism", "zh-CN"), {
-    lecture: "Welcome (L)",
-    socratic: "Welcome (S)",
+    welcome: "Welcome from KS.",
   });
   assert.ok(requestedUrl.endsWith("/api/user/ai-tutors/epicureanism/welcome?locale=zh-CN"));
   assert.equal(requestedKey, "service-token");
@@ -115,15 +114,15 @@ test("getTutorWelcome 读取并规范化 KS 两种模式的欢迎语", async () 
 
 test("getTutorWelcome 在 KS 不可达或返回非字符串时回退为空字符串", async () => {
   globalThis.fetch = (async () => new Response("down", { status: 503 })) as typeof fetch;
-  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { lecture: "", socratic: "" });
+  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { welcome: "" });
 
-  globalThis.fetch = (async () => jsonResponse({ success: true, data: { lecture: 1, socratic: null } })) as typeof fetch;
-  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { lecture: "", socratic: "" });
+  globalThis.fetch = (async () => jsonResponse({ success: true, data: { welcome: 1 } })) as typeof fetch;
+  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { welcome: "" });
 
   globalThis.fetch = (async () => {
     throw new Error("connect ECONNREFUSED");
   }) as typeof fetch;
-  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { lecture: "", socratic: "" });
+  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { welcome: "" });
 });
 
 test("streamTutorText 解析被任意切分的 SSE 帧并拼接纯文本", async () => {

@@ -45,11 +45,11 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     conversation: { id: conversation.id, mode: conversation.mode, messages: conversation.messages },
-    welcome: mode === "socratic" ? welcome.socratic : welcome.lecture,
+    welcome: welcome.welcome,
   });
 }
 
-/** New chat：删除当前用户在该课程/课时/模式下的对话记录（幂等）。 */
+/** New chat：删除当前用户在该课程/课时下的对话记录（2026-10-27：不再按模式隔离，幂等）。 */
 export async function DELETE(request: Request) {
   const user = await currentProductUser();
   if (!user) return jsonError("Sign in is required.", 401);

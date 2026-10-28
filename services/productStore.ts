@@ -2201,7 +2201,8 @@ export async function getConversation(userId: string, conversationId: string | u
   const data = await ensureProductData();
   const existing = conversationId
     ? data.conversations.find((item) => item.id === conversationId && item.userId === userId && item.courseId === courseId && item.lessonId === (lessonId || null))
-    : data.conversations.find((item) => item.userId === userId && item.courseId === courseId && item.lessonId === (lessonId || null) && item.mode === mode);
+    // 2026-10-27：对话不再按 mode 隔离，Lecture / Socratic 切换复用同一会话
+    : data.conversations.find((item) => item.userId === userId && item.courseId === courseId && item.lessonId === (lessonId || null));
   if (existing) return existing;
   return { id: id("conversation"), userId, courseId, lessonId: lessonId || null, mode, messages: [], updatedAt: now() } satisfies ProductConversation;
 }
@@ -2216,11 +2217,11 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
-/** New chat：清除当前用户在该课程/课时/模式下的对话记录（幂等）。 */
+/** New chat：清除当前用户在该课程/课时下的对话记录（2026-10-27：不再按 mode 隔离，幂等）。 */
 export async function deleteConversation(userId: string, courseId: string, lessonId: string | undefined, mode: "lecture" | "socratic") {
   return editData((data) => {
     const before = data.conversations.length;
-    data.conversations = data.conversations.filter((item) => !(item.userId === userId && item.courseId === courseId && item.lessonId === (lessonId || null) && item.mode === mode));
+    data.conversations = data.conversations.filter((item) => !(item.userId === userId && item.courseId === courseId && item.lessonId === (lessonId || null)));
     return before - data.conversations.length;
   });
 }

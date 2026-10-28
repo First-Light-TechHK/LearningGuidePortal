@@ -201,9 +201,12 @@ test("a stream from the previous lesson never writes into the new conversation",
     assert.equal(await page.locator(".portal-form-error").count(), 0, "a replaced stream must not surface an error");
     assert.deepEqual(pageErrors, []);
 
-    // Switching modes once the answer has settled still loads that mode's conversation.
+    // 2026-10-27：切换模式不再重新加载对话，只影响后续请求的提示词注入。
+    // 点击 Socratic 后，当前会话消息应保持不变（仍显示 Lesson two history + Fresh answer.）。
     await page.locator(".mode-switch button").nth(1).click();
-    await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Lesson two socratic history"));
+    const transcriptAfterModeSwitch = await page.locator(".tutor-messages").textContent();
+    assert.ok(transcriptAfterModeSwitch?.includes("Lesson two history"), "switching mode must not reload the conversation");
+    assert.equal(transcriptAfterModeSwitch?.includes("socratic history"), false, "switching mode must not load the socratic conversation");
   } finally {
     harness.releaseHeaders();
     harness.releaseTail();
