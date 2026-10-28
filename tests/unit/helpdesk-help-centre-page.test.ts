@@ -176,6 +176,7 @@ test("the page matches 1387:2 at 1440 px", async () => {
   assert.deepEqual([hero.width, hero.height], [1440, 255], "hero 1440 × 255");
   const search = await box(".help-centre-search");
   assert.deepEqual([search.width, search.height, search.x], [830, 61, 305]);
+  assert.equal(search.y - hero.y, 130, "26 + title + 11 + subtitle + 11 + 2 + 11 (1388:2)");
   const list = await box(".help-centre-list");
   assert.deepEqual([list.x, list.width], [85, 826]);
   assert.equal(list.y - (hero.y + hero.height), 41);

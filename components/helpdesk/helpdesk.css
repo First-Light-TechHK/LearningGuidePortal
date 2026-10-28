@@ -99,7 +99,7 @@
 .helpdesk-chat-chip:hover:not(:disabled) { border-color: #b8d2fb; background: #f7faff; }
 .helpdesk-chat-chip:disabled { cursor: default; opacity: .7; }
 .helpdesk-chat-mine { display: flex; justify-content: flex-end; }
-.helpdesk-chat-question { max-width: 281px; box-sizing: border-box; padding: 13px 12px 8px; border-radius: 10px; background: #e0ecff; color: #254772; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
+.helpdesk-chat-question { width: 281px; max-width: 100%; min-height: 46px; box-sizing: border-box; padding: 13px 12px 8px; border-radius: 10px; background: #e0ecff; color: #254772; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
 .helpdesk-chat-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 365px; box-sizing: border-box; padding: 11px 11px 10px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; }
 .helpdesk-chat-answer-text, .helpdesk-chat-fallback { color: #384e69; font-size: 12px; overflow-wrap: anywhere; }
 .helpdesk-chat-answer-text { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
@@ -126,7 +126,7 @@
 .helpdesk-chat-info svg { flex: 0 0 19px; color: #2468f5; }
 .helpdesk-chat-info p { color: #516985; font-size: 11px; }
 .helpdesk-chat-footer { display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
-.helpdesk-chat-input { flex: 0 0 351px; width: 351px; height: 70px; box-sizing: border-box; padding: 11px 11px 11px 12px; border: 1px solid #cad8ea; border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: normal; resize: none; }
+.helpdesk-chat-input { flex: 0 0 351px; width: 351px; height: 70px; box-sizing: border-box; padding: 27px 11px 10px 12px; border: 1px solid #cad8ea; border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: normal; resize: none; }
 .helpdesk-chat-input::placeholder { color: #95a3b8; opacity: 1; }
 .helpdesk-chat-input:focus { border-color: #2468f5; outline: none; box-shadow: 0 0 0 3px rgba(36, 104, 245, .12); }
 .helpdesk-chat-send { display: grid; flex: 0 0 43px; width: 43px; height: 43px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: #2468f5; color: #fff; cursor: pointer; }
@@ -282,8 +282,8 @@
 .portal-page.help-centre-page { background: #fff; }
 .help-centre { color: #1d2c46; line-height: normal; }
 .help-centre-hero { display: flex; height: 255px; box-sizing: border-box; flex-direction: column; align-items: center; gap: 11px; padding: 26px 20px 20px; background: #1e61f4; text-align: center; }
-.help-centre-hero h1 { width: min(1000px, 100%); margin: 0; color: #fff; font-size: 41px; font-weight: 700; line-height: normal; }
-.help-centre-hero > p { width: min(900px, 100%); margin: 0 0 2px; color: #eff5ff; font-size: 16px; line-height: normal; }
+.help-centre-hero h1 { width: min(1000px, 100%); margin: 0; color: #fff; font-size: 41px; font-weight: 700; line-height: 50px; }
+.help-centre-hero > p { width: min(900px, 100%); margin: 0 0 13px; color: #eff5ff; font-size: 16px; line-height: 19px; }
 .help-centre-search { display: flex; width: 830px; max-width: 100%; height: 61px; box-sizing: border-box; flex: 0 0 61px; align-items: center; gap: 14px; padding: 0 18px 0 20px; border: 1px solid #b8d2fb; border-radius: 10px; background: #fff; }
 .help-centre-search:focus-within { box-shadow: 0 0 0 3px rgba(255, 255, 255, .45); }
 .help-centre-search svg { flex: 0 0 22px; color: #5f6f86; }
