@@ -11,3 +11,4 @@ tsconfig.tsbuildinfo
 .env
 .evn
 .env*.local
+.backups/
