@@ -75,13 +75,16 @@ test("getTutorAvailability 只认 KS 的 available 字段", async () => {
     online: true,
     reachable: true,
   });
+  // 2026-10-28 复盘 A2：不可用原因必须可区分，否则"没有按钮"无法定位。
   assert.deepEqual(await getTutorAvailability("stoicism"), {
     online: false,
     reachable: true,
+    reason: "not-online",
   });
   assert.deepEqual(await getTutorAvailability("missing"), {
     online: false,
     reachable: true,
+    reason: "not-in-ks",
   });
 });
 
@@ -93,7 +96,49 @@ test("getTutorAvailability 在 KS 不可达时按 offline 处理", async () => {
   assert.deepEqual(await getTutorAvailability("epicureanism"), {
     online: false,
     reachable: false,
+    reason: "network",
   });
+});
+
+test("getTutorAvailability 区分 KS 鉴权失败与未配置", async () => {
+  globalThis.fetch = (async () => new Response("nope", { status: 401 })) as typeof fetch;
+  assert.deepEqual(await getTutorAvailability("epicureanism"), {
+    online: false,
+    reachable: false,
+    reason: "http-error",
+    status: 401,
+  });
+
+  delete process.env.KS_TUTOR_BASE_URL;
+  try {
+    assert.deepEqual(await getTutorAvailability("epicureanism"), {
+      online: false,
+      reachable: false,
+      reason: "not-configured",
+    });
+  } finally {
+    process.env.KS_TUTOR_BASE_URL = "http://ks.test";
+  }
+});
+
+test("tutorClientDiagnostics 不泄露地址与密钥且反映配置状态", async () => {
+  const { tutorClientDiagnostics } = await import("../../services/ksTutorClient");
+  const configured = tutorClientDiagnostics();
+  assert.equal(configured.configured, true);
+  assert.equal(configured.baseUrlConfigured, true);
+  assert.equal(configured.apiKeyConfigured, true);
+  // 健康接口不得回显 KS 主机名（既有安全约束），也不得回显令牌。
+  const serialised = JSON.stringify(configured);
+  assert.equal(serialised.includes("ks.test"), false);
+  assert.equal(serialised.includes("service-token"), false);
+
+  delete process.env.KS_TUTOR_API_KEY;
+  try {
+    assert.equal(tutorClientDiagnostics().configured, false);
+    assert.equal(tutorClientDiagnostics().apiKeyConfigured, false);
+  } finally {
+    process.env.KS_TUTOR_API_KEY = "service-token";
+  }
 });
 
 test("getTutorWelcome 读取并规范化 KS 课程级统一欢迎语", async () => {
