@@ -1,5 +1,6 @@
 import "./scripts/register-tsconfig-paths.cjs";
 import { defineConfig } from "playwright/test";
+import { HELPDESK_E2E, helpdeskAdminStubUrl, helpdeskE2eServerEnv } from "./tests/e2e/helpdesk-e2e-env";
 
 const ci = Boolean(process.env.CI);
 const port = ci ? 8080 : Number(process.env.E2E_PORT || 3012);
@@ -14,6 +15,11 @@ const localEnv = {
   EMAIL_VERIFICATION_REQUIRED: "0",
   SESSION_SECRET: sessionSecret,
   APP_VERSION: "e2e",
+  // In DEV, localhost / 127.0.0.1 count as BackOffice hosts unless ADMIN_HOSTS
+  // says otherwise; learner pages need the learner site (same as playwright.studygroup.config.ts).
+  ADMIN_HOSTS: "admin.ilovelearningguide.com,admin.sit.ilovelearningguide.com",
+  // Helpdesk: local-only test tokens and the stub Admin started below.
+  ...helpdeskE2eServerEnv(),
 };
 
 const ciEnv = {
@@ -39,15 +45,28 @@ export default defineConfig({
     baseURL,
     browserName: "chromium",
   },
-  webServer: {
-    command: ci
-      ? `npm run start -- -p ${port}`
-      : `npx next dev --hostname 127.0.0.1 -p ${port}`,
-    url: ci ? `${baseURL}/en-GB/portal` : `${baseURL}/api/health`,
-    reuseExistingServer: !ci,
-    timeout: 180_000,
-    env: ci ? ciEnv : localEnv,
-  },
+  webServer: [
+    {
+      command: ci
+        ? `npm run start -- -p ${port}`
+        : `npx next dev --hostname 127.0.0.1 -p ${port}`,
+      url: ci ? `${baseURL}/en-GB/portal` : `${baseURL}/api/health`,
+      reuseExistingServer: !ci,
+      timeout: 180_000,
+      env: ci ? ciEnv : localEnv,
+    },
+    ...(!ci
+      ? [
+          {
+            // Stand-in for the BackOffice Helpdesk integration API (Common Questions, suggestions).
+            command: `node tests/e2e/helpdesk-admin-stub.mjs ${HELPDESK_E2E.adminPort} ${HELPDESK_E2E.adminToken}`,
+            url: `${helpdeskAdminStubUrl()}/__health`,
+            reuseExistingServer: true,
+            timeout: 30_000,
+          },
+        ]
+      : []),
+  ],
   projects: [
     {
       name: "e2e-cloud",
@@ -66,6 +85,12 @@ export default defineConfig({
             name: "e2e-local-demo",
             ...chromium,
             testMatch: ["**/E2E-B1-purchase-learn.spec.ts"],
+          },
+          {
+            // Needs the DEV-only local Helpdesk store and the stub Admin above.
+            name: "e2e-helpdesk",
+            ...chromium,
+            testMatch: ["**/helpdesk-support.spec.ts"],
           },
         ]
       : []),
