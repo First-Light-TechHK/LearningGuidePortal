@@ -8,22 +8,38 @@ import type { CommonQuestion, HelpdeskLocale, HelpdeskSuggestion, SuggestInput, 
 
 export const ADMIN_QUESTIONS_TTL_MS = 60_000;
 export const ADMIN_QUESTIONS_TIMEOUT_MS = 3_000;
+/** How long a page waits for Admin when nothing is cached; after that it renders without the column and the answer, when it comes, is cached. */
+export const ADMIN_QUESTIONS_WAIT_MS = 500;
+/** After a failed fetch, no new request for this long (stale or hidden meanwhile), so an outage costs one request per window, not one per page load. */
+export const ADMIN_QUESTIONS_RETRY_MS = 15_000;
 export const ADMIN_SUGGEST_TIMEOUT_MS = 4_000;
 export const ADMIN_OUTCOME_TIMEOUT_MS = 4_000;
 
 type CacheEntry = { etag: string | null; questions: CommonQuestion[]; fetchedAt: number };
 const questionCache = new Map<string, CacheEntry>();
+/** One request per base URL + locale at a time. */
+const questionsInFlight = new Map<string, Promise<CommonQuestion[] | null>>();
+const questionsFailedAt = new Map<string, number>();
 
 /** Test hook and operational reset: forget every cached question list. */
 export function clearCommonQuestionsCache() {
   questionCache.clear();
+  questionsInFlight.clear();
+  questionsFailedAt.clear();
+}
+
+/** The value, or null when it is not there within ms (the work itself goes on). */
+function within<T>(work: Promise<T | null>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
 export type AdminHelpdeskClientDeps = {
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: Record<string, unknown>) => void;
-  timeouts?: Partial<{ questions: number; suggest: number; outcome: number }>;
+  timeouts?: Partial<{ questions: number; wait: number; suggest: number; outcome: number }>;
 };
 
 type Target = { baseUrl: string; token: string };
@@ -61,7 +77,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   const doFetch = deps.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
-  const timeouts = { questions: ADMIN_QUESTIONS_TIMEOUT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
+  const timeouts = { questions: ADMIN_QUESTIONS_TIMEOUT_MS, wait: ADMIN_QUESTIONS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
 
   async function call(destination: Target, path: string, init: { method: "GET" | "POST"; body?: unknown; headers?: Record<string, string>; timeout: number }) {
     const controller = new AbortController();
@@ -84,19 +100,15 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     log({ type: "helpdesk", event, reason: error instanceof Error ? (error.message === "timeout" ? "timeout" : error.name) : String(error), ...extra });
   }
 
-  /** Featured, published questions for the locale; null means "hide the column" (nothing cached and Admin unavailable). */
-  async function commonQuestions(locale: HelpdeskLocale): Promise<CommonQuestion[] | null> {
-    const destination = target();
-    if (!destination) return null;
-    const key = `${destination.baseUrl}|${locale}`;
+  async function fetchQuestions(destination: Target, key: string, locale: HelpdeskLocale): Promise<CommonQuestion[] | null> {
     const cached = questionCache.get(key);
-    if (cached && now() - cached.fetchedAt < ADMIN_QUESTIONS_TTL_MS) return cached.questions;
     try {
       const result = await call(destination, `/api/integration/helpdesk/questions?${new URLSearchParams({ locale, featured: "true" })}`, {
         method: "GET", timeout: timeouts.questions, headers: cached?.etag ? { "If-None-Match": cached.etag } : {}
       });
       if (result.status === 304 && cached) {
         questionCache.set(key, { ...cached, fetchedAt: now() });
+        questionsFailedAt.delete(key);
         return cached.questions;
       }
       if (result.status !== 200) throw new Error(`status_${result.status}`);
@@ -105,11 +117,38 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       const questions = body.questions.map(question).filter((item): item is CommonQuestion => Boolean(item));
       const etag = result.etag || (typeof body.etag === "string" ? body.etag : null);
       questionCache.set(key, { etag, questions, fetchedAt: now() });
+      questionsFailedAt.delete(key);
       return questions;
     } catch (error) {
       failure("admin_questions_failed", error, { locale, stale: Boolean(cached) });
+      questionsFailedAt.set(key, now());
       return cached ? cached.questions : null;
     }
+  }
+
+  /**
+   * Featured, published questions for the locale; null means "hide the column".
+   * Never holds a page on Admin: a fresh copy is returned as is, a stale copy
+   * is returned at once while it is revalidated in the background, and with
+   * nothing cached the caller waits at most ADMIN_QUESTIONS_WAIT_MS (the
+   * request goes on and its answer is cached for the next load). After a
+   * failure Admin is not asked again for ADMIN_QUESTIONS_RETRY_MS.
+   */
+  async function commonQuestions(locale: HelpdeskLocale): Promise<CommonQuestion[] | null> {
+    const destination = target();
+    if (!destination) return null;
+    const key = `${destination.baseUrl}|${locale}`;
+    const cached = questionCache.get(key);
+    if (cached && now() - cached.fetchedAt < ADMIN_QUESTIONS_TTL_MS) return cached.questions;
+    const failedAt = questionsFailedAt.get(key);
+    if (failedAt !== undefined && now() - failedAt < ADMIN_QUESTIONS_RETRY_MS) return cached ? cached.questions : null;
+    let pending = questionsInFlight.get(key);
+    if (!pending) {
+      pending = fetchQuestions(destination, key, locale).finally(() => questionsInFlight.delete(key));
+      questionsInFlight.set(key, pending);
+    }
+    if (cached) return cached.questions;
+    return within(pending, timeouts.wait);
   }
 
   /** One stored answer that may solve the enquiry, or null (no match, not configured, error or the 4 s timeout). */

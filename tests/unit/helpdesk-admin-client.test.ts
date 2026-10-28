@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import {
+  ADMIN_QUESTIONS_RETRY_MS,
   ADMIN_QUESTIONS_TTL_MS,
+  ADMIN_QUESTIONS_WAIT_MS,
   ADMIN_SUGGEST_TIMEOUT_MS,
   clearCommonQuestionsCache,
   createAdminHelpdeskClient
@@ -79,6 +81,7 @@ test("common questions: stale data on error, hidden (null) when nothing is cache
   });
   const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
   assert.equal(await client.commonQuestions("en-GB"), null, "nothing cached: hide the column");
+  clock += ADMIN_QUESTIONS_RETRY_MS;
   mode = "ok";
   assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
   clock += ADMIN_QUESTIONS_TTL_MS;
@@ -88,6 +91,55 @@ test("common questions: stale data on error, hidden (null) when nothing is cache
   assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
   assert.ok(logs.some((line) => line.event === "admin_questions_failed"));
   assert.ok(!JSON.stringify(logs).includes(TOKEN), "the token is never logged");
+});
+
+test("a hanging Admin never holds the page: nothing cached -> hidden within the wait budget; the late answer is cached for the next load", async () => {
+  assert.ok(ADMIN_QUESTIONS_WAIT_MS <= 500, "the page waits at most half a second for Admin");
+  let release: (response: Response) => void = () => undefined;
+  const stub = stubFetch(() => new Promise<Response>((resolve) => { release = resolve; }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, log: (line) => logs.push(line), timeouts: { wait: 40, questions: 5_000 } });
+  const started = Date.now();
+  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.ok(Date.now() - started < 1_000, `waited ${Date.now() - started} ms`);
+  assert.equal(await client.commonQuestions("en-GB"), null, "a second load while the first request is still out");
+  assert.equal(stub.calls.length, 1, "one request in flight per locale");
+  release(json({ questions: [QUESTION] }));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.equal(stub.calls.length, 1);
+});
+
+test("stale questions are served at once while they are revalidated in the background", async () => {
+  let clock = 0;
+  let hang = false;
+  let release: (response: Response) => void = () => undefined;
+  const stub = stubFetch(() => hang ? new Promise<Response>((resolve) => { release = resolve; }) : json({ questions: [QUESTION] }, 200, { etag: '"v1"' }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line), timeouts: { wait: 5_000, questions: 10_000 } });
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  clock += ADMIN_QUESTIONS_TTL_MS;
+  hang = true;
+  const started = Date.now();
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.ok(Date.now() - started < 1_000, "the stale copy does not wait for Admin");
+  assert.equal(stub.calls.length, 2);
+  release(json({ questions: [{ ...QUESTION, question: "Updated?" }] }));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal((await client.commonQuestions("en-GB"))?.[0].question, "Updated?");
+});
+
+test("an outage costs one request per retry window, not one per page load", async () => {
+  let clock = 0;
+  const stub = stubFetch(() => json({ code: "down" }, 503));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
+  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(await client.commonQuestions("en-GB"), null);
+  clock += ADMIN_QUESTIONS_RETRY_MS - 1;
+  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(stub.calls.length, 1);
+  clock += 1;
+  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(stub.calls.length, 2);
+  assert.equal(logs.filter((line) => line.event === "admin_questions_failed").length, 2);
 });
 
 test("not configured: no request, questions hidden, no suggestion, outcome not delivered; env is read on every call", async () => {
