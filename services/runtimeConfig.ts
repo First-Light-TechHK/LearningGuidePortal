@@ -73,7 +73,10 @@ export function runtimeConfiguration() {
   const stripeWebhook = hasEnv("STRIPE_WEBHOOK_SECRET");
   const publicUrl = hasEnv("NEXT_PUBLIC_APP_URL");
   const persistentStorage = Boolean(process.env.DATABASE_URL?.trim() && process.env.DATA_S3_BUCKET?.trim()) && process.env.STORAGE_BACKEND !== "local";
-  const email = hasEnv("SES_FROM_EMAIL") || (hasEnv("SMTP_HOST") && hasEnv("SMTP_USER") && hasEnv("SMTP_PASS"));
+  // Must mirror services/emailService.ts: the transport is SMTP-only. Treating
+  // SES_FROM_EMAIL as a configured mailbox reported ready:true while no SMTP
+  // credentials existed, so mail was silently dead behind a green health check.
+  const email = hasEnv("SMTP_HOST") && hasEnv("SMTP_USER") && hasEnv("SMTP_PASS");
   const emailVerification = emailVerificationRequired();
   const openRouter = hasEnv("OPENROUTER_API_KEY");
   const sessionSecret = Boolean(process.env.SESSION_SECRET?.trim() && (process.env.SESSION_SECRET?.trim().length || 0) >= 32);
@@ -91,7 +94,7 @@ export function runtimeConfiguration() {
   if (payment === "stripe") for (const price of subscriptionPrices) if (!hasEnv(price.env)) required.push(price.env);
   if (production && !google) required.push("GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET");
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
-  if (emailVerification && !email) required.push("SES_FROM_EMAIL or SMTP_HOST + SMTP_USER + SMTP_PASS");
+  if (emailVerification && !email) required.push("SMTP_HOST + SMTP_USER + SMTP_PASS");
   if (production && !openRouter) required.push("OPENROUTER_API_KEY");
   if ((google || wechat) && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
   return {
