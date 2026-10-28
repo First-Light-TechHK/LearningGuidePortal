@@ -105,11 +105,11 @@ test("a retried submit after a lost response sends the same request: same Idempo
   assert.notEqual(submissionSignature(form, []), signature);
   assert.equal(retry.retryFor(signature), null, "nothing failed yet: ask for a suggestion first");
   const first = keys.keyFor(signature);
-  retry.failed(signature, "s-1", 0);
-  assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1" }, "network failure: may have been created, so resend as is");
+  retry.failed(signature, "s-1", 0, ["a-1", "a-2"]);
+  assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1", assistIds: ["a-1", "a-2"] }, "network failure: may have been created, so resend as is, with the same linked chat answers");
   assert.equal(keys.keyFor(signature), first);
   retry.failed(signature, "s-1", 503);
-  assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1" });
+  assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1", assistIds: [] });
   assert.equal(retry.retryFor(submissionSignature({ ...form, body: "Edited" }, files)), null, "an edited form is a new submit");
   retry.failed(signature, null, 502);
   assert.deepEqual(retry.retryFor(signature), { suggestionId: null, assistIds: [] }, "a direct submit is retried directly too");
