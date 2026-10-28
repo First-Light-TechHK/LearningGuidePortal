@@ -107,44 +107,43 @@ function bodyTooLarge() {
   return new HelpdeskProblem("attachment_too_large", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} files of 10 MB each.`);
 }
 
-/** Reads the raw body, refusing (413) from Content-Length up front or as soon as the bytes read pass the bound. */
-async function readBoundedBody(request: Request, max: number): Promise<Uint8Array<ArrayBuffer>> {
+/**
+ * The request body as a pass-through stream: 413 up front from Content-Length,
+ * or as soon as the bytes that went through pass the bound (the source is
+ * then cancelled). Nothing is collected here, so the multipart parser holds
+ * the only copy of the raw body.
+ */
+function boundedBody(request: Request, max: number, onTooLarge: () => void): ReadableStream<Uint8Array> | null {
   const declared = request.headers.get("content-length")?.trim();
   if (declared && /^\d+$/.test(declared) && Number(declared) > max) throw bodyTooLarge();
-  if (!request.body) return new Uint8Array(0);
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
+  if (!request.body) return null;
   let total = 0;
-  for (;;) {
-    let next: ReadableStreamReadResult<Uint8Array>;
-    try { next = await reader.read(); } catch { throw new HelpdeskProblem("invalid_request", "Send multipart/form-data."); }
-    if (next.done) break;
-    total += next.value.byteLength;
-    if (total > max) {
-      await reader.cancel().catch(() => undefined);
-      throw bodyTooLarge();
+  return request.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      total += chunk.byteLength;
+      if (total > max) { onTooLarge(); controller.error(bodyTooLarge()); return; }
+      controller.enqueue(chunk);
     }
-    chunks.push(next.value);
-  }
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
-  return body;
+  }));
 }
 
 /** multipart/form-data: text fields plus files under "files[]" (or "files"), at most HELPDESK_MULTIPART_MAX_BYTES in all. */
 export async function readMultipart(request: Request): Promise<{ fields: Record<string, unknown>; files: UploadInput[] }> {
-  const bytes = await readBoundedBody(request, HELPDESK_MULTIPART_MAX_BYTES);
+  let tooLarge = false;
+  const body = boundedBody(request, HELPDESK_MULTIPART_MAX_BYTES, () => { tooLarge = true; });
   let form: FormData;
   try {
-    form = await new Response(bytes, { headers: { "content-type": request.headers.get("content-type") || "" } }).formData();
-  } catch { throw new HelpdeskProblem("invalid_request", "Send multipart/form-data."); }
+    form = await new Response(body, { headers: { "content-type": request.headers.get("content-type") || "" } }).formData();
+  } catch {
+    if (tooLarge) throw bodyTooLarge();
+    throw new HelpdeskProblem("invalid_request", "Send multipart/form-data.");
+  }
   const fields: Record<string, unknown> = {};
   const files: UploadInput[] = [];
   for (const [name, value] of form.entries()) {
     if (typeof value === "string") { if (name !== "files[]" && name !== "files") fields[name] = value; continue; }
     if (name !== "files[]" && name !== "files") continue;
-    // Fail before buffering bytes we would reject anyway (the contract re-checks).
+    // The parser already holds every part; checking here only avoids copying the bytes of a request the contract would refuse anyway.
     if (files.length >= HELPDESK_LIMITS.filesPerMessage) throw new HelpdeskProblem("too_many_attachments", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} files.`);
     if (value.size > HELPDESK_LIMITS.fileMaxBytes) throw new HelpdeskProblem("attachment_too_large", "Each file must be 10 MB or smaller.");
     files.push({ fileName: value.name, declaredType: value.type, bytes: new Uint8Array(await value.arrayBuffer()) });

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { attachmentFileName, isInlineAttachment, sniffAttachment } from "../../modules/helpdesk/attachments";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { HelpdeskProblem } from "../../contracts/helpdesk";
@@ -150,6 +152,46 @@ test("readMultipart stops reading and answers 413 once a body without Content-Le
   await tooLarge(readMultipart(multipartRequest(body, { "content-type": "multipart/form-data; boundary=x" })));
   assert.ok(sent <= HELPDESK_MULTIPART_MAX_BYTES + 2 * chunk.byteLength, `read ${sent} bytes`);
   assert.equal(cancelled, true);
+});
+
+test("readMultipart streams the body into the multipart parser instead of first buffering a whole copy of it", { timeout: 30_000 }, async () => {
+  setFlagsFromString("--expose-gc");
+  const gc = runInNewContext("gc") as () => void;
+  const boundary = "lg-boundary";
+  const part = (name: string) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="files[]"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+  const chunkSize = 1024 * 1024;
+  const perFile = 8;
+  // Three 8 MB files in 1 MB chunks, made only when the reader pulls them.
+  const pieces: Array<() => Uint8Array> = [() => new Uint8Array(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="subject"\r\n\r\nBig files\r\n`))];
+  for (const name of ["a.bin", "b.bin", "c.bin"]) {
+    pieces.push(() => new Uint8Array(part(name)));
+    for (let index = 0; index < perFile; index += 1) pieces.push(() => new Uint8Array(chunkSize).fill(0x41));
+    pieces.push(() => new Uint8Array(Buffer.from("\r\n")));
+  }
+  pieces.push(() => new Uint8Array(Buffer.from(`--${boundary}--\r\n`)));
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = pieces.shift();
+      if (next) controller.enqueue(next()); else controller.close();
+    }
+  }, { highWaterMark: 0 });
+  const original = Response.prototype.formData;
+  let heldWhenParsingStarts = Number.NaN;
+  gc();
+  const baseline = process.memoryUsage().arrayBuffers;
+  Response.prototype.formData = function (this: Response) {
+    gc();
+    heldWhenParsingStarts = process.memoryUsage().arrayBuffers - baseline;
+    return original.call(this);
+  };
+  try {
+    const { fields, files } = await readMultipart(multipartRequest(body, { "content-type": `multipart/form-data; boundary=${boundary}` }));
+    assert.equal(fields.subject, "Big files");
+    assert.deepEqual(files.map((item) => [item.fileName, item.bytes.byteLength, item.bytes[perFile * chunkSize - 1]]), [["a.bin", perFile * chunkSize, 0x41], ["b.bin", perFile * chunkSize, 0x41], ["c.bin", perFile * chunkSize, 0x41]]);
+  } finally {
+    Response.prototype.formData = original;
+  }
+  assert.ok(heldWhenParsingStarts < 4 * chunkSize, `held ${Math.round(heldWhenParsingStarts / chunkSize)} MB of the ${3 * perFile} MB body before parsing`);
 });
 
 test("readMultipart still reads fields and files under the bound, and refuses a body that is not multipart", async () => {
