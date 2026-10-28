@@ -140,6 +140,8 @@ export async function* streamTutorText(input: {
   // KS quota bucket: the learning page's 1:1 Tutor ("portal", the default)
   // and the Live Session room ("study-group") never spend each other's budget.
   channel?: "portal" | "study-group";
+  // Portal 学员 userId：用于 KS 侧日志审计和用户级限流分桶（2026-10-28）
+  userId?: string;
 }): AsyncGenerator<string> {
   const { baseUrl, apiKey, timeoutMs } = config();
   if (!baseUrl) {
@@ -164,7 +166,8 @@ export async function* streamTutorText(input: {
         mode: ksMode(input.mode),
         locale: input.locale,
         history: input.history.slice(-10),
-        channel: input.channel ?? "portal"
+        channel: input.channel ?? "portal",
+        ...(input.userId ? { userId: input.userId } : {}),
       }),
     });
   } catch (error) {
