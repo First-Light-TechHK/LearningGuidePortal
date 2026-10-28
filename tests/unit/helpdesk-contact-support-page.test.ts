@@ -709,6 +709,10 @@ test("chat: “We’d love to hear your ideas” picks Other Enquiries and focus
     assert.deepEqual([panel.width, panel.height], [455, 800], "panel 455 × 800");
     assert.equal(panel.x - card.x, 925, "the panel starts 925 px into the card");
     assert.equal(card.width, 1399);
+    assert.equal(card.x, 20, "the card starts at x = 20 as in Figma (not 20.5 from centring)");
+    assert.equal((await box(".helpdesk-chat-header h2")).y - panel.y, 8, "the title sits 7 px under the header top (1394:9)");
+    const chips = c.panel.locator(".helpdesk-chat-chips");
+    assert.equal((await box(".helpdesk-chat-chips")).height + Number.parseFloat(await chips.evaluate((node) => getComputedStyle(node).marginBottom)), 124, "the chips block takes 124 px (1394:30)");
     assert.equal((await box(".helpdesk-chat-header")).height, 51);
     assert.equal((await box(".helpdesk-chat-messages")).height, 664);
     assert.equal((await box(".helpdesk-chat-chip")).width, 404);
@@ -724,6 +728,46 @@ test("chat: “We’d love to hear your ideas” picks Other Enquiries and focus
     assert.ok(narrowPanel.x + narrowPanel.width <= 800, "without overflowing");
     await page.close();
   }
+});
+
+test("the submit-time modal matches 1333:249 at 1440 × 1024: 1032 × 900 at (204, 40), the enquiry card, the blue answer box with the bot on its right, one helpful row", async () => {
+  const locale: Locale = "en-GB";
+  const harness = await open(locale, api({ suggestion: () => ({ json: { suggestion: SUGGESTION } }) }));
+  const { page } = harness;
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.addStyleTag({ content: "html { scrollbar-width: none; } body { margin: 0; }" });
+  const f = form(page, locale);
+  await fillValid(page, locale);
+  await f.submit.click();
+  await f.dialog.waitFor();
+  const box = async (selector: string) => (await f.dialog.locator(selector).first().boundingBox())!;
+  const dialog = (await f.dialog.boundingBox())!;
+  assert.deepEqual([dialog.x, dialog.y, dialog.width, dialog.height], [204, 40, 1032, 900], "1341:6 is 1032 × 900, 40 px from the top");
+  assert.equal((await box(".helpdesk-modal-header")).height, 73);
+  const lines = await f.dialog.locator(".helpdesk-modal-text p").evaluateAll((nodes) => nodes.map((node) => [node.getBoundingClientRect().top, node.getBoundingClientRect().bottom]));
+  assert.equal(lines.length, 2);
+  assert.equal(lines[1][0] - lines[0][1], 6, "message lines are 6 px apart (1341:27 / 1341:28)");
+  const card = f.dialog.locator(".helpdesk-modal-query-content");
+  assert.equal(await card.evaluate((node) => getComputedStyle(node).borderTopColor), "rgb(227, 232, 240)", "the enquiry sits in a bordered card (1341:21)");
+  const answer = await box(".helpdesk-modal-answer-content");
+  const bot = await box(".helpdesk-modal-answer .helpdesk-bot-avatar");
+  assert.equal(answer.width, 924, "the answer box is 924 px wide");
+  assert.equal(await f.dialog.locator(".helpdesk-modal-answer-content").evaluate((node) => getComputedStyle(node).backgroundColor), "rgb(232, 242, 255)");
+  assert.equal(bot.x, answer.x + 924 + 20, "the bot avatar sits 20 px to the right of the answer box");
+  const steps = await f.dialog.locator(".helpdesk-modal-answer ol > li").first().evaluate((li) => [...li.querySelectorAll(".md-line")].map((line) => line.getBoundingClientRect().top - li.getBoundingClientRect().top));
+  assert.deepEqual(steps, [28], "a step's text starts 4 px under its 24 px title line (1341:39)");
+  const helpful = await box(".helpdesk-modal-helpful");
+  const footer = await box(".helpdesk-modal-footer");
+  assert.equal(helpful.y + helpful.height - footer.y, 64, "the helpful row is 64 px with the footer's top border");
+  assert.equal(footer.height, 132, "the footer is 132 px (1341:49)");
+  const yes = await box(".helpdesk-feedback-yes");
+  const no = await box(".helpdesk-feedback-no");
+  const edit = (await f.dialog.getByRole("button", { name: f.copy.assistant.edit }).boundingBox())!;
+  assert.deepEqual([yes.height, no.height, edit.height], [40, 40, 40], "40 px buttons");
+  assert.equal(yes.y, no.y, "Yes and No share one row");
+  assert.equal(edit.x + edit.width, dialog.x + dialog.width - 20, "Edit my enquiry sits at the right edge");
+  assert.ok(yes.x > helpful.x + 200 && edit.x - (no.x + no.width) > 100, "Yes / No sit in the middle, apart from Edit");
+  await page.close();
 });
 
 test("the greeting falls back when the account has no name", async () => {

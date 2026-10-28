@@ -184,8 +184,14 @@ test("the page matches 1387:2 at 1440 px", async () => {
   assert.deepEqual([card.x, card.width], [984, 371]);
   assert.ok(card.height >= 542);
   assert.equal((await box(".help-centre-article")).height, 87);
+  assert.deepEqual([(await box(".help-centre-article-question")).height, (await box(".help-centre-article-summary")).height, (await box(".help-centre-article-category")).height], [21, 16, 15], "Figma text boxes 21 / 16 / 15 (1388:24-26)");
+  assert.equal((await box(".help-centre-side h2")).height + 21, 44, "Popular topics then 22 px to the first topic (1388:78-79)");
   assert.equal((await box(".help-centre-topic")).height, 51);
   const button = await box(".help-centre-contact-button");
   assert.deepEqual([button.width, button.height], [316, 42]);
+  // A row that wraps keeps the 25 px gap under its text block instead of running into the next row.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const gaps = await page.locator(".help-centre-article").evaluateAll((rows) => rows.slice(0, -1).map((row, index) => rows[index + 1].getBoundingClientRect().top - row.querySelector(".help-centre-article-text")!.getBoundingClientRect().bottom));
+  assert.ok(gaps.length > 0 && gaps.every((gap) => gap === 25), `25 px between rows at 390 px: ${gaps}`);
   await page.close();
 });

@@ -287,7 +287,7 @@ function AssistantModal({ copy, locale, suggestion, enquiry, thanks, busy, accou
             <div className="helpdesk-modal-query-content">
               <div className="helpdesk-modal-query-title"><h3>{enquiry.subject}</h3><span className="helpdesk-type-tag">{copy.categories[enquiry.category]}</span></div>
               <p className="helpdesk-modal-meta">{enquiry.email} · {time}</p>
-              <div className="helpdesk-modal-text">{paragraphs.map((line, index) => <p key={index}>{line || "​"}</p>)}</div>
+              <div className="helpdesk-modal-text">{paragraphs.map((line, index) => line ? <p key={index}>{line}</p> : <p key={index} className="is-blank">​</p>)}</div>
               {enquiry.files.length ? <div className="helpdesk-modal-files">{enquiry.files.map((file, index) => <FileSummaryChip key={index} name={file.name} size={file.size} image={file.type.startsWith("image/")} />)}</div> : null}
             </div>
           </section>
@@ -305,8 +305,8 @@ function AssistantModal({ copy, locale, suggestion, enquiry, thanks, busy, accou
             <div>
               <button type="button" className="helpdesk-feedback-button helpdesk-feedback-yes" disabled={busy} onClick={() => onOutcome("solved")}><ThumbsUp size={14} aria-hidden="true" />{copy.assistant.yes}</button>
               <button type="button" className="helpdesk-feedback-button helpdesk-feedback-no" disabled={busy} onClick={() => onOutcome("declined")}><ThumbsDown size={14} aria-hidden="true" />{busy ? copy.submitting : copy.assistant.no}</button>
-              <button type="button" className="helpdesk-feedback-button" disabled={busy} onClick={() => onOutcome("edited")}>{copy.assistant.edit}</button>
             </div>
+            <button type="button" className="helpdesk-feedback-button" disabled={busy} onClick={() => onOutcome("edited")}>{copy.assistant.edit}</button>
           </div>
           <div className="helpdesk-modal-footer-spacer" />
         </footer>

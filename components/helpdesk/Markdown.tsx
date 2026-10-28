@@ -18,10 +18,17 @@ function Lines({ lines }: { lines: Line[] }) {
   return <>{lines.map((line, index) => <Fragment key={index}>{index > 0 ? <br /> : null}<InlineParts parts={line} /></Fragment>)}</>;
 }
 
+/** A list item: the first line is its title; later lines keep their <br /> and are wrapped (.md-line) so a surface can space them (the 1333:249 modal sets 4px). */
+function ItemLines({ lines }: { lines: Line[] }) {
+  return <>{lines.map((line, index) => index === 0
+    ? <InlineParts key={index} parts={line} />
+    : <Fragment key={index}><br /><span className="md-line"><InlineParts parts={line} /></span></Fragment>)}</>;
+}
+
 export function Markdown({ text, className }: { text: string; className?: string }) {
   const blocks = parseMarkdown(text).map((block, index) => {
     if (block.kind === "paragraph") return <p key={index}><Lines lines={block.lines} /></p>;
-    const items = block.items.map((item, itemIndex) => <li key={itemIndex}><Lines lines={item} /></li>);
+    const items = block.items.map((item, itemIndex) => <li key={itemIndex}><ItemLines lines={item} /></li>);
     if (block.kind === "bullet") return <ul key={index}>{items}</ul>;
     return <ol key={index} start={block.start === 1 ? undefined : block.start}>{items}</ol>;
   });

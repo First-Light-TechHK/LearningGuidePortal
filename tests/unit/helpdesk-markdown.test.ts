@@ -25,9 +25,10 @@ test("paragraphs split on blank lines; single line breaks stay line breaks", () 
 
 test("bold, ordered and bullet lists, with lazy continuation lines and loose lists", () => {
   assert.equal(html("Use **Settings** then **Save**."), "<p>Use <strong>Settings</strong> then <strong>Save</strong>.</p>");
-  assert.equal(html("1. Open **Account**\nThen sign in again.\n2. Check spam"), "<ol><li>Open <strong>Account</strong><br/>Then sign in again.</li><li>Check spam</li></ol>");
+  // A list item's later lines keep their <br/> and are wrapped so the 1333:249 modal can set its 4px step gap.
+  assert.equal(html("1. Open **Account**\nThen sign in again.\n2. Check spam"), '<ol><li>Open <strong>Account</strong><br/><span class="md-line">Then sign in again.</span></li><li>Check spam</li></ol>');
   assert.equal(html("3. Third\n\n4. Fourth\n\nAfter"), '<ol start="3"><li>Third</li><li>Fourth</li></ol><p>After</p>', "a blank line between items keeps one list");
-  assert.equal(html("- one\n* two\n\n   indented more\nText"), "<ul><li>one</li><li>two<br/>indented more<br/>Text</li></ul>");
+  assert.equal(html("- one\n* two\n\n   indented more\nText"), '<ul><li>one</li><li>two<br/><span class="md-line">indented more</span><br/><span class="md-line">Text</span></li></ul>');
   assert.equal(html("Intro\n- a\n- b"), "<p>Intro</p><ul><li>a</li><li>b</li></ul>", "a list may follow a paragraph line directly");
   assert.equal(html("1. a\n- b"), "<ol><li>a</li></ol><ul><li>b</li></ul>", "switching list kind starts a new list");
   assert.equal(html("**not closed and 2 * 3"), "<p>**not closed and 2 * 3</p>");
