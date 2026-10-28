@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import {
   getTutorAvailability,
@@ -74,13 +75,16 @@ test("getTutorAvailability 只认 KS 的 available 字段", async () => {
     online: true,
     reachable: true,
   });
+  // 2026-10-28 复盘 A2：不可用原因必须可区分，否则"没有按钮"无法定位。
   assert.deepEqual(await getTutorAvailability("stoicism"), {
     online: false,
     reachable: true,
+    reason: "not-online",
   });
   assert.deepEqual(await getTutorAvailability("missing"), {
     online: false,
     reachable: true,
+    reason: "not-in-ks",
   });
 });
 
@@ -92,21 +96,62 @@ test("getTutorAvailability 在 KS 不可达时按 offline 处理", async () => {
   assert.deepEqual(await getTutorAvailability("epicureanism"), {
     online: false,
     reachable: false,
+    reason: "network",
   });
 });
 
-test("getTutorWelcome 读取并规范化 KS 两种模式的欢迎语", async () => {
+test("getTutorAvailability 区分 KS 鉴权失败与未配置", async () => {
+  globalThis.fetch = (async () => new Response("nope", { status: 401 })) as typeof fetch;
+  assert.deepEqual(await getTutorAvailability("epicureanism"), {
+    online: false,
+    reachable: false,
+    reason: "http-error",
+    status: 401,
+  });
+
+  delete process.env.KS_TUTOR_BASE_URL;
+  try {
+    assert.deepEqual(await getTutorAvailability("epicureanism"), {
+      online: false,
+      reachable: false,
+      reason: "not-configured",
+    });
+  } finally {
+    process.env.KS_TUTOR_BASE_URL = "http://ks.test";
+  }
+});
+
+test("tutorClientDiagnostics 不泄露地址与密钥且反映配置状态", async () => {
+  const { tutorClientDiagnostics } = await import("../../services/ksTutorClient");
+  const configured = tutorClientDiagnostics();
+  assert.equal(configured.configured, true);
+  assert.equal(configured.baseUrlConfigured, true);
+  assert.equal(configured.apiKeyConfigured, true);
+  // 健康接口不得回显 KS 主机名（既有安全约束），也不得回显令牌。
+  const serialised = JSON.stringify(configured);
+  assert.equal(serialised.includes("ks.test"), false);
+  assert.equal(serialised.includes("service-token"), false);
+
+  delete process.env.KS_TUTOR_API_KEY;
+  try {
+    assert.equal(tutorClientDiagnostics().configured, false);
+    assert.equal(tutorClientDiagnostics().apiKeyConfigured, false);
+  } finally {
+    process.env.KS_TUTOR_API_KEY = "service-token";
+  }
+});
+
+test("getTutorWelcome 读取并规范化 KS 课程级统一欢迎语", async () => {
   let requestedUrl = "";
   let requestedKey = "";
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requestedUrl = String(url);
     requestedKey = String((init?.headers as Record<string, string> | undefined)?.["X-API-Key"] || "");
-    return jsonResponse({ success: true, data: { lecture: "Welcome (L)", socratic: "Welcome (S)" } });
+    return jsonResponse({ success: true, data: { welcome: "Welcome from KS." } });
   }) as typeof fetch;
 
   assert.deepEqual(await getTutorWelcome("epicureanism", "zh-CN"), {
-    lecture: "Welcome (L)",
-    socratic: "Welcome (S)",
+    welcome: "Welcome from KS.",
   });
   assert.ok(requestedUrl.endsWith("/api/user/ai-tutors/epicureanism/welcome?locale=zh-CN"));
   assert.equal(requestedKey, "service-token");
@@ -114,15 +159,15 @@ test("getTutorWelcome 读取并规范化 KS 两种模式的欢迎语", async () 
 
 test("getTutorWelcome 在 KS 不可达或返回非字符串时回退为空字符串", async () => {
   globalThis.fetch = (async () => new Response("down", { status: 503 })) as typeof fetch;
-  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { lecture: "", socratic: "" });
+  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { welcome: "" });
 
-  globalThis.fetch = (async () => jsonResponse({ success: true, data: { lecture: 1, socratic: null } })) as typeof fetch;
-  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { lecture: "", socratic: "" });
+  globalThis.fetch = (async () => jsonResponse({ success: true, data: { welcome: 1 } })) as typeof fetch;
+  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { welcome: "" });
 
   globalThis.fetch = (async () => {
     throw new Error("connect ECONNREFUSED");
   }) as typeof fetch;
-  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { lecture: "", socratic: "" });
+  assert.deepEqual(await getTutorWelcome("epicureanism", "en-GB"), { welcome: "" });
 });
 
 test("streamTutorText 解析被任意切分的 SSE 帧并拼接纯文本", async () => {
@@ -152,6 +197,20 @@ test("streamTutorText 解析被任意切分的 SSE 帧并拼接纯文本", async
   assert.equal(requestBody.mode, "SOCRATIC");
   assert.equal(requestBody.locale, "en-GB");
   assert.deepEqual(requestBody.history, [{ role: "user", content: "Earlier" }]);
+});
+
+test("streamTutorText 按渠道选 KS 限流桶：学习页默认 portal，直播间传 study-group", async () => {
+  const channels: unknown[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    channels.push((JSON.parse(String(init?.body)) as Record<string, unknown>).channel);
+    return sseResponse(['data: {"done":true}\n\n'], 5);
+  }) as typeof fetch;
+  const input = { externalCourseId: "c", message: "q", mode: "lecture" as const, locale: "en-GB" as const, history: [] };
+  await collect(streamTutorText(input));
+  await collect(streamTutorText({ ...input, channel: "study-group" }));
+  assert.deepEqual(channels, ["portal", "study-group"]);
+  const runtime = readFileSync(new URL("../../modules/group-study/runtime.ts", import.meta.url), "utf8");
+  assert.match(runtime, /channel: "study-group"/);
 });
 
 test("streamTutorText 遇到 error 帧抛出 KsTutorError", async () => {

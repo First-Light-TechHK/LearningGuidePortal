@@ -20,7 +20,7 @@ test("Subscription Figma layout and shared full-width footer in both locales", a
   const Footer=createRequire(import.meta.url)(filename).PortalFooter;
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PricingPlans} from './components/portal/PricingPlans';import {getMessages} from './lib/i18n/messages';import styles from './components/portal/subscription-records.module.css';const root=createRoot(document.getElementById('root'));window.mount=p=>{const copy=getMessages(p.locale).pricingDesign;flushSync(()=>root.render(p.account?<main className={'portal-page portal-account-page '+styles.page}><header className="portal-header"/><nav className="account-nav"/><section className={styles.content}><div className={styles.inner}><h1>My Subscription</h1></div></section><div className="footer-slot" dangerouslySetInnerHTML={{__html:p.footer}}/></main>:<main className="portal-page pricing-design-page"><header className="portal-header" style={{height:68}}/><section className="pricing-design-main"><PricingPlans {...p} copy={copy}/></section><section className="pricing-design-information"><div><h2>{copy.information}</h2><div className="pricing-information-grid">{copy.rules.map(rule=><div key={rule.title}><h3>{rule.title}</h3><p>{rule.text}</p></div>)}</div></div></section><div dangerouslySetInnerHTML={{__html:p.footer}}/></main>))}`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"design.js",platform:"browser",jsx:"automatic",loader:{".css":"local-css"},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\//},args=>({path:args.path,namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"export function useRouter(){return {refresh(){}}}",loader:"tsx"}));}}]});
   const categories=defaultPortalContent.categories;
-  const plans=([6,12] as const).flatMap(termMonths=>[{id:`all-${termMonths}`,name:"Everything",scope:"everything",scopeId:"*",termMonths,device:"pc",amountMinor:termMonths===6?9900:19800,currency:"usd",aiPoints:termMonths===6?1500:3000},...categories.map(c=>({id:`${c.id}-${termMonths}`,name:c.labels['en-GB'],scope:"category",scopeId:c.id,termMonths,device:"pc",amountMinor:termMonths===6?3900:7800,currency:"usd",aiPoints:termMonths===6?500:1000}))]);
+  const plans=([6,12] as const).flatMap(termMonths=>[{id:`all-${termMonths}`,name:"Everything",scope:"everything",scopeId:"*",termMonths,device:"pc",amountMinor:termMonths===6?9900:19800,currency:"usd",aiPoints:termMonths===6?1500:3100},...categories.map(c=>({id:`${c.id}-${termMonths}`,name:c.labels['en-GB'],scope:"category",scopeId:c.id,termMonths,device:"pc",amountMinor:termMonths===6?3900:7800,currency:"usd",aiPoints:termMonths===6?500:1100}))]);
   const browser=await chromium.launch();
   try {for(const locale of ["en-GB","zh-CN"]){
     const page=await browser.newPage();
@@ -76,8 +76,8 @@ test("Subscription Figma layout and shared full-width footer in both locales", a
       await page.screenshot({path:`test-results/subscription-design/${locale}-${width}-two-line-courses.png`,fullPage:true});
       await page.getByRole("button", { name: getMessages(locale as "en-GB" | "zh-CN").pricingDesign.year, exact: true }).click();
       await assertSelected("category");
-      assert.equal(await everything.locator('.pricing-card-benefits strong').textContent(),'3,000');
-      assert.equal(await category.locator('.pricing-card-benefits strong').textContent(),'1,000');
+      assert.equal(await everything.locator('.pricing-card-benefits strong').textContent(),'3,100');
+      assert.equal(await category.locator('.pricing-card-benefits strong').textContent(),'1,100');
       await page.screenshot({path:`test-results/subscription-design/${locale}-${width}-category-selected.png`,fullPage:true});
       await everything.locator('h2').click();
       await assertSelected("everything");

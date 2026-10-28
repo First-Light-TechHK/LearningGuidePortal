@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { persistenceEnabled } from "./config";
 import { query } from "./db";
-import { s3DeleteMany, s3Get, s3Put } from "./s3";
+import { s3DeleteMany, s3Get, s3GetRange, s3Put } from "./s3";
 
 const TEXT_DB_MAX_BYTES = 512 * 1024;
 const BINARY_EXT = new Set([".pdf", ".doc", ".docx", ".png", ".jpg", ".jpeg", ".gif", ".zip", ".bin"]);
@@ -151,6 +151,32 @@ export async function vfsReadBuffer(systemRoot: string, absolutePath: string) {
   if (row.storage === "db") return Buffer.from(row.content || "", "utf8");
   if (!row.s3_key) throw new Error(`Missing s3_key for ${relativePath}`);
   return s3Get(row.s3_key);
+}
+
+/** Read only [start, end] (inclusive) of a stored buffer; S3 objects use a Range GET. */
+export async function vfsReadBufferRange(systemRoot: string, absolutePath: string, start: number, end: number) {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) throw new Error("Invalid byte range.");
+  if (!persistenceEnabled()) {
+    const bytes = await readFile(absolutePath);
+    return bytes.subarray(start, end + 1);
+  }
+  const relativePath = toRelativeDataPath(systemRoot, absolutePath);
+  const result = await query<{ storage: string; content: string | null; s3_key: string | null; byte_size: number | string }>(
+    `SELECT storage, content, s3_key, byte_size FROM app_files WHERE path = $1`,
+    [relativePath]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    const error = new Error(`ENOENT: ${relativePath}`) as NodeJS.ErrnoException;
+    error.code = "ENOENT";
+    throw error;
+  }
+  const size = Number(row.byte_size);
+  if (!Number.isSafeInteger(size) || start >= size) throw new Error(`Invalid byte range for ${relativePath}.`);
+  const boundedEnd = Math.min(end, size - 1);
+  if (row.storage === "db") return Buffer.from(row.content || "", "utf8").subarray(start, boundedEnd + 1);
+  if (!row.s3_key) throw new Error(`Missing s3_key for ${relativePath}`);
+  return s3GetRange(row.s3_key, start, boundedEnd);
 }
 
 export async function vfsExists(systemRoot: string, absolutePath: string) {

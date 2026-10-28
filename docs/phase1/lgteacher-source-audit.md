@@ -1,4 +1,4 @@
-# LGTeacher Source Audit
+﻿# LGTeacher Source Audit
 
 Audit date: 15 September 2026. Source: sibling `../LGTeacher`, frontend
 `LearningGuide_front_teacher/src`, backend `learning-guide-teacher/src`.
@@ -110,10 +110,10 @@ saves, XSS sanitisation, cross-course media rejection, saved preview in both
 locales, and archival retaining referenced history. No uncaught browser errors,
 console errors or failed same-origin requests were recorded.
 
-- Authoritative final report: [results.json](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/results.json).
-- PDF: [desktop canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/pdf-desktop.png), [mobile canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/pdf-mobile.png), [contained mobile page](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/pdf-page-mobile.png).
-- Editor: [desktop](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/editor-desktop.png), [mobile](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/editor-mobile.png).
-- OBJ: [desktop modal](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/obj-modal-desktop.png), [mobile modal](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-BBQODw/obj-modal-mobile.png).
+- Authoritative final report: results.json.
+- PDF: desktop canvas, mobile canvas, contained mobile page.
+- Editor: desktop, mobile.
+- OBJ: desktop modal, mobile modal.
 
 The runner terminated its server, removed its isolated product store and exited
 successfully. A post-run `lsof -nP -iTCP:3016 -sTCP:LISTEN` found no listener.
@@ -151,10 +151,10 @@ checks passed. No uncaught errors, console errors or failed same-origin browser
 requests were recorded. These checks do not cover the parent's later CMS-route
 hardening, deployment or pushing MAIN; another final build/rerun may be needed.
 
-- Latest report: [results.json](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/results.json).
-- Overflow detail: [element bounds](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/editor-mobile-overflow.json).
-- PDF text: [desktop canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/pdf-desktop.png), [mobile canvas](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/pdf-mobile.png), [overflowing mobile page](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/pdf-page-mobile.png).
-- OBJ: [mobile modal](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-28rBlZ/obj-modal-mobile.png).
+- Latest report: results.json.
+- Overflow detail: element bounds.
+- PDF text: desktop canvas, mobile canvas, overflowing mobile page.
+- OBJ: mobile modal.
 
 The first merged iteration exposed the layout failure before saving. Layout
 checks now retain their own failures while allowing save and subsequent checks
@@ -243,9 +243,9 @@ the strengthened runner fail.
   modifying application code or existing tests.
 - A 9/9 assertion run was superseded after manual inspection found its PDF image
   blank. The runner now waits and checks interior screenshot pixels explicitly.
-- Authoritative strengthened report: [results.json](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/results.json).
-- PDF failure: [desktop screenshot](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/pdf-desktop.png).
-- Passing OBJ evidence: [desktop](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/obj-desktop.png), [mobile](/var/folders/cy/q9773k4j0wj6mywq15z2d8w40000gp/T/lgteacher-complete-report-KnbjJ3/obj-mobile.png). Pixel diversity/framing, drag and auto-rotation were asserted at both sizes.
+- Authoritative strengthened report: results.json.
+- PDF failure: desktop screenshot.
+- Passing OBJ evidence: desktop, mobile. Pixel diversity/framing, drag and auto-rotation were asserted at both sizes.
 - Timed-video exercise trigger, pause, answer and resume passed using the locally
   recorded WebM, not synthetic media-event dispatch or mocked application APIs.
 - Each runner terminated its server and removed its temporary product store.

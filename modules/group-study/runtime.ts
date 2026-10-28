@@ -100,9 +100,9 @@ export function createReminderListReader(repository: { read(): Promise<StudyGrou
 }
 
 // A learner's Study Group profile. A learner without a nickname has an empty
-// displayName: each place that shows a name chooses its own stand-in (the
-// roster and the video tiles show the user id, as before; the AI Tutor's
-// "replying to" line shows "a participant" instead of the id; QA r3-B3).
+// displayName: each place that shows a name chooses its own stand-in, never
+// the internal user id (the roster, attendee lists and video tiles show
+// "Participant"; the AI Tutor's "replying to" line shows "a participant").
 export function studyGroupProfile(user: { id: string; nickname?: string | null; email: string | null; locale?: string | null }): UserProfile {
   return { id: user.id, displayName: user.nickname || "", email: user.email, locale: user.locale === "zh-CN" ? "zh-CN" : "en-GB" };
 }
@@ -313,7 +313,9 @@ export function studyGroupService() {
         mode: "lecture",
         locale,
         history,
-        signal
+        signal,
+        // The room is its own KS quota bucket, apart from the 1:1 Tutor's.
+        channel: "study-group"
       })) {
         text += delta;
       }

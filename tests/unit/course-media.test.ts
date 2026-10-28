@@ -301,6 +301,32 @@ test("media GET and HEAD use private responses with bounded RFC byte ranges", as
   assert.equal((await head.arrayBuffer()).byteLength, 0);
 });
 
+test("stored media caps open-ended ranges and keeps the tail of a large suffix range", async () => {
+  const iendStart = png.length - 12;
+  const padding = Buffer.alloc(5 * 1024 * 1024 - png.length, 0x41);
+  const largePng = Buffer.concat([png.subarray(0, iendStart), padding, png.subarray(iendStart)]);
+  const asset = await media.uploadCourseMedia(teacher, courseId, input(largePng, "large.png", "image/png"));
+  const cap = media.STORED_RANGE_CHUNK_BYTES;
+  const size = largePng.length;
+
+  const first = await fetchAdminAsset(asset, teacherToken, { range: "bytes=0-" });
+  assert.equal(first.status, 206);
+  assert.equal(first.headers.get("content-length"), String(cap));
+  assert.equal(first.headers.get("content-range"), `bytes 0-${cap - 1}/${size}`);
+  assert.equal((await first.arrayBuffer()).byteLength, cap);
+
+  const second = await fetchAdminAsset(asset, teacherToken, { range: `bytes=${cap}-` });
+  assert.equal(second.status, 206);
+  assert.equal(second.headers.get("content-length"), String(size - cap));
+  assert.equal(second.headers.get("content-range"), `bytes ${cap}-${size - 1}/${size}`);
+
+  const tail = await fetchAdminAsset(asset, teacherToken, { range: `bytes=-${size}` });
+  assert.equal(tail.status, 206);
+  assert.equal(tail.headers.get("content-length"), String(cap));
+  assert.equal(tail.headers.get("content-range"), `bytes ${size - cap}-${size - 1}/${size}`);
+  assert.equal((await tail.arrayBuffer()).byteLength, cap);
+});
+
 test("teacher learner cookie cannot bypass publication or entitlement through admin preview", async () => {
   const id = "media-transport-course";
   await editFixture(data => {

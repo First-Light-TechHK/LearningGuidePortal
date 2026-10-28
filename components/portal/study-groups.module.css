@@ -1,27 +1,5 @@
 .page { background: #f9fafb; color: #111827; font-family: Inter, sans-serif; }
 .meta { color: #6b7280; font-size: 13px; }
-.header { display: flex; align-items: center; height: 68px; padding: 0 40px; background: #fff; border-bottom: 1px solid #e4e7ec; position: relative; }
-.brand { display: inline-flex; align-items: center; gap: 8px; color: #0a0a0a; font-size: 20px; font-weight: 600; text-decoration: none; }
-.nav { display: flex; gap: 30px; margin-left: 33px; font-size: 14px; align-self: stretch; }
-.nav a { position: relative; display: inline-flex; align-items: center; color: #4a5565; font-weight: 500; text-decoration: none; }
-.nav a.active { color: #155dfc; font-weight: 700; text-transform: capitalize; }
-.nav a.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #155dfc; }
-.tools { margin-left: auto; display: flex; align-items: center; gap: 20px; }
-/* 599:36 header language chip: 22px tall at y23 (the global .portal-language sets min-height 26/colour #475467 with !important, so pin both here). */
-.tools :global(.portal-language) { display: inline-flex; align-items: center; gap: 6px; height: 22px; min-height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565 !important; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
-.lang { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; background: #d9d9d9; color: #4a5565; font-size: 14px; font-weight: 500; text-transform: uppercase; text-decoration: none; }
-.signInLink { color: #4a5565; font-size: 14px; font-weight: 500; text-decoration: none; }
-.bell { width: 20px; height: 20px; }
-/* 599:40 notification bell: centre the 20px icon in the header tool row (icon y24). */
-.tools a[href*="/notifications"] { display: inline-flex; align-items: center; }
-/* QA M23: the phone header's compact menu (hidden where the nav row shows). */
-.menu { display: none; position: relative; margin-right: 10px; }
-.menu summary { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e4e7ec; border-radius: 8px; color: #4a5565; list-style: none; cursor: pointer; }
-.menu summary::-webkit-details-marker { display: none; }
-.menu nav { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; display: grid; min-width: 180px; padding: 6px; background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; box-shadow: 0 10px 24px rgba(16, 24, 40, .14); }
-.menu nav a { padding: 10px 12px; border-radius: 8px; color: #4a5565; font-size: 14px; font-weight: 500; text-decoration: none; }
-.menu nav a.active { color: #155dfc; font-weight: 700; }
-.avatar { width: 32px; height: 32px; border-radius: 18px; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 13px; font-weight: 600; text-decoration: none; }
 .layout { display: grid; grid-template-columns: 460px minmax(0, 1fr); min-height: calc(100vh - 68px); }
 /* BUG-0129: the grid used to let the sidebar grow with its cards (overflow:auto with no
    height cap), stretching the whole page as Study Groups piled up. Capping it to the
@@ -363,8 +341,6 @@
 .chatForm .tutorEntry { align-self: flex-start; margin-top: auto; }
 .chatForm .tutorOffline { margin: 6px 0 0; color: #344054; }
 @media (max-width: 800px) {
-  .header { padding: 0 16px; }
-  .nav { display: none; }
   .layout, .detail, .room, .pair, .sheet, .facts { grid-template-columns: 1fr; }
   /* BUG-0129: stacked single column — the sidebar scrolls with the page again. */
   .sidebar { max-height: none; }
@@ -375,13 +351,10 @@
      host-footer -42px shift is a desktop-only alignment — reset both. */
   .endCard { margin: -35px auto 0; }
   .hostFootWithCopy { margin-bottom: 0; }
-  /* QA M23: at 375px the session card stacks its buttons under the text, the
-     member column has no desktop height, and the compact menu replaces the nav. */
+  /* QA M23: at 375px the session card stacks its buttons under the text and
+     the member column has no desktop height. */
   .session { grid-template-columns: minmax(0, 1fr); row-gap: 12px; padding: 16px; }
   .memberCol { min-height: 0; }
-  .menu { display: block; }
-  .brand { font-size: 16px; }
-  .tools { gap: 12px; }
 }
 /* QA 2026-10-19 M23 (room): at phone width the room fits the screen without
    sideways scrolling; the breadcrumb and the controls wrap. */

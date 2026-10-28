@@ -10,8 +10,7 @@ import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy
 // section 二 and the final review's r1/r2/r4 items). Each test names its item.
 
 const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-const header = readFileSync(new URL("../../components/portal/StudyGroupHeader.tsx", import.meta.url), "utf8");
-const signInLink = readFileSync(new URL("../../components/portal/StudyGroupSignInLink.tsx", import.meta.url), "utf8");
+const authLink = readFileSync(new URL("../../components/portal/AuthNavigationLink.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
 
 function form(fields: Array<{ valueMissing?: boolean; rangeUnderflow?: boolean }>) {
@@ -131,8 +130,8 @@ test("M6: every sign-in link comes back to the open group, and a signed-out visi
   assert.equal(app.includes("href={`/${locale}/portal/sign-in`}"), false);
   // The open group lives in the address, so the header link (which reads it) returns to it.
   assert.match(app, /setSelectedId\(id\);\s*showGroupInAddress\(id\);/);
-  assert.match(header, /<StudyGroupSignInLink locale=\{locale\} className=\{styles\.signInLink\} label=\{copy\.signIn\} \/>/);
-  assert.match(signInLink, /studyGroupSignInHref\(locale, pathname \+ \(query \? `\?\$\{query\}` : ""\)\)/);
+  // The site header's Sign In (BUG-0217: the same PortalHeader as every page) returns to the full current URL.
+  assert.match(authLink, /authNavigationHref\(locale, mode, window\.location\.href\)/);
   assert.deepEqual(joinGate({ signedIn: false, canJoin: false, courseAvailable: true }), { note: "signInToJoin", action: "sign-in" });
   // Next.js only syncs useSearchParams (the header link) when replaceState gets a state of its own.
   assert.match(app, /window\.history\.replaceState\(null, "", url\.pathname \+ url\.search \+ url\.hash\);/);
@@ -174,17 +173,11 @@ test("M9: a cancelled group or session, or a session moved later, closes with a 
   assert.equal(zh.studyGroupsPage.notices.sessionRescheduled, "这节直播课已改到更晚的时间，你的座位已释放。");
 });
 
-test("M23: at phone width the session card is one column, the member column has no fixed height, and a menu replaces the nav", () => {
+test("M23: at phone width the session card is one column and the member column has no fixed height", () => {
   const phone = phoneRules();
   assert.match(phone, /\.session \{ grid-template-columns: minmax\(0, 1fr\);[^}]*\}/);
   assert.match(phone, /\.memberCol \{ min-height: 0; \}/);
-  assert.match(phone, /\.nav \{ display: none; \}/);
-  assert.match(phone, /\.menu \{ display: block; \}/);
-  assert.match(css, /\n\.menu \{ display: none;[^}]*\}/);
-  assert.match(header, /<details className=\{styles\.menu\}>\s*<summary aria-label=\{page\.menu\}>/);
-  assert.match(header, /<nav aria-label=\{page\.primaryNavigation\}>\{links\}<\/nav>/);
-  assert.match(header, /href=\{`\/\$\{locale\}\/portal\/courses`\}/);
-  assert.match(header, /href=\{`\/\$\{locale\}\/subscription`\}/);
+  // The phone navigation is the site header's own since BUG-0217.
 });
 
 test("M24: the attendees dialog says Nobody yet when empty and its button closes", () => {
@@ -207,14 +200,11 @@ test("M26: the created card names the group and Course, and Cancel waits for the
   assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{creating\}>\{copy\.cancel\}<\/button>/);
 });
 
-test("M27: the header speaks the page's language, the avatar has a name, the language chip is right at first paint, and the chat box shows focus", () => {
-  assert.equal(header.includes('aria-label="Primary navigation"'), false);
-  assert.match(header, /<nav className=\{styles\.nav\} aria-label=\{page\.primaryNavigation\}>/);
-  assert.equal(zh.studyGroupsPage.primaryNavigation, "主导航");
-  assert.match(header, /className=\{styles\.avatar\} href=\{`\/\$\{locale\}\/account\/my-learning`\} prefetch=\{false\} aria-label=\{copy\.myLearning\}>/);
-  assert.match(header, /<Suspense fallback=\{<span className=\{styles\.lang\}>\{languageLabel\}<\/span>\}>\s*<PortalLanguageLink locale=\{locale\} label=\{languageLabel\} \/>/);
+test("M27: the chat box shows focus", () => {
+  // The header (language, avatar, navigation labels) is the site PortalHeader since BUG-0217.
   assert.match(css, /\.chatForm:focus-within \{[^}]*border-color: #1d6bff;[^}]*box-shadow:[^}]*\}/);
 });
+
 
 // QA3 review of the groups page (scratchpad qa3/groups.md): findings 1-9 and nits N-a to N-d.
 

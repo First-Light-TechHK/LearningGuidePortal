@@ -45,11 +45,11 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     conversation: { id: conversation.id, mode: conversation.mode, messages: conversation.messages },
-    welcome: mode === "socratic" ? welcome.socratic : welcome.lecture,
+    welcome: welcome.welcome,
   });
 }
 
-/** New chat：删除当前用户在该课程/课时/模式下的对话记录（幂等）。 */
+/** New chat：删除当前用户在该课程/课时下的对话记录（2026-10-27：不再按模式隔离，幂等）。 */
 export async function DELETE(request: Request) {
   const user = await currentProductUser();
   if (!user) return jsonError("Sign in is required.", 401);
@@ -110,6 +110,7 @@ export async function POST(request: Request) {
       locale,
       history: history.map((item) => ({ role: item.role, content: item.content })),
       signal: request.signal,
+      userId: user.id,
     });
     // 首字节前失败仍可返回标准错误状态；流开始后只能结束响应。
     const first = await generator.next();

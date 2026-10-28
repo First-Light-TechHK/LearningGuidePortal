@@ -654,7 +654,7 @@ test("r3-ops / r3-B3: a failing profile, knowledge read or model call answers in
   const { studyGroupProfile } = await import("../../modules/group-study/runtime");
   assert.equal(studyGroupProfile({ id: "usr_123", nickname: "", email: null, locale: "en-GB" }).displayName, "");
   assert.equal(studyGroupProfile({ id: "usr_123", nickname: "Anna", email: null, locale: "zh-CN" }).displayName, "Anna");
-  assert.equal((await f.service.getSession({ actorUserId: "m2", sessionId: session.id })).attendees.find((item) => item.userId === "m2")?.displayName, "m2", "the roster keeps its own stand-in");
+  assert.equal((await f.service.getSession({ actorUserId: "m2", sessionId: session.id })).attendees.find((item) => item.userId === "m2")?.displayName, "", "the roster never shows the user id; the page shows its own stand-in");
 });
 
 test("M21: an answer whose publish dies queues one unavailable notice for the same message", async () => {

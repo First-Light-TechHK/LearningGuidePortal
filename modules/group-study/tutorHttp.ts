@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "./http";
+import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "./http";
 import { studyGroupService } from "./runtime";
 
 const backgroundDeliveries = new Set<Promise<unknown>>();
@@ -13,7 +13,7 @@ export async function acceptTutorPost(request: Request, sessionId: string) {
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   try {
-    const body = await request.json() as { message?: string; text?: string; clientEventId?: string };
+    const body = await readJsonObject<{ message?: string; text?: string; clientEventId?: string }>(request);
     const queued = await studyGroupService().enqueueTutor({
       actorUserId: user.id,
       sessionId,
@@ -41,7 +41,7 @@ export async function acceptTutorWithdraw(request: Request, sessionId: string) {
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   try {
-    const body = await request.json() as { requestId?: string };
+    const body = await readJsonObject<{ requestId?: string }>(request);
     return studyGroupData(await studyGroupService().withdrawTutor({ actorUserId: user.id, sessionId, requestId: body.requestId || "" }));
   } catch (error) {
     return studyGroupFailure(error);
