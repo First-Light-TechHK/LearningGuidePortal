@@ -1,5 +1,7 @@
 # Study Group production persistence design — Phase C slice 1
 
+Historical reference note (2026-10-28): the WeChat relay and `repositories/wechatTicketRepository.ts` examples cited below have since been removed. Migration 011 remains immutable history; its table is no longer part of runtime bootstrap. Those examples describe the original design's precedents, not current WeChat behavior. Current repository/DDL examples include `repositories/productTransactionRepository.ts` and migration 012.
+
 Design for the Study Group production core on the product's existing RDS PostgreSQL, replacing the container-local `study-group.json` store (`modules/group-study/repository.ts`) before the feature may be enabled in any managed environment. This document is design only; no code changes accompany it.
 
 Sources this design is built from and must stay consistent with:

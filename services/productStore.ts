@@ -2,7 +2,7 @@ import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type Verifi
 import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
-import { withAnnualAiPoints } from "./planAiPoints";
+import { withPlanAiPoints } from "./planAiPoints";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
@@ -1133,7 +1133,7 @@ export function publicFirstLesson(course: ProductCourse) {
 
 export async function listPlans(courseId?: string) {
   const data = await ensureProductData();
-  const plans = withAnnualAiPoints(data.plans).filter((plan) => {
+  const plans = withPlanAiPoints(data.plans).filter((plan) => {
     if (paymentMode() === "stripe" && process.env.STRIPE_SANDBOX === "1" && !configuredStripePrice(plan.id)) return false;
     const scope = planScope(plan);
     if (courseId) return plan.device === "pc" && scope.scope === "course" && scope.scopeId === courseId;
@@ -1279,7 +1279,7 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const expiresAt = new Date(Date.now() + QUOTE_MINUTES * 60_000).toISOString();
     if (kind === "trial" && (!plan.trialEligible || plan.device !== "pc")) throw new Error("This plan does not include a trial.");
     assertPlanPurchaseAllowed(data, userId, plan);
-    const offer = withAnnualAiPoints(data.plans).find(item => item.id === planId)!;
+    const offer = withPlanAiPoints(data.plans).find(item => item.id === planId)!;
     const quote: ProductQuote = { price, planSnapshot: { ...offer }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
     return { quote, plan: offer };
@@ -1294,7 +1294,7 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
     || source.cancelAtPeriodEnd && !allowCanceledRenewal || new Date(source.validTo) <= new Date()) {
     throw new Error("Only an active PC category subscription can be upgraded.");
   }
-  const plans = withAnnualAiPoints(data.plans);
+  const plans = withPlanAiPoints(data.plans);
   const sourcePlan = plans.find((item) => item.id === source.planId);
   if (!sourcePlan) throw new Error("The current subscription plan could not be found.");
   const target = plans.find((item) => item.scope === "everything" && item.device === "pc" && item.termMonths === sourcePlan.termMonths);
@@ -1364,9 +1364,9 @@ export async function getQuoteForUser(userId: string, quoteId: string) {
   if (!quote) return null;
   const resumable = quote.upgradeProration && data.orders.some(order => order.userId === userId && order.quoteId === quote.id && order.upgradeProration && ["pending", "paid"].includes(order.status));
   if (new Date(quote.expiresAt) <= new Date() && !resumable) return null;
-  const plan = quote.planSnapshot || withAnnualAiPoints(data.plans).find((item) => item.id === quote.planId);
+  const plan = quote.planSnapshot || withPlanAiPoints(data.plans).find((item) => item.id === quote.planId);
   const source = quote.kind === "upgrade" ? data.subscriptions.find(item => item.id === quote.sourceSubscriptionId && item.userId === userId) : undefined;
-  const sourcePlan = source ? withAnnualAiPoints(data.plans).find(item => item.id === source.planId) : undefined;
+  const sourcePlan = source ? withPlanAiPoints(data.plans).find(item => item.id === source.planId) : undefined;
   const upgradeOrder = quote.upgradeProration ? data.orders.find(order => order.userId === userId && order.quoteId === quote.id && order.paymentMode === "stripe" && order.upgradeProration) : undefined;
   return plan ? { quote, plan, sourceSubscription: source, sourcePlan, upgradeOrder } : null;
 }

@@ -68,7 +68,6 @@ const SCHEMA_PROBE = `
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
     AND to_regclass('orm_rows') IS NOT NULL
-    AND to_regclass('wechat_login_tickets') IS NOT NULL
     AND to_regclass('study_groups') IS NOT NULL
     AND to_regclass('study_group_memberships') IS NOT NULL
     AND to_regclass('live_sessions') IS NOT NULL
@@ -179,16 +178,8 @@ CREATE INDEX IF NOT EXISTS contact_requests_status_created_idx ON contact_reques
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (table_name, id)
         );
-        CREATE TABLE IF NOT EXISTS wechat_login_tickets (
-          ticket_hash CHAR(64) PRIMARY KEY,
-          target_env TEXT NOT NULL CHECK (target_env IN ('DEV', 'SIT', 'UAT')),
-          nonce TEXT NOT NULL,
-          profile JSONB NOT NULL,
-          expires_at TIMESTAMPTZ NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS wechat_login_tickets_expires_at_idx ON wechat_login_tickets (expires_at);
         -- Mirrors db/migrations/012_study_group_persistence.sql so a boot with
-        -- no schema job self-heals (010/011 precedent); the two copies must
+        -- no schema job self-heals (010 precedent); the two copies must
         -- declare the same tables and constraints
         -- (pinned by tests/unit/study-group-migration-parity.test.ts).
         CREATE TABLE IF NOT EXISTS study_groups (

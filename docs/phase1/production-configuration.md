@@ -76,6 +76,8 @@ Use the matching bucket and prefix in each environment, for example `learning-gu
 
 Google and WeChat use different registration rules. Google requires the complete redirect URI. WeChat Open Platform website applications require the authorised **domain name only**; the application then sends the complete callback URI at runtime.
 
+Each DEV/SIT/UAT/PPE/PROD service now uses its own approved WeChat website application, with that application's `WECHAT_APP_ID` and `WECHAT_APP_SECRET` and the service's own `NEXT_PUBLIC_APP_URL`. The former UAT relay is removed; no shared callback, handoff secret or ticket endpoint is needed. Legacy relay environment variables are ignored. When changing an existing AppID, check existing scoped Account identities before rollout; this code change does not merge accounts across AppIDs.
+
 ```text
 Google:
 https://learn.example.com/api/auth/google/callback
