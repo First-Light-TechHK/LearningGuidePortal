@@ -4,7 +4,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, isTicketId, parseIdempotencyKey, problemBody, type HelpdeskAttachmentType, type UploadInput } from "@/contracts/helpdesk";
 import { isInlineAttachment } from "./attachments";
-import { requestOriginMatches } from "@/services/adminHost";
+import { adminHostDecision, requestOriginMatches } from "@/services/adminHost";
 import { currentProductUserFromRequest } from "@/services/productAuth";
 import type { LearnerIdentity } from "./service";
 
@@ -46,6 +46,19 @@ export function attachmentResponse(content: { bytes: Uint8Array; contentType: He
   });
 }
 
+/**
+ * middleware.ts does not run on the two Helpdesk upload paths (so their large
+ * bodies are not cloned), so their handlers apply the same admin-host rule
+ * first: the identical 404 / 307 the middleware would have answered, or null.
+ */
+export function adminHostResponse(request: Request): Response | null {
+  const decision = adminHostDecision(request);
+  if (decision.allow) return null;
+  if (decision.status === 404) return new Response("Not Found", { status: 404 });
+  if (decision.status === 307 && decision.location) return Response.redirect(new URL(decision.location, request.url), 307);
+  return null;
+}
+
 export async function requireLearner(request: Request, options: { write?: boolean } = {}): Promise<LearnerIdentity> {
   const user = await currentProductUserFromRequest(request);
   if (!user) throw new HelpdeskProblem("unauthenticated", "Sign in to contact support.");
@@ -81,10 +94,50 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   try { return await request.json(); } catch { throw new HelpdeskProblem("invalid_request", "Send a JSON body."); }
 }
 
-/** multipart/form-data: text fields plus files under "files[]" (or "files"). */
+/**
+ * Largest multipart body a learner may send: five 10 MB files plus 1 MB for
+ * the text fields and multipart framing. The two upload Route Handlers are
+ * excluded from the middleware (middleware.ts), so Next neither clones nor
+ * truncates their bodies; this bound is what keeps them from buffering more.
+ */
+export const HELPDESK_MULTIPART_MAX_BYTES = HELPDESK_LIMITS.filesPerMessage * HELPDESK_LIMITS.fileMaxBytes + 1024 * 1024;
+
+function bodyTooLarge() {
+  return new HelpdeskProblem("attachment_too_large", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} files of 10 MB each.`);
+}
+
+/** Reads the raw body, refusing (413) from Content-Length up front or as soon as the bytes read pass the bound. */
+async function readBoundedBody(request: Request, max: number): Promise<Uint8Array<ArrayBuffer>> {
+  const declared = request.headers.get("content-length")?.trim();
+  if (declared && /^\d+$/.test(declared) && Number(declared) > max) throw bodyTooLarge();
+  if (!request.body) return new Uint8Array(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    let next: ReadableStreamReadResult<Uint8Array>;
+    try { next = await reader.read(); } catch { throw new HelpdeskProblem("invalid_request", "Send multipart/form-data."); }
+    if (next.done) break;
+    total += next.value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw bodyTooLarge();
+    }
+    chunks.push(next.value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  return body;
+}
+
+/** multipart/form-data: text fields plus files under "files[]" (or "files"), at most HELPDESK_MULTIPART_MAX_BYTES in all. */
 export async function readMultipart(request: Request): Promise<{ fields: Record<string, unknown>; files: UploadInput[] }> {
+  const bytes = await readBoundedBody(request, HELPDESK_MULTIPART_MAX_BYTES);
   let form: FormData;
-  try { form = await request.formData(); } catch { throw new HelpdeskProblem("invalid_request", "Send multipart/form-data."); }
+  try {
+    form = await new Response(bytes, { headers: { "content-type": request.headers.get("content-type") || "" } }).formData();
+  } catch { throw new HelpdeskProblem("invalid_request", "Send multipart/form-data."); }
   const fields: Record<string, unknown> = {};
   const files: UploadInput[] = [];
   for (const [name, value] of form.entries()) {

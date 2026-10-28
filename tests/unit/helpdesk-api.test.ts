@@ -34,6 +34,9 @@ before(async () => {
   process.env.SESSION_SECRET = "test-session-secret-with-at-least-32-characters";
   delete process.env.DATABASE_URL;
   delete process.env.PORTAL_HELPDESK_TOKEN;
+  // In DEV, localhost counts as a BackOffice host unless ADMIN_HOSTS says
+  // otherwise (services/adminHost.ts); these tests play the learner site.
+  process.env.ADMIN_HOSTS = "admin.ilovelearningguide.com,admin.sit.ilovelearningguide.com";
   store = await import("../../services/productStore");
   const make = async (email: string, nickname: string) => {
     const user = await store.registerUser({ email, password: "password1", nickname });
@@ -115,6 +118,34 @@ test("learner endpoints require a session (401 problem) and a same-origin POST",
   await problem(await routes.ticket.GET(learnerRequest(`/api/helpdesk/tickets/${randomUUID()}`), ctx({ id: randomUUID() })), 401, "unauthenticated");
   await problem(await routes.attachment.GET(learnerRequest(`/api/helpdesk/attachments/${randomUUID()}`), ctx({ id: randomUUID() })), 401, "unauthenticated");
   await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm(createFields), key: randomUUID(), cookie: learnerCookie, origin: "https://evil.example" }), ctx()), 403, "forbidden_origin");
+});
+
+test("the upload endpoints skip middleware, so they apply its admin-host rule and the body bound themselves", async () => {
+  const { middleware } = await import("../../middleware");
+  const { NextRequest } = await import("next/server");
+  const ticketId = randomUUID();
+  const onAdmin = (url: string, method: "GET" | "POST") => new Request(`https://admin.ilovelearningguide.com${url}`, {
+    method, headers: { host: "admin.ilovelearningguide.com", origin: "https://admin.ilovelearningguide.com", cookie: `${SESSION_COOKIE}=${learnerCookie}`, "idempotency-key": randomUUID() },
+    body: method === "POST" ? ticketForm(createFields) : undefined
+  });
+  const cases: Array<[string, "GET" | "POST", (request: Request) => Promise<Response>]> = [
+    ["/api/helpdesk/tickets", "GET", (request) => routes.tickets.GET(request, ctx())],
+    ["/api/helpdesk/tickets", "POST", (request) => routes.tickets.POST(request, ctx())],
+    [`/api/helpdesk/tickets/${ticketId}/messages`, "POST", (request) => routes.messages.POST(request, ctx({ id: ticketId }))]
+  ];
+  for (const [url, method, call] of cases) {
+    const expected = middleware(new NextRequest(onAdmin(url, method)));
+    const response = await call(onAdmin(url, method));
+    assert.equal(response.status, 307, `${method} ${url}`);
+    assert.equal(response.status, expected.status);
+    assert.equal(response.headers.get("location"), expected.headers.get("location"));
+  }
+  // A Content-Length over five 10 MB files plus framing is refused before the body is read.
+  const before = (await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length;
+  const huge = learnerRequest("/api/helpdesk/tickets", { body: ticketForm(createFields), key: randomUUID(), cookie: learnerCookie });
+  const oversized = new Request(huge.url, { method: "POST", headers: new Headers([...huge.headers, ["content-length", String(51 * 1024 * 1024 + 1)]]), body: await huge.arrayBuffer() });
+  await problem(await routes.tickets.POST(oversized, ctx()), 413, "attachment_too_large");
+  assert.equal((await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length, before);
 });
 
 test("integration endpoints: 503 when the token is unset, 401 Bearer challenge when wrong, rotation applies per request", async () => {

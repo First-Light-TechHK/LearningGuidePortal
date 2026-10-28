@@ -1,5 +1,5 @@
 import { parseCreateTicketInput } from "@/contracts/helpdesk";
-import { idempotencyKey, jsonResponse, problemResponse, readMultipart, requireLearner } from "@/modules/helpdesk/http";
+import { adminHostResponse, idempotencyKey, jsonResponse, problemResponse, readMultipart, requireLearner } from "@/modules/helpdesk/http";
 import { helpdeskService } from "@/modules/helpdesk/runtime";
 
 export const runtime = "nodejs";
@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/helpdesk/tickets → { tickets: TicketSummary[] } (own tickets, newest activity first). */
 export async function GET(request: Request) {
+  const blocked = adminHostResponse(request);
+  if (blocked) return blocked;
   try {
     const learner = await requireLearner(request);
     return jsonResponse(await helpdeskService().listLearnerTickets(learner));
@@ -15,6 +17,8 @@ export async function GET(request: Request) {
 
 /** POST /api/helpdesk/tickets (multipart: category, subject, body, locale, files[]; Idempotency-Key) → 201 TicketDetail. */
 export async function POST(request: Request) {
+  const blocked = adminHostResponse(request);
+  if (blocked) return blocked;
   try {
     const learner = await requireLearner(request, { write: true });
     const key = idempotencyKey(request);

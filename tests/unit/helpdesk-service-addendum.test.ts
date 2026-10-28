@@ -205,6 +205,66 @@ test("unread flag: set by the learner's ticket and messages, cleared only by mar
   assert.equal((await h.service.getAgentTicket(ticket.id)).unreadByAgent, false, "confirming is not a new message");
 });
 
+test("mark_read with expectedSequence never clears a learner message the agent has not seen yet", async () => {
+  const h = harness();
+  const { ticket } = await h.service.createTicket(learner, enquiry(), randomUUID());
+  const reply = (await h.service.postAgentMessage(ticket.id, { body: "Which browser?", internal: false, agent, expectedSequence: 1 }, randomUUID())).ticket;
+  // The agent opens the ticket at this sequence ...
+  const opened = await h.service.getAgentTicket(ticket.id);
+  assert.equal(opened.sequence, reply.sequence);
+  // ... the learner writes before BackOffice sends mark_read for that snapshot.
+  await h.service.learnerMessage(learner, ticket.id, { body: "Chrome on Windows", expectedSequence: opened.sequence, files: [] }, randomUUID());
+  const late = await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: opened.sequence }, randomUUID());
+  assert.equal(late.ticket.unreadByAgent, true, "the unseen learner message keeps its dot");
+  assert.equal(late.ticket.sequence, opened.sequence + 1, "mark_read is still not an event");
+  const current = await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: late.ticket.sequence }, randomUUID());
+  assert.equal(current.ticket.unreadByAgent, false, "the up-to-date snapshot clears it");
+  await h.service.learnerMessage(learner, ticket.id, { body: "Any news?", expectedSequence: current.ticket.sequence, files: [] }, randomUUID());
+  assert.equal((await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: null }, randomUUID())).ticket.unreadByAgent, false, "without expectedSequence it clears unconditionally");
+});
+
+test("attachment bytes written for a change that does not commit are removed again", async () => {
+  const removed: string[] = [];
+  const base = createLocalHelpdeskRepository(path.join(root, randomUUID()));
+  let loseNextRace = false;
+  let duplicateNextInsert = false;
+  const repository = {
+    ...base,
+    async appendChange(input: Parameters<typeof base.appendChange>[0]) {
+      if (loseNextRace) { loseNextRace = false; return "stale" as const; }
+      return base.appendChange(input);
+    },
+    async insertTicket(input: Parameters<typeof base.insertTicket>[0]) {
+      if (duplicateNextInsert) { duplicateNextInsert = false; return { status: "duplicate" as const }; }
+      return base.insertTicket(input);
+    }
+  };
+  const h = harness({ repository });
+  const blobs = h.blobs;
+  const service = createHelpdeskService({
+    repository,
+    blobs: { async put(key, bytes) { blobs.set(key, Buffer.from(bytes)); }, async get(key) { return blobs.get(key) as Buffer; }, async remove(key) { removed.push(key); blobs.delete(key); } },
+    now: () => new Date("2026-10-28T06:00:00.000Z"),
+    log: () => undefined
+  });
+  const { ticket } = await service.createTicket(learner, enquiry({}, [file(PNG, "shot.png")]), randomUUID());
+  assert.equal(blobs.size, 1);
+  // Lost the optimistic-concurrency race after the bytes were written.
+  loseNextRace = true;
+  await rejects(service.learnerMessage(learner, ticket.id, { body: "Here is another", expectedSequence: ticket.sequence, files: [file(PNG, "a.png"), file(PDF, "b.pdf")] }, randomUUID()), "stale_ticket");
+  assert.equal(removed.length, 2);
+  assert.equal(blobs.size, 1, "only the committed ticket's attachment is left");
+  // A create whose key another request already used.
+  duplicateNextInsert = true;
+  await rejects(service.createTicket(learner, enquiry({}, [file(PNG, "again.png")]), randomUUID()), "idempotency_conflict");
+  assert.equal(removed.length, 3);
+  assert.equal(blobs.size, 1);
+  // The committed attachment is still served.
+  const detail = await service.getLearnerTicket(learner, ticket.id);
+  const attachmentId = detail.messages[0].attachments[0].id;
+  assert.deepEqual(Buffer.from((await service.readLearnerAttachment(learner, attachmentId)).bytes), PNG);
+});
+
 test("agent list: contact email, one-line preview of the first message, search by name or contact email, category filter", async () => {
   const h = harness();
   const long = `${"Line one.\n\n   Line two ".repeat(10)}end`;

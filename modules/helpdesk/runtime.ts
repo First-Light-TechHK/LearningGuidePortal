@@ -8,7 +8,7 @@ import path from "node:path";
 import type { HelpdeskLocale } from "@/contracts/helpdesk";
 import { helpdeskRepository } from "@/repositories/helpdeskRepository";
 import { sendHelpdeskUpdateEmail } from "@/services/emailService";
-import { readBinary, systemRoot, writeBinary } from "@/services/fileStore";
+import { readBinary, removeDir, systemRoot, writeBinary } from "@/services/fileStore";
 import { ensureProductData, recordUserNotification } from "@/services/productStore";
 import { publicAppOrigin } from "@/services/runtimeConfig";
 import { createHelpdeskService, type HelpdeskService } from "./service";
@@ -35,7 +35,9 @@ export function helpdeskService(): HelpdeskService {
     // services/persistence/vfs): local files in DEV, S3 + app_files elsewhere.
     blobs: {
       put: (key, bytes) => writeBinary(path.join(systemRoot(), key), Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)),
-      get: (key) => readBinary(path.join(systemRoot(), key))
+      get: (key) => readBinary(path.join(systemRoot(), key)),
+      // Only for bytes whose ticket change did not commit (removeDir also removes a single file / app_files row).
+      remove: (key) => removeDir(path.join(systemRoot(), key))
     },
     // Notification Center rows have no link field; the body carries the
     // ticket number and subject (docs/phase1/helpdesk-tickets.md, TODO).

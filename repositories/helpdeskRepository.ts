@@ -197,11 +197,12 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     async countTicketsByUser(userId) {
       return (await load()).tickets.filter((item) => item.userId === userId).length;
     },
-    markRead(ticketId) {
+    markRead(ticketId, seenSequence) {
       return exclusive(async () => {
         const store = await load();
         const ticket = store.tickets.find((item) => item.id === ticketId);
         if (!ticket || !ticket.unreadByAgent) return;
+        if (seenSequence !== null && ticket.sequence > seenSequence) return;
         ticket.unreadByAgent = false;
         await save(store);
       });
@@ -435,8 +436,10 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
     async countTicketsByUser(userId) {
       return Number((await select<{ total: string }>("SELECT count(*) AS total FROM helpdesk_tickets WHERE user_id = $1", [userId]))[0].total);
     },
-    async markRead(ticketId) {
-      await select("UPDATE helpdesk_tickets SET unread_by_agent = FALSE WHERE id = $1 AND unread_by_agent", [ticketId]);
+    async markRead(ticketId, seenSequence) {
+      // One conditional UPDATE: a learner message committed after the agent's
+      // snapshot has raised the sequence, so the row no longer matches.
+      await select("UPDATE helpdesk_tickets SET unread_by_agent = FALSE WHERE id = $1 AND unread_by_agent AND ($2::int IS NULL OR sequence <= $2::int)", [ticketId, seenSequence]);
     },
     async listAutoConfirmDue(nowIso, userId) {
       const params: unknown[] = [nowIso];

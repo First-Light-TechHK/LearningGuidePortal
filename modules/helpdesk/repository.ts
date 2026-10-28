@@ -27,8 +27,9 @@ export type TicketChange = {
   tag?: { op: "add" | "remove"; tag: string; at: string };
   /**
    * The learner posted a public message: set unread_by_agent. The stored flag
-   * is only ever raised here and only cleared by markRead, so a stale row
-   * snapshot can never undo an agent's mark_read or a learner's new message.
+   * is only ever raised here and only cleared by markRead (which, given the
+   * agent's seen sequence, skips a ticket that moved on), so a stale snapshot
+   * can never undo an agent's mark_read or a learner's new message.
    */
   markUnread?: boolean;
 };
@@ -49,8 +50,13 @@ export type HelpdeskRepository = {
   /** Newest activity first (updated_at DESC, id DESC); returns at most limit + 1 rows so the caller can tell whether more exist. */
   listTickets(query: AgentListQuery): Promise<{ tickets: TicketListItem[]; counts: TicketCounts }>;
   countTicketsByUser(userId: string): Promise<number>;
-  /** Clears unread_by_agent; not an event, never changes the sequence. */
-  markRead(ticketId: string): Promise<void>;
+  /**
+   * Clears unread_by_agent; not an event, never changes the sequence. With
+   * seenSequence (the sequence the agent's snapshot showed) it clears only
+   * while the ticket is still at or below it, so a learner message that
+   * arrived after that snapshot keeps its unread dot.
+   */
+  markRead(ticketId: string, seenSequence: number | null): Promise<void>;
   listAutoConfirmDue(nowIso: string, userId?: string): Promise<TicketRecord[]>;
   findAttachment(id: string): Promise<AttachmentRecord | null>;
 };

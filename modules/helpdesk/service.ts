@@ -67,7 +67,8 @@ export type LearnerUpdateKind = "agent_replied" | "resolution_proposed";
 export type HelpdeskNotification = { userId: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind; title: string; body: string };
 /** A plain-text email to the ticket's contact email (Figma: "we will reply to you by email"). */
 export type HelpdeskEmail = { to: string; subject: string; text: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind };
-export type HelpdeskBlobStore = { put(key: string, bytes: Uint8Array): Promise<void>; get(key: string): Promise<Uint8Array> };
+/** remove (optional) deletes bytes written for a change that then did not commit. */
+export type HelpdeskBlobStore = { put(key: string, bytes: Uint8Array): Promise<void>; get(key: string): Promise<Uint8Array>; remove?(key: string): Promise<void> };
 export type HelpdeskDeps = {
   repository: HelpdeskRepository;
   blobs: HelpdeskBlobStore;
@@ -279,8 +280,28 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       const id = uuidv7(at.getTime());
       return { file, record: { id, ticketId, messageId, uploaderKind: "learner" as const, fileName: attachmentFileName(file.fileName, contentType), contentType, sizeBytes: file.bytes.byteLength, storageKey: attachmentStorageKey(ticketId, id), createdAt: at.toISOString() } };
     });
-    for (const item of prepared) await deps.blobs.put(item.record.storageKey, item.file.bytes);
+    const written: AttachmentRecord[] = [];
+    try {
+      for (const item of prepared) {
+        await deps.blobs.put(item.record.storageKey, item.file.bytes);
+        written.push(item.record);
+      }
+    } catch (error) {
+      await discardUploads(written);
+      throw error;
+    }
     return prepared.map((item) => item.record);
+  }
+
+  /** Best effort: bytes of a change that did not commit (lost race, reused key, failure) are deleted again. */
+  async function discardUploads(attachments: AttachmentRecord[]) {
+    const blobs = deps.blobs;
+    if (!blobs.remove || attachments.length === 0) return;
+    for (const item of attachments) {
+      try { await blobs.remove(item.storageKey); } catch (error) {
+        log({ type: "helpdesk", event: "attachment_cleanup_failed", ticketId: item.ticketId, attachmentId: item.id, error: error instanceof Error ? error.name : "unknown" });
+      }
+    }
   }
 
   async function load(ticketId: string, ownerId?: string): Promise<TicketAggregate> {
@@ -400,12 +421,19 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       data: eventData(ticket.status, next.status, spec.actor, { reason: autoClaimed ? "auto_claimed" : decision.transition.closeReason, messageId: message?.id, rating: spec.rating, tag: spec.tag }),
       key: spec.key, hash: spec.hash
     });
-    const outcome = await repository.appendChange({
-      ticket: next, expectedSequence: ticket.sequence, message, attachments, event,
-      tag: spec.tag === undefined ? undefined : { op: spec.command === "add_tag" ? "add" : "remove", tag: spec.tag, at: at.toISOString() },
-      markUnread: Boolean(message && !message.internal && spec.actor.kind === "learner")
-    });
+    let outcome: Awaited<ReturnType<HelpdeskRepository["appendChange"]>>;
+    try {
+      outcome = await repository.appendChange({
+        ticket: next, expectedSequence: ticket.sequence, message, attachments, event,
+        tag: spec.tag === undefined ? undefined : { op: spec.command === "add_tag" ? "add" : "remove", tag: spec.tag, at: at.toISOString() },
+        markUnread: Boolean(message && !message.internal && spec.actor.kind === "learner")
+      });
+    } catch (error) {
+      await discardUploads(attachments);
+      throw error;
+    }
     if (outcome !== "applied") {
+      await discardUploads(attachments);
       if (await replayed(spec.key, spec.hash, spec.ticketId)) return { aggregate: await load(spec.ticketId), replayed: true };
       if (outcome === "duplicate") throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
       throw staleProblem((await load(spec.ticketId)).ticket.sequence);
@@ -458,17 +486,24 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       if (!declined.ok) throw new HelpdeskProblem("invalid_transition");
       events.push(buildEvent({ ticketId, sequence: 2, name: declined.transition.event, at, data: eventData(decision.to, declined.to, actor, { suggestionId }), key: null, hash: null }));
     }
-    const outcome = await repository.insertTicket({
-      ticket: {
-        id: ticketId, userId: learner.id, userEmail: learner.email, userName: learner.name, contactEmail, locale: input.locale, category: input.category, subject: input.subject,
-        status: decision.to, assigneeId: null, assigneeName: null, sequence: events.length, confirmDueAt: null, closedAt: null, closeReason: null, rating: null,
-        createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash, suggestionId, unreadByAgent: true
-      },
-      message: { id: messageId, ticketId, authorKind: "learner", authorId: learner.id, authorName: learner.name, body: input.body, internal: false, attachmentIds: attachments.map((item) => item.id), clientEventId: key, payloadHash: hash, createdAt },
-      attachments,
-      events
-    });
+    let outcome: Awaited<ReturnType<HelpdeskRepository["insertTicket"]>>;
+    try {
+      outcome = await repository.insertTicket({
+        ticket: {
+          id: ticketId, userId: learner.id, userEmail: learner.email, userName: learner.name, contactEmail, locale: input.locale, category: input.category, subject: input.subject,
+          status: decision.to, assigneeId: null, assigneeName: null, sequence: events.length, confirmDueAt: null, closedAt: null, closeReason: null, rating: null,
+          createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash, suggestionId, unreadByAgent: true
+        },
+        message: { id: messageId, ticketId, authorKind: "learner", authorId: learner.id, authorName: learner.name, body: input.body, internal: false, attachmentIds: attachments.map((item) => item.id), clientEventId: key, payloadHash: hash, createdAt },
+        attachments,
+        events
+      });
+    } catch (error) {
+      await discardUploads(attachments);
+      throw error;
+    }
     if (outcome.status === "duplicate") {
+      await discardUploads(attachments);
       const later = await replayTicket();
       if (later) return later;
       throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
@@ -525,8 +560,9 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     const actor: Actor = { kind: "agent", id: input.agent.id, name: input.agent.name };
     if (input.action === "mark_read") {
       // Not an event: it only clears the BackOffice unread dot, so it never makes anyone stale.
+      // expectedSequence (the snapshot the agent saw) keeps a newer learner message unread.
       await load(ticketId);
-      await repository.markRead(ticketId);
+      await repository.markRead(ticketId, input.expectedSequence);
       return { ticket: await agentDetail(await fresh(await load(ticketId))), replayed: false };
     }
     const hash = payloadHash({ op: "agent_action", ticketId, agent: input.agent, action: input.action, ...(input.tag !== undefined ? { tag: input.tag } : {}) });

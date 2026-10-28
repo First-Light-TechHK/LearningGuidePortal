@@ -221,6 +221,28 @@ test("unread flag: mark_read clears it without an event; a stale agent snapshot 
   assert.equal((await hd.getAgentTicket(ticket.id)).unreadByAgent, true);
 });
 
+test("unread flag: a mark_read for an older snapshot leaves a newer learner message unread; racing it never loses the dot", async () => {
+  const hd = service();
+  const { ticket } = await hd.createTicket(learner, input(), randomUUID());
+  const seen = (await hd.getAgentTicket(ticket.id)).sequence;
+  await hd.learnerMessage(learner, ticket.id, { body: "Also the receipt is missing", expectedSequence: seen, files: [] }, randomUUID());
+  const late = await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: seen }, randomUUID());
+  assert.equal(late.ticket.unreadByAgent, true);
+  assert.equal((await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: late.ticket.sequence }, randomUUID())).ticket.unreadByAgent, false);
+  // Race the learner's message against mark_read for the snapshot before it, many times:
+  // whichever commits first, the message must end up unread.
+  for (let round = 0; round < 10; round += 1) {
+    const before = (await hd.getAgentTicket(ticket.id)).sequence;
+    await Promise.all([
+      hd.learnerMessage(learner, ticket.id, { body: `Follow-up ${round}`, expectedSequence: before, files: [] }, randomUUID()),
+      hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: before }, randomUUID())
+    ]);
+    assert.equal((await hd.getAgentTicket(ticket.id)).unreadByAgent, true, `round ${round}`);
+    await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: before + 1 }, randomUUID());
+    assert.equal((await hd.getAgentTicket(ticket.id)).unreadByAgent, false);
+  }
+});
+
 test("tags in PostgreSQL: idempotent add/remove events, limit of 10, list filter and counts, concurrent tagging all lands", async () => {
   const hd = service();
   const { ticket } = await hd.createTicket(learner, input(), randomUUID());

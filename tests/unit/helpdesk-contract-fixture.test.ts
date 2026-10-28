@@ -70,6 +70,9 @@ before(async () => {
   process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
   delete process.env.DATABASE_URL;
   delete process.env.ADMIN_HELPDESK_BASE_URL;
+  // In DEV, localhost counts as a BackOffice host unless ADMIN_HOSTS says
+  // otherwise; the learner upload handlers apply that rule themselves.
+  process.env.ADMIN_HOSTS = "admin.ilovelearningguide.com,admin.sit.ilovelearningguide.com";
 });
 
 after(async () => {
