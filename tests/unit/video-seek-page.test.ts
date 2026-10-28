@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { chromium } from "playwright";
 import { readFile } from "node:fs/promises";
 
-test("video seek tracks mouse/touch drags without waiting for media timeupdate", async () => {
+test("video toolbar reveals on hover or keyboard focus during playback and preserves mouse/touch seeking", async () => {
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {ControlledVideo} from './components/portal/ControlledVideo';window.mount=locale=>createRoot(document.getElementById('root')).render(<div className="la" style={{width:'100%'}}><ControlledVideo locale={locale}/></div>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,platform:"browser",jsx:"automatic"});
   const browser=await chromium.launch();
   try{for(const locale of ["en-GB","zh-CN"]) for(const touch of [false,true]){
@@ -13,6 +13,28 @@ test("video seek tracks mouse/touch drags without waiting for media timeupdate",
     await page.addScriptTag({content:bundle.outputFiles[0].text});await page.evaluate(locale=>(window as any).mount(locale),locale);
     const seek=page.getByRole("slider");await seek.waitFor();assert.equal(await seek.isDisabled(),true);
     await page.locator("video").evaluate(video=>{Object.defineProperty(video,"duration",{value:120});let position=0;Object.defineProperty(video,"currentTime",{get:()=>position,set:value=>{position=value;},configurable:true});video.dispatchEvent(new Event("loadedmetadata"));});
+    const controls=page.locator(".la-video-controls");
+    const opacity=()=>controls.evaluate(element=>getComputedStyle(element).opacity);
+    assert.equal(await opacity(),"1","paused video keeps its controls visible");
+    await page.mouse.move(0,790);
+    await page.locator("video").evaluate(video=>video.dispatchEvent(new Event("play")));
+    await page.waitForFunction(expected=>getComputedStyle(document.querySelector(".la-video-controls")!).opacity===expected,touch?"1":"0");
+    if(!touch){
+      assert.equal(await controls.evaluate(element=>getComputedStyle(element).pointerEvents),"none","hidden controls do not capture pointer input");
+      await page.locator("video").hover();assert.equal(await opacity(),"1","hovering anywhere on the video reveals the controls");
+      // Pointer clicks may retain focus, but leaving the video must still hide the bar.
+      await controls.getByRole("button").first().click();
+      await page.mouse.move(0,790);assert.equal(await opacity(),"0","pointer focus does not pin the controls open");
+      await page.keyboard.press("Tab");assert.equal(await opacity(),"1","keyboard navigation reveals the focused control");
+      await page.locator(":focus").evaluate(element=>(element as HTMLElement).blur());
+      assert.equal(await opacity(),"0");
+      await page.locator("video").evaluate(video=>video.dispatchEvent(new Event("pause")));
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector(".la-video-controls")!).opacity==="1");
+      await page.locator("video").evaluate(video=>video.dispatchEvent(new Event("play")));
+      await page.locator("video").hover();
+    }else{
+      assert.equal(await opacity(),"1","touch devices retain controls without hover");
+    }
     await seek.waitFor({state:"visible"});const box=(await seek.boundingBox())!;const y=box.y+box.height/2,start=box.x+8,end=box.x+box.width*.75;
     const session=await context.newCDPSession(page);
     if(touch)await session.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:start,y}]});else{await page.mouse.move(start,y);await page.mouse.down();}
@@ -28,6 +50,9 @@ test("video seek tracks mouse/touch drags without waiting for media timeupdate",
     if(!touch){await seek.click({position:{x:box.width*.25,y:box.height/2}});assert.ok(Number(await seek.inputValue())<40);}
     await page.locator("video").evaluate(v=>{(v as HTMLVideoElement).currentTime=20;v.dispatchEvent(new Event("timeupdate"));});
     await page.waitForFunction(()=>document.querySelector('input[type="range"]')?.getAttribute('value')==='20');
+    await seek.evaluate(element=>(element as HTMLElement).blur());await page.mouse.move(0,790);
+    await page.locator("video").evaluate(video=>video.dispatchEvent(new Event("ended")));
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector(".la-video-controls")!).opacity==="1");
     await context.close();
   }}finally{await browser.close();}
 });

@@ -337,22 +337,14 @@ test("the Host starts from the session controls instead of waiting in the member
   assert.equal(zh.studyGroupsPage.hostWaiting, "你是本节主持人，准备好后点击开始。");
 });
 
-test("the active navigation underline tracks the active link instead of a fixed offset", () => {
+test("BUG-0217: the Study Group pages use the site header, Study Groups active", () => {
+  for (const page of ["../../app/[locale]/portal/study-groups/page.tsx", "../../app/[locale]/portal/study-groups/sessions/[sessionId]/page.tsx"]) {
+    const source = readFileSync(new URL(page, import.meta.url), "utf8");
+    assert.match(source, /<PortalHeader locale=\{locale\} active="study-groups" signedIn=\{Boolean\(user\)\} displayName=\{user\?\.nickname\} avatarUrl=/);
+    assert.equal(source.includes("StudyGroupHeader"), false);
+  }
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
-  assert.equal(css.includes("left: 338px"), false);
-  assert.equal(css.includes(".mark"), false);
-  assert.match(css, /\.nav a \{[^}]*position: relative[^}]*\}/);
-  assert.match(css, /\.nav a\.active::after \{[^}]*left: 0;[^}]*right: 0;[^}]*bottom: 0;[^}]*\}/);
-  const header = readFileSync(new URL("../../components/portal/StudyGroupHeader.tsx", import.meta.url), "utf8");
-  assert.equal(header.includes("styles.mark"), false);
-  assert.equal(header.includes('className="active"'), false);
-  assert.match(header, /className=\{styles\.active\} href=\{`\/\$\{locale\}\/portal\/study-groups`\}/);
-  // Design source (LG-YL · Study_Group_UIFinal header): nav starts at x=252 with the
-  // brand text ending at 219 (margin 33px); the active label (599:25) and its 4px bar
-  // (599:42, 95x4 at 338,64) are #155dfc.
-  assert.match(css, /\.nav \{[^}]*margin-left: 33px[^}]*\}/);
-  assert.match(css, /\.nav a\.active \{ color: #155dfc; font-weight: 700[^}]*\}/);
-  assert.match(css, /\.nav a\.active::after \{[^}]*background: #155dfc[^}]*\}/);
+  assert.equal(/^\.header \{/m.test(css), false, "no second header design is left in the Study Group styles");
 });
 
 test("the join gate call-to-action centres its label for the sign-in link", () => {
@@ -365,7 +357,6 @@ test("the join gate call-to-action centres its label for the sign-in link", () =
 test("the final design tokens pin the join gate, session chips, and secondary buttons", () => {
   // LG-YL / Study_Group_UIFinal (page 599:2), 1440x1024 frames.
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.tools \{[^}]*gap: 20px[^}]*\}/); // 599:930 header EN/bell/avatar gaps
   assert.match(css, /\.sheet \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 230px; gap: 30px;[^}]*padding: 8px 8px 30px 30px/); // 599:930 article 510..1152, Detail Side 1182..1412
   assert.match(css, /\.sheet > article \{ margin-top: 22px; \}/);
   assert.match(css, /\.memberCol \{[^}]*padding: 20px[^}]*\}/);
@@ -380,7 +371,6 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(css, /\.endCard h1 \{ font-size: 28px; font-weight: 700; color: #000; \}/); // 599:1448 h1 28px/700 #000
   assert.match(css, /\.endCard \.primary \{ min-width: 152px; height: 36px; font-size: 12px; \}/); // 599:1455
   assert.match(css, /\.ghost \{[^}]*color: #111827[^}]*\}/); // 599:627 Button/Edit Group label
-  assert.match(css, /\.signInLink \{[^}]*color: #4a5565[^}]*\}/); // 599:971 header Sign In variant
   assert.match(css, /\.live \{ position: absolute; top: 8px; right: 8px/); // 599:44 sidebar Live chip inset
   assert.match(css, /\.joined \{ background: #d1f1dd; color: #16a34a; \}/); // 599:47 sidebar Joined chip text #16a34a
   assert.match(css, /\.empty \{[^}]*padding-top: 130px; \}/); // 599:8 rhythm: title 218, art 395, h2 573, body 614

@@ -1,6 +1,6 @@
 import type { SubscriptionSelectionState } from "@/contracts/subscription-selection";
 import type { ProductPlan, ProductSubscription } from "./productStore";
-import { withAnnualAiPoints } from "./planAiPoints";
+import { withPlanAiPoints } from "./planAiPoints";
 
 export function livePaidSubscriptions(subscriptions: ProductSubscription[], userId: string, at = Date.now()) {
   return subscriptions.filter(item => item.userId === userId && item.source === "purchase"
@@ -17,7 +17,7 @@ export function subscriptionCoverage(subscriptions: ProductSubscription[], plans
 }
 
 export function buildSubscriptionSelection(subscriptions: ProductSubscription[], plans: ProductPlan[], userId: string, at = Date.now()): SubscriptionSelectionState {
-  plans = withAnnualAiPoints(plans);
+  plans = withPlanAiPoints(plans);
   const coverage = subscriptionCoverage(subscriptions, plans, userId, at);
   const source = coverage.categoryIds.length === 1 ? coverage.categories.find(item => item.state === "active" && (item.device || plans.find(plan => plan.id === item.planId)?.device || "pc") === "pc") || coverage.categories[0] : null;
   const sourcePlan = source && plans.find(plan => plan.id === source.planId);

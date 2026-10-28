@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
 import { chromium } from "playwright";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 
-test("video sub-chapters on the same file seek in place and keep playing", async () => {
+test("video point selection plays real media across same/different sources while preserving chapter starts and trial limits", {timeout:120000}, async () => {
   const bundle = await build({
     stdin: {
       resolveDir: process.cwd(),
       loader: "tsx",
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(<PreviewLessonView key={p.key} {...p}/>));`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LessonContentPlayer} from './components/portal/LessonContentPlayer';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.player?<LessonContentPlayer key={p.key} contents={p.lesson.contents} initialContentId={p.initialContentId} locale={p.locale}/>:<PreviewLessonView key={p.key} {...p}/>));`,
     },
     bundle: true,
     write: false,
@@ -41,68 +41,106 @@ test("video sub-chapters on the same file seek in place and keep playing", async
     }],
   });
   const browser = await chromium.launch();
+  await mkdir("test-results/video-point-tracking", { recursive: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
-    await page.route("**/*", async route => {
-      const url = new URL(route.request().url());
-      if (url.pathname.startsWith("/portal/")) {
-        return route.fulfill({ body: await readFile(`public${url.pathname}`), contentType: url.pathname.endsWith(".svg") ? "image/svg+xml" : "image/png" });
+    for (const locale of ["en-GB", "zh-CN"] as const) for (const player of [false, true]) {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await page.route("**/*", async route => {
+        const url = new URL(route.request().url());
+        if (url.pathname.endsWith(".webm")) {
+          const body=await readFile(`public${url.pathname}`),range=route.request().headers().range?.match(/^bytes=(\d+)-(\d*)$/);
+          const start=range?Number(range[1]):0,end=range&&range[2]?Math.min(Number(range[2]),body.length-1):body.length-1;
+          return route.fulfill({status:range?206:200,body:body.subarray(start,end+1),contentType:"video/webm",headers:{"Accept-Ranges":"bytes",...(range?{"Content-Range":`bytes ${start}-${end}/${body.length}`}:{})}});
+        }
+        if (url.pathname.startsWith("/portal/")) return route.fulfill({ body: await readFile(`public${url.pathname}`), contentType: url.pathname.endsWith(".svg") ? "image/svg+xml" : "image/png" });
+        if (url.pathname.startsWith("/api/")) return route.fulfill({ json: { record: {} } });
+        return route.fulfill({ contentType: "text/html", body: "<!doctype html><div id='root'></div>" });
+      });
+      await page.goto("http://chapter.test");
+      await page.addScriptTag({ content: "window.__name=value=>value" });
+      for (const file of ["app/styles.css", "app/portal-design.css", "components/portal/lesson-authoring.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
+      await page.addStyleTag({content:bundle.outputFiles.find(file=>file.path.endsWith("css"))!.text});
+      await page.addScriptTag({ content: bundle.outputFiles.find(file => file.path.endsWith("js"))!.text });
+      const lesson = {
+        id: "lesson", title: "Modeling", body: "", durationMinutes: 1,
+        contents: [
+          { id: "v1", title: "State Spaces", type: "video", mode: "lecture", exhibitMode: "authored", url: "/portal/text-exhibits/flowers.webm", startSeconds: 0, nodes: [] },
+          { id: "v2", title: "Defining Vectors", type: "video", mode: "lecture", exhibitMode: "authored", url: "/portal/text-exhibits/flowers.webm", startSeconds: 0.5, nodes: [] },
+          { id: "v3", title: "Other source", type: "video", mode: "lecture", exhibitMode: "authored", url: "/portal/text-exhibits/flowers.webm?source=other", startSeconds: 0.25, nodes: [] },
+        ],
+      };
+      const props = { player, key:"video", locale, courseId:"modeling-life", courseTitle:"Modeling life", category:"Science", description:"", poster:"/portal/course-study.jpg", lesson, outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson",modes:["video"]}],nextHref:null,initialCompleted:false,entitled:true,preferredMode:"video" };
+      const mount = (extra: object = {}) => page.evaluate(props => (window as unknown as { mount:(p:unknown)=>void }).mount(props), {...props,...extra});
+      const video = page.locator("video.la-lesson-video");
+      const point = (index: number) => player ? page.locator(".la-content-nav button").nth(index) : page.getByRole("button", { name: new RegExp(`^1\\.${index + 1} `) });
+      const ready = () => page.waitForFunction(() => document.querySelector<HTMLVideoElement>("video.la-lesson-video")!.readyState >= 2);
+      const playing = () => page.waitForFunction(() => { const media=document.querySelector<HTMLVideoElement>("video.la-lesson-video");return media && !media.paused && !media.ended && media.readyState>=2; });
+      await mount();await ready();
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0,"first entry starts at zero without starting playback");
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+      await video.evaluate(el=>{el.setAttribute("data-identity","same-video");(el as HTMLVideoElement).loop=true;});
+      const naturallyOpened=!player?page.waitForRequest(request=>request.url().includes("/api/study/")&&request.postDataJSON()?.contentId==="v2"):undefined;
+      await video.evaluate(el=>(el as HTMLVideoElement).play());
+      await point(1).and(page.locator('[aria-current="step"]')).waitFor();
+      await naturallyOpened;
+      await page.waitForFunction(()=>document.querySelector<HTMLVideoElement>("video.la-lesson-video")!.currentTime>0.7);
+      await video.evaluate(el=>(el as HTMLVideoElement).pause());
+      assert.equal(await point(1).getAttribute("aria-current"),"step","natural playback follows the current authored point");
+      assert.equal(await point(2).getAttribute("aria-current"),null,"timestamps in another source cannot select that source");
+      assert.equal(await video.getAttribute("data-identity"),"same-video");
+      await page.screenshot({path:`test-results/video-point-tracking/${locale}-${player?"shared":"outline"}-desktop.png`,fullPage:true});
+      await page.setViewportSize({width:390,height:844});
+      await page.screenshot({path:`test-results/video-point-tracking/${locale}-${player?"shared":"outline"}-mobile.png`,fullPage:true});
+      await page.setViewportSize({width:1440,height:1024});
+      // Paused scrubbing follows points too, without seeking back or starting playback.
+      await video.evaluate(el=>{(el as HTMLVideoElement).currentTime=0.1;});
+      await point(0).and(page.locator('[aria-current="step"]')).waitFor();
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+      assert.ok(Math.abs(await video.evaluate(el=>(el as HTMLVideoElement).currentTime)-0.1)<0.01);
+      await video.evaluate(el=>{(el as HTMLVideoElement).currentTime=0.8;});
+      await point(1).and(page.locator('[aria-current="step"]')).waitFor();
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+      assert.ok(Math.abs(await video.evaluate(el=>(el as HTMLVideoElement).currentTime)-0.8)<0.01,"following a seek must retain its exact position");
+      const openedPoint=!player?page.waitForRequest(request=>request.url().includes("/api/study/")&&request.postDataJSON()?.contentId==="v2"):undefined;
+      await point(1).click();await playing();await openedPoint;
+      assert.equal(await video.getAttribute("data-identity"),"same-video","same-source navigation retains the video element");
+      assert.ok(await video.evaluate(el=>(el as HTMLVideoElement).currentTime>=0.5));
+      const before = await video.evaluate(el=>(el as HTMLVideoElement).currentTime);
+      await page.waitForFunction(before=>document.querySelector<HTMLVideoElement>("video.la-lesson-video")!.currentTime>before+0.05,before);
+      await video.evaluate(el=>{(el as HTMLVideoElement).playbackRate=1.5;(el as HTMLVideoElement).muted=true;});
+      await point(0).click();await playing();
+      assert.equal(await video.getAttribute("data-identity"),"same-video");
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).playbackRate),1.5);
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).muted),true);
+      await video.evaluate(el=>(el as HTMLVideoElement).pause());
+      await point(0).click();await playing();
+      assert.ok(await video.evaluate(el=>(el as HTMLVideoElement).currentTime<0.5),"reselecting the same paused point restarts and plays it");
+      // A real seek can interrupt the first play promise; the seeked/canplay retry must recover.
+      await video.evaluate(el=>{
+        const media=el as HTMLVideoElement, nativePlay=media.play.bind(media);
+        media.pause();let attempts=0;
+        media.play=()=>{media.dataset.playAttempts=String(++attempts);return attempts===1?Promise.reject(new DOMException("Seek interrupted playback","AbortError")):nativePlay();};
+      });
+      await point(1).click();await playing();
+      assert.ok(Number(await video.getAttribute("data-play-attempts"))>=2,"an interrupted chapter play is retried after the actual media seek");
+      const openedSource=!player?page.waitForRequest(request=>request.url().includes("/api/study/")&&request.postDataJSON()?.contentId==="v3"):undefined;
+      await point(2).click();await ready();await playing();await openedSource;
+      assert.equal(await video.getAttribute("data-identity"),null,"a different source gets a new video which also plays");
+      assert.ok(await video.evaluate(el=>(el as HTMLVideoElement).currentTime>=0.25));
+      // Resuming a selected later point retains its authored position without unsolicited autoplay.
+      await mount({key:"resume",initialContentId:"v2"});await ready();
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0.5);
+      assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+      if (!player) {
+        await mount({key:"trial",entitled:false,trialGate:{pricingHref:"/subscription",recommendations:[],videoLimitSeconds:0.1}});await ready();
+        await point(1).click();await page.getByRole("dialog").waitFor();
+        assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
+        assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0.1,"selecting beyond the preview cutoff cannot resume playback");
       }
-      if (url.pathname.startsWith("/api/")) return route.fulfill({ json: { record: {} } });
-      if (url.hostname !== "chapter.test") return route.fulfill({ status: 204 });
-      return route.fulfill({ contentType: "text/html", body: "<!doctype html><div id='root'></div>" });
-    });
-    await page.goto("http://chapter.test");
-    await page.addScriptTag({ content: "window.__name=value=>value" });
-    await page.addStyleTag({ content: await readFile("components/portal/lesson-authoring.css", "utf8") });
-    await page.addScriptTag({ content: bundle.outputFiles.find(file => file.path.endsWith("js"))!.text });
-    const lesson = {
-      id: "lesson",
-      title: "Modeling",
-      body: "",
-      durationMinutes: 24,
-      contents: [
-        { id: "v1", title: "State Spaces", type: "video", mode: "lecture", url: "/api/course-media/modeling-life/video", startSeconds: 10, nodes: [] },
-        { id: "v2", title: "Defining Vectors", type: "video", mode: "lecture", url: "/api/course-media/modeling-life/video", startSeconds: 412, nodes: [] },
-      ],
-    };
-    await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), {
-      key: "video",
-      locale: "en-GB",
-      courseId: "modeling-life",
-      courseTitle: "Modeling life",
-      category: "Science",
-      description: "",
-      poster: "/portal/course-study.jpg",
-      lesson,
-      outline: [{ id: "lesson", number: "01", title: lesson.title, href: "/lesson", modes: ["video"] }],
-      nextHref: null,
-      initialCompleted: false,
-      entitled: true,
-      preferredMode: "video",
-    });
-    const video = page.locator("video.la-lesson-video");
-    await video.waitFor();
-    await video.evaluate(el => {
-      Object.defineProperty(el, "duration", { configurable: true, value: 1469 });
-      let time = 0;
-      Object.defineProperty(el, "currentTime", { configurable: true, get: () => time, set: value => { time = value; } });
-      el.dispatchEvent(new Event("loadedmetadata"));
-    });
-    assert.equal(await video.evaluate(el => (el as HTMLVideoElement).currentTime), 10);
-    await video.evaluate(el => {
-      Object.defineProperty(el, "paused", { configurable: true, get: () => false });
-      el.dispatchEvent(new Event("play"));
-    });
-    const identity = await video.evaluate(el => {
-      (el as HTMLVideoElement & { marker?: string }).marker = "keep-me";
-      return (el as HTMLVideoElement & { marker?: string }).marker;
-    });
-    await page.getByRole("button", { name: /^1\.2 Defining Vectors$/ }).click();
-    assert.equal(await video.evaluate(el => (el as HTMLVideoElement & { marker?: string }).marker), identity);
-    assert.equal(await video.evaluate(el => (el as HTMLVideoElement).currentTime), 412);
-    assert.equal(await video.evaluate(el => (el as HTMLVideoElement).paused), false);
-  } finally {
-    await browser.close();
-  }
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  } finally { await browser.close(); }
 });

@@ -822,7 +822,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                     <li data-live={!sessionNotStarted(session) && (session.state === "live" || session.state === "starting_soon") ? "true" : undefined}><FactIcon kind="people" />{sessionNotStarted(session) ? copy.notStartedBody : session.state === "completed" ? <>{fillCount(locale, copy.attended, session.attendees.length)}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : session.state === "scheduled" ? <>{fill(copy.plannedCount, { count: session.plannedCount })}<span className={styles.divider} aria-hidden="true" />{fill(copy.maximumLine, { count: session.maxParticipants })}</> : fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</li>
                   </ul>
                   {session.state === "scheduled" && (selected.role === "host" || session.viewerPlanned) ? <p className={styles.reminderHint}>{copy.reminderHint}</p> : null}
-                  {session.attendees.length ? <p className={styles.avatarRow}>{session.attendees.slice(0, 4).map((person) => <span key={person.userId}>{person.displayName.slice(0, 1).toUpperCase()}</span>)}{session.attendees.length > 4 ? <span className={styles.avatarMore}>+{session.attendees.length - 4}</span> : null}</p> : null}
+                  {session.attendees.length ? <p className={styles.avatarRow}>{session.attendees.slice(0, 4).map((person) => <span key={person.userId}>{(person.displayName || copy.room.participant).slice(0, 1).toUpperCase()}</span>)}{session.attendees.length > 4 ? <span className={styles.avatarMore}>+{session.attendees.length - 4}</span> : null}</p> : null}
                   {(session.state === "scheduled" || (session.state === "starting_soon" && !sessionNotStarted(session))) && session.viewerPlanned ? <p className={styles.planningTag}>{copy.planning}</p> : null}
                   </div>
                   <div className={styles.row}>
@@ -840,7 +840,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
             <aside className={styles.memberCol} aria-label={copy.members}>
               <h3>{copy.members} <span className={styles.countBadge}>{selected.memberCount}</span></h3>
               <ul className={styles.memberList}>
-                {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{member.displayName.slice(0, 1)}</span><span>{member.displayName}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
+                {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{(member.displayName || copy.room.participant).slice(0, 1)}</span><span>{member.displayName || copy.room.participant}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
               {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={openEditGroup}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
               {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" disabled={mutating !== null} onClick={() => { setErrorCode("idle"); setDialog("leave-group"); }}>{copy.leaveGroup}</button></div> : null}
@@ -863,7 +863,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 {waitingSession.focus ? <><h3 className={styles.waitingFocus}>{copy.focus}</h3><p>{waitingSession.focus}</p></> : null}
               </div>
             ) : null}
-            {dialog === "attendees" ? attendees.length ? <ul className={styles.attendeeList}>{attendees.map((person) => <li key={person.userId}>{person.displayName}</li>)}</ul> : <p className={styles.attendeeEmpty}>{copy.nobodyYet}</p> : null}
+            {dialog === "attendees" ? attendees.length ? <ul className={styles.attendeeList}>{attendees.map((person) => <li key={person.userId}>{person.displayName || copy.room.participant}</li>)}</ul> : <p className={styles.attendeeEmpty}>{copy.nobodyYet}</p> : null}
             {dialog === "edit" ? (
               <>
                 <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={editTitle} onChange={(event) => setEditTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{editTitle.length}/50</span></span></label>

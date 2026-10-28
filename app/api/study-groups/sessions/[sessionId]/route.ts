@@ -1,4 +1,4 @@
-import { signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
+import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
 import { studyGroupService } from "@/modules/group-study/runtime";
 
 export async function GET(request: Request, context: { params: Promise<{ sessionId: string }> }) {
@@ -17,7 +17,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ sessi
   if (!user) return unauthenticated();
   const { sessionId } = await context.params;
   try {
-    const body = await request.json() as { groupId?: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean };
+    const body = await readJsonObject<{ groupId?: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }>(request);
     return studyGroupData(await studyGroupService().editSession({
       actorUserId: user.id,
       groupId: body.groupId || "",

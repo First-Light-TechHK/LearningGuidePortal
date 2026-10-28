@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { stop } from "esbuild";
 
 export const SESSION_COOKIE = "learning_guide_session";
 export const PASSWORD = "Passw0rd!123";
@@ -214,6 +215,8 @@ export async function isolate(prefix: string) {
   return {
     async restore() {
       process.chdir(originalCwd);
+      // The esbuild child can retain the temporary working directory on Windows.
+      if (process.platform === "win32") await stop();
       for (const key of Object.keys(process.env)) {
         if (!(key in envSnapshot)) delete process.env[key];
       }

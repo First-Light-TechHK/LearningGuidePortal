@@ -3,7 +3,7 @@
 import { AuthNavigationLink } from "@/components/portal/AuthNavigationLink";
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { PortalSessionResponse } from "@/contracts/portal-session";
 import { Bell } from "lucide-react";
 import Image from "next/image";
@@ -14,14 +14,16 @@ import { AccountMenu } from "@/components/portal/AccountMenu";
 
 type HeaderSection = "courses" | "study-groups" | "my-learning" | "subscription";
 
-export function PortalHeader({ locale, active, signedIn: initialSignedIn = false, displayName: initialName, avatarUrl: initialAvatar }: { locale: Locale; active?: HeaderSection; signedIn?: boolean; displayName?: string; avatarUrl?: string }) {
+export function PortalHeader({ locale, active, signedIn: initialSignedIn = false, displayName: initialName, avatarUrl: initialAvatar, serverUserId }: { locale: Locale; active?: HeaderSection; signedIn?: boolean; displayName?: string; avatarUrl?: string; serverUserId?: string | null }) {
   const messages = getMessages(locale);
   const copy = messages.portal;
   const pathname = usePathname();
+  const router = useRouter();
   const [identity, setIdentity] = useState({ signedIn: initialSignedIn, displayName: initialName, avatarUrl: initialAvatar });
   useEffect(() => {
     setIdentity({ signedIn: initialSignedIn, displayName: initialName, avatarUrl: initialAvatar });
     let controller: AbortController;
+    let refreshRequested = false;
     const refresh = async () => {
       controller?.abort();
       const request = controller = new AbortController();
@@ -31,13 +33,18 @@ export function PortalHeader({ locale, active, signedIn: initialSignedIn = false
         const data = await response.json() as PortalSessionResponse;
         if (!data.ok || request.signal.aborted) return;
         setIdentity({ signedIn: Boolean(data.user), displayName: data.user?.nickname, avatarUrl: data.user?.avatarUrl || undefined });
+        // Course access belongs to the server render, not just the refreshed header.
+        if (serverUserId !== undefined && (data.user === null || typeof data.user?.id === "string") && serverUserId !== (data.user?.id ?? null) && !refreshRequested) {
+          refreshRequested = true;
+          router.refresh();
+        }
       } catch { /* Keep the server-rendered identity on transient failures. */ }
     };
     void refresh();
     const onRestore = (event: PageTransitionEvent) => { if (event.persisted) void refresh(); };
     window.addEventListener("pageshow", onRestore);
     return () => { controller?.abort(); window.removeEventListener("pageshow", onRestore); };
-  }, [pathname, initialSignedIn, initialName, initialAvatar]);
+  }, [pathname, initialSignedIn, initialName, initialAvatar, serverUserId, router]);
   const { signedIn, displayName, avatarUrl } = identity;
 
   return (

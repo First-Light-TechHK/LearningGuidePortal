@@ -62,9 +62,13 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await progress(100); assert.equal(await page.getByRole("dialog").count(),0,"seeking to the end must not complete a lesson");
       await page.locator("video").evaluate(element=>{element.dispatchEvent(new Event("ended"));element.dispatchEvent(new Event("ended"));});
       await page.getByRole("dialog").waitFor(); assert.equal(completions.length,1,"ended after Keep watching saves once");
+      await page.getByRole("dialog").getByRole("heading",{name:locale==="en-GB"?"Complete Course":"完成课程",exact:true}).waitFor();
+      assert.equal(await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),0);
+      await page.screenshot({path:`test-results/video-completion/${locale}-complete-course.png`,fullPage:true});
       assert.equal((completions[0] as {learningMode:string}).learningMode,"video");
       assert.ok((completions[0] as {contentId:string}).contentId);
-      await page.getByRole("dialog").getByRole("button").last().click();
+      await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.completeCourse,exact:true}).click();
+      await page.waitForFunction(expected=>(window as unknown as {navigated:string}).navigated===expected,`/${locale}/account/my-learning`);
       completions.length=0;
       await mount("retry",true,false,false,`/${locale}/account/learn/course?lessonId=next`);await progress(98);await bar.waitFor();fail=true;
       assert.equal(await page.locator(`a[href="/${locale}/account/learn/course?lessonId=next"]`).count(),0,"video playback omits the standalone continuation link");
@@ -75,6 +79,8 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       assert.ok((await bar.textContent())!.includes(getMessages(locale).learning.completed));
       assert.equal(await bar.getByRole("button").count(),0);
       const modal=page.getByRole("dialog");
+      await modal.getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+      assert.equal(await modal.getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),1);
       assert.equal(await modal.getByRole("button").count(),4);
       assert.equal(await modal.locator("#lesson-completed-description").evaluate(element=>getComputedStyle(element).backgroundColor),"rgba(0, 0, 0, 0)");
       const modalBox=(await modal.boundingBox())!;assert.equal(modalBox.width,720);assert.equal(modalBox.height,624);

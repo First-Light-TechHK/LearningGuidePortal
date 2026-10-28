@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LESSON_CONTENT_LIMITS } from "../../contracts/lesson-content";
-import { courseMediaAssetId, LessonContentError, lessonContentAssetIds, lessonContentsText, sanitiseLessonContents, sanitiseRichHtml, validateLessonContents } from "../../services/lessonContent";
+import { courseMediaAssetId, LessonContentError, lessonContentAssetIds, lessonContentAssetReferences, lessonContentsText, sanitiseLessonContents, sanitiseRichHtml, validateLessonContents } from "../../services/lessonContent";
 
 const courseId = "course_123";
 const assetId = "7c831ab8-cc01-4d15-8d71-ef3524d08e09";
 const url = `/api/course-media/${courseId}/${assetId}`;
 const content = () => ({ id: "content-1", title: "Lesson content", type: "text", mode: "interactive", html: "<p>Hello</p>", nodes: [{ id: "node-1", title: "Detail", type: "text", html: "<p>Detail</p>", triggerTime: 1.25 }] });
+
+test("authored exhibit cards retain only known active node references and remove executable attributes", () => {
+  const value = { ...content(), html: '<div onclick="alert(1)" data-exhibit-card="node-1"></div><div data-exhibit-card="unknown"></div><span data-exhibit-card="node-1">Text</span>', nodes: [{ id: "node-1", title: "Image", type: "image", url, triggerTime: 0 }] };
+  const saved = validateLessonContents([value], courseId);
+  assert.equal(saved[0].html, '<div data-exhibit-card="node-1"></div><div></div><span>Text</span>');
+  saved[0].nodes[0].active = false;
+  assert.doesNotMatch(sanitiseLessonContents(saved, courseId)[0].html!, /data-exhibit-card/);
+});
 
 test("strict validation preserves IDs, ordering, timing and supported rich text", () => {
   const value = content();
@@ -64,6 +72,17 @@ test("asset extraction only includes sanitised renderable HTML and structured UR
   assert.deepEqual([...lessonContentAssetIds([value], courseId)], [assetId]);
   value.html = `<a href="${url}">Download</a>`;
   assert.deepEqual([...lessonContentAssetIds([value], courseId)], [assetId]);
+});
+
+test("exhibit thumbnail references are images and follow their owning node visibility", () => {
+  const thumbnailId = "1b00006f-08ed-4f77-8285-a4685e3237de";
+  const value = { ...content(), nodes: [{ id: "image", title: "Exhibit", type: "image", triggerTime: 37, url, thumbnail: `/api/course-media/${courseId}/${thumbnailId}` }] };
+  assert.deepEqual(lessonContentAssetReferences([value], courseId), [{ assetId, fileType: "image" }, { assetId: thumbnailId, fileType: "image" }]);
+  const hidden = { ...value, nodes: [{ ...value.nodes[0], active: false }] };
+  assert.equal(lessonContentAssetIds([hidden], courseId).size, 0);
+  assert.equal(lessonContentAssetIds([{ ...value, active: false }], courseId).size, 0);
+  assert.equal(lessonContentAssetReferences([hidden], courseId, true).length, 2);
+  assert.equal(lessonContentAssetIds([{ ...value, nodes: [{ ...value.nodes[0], thumbnail: `/api/course-media/other/${thumbnailId}` }] }], courseId).size, 0);
 });
 
 test("IDs, node limits, malformed collections and trigger times fail closed", () => {

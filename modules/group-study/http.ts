@@ -37,6 +37,14 @@ export function studyGroupFailure(error: unknown) {
   return NextResponse.json({ ok: false, code: "error", message: "Study Group request failed.", data: null }, { status: 500 });
 }
 
+// A request body is a JSON object; `null`, an array or a bare value is a
+// validation failure (400), not a TypeError on the first field read (500).
+export async function readJsonObject<T extends object>(request: Request): Promise<Partial<T>> {
+  const body: unknown = await request.json();
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new StudyGroupError("validation", "Request body must be a JSON object.");
+  return body as Partial<T>;
+}
+
 export function unauthenticated() {
   return NextResponse.json({ ok: false, code: "unauthenticated", message: "Sign in is required.", data: null }, { status: 401 });
 }

@@ -364,7 +364,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       setCameraTracks(nextCameras);
       setTiles(people.map((person) => ({
         identity: person.identity,
-        name: person.name || person.identity,
+        name: person.name || roomCopy.participant,
         host: hostIds.has(person.identity),
         mic: person.isMicrophoneEnabled,
         speaking: person.isSpeaking
@@ -953,7 +953,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
       }))
     : session.attendees.map((person) => ({
         key: person.userId,
-        name: person.displayName,
+        name: person.displayName || roomCopy.participant,
         host: Boolean(group?.members?.some((member) => member.userId === person.userId && member.role === "host")),
         hand: false,
         status: "" as const

@@ -1,0 +1,18 @@
+# Modeling life Lesson 01 text exhibits
+
+Migration `016_add_modeling_life_lesson1_text_exhibits` uses the existing numbered ORM migration registry after 015. It targets Course id/slug `modeling-life`, Lesson `modeling-life-lesson-1`, text point `modeling-life-l1-text-1`.
+
+| Video exhibit | Text placement (immediately before the paragraph) | New text node id |
+| --- | --- | --- |
+| T, W, V, C | Our first example is going to be a single number. | `modeling-life-l1-text-exhibit-1` |
+| Three examples of one-dimensional state spaces | T: Yes, that is the case. With electricity, the state variable might be voltage. | `modeling-life-l1-text-exhibit-2` |
+
+Each text node copies the current video node's image URL, thumbnail, title, description and source, with a separate id and text timing zero. Explicit top-level `<div data-exhibit-card="node-id"></div>` markers resolve into existing View exhibit cards and the image dialog. Legacy inline instance references stay reading text. Server sanitisation scopes references to the owning content's active nodes, and half-text previews retain only the nodes referenced in delivered HTML. These two cards are in the configured fully readable first point, so both appear during preview as well as entitled Study.
+
+The migration declares only `touches: ["courses"]`. It preserves every original paragraph, embedded image, caption, video node, other Lesson, assessment definition, preview setting and learner record. It advances the course timestamp. Already installed cards skip without resynchronising later author edits. Missing course/lesson/text point skips; conflicting identities, ambiguous/missing source nodes, duplicate markers or changed/ambiguous target paragraphs fail before writing. The existing migration transaction and ledger provide deployment replay safety; direct reruns also avoid duplicates. No schema, file upload, S3 copy or new endpoint is required.
+
+Validation covers exact placements and resource metadata, original content preservation, independently repeatable ORM application, failures without partial writes, active-node HTML sanitisation, preview media exposure and bilingual browser image dialogs. Run the relevant migration, lesson-content, text-preview and Modeling life browser tests, TypeScript, ESLint and `npm run build`. `npm run data:migrate -- --dry-run` previews the pending changes without persisting them.
+
+Local validation passed: 44 migration/service/API tests and both browser regressions; the expanded Modeling life browser regression additionally verifies both cards and image dialogs at desktop/mobile sizes in en-GB and zh-CN. Card screenshots and original-image dialogs were visually reviewed. Both TypeScript configurations, scoped ESLint (existing image-element warnings only) and the production build passed. The local dry-run reports 015 and 016 pending, two Lesson updates, four compiled SQL operations, zero objects and `persisted:false`; no live or local apply was run.
+
+The user has authorised committing and pushing to DEV. After deployment, check the migration report/ledger for 016, then inspect Lesson 01 text in both UI locales and on mobile: exactly two cards before the specified paragraphs, loaded thumbnails, the matching original image/description on View exhibit, no duplicate bottom links and preserved reading/preview gating. Confirm Lesson 02 assessment data from 015 and existing progress remain. Target-environment smoke awaits deployment; a successful startup alone does not establish successful migration execution. Roll back UI code if necessary; correct content through a new numbered migration rather than editing shipped migrations or erasing learner records.

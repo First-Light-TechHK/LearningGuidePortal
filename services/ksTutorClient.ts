@@ -6,12 +6,113 @@ export type TutorAvailability = {
   online: boolean;
   /** false = KS 未配置 / 不可达；Portal 按 offline 处理并隐藏入口 */
   reachable: boolean;
+  /**
+   * 为什么不可用。线上的按钮只在 `online === true` 时渲染，
+   * 而"没有按钮"曾同时对应配置缺失、鉴权失败、课程未同步等多种原因，
+   * 无法从界面区分（2026-10-28 复盘 A2）。此字段让原因可观测。
+   */
+  reason?: TutorUnavailableReason;
+  /** KS 的 HTTP 状态码，便于区分 401（密钥不一致）与 5xx（服务异常） */
+  status?: number;
 };
+
+export type TutorUnavailableReason =
+  | "not-configured"
+  | "http-error"
+  | "timeout"
+  | "network"
+  | "not-in-ks"
+  | "not-online";
+
+/** 结构化日志：与 email 的 `{type:"mail"}` 同一约定，便于 CloudWatch 过滤。 */
+function logTutor(event: string, detail: Record<string, unknown>) {
+  console.info(JSON.stringify({ type: "ai-tutor", event, ...detail }));
+}
+
+/**
+ * 供 /api/health/config 暴露的 KS 客户端诊断信息。
+ * 只暴露"是否配置"，**不返回主机名或密钥**：`study-group-readiness` 既有测试
+ * 明确要求健康接口不回显 KS 内部地址（2026-10-22）。
+ */
+export function tutorClientDiagnostics() {
+  const { baseUrl, apiKey, timeoutMs } = config();
+  return {
+    configured: Boolean(baseUrl && apiKey),
+    baseUrlConfigured: Boolean(baseUrl),
+    apiKeyConfigured: Boolean(apiKey),
+    timeoutMs,
+  };
+}
+
+
+/**
+ * 读取某 Portal 课程（slug）的 AI Tutor 状态。
+ * KS 不可达或未配置时返回 reachable=false，调用方应按 offline 隐藏入口。
+ *
+ * 2026-10-28 复盘 A2：以前所有失败都返回同一个 `{online:false,reachable:false}`，
+ * 于是"没有 AI Tutor 按钮"同时对应未配置、Key 不一致、课程未同步、未开 Online
+ * 四种完全不同的原因，界面上无法区分。现在返回 `reason` 并写结构化日志。
+ */
+export async function getTutorAvailability(
+  externalCourseId: string,
+  signal?: AbortSignal,
+): Promise<TutorAvailability> {
+  const { baseUrl, apiKey } = config();
+  if (!baseUrl) {
+    logTutor("unavailable", { course: externalCourseId, reason: "not-configured", missing: "KS_TUTOR_BASE_URL" });
+    return { online: false, reachable: false, reason: "not-configured" };
+  }
+
+  const timeout = signalWithTimeout(signal, STATUS_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${baseUrl}/api/user/ai-tutors`, {
+      headers: apiKey ? { "X-API-Key": apiKey } : undefined,
+      cache: "no-store",
+      signal: timeout.signal,
+    });
+    if (!response.ok) {
+      // 401 几乎总是 Portal 的 KS_TUTOR_API_KEY 与 KS 侧 AUTH_TOKEN 不一致。
+      logTutor("unavailable", {
+        course: externalCourseId,
+        reason: "http-error",
+        status: response.status,
+        ...(response.status === 401 ? { hint: "KS_TUTOR_API_KEY mismatch" } : {})
+      });
+      return { online: false, reachable: false, reason: "http-error", status: response.status };
+    }
+    const payload = (await response.json()) as {
+      data?: Array<{ externalId?: string; available?: boolean; online?: boolean }>;
+    };
+    const tutor = payload.data?.find((item) => item.externalId === externalCourseId);
+    if (!tutor) {
+      // Portal 有这门课、KS 没有：需在 Admin 的 Knowledge 里从 Portal 同步该课程。
+      logTutor("unavailable", { course: externalCourseId, reason: "not-in-ks" });
+      return { online: false, reachable: true, reason: "not-in-ks" };
+    }
+    if (!tutor.available) {
+      // KS 有课程，但 AI Tutor 未开启，或没有 Live Release。
+      logTutor("unavailable", {
+        course: externalCourseId,
+        reason: "not-online",
+        online: Boolean(tutor.online),
+        ...(tutor.online ? { hint: "no live release" } : { hint: "AI Tutor not switched Online" })
+      });
+      return { online: false, reachable: true, reason: "not-online" };
+    }
+    return { online: true, reachable: true };
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "AbortError";
+    logTutor("unavailable", { course: externalCourseId, reason: timedOut ? "timeout" : "network" });
+    return { online: false, reachable: false, reason: timedOut ? "timeout" : "network" };
+  } finally {
+    timeout.dispose();
+  }
+}
 
 export type TutorHistoryMessage = { role: "user" | "assistant"; content: string };
 
-/** KS 课程 AI Tutor 欢迎语（按模式区分；空字符串表示未配置） */
-export type TutorWelcome = { lecture: string; socratic: string };
+/** KS 课程 AI Tutor 欢迎语（2026-10-27：课程级统一，不再按模式区分；空字符串表示未配置） */
+export type TutorWelcome = { welcome: string };
 
 export class KsTutorError extends Error {
   constructor(
@@ -57,51 +158,17 @@ function ksMode(mode: "lecture" | "socratic") {
   return mode === "socratic" ? "SOCRATIC" : "LECTURE";
 }
 
-/**
- * 读取某 Portal 课程（slug）的 AI Tutor 状态。
- * KS 不可达或未配置时返回 reachable=false，调用方应按 offline 隐藏入口。
- */
-export async function getTutorAvailability(
-  externalCourseId: string,
-  signal?: AbortSignal,
-): Promise<TutorAvailability> {
-  const { baseUrl, apiKey } = config();
-  if (!baseUrl) {
-    return { online: false, reachable: false };
-  }
-
-  const timeout = signalWithTimeout(signal, STATUS_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${baseUrl}/api/user/ai-tutors`, {
-      headers: apiKey ? { "X-API-Key": apiKey } : undefined,
-      cache: "no-store",
-      signal: timeout.signal,
-    });
-    if (!response.ok) {
-      return { online: false, reachable: false };
-    }
-    const payload = (await response.json()) as {
-      data?: Array<{ externalId?: string; available?: boolean }>;
-    };
-    const tutor = payload.data?.find((item) => item.externalId === externalCourseId);
-    return { online: Boolean(tutor?.available), reachable: true };
-  } catch {
-    return { online: false, reachable: false };
-  } finally {
-    timeout.dispose();
-  }
-}
 
 /**
- * 读取某 Portal 课程（slug）在两种模式下的欢迎语。KS 不可达/未配置时返回空字符串，
- * 前端据此不展示欢迎气泡（不编造本地文案）。
+ * 读取某 Portal 课程（slug）的欢迎语（2026-10-27：课程级统一，不再按模式区分）。
+ * KS 不可达/未配置时返回空字符串，前端据此不展示欢迎气泡（不编造本地文案）。
  */
 export async function getTutorWelcome(
   externalCourseId: string,
   locale: Locale,
   signal?: AbortSignal,
 ): Promise<TutorWelcome> {
-  const empty: TutorWelcome = { lecture: "", socratic: "" };
+  const empty: TutorWelcome = { welcome: "" };
   const { baseUrl, apiKey } = config();
   if (!baseUrl) return empty;
 
@@ -114,11 +181,10 @@ export async function getTutorWelcome(
     });
     if (!response.ok) return empty;
     const payload = (await response.json()) as {
-      data?: { lecture?: unknown; socratic?: unknown };
+      data?: { welcome?: unknown };
     };
     return {
-      lecture: typeof payload.data?.lecture === "string" ? payload.data.lecture : "",
-      socratic: typeof payload.data?.socratic === "string" ? payload.data.socratic : "",
+      welcome: typeof payload.data?.welcome === "string" ? payload.data.welcome : "",
     };
   } catch {
     return empty;
@@ -138,6 +204,11 @@ export async function* streamTutorText(input: {
   locale: Locale;
   history: TutorHistoryMessage[];
   signal?: AbortSignal;
+  // KS quota bucket: the learning page's 1:1 Tutor ("portal", the default)
+  // and the Live Session room ("study-group") never spend each other's budget.
+  channel?: "portal" | "study-group";
+  // Portal 学员 userId：用于 KS 侧日志审计和用户级限流分桶（2026-10-28）
+  userId?: string;
 }): AsyncGenerator<string> {
   const { baseUrl, apiKey, timeoutMs } = config();
   if (!baseUrl) {
@@ -162,9 +233,8 @@ export async function* streamTutorText(input: {
         mode: ksMode(input.mode),
         locale: input.locale,
         history: input.history.slice(-10),
-        // The Live Session room is its own quota bucket on the KS side: its
-        // traffic must not spend the course's 1:1 question budget.
-        channel: "study-group"
+        channel: input.channel ?? "portal",
+        ...(input.userId ? { userId: input.userId } : {}),
       }),
     });
   } catch (error) {

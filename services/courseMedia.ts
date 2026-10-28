@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { COURSE_MEDIA_MAX_BYTES, type CourseMediaAsset } from "@/contracts/lesson-content";
 import { systemRoot } from "@/services/fileStore";
-import { vfsReadBuffer, vfsWriteBuffer } from "@/services/persistence/vfs";
+import { vfsReadBuffer, vfsReadBufferRange, vfsStat, vfsWriteBuffer } from "@/services/persistence/vfs";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isManagedEnvironment } from "@/services/runtimeConfig";
 import { canManageCourse } from "@/services/backofficeAccess";
@@ -10,24 +10,8 @@ import { requestOriginMatches } from "@/services/adminHost";
 import { checkEntitlement, getProductCourse, publicFirstLesson, type ProductCourse, type ProductUser } from "@/services/productStore";
 import { buildTextLessonPreview } from "./textLessonPreview";
 import { courseMediaAssetId, isContentId, lessonContentAssetIds, lessonContentAssetReferences } from "@/services/lessonContent";
-import { s3HeadRaw, s3PresignRaw } from "@/services/persistence/s3";
-
-const RAW_MEDIA_EXTENSIONS = ["mp4", "webm", "mov", "png", "jpg", "jpeg", "pdf", "mp3", "m4a"] as const;
-const rawMediaKeys = new Map<string, string | null>();
-
-async function findRawCourseMedia(courseId: string, assetId: string): Promise<string | null> {
-  const cacheKey = `${courseId}/${assetId}`;
-  if (!rawMediaKeys.has(cacheKey)) {
-    let found: string | null = null;
-    for (const extension of RAW_MEDIA_EXTENSIONS) {
-      const key = `course-media/${courseId}/${assetId}.${extension}`;
-      if (await s3HeadRaw(key)) { found = key; break; }
-    }
-    rawMediaKeys.set(cacheKey, found);
-  }
-  const key = rawMediaKeys.get(cacheKey);
-  return key ? s3PresignRaw(key) : null;
-}
+import { s3PresignRaw } from "@/services/persistence/s3";
+import { findRawCourseMediaKey } from "./courseMediaRaw";
 
 export { COURSE_MEDIA_MAX_BYTES } from "@/contracts/lesson-content";
 
@@ -177,9 +161,9 @@ export function validateCourseMediaFile(input: { name: string; type: string; byt
   return { originalName: input.name, fileType: format.fileType, mimeType: format.mimeType, extension, size: input.bytes.length };
 }
 
-function assetPath(courseId: string, assetId: string): string {
+function assetPath(courseId: string, assetId: string, root = systemRoot()): string {
   if (!courseMediaAssetId(`/api/course-media/${courseId}/${assetId}`, courseId)) throw new CourseMediaError("notFound", 404, "Media not found.");
-  return path.join(systemRoot(), "course_media", courseId, `${assetId}.bin`);
+  return path.join(root, "course_media", courseId, `${assetId}.bin`);
 }
 
 function checkStorage(): void {
@@ -231,6 +215,79 @@ async function readStoredAsset(courseId: string, assetId: string): Promise<{ ass
   return { asset, bytes };
 }
 
+type StoredAssetMeta = { asset: CourseMediaAsset; mediaOffset: number; totalSize: number };
+const STORED_META_TTL_MS = 5 * 60 * 1000;
+const storedAssetMeta = new Map<string, { promise: Promise<StoredAssetMeta>; expiresAt: number }>();
+
+/** Test seam: clear cached container headers. */
+export function resetStoredAssetMetaCache() {
+  storedAssetMeta.clear();
+}
+
+function invalidStoredMedia(): never {
+  throw new CourseMediaError("failed", 500, "Invalid stored media.");
+}
+
+async function notFoundWhenMissing<T>(promise: Promise<T>): Promise<T> {
+  try { return await promise; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as Error).name === "NoSuchKey") throw new CourseMediaError("notFound", 404, "Media not found.");
+    throw error;
+  }
+}
+
+/** Read only the small container header; never pulls the media bytes. */
+async function readStoredAssetMetaUncached(courseId: string, assetId: string, root = systemRoot()): Promise<StoredAssetMeta> {
+  const file = assetPath(courseId, assetId, root);
+  checkStorage();
+  const stat = await notFoundWhenMissing(vfsStat(root, file));
+  const totalSize = stat.size;
+  if (totalSize < 5 || totalSize > COURSE_MEDIA_MAX_BYTES + 8196) invalidStoredMedia();
+  const prefix = await notFoundWhenMissing(vfsReadBufferRange(root, file, 0, 3));
+  if (prefix.length !== 4) invalidStoredMedia();
+  const length = prefix.readUInt32BE(0);
+  if (length <= 0 || length > 8192 || length + 4 >= totalSize) invalidStoredMedia();
+  const header = await notFoundWhenMissing(vfsReadBufferRange(root, file, 4, 4 + length - 1));
+  if (header.length !== length) invalidStoredMedia();
+  let asset: CourseMediaAsset;
+  try { asset = JSON.parse(header.toString("utf8")); } catch { invalidStoredMedia(); }
+  const mediaOffset = 4 + length;
+  if (!asset || asset.id !== assetId || asset.courseId !== courseId || asset.url !== `/api/course-media/${courseId}/${assetId}` || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > COURSE_MEDIA_MAX_BYTES || mediaOffset + asset.size !== totalSize) invalidStoredMedia();
+  return { asset, mediaOffset, totalSize };
+}
+
+/** Asset ids are immutable, and every Range chunk re-reads this header. */
+async function readStoredAssetMeta(courseId: string, assetId: string, root = systemRoot()): Promise<StoredAssetMeta> {
+  const cacheKey = `${root}\u0000${courseId}/${assetId}`;
+  const now = Date.now();
+  const cached = storedAssetMeta.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.promise;
+  const promise = readStoredAssetMetaUncached(courseId, assetId, root);
+  const entry = { promise, expiresAt: now + STORED_META_TTL_MS };
+  storedAssetMeta.set(cacheKey, entry);
+  promise.catch(() => { if (storedAssetMeta.get(cacheKey) === entry) storedAssetMeta.delete(cacheKey); });
+  return promise;
+}
+
+async function readStoredAssetRangeFromMeta(meta: StoredAssetMeta, courseId: string, assetId: string, start: number, end: number, root = systemRoot()): Promise<Buffer> {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= meta.asset.size) throw new CourseMediaError("invalid", 416, "Invalid media range.");
+  const file = assetPath(courseId, assetId, root);
+  const bytes = await notFoundWhenMissing(vfsReadBufferRange(root, file, meta.mediaOffset + start, meta.mediaOffset + end));
+  if (bytes.length !== end - start + 1) invalidStoredMedia();
+  return bytes;
+}
+
+/**
+ * Serve a byte range from the legacy [length][JSON header][media] container by
+ * fetching only that slice from storage. The whole-object read is reserved for
+ * full responses, where the full signature validation still runs.
+ */
+export async function readStoredAssetRange(courseId: string, assetId: string, start: number, end: number, root = systemRoot()): Promise<{ asset: CourseMediaAsset; bytes: Buffer; size: number }> {
+  const meta = await readStoredAssetMeta(courseId, assetId, root);
+  const bytes = await readStoredAssetRangeFromMeta(meta, courseId, assetId, start, end, root);
+  return { asset: meta.asset, bytes, size: meta.asset.size };
+}
+
 function contentsOf(lesson: { id: string }): unknown {
   return (lesson as { contents?: unknown }).contents || [];
 }
@@ -240,7 +297,7 @@ export async function canReadCourseMedia(user: ProductUser | null, course: Produ
   if (allowAuthor && user && canManageCourse(user, course)) return true;
   if (course.status !== "published") return false;
   if (courseMediaAssetId(course.cover || course.thumbnailPath, course.id) === assetId) {
-    return (await readStoredAsset(course.id, assetId)).asset.fileType === "image";
+    return (await readStoredAssetMeta(course.id, assetId)).asset.fileType === "image";
   }
   const preview = publicFirstLesson(course);
   if (preview) {
@@ -258,7 +315,7 @@ export async function assertLessonMediaReferences(courseId: string, value: unkno
   const references = lessonContentAssetReferences(value, courseId, true);
   const assets = new Map<string, CourseMediaAsset>();
   for (const reference of references) {
-    if (!assets.has(reference.assetId)) assets.set(reference.assetId, (await readStoredAsset(courseId, reference.assetId)).asset);
+    if (!assets.has(reference.assetId)) assets.set(reference.assetId, (await readStoredAssetMeta(courseId, reference.assetId)).asset);
     if (reference.fileType && assets.get(reference.assetId)!.fileType !== reference.fileType) throw new CourseMediaError("invalid", 400, "Media type does not match lesson content.");
   }
 }
@@ -269,7 +326,7 @@ export async function assertCourseMediaReferences(course: Pick<ProductCourse, "i
   if (cover) {
     const assetId = courseMediaAssetId(cover, course.id);
     if (!assetId && /\/api\/course-media/i.test(cover)) throw new CourseMediaError("invalid", 400, "A course cover must belong to this course.");
-    if (assetId && (await readStoredAsset(course.id, assetId)).asset.fileType !== "image") throw new CourseMediaError("invalid", 400, "A course cover must be an image.");
+    if (assetId && (await readStoredAssetMeta(course.id, assetId)).asset.fileType !== "image") throw new CourseMediaError("invalid", 400, "A course cover must be an image.");
   }
   for (const section of course.sections) {
     for (const lesson of section.lessons) await assertLessonMediaReferences(course.id, contentsOf(lesson));
@@ -291,16 +348,20 @@ export function parseMediaRange(header: string | null, size: number): { start: n
   return { start, end: Math.min(end, size - 1) };
 }
 
-export async function serveCourseMedia(request: Request, user: ProductUser | null, courseId: string, assetId: string, allowAuthor = false): Promise<Response> {
-  assetPath(courseId, assetId);
-  const course = await getProductCourse(courseId);
-  if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId, allowAuthor)) throw new CourseMediaError("notFound", 404, "Media not found.");
-  const raw = persistenceEnabled() ? await findRawCourseMedia(courseId, assetId) : null;
-  if (raw) {
-    return new Response(null, { status: 307, headers: { Location: raw, "Cache-Control": "private, no-store", "Vary": "Cookie" } });
-  }
-  const { asset, bytes } = await readStoredAsset(courseId, assetId);
-  const headers = new Headers({
+// Browsers commonly ask for `bytes=0-`; cap one stored-media read so an
+// open-ended request cannot pull a whole video into memory. The media element
+// asks for the next chunk as it plays. A suffix request (`bytes=-N`) is capped
+// from the end so a tail read still receives the file's real tail.
+export const STORED_RANGE_CHUNK_BYTES = 4 * 1024 * 1024;
+
+export function boundStoredRange(range: { start: number; end: number } | null, preferTail = false): { start: number; end: number } | null {
+  if (!range || range.end - range.start + 1 <= STORED_RANGE_CHUNK_BYTES) return range;
+  if (preferTail) return { start: range.end - STORED_RANGE_CHUNK_BYTES + 1, end: range.end };
+  return { start: range.start, end: range.start + STORED_RANGE_CHUNK_BYTES - 1 };
+}
+
+function mediaHeaders(asset: CourseMediaAsset): Headers {
+  return new Headers({
     "Content-Type": asset.mimeType,
     "Content-Disposition": `inline; filename="${asset.id}.${asset.extension}"`,
     "Cache-Control": "private, no-store",
@@ -311,18 +372,49 @@ export async function serveCourseMedia(request: Request, user: ProductUser | nul
     "Content-Security-Policy": "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
     "Accept-Ranges": "bytes",
   });
-  // VFS currently reads whole objects. Range responses save transfer to clients,
-  // but do not yet reduce S3 read bandwidth or the bounded server memory usage.
-  const range = request.method === "HEAD" || request.headers.has("if-range") ? null : parseMediaRange(request.headers.get("range"), bytes.length);
-  if (range === "invalid") {
-    headers.set("Content-Range", `bytes */${bytes.length}`);
+}
+
+export async function serveCourseMedia(request: Request, user: ProductUser | null, courseId: string, assetId: string, allowAuthor = false): Promise<Response> {
+  assetPath(courseId, assetId);
+  const course = await getProductCourse(courseId);
+  if (!course || course.id !== courseId || !await canReadCourseMedia(user, course, assetId, allowAuthor)) throw new CourseMediaError("notFound", 404, "Media not found.");
+  const rawKey = persistenceEnabled() ? await findRawCourseMediaKey(courseId, assetId) : null;
+  if (rawKey) {
+    const location = await s3PresignRaw(rawKey);
+    return new Response(null, { status: 307, headers: { Location: location, "Cache-Control": "private, no-store", "Vary": "Cookie" } });
+  }
+  const rangeHeader = request.headers.get("range");
+  if (request.method !== "HEAD" && (!rangeHeader || request.headers.has("if-range"))) {
+    // A full response keeps the existing whole-object signature validation.
+    const { asset, bytes } = await readStoredAsset(courseId, assetId);
+    const headers = mediaHeaders(asset);
+    headers.set("Content-Length", String(bytes.length));
+    return new Response(new Uint8Array(bytes), { status: 200, headers });
+  }
+  const meta = await readStoredAssetMeta(courseId, assetId);
+  const { asset } = meta;
+  const size = asset.size;
+  const headers = mediaHeaders(asset);
+  const requested = request.method === "HEAD" ? null : parseMediaRange(rangeHeader, size);
+  if (requested === "invalid") {
+    headers.set("Content-Range", `bytes */${size}`);
     headers.set("Content-Length", "0");
     return new Response(null, { status: 416, headers });
   }
-  const body = range ? bytes.subarray(range.start, range.end + 1) : bytes;
-  headers.set("Content-Length", String(body.length));
-  if (range) headers.set("Content-Range", `bytes ${range.start}-${range.end}/${bytes.length}`);
-  return new Response(request.method === "HEAD" ? null : new Uint8Array(body), { status: range ? 206 : 200, headers });
+  if (request.method === "HEAD") {
+    headers.set("Content-Length", String(size));
+    return new Response(null, { status: 200, headers });
+  }
+  const range = boundStoredRange(requested, /^bytes=-\d+$/.test(rangeHeader || ""));
+  if (!range) {
+    const { bytes } = await readStoredAsset(courseId, assetId);
+    headers.set("Content-Length", String(bytes.length));
+    return new Response(new Uint8Array(bytes), { status: 200, headers });
+  }
+  const bytes = await readStoredAssetRangeFromMeta(meta, courseId, assetId, range.start, range.end);
+  headers.set("Content-Length", String(bytes.length));
+  headers.set("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
+  return new Response(new Uint8Array(bytes), { status: 206, headers });
 }
 
 export function assertMediaUploadOrigin(request: Request): void {
