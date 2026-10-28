@@ -14,6 +14,7 @@ import {
   type TicketRecord,
   formatTicketNumber,
   needsReply,
+  raisesUnreadByAgent,
   reopenDeadline,
   ticketDayKey,
   type Command,
@@ -205,6 +206,26 @@ test("unread by agent: a learner message sets it; agent commands and tags never 
   const agentReply = decide(record({ unreadByAgent: true }), "agent_reply", "agent", NOW);
   assert.ok(agentReply.ok);
   assert.equal(evolve(record({ unreadByAgent: true }), agentReply, { now: NOW, actor: { kind: "agent", id: "a", name: "A" }, publicMessage: true }).unreadByAgent, true, "only mark_read clears it");
+});
+
+test("'Not yet' (reject) without a message is learner activity: unread for the agent and back in Needs reply", () => {
+  const pending = record({ status: "PENDING_CONFIRM", confirmDueAt: new Date(NOW.getTime() + HOUR).toISOString(), lastMessageBy: "agent", unreadByAgent: false });
+  const decision = decide(pending, "reject", "learner", NOW);
+  assert.ok(decision.ok);
+  const next = evolve(pending, decision, { now: NOW, actor: { kind: "learner", id: "u1", name: "U" }, publicMessage: false });
+  assert.equal(next.status, "ASSIGNED");
+  assert.equal(next.unreadByAgent, true);
+  assert.equal(next.lastMessageBy, "learner");
+  assert.equal(next.lastMessageAt, NOW.toISOString());
+  assert.equal(needsReply(next), true);
+  assert.equal(raisesUnreadByAgent(decision.transition, "learner", false), true);
+  assert.equal(raisesUnreadByAgent(decision.transition, "learner", true), true);
+  const close = decide(record(), "close", "learner", NOW);
+  assert.ok(close.ok);
+  assert.equal(raisesUnreadByAgent(close.transition, "learner", false), false, "closing is not a request for a reply");
+  const reply = decide(record(), "agent_reply", "agent", NOW);
+  assert.ok(reply.ok);
+  assert.equal(raisesUnreadByAgent(reply.transition, "agent", true), false);
 });
 
 test("tags and declined suggestions are bookkeeping: state, activity time and last message stay as they were", () => {

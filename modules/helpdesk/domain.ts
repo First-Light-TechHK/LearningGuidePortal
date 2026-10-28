@@ -230,17 +230,31 @@ export function formatTicketNumber(createdAt: string, counter: number): string {
 }
 
 /**
+ * Learner commands that ask support for something even without a message:
+ * "Not yet" (reject) sends the ticket back to the agent, so the BackOffice
+ * shows the unread dot and lists it under Needs reply as a message would.
+ */
+const LEARNER_ACTIVITY_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["resolution_rejected"]);
+
+/** Whether this change raises unread_by_agent: a learner's public message, or learner activity such as "Not yet". */
+export function raisesUnreadByAgent(transition: Pick<Transition, "event">, actor: ActorKind, publicMessage: boolean) {
+  return actor === "learner" && (publicMessage || LEARNER_ACTIVITY_EVENTS.has(transition.event));
+}
+
+/**
  * The ticket row after an allowed transition. `publicMessage` is set when the
  * command adds a learner-visible message (it moves last_message_*);
- * internal notes only advance the sequence.
+ * learner activity without a message ("Not yet") moves them as well, so
+ * Needs reply sees it; internal notes only advance the sequence.
  */
 export function evolve(ticket: TicketRecord, decision: Extract<Decision, { ok: true }>, context: { now: Date; actor: Actor; publicMessage: boolean; rating?: number }): TicketRecord {
   const { transition, to } = decision;
   const at = context.now.toISOString();
   const next: TicketRecord = { ...ticket, status: to, sequence: ticket.sequence + 1 };
   if (!BOOKKEEPING_EVENTS.has(transition.event)) next.updatedAt = at;
-  if (context.publicMessage) { next.lastMessageAt = at; next.lastMessageBy = context.actor.kind; }
-  if (context.publicMessage && context.actor.kind === "learner") next.unreadByAgent = true;
+  const learnerActivity = raisesUnreadByAgent(transition, context.actor.kind, context.publicMessage);
+  if (context.publicMessage || learnerActivity) { next.lastMessageAt = at; next.lastMessageBy = context.actor.kind; }
+  if (learnerActivity) next.unreadByAgent = true;
   if (context.actor.kind === "agent" && !next.assigneeId && (transition.command === "claim" || transition.command === "agent_reply" || transition.command === "propose_resolution")) {
     next.assigneeId = context.actor.id;
     next.assigneeName = context.actor.name;

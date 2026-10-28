@@ -243,6 +243,24 @@ test("unread flag: a mark_read for an older snapshot leaves a newer learner mess
   }
 });
 
+test("'Not yet' without a message raises unread_by_agent and counts in Needs reply in PostgreSQL", async () => {
+  let clock = Date.parse("2026-10-28T06:00:00.000Z");
+  const hd = service(() => new Date(clock));
+  const { ticket } = await hd.createTicket(learner, input(), randomUUID());
+  await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: 1 }, randomUUID());
+  await hd.postAgentMessage(ticket.id, { body: "Please sign out and in again.", internal: false, agent, expectedSequence: 1 }, randomUUID());
+  await hd.agentAction(ticket.id, { action: "propose_resolution", agent, expectedSequence: 2 }, randomUUID());
+  assert.equal((await hd.listAgentTickets({ status: "needs_reply", q: "", limit: 20, cursor: null })).counts.needs_reply, 0);
+  clock += 60_000;
+  await hd.learnerAction(learner, ticket.id, { action: "reject", expectedSequence: 3 }, randomUUID());
+  const stored = await rows<{ status: string; unread_by_agent: boolean; last_message_by: string }>("SELECT status, unread_by_agent, last_message_by FROM helpdesk_tickets WHERE id = $1", [ticket.id]);
+  assert.deepEqual(stored, [{ status: "ASSIGNED", unread_by_agent: true, last_message_by: "learner" }]);
+  const queue = await hd.listAgentTickets({ status: "needs_reply", q: "", limit: 20, cursor: null });
+  assert.deepEqual(queue.tickets.map((item) => item.id), [ticket.id]);
+  assert.equal(queue.counts.needs_reply, 1);
+  assert.equal(queue.tickets[0].unreadByAgent, true);
+});
+
 test("tags in PostgreSQL: idempotent add/remove events, limit of 10, list filter and counts, concurrent tagging all lands", async () => {
   const hd = service();
   const { ticket } = await hd.createTicket(learner, input(), randomUUID());

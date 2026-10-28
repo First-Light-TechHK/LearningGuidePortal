@@ -260,6 +260,27 @@ test("not solved yet: reject with an optional message and replying while pending
   assert.equal(solved.ticket.closeReason, "user_closed");
 });
 
+test("'Not yet' without a message raises the unread dot and puts the ticket back in Needs reply and its count", async () => {
+  const h = harness();
+  const { ticket } = await h.service.createTicket(learner, ticketInput(), randomUUID());
+  await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: 1 }, randomUUID());
+  await h.service.postAgentMessage(ticket.id, { body: "Try signing out and in again.", internal: false, agent, expectedSequence: 1 }, randomUUID());
+  await h.service.agentAction(ticket.id, { action: "propose_resolution", agent, expectedSequence: 2 }, randomUUID());
+  const before = await h.service.listAgentTickets({ status: "needs_reply", q: "", limit: 20, cursor: null });
+  assert.deepEqual([before.tickets.length, before.counts.needs_reply], [0, 0]);
+  h.advance(60_000);
+  const rejected = await h.service.learnerAction(learner, ticket.id, { action: "reject", expectedSequence: 3 }, randomUUID());
+  assert.equal(rejected.ticket.status, "ASSIGNED");
+  assert.equal(rejected.ticket.lastMessageBy, "learner");
+  const agentView = await h.service.getAgentTicket(ticket.id);
+  assert.equal(agentView.unreadByAgent, true);
+  assert.equal(agentView.needsReply, true);
+  const after = await h.service.listAgentTickets({ status: "needs_reply", q: "", limit: 20, cursor: null });
+  assert.deepEqual(after.tickets.map((item) => item.id), [ticket.id]);
+  assert.equal(after.counts.needs_reply, 1);
+  assert.equal(after.tickets[0].unreadByAgent, true);
+});
+
 test("auto-confirm is applied lazily on read after 72 hours, then the 7-day follow-up window applies", async () => {
   const h = harness();
   const { ticket } = await h.service.createTicket(learner, ticketInput(), randomUUID());

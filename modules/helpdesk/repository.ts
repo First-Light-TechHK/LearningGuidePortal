@@ -26,7 +26,7 @@ export type TicketChange = {
   /** A tag change that commits with the event (add_tag / remove_tag). */
   tag?: { op: "add" | "remove"; tag: string; at: string };
   /**
-   * The learner posted a public message: set unread_by_agent. The stored flag
+   * The learner posted a public message or said "Not yet": set unread_by_agent. The stored flag
    * is only ever raised here and only cleared by markRead (which, given the
    * agent's seen sequence, skips a ticket that moved on), so a stale snapshot
    * can never undo an agent's mark_read or a learner's new message.

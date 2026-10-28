@@ -51,6 +51,7 @@ import {
   isAutoConfirmDue,
   isLearnerVisibleEvent,
   needsReply,
+  raisesUnreadByAgent,
   type Actor,
   type AttachmentRecord,
   type Command,
@@ -426,7 +427,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       outcome = await repository.appendChange({
         ticket: next, expectedSequence: ticket.sequence, message, attachments, event,
         tag: spec.tag === undefined ? undefined : { op: spec.command === "add_tag" ? "add" : "remove", tag: spec.tag, at: at.toISOString() },
-        markUnread: Boolean(message && !message.internal && spec.actor.kind === "learner")
+        markUnread: raisesUnreadByAgent(decision.transition, spec.actor.kind, Boolean(message && !message.internal))
       });
     } catch (error) {
       await discardUploads(attachments);
