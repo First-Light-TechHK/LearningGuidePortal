@@ -1,12 +1,13 @@
 "use client";
 // Learner enquiry page (no Figma frame yet: 待视觉验收). The server's
 // allowedActions decide which controls show; every write carries the shown
-// expectedSequence and an Idempotency-Key, and a 409 reloads the ticket.
+// expectedSequence and an Idempotency-Key, and a 404 / 409 (stale, wrong
+// state, window passed, already rated) reloads the ticket so stale controls go.
 import Link from "next/link";
 import { ArrowLeft, Star } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { TicketDetail } from "@/contracts/helpdesk";
-import { conversationItems, fileSignature, fillTemplate, inputMaxLength, isValidText, problemMessageKey, relativeTime, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { conversationItems, fileSignature, fillTemplate, inputMaxLength, isValidText, problemMessageKey, relativeTime, reloadsTicket, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
 import { loadTicket, newIdempotencyKey, sendTicketAction, sendTicketMessage, type ApiFailure } from "./helpdeskApi";
 import { AttachmentZone, LinkifiedText, MessageAttachments, StatusPill, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
 import "./helpdesk.css";
@@ -21,7 +22,7 @@ export function EnquiryDetail({ locale, copy, config, initial }: { locale: Local
   const [busy, setBusy] = useState<string>("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [now, setNow] = useState<number | null>(null);
-  const attachments = useAttachments(config, copy);
+  const attachments = useAttachments(config, copy, busy !== "");
   const keys = useRef(new SubmissionKeys(newIdempotencyKey));
   const inFlight = useRef(false);
   const allowed = new Set(ticket.allowedActions);
@@ -40,10 +41,11 @@ export function EnquiryDetail({ locale, copy, config, initial }: { locale: Local
   async function handleFailure(result: ApiFailure) {
     if (result.status >= 400 && result.status < 500) keys.current.done();
     const key = problemMessageKey(result.status, result.code);
-    if (key === "conflict") {
+    if (reloadsTicket(result.status)) {
       const fresh = await loadTicket(ticket.id);
       if (fresh.ok) setTicket(fresh.data);
-      setNotice(copy.detail.updated);
+      // "Updated" only when the page now shows the new state.
+      setNotice(key === "conflict" ? (fresh.ok ? copy.detail.updated : copy.errors.unavailable) : copy.errors[key]);
       return;
     }
     setNotice(copy.errors[key]);

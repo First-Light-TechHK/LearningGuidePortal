@@ -22,9 +22,11 @@ async function call<T>(input: string, init: RequestInit = {}): Promise<ApiResult
 }
 
 /** The AI suggestion must never block submitting: any failure or a slow answer counts as "no suggestion". */
-export async function requestSuggestion(input: { category: string; subject: string; message: string; locale: string }, timeoutMs = 5_000): Promise<HelpdeskSuggestion | null> {
+export async function requestSuggestion(input: { category: string; subject: string; message: string; locale: string }, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<HelpdeskSuggestion | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 5_000);
+  // The page aborts when the learner cancels or leaves.
+  options.signal?.addEventListener("abort", () => controller.abort(), { once: true });
   try {
     const result = await call<{ suggestion: HelpdeskSuggestion | null }>("/api/helpdesk/suggestions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: controller.signal });
     return result.ok && result.data?.suggestion ? result.data.suggestion : null;

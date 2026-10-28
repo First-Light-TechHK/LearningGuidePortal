@@ -2,13 +2,16 @@
 // Learner Contact Support (Figma 1216:6) with the AI Support Assistant modal
 // (Figma 1333:249). Submit validates in the page, asks for a suggestion (never
 // blocking: no answer, an error or a slow answer submits directly), and then
-// creates the ticket with one Idempotency-Key per logical submit.
+// creates the ticket with one Idempotency-Key per logical submit. Cancel or
+// leaving the page during the check never creates a ticket, and a submit
+// whose response was lost is resent as it was (same key, same declined
+// suggestion) so the server replays it.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, ThumbsDown, ThumbsUp, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { CommonQuestion, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
-import { answerBlocks, fileSignature, fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, problemMessageKey, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { answerBlocks, fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, nextFocusIndex, problemMessageKey, RetryableSubmit, submissionSignature, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
 import { createTicket, newIdempotencyKey, reportSuggestionOutcome, requestSuggestion } from "./helpdeskApi";
 import { AttachmentZone, FileSummaryChip, LinkifiedText, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
 import "./helpdesk.css";
@@ -33,12 +36,22 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
   const [suggestion, setSuggestion] = useState<HelpdeskSuggestion | null>(null);
   const [askedAt, setAskedAt] = useState<Date | null>(null);
   const [created, setCreated] = useState<TicketDetail | null>(null);
-  const attachments = useAttachments(config, copy);
+  const attachments = useAttachments(config, copy, busy !== "");
   const keys = useRef(new SubmissionKeys(newIdempotencyKey));
+  const retry = useRef(new RetryableSubmit());
   const inFlight = useRef(false);
+  /** Set by Cancel and on unmount: a suggestion check still running must not go on to create a ticket. */
+  const abandoned = useRef(false);
+  const suggestionCheck = useRef<AbortController | null>(null);
   const subjectInput = useRef<HTMLInputElement>(null);
+  const submitButton = useRef<HTMLButtonElement>(null);
   const accountHome = `/${locale}/account/my-learning`;
   const enquiriesHref = `/${locale}/account/my-learning/support/enquiries`;
+
+  useEffect(() => {
+    abandoned.current = false;
+    return () => { abandoned.current = true; suggestionCheck.current?.abort(); };
+  }, []);
 
   useEffect(() => {
     if (phase !== "thanks") return;
@@ -58,25 +71,33 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     return !first;
   }
 
+  function formFields(): Record<string, string> {
+    return { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim() };
+  }
+
   async function submitTicket(suggestionId: string | null) {
     setBusy("submitting");
-    const fields: Record<string, string> = { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim() };
+    const fields = formFields();
+    const signature = submissionSignature(fields, attachments.files);
     if (suggestionId) fields.suggestionId = suggestionId;
     const form = new FormData();
     for (const [name, value] of Object.entries(fields)) form.append(name, value);
     for (const file of attachments.files) form.append("files[]", file, file.name);
-    const key = keys.current.keyFor(JSON.stringify(fields) + fileSignature(attachments.files));
+    const key = keys.current.keyFor(signature);
     const result = await createTicket(form, key);
+    if (abandoned.current) return;
     setBusy("");
     if (result.ok) {
       keys.current.done();
+      retry.current.clear();
       setCreated(result.data);
       setPhase("success");
       window.scrollTo({ top: 0 });
       return;
     }
-    // A 4xx is final for this payload; a network error or 5xx keeps the key so a retry replays.
+    // A 4xx is final for this payload; a network error or 5xx keeps the key (and the declined suggestion) so a retry replays.
     if (result.status >= 400 && result.status < 500) keys.current.done();
+    retry.current.failed(signature, suggestionId, result.status);
     setPhase("form");
     setFormError(copy.errors[problemMessageKey(result.status, result.code)]);
   }
@@ -89,8 +110,15 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     if (!validate()) return;
     inFlight.current = true;
     try {
+      // Same form as a submit that may have reached the server: resend it as it was, without a new suggestion check.
+      const again = retry.current.retryFor(submissionSignature(formFields(), attachments.files));
+      if (again) { await submitTicket(again.suggestionId); return; }
       setBusy("checking");
-      const found = await requestSuggestion({ category, subject: subject.trim(), message: message.trim(), locale });
+      const check = new AbortController();
+      suggestionCheck.current = check;
+      const found = await requestSuggestion({ category, subject: subject.trim(), message: message.trim(), locale }, { signal: check.signal });
+      suggestionCheck.current = null;
+      if (abandoned.current) return;
       if (found) {
         setBusy("");
         setSuggestion(found);
@@ -105,21 +133,24 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     }
   }
 
-  function closeSuggestion(outcome: SuggestionOutcome) {
+  /** focus: where focus goes when the modal closes back to the form ("Edit" goes to Subject; X / Escape back to Submit, which opened it). */
+  function closeSuggestion(outcome: SuggestionOutcome, focus: "subject" | "submit" = "subject") {
     if (suggestion) reportSuggestionOutcome(suggestion.id, outcome);
     if (outcome === "solved") { setPhase("thanks"); return; }
-    if (outcome === "edited") { setPhase("form"); setTimeout(() => subjectInput.current?.focus(), 0); return; }
+    if (outcome === "edited") { setPhase("form"); setTimeout(() => (focus === "submit" ? submitButton.current : subjectInput.current)?.focus(), 0); return; }
     if (inFlight.current || !suggestion) return;
     inFlight.current = true;
     void submitTicket(suggestion.id).finally(() => { inFlight.current = false; });
   }
 
   function cancel() {
+    abandoned.current = true;
+    suggestionCheck.current?.abort();
     if (window.history.length > 1) router.back();
     else router.push(accountHome);
   }
 
-  const fieldProps = (field: Field) => ({ id: `${ids}-${field}`, "aria-invalid": errors[field] ? true : undefined, "aria-describedby": errors[field] ? `${ids}-${field}-error` : undefined });
+  const fieldProps = (field: Field) => ({ id: `${ids}-${field}`, "aria-required": true, "aria-invalid": errors[field] ? true : undefined, "aria-describedby": errors[field] ? `${ids}-${field}-error` : undefined });
   const fieldError = (field: Field) => errors[field] ? <p id={`${ids}-${field}-error`} className="helpdesk-field-error">{errors[field]}</p> : null;
   const label = (field: Field, text: string) => <label className="helpdesk-label" id={`${ids}-${field}-label`} htmlFor={`${ids}-${field}`}>{text}<span aria-hidden="true">*</span></label>;
   const disabled = busy !== "";
@@ -142,14 +173,14 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
           {formError ? <p role="alert" className="helpdesk-inline-error">{formError}</p> : null}
           <div className="helpdesk-form-actions">
             <button type="button" className="helpdesk-cancel-button" onClick={cancel} disabled={busy === "submitting"}>{copy.cancel}</button>
-            <button type="submit" className="helpdesk-submit-button" disabled={disabled}>{busy === "checking" ? copy.assistant.checking : busy === "submitting" ? copy.submitting : copy.submit}</button>
+            <button ref={submitButton} type="submit" className="helpdesk-submit-button" disabled={disabled}>{busy === "checking" ? copy.assistant.checking : busy === "submitting" ? copy.submitting : copy.submit}</button>
           </div>
         </form>}
       {questions.length ? <><div className="helpdesk-divider" aria-hidden="true" /><CommonQuestions copy={copy} questions={questions} /></> : null}
     </div>
     {(phase === "suggestion" || phase === "thanks") && suggestion ? <AssistantModal copy={copy} locale={locale} suggestion={suggestion} thanks={phase === "thanks"} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}
-      onOutcome={closeSuggestion} /> : null}
+      onOutcome={closeSuggestion} onDismiss={() => closeSuggestion("edited", "submit")} /> : null}
   </div>;
 }
 
@@ -177,7 +208,9 @@ function TopicSelect({ copy, options, value, onChange, disabled, buttonProps, la
     } else if ((event.key === "Enter" || event.key === " ") && open) { event.preventDefault(); choose(active); }
     else if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); }
   }
-  return <div className={`helpdesk-select${open ? " is-open" : ""}`} ref={root}>
+  // Tabbing (or otherwise moving focus) out of the control closes the list.
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); };
+  return <div className={`helpdesk-select${open ? " is-open" : ""}`} ref={root} onBlur={onBlur}>
     <button type="button" role="combobox" {...buttonProps} aria-labelledby={labelledBy} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-activedescendant={open ? `${listId}-${active}` : undefined} disabled={disabled}
       className={`helpdesk-select-trigger${value ? " has-value" : ""}`} onClick={() => { setActive(Math.max(0, options.indexOf(value as TicketCategory))); setOpen((current) => !current); }} onKeyDown={onKeyDown}>
       <span>{value ? copy.categories[value] : copy.selectTopic}</span>{open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
@@ -205,24 +238,44 @@ function CommonQuestions({ copy, questions }: { copy: HelpdeskCopy; questions: C
 
 type Enquiry = { name: string; email: string; subject: string; category: TicketCategory; message: string; askedAt: Date; files: File[] };
 
-function AssistantModal({ copy, locale, suggestion, enquiry, thanks, busy, accountHome, onOutcome }: { copy: HelpdeskCopy; locale: Locale; suggestion: HelpdeskSuggestion; enquiry: Enquiry; thanks: boolean; busy: boolean; accountHome: string; onOutcome: (outcome: SuggestionOutcome) => void }) {
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function AssistantModal({ copy, locale, suggestion, enquiry, thanks, busy, accountHome, onOutcome, onDismiss }: { copy: HelpdeskCopy; locale: Locale; suggestion: HelpdeskSuggestion; enquiry: Enquiry; thanks: boolean; busy: boolean; accountHome: string; onOutcome: (outcome: SuggestionOutcome) => void; onDismiss: () => void }) {
   const ids = useId();
   const dialog = useRef<HTMLDivElement>(null);
+  const latest = useRef({ thanks, busy, onDismiss });
+  latest.current = { thanks, busy, onDismiss };
   useEffect(() => {
     dialog.current?.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = previous; };
+    // Modal: Escape closes it wherever focus is, and Tab / Shift+Tab stay inside it.
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const node = dialog.current;
+      if (!node) return;
+      if (event.key === "Escape") {
+        if (!latest.current.thanks && !latest.current.busy) { event.preventDefault(); latest.current.onDismiss(); }
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const target = nextFocusIndex({ count: items.length, active: items.indexOf(document.activeElement as HTMLElement), shift: event.shiftKey });
+      if (target === null) return;
+      event.preventDefault();
+      (target < 0 ? node : items[target]).focus();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => { document.removeEventListener("keydown", onKeyDown, true); document.body.style.overflow = previous; };
   }, []);
   const name = firstName(enquiry.name);
   const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false }).format(enquiry.askedAt);
   const paragraphs = enquiry.message.split(/\n/);
-  return <div className="helpdesk-modal-backdrop">
-    <div className="helpdesk-modal" role="dialog" aria-modal="true" aria-labelledby={`${ids}-title`} tabIndex={-1} ref={dialog}
-      onKeyDown={(event) => { if (event.key === "Escape" && !thanks && !busy) onOutcome("edited"); }}>
+  // A press on the backdrop must not move focus to the page behind.
+  return <div className="helpdesk-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}>
+    <div className="helpdesk-modal" role="dialog" aria-modal="true" aria-labelledby={`${ids}-title`} tabIndex={-1} ref={dialog}>
       <header className="helpdesk-modal-header">
         <div className="helpdesk-modal-heading"><span className="helpdesk-modal-icon"><Bot size={20} aria-hidden="true" /></span><div><h2 id={`${ids}-title`}>{copy.assistant.title}</h2><p>{copy.assistant.subtitle}</p></div></div>
-        {thanks ? null : <button type="button" className="helpdesk-modal-close" aria-label={copy.assistant.close} disabled={busy} onClick={() => onOutcome("edited")}><X size={14} aria-hidden="true" /></button>}
+        {thanks ? null : <button type="button" className="helpdesk-modal-close" aria-label={copy.assistant.close} disabled={busy} onClick={onDismiss}><X size={14} aria-hidden="true" /></button>}
       </header>
       {thanks ? <div className="helpdesk-modal-thanks" role="status"><span className="helpdesk-success-icon"><Check size={22} aria-hidden="true" /></span><h3>{copy.assistant.thanksTitle}</h3><p>{copy.assistant.thanksBody}</p><Link prefetch={false} className="helpdesk-submit-button" href={accountHome}>{copy.assistant.backToAccount}</Link></div> : <>
         <div className="helpdesk-modal-body">

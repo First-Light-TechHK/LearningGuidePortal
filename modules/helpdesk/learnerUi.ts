@@ -105,6 +105,70 @@ export class SubmissionKeys {
   }
 }
 
+/**
+ * What makes two ticket submits the same logical submit (and so the same
+ * Idempotency-Key): the form and the files, not which AI suggestion was
+ * declined, because Admin gives every suggestion request a new id.
+ */
+export function submissionSignature(fields: Record<string, string>, files: { name: string; size: number; lastModified?: number }[]): string {
+  const form = Object.fromEntries(Object.entries(fields).filter(([name]) => name !== "suggestionId"));
+  return JSON.stringify(Object.keys(form).sort().map((name) => [name, form[name]])) + fileSignature(files);
+}
+
+/** A network failure (status 0) or a 5xx may still have created the ticket; a 4xx did not. */
+function mayHaveReachedServer(status: number) {
+  return status === 0 || status >= 500;
+}
+
+/**
+ * Remembers a ticket submit that failed but may still have reached the
+ * server. Submitting the same form again then resends that request as it
+ * was (same Idempotency-Key from SubmissionKeys, same declined suggestion,
+ * no new suggestion check), so a lost response replays instead of creating
+ * a second ticket.
+ */
+export class RetryableSubmit {
+  private last: { signature: string; suggestionId: string | null } | null = null;
+  failed(signature: string, suggestionId: string | null, status: number) {
+    this.last = mayHaveReachedServer(status) ? { signature, suggestionId } : null;
+  }
+  retryFor(signature: string): { suggestionId: string | null } | null {
+    return this.last && this.last.signature === signature ? { suggestionId: this.last.suggestionId } : null;
+  }
+  clear() {
+    this.last = null;
+  }
+}
+
+/**
+ * Files to attach from a paste, or [] to let the browser paste as usual:
+ * text pasted into a text field stays text (Office copies a picture of the
+ * cells next to the text), and nothing is attached while the form is busy.
+ */
+export function pastedFiles<T>(paste: { files: T[]; types: readonly string[]; intoTextField: boolean; disabled: boolean }): T[] {
+  if (paste.disabled || paste.files.length === 0) return [];
+  const hasText = paste.types.includes("text/plain") || paste.types.includes("text/html");
+  return hasText && paste.intoTextField ? [] : paste.files;
+}
+
+/**
+ * Focus trap for a modal: the index to move focus to on Tab, or null to let
+ * the browser move it. active is the focused element's index among the
+ * count focusable ones (-1: the dialog itself or something outside it).
+ */
+export function nextFocusIndex({ count, active, shift }: { count: number; active: number; shift: boolean }): number | null {
+  if (count === 0) return -1;
+  if (active < 0) return shift ? count - 1 : 0;
+  if (shift && active === 0) return count - 1;
+  if (!shift && active === count - 1) return 0;
+  return null;
+}
+
+/** Enquiry page: after a 404 or 409 (stale, wrong state, window passed, already rated) the shown ticket is out of date, so reload it. */
+export function reloadsTicket(status: number): boolean {
+  return status === 404 || status === 409;
+}
+
 export function fileSignature(files: { name: string; size: number; lastModified?: number }[]): string {
   return JSON.stringify(files.map((file) => [file.name, file.size, file.lastModified ?? 0]));
 }

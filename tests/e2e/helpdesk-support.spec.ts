@@ -245,6 +245,139 @@ test("assistant suggestion: Edit closes the modal and keeps the form", async ({ 
   await context.close();
 });
 
+test("Cancel while the suggestion check is running leaves the page and creates no ticket", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await page.goto("/en-GB/account/my-learning/settings");
+  await openSupport(page);
+  const posts: string[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/helpdesk/tickets") posts.push(request.url()); });
+  await page.route("**/api/helpdesk/suggestions", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ suggestion: null }) }).catch(() => undefined);
+  });
+  await fillEnquiry(page, "en-GB", { category: "other", subject: `Changed my mind ${randomUUID().slice(0, 6)}`, message: "Never mind." });
+  await page.getByRole("button", { name: text.submit }).click();
+  await expect(page.getByRole("button", { name: text.assistant.checking })).toBeVisible();
+  await page.getByRole("button", { name: text.cancel }).click();
+  await page.waitForURL("**/en-GB/account/my-learning/settings");
+  await page.waitForTimeout(3_500);
+  expect(posts).toEqual([]);
+  expect(await learnerTickets(page)).toEqual([]);
+  await context.close();
+});
+
+test("a submit whose response was lost is retried with the same Idempotency-Key and declined suggestion: one ticket", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await openSupport(page);
+  const subject = `Password reset lost ${randomUUID().slice(0, 6)}`;
+  const sent: Array<{ key: string; suggestionId: string | null }> = [];
+  await page.route("**/api/helpdesk/tickets", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const body = route.request().postData() || "";
+    sent.push({ key: route.request().headers()["idempotency-key"], suggestionId: /name="suggestionId"\r\n\r\n([0-9a-f-]{36})/.exec(body)?.[1] ?? null });
+    if (sent.length === 1) {
+      // The ticket is created, but the browser never hears back.
+      await route.fetch();
+      await route.abort("connectionreset");
+      return;
+    }
+    await route.continue();
+  });
+  await fillEnquiry(page, "en-GB", { category: "technical_support", subject, message: "The reset email never came." });
+  await page.getByRole("button", { name: text.submit }).click();
+  await page.getByRole("dialog", { name: text.assistant.title }).getByRole("button", { name: text.assistant.no }).click();
+  await expect(page.locator("main").getByRole("alert")).toHaveText(text.errors.unavailable);
+  await page.getByRole("button", { name: text.submit }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(sent.length).toBe(2);
+  expect(sent[1].key).toBe(sent[0].key);
+  const suggestionId = await lastSuggestionId(page.request, subject);
+  expect(sent.map((item) => item.suggestionId)).toEqual([suggestionId, suggestionId]);
+  const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { subject: string } }[] };
+  expect(suggestions.filter((entry) => entry.request.subject === subject).length, "the retry does not ask for a new suggestion").toBe(1);
+  const tickets = await learnerTickets(page);
+  expect(tickets.length).toBe(1);
+  expect((await agentTicket(page.request, tickets[0].id)).suggestionId).toBe(suggestionId);
+  await context.close();
+});
+
+test("assistant modal: Tab stays inside, Escape works after a click on the backdrop and focus returns to Submit", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await openSupport(page);
+  const subject = `Password focus ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "en-GB", { category: "technical_support", subject, message: "Where is my password email?" });
+  const submit = page.getByRole("button", { name: text.submit });
+  await submit.click();
+  const modal = page.getByRole("dialog", { name: text.assistant.title });
+  await expect(modal).toBeVisible();
+  const inside = () => modal.evaluate((dialog) => dialog.contains(document.activeElement));
+  for (let index = 0; index < 6; index += 1) { await page.keyboard.press("Tab"); expect(await inside()).toBe(true); }
+  for (let index = 0; index < 6; index += 1) { await page.keyboard.press("Shift+Tab"); expect(await inside()).toBe(true); }
+  await page.mouse.click(4, 4);
+  await page.keyboard.press("Tab");
+  expect(await inside(), "focus does not escape to the page behind").toBe(true);
+  await page.mouse.click(4, 4);
+  await page.keyboard.press("Escape");
+  await expect(modal).toHaveCount(0);
+  await expect(submit).toBeFocused();
+  expect(await outcomeOf(page.request, (await lastSuggestionId(page.request, subject))!)).toBe("edited");
+  expect(await learnerTickets(page)).toEqual([]);
+  await context.close();
+});
+
+test("form accessibility: required fields are announced, the drop zone is no extra tab stop, the topic list closes on Tab, Office pastes stay text", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await openSupport(page);
+  const combobox = page.getByRole("combobox", { name: text.enquiryType });
+  for (const field of [combobox, page.getByLabel(text.subject), page.getByLabel(text.message), page.getByLabel(text.email)]) await expect(field).toHaveAttribute("aria-required", "true");
+  expect(await page.locator(".helpdesk-dropzone").getAttribute("tabindex")).toBeNull();
+  await combobox.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  // Copying cells from Excel puts the text and a picture of the cells on the clipboard.
+  await page.getByLabel(text.subject).evaluate((input, base64) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "A1\tB1");
+    data.items.add(new File([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))], "image.png", { type: "image/png" }));
+    input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG.toString("base64"));
+  await expect(page.locator(".helpdesk-file-chip")).toHaveCount(0);
+  await context.close();
+});
+
+test("a follow-up refused because the window has passed reloads the ticket, so the stale composer goes away", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await page.goto("/en-GB/account/my-learning/support");
+  const ticket = await createTicketByApi(page, `Window passed ${randomUUID().slice(0, 6)}`);
+  await agentReply(page.request, ticket.id, "Done on our side.");
+  const { sequence } = await agentTicket(page.request, ticket.id);
+  expect((await page.request.post(`/api/helpdesk/tickets/${ticket.id}/actions`, { headers: { "Idempotency-Key": randomUUID(), Origin: origin(page) }, data: { action: "close", expectedSequence: sequence } })).status()).toBe(200);
+  await page.goto(`/en-GB/account/my-learning/support/${ticket.id}`);
+  await expect(page.getByRole("button", { name: text.detail.followUp })).toBeVisible();
+  // As if the 7 days ran out while the page was open.
+  await page.route(`**/api/helpdesk/tickets/${ticket.id}/messages`, (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({ type: "https://www.ilovelearningguide.com/problems/reopen_window_passed", title: "The follow-up window has passed", status: 409, detail: "The follow-up window has passed", code: "reopen_window_passed" }) }));
+  await page.route(`**/api/helpdesk/tickets/${ticket.id}`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { allowedActions: string[]; followUpUntil: string | null };
+    await route.fulfill({ response, json: { ...body, allowedActions: [], followUpUntil: null } });
+  });
+  await page.getByLabel(text.detail.replyLabel).fill("One more thing.");
+  await page.getByRole("button", { name: text.detail.followUp }).click();
+  await expect(page.locator("main").getByRole("alert")).toHaveText(text.errors.reopenWindow);
+  await expect(page.getByLabel(text.detail.replyLabel)).toHaveCount(0);
+  await expect(page.locator(".helpdesk-stars")).toHaveCount(0);
+  await expect(page.getByText(text.detail.closedNote)).toBeVisible();
+  await context.close();
+});
+
 test("agent reply, learner reply, resolution: not yet, solved, rating and follow-up", async ({ browser }) => {
   const { context, page } = await newLearner(browser);
   const text = copy("en-GB");

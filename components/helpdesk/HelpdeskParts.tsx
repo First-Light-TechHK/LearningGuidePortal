@@ -6,7 +6,7 @@ import { Download, FileText, Image as ImageIcon, Paperclip, Upload, X } from "lu
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import type { AttachmentView, TicketStatus } from "@/contracts/helpdesk";
 import type { getMessages } from "@/lib/i18n/messages";
-import { fillTemplate, formatBytes, linkify, screenFiles, type FileProblem, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { fillTemplate, formatBytes, linkify, pastedFiles, screenFiles, type FileProblem, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
 
 export type HelpdeskCopy = ReturnType<typeof getMessages>["helpdesk"];
 
@@ -16,10 +16,12 @@ function problemText(copy: HelpdeskCopy, problems: FileProblem[]) {
 }
 
 /** Attachment state with the same checks as the server (type, 10 MB, 5 files); errors are one line of copy. */
-export function useAttachments(config: HelpdeskUiConfig, copy: HelpdeskCopy) {
+export function useAttachments(config: HelpdeskUiConfig, copy: HelpdeskCopy, disabled = false) {
   const [files, setFilesState] = useState<File[]>([]);
   const [error, setError] = useState("");
   const current = useRef<File[]>([]);
+  const busy = useRef(disabled);
+  busy.current = disabled;
   const setFiles = useCallback((next: File[]) => { current.current = next; setFilesState(next); }, []);
   const add = useCallback((incoming: File[]) => {
     if (incoming.length === 0) return;
@@ -29,9 +31,16 @@ export function useAttachments(config: HelpdeskUiConfig, copy: HelpdeskCopy) {
   }, [config, copy, setFiles]);
   const remove = useCallback((index: number) => { setFiles(current.current.filter((_, position) => position !== index)); setError(""); }, [setFiles]);
   const clear = useCallback(() => { setFiles([]); setError(""); }, [setFiles]);
-  /** Paste anywhere in the form: files on the clipboard become attachments; plain text pastes as usual. */
+  /**
+   * Paste anywhere in the form: files on the clipboard become attachments,
+   * except while the form is busy, and except when text is being pasted into
+   * a text field (Office copies a picture of the cells next to the text):
+   * then the browser pastes the text as usual.
+   */
   const onPaste = useCallback((event: ReactClipboardEvent) => {
-    const pasted = [...(event.clipboardData?.files ?? [])];
+    const target = event.target as HTMLElement;
+    const intoTextField = target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !["file", "checkbox", "radio", "button", "submit", "reset"].includes(target.type)) || target.isContentEditable;
+    const pasted = pastedFiles({ files: [...(event.clipboardData?.files ?? [])], types: [...(event.clipboardData?.types ?? [])], intoTextField, disabled: busy.current });
     if (pasted.length === 0) return;
     event.preventDefault();
     add(pasted.map((file, index) => file.name && file.name !== "image.png" ? file : new File([file], `screenshot-${Date.now()}${index ? `-${index}` : ""}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: file.type, lastModified: file.lastModified })));
@@ -43,7 +52,7 @@ export function AttachmentZone({ copy, config, attachments, disabled, inputId }:
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   return <div className="helpdesk-attachments">
-    <div className={`helpdesk-dropzone${dragging ? " is-dragging" : ""}`} tabIndex={0} aria-describedby={`${inputId}-hint`}
+    <div className={`helpdesk-dropzone${dragging ? " is-dragging" : ""}`} aria-describedby={`${inputId}-hint`}
       onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
       onDrop={(event) => { event.preventDefault(); setDragging(false); if (!disabled) attachments.add([...event.dataTransfer.files]); }}>
       <div className="helpdesk-dropzone-text">

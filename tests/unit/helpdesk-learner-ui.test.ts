@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, parseCreateTicketInput, isContactEmail, type TicketDetail } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { helpdeskUiConfig } from "../../modules/helpdesk/learnerUiConfig";
-import { answerBlocks, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, problemMessageKey, relativeTime, screenFiles, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
+import { answerBlocks, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, relativeTime, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
 
 const config = helpdeskUiConfig();
 
@@ -91,6 +91,64 @@ test("one Idempotency-Key per logical submit: reused on retry of the same payloa
   const file = { name: "a.png", size: 3, lastModified: 7 };
   assert.equal(fileSignature([file]), fileSignature([{ ...file }]));
   assert.notEqual(fileSignature([file]), fileSignature([{ ...file, size: 4 }]));
+});
+
+test("a retried submit after a lost response sends the same request: same Idempotency-Key and the same declined suggestion", () => {
+  let next = 0;
+  const keys = new SubmissionKeys(() => `key-${++next}`);
+  const retry = new RetryableSubmit();
+  const form = { category: "technical_support", subject: "Password", body: "No reset email", locale: "en-GB", contactEmail: "a@example.com" };
+  const files = [{ name: "a.png", size: 3, lastModified: 1 }];
+  const signature = submissionSignature(form, files);
+  assert.equal(submissionSignature({ ...form, suggestionId: "s-1" }, files), signature, "which suggestion was declined is not part of the signature");
+  assert.notEqual(submissionSignature({ ...form, subject: "Other" }, files), signature);
+  assert.notEqual(submissionSignature(form, []), signature);
+  assert.equal(retry.retryFor(signature), null, "nothing failed yet: ask for a suggestion first");
+  const first = keys.keyFor(signature);
+  retry.failed(signature, "s-1", 0);
+  assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1" }, "network failure: may have been created, so resend as is");
+  assert.equal(keys.keyFor(signature), first);
+  retry.failed(signature, "s-1", 503);
+  assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1" });
+  assert.equal(retry.retryFor(submissionSignature({ ...form, body: "Edited" }, files)), null, "an edited form is a new submit");
+  retry.failed(signature, null, 502);
+  assert.deepEqual(retry.retryFor(signature), { suggestionId: null }, "a direct submit is retried directly too");
+  retry.failed(signature, "s-1", 400);
+  assert.equal(retry.retryFor(signature), null, "a 4xx is final");
+  retry.failed(signature, "s-1", 503);
+  retry.clear();
+  assert.equal(retry.retryFor(signature), null);
+});
+
+test("pasting: files are attached only when no text is being pasted into a text field, and never while the form is busy", () => {
+  const shot = [{ name: "image.png" }];
+  assert.deepEqual(pastedFiles({ files: shot, types: ["Files"], intoTextField: false, disabled: false }), shot);
+  assert.deepEqual(pastedFiles({ files: shot, types: ["Files"], intoTextField: true, disabled: false }), shot, "a screenshot pasted into the message still attaches");
+  assert.deepEqual(pastedFiles({ files: shot, types: ["text/plain", "text/html", "Files"], intoTextField: true, disabled: false }), [], "Excel cells: the text goes into the field");
+  assert.deepEqual(pastedFiles({ files: shot, types: ["text/html", "Files"], intoTextField: true, disabled: false }), []);
+  assert.deepEqual(pastedFiles({ files: shot, types: ["text/plain", "Files"], intoTextField: false, disabled: false }), shot, "not into a text field: the file is what can be pasted");
+  assert.deepEqual(pastedFiles({ files: shot, types: ["Files"], intoTextField: false, disabled: true }), []);
+  assert.deepEqual(pastedFiles({ files: [], types: ["text/plain"], intoTextField: true, disabled: false }), []);
+});
+
+test("the assistant modal keeps Tab inside: forward from the last wraps to the first, back from the first wraps to the last, focus outside comes back in", () => {
+  assert.equal(nextFocusIndex({ count: 4, active: 3, shift: false }), 0);
+  assert.equal(nextFocusIndex({ count: 4, active: 0, shift: true }), 3);
+  assert.equal(nextFocusIndex({ count: 4, active: 1, shift: false }), null, "inside the cycle the browser moves focus");
+  assert.equal(nextFocusIndex({ count: 4, active: 2, shift: true }), null);
+  assert.equal(nextFocusIndex({ count: 4, active: -1, shift: false }), 0, "focus is on the dialog itself or outside it");
+  assert.equal(nextFocusIndex({ count: 4, active: -1, shift: true }), 3);
+  assert.equal(nextFocusIndex({ count: 1, active: 0, shift: false }), 0);
+  assert.equal(nextFocusIndex({ count: 0, active: -1, shift: false }), -1, "nothing focusable: keep focus on the dialog");
+});
+
+test("a rejected enquiry action reloads the ticket on every 404 and 409, so stale controls go away", () => {
+  for (const code of ["stale_ticket", "invalid_transition", "reopen_window_passed", "rating_window_passed", "already_rated", "not_found", undefined]) {
+    assert.equal(reloadsTicket(code === "not_found" ? 404 : 409), true, String(code));
+  }
+  for (const [status, code] of [[400, "validation_failed"], [413, "attachment_too_large"], [415, "attachment_type_unsupported"], [429, "rate_limited"], [503, "helpdesk_unavailable"], [0, undefined], [401, "unauthenticated"]] as const) {
+    assert.equal(reloadsTicket(status), false, `${status} ${code}`);
+  }
 });
 
 test("names, initials, sizes and templates for the assistant modal", () => {
