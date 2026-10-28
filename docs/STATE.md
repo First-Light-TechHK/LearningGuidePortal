@@ -36,6 +36,7 @@
 - `deploy`
 - `verify`
 - `Study Group PostgreSQL I/O`
+- `Audit (${{ matrix.environment }})`
 - `UAT deployment and learner acceptance`
 
 ## 最近 tag
