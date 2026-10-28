@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { attachmentFileName, isInlineAttachment, sniffAttachment } from "../../modules/helpdesk/attachments";
+import { attachmentFileName, isInlineAttachment, sniffAttachment, textEncoding } from "../../modules/helpdesk/attachments";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { HelpdeskProblem } from "../../contracts/helpdesk";
 import { HELPDESK_MULTIPART_MAX_BYTES, attachmentResponse, readMultipart } from "../../modules/helpdesk/http";
@@ -40,11 +40,43 @@ test("txt and csv need the extension plus clean UTF-8 text; markup, binaries and
   assert.equal(sniff(TEXT, "steps.md"), null, "text without .txt/.csv is not accepted");
   assert.equal(sniff(TEXT, "steps"), null);
   assert.equal(sniff(Buffer.from("abc\u0000def"), "nul.txt"), null);
-  assert.equal(sniff(Buffer.from([0x61, 0xff, 0xfe, 0x62]), "latin.txt"), null, "invalid UTF-8");
   assert.equal(sniff(Buffer.from("bell\u0007"), "ctrl.txt"), null);
   assert.equal(sniff(HTML, "page.txt"), null, "html disguised as text");
   assert.equal(sniff(SVG, "image.txt"), null, "svg disguised as text");
   assert.equal(sniff(Buffer.from("  <?xml version=\"1.0\"?><svg/>"), "x.csv"), null);
+});
+
+test("txt and csv in other text encodings are accepted (GBK, Windows-1252, UTF-16 with a BOM); binaries, controls and markup are still refused", () => {
+  const gbk = Buffer.from([0xd0, 0xd5, 0xc3, 0xfb, 0x2c, 0xb3, 0xc9, 0xbc, 0xa8, 0x0a, 0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x39, 0x30, 0x0a]); // 姓名,成绩\n张三,90\n in GBK
+  const cp1252 = Buffer.from([0x4a, 0x6f, 0x73, 0xe9, 0x2c, 0x4d, 0x6f, 0x6e, 0x74, 0x72, 0xe9, 0x61, 0x6c, 0x0d, 0x0a]); // José,Montréal\r\n
+  const utf16le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("Name\tScore\r\n张三\t90\r\n", "utf16le")]);
+  const utf16be = Buffer.from(Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from("Steps\n1. Sign in\n", "utf16le")]).map((_, index, all) => index < 2 ? all[index] : all[index % 2 === 0 ? index + 1 : index - 1]));
+  assert.equal(sniff(gbk, "grades.csv"), "text/csv");
+  assert.equal(sniff(cp1252, "list.csv"), "text/csv");
+  assert.equal(sniff(Buffer.from([0x61, 0xff, 0xfe, 0x62]), "latin.txt"), "text/plain", "not UTF-8, but text");
+  assert.equal(sniff(utf16le, "export.txt"), "text/plain");
+  assert.equal(sniff(utf16be, "steps.txt"), "text/plain");
+  assert.equal(textEncoding(gbk), "legacy");
+  assert.equal(textEncoding(TEXT), "utf-8");
+  assert.equal(textEncoding(utf16le), "utf-16le");
+  assert.equal(textEncoding(utf16be), "utf-16be");
+  assert.equal(sniff(Buffer.from("Name\tScore\r\n", "utf16le"), "no-bom.txt"), null, "UTF-16 without a BOM is full of NUL bytes: looks binary");
+  assert.equal(sniff(Buffer.concat([gbk, Buffer.from([0x00])]), "nul.csv"), null);
+  assert.equal(sniff(Buffer.concat([cp1252, Buffer.from([0x07])]), "bell.csv"), null);
+  assert.equal(sniff(Buffer.concat([Buffer.from([0xe9]), Buffer.from([0x1b, 0x5b])]), "esc.txt"), null);
+  assert.equal(sniff(Buffer.concat([Buffer.from("<html><body>"), Buffer.from([0xe9])]), "page.txt"), null, "markup in a legacy encoding");
+  assert.equal(sniff(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("<svg onload=alert(1)>", "utf16le")]), "x.txt"), null, "markup in UTF-16");
+  assert.equal(sniff(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("a\u0000b", "utf16le")]), "x.txt"), null, "a NUL character in UTF-16");
+  assert.equal(sniff(Buffer.from([0xff, 0xfe, 0x41]), "odd.txt"), null, "truncated UTF-16");
+  assert.equal(sniff(EXE, "setup.txt"), null);
+  assert.equal(sniff(PNG, "shot.txt"), "image/png", "magic bytes still win");
+});
+
+test("text attachments are served with the charset they were written in, and none when it is a legacy encoding", () => {
+  const gbk = Buffer.from([0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x39, 0x30]);
+  assert.equal(attachmentResponse({ bytes: new Uint8Array(TEXT), contentType: "text/plain", fileName: "a.txt" }).headers.get("content-type"), "text/plain; charset=utf-8");
+  assert.equal(attachmentResponse({ bytes: new Uint8Array(gbk), contentType: "text/csv", fileName: "a.csv" }).headers.get("content-type"), "text/csv");
+  assert.equal(attachmentResponse({ bytes: new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("a,b", "utf16le")])), contentType: "text/csv", fileName: "a.csv" }).headers.get("content-type"), "text/csv; charset=utf-16le");
 });
 
 test("html, svg and executables are never accepted", () => {

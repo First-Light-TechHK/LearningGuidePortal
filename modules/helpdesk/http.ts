@@ -3,7 +3,7 @@
 // plain-JSON success bodies. No business rules here.
 import { createHash, timingSafeEqual } from "node:crypto";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, isTicketId, parseIdempotencyKey, problemBody, type HelpdeskAttachmentType, type UploadInput } from "@/contracts/helpdesk";
-import { isInlineAttachment } from "./attachments";
+import { isInlineAttachment, textEncoding } from "./attachments";
 import { adminHostDecision, requestOriginMatches } from "@/services/adminHost";
 import { currentProductUserFromRequest } from "@/services/productAuth";
 import type { LearnerIdentity } from "./service";
@@ -33,11 +33,13 @@ export function jsonResponse(body: unknown, status = 200, replayed = false): Res
  */
 export function attachmentResponse(content: { bytes: Uint8Array; contentType: HelpdeskAttachmentType; fileName: string }): Response {
   if (!(HELPDESK_ATTACHMENT_TYPES as readonly string[]).includes(content.contentType)) throw new HelpdeskProblem("not_found", "No such attachment.");
-  const textual = content.contentType.startsWith("text/");
+  // Text keeps the encoding it was written in: UTF-8 / UTF-16 are labelled; a legacy encoding (GBK, Windows-1252, ...) gets no charset.
+  const encoding = content.contentType.startsWith("text/") ? textEncoding(content.bytes) : null;
+  const charset = encoding && encoding !== "legacy" ? `; charset=${encoding}` : "";
   return new Response(new Uint8Array(content.bytes), {
     status: 200,
     headers: {
-      "Content-Type": textual ? `${content.contentType}; charset=utf-8` : content.contentType,
+      "Content-Type": `${content.contentType}${charset}`,
       "Content-Length": String(content.bytes.byteLength),
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",

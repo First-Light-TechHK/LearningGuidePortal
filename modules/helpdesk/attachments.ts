@@ -1,7 +1,9 @@
 // Helpdesk attachment typing (Figma addendum §B): the type is decided from
 // the bytes, never from the declared Content-Type. Images and PDF by magic
-// bytes, docx/xlsx by their ZIP structure, txt/csv by extension plus clean
-// UTF-8 text. HTML and SVG are never accepted, so they are never served.
+// bytes, docx/xlsx by their ZIP structure, txt/csv by extension plus text
+// content (UTF-8, UTF-16 with a BOM, or a legacy encoding such as GBK or
+// Windows-1252 with no control bytes). HTML and SVG are never accepted, so
+// they are never served.
 import { HELPDESK_LIMITS, type HelpdeskAttachmentType } from "@/contracts/helpdesk";
 import { sniffImage } from "@/services/portalMedia";
 
@@ -79,12 +81,37 @@ function officeType(bytes: Uint8Array): HelpdeskAttachmentType | null {
 
 const MARKUP_START = /^\s*<(?:!doctype|html|head|body|script|svg|\?xml|iframe|object)\b/i;
 
-function cleanText(bytes: Uint8Array): boolean {
-  let text: string;
-  try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return false; }
-  // Tab, line feed, form feed and carriage return are the only control characters allowed.
-  if (/[\u0000-\u0008\u000b\u000e-\u001f\u007f]/.test(text)) return false;
-  return !MARKUP_START.test(text.replace(/^﻿/, ""));
+/** Tab, line feed, form feed and carriage return are the only control characters allowed in text. */
+const TEXT_CONTROL = /[\u0000-\u0008\u000b\u000e-\u001f\u007f]/;
+
+function decodeStrict(bytes: Uint8Array, label: string): string | null {
+  try { return new TextDecoder(label, { fatal: true }).decode(bytes); } catch { return null; }
+}
+
+/**
+ * How a txt/csv file is encoded, or null when it is not plain text.
+ * "legacy" is any ASCII-compatible encoding that is not UTF-8 (GBK, Big5,
+ * Shift_JIS, Windows-1252, ...): every such encoding writes control
+ * characters, NUL included, as bytes below 0x20, and none of them uses
+ * those bytes inside a character, so a control byte means binary content.
+ */
+export type TextEncodingName = "utf-8" | "utf-16le" | "utf-16be" | "legacy";
+export function textEncoding(bytes: Uint8Array): TextEncodingName | null {
+  let encoding: TextEncodingName;
+  let text: string | null;
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) { encoding = "utf-16le"; text = decodeStrict(bytes, "utf-16le"); }
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) { encoding = "utf-16be"; text = decodeStrict(bytes, "utf-16be"); }
+  else {
+    text = decodeStrict(bytes, "utf-8");
+    encoding = "utf-8";
+    if (text === null) {
+      encoding = "legacy";
+      // latin1 maps each byte to one character, so the control and markup checks below see the raw ASCII bytes.
+      text = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("latin1");
+    }
+  }
+  if (text === null || TEXT_CONTROL.test(text)) return null;
+  return MARKUP_START.test(text.replace(/^\ufeff/, "")) ? null : encoding;
 }
 
 /** The attachment's real type, or null when it is not one of the allowed types. */
@@ -97,7 +124,7 @@ export function sniffAttachment(bytes: Uint8Array, fileName: string): HelpdeskAt
   if (startsWith(bytes, "PK\u0003\u0004")) return officeType(bytes);
   const ext = extension(fileName);
   if (ext !== "txt" && ext !== "csv") return null;
-  if (!cleanText(bytes)) return null;
+  if (!textEncoding(bytes)) return null;
   return ext === "csv" ? "text/csv" : "text/plain";
 }
 
