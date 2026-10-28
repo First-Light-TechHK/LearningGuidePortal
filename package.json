@@ -28,6 +28,7 @@
     "catalogue:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-data.ts",
     "assessment:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-lesson-assessments.ts",
     "contact:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-contact-requests.ts",
+    "helpdesk:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-helpdesk-tickets.ts",
     "data:migrate": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs scripts/migrate-data.ts",
     "data:migration:new": "node scripts/new-data-migration.mjs",
     "verify:science-display": "node scripts/verify-science-display.mjs",
