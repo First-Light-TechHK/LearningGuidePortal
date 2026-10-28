@@ -934,6 +934,32 @@
       }
     ]
   },
+  "helpCentre": {
+    "title": "有什么可以帮你？",
+    "subtitle": "搜索帮助文章，或在下方按主题浏览。",
+    "searchPlaceholder": "搜索帮助文章…",
+    "searchLabel": "搜索帮助文章",
+    "popularTitle": "热门文章",
+    "popularSubtitle": "学员最常问的问题，在这里快速找到答案。",
+    "searchTitle": "搜索结果",
+    "searchSubtitle": "与“{q}”相关的文章。",
+    "searchEmpty": "没有找到与“{q}”相关的文章。换个关键词试试，或联系客服团队。",
+    "categorySubtitle": "关于这个主题的文章。",
+    "categoryEmpty": "这个主题下暂时还没有文章。",
+    "popularEmpty": "暂时还没有帮助文章。",
+    "allArticles": "返回热门文章",
+    "unavailable": "帮助文章暂时无法加载，以下是一些常见解答。",
+    "topicsTitle": "热门主题",
+    "contactTitle": "联系客服",
+    "contactBody": "仍需帮助？给客服团队留言，我们会通过邮件回复你。",
+    "contactButton": "联系客服",
+    "categories": {
+      "account_technical": "账户与技术支持",
+      "courses_learning": "课程与学习",
+      "payments_subscriptions": "付款与订阅",
+      "other": "其他问题"
+    }
+  },
   "studyGroupsPage": {
     "title": "学习小组",
     "groupTitle": "学习小组标题",

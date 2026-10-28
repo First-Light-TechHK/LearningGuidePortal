@@ -1,5 +1,5 @@
 // Browser harness for the learner Helpdesk components (components/helpdesk/**,
-// the My enquiries page and AccountNav): one esbuild bundle with next/* and the
+// the My enquiries page, the public Help Centre page and AccountNav): one esbuild bundle with next/* and the
 // server modules stubbed, run in Playwright Chromium inside `npm run test:unit`.
 // Every /api/ request is recorded (method, path, Idempotency-Key, JSON or
 // multipart body, repeated multipart fields such as assistIds as arrays) and answered by the test's handler, so a test can assert
@@ -23,6 +23,7 @@ import {ContactSupport} from './components/helpdesk/ContactSupport';
 import {EnquiryDetail} from './components/helpdesk/EnquiryDetail';
 import {AccountNav} from './components/portal/AccountNav';
 import EnquiriesPage from './app/[locale]/account/my-learning/support/enquiries/page';
+import HelpPage from './app/[locale]/help/page';
 import {getMessages} from './lib/i18n/messages';
 const root=createRoot(document.getElementById('root'));
 let mounts=0;
@@ -30,6 +31,7 @@ window.__nav=[];
 window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips}/>);
 window.mountDetail=p=>root.render(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
 window.mountNav=p=>root.render(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
+window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});root.render(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
 window.mountList=async p=>{window.__list={...p,identities:[]};try{const page=await EnquiriesPage({params:Promise.resolve({locale:p.locale})});root.render(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
 `;
 
@@ -37,7 +39,11 @@ const STUBS: Record<string, string> = {
   "next/link": "import React from 'react';export default function Link({prefetch,href,...props}){return <a href={href} {...props}/>}",
   // A stable router object: ContactSupport lists it in an effect's dependencies.
   "next/navigation": "const router={push:url=>window.__nav.push(['push',url]),back:()=>window.__nav.push(['back']),replace:url=>window.__nav.push(['replace',url]),refresh:()=>{}};export function useRouter(){return router}export function usePathname(){return location.pathname}export function redirect(url){throw new Error('redirect:'+url)}export function notFound(){throw new Error('notFound')}",
-  productAuth: "export async function currentProductUser(){return window.__list.user}",
+  productAuth: "export async function currentProductUser(){return (window.__help||window.__list).user}",
+  // Admin as the Help Centre sees it: window.__help.faqs filtered like Admin (popular, category, limit), q answered from window.__help.search.
+  adminClient: "export function createAdminHelpdeskClient(){const h=()=>window.__help;return {async faqs(locale,filter={}){h().requests.push({kind:'faqs',locale,filter});if(h().fail)return null;let list=filter.q?(h().search[filter.q]||[]):h().faqs;if(filter.popular)list=list.filter(f=>f.popular);if(filter.category)list=list.filter(f=>f.category===filter.category);return list.slice(0,filter.limit||100)},async faq(id,locale){h().requests.push({kind:'faq',locale,id});return [...h().extra,...h().faqs].find(f=>f.id===id)||null}}}",
+  // contracts/helpdesk.ts imports lib/uuidv7 (node:crypto); the browser bundle gets the same checks over Web Crypto.
+  uuidv7: "const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;export function isUuid(value){return typeof value==='string'&&UUID.test(value)}export function uuidv7(){return crypto.randomUUID()}export function uuidv7Timestamp(){return 0}",
   runtime: "export function helpdeskService(){return {async listLearnerTickets(identity){window.__list.identities.push(identity);if(window.__list.fail)throw new Error('helpdesk down');return {tickets:window.__list.tickets}}}}",
   PortalHeader: "export function PortalHeader(){return null}",
   PortalFooter: "export function PortalFooter(){return null}"
@@ -54,7 +60,7 @@ export function helpdeskBundle() {
     plugins: [{
       name: "helpdesk-stubs",
       setup(b) {
-        b.onResolve({ filter: /^next\/(link|navigation)$|services\/productAuth$|modules\/helpdesk\/runtime$|components\/portal\/Portal(Header|Footer)$/ }, (args) => ({ path: args.path, namespace: "stub" }));
+        b.onResolve({ filter: /^next\/(link|navigation)$|services\/productAuth$|modules\/helpdesk\/(runtime|adminClient)$|lib\/uuidv7$|components\/portal\/Portal(Header|Footer)$/ }, (args) => ({ path: args.path, namespace: "stub" }));
         b.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({ loader: "tsx", resolveDir: process.cwd(), contents: STUBS[args.path] ?? STUBS[args.path.split("/").pop() as string] }));
       }
     }]
@@ -145,6 +151,14 @@ export async function mountList(page: Page, props: ListProps): Promise<{ result:
   const result = await page.evaluate((p) => (window as unknown as { mountList(p: unknown): Promise<string> }).mountList(p), props);
   const identities = await page.evaluate(() => (window as unknown as { __list: { identities: unknown[] } }).__list.identities);
   return { result, identities };
+}
+
+export type HelpProps = { locale: Locale; user?: { id: string; email?: string; nickname?: string } | null; searchParams?: Record<string, string>; faqs?: unknown[]; search?: Record<string, unknown[]>; extra?: unknown[]; fail?: boolean };
+/** Renders the real /{locale}/help page (server component) against the stubbed Admin client; returns what it asked Admin. */
+export async function mountHelp(page: Page, props: HelpProps): Promise<{ result: string; requests: Array<{ kind: string; locale: string; filter?: Record<string, unknown>; id?: string }> }> {
+  const result = await page.evaluate((p) => (window as unknown as { mountHelp(p: unknown): Promise<string> }).mountHelp(p), { user: null, ...props });
+  const requests = await page.evaluate(() => (window as unknown as { __help: { requests: [] } }).__help.requests);
+  return { result, requests };
 }
 
 /** Wait (bounded) until the recorded calls satisfy the predicate. */

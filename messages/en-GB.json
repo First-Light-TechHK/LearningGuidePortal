@@ -934,6 +934,32 @@
       }
     ]
   },
+  "helpCentre": {
+    "title": "How can we help?",
+    "subtitle": "Search help articles or browse by topic below.",
+    "searchPlaceholder": "Search help articles...",
+    "searchLabel": "Search help articles",
+    "popularTitle": "Popular articles",
+    "popularSubtitle": "Quick answers to the questions students ask most often.",
+    "searchTitle": "Search results",
+    "searchSubtitle": "Articles matching “{q}”.",
+    "searchEmpty": "No articles match “{q}”. Try different words, or contact our support team.",
+    "categorySubtitle": "Articles about this topic.",
+    "categoryEmpty": "There are no articles about this topic yet.",
+    "popularEmpty": "There are no help articles yet.",
+    "allArticles": "Back to popular articles",
+    "unavailable": "Help articles are temporarily unavailable. Here are some common answers.",
+    "topicsTitle": "Popular topics",
+    "contactTitle": "Contact Support",
+    "contactBody": "Still need help? Send a message to our support team. We will reply by email.",
+    "contactButton": "Contact Support",
+    "categories": {
+      "account_technical": "Account & Technical Support",
+      "courses_learning": "Courses & Learning",
+      "payments_subscriptions": "Payments & Subscriptions",
+      "other": "Other Enquiries"
+    }
+  },
   "studyGroupsPage": {
     "title": "Study Groups",
     "groupTitle": "Study Group Title",
