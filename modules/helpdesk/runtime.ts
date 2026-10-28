@@ -11,6 +11,8 @@ import { sendHelpdeskUpdateEmail } from "@/services/emailService";
 import { readBinary, removeDir, systemRoot, writeBinary } from "@/services/fileStore";
 import { ensureProductData, recordUserNotification } from "@/services/productStore";
 import { publicAppOrigin } from "@/services/runtimeConfig";
+import { createAdminHelpdeskClient } from "./adminClient";
+import { createAssistantService, type AssistantService } from "./assistant";
 import { createHelpdeskService, type HelpdeskService } from "./service";
 import { projectStudent } from "./studentDirectory";
 
@@ -55,4 +57,9 @@ export function helpdeskService(): HelpdeskService {
     // Read-only: the same product aggregate that getUserById reads; nothing is written.
     studentDirectory: async (userId) => projectStudent(await ensureProductData(), userId, new Date())
   });
+}
+
+/** The learner AI Support Assistant (v2 §4b): same storage as the tickets, Admin over the integration API. */
+export function helpdeskAssistant(): AssistantService {
+  return createAssistantService({ repository: helpdeskRepository(), admin: createAdminHelpdeskClient() });
 }

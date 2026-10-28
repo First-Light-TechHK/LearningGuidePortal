@@ -108,7 +108,7 @@ test("every combination outside the table is rejected with invalid_transition", 
 });
 
 test("the transition table is the single source: each row names an event and a valid target", () => {
-  const events = new Set(["created", "claimed", "agent_replied", "internal_note_added", "learner_replied", "resolution_proposed", "resolution_rejected", "confirmed", "auto_confirmed", "closed_by_learner", "cancelled", "reopened", "rated", "suggestion_declined", "tag_added", "tag_removed"]);
+  const events = new Set(["created", "claimed", "agent_replied", "internal_note_added", "learner_replied", "resolution_proposed", "resolution_rejected", "confirmed", "auto_confirmed", "closed_by_learner", "cancelled", "reopened", "rated", "suggestion_declined", "tag_added", "tag_removed", "flagged", "unflagged"]);
   for (const row of TRANSITIONS) {
     assert.ok(events.has(row.event), row.event);
     assert.ok(row.to === "unchanged" || TICKET_STATUSES.includes(row.to));
@@ -203,7 +203,7 @@ function record(overrides: Partial<TicketRecord> = {}): TicketRecord {
     id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", number: "LG-261028-0001", userId: "u1", userEmail: "u1@example.test", userName: "U One", contactEmail: "contact@example.test",
     locale: "en-GB", category: "technical_support", subject: "s", status: "ASSIGNED", assigneeId: "agent-1", assigneeName: "Amy", sequence: 3,
     confirmDueAt: null, closedAt: null, closeReason: null, rating: null, createdAt: at, updatedAt: at, lastMessageAt: at, lastMessageBy: "agent",
-    clientEventId: "8e03978e-40d5-43e8-bc93-6894a57f9324", payloadHash: "a".repeat(64), suggestionId: null, unreadByAgent: false, ...overrides
+    clientEventId: "8e03978e-40d5-43e8-bc93-6894a57f9324", payloadHash: "a".repeat(64), suggestionId: null, unreadByAgent: false, flaggedAt: null, flaggedBy: null, ...overrides
   };
 }
 

@@ -13,13 +13,15 @@ import { after, before, beforeEach, test } from "node:test";
 import { ensureSchema, getPool } from "../../../services/persistence/db";
 import { createPostgresHelpdeskRepository } from "../../../repositories/helpdeskRepository";
 import { createHelpdeskService } from "../../../modules/helpdesk/service";
+import { createAssistantService } from "../../../modules/helpdesk/assistant";
 import { eventType, type EventRecord, type MessageRecord, type TicketRecord } from "../../../modules/helpdesk/domain";
 import { uuidv7 } from "../../../lib/uuidv7";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
 import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 
-const TABLES = ["helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_assist_log", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
+const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const learner = { id: "pg-learner", email: "pg-learner@example.test", name: "PG Learner" };
 const agent = { id: "emp-pg", name: "PG Agent" };
@@ -50,11 +52,15 @@ beforeEach(async () => {
   await getPool().query(`TRUNCATE ${TABLES.join(", ")} CASCADE`);
 });
 
-test("the runtime bootstrap creates every 017 table and the artifact re-applies cleanly", async () => {
+test("the runtime bootstrap creates every 017 and 018 table and both artifacts re-apply cleanly", async () => {
   const present = await rows<{ name: string | null }>(`SELECT to_regclass(name)::text AS name FROM unnest($1::text[]) AS name`, [TABLES]);
   assert.deepEqual(present.map((row) => row.name), TABLES);
   await getPool().query(MIGRATION);
   await getPool().query(MIGRATION);
+  await getPool().query(MIGRATION_V2);
+  await getPool().query(MIGRATION_V2);
+  const columns = await rows<{ column_name: string; is_nullable: string }>("SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'helpdesk_tickets' AND column_name IN ('flagged_at', 'flagged_by') ORDER BY column_name");
+  assert.deepEqual(columns, [{ column_name: "flagged_at", is_nullable: "YES" }, { column_name: "flagged_by", is_nullable: "YES" }]);
   const constraints = await rows<{ definition: string }>(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'helpdesk_ticket_events'::regclass AND contype = 'u'`);
   assert.ok(constraints.some((row) => row.definition === "UNIQUE (subject, sequence)"));
   assert.ok(constraints.some((row) => row.definition === "UNIQUE (client_event_id)"));
@@ -363,4 +369,55 @@ test("student projection counts the learner's tickets in PostgreSQL", async () =
   const detail = await hd.getAgentTicket(ticket.id);
   assert.equal(detail.student.totalEnquiries, 2);
   assert.equal(detail.student.joinedAt, "2024-01-15T00:00:00.000Z");
+});
+
+test("v2 in PostgreSQL: flag round-trips, flagged and learnerId filters bound list and counts", async () => {
+  const hd = service();
+  const a = (await hd.createTicket(learner, input("A"), randomUUID())).ticket;
+  const b = (await hd.createTicket({ ...learner, id: "pg-other" }, input("B"), randomUUID())).ticket;
+  const flagged = (await hd.agentAction(a.id, { action: "flag", agent, expectedSequence: 1 }, randomUUID())).ticket;
+  assert.equal(flagged.flagged, true);
+  assert.deepEqual(await rows("SELECT flagged_by FROM helpdesk_tickets WHERE id = $1", [a.id]), [{ flagged_by: agent.id }]);
+  const list = await hd.listAgentTickets({ status: null, q: "", limit: 20, cursor: null, flagged: true });
+  assert.deepEqual(list.tickets.map((item) => item.id), [a.id]);
+  assert.equal(list.counts.all, 1);
+  const mine = await hd.listAgentTickets({ status: null, q: "", limit: 20, cursor: null, learnerId: "pg-other" });
+  assert.deepEqual(mine.tickets.map((item) => item.id), [b.id]);
+  const unflagged = (await hd.agentAction(a.id, { action: "unflag", agent, expectedSequence: 2 }, randomUUID())).ticket;
+  assert.equal(unflagged.flagged, false);
+  assert.deepEqual(await rows("SELECT flagged_at, flagged_by FROM helpdesk_tickets WHERE id = $1", [a.id]), [{ flagged_at: null, flagged_by: null }]);
+});
+
+test("v2 in PostgreSQL: assist log rows, first-wins feedback under a race, the hourly count and the linking rules", async () => {
+  let clock = Date.parse("2026-10-28T06:00:00.000Z");
+  const now = () => new Date(clock);
+  const repository = createPostgresHelpdeskRepository();
+  const reported: string[] = [];
+  const assistant = createAssistantService({
+    repository, now, log: () => undefined,
+    admin: {
+      async suggest(request) { return /password/.test(request.message) ? { id: uuidv7(clock), faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000f1", question: "Reset?", answer: "Use **Forgot password**." } : null; },
+      async reportOutcome(_id, outcome) { reported.push(outcome); return true; }
+    }
+  });
+  const key = randomUUID();
+  const asked = await assistant.ask(learner, { message: "password help", locale: "en-GB", faqId: null }, key);
+  assert.equal((await assistant.ask(learner, { message: "password help", locale: "en-GB", faqId: null }, key)).replayed, true);
+  const racing = await Promise.all([true, false, true, false].map((helpful) => assistant.feedback(learner, asked.response.id, helpful)));
+  assert.equal(new Set(racing.map((item) => item.feedback)).size, 1, "every caller sees the one stored value");
+  assert.equal(reported.length >= 1 && reported.length <= 4, true);
+  clock += 1000;
+  const fallback = await assistant.ask(learner, { message: "refund", locale: "en-GB", faqId: null }, randomUUID());
+  const foreign = await assistant.ask({ ...learner, id: "pg-other" }, { message: "password", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(await repository.nthRecentAssistAt(learner.id, "2026-10-28T05:00:00.000Z", 2, ["chat", "chip"]), "2026-10-28T06:00:00.000Z");
+  assert.equal(await repository.nthRecentAssistAt(learner.id, "2026-10-28T05:00:00.000Z", 3, ["chat", "chip"]), null);
+  clock += 24 * 3_600_000;
+  const late = await assistant.ask(learner, { message: "password later", locale: "en-GB", faqId: null }, randomUUID());
+  const hd = service(now);
+  const ticket = (await hd.createTicket(learner, { ...input("Linked"), assistIds: [asked.response.id, fallback.response.id, foreign.response.id, late.response.id] }, randomUUID())).ticket;
+  // asked is now older than 24 h; fallback is exactly 24 h old (not newer than the window); foreign belongs to someone else.
+  const detail = await hd.getAgentTicket(ticket.id);
+  assert.deepEqual(detail.aiAssist.map((item) => item.id), [late.response.id]);
+  assert.equal(detail.aiAssist[0].answer, "Use **Forgot password**.");
+  assert.match(detail.aiAssist[0].createdAt, /^2026-10-29T06:00:01\.000Z$/);
 });

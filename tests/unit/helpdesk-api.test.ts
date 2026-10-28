@@ -18,11 +18,12 @@ const TOKEN = "local-test-helpdesk-token-0123456789";
 const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
 type Params = { params: Promise<Record<string, string>> };
 type Handler = (request: Request, context: Params) => Promise<Response>;
-type Routes = Record<"tickets" | "ticket" | "messages" | "actions" | "attachment" | "agentTickets" | "agentTicket" | "agentMessages" | "agentActions" | "agentAttachment" | "commonQuestions" | "suggestions" | "outcome", Record<string, Handler>>;
+type Routes = Record<"tickets" | "ticket" | "messages" | "actions" | "attachment" | "agentTickets" | "agentTicket" | "agentMessages" | "agentActions" | "agentAttachment" | "assistant" | "assistantFeedback" | "suggestions" | "outcome", Record<string, Handler>>;
 let directory = "";
 let routes: Routes;
 let learnerCookie = "";
 let strangerCookie = "";
+let strangerId = "";
 let learnerId = "";
 let store: typeof import("../../services/productStore");
 
@@ -46,7 +47,9 @@ before(async () => {
   const learner = await make("helpdesk-learner@example.test", "Lin Learner");
   learnerId = learner.user.id;
   learnerCookie = learner.token;
-  strangerCookie = (await make("helpdesk-stranger@example.test", "Sam Stranger")).token;
+  const stranger = await make("helpdesk-stranger@example.test", "Sam Stranger");
+  strangerCookie = stranger.token;
+  strangerId = stranger.user.id;
   routes = {
     tickets: await import("../../app/api/helpdesk/tickets/route"),
     ticket: await import("../../app/api/helpdesk/tickets/[id]/route"),
@@ -58,7 +61,8 @@ before(async () => {
     agentMessages: await import("../../app/api/integration/helpdesk/tickets/[id]/messages/route"),
     agentActions: await import("../../app/api/integration/helpdesk/tickets/[id]/actions/route"),
     agentAttachment: await import("../../app/api/integration/helpdesk/attachments/[id]/route"),
-    commonQuestions: await import("../../app/api/helpdesk/common-questions/route"),
+    assistant: await import("../../app/api/helpdesk/assistant/route"),
+    assistantFeedback: await import("../../app/api/helpdesk/assistant/[id]/feedback/route"),
     suggestions: await import("../../app/api/helpdesk/suggestions/route"),
     outcome: await import("../../app/api/helpdesk/suggestions/[id]/outcome/route")
   } as unknown as Routes;
@@ -396,14 +400,15 @@ test("create accepts contactEmail and suggestionId; the agent API tags, marks re
   assert.deepEqual(detail.tags, ["login issue"]);
 });
 
-// A local stand-in for Admin's integration API (addendum §A/§C/§E).
+// A local stand-in for Admin's integration API (v2 §2).
 type AdminCall = { method: string; url: string; authorization: string | undefined; body: string };
 let admin: Server;
 let adminCalls: AdminCall[] = [];
 let adminMode: "ok" | "down" | "slow" = "ok";
 const ADMIN_TOKEN = "local-test-admin-helpdesk-token";
-const QA = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "technical_support", question: "How do I reset my password?", answer: "Open Sign in, then Forgot password." };
-const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000bb", qaId: QA.id, question: QA.question, answer: QA.answer };
+const FAQ = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password.", updatedAt: "2026-10-28T08:30:00.000Z" };
+let suggestionSeq = 0;
+const suggestionFor = () => ({ id: `0192d4f0-7b6a-7c3e-9a10-${String(++suggestionSeq).padStart(12, "0")}`, faqId: FAQ.id, question: FAQ.question, answer: FAQ.answer });
 
 async function readBody(request: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -416,11 +421,15 @@ async function startAdmin() {
     const call = { method: request.method || "", url: request.url || "", authorization: request.headers.authorization, body: await readBody(request) };
     adminCalls.push(call);
     if (adminMode === "down") { response.writeHead(503, { "content-type": "application/problem+json" }).end("{}"); return; }
-    if (adminMode === "slow") { setTimeout(() => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: SUGGESTION })), 6_000).unref(); return; }
+    if (adminMode === "slow") { setTimeout(() => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: suggestionFor() })), 6_000).unref(); return; }
     if (call.authorization !== `Bearer ${ADMIN_TOKEN}`) { response.writeHead(401).end(); return; }
-    if (call.method === "GET" && call.url.startsWith("/api/integration/helpdesk/questions?")) { response.writeHead(200, { "content-type": "application/json", etag: "\"q1\"" }).end(JSON.stringify({ questions: [QA], etag: "\"q1\"" })); return; }
-    if (call.method === "POST" && call.url === "/api/integration/helpdesk/suggest") { response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: JSON.parse(call.body).subject.includes("password") ? SUGGESTION : null })); return; }
-    if (call.method === "POST" && call.url === `/api/integration/helpdesk/suggestions/${SUGGESTION.id}/outcome`) { response.writeHead(204).end(); return; }
+    if (call.method === "POST" && call.url === "/api/integration/helpdesk/suggest") {
+      const body = JSON.parse(call.body) as { subject?: string; message: string; faqId?: string };
+      const hit = body.faqId === FAQ.id || /password/i.test(`${body.subject ?? ""} ${body.message}`);
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: hit ? suggestionFor() : null }));
+      return;
+    }
+    if (call.method === "POST" && /^\/api\/integration\/helpdesk\/suggestions\/[^/]+\/outcome$/.test(call.url)) { response.writeHead(204).end(); return; }
     response.writeHead(404).end();
   });
   await new Promise<void>((resolve) => admin.listen(0, "127.0.0.1", resolve));
@@ -428,22 +437,10 @@ async function startAdmin() {
   process.env.ADMIN_HELPDESK_TOKEN = ADMIN_TOKEN;
 }
 
-test("common questions, suggestions and outcomes: signed-in only, thin pass-through to Admin, never blocking", async (t) => {
+test("submit-time suggestions and outcomes: signed-in only, logged as source submit, never blocking; outcomes are kept when Admin is down", async (t) => {
   await startAdmin();
   t.after(() => new Promise<void>((resolve) => { admin.closeAllConnections(); admin.close(() => resolve()); }));
-  const { clearCommonQuestionsCache } = await import("../../modules/helpdesk/adminClient");
-  clearCommonQuestionsCache();
   adminCalls = [];
-
-  await problem(await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=en-GB"), ctx()), 401, "unauthenticated");
-  await problem(await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=fr-FR", { cookie: learnerCookie }), ctx()), 400, "validation_failed");
-  const questions = await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=en-GB", { cookie: learnerCookie }), ctx());
-  assert.equal(questions.status, 200);
-  assert.equal(questions.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await questions.json(), { questions: [QA] });
-  assert.equal(adminCalls[0].url, "/api/integration/helpdesk/questions?locale=en-GB&featured=true");
-  await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=en-GB", { cookie: learnerCookie }), ctx());
-  assert.equal(adminCalls.length, 1, "served from the 60 s cache");
 
   const enquiry = { category: "technical_support", subject: "Forgot my password", message: "I cannot sign in", locale: "en-GB" };
   await problem(await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry }), ctx()), 401, "unauthenticated");
@@ -451,17 +448,21 @@ test("common questions, suggestions and outcomes: signed-in only, thin pass-thro
   await problem(await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, category: "billing" }, cookie: learnerCookie }), ctx()), 400, "validation_failed");
   const suggested = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
   assert.equal(suggested.status, 200);
-  assert.deepEqual(await suggested.json(), { suggestion: SUGGESTION });
-  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { learnerId, locale: "en-GB", category: "technical_support", subject: "Forgot my password", message: "I cannot sign in" });
-  const none = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Refund" }, cookie: learnerCookie }), ctx());
+  const { suggestion } = await suggested.json() as { suggestion: { id: string; faqId: string; question: string; answer: string } };
+  assert.deepEqual(Object.keys(suggestion).sort(), ["answer", "faqId", "id", "question"]);
+  assert.equal(suggestion.faqId, FAQ.id);
+  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { learnerId, locale: "en-GB", source: "submit", category: "technical_support", subject: "Forgot my password", message: "I cannot sign in" });
+  const none = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Refund", message: "money back" }, cookie: learnerCookie }), ctx());
   assert.deepEqual(await none.json(), { suggestion: null });
   const ticketsBefore = (await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length;
 
-  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "solved" } }), ctx({ id: SUGGESTION.id })), 401, "unauthenticated");
-  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "maybe" }, cookie: learnerCookie }), ctx({ id: SUGGESTION.id })), 400, "validation_failed");
+  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" } }), ctx({ id: suggestion.id })), 401, "unauthenticated");
+  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "maybe" }, cookie: learnerCookie }), ctx({ id: suggestion.id })), 400, "validation_failed");
   await problem(await routes.outcome.POST(learnerRequest("/api/helpdesk/suggestions/nope/outcome", { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: "nope" })), 404, "not_found");
-  const solved = await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: SUGGESTION.id }));
+  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" }, cookie: strangerCookie }), ctx({ id: suggestion.id })), 404, "not_found");
+  const solved = await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: suggestion.id }));
   assert.equal(solved.status, 204);
+  assert.equal(adminCalls.at(-1)!.url, `/api/integration/helpdesk/suggestions/${suggestion.id}/outcome`);
   assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { outcome: "solved" });
   assert.equal((await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length, ticketsBefore, "'solved' creates no ticket");
 
@@ -469,9 +470,19 @@ test("common questions, suggestions and outcomes: signed-in only, thin pass-thro
   const failed = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
   assert.equal(failed.status, 200);
   assert.deepEqual(await failed.json(), { suggestion: null }, "an Admin failure means: create the ticket directly");
-  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "edited" }, cookie: learnerCookie }), ctx({ id: SUGGESTION.id })), 503, "assistant_unavailable");
-  clearCommonQuestionsCache();
-  assert.deepEqual(await (await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=zh-CN", { cookie: learnerCookie }), ctx())).json(), { questions: [] }, "nothing cached: the column is hidden");
+  adminMode = "ok";
+  const second = (await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json()).suggestion as { id: string };
+  adminMode = "down";
+  const kept = await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${second.id}/outcome`, { json: { outcome: "declined" }, cookie: learnerCookie }), ctx({ id: second.id }));
+  assert.equal(kept.status, 204, "Portal keeps the outcome even when Admin cannot be told");
+  adminMode = "ok";
+  // The declined suggestion is linked to the ticket and the BackOffice sees what the learner chose.
+  process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, suggestionId: second.id }), key: randomUUID(), cookie: learnerCookie }), ctx());
+  assert.equal(created.status, 201, await created.clone().text());
+  const ticketId = (await created.json()).id as string;
+  const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticketId}`), ctx({ id: ticketId }))).json();
+  assert.deepEqual(detail.aiAssist.map((item: { id: string; source: string; feedback: string }) => [item.id, item.source, item.feedback]), [[second.id, "submit", "declined"]]);
 
   adminMode = "slow";
   const started = Date.now();
@@ -483,4 +494,100 @@ test("common questions, suggestions and outcomes: signed-in only, thin pass-thro
 
   delete process.env.ADMIN_HELPDESK_TOKEN;
   assert.deepEqual(await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json(), { suggestion: null });
+});
+
+test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers, fallback null, replay, 30/hour then 429 with Retry-After", async (t) => {
+  await startAdmin();
+  t.after(() => new Promise<void>((resolve) => { admin.closeAllConnections(); admin.close(() => resolve()); }));
+  adminCalls = [];
+  const ask = (json: unknown, init: { cookie?: string; key?: string | null; origin?: string } = {}) => routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json, cookie: init.cookie, key: init.key === null ? undefined : init.key ?? randomUUID(), origin: init.origin }), ctx());
+  await problem(await ask({ message: "password", locale: "en-GB" }), 401, "unauthenticated");
+  await problem(await ask({ message: "password", locale: "en-GB" }, { cookie: strangerCookie, origin: "https://evil.example" }), 403, "forbidden_origin");
+  await problem(await ask({ message: "password", locale: "en-GB" }, { cookie: strangerCookie, key: null }), 400, "idempotency_key_required");
+  await problem(await ask({ message: "x".repeat(501), locale: "en-GB" }, { cookie: strangerCookie }), 400, "validation_failed");
+
+  const key = randomUUID();
+  const chat = await ask({ message: "I never get the password email", locale: "en-GB" }, { cookie: strangerCookie, key });
+  assert.equal(chat.status, 200, await chat.clone().text());
+  assert.equal(chat.headers.get("cache-control"), "no-store");
+  const answered = await chat.json() as { id: string; reply: { id: string; faqId: string; question: string; answer: string } };
+  assert.equal(answered.reply.answer, FAQ.answer, "verbatim");
+  assert.equal(answered.id, answered.reply.id);
+  const callsBefore = adminCalls.length;
+  const replayed = await ask({ message: "I never get the password email", locale: "en-GB" }, { cookie: strangerCookie, key });
+  assert.equal(replayed.headers.get("idempotent-replayed"), "true");
+  assert.deepEqual(await replayed.json(), answered);
+  assert.equal(adminCalls.length, callsBefore, "a replay never asks Admin again");
+  await problem(await ask({ message: "something else", locale: "en-GB" }, { cookie: strangerCookie, key }), 409, "idempotency_conflict");
+
+  const chip = await (await ask({ message: FAQ.question, locale: "zh-CN", faqId: FAQ.id }, { cookie: strangerCookie })).json();
+  assert.equal(chip.reply.faqId, FAQ.id);
+  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { learnerId: strangerId, locale: "zh-CN", source: "chip", message: FAQ.question, faqId: FAQ.id });
+  const fallback = await (await ask({ message: "refund for order 42", locale: "en-GB" }, { cookie: strangerCookie })).json();
+  assert.equal(fallback.reply, null);
+  assert.match(fallback.id, /^[0-9a-f-]{36}$/);
+
+  // Feedback: own answers only, first value wins, forwarded to Admin.
+  const feedback = (id: string, json: unknown, cookie = strangerCookie, withKey = true) => routes.assistantFeedback.POST(learnerRequest(`/api/helpdesk/assistant/${id}/feedback`, { json, cookie, key: withKey ? randomUUID() : undefined }), ctx({ id }));
+  await problem(await feedback(answered.id, { helpful: true }, learnerCookie), 404, "not_found");
+  await problem(await feedback(answered.id, { helpful: true }, strangerCookie, false), 400, "idempotency_key_required");
+  await problem(await feedback(answered.id, { helpful: "yes" }), 400, "validation_failed");
+  await problem(await feedback(fallback.id, { helpful: true }), 404, "not_found");
+  const yes = await feedback(answered.id, { helpful: true });
+  assert.equal(yes.status, 200);
+  assert.deepEqual(await yes.json(), { id: answered.id, feedback: "helpful" });
+  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { outcome: "helpful" });
+  assert.deepEqual(await (await feedback(answered.id, { helpful: false })).json(), { id: answered.id, feedback: "helpful" }, "first value wins");
+
+  // Admin down or slow: reply null, never an error.
+  adminMode = "down";
+  assert.equal((await (await ask({ message: "password", locale: "en-GB" }, { cookie: strangerCookie })).json()).reply, null);
+  adminMode = "ok";
+
+  // 30 per hour per learner (chat + chip): this learner has asked 4 times so far (a replay does not count).
+  for (let index = 0; index < 26; index += 1) assert.equal((await ask({ message: `question ${index}`, locale: "en-GB" }, { cookie: strangerCookie })).status, 200);
+  const limited = await ask({ message: "one more", locale: "en-GB" }, { cookie: strangerCookie });
+  const body = await problem(limited, 429, "rate_limited");
+  assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  assert.ok(body.retryAfter > 0);
+  assert.equal((await ask({ message: "password please", locale: "en-GB" }, { cookie: learnerCookie })).status, 200, "other learners are not limited");
+
+  // The chat answers are linked to the next enquiry (multipart assistIds), and the agent sees them.
+  const form = ticketForm(createFields);
+  form.append("assistIds", answered.id);
+  form.append("assistIds", fallback.id);
+  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: form, key: randomUUID(), cookie: strangerCookie }), ctx());
+  assert.equal(created.status, 201, await created.clone().text());
+  const ticketId = (await created.json()).id as string;
+  process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticketId}`), ctx({ id: ticketId }))).json();
+  assert.deepEqual(detail.aiAssist.map((item: { id: string }) => item.id), [answered.id, fallback.id]);
+  assert.equal(detail.aiAssist[0].feedback, "helpful");
+  assert.equal(detail.aiAssist[0].question, "I never get the password email");
+  assert.equal(detail.aiAssist[1].answer, null);
+  const tooMany = ticketForm(createFields);
+  for (let index = 0; index < 11; index += 1) tooMany.append("assistIds[]", randomUUID());
+  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: tooMany, key: randomUUID(), cookie: strangerCookie }), ctx()), 400, "validation_failed");
+});
+
+test("agent flag / unflag and the flagged / learnerId list filters over HTTP", async () => {
+  process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Flag me" }), key: randomUUID(), cookie: learnerCookie }), ctx());
+  const ticket = await created.json() as { id: string };
+  const agent = { id: "emp-1", name: "Amy Agent" };
+  await problem(await routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}/actions`, { key: randomUUID(), json: { action: "flag", agent } }), ctx({ id: ticket.id })), 400, "validation_failed");
+  const flagged = await routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}/actions`, { key: randomUUID(), json: { action: "flag", agent, expectedSequence: 1 } }), ctx({ id: ticket.id }));
+  assert.equal(flagged.status, 200, await flagged.clone().text());
+  assert.equal((await flagged.json()).flagged, true);
+  const list = await (await routes.agentTickets.GET(agentRequest("/api/integration/helpdesk/tickets?flagged=true"), ctx())).json();
+  assert.ok(list.tickets.length >= 1);
+  assert.ok(list.tickets.every((item: { flagged: boolean }) => item.flagged));
+  const timeline = await (await routes.agentTickets.GET(agentRequest(`/api/integration/helpdesk/tickets?learnerId=${encodeURIComponent(learnerId)}&limit=10`), ctx())).json();
+  assert.ok(timeline.tickets.length >= 1);
+  assert.ok(timeline.tickets.every((item: { learner: { id: string } }) => item.learner.id === learnerId));
+  await problem(await routes.agentTickets.GET(agentRequest("/api/integration/helpdesk/tickets?flagged=maybe"), ctx()), 400, "validation_failed");
+  const unflagged = await routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}/actions`, { key: randomUUID(), json: { action: "unflag", agent, expectedSequence: 2 } }), ctx({ id: ticket.id }));
+  assert.equal((await unflagged.json()).flagged, false);
+  const learnerView = await (await routes.ticket.GET(learnerRequest(`/api/helpdesk/tickets/${ticket.id}`, { cookie: learnerCookie }), ctx({ id: ticket.id }))).json();
+  assert.equal(learnerView.timeline.some((item: { type: string }) => item.type === "flagged" || item.type === "unflagged"), false);
 });

@@ -58,7 +58,7 @@ test("addendum: the four Figma enquiry types replace the old categories; nine at
 
 test("create-ticket input is trimmed, bounded and enum-checked", () => {
   const input = parseCreateTicketInput(valid, [png]);
-  assert.deepEqual({ ...input, files: input.files.length }, { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid but my plan is still Basic.", locale: "zh-CN", contactEmail: null, suggestionId: null, files: 1 });
+  assert.deepEqual({ ...input, files: input.files.length }, { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid but my plan is still Basic.", locale: "zh-CN", contactEmail: null, suggestionId: null, assistIds: [], files: 1 });
   assert.equal(parseCreateTicketInput({ ...valid, subject: "x".repeat(120) }, []).subject.length, 120);
   problem(() => parseCreateTicketInput({ ...valid, subject: "x".repeat(121) }, []), "validation_failed", "subject");
   problem(() => parseCreateTicketInput({ ...valid, subject: "   " }, []), "validation_failed", "subject");
@@ -147,9 +147,9 @@ test("suggestion inputs: same bounds as a ticket; outcome is solved | declined |
 });
 
 test("agent list query: status filter, search text, bounded limit, opaque cursor", () => {
-  assert.deepEqual(parseAgentListQuery(new URLSearchParams("")), { status: null, q: "", limit: 20, cursor: null, category: null, tag: null });
+  assert.deepEqual(parseAgentListQuery(new URLSearchParams("")), { status: null, q: "", limit: 20, cursor: null, category: null, tag: null, flagged: null, learnerId: null });
   const parsed = parseAgentListQuery(new URLSearchParams("status=needs_reply&q=%20LG-261028%20&limit=500"));
-  assert.deepEqual(parsed, { status: "needs_reply", q: "LG-261028", limit: 100, cursor: null, category: null, tag: null });
+  assert.deepEqual(parsed, { status: "needs_reply", q: "LG-261028", limit: 100, cursor: null, category: null, tag: null, flagged: null, learnerId: null });
   const filtered = parseAgentListQuery(new URLSearchParams("category=technical_support&tag=%20Login%20Issue"));
   assert.equal(filtered.category, "technical_support");
   assert.equal(filtered.tag, "login issue");

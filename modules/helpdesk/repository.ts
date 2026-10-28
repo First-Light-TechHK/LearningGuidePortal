@@ -2,7 +2,7 @@
 // repositories/helpdeskRepository.ts (PostgreSQL, and a DEV-only local file
 // fallback). Every write is atomic: the ticket row, the optional message and
 // attachments, and exactly one event commit together or not at all.
-import type { AgentListQuery, TicketCounts } from "@/contracts/helpdesk";
+import type { AgentListQuery, AssistFeedback, AssistSource, HelpdeskLocale, TicketCounts } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TicketAggregate, TicketRecord } from "./domain";
 
 export type IdempotencyRecord = { ticketId: string; payloadHash: string };
@@ -14,6 +14,33 @@ export type NewTicket = {
   attachments: AttachmentRecord[];
   /** created (sequence 1), then suggestion_declined (sequence 2) when the learner declined an AI suggestion. */
   events: EventRecord[];
+  /**
+   * v2 §4a: link these helpdesk_assist_log rows to the new ticket in the same
+   * transaction — only rows of learnerId, created after sinceIso and not yet
+   * linked; any other id is skipped silently.
+   */
+  assistLinks?: { ids: string[]; learnerId: string; sinceIso: string };
+};
+
+/** One AI Support Assistant answer as shown to the learner (helpdesk_assist_log, v2 §4a). */
+export type AssistRecord = {
+  /** Admin's suggestion id, or a Portal UUIDv7 when Admin returned no answer. */
+  id: string;
+  learnerId: string;
+  source: AssistSource;
+  locale: HelpdeskLocale;
+  /** What the learner typed (chat), the chip question, or the enquiry subject (submit); at most 500 code points. */
+  question: string;
+  faqId: string | null;
+  faqQuestion: string | null;
+  /** The verbatim answer shown, or null for the fallback. */
+  answer: string | null;
+  feedback: AssistFeedback | null;
+  ticketId: string | null;
+  /** Idempotency-Key of the chat request (null for submit checks). */
+  clientEventId: string | null;
+  payloadHash: string | null;
+  createdAt: string;
 };
 
 export type TicketChange = {
@@ -67,4 +94,15 @@ export type HelpdeskRepository = {
   /** Rate limiting: the same for public messages this learner wrote on their own tickets (a ticket's first message included). */
   nthRecentLearnerMessageAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
   findAttachment(id: string): Promise<AttachmentRecord | null>;
+  // ---- v2 §4a AI assist log
+  /** "duplicate" when the id or the Idempotency-Key is already stored. */
+  insertAssist(record: AssistRecord): Promise<"inserted" | "duplicate">;
+  findAssist(id: string): Promise<AssistRecord | null>;
+  findAssistByKey(clientEventId: string): Promise<AssistRecord | null>;
+  /** Sets feedback only while it is null and the row belongs to learnerId; returns the row as stored afterwards (null: no such row for this learner). */
+  setAssistFeedback(id: string, learnerId: string, feedback: AssistFeedback): Promise<AssistRecord | null>;
+  /** Rate limiting: createdAt of the n-th newest row of this learner from these sources after sinceIso, or null. */
+  nthRecentAssistAt(learnerId: string, sinceIso: string, n: number, sources: readonly AssistSource[]): Promise<string | null>;
+  /** Rows linked to a ticket, oldest first. */
+  listAssistsByTicket(ticketId: string): Promise<AssistRecord[]>;
 };

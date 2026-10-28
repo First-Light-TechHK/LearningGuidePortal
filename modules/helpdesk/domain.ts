@@ -51,6 +51,9 @@ export type TicketRecord = {
   suggestionId: string | null;
   /** Set by a learner's ticket or message; cleared only by an agent's mark_read. */
   unreadByAgent: boolean;
+  /** v2 §4a: "Flag follow-up" — when and by which agent; both null when not flagged. */
+  flaggedAt: string | null;
+  flaggedBy: string | null;
 };
 
 export type TagRecord = { ticketId: string; tag: string; createdAt: string };
@@ -100,7 +103,7 @@ export type TicketAggregate = { ticket: TicketRecord; messages: MessageRecord[];
 export type Command =
   | "create" | "cancel" | "claim" | "agent_reply" | "internal_note" | "learner_reply" | "propose_resolution"
   | "confirm" | "reject" | "close" | "rate" | "auto_confirm"
-  | "decline_suggestion" | "add_tag" | "remove_tag";
+  | "decline_suggestion" | "add_tag" | "remove_tag" | "flag" | "unflag";
 
 type Guard = "reopen_window" | "rating" | "confirm_due";
 
@@ -137,13 +140,18 @@ export const TRANSITIONS: readonly Transition[] = [
   // Figma addendum: bookkeeping that never changes the state.
   { command: "decline_suggestion", actor: "learner", from: ["OPEN"], to: "unchanged", event: "suggestion_declined" },
   { command: "add_tag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "tag_added" },
-  { command: "remove_tag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "tag_removed" }
+  { command: "remove_tag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "tag_removed" },
+  // v2 §4a: "Flag follow-up" in the BackOffice action bar.
+  { command: "flag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "flagged" },
+  { command: "unflag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "unflagged" }
 ];
 
 /** Events that do not move the ticket's activity time (updatedAt). */
-const BOOKKEEPING_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["internal_note_added", "suggestion_declined", "tag_added", "tag_removed"]);
+const BOOKKEEPING_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["internal_note_added", "suggestion_declined", "tag_added", "tag_removed", "flagged", "unflagged"]);
 /** Agent-private events: never shown to the learner. */
-const AGENT_PRIVATE_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["internal_note_added", "tag_added", "tag_removed"]);
+const AGENT_PRIVATE_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["internal_note_added", "tag_added", "tag_removed", "flagged", "unflagged"]);
+/** Agent labels that commute: they never make anyone's view stale. */
+const LABEL_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["tag_added", "tag_removed", "flagged", "unflagged"]);
 
 /** Whether the learner's timeline shows this event. */
 export function isLearnerVisibleEvent(name: HelpdeskEventName) {
@@ -154,9 +162,10 @@ export function isLearnerVisibleEvent(name: HelpdeskEventName) {
  * Optimistic concurrency ignores events the actor could not have acted on:
  * tags never make anyone stale, and agent-private events (internal notes,
  * tags) never make a learner stale because the learner never sees them.
+ * Flags (v2) behave like tags.
  */
 export function ignoredByStaleCheck(name: HelpdeskEventName, actor: ActorKind) {
-  if (name === "tag_added" || name === "tag_removed") return true;
+  if (LABEL_EVENTS.has(name)) return true;
   return actor === "learner" && AGENT_PRIVATE_EVENTS.has(name);
 }
 
@@ -267,5 +276,7 @@ export function evolve(ticket: TicketRecord, decision: Extract<Decision, { ok: t
   }
   if (transition.event === "reopened") { next.closedAt = null; next.closeReason = null; }
   if (transition.event === "rated") next.rating = context.rating ?? null;
+  if (transition.event === "flagged") { next.flaggedAt = at; next.flaggedBy = context.actor.id; }
+  if (transition.event === "unflagged") { next.flaggedAt = null; next.flaggedBy = null; }
   return next;
 }

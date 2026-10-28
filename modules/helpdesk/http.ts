@@ -144,7 +144,13 @@ export async function readMultipart(request: Request): Promise<{ fields: Record<
   const files: UploadInput[] = [];
   for (const [name, value] of form.entries()) {
     // Browsers send every line break in a multipart text field as CRLF; read it back as typed so a line break counts once against the limits.
-    if (typeof value === "string") { if (name !== "files[]" && name !== "files") fields[name] = value.replace(/\r\n/g, "\n"); continue; }
+    if (typeof value === "string") {
+      if (name === "files[]" || name === "files") continue;
+      // v2 §4a: assistIds is a repeated field (assistIds or assistIds[]); every other text field is single.
+      if (name === "assistIds" || name === "assistIds[]") { fields.assistIds = [...(Array.isArray(fields.assistIds) ? fields.assistIds : []), value]; continue; }
+      fields[name] = value.replace(/\r\n/g, "\n");
+      continue;
+    }
     if (name !== "files[]" && name !== "files") continue;
     // The parser already holds every part; checking here only avoids copying the bytes of a request the contract would refuse anyway.
     if (files.length >= HELPDESK_LIMITS.filesPerMessage) throw new HelpdeskProblem("too_many_attachments", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} files.`);

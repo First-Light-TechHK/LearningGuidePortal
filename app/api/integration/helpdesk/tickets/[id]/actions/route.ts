@@ -5,7 +5,7 @@ import { helpdeskService } from "@/modules/helpdesk/runtime";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** POST /api/integration/helpdesk/tickets/{id}/actions ({ action: "claim"|"propose_resolution", agent:{id,name}, expectedSequence }; Idempotency-Key) → 200 AgentTicketDetail. */
+/** POST /api/integration/helpdesk/tickets/{id}/actions ({ action: "claim"|"propose_resolution"|"flag"|"unflag", agent:{id,name}, expectedSequence } or a tag / mark_read action; Idempotency-Key) → 200 AgentTicketDetail. */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     requireIntegration(request);

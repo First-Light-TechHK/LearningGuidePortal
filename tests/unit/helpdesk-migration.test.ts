@@ -47,3 +47,25 @@ test("017 carries the Figma addendum: enquiry types, contact email, suggestion, 
   assert.match(migration, /CREATE TABLE IF NOT EXISTS helpdesk_ticket_tags \( ticket_id UUID NOT NULL REFERENCES helpdesk_tickets\(id\), tag TEXT NOT NULL CHECK \(char_length\(tag\) BETWEEN 1 AND 32\), created_at TIMESTAMPTZ NOT NULL, PRIMARY KEY \(ticket_id, tag\) \);/);
   assert.match(migration, /CREATE INDEX IF NOT EXISTS helpdesk_ticket_tags_tag_idx ON helpdesk_ticket_tags \(tag\);/);
 });
+
+test("018 (v2) is a new additive, repeatable migration mirrored by the bootstrap; 017 is untouched", async () => {
+  const migration = await readFile("db/migrations/018_helpdesk_v2.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS|ALTER TABLE)[\s\S]*?;/g) || [];
+  assert.ok(statements.length >= 6);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  for (const statement of plain.match(/ALTER TABLE [^;]*;/g) || []) assert.match(statement, /^ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS /, "ALTER only adds nullable columns");
+  assert.match(plain, /ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMPTZ;/);
+  assert.match(plain, /ADD COLUMN IF NOT EXISTS flagged_by TEXT;/);
+  assert.match(plain, /CREATE TABLE IF NOT EXISTS helpdesk_assist_log \([^;]*source TEXT NOT NULL CHECK \(source IN \('submit', 'chat', 'chip'\)\)/);
+  assert.match(plain, /feedback TEXT CHECK \(feedback IN \('helpful', 'not_helpful', 'solved', 'declined', 'edited'\)\)/);
+  assert.match(plain, /question TEXT NOT NULL CHECK \(char_length\(question\) BETWEEN 1 AND 500\)/);
+  assert.match(plain, /ticket_id UUID REFERENCES helpdesk_tickets\(id\)/);
+  assert.match(plain, /client_event_id UUID UNIQUE/);
+  assert.match(bootstrap, /to_regclass\('helpdesk_assist_log'\) IS NOT NULL/);
+  assert.match(bootstrap, /table_name = 'helpdesk_tickets'\s+AND column_name = 'flagged_at'/, "the probe covers the newest column");
+  assert.doesNotMatch(plain, /CREATE TABLE (?!IF NOT EXISTS)/);
+  assert.doesNotMatch(plain, /CREATE (?:UNIQUE )?INDEX (?!IF NOT EXISTS)/);
+});

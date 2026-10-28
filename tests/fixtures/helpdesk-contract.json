@@ -1,10 +1,10 @@
 {
   "$comment": [
-    "Helpdesk v1 wire contract between Portal and Admin (BackOffice), captured from a real local run of both apps on 2026-10-28 and anonymised.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source.",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
-  "version": 1,
+  "version": 2,
   "enums": {
     "ticketStatus": [
       "OPEN",
@@ -29,7 +29,9 @@
       "propose_resolution",
       "add_tag",
       "remove_tag",
-      "mark_read"
+      "mark_read",
+      "flag",
+      "unflag"
     ],
     "attachmentContentType": [
       "image/png",
@@ -62,6 +64,24 @@
       "declined",
       "edited"
     ],
+    "assistFeedback": [
+      "helpful",
+      "not_helpful",
+      "solved",
+      "declined",
+      "edited"
+    ],
+    "assistSource": [
+      "submit",
+      "chat",
+      "chip"
+    ],
+    "faqCategory": [
+      "account_technical",
+      "courses_learning",
+      "payments_subscriptions",
+      "other"
+    ],
     "agentProblemCode": {
       "400": [
         "invalid_request",
@@ -92,6 +112,8 @@
       "idempotencyKey": "UUID, required on every POST"
     },
     "listRequest": "/api/integration/helpdesk/tickets?status=needs_reply&category=payments_subscriptions&tag=refund&q=invoice&limit=30&cursor=opaque-cursor-from-portal",
+    "timelineRequest": "/api/integration/helpdesk/tickets?learnerId=user_fixture_learner&limit=10",
+    "flaggedListRequest": "/api/integration/helpdesk/tickets?flagged=true",
     "listResponse": {
       "tickets": [
         {
@@ -123,7 +145,8 @@
           "unreadByAgent": true,
           "tags": [
             "refund"
-          ]
+          ],
+          "flagged": false
         }
       ],
       "nextCursor": "opaque-cursor-from-portal",
@@ -169,6 +192,7 @@
       "tags": [
         "refund"
       ],
+      "flagged": true,
       "suggestionId": null,
       "student": {
         "id": "user_fixture_learner",
@@ -342,6 +366,28 @@
         "reply",
         "internal_note",
         "propose_resolution"
+      ],
+      "aiAssist": [
+        {
+          "id": "01a18100-0000-7000-8000-00000000000f",
+          "source": "chat",
+          "question": "Where can I find my invoice?",
+          "faqId": "01a18100-0000-7000-8000-000000000010",
+          "faqQuestion": "Where can I find my invoice?",
+          "answer": "Open **My Subscription**, then choose an order to see its invoice.",
+          "feedback": "not_helpful",
+          "createdAt": "2026-10-28T08:36:41.120Z"
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000011",
+          "source": "submit",
+          "question": "Invoice 中文 test",
+          "faqId": null,
+          "faqQuestion": null,
+          "answer": null,
+          "feedback": null,
+          "createdAt": "2026-10-28T08:38:01.002Z"
+        }
       ]
     },
     "messageRequest": {
@@ -394,6 +440,22 @@
           "id": "01a18100-0000-7000-8000-000000000002",
           "name": "Alex Support"
         }
+      },
+      {
+        "action": "flag",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "expectedSequence": 5
+      },
+      {
+        "action": "unflag",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "expectedSequence": 6
       }
     ],
     "staleProblem": {
@@ -426,31 +488,57 @@
     "auth": {
       "header": "Authorization: Bearer <ADMIN_HELPDESK_TOKEN>"
     },
-    "questionsRequest": "/api/integration/helpdesk/questions?locale=en-GB&featured=true",
-    "questionsResponse": {
-      "questions": [
+    "faqsRequest": "/api/integration/helpdesk/faqs?locale=en-GB&popular=true&limit=3",
+    "faqsSearchRequest": "/api/integration/helpdesk/faqs?locale=zh-CN&category=payments_subscriptions&q=invoice&limit=50",
+    "faqsResponse": {
+      "faqs": [
         {
           "id": "01a18100-0000-7000-8000-00000000000d",
-          "category": "technical_support",
+          "category": "account_technical",
+          "popular": true,
           "question": "How do I reset my password?",
-          "answer": "1. Check your spam folder\nThe reset email can land there.\n2. Request a new link\nOpen https://www.ilovelearningguide.com/en-GB/forgot-password and try again."
+          "answer": "1. Check your spam folder\n2. Request a new link on [Forgot password](https://www.ilovelearningguide.com/en-GB/forgot-password)\n\nStill stuck? Email **support** at [support@ilovelearningguide.com](mailto:support@ilovelearningguide.com).",
+          "updatedAt": "2026-10-28T08:30:00.000Z"
         }
       ],
       "etag": "\"bA5FoUm-D43QRPNhxUuNzqg8bs7\""
     },
+    "faqRequest": "/api/integration/helpdesk/faqs/01a18100-0000-7000-8000-00000000000d?locale=en-GB",
+    "faqResponse": {
+      "id": "01a18100-0000-7000-8000-00000000000d",
+      "category": "account_technical",
+      "popular": true,
+      "question": "How do I reset my password?",
+      "answer": "1. Check your spam folder\n2. Request a new link on [Forgot password](https://www.ilovelearningguide.com/en-GB/forgot-password)\n\nStill stuck? Email **support** at [support@ilovelearningguide.com](mailto:support@ilovelearningguide.com).",
+      "updatedAt": "2026-10-28T08:30:00.000Z"
+    },
     "suggestRequest": {
       "learnerId": "user_fixture_learner",
       "locale": "en-GB",
+      "source": "submit",
       "category": "technical_support",
       "subject": "Cannot reset my password",
       "message": "The reset email never arrives."
     },
+    "suggestChatRequest": {
+      "learnerId": "user_fixture_learner",
+      "locale": "en-GB",
+      "source": "chat",
+      "message": "I never get the reset email"
+    },
+    "suggestChipRequest": {
+      "learnerId": "user_fixture_learner",
+      "locale": "en-GB",
+      "source": "chip",
+      "message": "How do I reset my password?",
+      "faqId": "01a18100-0000-7000-8000-00000000000d"
+    },
     "suggestResponse": {
       "suggestion": {
         "id": "01a18100-0000-7000-8000-00000000000e",
-        "qaId": "01a18100-0000-7000-8000-00000000000d",
+        "faqId": "01a18100-0000-7000-8000-00000000000d",
         "question": "How do I reset my password?",
-        "answer": "1. Check your spam folder\nThe reset email can land there.\n2. Request a new link\nOpen https://www.ilovelearningguide.com/en-GB/forgot-password and try again."
+        "answer": "1. Check your spam folder\n2. Request a new link on [Forgot password](https://www.ilovelearningguide.com/en-GB/forgot-password)\n\nStill stuck? Email **support** at [support@ilovelearningguide.com](mailto:support@ilovelearningguide.com)."
       }
     },
     "suggestNoMatchResponse": {
@@ -458,6 +546,9 @@
     },
     "outcomeRequest": {
       "outcome": "declined"
+    },
+    "helpfulOutcomeRequest": {
+      "outcome": "helpful"
     },
     "outcomeResponse": {
       "id": "01a18100-0000-7000-8000-00000000000e",

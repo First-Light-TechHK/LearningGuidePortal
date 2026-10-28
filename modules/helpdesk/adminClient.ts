@@ -1,37 +1,41 @@
-// Portal -> Admin client for the Admin-owned Helpdesk Q&A (addendum §A/§C/§E).
-// Admin is the single writer of Common Questions and suggestions; Portal only
-// reads published questions and asks for a suggestion. Every call is best
-// effort: the learner's submit must never wait on, or fail because of, Admin.
+// Portal -> Admin client for the Admin-owned Helpdesk FAQs and the AI
+// Support Assistant (tickets-v2-figma-addendum §2). Admin is the single
+// writer of FAQs and suggestions; Portal only reads published FAQs, asks for
+// a suggestion and reports outcomes. Every call is best effort: no learner
+// page or submit ever waits long on, or fails because of, Admin.
 // ADMIN_HELPDESK_BASE_URL and ADMIN_HELPDESK_TOKEN are read on every call so
 // a rotated token applies without a restart. The token is never logged.
-import type { CommonQuestion, HelpdeskLocale, HelpdeskSuggestion, SuggestInput, SuggestionOutcome } from "@/contracts/helpdesk";
+import { FAQ_CATEGORIES, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type HelpFaq, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
+import { isUuid } from "@/lib/uuidv7";
 
-export const ADMIN_QUESTIONS_TTL_MS = 60_000;
-export const ADMIN_QUESTIONS_TIMEOUT_MS = 3_000;
-/** How long a page waits for Admin when nothing is cached; after that it renders without the column and the answer, when it comes, is cached. */
-export const ADMIN_QUESTIONS_WAIT_MS = 500;
+export const ADMIN_FAQS_TTL_MS = 60_000;
+export const ADMIN_FAQS_TIMEOUT_MS = 3_000;
+/** How long a page waits for Admin when nothing is cached; after that it renders without the data and the answer, when it comes, is cached. */
+export const ADMIN_FAQS_WAIT_MS = 500;
 /** After a failed fetch, no new request for this long (stale or hidden meanwhile), so an outage costs one request per window, not one per page load. */
-export const ADMIN_QUESTIONS_RETRY_MS = 15_000;
+export const ADMIN_FAQS_RETRY_MS = 15_000;
+/** Distinct FAQ queries kept (searches make many); the oldest entry goes first. */
+export const ADMIN_FAQS_CACHE_ENTRIES = 200;
 export const ADMIN_SUGGEST_TIMEOUT_MS = 4_000;
 export const ADMIN_OUTCOME_TIMEOUT_MS = 4_000;
 
-type CacheEntry = { etag: string | null; questions: CommonQuestion[]; fetchedAt: number };
-const questionCache = new Map<string, CacheEntry>();
-/** One request per base URL + locale at a time. */
-const questionsInFlight = new Map<string, Promise<CommonQuestion[] | null>>();
-const questionsFailedAt = new Map<string, number>();
+type CacheEntry<T> = { etag: string | null; value: T; fetchedAt: number };
+const faqCache = new Map<string, CacheEntry<HelpFaq[] | HelpFaq | null>>();
+/** One request per base URL + query at a time. */
+const faqsInFlight = new Map<string, Promise<HelpFaq[] | HelpFaq | null | undefined>>();
+const faqsFailedAt = new Map<string, number>();
 
-/** Test hook and operational reset: forget every cached question list. */
-export function clearCommonQuestionsCache() {
-  questionCache.clear();
-  questionsInFlight.clear();
-  questionsFailedAt.clear();
+/** Test hook and operational reset: forget every cached FAQ answer. */
+export function clearFaqCache() {
+  faqCache.clear();
+  faqsInFlight.clear();
+  faqsFailedAt.clear();
 }
 
-/** The value, or null when it is not there within ms (the work itself goes on). */
-function within<T>(work: Promise<T | null>, ms: number): Promise<T | null> {
+/** The value, or undefined when it is not there within ms (the work itself goes on). */
+function within<T>(work: Promise<T | undefined>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  const late = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), ms); });
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
@@ -39,7 +43,7 @@ export type AdminHelpdeskClientDeps = {
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: Record<string, unknown>) => void;
-  timeouts?: Partial<{ questions: number; wait: number; suggest: number; outcome: number }>;
+  timeouts?: Partial<{ faqs: number; wait: number; suggest: number; outcome: number }>;
 };
 
 type Target = { baseUrl: string; token: string };
@@ -59,25 +63,37 @@ function target(): Target | null {
 
 const isText = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
-function question(value: unknown): CommonQuestion | null {
+/** A published FAQ as Admin sends it; anything malformed (or an unknown category) is dropped. */
+function faqOf(value: unknown): HelpFaq | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  if (!isText(item.id) || !isText(item.category) || !isText(item.question) || !isText(item.answer)) return null;
-  return { id: item.id, category: item.category, question: item.question, answer: item.answer };
+  if (!isUuid(item.id) || !isText(item.question) || !isText(item.answer)) return null;
+  if (typeof item.category !== "string" || !(FAQ_CATEGORIES as readonly string[]).includes(item.category)) return null;
+  return { id: item.id.toLowerCase(), category: item.category as FaqCategory, popular: item.popular === true, question: item.question, answer: item.answer, updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : "" };
 }
 
 function suggestion(value: unknown): HelpdeskSuggestion | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  if (!isText(item.id) || !isText(item.qaId) || !isText(item.question) || !isText(item.answer)) return null;
-  return { id: item.id, qaId: item.qaId, question: item.question, answer: item.answer };
+  if (!isUuid(item.id) || !isUuid(item.faqId) || !isText(item.question) || !isText(item.answer)) return null;
+  return { id: item.id.toLowerCase(), faqId: item.faqId.toLowerCase(), question: item.question, answer: item.answer };
+}
+
+/** The list query in a fixed order (locale, popular, category, q, limit). */
+export function faqsPath(locale: HelpdeskLocale, filter: FaqFilter = {}) {
+  const query = new URLSearchParams({ locale });
+  if (filter.popular) query.set("popular", "true");
+  if (filter.category) query.set("category", filter.category);
+  if (filter.q) query.set("q", filter.q);
+  if (filter.limit) query.set("limit", String(Math.min(100, Math.max(1, Math.floor(filter.limit)))));
+  return `/api/integration/helpdesk/faqs?${query}`;
 }
 
 export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   const doFetch = deps.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
-  const timeouts = { questions: ADMIN_QUESTIONS_TIMEOUT_MS, wait: ADMIN_QUESTIONS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
+  const timeouts = { faqs: ADMIN_FAQS_TIMEOUT_MS, wait: ADMIN_FAQS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
 
   async function call(destination: Target, path: string, init: { method: "GET" | "POST"; body?: unknown; headers?: Record<string, string>; timeout: number }) {
     const controller = new AbortController();
@@ -100,70 +116,107 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     log({ type: "helpdesk", event, reason: error instanceof Error ? (error.message === "timeout" ? "timeout" : error.name) : String(error), ...extra });
   }
 
-  async function fetchQuestions(destination: Target, key: string, locale: HelpdeskLocale): Promise<CommonQuestion[] | null> {
-    const cached = questionCache.get(key);
+  function remember(key: string, entry: CacheEntry<HelpFaq[] | HelpFaq | null>) {
+    faqCache.delete(key);
+    faqCache.set(key, entry);
+    while (faqCache.size > ADMIN_FAQS_CACHE_ENTRIES) faqCache.delete(faqCache.keys().next().value as string);
+  }
+
+  /** undefined = Admin could not answer (keep / hide); null = a single FAQ that does not exist (404). */
+  async function fetchFaqs(destination: Target, key: string, path: string, single: boolean): Promise<HelpFaq[] | HelpFaq | null | undefined> {
+    const cached = faqCache.get(key);
     try {
-      const result = await call(destination, `/api/integration/helpdesk/questions?${new URLSearchParams({ locale, featured: "true" })}`, {
-        method: "GET", timeout: timeouts.questions, headers: cached?.etag ? { "If-None-Match": cached.etag } : {}
-      });
+      const result = await call(destination, path, { method: "GET", timeout: timeouts.faqs, headers: cached?.etag ? { "If-None-Match": cached.etag } : {} });
       if (result.status === 304 && cached) {
-        questionCache.set(key, { ...cached, fetchedAt: now() });
-        questionsFailedAt.delete(key);
-        return cached.questions;
+        remember(key, { ...cached, fetchedAt: now() });
+        faqsFailedAt.delete(key);
+        return cached.value;
+      }
+      if (single && result.status === 404) {
+        remember(key, { etag: null, value: null, fetchedAt: now() });
+        faqsFailedAt.delete(key);
+        return null;
       }
       if (result.status !== 200) throw new Error(`status_${result.status}`);
-      const body = JSON.parse(result.text) as { questions?: unknown; etag?: unknown };
-      if (!Array.isArray(body.questions)) throw new Error("malformed");
-      const questions = body.questions.map(question).filter((item): item is CommonQuestion => Boolean(item));
+      const body = JSON.parse(result.text) as { faqs?: unknown; faq?: unknown; etag?: unknown };
+      let value: HelpFaq[] | HelpFaq | null;
+      if (single) {
+        // Tolerant reader: the FAQ itself, or wrapped as { faq }.
+        value = faqOf(body.faq ?? body);
+        if (!value) throw new Error("malformed");
+      } else {
+        if (!Array.isArray(body.faqs)) throw new Error("malformed");
+        value = body.faqs.map(faqOf).filter((item): item is HelpFaq => Boolean(item));
+      }
       const etag = result.etag || (typeof body.etag === "string" ? body.etag : null);
-      questionCache.set(key, { etag, questions, fetchedAt: now() });
-      questionsFailedAt.delete(key);
-      return questions;
+      remember(key, { etag, value, fetchedAt: now() });
+      faqsFailedAt.delete(key);
+      return value;
     } catch (error) {
-      failure("admin_questions_failed", error, { locale, stale: Boolean(cached) });
-      questionsFailedAt.set(key, now());
-      return cached ? cached.questions : null;
+      failure("admin_faqs_failed", error, { stale: Boolean(cached) });
+      faqsFailedAt.set(key, now());
+      return cached ? cached.value : undefined;
     }
   }
 
   /**
-   * Featured, published questions for the locale; null means "hide the column".
-   * Never holds a page on Admin: a fresh copy is returned as is, a stale copy
-   * is returned at once while it is revalidated in the background, and with
-   * nothing cached the caller waits at most ADMIN_QUESTIONS_WAIT_MS (the
-   * request goes on and its answer is cached for the next load). After a
-   * failure Admin is not asked again for ADMIN_QUESTIONS_RETRY_MS.
+   * Shared read path for FAQ lists and single FAQs. Never holds a page on
+   * Admin: a fresh copy is returned as is, a stale copy at once while it is
+   * revalidated in the background, and with nothing cached the caller waits
+   * at most waitMs (the request goes on and its answer is cached for the
+   * next load). After a failure Admin is not asked again for
+   * ADMIN_FAQS_RETRY_MS.
    */
-  async function commonQuestions(locale: HelpdeskLocale): Promise<CommonQuestion[] | null> {
+  async function read(path: string, single: boolean, waitMs: number | undefined): Promise<HelpFaq[] | HelpFaq | null | undefined> {
     const destination = target();
-    if (!destination) return null;
-    const key = `${destination.baseUrl}|${locale}`;
-    const cached = questionCache.get(key);
-    if (cached && now() - cached.fetchedAt < ADMIN_QUESTIONS_TTL_MS) return cached.questions;
-    const failedAt = questionsFailedAt.get(key);
-    if (failedAt !== undefined && now() - failedAt < ADMIN_QUESTIONS_RETRY_MS) return cached ? cached.questions : null;
-    let pending = questionsInFlight.get(key);
+    if (!destination) return undefined;
+    const key = `${destination.baseUrl}|${path}`;
+    const cached = faqCache.get(key);
+    if (cached && now() - cached.fetchedAt < ADMIN_FAQS_TTL_MS) return cached.value;
+    const failedAt = faqsFailedAt.get(key);
+    if (failedAt !== undefined && now() - failedAt < ADMIN_FAQS_RETRY_MS) return cached ? cached.value : undefined;
+    let pending = faqsInFlight.get(key);
     if (!pending) {
-      pending = fetchQuestions(destination, key, locale).finally(() => questionsInFlight.delete(key));
-      questionsInFlight.set(key, pending);
+      pending = fetchFaqs(destination, key, path, single).finally(() => faqsInFlight.delete(key));
+      faqsInFlight.set(key, pending);
     }
-    if (cached) return cached.questions;
-    return within(pending, timeouts.wait);
+    if (cached) return cached.value;
+    return within(pending, waitMs ?? timeouts.wait);
   }
 
-  /** One stored answer that may solve the enquiry, or null (no match, not configured, error or the 4 s timeout). */
-  async function suggest(input: SuggestInput & { learnerId: string }): Promise<HelpdeskSuggestion | null> {
+  /** Published FAQs for the locale (popular first, then newest, as Admin orders them); null means Admin is unavailable and nothing is cached. */
+  async function faqs(locale: HelpdeskLocale, filter: FaqFilter = {}, options: { waitMs?: number } = {}): Promise<HelpFaq[] | null> {
+    const value = await read(faqsPath(locale, filter), false, options.waitMs);
+    return Array.isArray(value) ? value : null;
+  }
+
+  /** One published FAQ (the Help Centre ?faq= deep link), or null when it does not exist or Admin is unavailable. */
+  async function faq(id: string, locale: HelpdeskLocale, options: { waitMs?: number } = {}): Promise<HelpFaq | null> {
+    if (!isUuid(id)) return null;
+    const value = await read(`/api/integration/helpdesk/faqs/${encodeURIComponent(id.toLowerCase())}?${new URLSearchParams({ locale })}`, true, options.waitMs);
+    return value && !Array.isArray(value) ? value : null;
+  }
+
+  /**
+   * One stored answer, or null (no match, not configured, error or the 4 s
+   * timeout). source says where it is shown: the submit-time modal, the chat
+   * panel, or a starter chip (with faqId, which Admin returns directly).
+   */
+  async function suggest(input: AdminSuggestRequest): Promise<HelpdeskSuggestion | null> {
     const destination = target();
     if (!destination) return null;
     try {
-      const result = await call(destination, "/api/integration/helpdesk/suggest", {
-        method: "POST", timeout: timeouts.suggest,
-        body: { learnerId: input.learnerId, locale: input.locale, category: input.category, subject: input.subject, message: input.message }
-      });
+      // Fixed key order; optional fields only when set.
+      const body: Record<string, string> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
+      if (input.category) body.category = input.category;
+      if (input.subject) body.subject = input.subject;
+      body.message = input.message;
+      if (input.faqId) body.faqId = input.faqId;
+      const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
-      const body = JSON.parse(result.text) as { suggestion?: unknown };
-      if (body.suggestion === null) return null;
-      const parsed = suggestion(body.suggestion);
+      const reply = JSON.parse(result.text) as { suggestion?: unknown };
+      if (reply.suggestion === null) return null;
+      const parsed = suggestion(reply.suggestion);
       if (!parsed) throw new Error("malformed");
       return parsed;
     } catch (error) {
@@ -173,7 +226,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   }
 
   /** Report what the learner did with a suggestion; true when Admin accepted it. */
-  async function reportOutcome(suggestionId: string, outcome: SuggestionOutcome): Promise<boolean> {
+  async function reportOutcome(suggestionId: string, outcome: AssistFeedback): Promise<boolean> {
     const destination = target();
     if (!destination) return false;
     try {
@@ -186,7 +239,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     }
   }
 
-  return { commonQuestions, suggest, reportOutcome };
+  return { faqs, faq, suggest, reportOutcome };
 }
 
 export type AdminHelpdeskClient = ReturnType<typeof createAdminHelpdeskClient>;

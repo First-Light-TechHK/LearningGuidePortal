@@ -1,19 +1,21 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import {
-  ADMIN_QUESTIONS_RETRY_MS,
-  ADMIN_QUESTIONS_TTL_MS,
-  ADMIN_QUESTIONS_WAIT_MS,
+  ADMIN_FAQS_CACHE_ENTRIES,
+  ADMIN_FAQS_RETRY_MS,
+  ADMIN_FAQS_TTL_MS,
+  ADMIN_FAQS_WAIT_MS,
   ADMIN_SUGGEST_TIMEOUT_MS,
-  clearCommonQuestionsCache,
+  clearFaqCache,
   createAdminHelpdeskClient
 } from "../../modules/helpdesk/adminClient";
 
 const BASE = "http://admin.local:3100";
 const TOKEN = "local-test-admin-helpdesk-token";
 const env = { ...process.env };
-const QUESTION = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "technical_support", question: "How do I reset my password?", answer: "Open Sign in, then Forgot password." };
-const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000aa", qaId: QUESTION.id, question: QUESTION.question, answer: QUESTION.answer };
+const QUESTION = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password.", updatedAt: "2026-10-28T08:30:00.000Z" };
+const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000aa", faqId: QUESTION.id, question: QUESTION.question, answer: QUESTION.answer };
+const POPULAR = { popular: true, limit: 3 };
 
 type Call = { url: string; method: string; headers: Headers; body: string | null };
 
@@ -33,7 +35,7 @@ const logs: Array<Record<string, unknown>> = [];
 beforeEach(() => {
   process.env.ADMIN_HELPDESK_BASE_URL = `${BASE}/`;
   process.env.ADMIN_HELPDESK_TOKEN = TOKEN;
-  clearCommonQuestionsCache();
+  clearFaqCache();
   logs.length = 0;
 });
 
@@ -43,128 +45,129 @@ afterEach(() => {
 });
 
 test("timeouts and cache lifetime match the addendum", () => {
-  assert.equal(ADMIN_QUESTIONS_TTL_MS, 60_000);
+  assert.equal(ADMIN_FAQS_TTL_MS, 60_000);
   assert.equal(ADMIN_SUGGEST_TIMEOUT_MS, 4_000);
 });
 
-test("common questions: Bearer token, locale + featured query, cached for 60 s, then revalidated with If-None-Match", async () => {
+test("FAQs: Bearer token, locale + popular + limit query, cached for 60 s, then revalidated with If-None-Match", async () => {
   let clock = 1_000_000;
-  const stub = stubFetch((call) => call.headers.get("if-none-match") === '"v1"' ? new Response(null, { status: 304, headers: { etag: '"v1"' } }) : json({ questions: [QUESTION], etag: '"v1"' }, 200, { etag: '"v1"' }));
+  const stub = stubFetch((call) => call.headers.get("if-none-match") === '"v1"' ? new Response(null, { status: 304, headers: { etag: '"v1"' } }) : json({ faqs: [QUESTION], etag: '"v1"' }, 200, { etag: '"v1"' }));
   const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   assert.equal(stub.calls.length, 1);
-  assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/questions?locale=en-GB&featured=true`);
+  assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/faqs?locale=en-GB&popular=true&limit=3`);
   assert.equal(stub.calls[0].headers.get("authorization"), `Bearer ${TOKEN}`);
   assert.equal(stub.calls[0].headers.get("if-none-match"), null);
-  clock += ADMIN_QUESTIONS_TTL_MS - 1;
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  clock += ADMIN_FAQS_TTL_MS - 1;
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   assert.equal(stub.calls.length, 1, "served from cache inside 60 s");
   clock += 1;
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   assert.equal(stub.calls.length, 2);
   assert.equal(stub.calls[1].headers.get("if-none-match"), '"v1"');
   clock += 1000;
-  await client.commonQuestions("en-GB");
+  await client.faqs("en-GB", POPULAR);
   assert.equal(stub.calls.length, 2, "a 304 restarts the 60 s window");
-  await client.commonQuestions("zh-CN");
+  await client.faqs("zh-CN", POPULAR);
   assert.equal(stub.calls.length, 3, "each locale has its own entry");
   assert.match(stub.calls[2].url, /locale=zh-CN/);
 });
 
-test("common questions: stale data on error, hidden (null) when nothing is cached; malformed rows are dropped", async () => {
+test("FAQs: stale data on error, null when nothing is cached; malformed rows (and unknown categories) are dropped", async () => {
   let clock = 0;
   let mode: "ok" | "fail" | "throw" = "fail";
   const stub = stubFetch(() => {
     if (mode === "throw") throw new TypeError("fetch failed");
     if (mode === "fail") return json({ type: "x", code: "boom" }, 500);
-    return json({ questions: [QUESTION, { id: 5 }, { ...QUESTION, id: "q2", answer: null }] });
+    return json({ faqs: [QUESTION, { id: 5 }, { ...QUESTION, id: "0192d4f0-7b6a-7c3e-9a10-1234567890ac", answer: null }, { ...QUESTION, id: "0192d4f0-7b6a-7c3e-9a10-1234567890ad", category: "billing" }, { ...QUESTION, id: "q2" }] });
   });
   const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
-  assert.equal(await client.commonQuestions("en-GB"), null, "nothing cached: hide the column");
-  clock += ADMIN_QUESTIONS_RETRY_MS;
+  assert.equal(await client.faqs("en-GB", POPULAR), null, "nothing cached: hide the column");
+  clock += ADMIN_FAQS_RETRY_MS;
   mode = "ok";
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
-  clock += ADMIN_QUESTIONS_TTL_MS;
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
+  clock += ADMIN_FAQS_TTL_MS;
   mode = "throw";
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION], "stale on error");
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION], "stale on error");
   mode = "fail";
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
-  assert.ok(logs.some((line) => line.event === "admin_questions_failed"));
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
+  assert.ok(logs.some((line) => line.event === "admin_faqs_failed"));
   assert.ok(!JSON.stringify(logs).includes(TOKEN), "the token is never logged");
 });
 
 test("a hanging Admin never holds the page: nothing cached -> hidden within the wait budget; the late answer is cached for the next load", async () => {
-  assert.ok(ADMIN_QUESTIONS_WAIT_MS <= 500, "the page waits at most half a second for Admin");
+  assert.ok(ADMIN_FAQS_WAIT_MS <= 500, "the page waits at most half a second for Admin");
   let release: (response: Response) => void = () => undefined;
   const stub = stubFetch(() => new Promise<Response>((resolve) => { release = resolve; }));
-  const client = createAdminHelpdeskClient({ fetch: stub.fetch, log: (line) => logs.push(line), timeouts: { wait: 40, questions: 5_000 } });
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, log: (line) => logs.push(line), timeouts: { wait: 40, faqs: 5_000 } });
   const started = Date.now();
-  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(await client.faqs("en-GB", POPULAR), null);
   assert.ok(Date.now() - started < 1_000, `waited ${Date.now() - started} ms`);
-  assert.equal(await client.commonQuestions("en-GB"), null, "a second load while the first request is still out");
+  assert.equal(await client.faqs("en-GB", POPULAR), null, "a second load while the first request is still out");
   assert.equal(stub.calls.length, 1, "one request in flight per locale");
-  release(json({ questions: [QUESTION] }));
+  release(json({ faqs: [QUESTION] }));
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   assert.equal(stub.calls.length, 1);
 });
 
-test("stale questions are served at once while they are revalidated in the background", async () => {
+test("stale FAQs are served at once while they are revalidated in the background", async () => {
   let clock = 0;
   let hang = false;
   let release: (response: Response) => void = () => undefined;
-  const stub = stubFetch(() => hang ? new Promise<Response>((resolve) => { release = resolve; }) : json({ questions: [QUESTION] }, 200, { etag: '"v1"' }));
-  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line), timeouts: { wait: 5_000, questions: 10_000 } });
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
-  clock += ADMIN_QUESTIONS_TTL_MS;
+  const stub = stubFetch(() => hang ? new Promise<Response>((resolve) => { release = resolve; }) : json({ faqs: [QUESTION] }, 200, { etag: '"v1"' }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line), timeouts: { wait: 5_000, faqs: 10_000 } });
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
+  clock += ADMIN_FAQS_TTL_MS;
   hang = true;
   const started = Date.now();
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   assert.ok(Date.now() - started < 1_000, "the stale copy does not wait for Admin");
   assert.equal(stub.calls.length, 2);
-  release(json({ questions: [{ ...QUESTION, question: "Updated?" }] }));
+  release(json({ faqs: [{ ...QUESTION, question: "Updated?" }] }));
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal((await client.commonQuestions("en-GB"))?.[0].question, "Updated?");
+  assert.equal((await client.faqs("en-GB", POPULAR))?.[0].question, "Updated?");
 });
 
 test("an outage costs one request per retry window, not one per page load", async () => {
   let clock = 0;
   const stub = stubFetch(() => json({ code: "down" }, 503));
   const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
-  assert.equal(await client.commonQuestions("en-GB"), null);
-  assert.equal(await client.commonQuestions("en-GB"), null);
-  clock += ADMIN_QUESTIONS_RETRY_MS - 1;
-  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(await client.faqs("en-GB", POPULAR), null);
+  assert.equal(await client.faqs("en-GB", POPULAR), null);
+  clock += ADMIN_FAQS_RETRY_MS - 1;
+  assert.equal(await client.faqs("en-GB", POPULAR), null);
   assert.equal(stub.calls.length, 1);
   clock += 1;
-  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(await client.faqs("en-GB", POPULAR), null);
   assert.equal(stub.calls.length, 2);
-  assert.equal(logs.filter((line) => line.event === "admin_questions_failed").length, 2);
+  assert.equal(logs.filter((line) => line.event === "admin_faqs_failed").length, 2);
 });
 
-test("not configured: no request, questions hidden, no suggestion, outcome not delivered; env is read on every call", async () => {
-  const stub = stubFetch(() => json({ questions: [QUESTION] }));
+test("not configured: no request, FAQs null, no suggestion, outcome not delivered; env is read on every call", async () => {
+  const stub = stubFetch(() => json({ faqs: [QUESTION] }));
   const client = createAdminHelpdeskClient({ fetch: stub.fetch });
   delete process.env.ADMIN_HELPDESK_TOKEN;
-  assert.equal(await client.commonQuestions("en-GB"), null);
-  assert.equal(await client.suggest({ learnerId: "u1", locale: "en-GB", category: "other", subject: "s", message: "m" }), null);
+  assert.equal(await client.faqs("en-GB", POPULAR), null);
+  assert.equal(await client.faq(QUESTION.id, "en-GB"), null);
+  assert.equal(await client.suggest({ learnerId: "u1", locale: "en-GB", source: "submit", category: "other", subject: "s", message: "m" }), null);
   assert.equal(await client.reportOutcome(SUGGESTION.id, "solved"), false);
   process.env.ADMIN_HELPDESK_TOKEN = TOKEN;
   process.env.ADMIN_HELPDESK_BASE_URL = "ftp://admin.local";
-  assert.equal(await client.commonQuestions("en-GB"), null, "only http(s) base URLs");
+  assert.equal(await client.faqs("en-GB", POPULAR), null, "only http(s) base URLs");
   assert.equal(stub.calls.length, 0);
   process.env.ADMIN_HELPDESK_BASE_URL = BASE;
-  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   process.env.ADMIN_HELPDESK_TOKEN = `${TOKEN}-rotated`;
-  clearCommonQuestionsCache();
-  await client.commonQuestions("en-GB");
+  clearFaqCache();
+  await client.faqs("en-GB", POPULAR);
   assert.equal(stub.calls.at(-1)?.headers.get("authorization"), `Bearer ${TOKEN}-rotated`);
 });
 
-test("suggest: posts the learner's enquiry and returns the stored answer", async () => {
+test("suggest (source submit): posts the learner's enquiry and returns the stored answer", async () => {
   const stub = stubFetch(() => json({ suggestion: SUGGESTION }));
   const client = createAdminHelpdeskClient({ fetch: stub.fetch });
-  const input = { learnerId: "u1", locale: "en-GB" as const, category: "technical_support" as const, subject: "Cannot log in", message: "It says invalid password" };
+  const input = { learnerId: "u1", locale: "en-GB" as const, source: "submit" as const, category: "technical_support" as const, subject: "Cannot log in", message: "It says invalid password" };
   assert.deepEqual(await client.suggest(input), SUGGESTION);
   assert.equal(stub.calls[0].method, "POST");
   assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/suggest`);
@@ -174,11 +177,13 @@ test("suggest: posts the learner's enquiry and returns the stored answer", async
 });
 
 test("suggest returns null on no match, any error, a malformed body, or the timeout", async () => {
-  const input = { learnerId: "u1", locale: "zh-CN" as const, category: "other" as const, subject: "s", message: "m" };
+  const input = { learnerId: "u1", locale: "zh-CN" as const, source: "chat" as const, message: "m" };
   for (const handler of [
     () => json({ suggestion: null }),
     () => json({ type: "x" }, 429),
     () => json({ suggestion: { id: "x" } }),
+    () => json({ suggestion: { ...SUGGESTION, faqId: "not-a-uuid" } }),
+    () => json({ suggestion: { id: SUGGESTION.id, qaId: QUESTION.id, question: "q", answer: "a" } }),
     () => new Response("not json", { status: 200 }),
     () => { throw new TypeError("fetch failed"); }
   ]) {
@@ -201,4 +206,62 @@ test("outcome: posts { outcome } to the suggestion and reports whether Admin acc
   assert.equal(ok.calls[0].headers.get("authorization"), `Bearer ${TOKEN}`);
   assert.equal(await createAdminHelpdeskClient({ fetch: stubFetch(() => json({}, 404)).fetch }).reportOutcome(SUGGESTION.id, "solved"), false);
   assert.equal(await createAdminHelpdeskClient({ fetch: stubFetch(() => { throw new Error("down"); }).fetch }).reportOutcome(SUGGESTION.id, "edited"), false);
+});
+
+test("suggest (chat / chip): source, and faqId only for a chip; optional fields are left out, not sent empty", async () => {
+  const stub = stubFetch(() => json({ suggestion: SUGGESTION }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  await client.suggest({ learnerId: "u1", locale: "en-GB", source: "chat", message: "reset email never arrives" });
+  await client.suggest({ learnerId: "u1", locale: "zh-CN", source: "chip", message: QUESTION.question, faqId: QUESTION.id });
+  assert.deepEqual(JSON.parse(stub.calls[0].body || ""), { learnerId: "u1", locale: "en-GB", source: "chat", message: "reset email never arrives" });
+  assert.deepEqual(JSON.parse(stub.calls[1].body || ""), { learnerId: "u1", locale: "zh-CN", source: "chip", message: QUESTION.question, faqId: QUESTION.id });
+});
+
+test("outcome: the chat's helpful / not_helpful go to the same endpoint", async () => {
+  const ok = stubFetch(() => json({ id: SUGGESTION.id, outcome: "helpful", changed: true }));
+  const client = createAdminHelpdeskClient({ fetch: ok.fetch });
+  assert.equal(await client.reportOutcome(SUGGESTION.id, "helpful"), true);
+  assert.equal(await client.reportOutcome(SUGGESTION.id, "not_helpful"), true);
+  assert.deepEqual(ok.calls.map((call) => JSON.parse(call.body || "")), [{ outcome: "helpful" }, { outcome: "not_helpful" }]);
+});
+
+test("FAQ list filters: category, search text and limit in a fixed order; each query is cached on its own", async () => {
+  const stub = stubFetch(() => json({ faqs: [QUESTION] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  await client.faqs("zh-CN", { category: "payments_subscriptions", q: "invoice", limit: 50 });
+  await client.faqs("zh-CN", { category: "payments_subscriptions", q: "invoice", limit: 50 });
+  await client.faqs("zh-CN", { q: "发票" });
+  await client.faqs("en-GB", { limit: 500 });
+  assert.deepEqual(stub.calls.map((call) => call.url.replace(BASE, "")), [
+    "/api/integration/helpdesk/faqs?locale=zh-CN&category=payments_subscriptions&q=invoice&limit=50",
+    `/api/integration/helpdesk/faqs?locale=zh-CN&q=${encodeURIComponent("发票")}`,
+    "/api/integration/helpdesk/faqs?locale=en-GB&limit=100"
+  ]);
+});
+
+test("FAQ cache keeps at most ADMIN_FAQS_CACHE_ENTRIES queries (searches cannot grow it without bound)", async () => {
+  const stub = stubFetch(() => json({ faqs: [QUESTION] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  for (let index = 0; index <= ADMIN_FAQS_CACHE_ENTRIES; index += 1) await client.faqs("en-GB", { q: `query ${index}` });
+  await client.faqs("en-GB", { q: `query ${ADMIN_FAQS_CACHE_ENTRIES}` });
+  assert.equal(stub.calls.length, ADMIN_FAQS_CACHE_ENTRIES + 1, "the newest entry is still cached");
+  await client.faqs("en-GB", { q: "query 0" });
+  assert.equal(stub.calls.length, ADMIN_FAQS_CACHE_ENTRIES + 2, "the oldest entry was evicted");
+});
+
+test("single FAQ: GET /faqs/{id}?locale=, bare or wrapped as { faq }; 404 and bad ids are null; cached", async () => {
+  let mode: "bare" | "wrapped" | "missing" = "bare";
+  const stub = stubFetch(() => mode === "missing" ? json({ code: "not_found" }, 404) : json(mode === "bare" ? QUESTION : { faq: QUESTION }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  assert.deepEqual(await client.faq(QUESTION.id.toUpperCase(), "en-GB"), QUESTION);
+  assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/faqs/${QUESTION.id}?locale=en-GB`);
+  assert.deepEqual(await client.faq(QUESTION.id, "en-GB"), QUESTION);
+  assert.equal(stub.calls.length, 1, "cached");
+  mode = "wrapped";
+  assert.deepEqual(await client.faq(QUESTION.id, "zh-CN"), QUESTION);
+  mode = "missing";
+  const other = "0192d4f0-7b6a-7c3e-9a10-1234567890ff";
+  assert.equal(await client.faq(other, "en-GB"), null);
+  assert.equal(await client.faq("../../tickets", "en-GB"), null);
+  assert.equal(stub.calls.length, 3, "a bad id never reaches Admin");
 });

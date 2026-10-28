@@ -7,8 +7,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { SESSION_COOKIE } from "../../services/productAuth";
 import {
-  AGENT_ACTIONS, BILLING_CYCLES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
-  SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentMessageInput, problemBody
+  AGENT_ACTIONS, ASSIST_FEEDBACK, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
+  SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentListQuery, parseAgentMessageInput, problemBody
 } from "../../contracts/helpdesk";
 import { createAdminHelpdeskClient } from "../../modules/helpdesk/adminClient";
 import { isInlineAttachment } from "../../modules/helpdesk/attachments";
@@ -21,8 +21,12 @@ import { CSV, PDF } from "./helpdesk-fixtures";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Fixture = {
   enums: Record<string, string[]> & { agentProblemCode: Record<string, string[]> };
-  adminToPortal: Record<string, Json> & { listResponse: Json; detailResponse: Json & { subscription: Json }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
-  portalToAdmin: Record<string, Json> & { questionsResponse: { questions: Json[]; etag: string }; suggestRequest: Record<string, string>; suggestResponse: { suggestion: Json }; outcomeRequest: Json; outcomeResponse: Json };
+  adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json; detailResponse: Json & { subscription: Json }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
+  portalToAdmin: Record<string, Json> & {
+    faqsRequest: string; faqsSearchRequest: string; faqsResponse: { faqs: Json[]; etag: string }; faqRequest: string; faqResponse: Json;
+    suggestRequest: Record<string, string>; suggestChatRequest: Record<string, string>; suggestChipRequest: Record<string, string>; suggestResponse: { suggestion: Json };
+    outcomeRequest: Json; helpfulOutcomeRequest: Json; outcomeResponse: Json;
+  };
 };
 
 let fixture: Fixture;
@@ -85,7 +89,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "2412c1d696355ad06c0ca80e6cdcb73390551900fe00ff5e6beed45f75ca2a22";
+const FIXTURE_SHA256 = "390d82c91ff3d4c37dab439d0a6a8be037399ac124ab7c36bf14104de1bc9e1d";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -105,6 +109,9 @@ test("contract enums match Portal's own constants", () => {
   assert.deepEqual(fixture.enums.subscriptionStatus, [...SUBSCRIPTION_STATUSES]);
   assert.deepEqual(fixture.enums.billingCycle, [...BILLING_CYCLES]);
   assert.deepEqual(fixture.enums.suggestionOutcome, [...SUGGESTION_OUTCOMES]);
+  assert.deepEqual(fixture.enums.assistFeedback, [...ASSIST_FEEDBACK]);
+  assert.deepEqual(fixture.enums.assistSource, [...ASSIST_SOURCES]);
+  assert.deepEqual(fixture.enums.faqCategory, [...FAQ_CATEGORIES]);
   for (const [status, codes] of Object.entries(fixture.enums.agentProblemCode)) {
     for (const code of codes) assert.equal(PROBLEM_STATUS[code as keyof typeof PROBLEM_STATUS], Number(status), code);
   }
@@ -122,6 +129,11 @@ test("Admin's message and action bodies from the contract are accepted as sent",
     }
   }
   assert.deepEqual(problemBody(new HelpdeskProblem("stale_ticket", "This request was updated. Reload it and try again.", { currentSequence: 5 })), fixture.adminToPortal.staleProblem);
+  // v2: the student timeline and the Flagged filter.
+  const timeline = parseAgentListQuery(new URL(fixture.adminToPortal.timelineRequest, ORIGIN).searchParams);
+  assert.equal(timeline.learnerId, "user_fixture_learner");
+  assert.equal(timeline.limit, 10);
+  assert.equal(parseAgentListQuery(new URL(fixture.adminToPortal.flaggedListRequest, ORIGIN).searchParams).flagged, true);
 });
 
 test("the integration list and detail Portal serves have the contract's shape", async () => {
@@ -141,8 +153,17 @@ test("the integration list and detail Portal serves have the contract's shape", 
     return new Request(`${ORIGIN}${url}`, { method: json === undefined ? "GET" : "POST", headers, body: json === undefined ? undefined : JSON.stringify(json) });
   };
 
+  // A chat question first (Admin is not configured here, so the fallback answer), linked to the enquiry below.
+  const assistant = await import("../../app/api/helpdesk/assistant/route");
+  const asked = await assistant.POST(new Request(`${ORIGIN}/api/helpdesk/assistant`, {
+    method: "POST", body: JSON.stringify({ message: "Where can I find my invoice?", locale: "zh-CN" }),
+    headers: new Headers({ host: "localhost:3000", origin: ORIGIN, cookie: `${SESSION_COOKIE}=${cookie}`, "idempotency-key": randomUUID(), "content-type": "application/json" })
+  }));
+  assert.equal(asked.status, 200, await asked.clone().text());
+  const assistId = (await asked.json() as { id: string }).id;
   const form = new FormData();
   for (const [key, value] of Object.entries({ category: "payments_subscriptions", subject: "Invoice 中文 test", body: "See files", locale: "zh-CN", contactEmail: "other@example.test" })) form.set(key, value);
+  form.append("assistIds", assistId);
   form.append("files[]", new File([new Uint8Array(PDF)], "发票 Oct.pdf", { type: "application/pdf" }));
   form.append("files[]", new File([new Uint8Array(CSV)], "data.csv", { type: "text/csv" }));
   const created = await tickets.POST(new Request(`${ORIGIN}/api/helpdesk/tickets`, {
@@ -156,12 +177,15 @@ test("the integration list and detail Portal serves have the contract's shape", 
   let current = await step(agentActions.POST(agent(`/api/integration/helpdesk/tickets/${id}/actions`, { action: "claim", agent: who, expectedSequence: 1 }), ctx(id)));
   current = await step(agentActions.POST(agent(`/api/integration/helpdesk/tickets/${id}/actions`, { action: "add_tag", tag: "Refund", agent: who, expectedSequence: current.sequence }), ctx(id)));
   current = await step(agentMessages.POST(agent(`/api/integration/helpdesk/tickets/${id}/messages`, { body: "Refund approved in Stripe.", internal: true, agent: who, expectedSequence: current.sequence }), ctx(id)));
-  await step(agentMessages.POST(agent(`/api/integration/helpdesk/tickets/${id}/messages`, { body: "Your invoice is attached to your account now.", internal: false, agent: who, expectedSequence: current.sequence }), ctx(id)));
+  current = await step(agentMessages.POST(agent(`/api/integration/helpdesk/tickets/${id}/messages`, { body: "Your invoice is attached to your account now.", internal: false, agent: who, expectedSequence: current.sequence }), ctx(id)));
+  await step(agentActions.POST(agent(`/api/integration/helpdesk/tickets/${id}/actions`, { action: "flag", agent: who, expectedSequence: current.sequence }), ctx(id)));
 
   const list = await (await agentTickets.GET(agent("/api/integration/helpdesk/tickets?limit=1"))).json() as Json;
   assertSameShape(list, fixture.adminToPortal.listResponse);
-  const detail = await (await agentTicket.GET(agent(`/api/integration/helpdesk/tickets/${id}`), ctx(id))).json() as Json;
+  const detail = await (await agentTicket.GET(agent(`/api/integration/helpdesk/tickets/${id}`), ctx(id))).json() as Json & { aiAssist: Json[]; flagged: boolean };
   assertSameShape(detail, fixture.adminToPortal.detailResponse);
+  assert.equal(detail.aiAssist.length, 1, "the chat answer is linked and compared against the contract's aiAssist item");
+  assert.equal(detail.flagged, true);
 
   // The subscription block (null for this learner) has the contract's keys when present.
   const projected = projectStudent({
@@ -186,25 +210,39 @@ test("Portal's Admin client sends the contract's requests and reads the contract
     const client = createAdminHelpdeskClient({ fetch: fakeFetch, log: () => undefined });
     const p = fixture.portalToAdmin;
 
-    replies.push(new Response(JSON.stringify(p.questionsResponse), { status: 200, headers: { "content-type": "application/json", etag: p.questionsResponse.etag } }));
-    assert.deepEqual(await client.commonQuestions("en-GB"), p.questionsResponse.questions);
-    assert.equal(sent[0].url, `http://admin.local.test${p.questionsRequest}`);
+    replies.push(new Response(JSON.stringify(p.faqsResponse), { status: 200, headers: { "content-type": "application/json", etag: p.faqsResponse.etag } }));
+    assert.deepEqual(await client.faqs("en-GB", { popular: true, limit: 3 }), p.faqsResponse.faqs);
+    assert.equal(sent[0].url, `http://admin.local.test${p.faqsRequest}`);
     assert.equal(sent[0].headers.Authorization, "Bearer local-test-admin-token");
 
-    replies.push(new Response(JSON.stringify(p.suggestResponse), { status: 200 }));
-    const request = p.suggestRequest as unknown as Parameters<typeof client.suggest>[0];
-    assert.deepEqual(await client.suggest(request), p.suggestResponse.suggestion);
-    assert.equal(sent[1].url, "http://admin.local.test/api/integration/helpdesk/suggest");
-    assert.deepEqual(sent[1].body, p.suggestRequest);
+    replies.push(new Response(JSON.stringify(p.faqsResponse), { status: 200 }));
+    await client.faqs("zh-CN", { category: "payments_subscriptions", q: "invoice", limit: 50 });
+    assert.equal(sent[1].url, `http://admin.local.test${p.faqsSearchRequest}`);
+
+    replies.push(new Response(JSON.stringify(p.faqResponse), { status: 200 }));
+    const faqId = (p.faqResponse as { id: string }).id;
+    assert.deepEqual(await client.faq(faqId, "en-GB"), p.faqResponse);
+    assert.equal(sent[2].url, `http://admin.local.test${p.faqRequest}`);
+
+    for (const [index, body] of [p.suggestRequest, p.suggestChatRequest, p.suggestChipRequest].entries()) {
+      replies.push(new Response(JSON.stringify(p.suggestResponse), { status: 200 }));
+      assert.deepEqual(await client.suggest(body as unknown as Parameters<typeof client.suggest>[0]), p.suggestResponse.suggestion);
+      assert.equal(sent[3 + index].url, "http://admin.local.test/api/integration/helpdesk/suggest");
+      assert.deepEqual(sent[3 + index].body, body, "sent exactly as in the contract (key order included)");
+      assert.equal(JSON.stringify(sent[3 + index].body), JSON.stringify(body));
+    }
 
     replies.push(new Response(JSON.stringify(p.suggestNoMatchResponse), { status: 200 }));
-    assert.equal(await client.suggest(request), null);
+    assert.equal(await client.suggest(p.suggestChatRequest as unknown as Parameters<typeof client.suggest>[0]), null);
 
     const suggestionId = (p.suggestResponse.suggestion as { id: string }).id;
     replies.push(new Response(JSON.stringify(p.outcomeResponse), { status: 200 }));
     assert.equal(await client.reportOutcome(suggestionId, "declined"), true);
-    assert.equal(sent[3].url, `http://admin.local.test/api/integration/helpdesk/suggestions/${suggestionId}/outcome`);
-    assert.deepEqual(sent[3].body, p.outcomeRequest);
+    assert.equal(sent[7].url, `http://admin.local.test/api/integration/helpdesk/suggestions/${suggestionId}/outcome`);
+    assert.deepEqual(sent[7].body, p.outcomeRequest);
+    replies.push(new Response(JSON.stringify({ ...p.outcomeResponse as object, outcome: "helpful" }), { status: 200 }));
+    assert.equal(await client.reportOutcome(suggestionId, "helpful"), true);
+    assert.deepEqual(sent[8].body, p.helpfulOutcomeRequest);
   } finally {
     delete process.env.ADMIN_HELPDESK_BASE_URL;
     delete process.env.ADMIN_HELPDESK_TOKEN;

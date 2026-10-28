@@ -26,7 +26,16 @@ export const HELPDESK_LIMITS = {
   /** Per learner, rolling hour, counted from helpdesk_tickets. */
   ticketsPerHour: 10,
   /** Per learner, rolling hour, counted from helpdesk_ticket_messages (every learner message, a ticket's first one included). */
-  learnerMessagesPerHour: 60
+  learnerMessagesPerHour: 60,
+  /** v2 §4b: assistant questions (chat + chip) per learner, rolling hour, counted from helpdesk_assist_log. */
+  assistantPerHour: 30,
+  /** v2 §4a: what the learner typed (or the chip question) as stored in helpdesk_assist_log. */
+  assistQuestionMax: 500,
+  /** v2 §4a: assistant answers a new ticket may link. */
+  assistIdsPerTicket: 10,
+  /** v2 §4a: only answers younger than this are linked to a new ticket. */
+  assistLinkWindowHours: 24,
+  learnerIdMax: 128
 } as const;
 
 export const TICKET_STATUSES = ["OPEN", "ASSIGNED", "WAITING_USER", "PENDING_CONFIRM", "CLOSED", "CANCELLED"] as const;
@@ -48,7 +57,8 @@ export type CloseReason = "cancelled" | "user_confirmed" | "user_closed" | "auto
 
 export const LEARNER_ACTIONS = ["cancel", "confirm", "reject", "close", "rate"] as const;
 export type LearnerAction = (typeof LEARNER_ACTIONS)[number];
-export const AGENT_ACTIONS = ["claim", "propose_resolution", "add_tag", "remove_tag", "mark_read"] as const;
+/** v2 §4a adds flag / unflag ("Flag follow-up" in the BackOffice action bar). */
+export const AGENT_ACTIONS = ["claim", "propose_resolution", "add_tag", "remove_tag", "mark_read", "flag", "unflag"] as const;
 export type AgentAction = (typeof AGENT_ACTIONS)[number];
 /** What the learner may do now ("reply" = send a message / follow up). */
 export type LearnerAllowedAction = "reply" | LearnerAction;
@@ -122,7 +132,7 @@ export type TicketDetail = TicketSummary & {
 export type HelpdeskEventName =
   | "created" | "claimed" | "agent_replied" | "internal_note_added" | "learner_replied" | "resolution_proposed"
   | "resolution_rejected" | "confirmed" | "auto_confirmed" | "closed_by_learner" | "cancelled" | "reopened" | "rated"
-  | "suggestion_declined" | "tag_added" | "tag_removed";
+  | "suggestion_declined" | "tag_added" | "tag_removed" | "flagged" | "unflagged";
 
 export type HelpdeskEventData = {
   from_state: TicketStatus | null;
@@ -161,6 +171,8 @@ export type AgentTicketSummary = TicketSummary & {
   /** A learner created the ticket or wrote since an agent last opened it (mark_read). */
   unreadByAgent: boolean;
   tags: string[];
+  /** v2 §4a: an agent flagged the enquiry for follow-up. */
+  flagged: boolean;
 };
 
 /** BackOffice "Student Information" (read-only projection of existing Portal data). */
@@ -205,22 +217,44 @@ export type AgentTicketDetail = Omit<AgentTicketSummary, "learner"> & {
   messages: AgentTicketMessageView[];
   events: HelpdeskCloudEvent[];
   allowedActions: AgentAllowedAction[];
+  /** v2 §4a: the AI Support Assistant answers linked to this enquiry, oldest first (as stored by Portal; never client text). */
+  aiAssist: AiAssistView[];
 };
 
 export type TicketCounts = Record<TicketStatus, number> & { needs_reply: number; all: number };
 export type LearnerTicketList = { tickets: TicketSummary[] };
 export type AgentTicketList = { tickets: AgentTicketSummary[]; nextCursor: string | null; counts: TicketCounts };
 
-// ---------------------------------------------------------------- Admin-owned Q&A and suggestions (addendum §A/§C/§E)
+// ---------------------------------------------------------------- Admin-owned FAQs and the AI Support Assistant (v2 §1, §2, §4)
 
-/** A published, featured Common Question from Admin; answer is plain text with line breaks. */
-export type CommonQuestion = { id: string; category: string; question: string; answer: string };
-export type CommonQuestionList = { questions: CommonQuestion[] };
-export type HelpdeskSuggestion = { id: string; qaId: string; question: string; answer: string };
+/** v2 §1: Help Centre topics (Admin owns the FAQs; Portal only reads published ones). */
+export const FAQ_CATEGORIES = ["account_technical", "courses_learning", "payments_subscriptions", "other"] as const;
+export type FaqCategory = (typeof FAQ_CATEGORIES)[number];
+/** A published FAQ in one locale; answer is the Markdown subset (modules/helpdesk/markdown.ts). */
+export type HelpFaq = { id: string; category: FaqCategory; popular: boolean; question: string; answer: string; updatedAt: string };
+export type FaqFilter = { popular?: boolean; category?: FaqCategory | null; q?: string; limit?: number };
+/** One stored answer, shown verbatim. */
+export type HelpdeskSuggestion = { id: string; faqId: string; question: string; answer: string };
 export type SuggestionResponse = { suggestion: HelpdeskSuggestion | null };
+/** Where an assistant answer was shown: the submit-time modal, the chat panel, or a starter chip. */
+export const ASSIST_SOURCES = ["submit", "chat", "chip"] as const;
+export type AssistSource = (typeof ASSIST_SOURCES)[number];
+/** What the learner did with the submit-time suggestion (1333:249). */
 export const SUGGESTION_OUTCOMES = ["solved", "declined", "edited"] as const;
 export type SuggestionOutcome = (typeof SUGGESTION_OUTCOMES)[number];
+/** Every outcome Admin records: the submit modal's three plus the chat's Helpful? Yes / No. First one wins. */
+export const ASSIST_FEEDBACK = ["helpful", "not_helpful", "solved", "declined", "edited"] as const;
+export type AssistFeedback = (typeof ASSIST_FEEDBACK)[number];
 export type SuggestInput = { category: TicketCategory; subject: string; message: string; locale: HelpdeskLocale };
+/** Portal -> Admin POST /api/integration/helpdesk/suggest (v2 §2). */
+export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string };
+/** POST /api/helpdesk/assistant body (v2 §4b). */
+export type AssistantInput = { message: string; locale: HelpdeskLocale; faqId: string | null };
+/** id is the assist log row (link it with assistIds); reply null = show the fallback copy. */
+export type AssistantResponse = { id: string; reply: HelpdeskSuggestion | null };
+export type AssistantFeedbackResponse = { id: string; feedback: AssistFeedback | null };
+/** BackOffice AI block (v2 §3d / §4a). */
+export type AiAssistView = { id: string; source: AssistSource; question: string; faqId: string | null; faqQuestion: string | null; answer: string | null; feedback: AssistFeedback | null; createdAt: string };
 
 // ---------------------------------------------------------------- problems
 
@@ -311,6 +345,8 @@ export type CreateTicketInput = {
   contactEmail?: string | null;
   /** The AI suggestion the learner declined before submitting ("No, still submit"). */
   suggestionId?: string | null;
+  /** v2 §4a: chat answers (helpdesk_assist_log ids) to link to the new ticket; at most 10. */
+  assistIds?: string[];
   files: UploadInput[];
 };
 export type LearnerMessageInput = { body: string; expectedSequence: number; files: UploadInput[] };
@@ -319,7 +355,13 @@ export type AgentMessageInput = { body: string; internal: boolean; agent: AgentI
 /** expectedSequence is required for claim / propose_resolution and optional (null) for tags and mark_read. */
 export type AgentActionInput = { action: AgentAction; agent: AgentIdentity; expectedSequence: number | null; tag?: string };
 export type ListCursor = { updatedAt: string; id: string };
-export type AgentListQuery = { status: TicketStatus | "needs_reply" | null; q: string; limit: number; cursor: ListCursor | null; category?: TicketCategory | null; tag?: string | null };
+export type AgentListQuery = {
+  status: TicketStatus | "needs_reply" | null; q: string; limit: number; cursor: ListCursor | null; category?: TicketCategory | null; tag?: string | null;
+  /** v2 §4a: only flagged (true) enquiries. */
+  flagged?: boolean | null;
+  /** v2 §4a: one learner's enquiries (the BackOffice student timeline). */
+  learnerId?: string | null;
+};
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HelpdeskProblem("invalid_request", "Send a JSON object.");
@@ -419,8 +461,23 @@ export function parseCreateTicketInput(fields: Record<string, unknown>, files: U
     locale: oneOf(fields, "locale", HELPDESK_LOCALES),
     contactEmail: optionalContactEmail(fields),
     suggestionId: optionalUuid(fields, "suggestionId"),
+    assistIds: assistIdList(fields.assistIds),
     files: uploads(files)
   };
+}
+
+/** v2 §4a: up to 10 distinct assist log ids (multipart repeats the field; one value arrives as a string). */
+function assistIdList(raw: unknown): string[] {
+  if (raw === undefined || raw === null || raw === "") return [];
+  const values = Array.isArray(raw) ? raw : [raw];
+  const ids: string[] = [];
+  for (const value of values) {
+    if (!isUuid(value)) invalid("assistIds", "assistIds must be UUIDs.");
+    const id = value.toLowerCase();
+    if (!ids.includes(id)) ids.push(id);
+  }
+  if (ids.length > HELPDESK_LIMITS.assistIdsPerTicket) invalid("assistIds", `Link at most ${HELPDESK_LIMITS.assistIdsPerTicket} assistant answers.`);
+  return ids;
 }
 
 export function parseLearnerMessageInput(fields: Record<string, unknown>, files: UploadInput[]): LearnerMessageInput {
@@ -455,7 +512,7 @@ export function parseAgentActionInput(value: unknown): AgentActionInput {
   const input = record(value);
   const action = oneOf(input, "action", AGENT_ACTIONS);
   const agent = agentIdentity(input);
-  if (action === "claim" || action === "propose_resolution") return { action, agent, expectedSequence: sequence(input, false) };
+  if (action === "claim" || action === "propose_resolution" || action === "flag" || action === "unflag") return { action, agent, expectedSequence: sequence(input, false) };
   const expectedSequence = input.expectedSequence === undefined || input.expectedSequence === null ? null : sequence(input, false);
   if (action === "mark_read") return { action, agent, expectedSequence };
   const tag = normaliseTag(input.tag);
@@ -475,6 +532,35 @@ export function parseSuggestInput(value: unknown): SuggestInput {
 
 export function parseSuggestionOutcome(value: unknown): SuggestionOutcome {
   return oneOf(record(value), "outcome", SUGGESTION_OUTCOMES);
+}
+
+/** POST /api/helpdesk/assistant: { message (1..500 code points), locale, faqId? } (v2 §4b). */
+export function parseAssistantInput(value: unknown): AssistantInput {
+  const input = record(value);
+  return {
+    message: boundedText(input, "message", HELPDESK_LIMITS.assistQuestionMax),
+    locale: oneOf(input, "locale", HELPDESK_LOCALES),
+    faqId: optionalUuid(input, "faqId")
+  };
+}
+
+/** POST /api/helpdesk/assistant/{id}/feedback: { helpful: boolean }. */
+export function parseAssistantFeedback(value: unknown): boolean {
+  const input = record(value);
+  if (typeof input.helpful !== "boolean") invalid("helpful", "helpful must be true or false.");
+  return input.helpful;
+}
+
+export type HelpCentreQuery = { q: string; category: FaqCategory | null; faq: string | null };
+
+/** /{locale}/help?q=&category=&faq= — anything unreadable is ignored rather than refused (it is a public page). */
+export function parseHelpCentreQuery(params: Record<string, string | string[] | undefined>): HelpCentreQuery {
+  const first = (name: string) => { const raw = params[name]; return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] ?? "" : ""; };
+  const rawQ = first("q");
+  const q = hasControlCharacters(rawQ) ? "" : [...rawQ.trim()].slice(0, HELPDESK_LIMITS.queryMax).join("");
+  const category = (FAQ_CATEGORIES as readonly string[]).includes(first("category")) ? first("category") as FaqCategory : null;
+  const faq = isUuid(first("faq")) ? first("faq").toLowerCase() : null;
+  return { q, category, faq };
 }
 
 export function parseLocaleParam(params: URLSearchParams): HelpdeskLocale {
@@ -516,7 +602,14 @@ export function parseAgentListQuery(params: URLSearchParams): AgentListQuery {
     tag = normaliseTag(tagRaw);
     if (!tag) invalid("tag", `tag must be at most ${HELPDESK_LIMITS.tagMax} characters.`);
   }
-  return { status, q, limit, cursor: cursorRaw ? decodeCursor(cursorRaw) : null, category: (categoryRaw || null) as TicketCategory | null, tag };
+  const flaggedRaw = (params.get("flagged") || "").trim();
+  if (flaggedRaw && flaggedRaw !== "true" && flaggedRaw !== "false") invalid("flagged", "flagged must be true or false.");
+  const learnerRaw = params.get("learnerId") || "";
+  if (hasControlCharacters(learnerRaw) || textLength(learnerRaw.trim()) > HELPDESK_LIMITS.learnerIdMax) invalid("learnerId", "learnerId is not valid.");
+  return {
+    status, q, limit, cursor: cursorRaw ? decodeCursor(cursorRaw) : null, category: (categoryRaw || null) as TicketCategory | null, tag,
+    flagged: flaggedRaw === "true" ? true : null, learnerId: learnerRaw.trim() || null
+  };
 }
 
 /** Idempotency-Key (IETF httpapi draft): an sf-string; Learning Guide keys are UUIDs. */

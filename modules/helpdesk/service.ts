@@ -18,6 +18,7 @@ import {
   type AgentTicketDetail,
   type AgentTicketList,
   type AgentTicketSummary,
+  type AiAssistView,
   type AttachmentView,
   type CreateTicketInput,
   type HelpdeskAttachmentType,
@@ -62,7 +63,7 @@ import {
   type TicketAggregate,
   type TicketRecord
 } from "./domain";
-import type { HelpdeskRepository, TicketListItem } from "./repository";
+import type { AssistRecord, HelpdeskRepository, TicketListItem } from "./repository";
 
 export type LearnerIdentity = { id: string; email: string; name: string };
 export type LearnerUpdateKind = "agent_replied" | "resolution_proposed";
@@ -206,8 +207,14 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       contactEmail: ticket.contactEmail,
       preview: previewOf(extra.firstMessage),
       unreadByAgent: ticket.unreadByAgent,
-      tags: extra.tags
+      tags: extra.tags,
+      flagged: Boolean(ticket.flaggedAt)
     };
+  }
+
+  /** v2 §4a: what Portal stored when the answer was shown — never text a client sent. */
+  function aiAssistView(row: AssistRecord): AiAssistView {
+    return { id: row.id, source: row.source, question: row.question, faqId: row.faqId, faqQuestion: row.faqQuestion, answer: row.answer, feedback: row.feedback, createdAt: row.createdAt };
   }
 
   async function studentProjection(ticket: TicketRecord): Promise<{ student: StudentProjection; subscription: SubscriptionProjection | null }> {
@@ -253,7 +260,8 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
         createdAt: item.createdAt, attachments: attachmentViews(aggregate, item, AGENT_ATTACHMENT_URL)
       })),
       events: aggregate.events.map(cloudEvent),
-      allowedActions: allowed(ticket, AGENT_ACTION_COMMANDS, "agent", at)
+      allowedActions: allowed(ticket, AGENT_ACTION_COMMANDS, "agent", at),
+      aiAssist: (await repository.listAssistsByTicket(ticket.id)).map(aiAssistView)
     };
   }
 
@@ -394,6 +402,13 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     tag?: string;
   };
 
+  /** Commands that set a label which may already be set: repeating them changes nothing (no event). */
+  function alreadyApplied(aggregate: TicketAggregate, spec: CommandSpec): boolean {
+    if (spec.command === "flag") return Boolean(aggregate.ticket.flaggedAt);
+    if (spec.command === "unflag") return !aggregate.ticket.flaggedAt;
+    return false;
+  }
+
   function staleProblem(currentSequence: number) {
     return new HelpdeskProblem("stale_ticket", "This request was updated. Reload it and try again.", { currentSequence });
   }
@@ -416,6 +431,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     const at = now();
     const decision = decide(ticket, spec.command, spec.actor.kind, at);
     if (!decision.ok) reject(ticket, spec.command, spec.actor.kind, decision);
+    if (alreadyApplied(aggregate, spec)) return { aggregate, replayed: false };
     if (spec.tag !== undefined) {
       // Tags are idempotent: adding a present tag or removing a missing one changes nothing.
       const present = aggregate.tags.includes(spec.tag);
@@ -484,7 +500,8 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     const contactEmail = input.contactEmail || (accountEmail && isContactEmail(accountEmail) ? accountEmail : null);
     if (!contactEmail) throw new HelpdeskProblem("validation_failed", "Add an email address so support can reply.", {}, "contactEmail");
     const suggestionId = input.suggestionId ?? null;
-    const hash = payloadHash({ op: "create", userId: learner.id, category: input.category, subject: input.subject, body: input.body, locale: input.locale, contactEmail, suggestionId, files: fileFingerprints(input.files) });
+    const assistIds = [...new Set(input.assistIds ?? [])].sort();
+    const hash = payloadHash({ op: "create", userId: learner.id, category: input.category, subject: input.subject, body: input.body, locale: input.locale, contactEmail, suggestionId, files: fileFingerprints(input.files), ...(assistIds.length ? { assistIds } : {}) });
     const replayTicket = async () => {
       const ticketId = await replayed(key, hash, null);
       if (!ticketId) return null;
@@ -515,11 +532,18 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
         ticket: {
           id: ticketId, userId: learner.id, userEmail: learner.email, userName: learner.name, contactEmail, locale: input.locale, category: input.category, subject: input.subject,
           status: decision.to, assigneeId: null, assigneeName: null, sequence: events.length, confirmDueAt: null, closedAt: null, closeReason: null, rating: null,
-          createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash, suggestionId, unreadByAgent: true
+          createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash, suggestionId, unreadByAgent: true,
+          flaggedAt: null, flaggedBy: null
         },
         message: { id: messageId, ticketId, authorKind: "learner", authorId: learner.id, authorName: learner.name, body: input.body, internal: false, attachmentIds: attachments.map((item) => item.id), clientEventId: key, payloadHash: hash, createdAt },
         attachments,
-        events
+        events,
+        // v2 §4a: the learner's own, unlinked answers from the last 24 h (the declined submit suggestion included).
+        assistLinks: {
+          ids: [...new Set([...assistIds, ...(suggestionId ? [suggestionId] : [])])],
+          learnerId: learner.id,
+          sinceIso: new Date(at.getTime() - HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000).toISOString()
+        }
       });
     } catch (error) {
       await discardUploads(attachments);
