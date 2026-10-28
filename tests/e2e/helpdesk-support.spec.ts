@@ -352,6 +352,41 @@ test("form accessibility: required fields are announced, the drop zone is no ext
   await context.close();
 });
 
+test("an image copied from a web page (text/html and the image, no text/plain) pasted into Message attaches", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await openSupport(page);
+  // Chrome "Copy image": the clipboard holds an <img> tag and the image file, but no plain text.
+  await page.getByLabel(text.message).evaluate((textarea, base64) => {
+    const data = new DataTransfer();
+    data.setData("text/html", "<img src=\"https://example.test/diagram.png\">");
+    data.items.add(new File([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))], "image.png", { type: "image/png" }));
+    textarea.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG.toString("base64"));
+  await expect(page.locator(".helpdesk-file-chip")).toHaveCount(1);
+  await expect(page.locator(".helpdesk-file-chip")).toContainText(/screenshot-\d+\.png/);
+  await expect(page.getByLabel(text.message)).toHaveValue("");
+  await context.close();
+});
+
+test("Cancel whose page comes back (back-forward cache) does not block the next Submit", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await page.goto("/en-GB/account/my-learning/settings");
+  await openSupport(page);
+  await page.route("**/api/helpdesk/suggestions", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ suggestion: null }) }));
+  // Cancel goes back to another document; the browser later restores this page as it was (React state included).
+  // Keep the page in place to stand in for that restore.
+  await page.evaluate(() => { window.history.back = () => undefined; });
+  await page.getByRole("button", { name: text.cancel }).click();
+  const subject = `Back again ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "en-GB", { category: "other", subject, message: "I came back to send it after all." });
+  await page.getByRole("button", { name: text.submit }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  expect((await learnerTickets(page)).map((ticket) => ticket.subject)).toEqual([subject]);
+  await context.close();
+});
+
 test("a follow-up refused because the window has passed reloads the ticket, so the stale composer goes away", async ({ browser }) => {
   const { context, page } = await newLearner(browser);
   const text = copy("en-GB");

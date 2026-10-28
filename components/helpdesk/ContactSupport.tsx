@@ -109,6 +109,8 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     attachments.setError("");
     if (!validate()) return;
     inFlight.current = true;
+    // A new Submit is never abandoned (Cancel may have left a page the browser later restored from the back-forward cache).
+    abandoned.current = false;
     try {
       // Same form as a submit that may have reached the server: resend it as it was, without a new suggestion check.
       const again = retry.current.retryFor(submissionSignature(formFields(), attachments.files));

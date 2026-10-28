@@ -40,7 +40,7 @@ export function useAttachments(config: HelpdeskUiConfig, copy: HelpdeskCopy, dis
   const onPaste = useCallback((event: ReactClipboardEvent) => {
     const target = event.target as HTMLElement;
     const intoTextField = target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !["file", "checkbox", "radio", "button", "submit", "reset"].includes(target.type)) || target.isContentEditable;
-    const pasted = pastedFiles({ files: [...(event.clipboardData?.files ?? [])], types: [...(event.clipboardData?.types ?? [])], intoTextField, disabled: busy.current });
+    const pasted = pastedFiles({ files: [...(event.clipboardData?.files ?? [])], plainText: event.clipboardData?.getData("text/plain") ?? "", intoTextField, disabled: busy.current });
     if (pasted.length === 0) return;
     event.preventDefault();
     add(pasted.map((file, index) => file.name && file.name !== "image.png" ? file : new File([file], `screenshot-${Date.now()}${index ? `-${index}` : ""}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: file.type, lastModified: file.lastModified })));

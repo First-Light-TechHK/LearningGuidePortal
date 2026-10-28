@@ -122,13 +122,14 @@ test("a retried submit after a lost response sends the same request: same Idempo
 
 test("pasting: files are attached only when no text is being pasted into a text field, and never while the form is busy", () => {
   const shot = [{ name: "image.png" }];
-  assert.deepEqual(pastedFiles({ files: shot, types: ["Files"], intoTextField: false, disabled: false }), shot);
-  assert.deepEqual(pastedFiles({ files: shot, types: ["Files"], intoTextField: true, disabled: false }), shot, "a screenshot pasted into the message still attaches");
-  assert.deepEqual(pastedFiles({ files: shot, types: ["text/plain", "text/html", "Files"], intoTextField: true, disabled: false }), [], "Excel cells: the text goes into the field");
-  assert.deepEqual(pastedFiles({ files: shot, types: ["text/html", "Files"], intoTextField: true, disabled: false }), []);
-  assert.deepEqual(pastedFiles({ files: shot, types: ["text/plain", "Files"], intoTextField: false, disabled: false }), shot, "not into a text field: the file is what can be pasted");
-  assert.deepEqual(pastedFiles({ files: shot, types: ["Files"], intoTextField: false, disabled: true }), []);
-  assert.deepEqual(pastedFiles({ files: [], types: ["text/plain"], intoTextField: true, disabled: false }), []);
+  assert.deepEqual(pastedFiles({ files: shot, plainText: "", intoTextField: false, disabled: false }), shot);
+  assert.deepEqual(pastedFiles({ files: shot, plainText: "", intoTextField: true, disabled: false }), shot, "a screenshot pasted into the message still attaches");
+  assert.deepEqual(pastedFiles({ files: shot, plainText: "A1\tB1", intoTextField: true, disabled: false }), [], "Excel / Word cells: the text goes into the field");
+  assert.deepEqual(pastedFiles({ files: shot, plainText: "", intoTextField: true, disabled: false }), shot, "Chrome 'Copy image' (text/html + the image, no text/plain): the image attaches");
+  assert.deepEqual(pastedFiles({ files: shot, plainText: " \n\t", intoTextField: true, disabled: false }), shot, "blank text/plain is no text to paste: the image attaches");
+  assert.deepEqual(pastedFiles({ files: shot, plainText: "A1", intoTextField: false, disabled: false }), shot, "not into a text field: the file is what can be pasted");
+  assert.deepEqual(pastedFiles({ files: shot, plainText: "", intoTextField: false, disabled: true }), []);
+  assert.deepEqual(pastedFiles({ files: [], plainText: "A1", intoTextField: true, disabled: false }), []);
 });
 
 test("the assistant modal keeps Tab inside: forward from the last wraps to the first, back from the first wraps to the last, focus outside comes back in", () => {

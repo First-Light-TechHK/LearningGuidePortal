@@ -144,11 +144,13 @@ export class RetryableSubmit {
  * Files to attach from a paste, or [] to let the browser paste as usual:
  * text pasted into a text field stays text (Office copies a picture of the
  * cells next to the text), and nothing is attached while the form is busy.
+ * plainText is the clipboard's text/plain: only that counts as text, because
+ * a text field cannot paste text/html alone (Chrome "Copy image" puts the
+ * image and an <img> tag on the clipboard, and the image must still attach).
  */
-export function pastedFiles<T>(paste: { files: T[]; types: readonly string[]; intoTextField: boolean; disabled: boolean }): T[] {
+export function pastedFiles<T>(paste: { files: T[]; plainText: string; intoTextField: boolean; disabled: boolean }): T[] {
   if (paste.disabled || paste.files.length === 0) return [];
-  const hasText = paste.types.includes("text/plain") || paste.types.includes("text/html");
-  return hasText && paste.intoTextField ? [] : paste.files;
+  return paste.plainText.trim() !== "" && paste.intoTextField ? [] : paste.files;
 }
 
 /**
