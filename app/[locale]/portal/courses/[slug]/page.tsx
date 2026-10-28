@@ -10,6 +10,7 @@ import { CourseLearningModeDialog } from "@/components/portal/CourseLearningMode
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { CourseCurriculumAction } from "@/components/portal/CourseCurriculumAction";
+import { CourseDetailSync } from "@/components/portal/CourseDetailSync";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { StreamedContent } from "@/components/portal/StreamedContent";
@@ -67,6 +68,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
       <StreamedContent>
+      {user && course && <CourseDetailSync slug={slug} snapshot={{ pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount }}/>}
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} serverUserId={user?.id ?? null} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
