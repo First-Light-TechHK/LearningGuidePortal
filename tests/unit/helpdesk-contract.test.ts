@@ -14,6 +14,7 @@ import {
   parseSuggestInput,
   parseSuggestionOutcome,
   problemBody,
+  isContactEmail,
   HELPDESK_ATTACHMENT_TYPES,
   TICKET_CATEGORIES,
   type UploadInput
@@ -160,6 +161,45 @@ test("agent list query: status filter, search text, bounded limit, opaque cursor
   problem(() => parseAgentListQuery(new URLSearchParams(`q=${"q".repeat(121)}`)), "validation_failed", "q");
   const cursor = Buffer.from(JSON.stringify({ updatedAt: "2026-10-28T06:00:00.000Z", id: KEY })).toString("base64url");
   assert.deepEqual(parseAgentListQuery(new URLSearchParams(`cursor=${cursor}`)).cursor, { updatedAt: "2026-10-28T06:00:00.000Z", id: KEY });
+});
+
+test("control characters (other than tab, line feed and carriage return) are refused with 400 in every parsed text field", () => {
+  const agent = { id: "emp-7", name: "Amy Chan" };
+  for (const bad of ["x\u0000y", "bell\u0007", "esc\u001b[0m", "del\u007f", "form\u000cfeed", "vt\u000b", "c1\u0085"]) {
+    problem(() => parseCreateTicketInput({ ...valid, subject: bad }, []), "validation_failed", "subject");
+    problem(() => parseCreateTicketInput({ ...valid, body: bad }, []), "validation_failed", "body");
+    problem(() => parseLearnerMessageInput({ body: bad, expectedSequence: "1" }, []), "validation_failed", "body");
+    problem(() => parseLearnerActionInput({ action: "reject", expectedSequence: 1, message: bad }), "validation_failed", "message");
+    problem(() => parseAgentMessageInput({ body: bad, internal: false, agent, expectedSequence: 1 }), "validation_failed", "body");
+    problem(() => parseAgentMessageInput({ body: "ok", internal: true, agent: { id: "emp-7", name: bad }, expectedSequence: 1 }), "validation_failed", "agent");
+    problem(() => parseAgentActionInput({ action: "claim", agent: { id: bad, name: "Amy" }, expectedSequence: 1 }), "validation_failed", "agent");
+    problem(() => parseSuggestInput({ category: "other", subject: bad, message: "m", locale: "en-GB" }), "validation_failed", "subject");
+    problem(() => parseSuggestInput({ category: "other", subject: "s", message: bad, locale: "en-GB" }), "validation_failed", "message");
+    problem(() => parseAgentListQuery(new URLSearchParams({ q: bad })), "validation_failed", "q");
+    problem(() => parseCreateTicketInput({ ...valid, contactEmail: `a${bad.replace(/[^\u0000-\u001f\u007f-\u009f]/g, "")}b@example.com` }, []), "validation_failed", "contactEmail");
+  }
+  assert.equal(isContactEmail("a\u0000b@example.com"), false);
+  const multiline = "Line 1\r\nLine 2\n\tindented";
+  assert.equal(parseCreateTicketInput({ ...valid, body: multiline }, []).body, multiline);
+  assert.equal(parseLearnerMessageInput({ body: multiline, expectedSequence: "2" }, []).body, multiline);
+});
+
+test("text limits count Unicode code points (as PostgreSQL char_length does); invisible-only text is empty", () => {
+  const emoji = "\u{1F600}";
+  assert.equal(parseCreateTicketInput({ ...valid, subject: emoji.repeat(120) }, []).subject, emoji.repeat(120));
+  problem(() => parseCreateTicketInput({ ...valid, subject: emoji.repeat(121) }, []), "validation_failed", "subject");
+  assert.equal(parseCreateTicketInput({ ...valid, body: "中".repeat(4999) + emoji }, []).body.length, 5001, "5000 code points in 5001 UTF-16 units");
+  problem(() => parseCreateTicketInput({ ...valid, body: emoji.repeat(5001) }, []), "validation_failed", "body");
+  assert.equal(parseLearnerActionInput({ action: "reject", expectedSequence: 1, message: emoji.repeat(5000) }).message, emoji.repeat(5000));
+  problem(() => parseLearnerActionInput({ action: "reject", expectedSequence: 1, message: emoji.repeat(5001) }), "validation_failed", "message");
+  assert.equal(parseAgentListQuery(new URLSearchParams({ q: emoji.repeat(120) })).q, emoji.repeat(120));
+  problem(() => parseAgentListQuery(new URLSearchParams({ q: emoji.repeat(121) })), "validation_failed", "q");
+  assert.equal(parseAgentMessageInput({ body: "ok", internal: true, agent: { id: "emp", name: emoji.repeat(120) }, expectedSequence: 1 }).agent.name, emoji.repeat(120));
+  for (const blank of ["\u200b", " \u200b\u200c\u200d ", "\u2060", "\ufeff"]) {
+    problem(() => parseCreateTicketInput({ ...valid, subject: blank }, []), "validation_failed", "subject");
+    problem(() => parseLearnerMessageInput({ body: blank, expectedSequence: "1" }, []), "validation_failed", "body");
+  }
+  assert.equal(parseCreateTicketInput({ ...valid, subject: "\u{1F468}\u200d\u{1F469}" }, []).subject, "\u{1F468}\u200d\u{1F469}", "a joined emoji is visible text");
 });
 
 test("Idempotency-Key: required UUID, bare or as a structured-field string", () => {

@@ -264,6 +264,16 @@ test("submit with a screenshot -> card -> agent reply -> learner reply -> resolu
   await problem(await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${randomUUID()}`), ctx({ id: randomUUID() })), 404, "not_found");
 });
 
+test("control characters in learner and agent text are a 400 validation_failed, never a 503", async () => {
+  process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "x\u0000y" }), cookie: learnerCookie, key: randomUUID() }), ctx()), 400, "validation_failed");
+  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, body: "nul\u0000" }), cookie: learnerCookie, key: randomUUID() }), ctx()), 400, "validation_failed");
+  const created = await (await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Control characters" }), cookie: learnerCookie, key: randomUUID() }), ctx())).json();
+  await problem(await routes.messages.POST(learnerRequest(`/api/helpdesk/tickets/${created.id}/messages`, { cookie: learnerCookie, key: randomUUID(), body: ticketForm({ body: "a\u0000b", expectedSequence: "1" }) }), ctx({ id: created.id })), 400, "validation_failed");
+  await problem(await routes.agentMessages.POST(agentRequest(`/api/integration/helpdesk/tickets/${created.id}/messages`, { key: randomUUID(), json: { body: "a\u0000b", internal: true, agent: { id: "emp-1", name: "Amy" }, expectedSequence: 1 } }), ctx({ id: created.id })), 400, "validation_failed");
+  await problem(await routes.agentTickets.GET(agentRequest(`/api/integration/helpdesk/tickets?q=${encodeURIComponent("a\u0000")}`), ctx()), 400, "validation_failed");
+});
+
 test("withdraw an OPEN request; nothing else can be done afterwards", async () => {
   const created = await (await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Withdraw me" }), cookie: learnerCookie, key: randomUUID() }), ctx())).json();
   await problem(await routes.actions.POST(learnerRequest(`/api/helpdesk/tickets/${created.id}/actions`, { cookie: strangerCookie, key: randomUUID(), json: { action: "cancel", expectedSequence: 1 } }), ctx({ id: created.id })), 404, "not_found");

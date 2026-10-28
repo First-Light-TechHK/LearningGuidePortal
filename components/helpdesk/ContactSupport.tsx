@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { CommonQuestion, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
-import { answerBlocks, fileSignature, fillTemplate, firstName, initials, problemMessageKey, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { answerBlocks, fileSignature, fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, problemMessageKey, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
 import { createTicket, newIdempotencyKey, reportSuggestionOutcome, requestSuggestion } from "./helpdeskApi";
 import { AttachmentZone, FileSummaryChip, LinkifiedText, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
 import "./helpdesk.css";
@@ -17,7 +17,6 @@ type Locale = "en-GB" | "zh-CN";
 type Field = "category" | "subject" | "message" | "email";
 type Phase = "form" | "suggestion" | "thanks" | "success";
 
-const EMAIL = /^[^\s@"<>()[\],;:\\]+@[^\s@"<>()[\],;:\\]+\.[^\s@"<>()[\],;:\\]{2,}$/;
 const THANKS_REDIRECT_MS = 2_000;
 
 export function ContactSupport({ locale, copy, config, account, questions }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { name: string; email: string }; questions: CommonQuestion[] }) {
@@ -50,9 +49,9 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
   function validate() {
     const found: Partial<Record<Field, string>> = {};
     if (!category) found.category = copy.validation.category;
-    if (!subject.trim() || subject.trim().length > config.limits.subjectMax) found.subject = copy.validation.subject;
-    if (!message.trim() || message.trim().length > config.limits.bodyMax) found.message = copy.validation.message;
-    if (!EMAIL.test(email.trim()) || email.trim().length > config.limits.emailMax) found.email = copy.validation.email;
+    if (!isValidText(subject, config.limits.subjectMax)) found.subject = copy.validation.subject;
+    if (!isValidText(message, config.limits.bodyMax)) found.message = copy.validation.message;
+    if (!isValidEmail(email, config.limits.emailMax)) found.email = copy.validation.email;
     setErrors(found);
     const first = (["category", "subject", "message", "email"] as const).find((field) => found[field]);
     if (first) document.getElementById(`${ids}-${first}`)?.focus();
@@ -136,8 +135,8 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
               onChange={(value) => { setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
             {fieldError("category")}
           </div>
-          <div className="helpdesk-field">{label("subject", copy.subject)}<input ref={subjectInput} {...fieldProps("subject")} className="helpdesk-input" maxLength={config.limits.subjectMax} placeholder={copy.subjectPlaceholder} value={subject} disabled={disabled} onChange={(event) => setSubject(event.target.value)} />{fieldError("subject")}</div>
-          <div className="helpdesk-field">{label("message", copy.message)}<textarea {...fieldProps("message")} className="helpdesk-input helpdesk-textarea" maxLength={config.limits.bodyMax} placeholder={copy.messagePlaceholder} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} />{fieldError("message")}</div>
+          <div className="helpdesk-field">{label("subject", copy.subject)}<input ref={subjectInput} {...fieldProps("subject")} className="helpdesk-input" maxLength={inputMaxLength(config.limits.subjectMax)} placeholder={copy.subjectPlaceholder} value={subject} disabled={disabled} onChange={(event) => setSubject(event.target.value)} />{fieldError("subject")}</div>
+          <div className="helpdesk-field">{label("message", copy.message)}<textarea {...fieldProps("message")} className="helpdesk-input helpdesk-textarea" maxLength={inputMaxLength(config.limits.bodyMax)} placeholder={copy.messagePlaceholder} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} />{fieldError("message")}</div>
           <AttachmentZone copy={copy} config={config} attachments={attachments} disabled={disabled} inputId={`${ids}-files`} />
           <div className="helpdesk-field">{label("email", copy.email)}<input {...fieldProps("email")} className="helpdesk-input" type="email" autoComplete="email" maxLength={config.limits.emailMax} value={email} disabled={disabled} onChange={(event) => setEmail(event.target.value)} />{fieldError("email")}<p className="helpdesk-email-note">{copy.emailNote}</p></div>
           {formError ? <p role="alert" className="helpdesk-inline-error">{formError}</p> : null}

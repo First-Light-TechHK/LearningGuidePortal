@@ -6,6 +6,7 @@
 // (/api/integration/helpdesk/**). Success bodies are plain JSON; errors are
 // application/problem+json. Nothing here touches storage.
 import { isUuid } from "@/lib/uuidv7";
+import { hasControlCharacters, isBlankText, textLength } from "./helpdeskText";
 
 export const HELPDESK_LIMITS = {
   subjectMax: 120,
@@ -319,12 +320,19 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/** Free text: no control characters anywhere (tab, LF and CR are fine), then trimmed, at most max code points. */
+function cleanText(raw: string, field: string, max: number): string {
+  if (hasControlCharacters(raw)) invalid(field, `${field} must not contain control characters.`);
+  const value = raw.trim();
+  if (textLength(value) > max) invalid(field, `${field} must be at most ${max} characters.`);
+  return value;
+}
+
 function boundedText(input: Record<string, unknown>, field: string, max: number): string {
   const raw = input[field];
   if (typeof raw !== "string") invalid(field, `${field} is required.`);
-  const value = raw.trim();
-  if (!value) invalid(field, `${field} is required.`);
-  if (value.length > max) invalid(field, `${field} must be at most ${max} characters.`);
+  const value = cleanText(raw, field, max);
+  if (isBlankText(value)) invalid(field, `${field} is required.`);
   return value;
 }
 
@@ -355,9 +363,12 @@ function agentIdentity(input: Record<string, unknown>): AgentIdentity {
   const agent = input.agent;
   if (!agent || typeof agent !== "object" || Array.isArray(agent)) invalid("agent", "agent { id, name } is required.");
   const value = agent as Record<string, unknown>;
-  const id = typeof value.id === "string" ? value.id.trim() : "";
-  const name = typeof value.name === "string" ? value.name.trim() : "";
-  if (!id || id.length > HELPDESK_LIMITS.agentIdMax || !name || name.length > HELPDESK_LIMITS.agentNameMax) invalid("agent", "agent { id, name } is required.");
+  const rawId = typeof value.id === "string" ? value.id : "";
+  const rawName = typeof value.name === "string" ? value.name : "";
+  if (hasControlCharacters(rawId) || hasControlCharacters(rawName)) invalid("agent", "agent { id, name } must not contain control characters.");
+  const id = rawId.trim();
+  const name = rawName.trim();
+  if (!id || textLength(id) > HELPDESK_LIMITS.agentIdMax || !name || textLength(name) > HELPDESK_LIMITS.agentNameMax) invalid("agent", "agent { id, name } is required.");
   return { id, name };
 }
 
@@ -365,13 +376,14 @@ const EMAIL_PATTERN = /^[^\s@"<>()\[\],;:\\]+@[^\s@"<>()\[\],;:\\]+\.[^\s@"<>()\
 
 /** A plain address (no display name, no header characters), at most 254 characters. */
 export function isContactEmail(value: string): boolean {
-  return value.length <= HELPDESK_LIMITS.contactEmailMax && EMAIL_PATTERN.test(value);
+  return value.length <= HELPDESK_LIMITS.contactEmailMax && !hasControlCharacters(value) && EMAIL_PATTERN.test(value);
 }
 
 function optionalContactEmail(input: Record<string, unknown>): string | null {
   const raw = input.contactEmail;
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string") invalid("contactEmail", "contactEmail must be an email address.");
+  if (hasControlCharacters(raw)) invalid("contactEmail", "contactEmail must be a valid email address.");
   const value = raw.trim();
   if (!value) return null;
   if (!isContactEmail(value)) invalid("contactEmail", "contactEmail must be a valid email address.");
@@ -389,7 +401,7 @@ function optionalUuid(input: Record<string, unknown>, field: string): string | n
 export function normaliseTag(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const value = raw.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-  if (!value || value.length > HELPDESK_LIMITS.tagMax || /[\u0000-\u001f\u007f]/.test(value)) return null;
+  if (!value || textLength(value) > HELPDESK_LIMITS.tagMax || hasControlCharacters(value)) return null;
   return value;
 }
 
@@ -420,9 +432,8 @@ export function parseLearnerActionInput(value: unknown): LearnerActionInput {
   }
   if (action === "reject" && input.message !== undefined && input.message !== null) {
     if (typeof input.message !== "string") invalid("message", "message must be text.");
-    const message = input.message.trim();
-    if (message.length > HELPDESK_LIMITS.bodyMax) invalid("message", `message must be at most ${HELPDESK_LIMITS.bodyMax} characters.`);
-    if (message) result.message = message;
+    const message = cleanText(input.message, "message", HELPDESK_LIMITS.bodyMax);
+    if (!isBlankText(message)) result.message = message;
   }
   return result;
 }
@@ -483,8 +494,7 @@ export function parseAgentListQuery(params: URLSearchParams): AgentListQuery {
     if (statusRaw !== "needs_reply" && !(TICKET_STATUSES as readonly string[]).includes(statusRaw)) invalid("status", "status is not valid.");
     status = statusRaw as AgentListQuery["status"];
   }
-  const q = (params.get("q") || "").trim();
-  if (q.length > HELPDESK_LIMITS.queryMax) invalid("q", `q must be at most ${HELPDESK_LIMITS.queryMax} characters.`);
+  const q = cleanText(params.get("q") || "", "q", HELPDESK_LIMITS.queryMax);
   let limit: number = HELPDESK_LIMITS.listLimitDefault;
   const limitRaw = params.get("limit");
   if (limitRaw !== null && limitRaw !== "") {

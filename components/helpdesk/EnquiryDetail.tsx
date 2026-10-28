@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Star } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { TicketDetail } from "@/contracts/helpdesk";
-import { conversationItems, fileSignature, fillTemplate, problemMessageKey, relativeTime, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { conversationItems, fileSignature, fillTemplate, inputMaxLength, isValidText, problemMessageKey, relativeTime, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
 import { loadTicket, newIdempotencyKey, sendTicketAction, sendTicketMessage, type ApiFailure } from "./helpdeskApi";
 import { AttachmentZone, LinkifiedText, MessageAttachments, StatusPill, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
 import "./helpdesk.css";
@@ -76,7 +76,7 @@ export function EnquiryDetail({ locale, copy, config, initial }: { locale: Local
 
   function sendReply() {
     const body = reply.trim();
-    if (!body || body.length > config.limits.bodyMax) { setNotice(copy.validation.message); return; }
+    if (!isValidText(reply, config.limits.bodyMax)) { setNotice(copy.validation.message); return; }
     const form = new FormData();
     form.append("body", body);
     form.append("expectedSequence", String(ticket.sequence));
@@ -123,7 +123,7 @@ export function EnquiryDetail({ locale, copy, config, initial }: { locale: Local
     {allowed.has("reply") ? <form className="helpdesk-composer" noValidate onPaste={attachments.onPaste} onSubmit={(event) => { event.preventDefault(); void sendReply(); }}>
       <label className="helpdesk-label" htmlFor={`${ids}-reply`}>{copy.detail.replyLabel}</label>
       {closed && ticket.followUpUntil && now !== null ? <p className="helpdesk-composer-hint">{withTime(copy.detail.followUpHint, ticket.followUpUntil)}</p> : null}
-      <textarea id={`${ids}-reply`} className="helpdesk-input helpdesk-textarea" maxLength={config.limits.bodyMax} placeholder={copy.detail.replyPlaceholder} value={reply} disabled={busyAny} onChange={(event) => setReply(event.target.value)} />
+      <textarea id={`${ids}-reply`} className="helpdesk-input helpdesk-textarea" maxLength={inputMaxLength(config.limits.bodyMax)} placeholder={copy.detail.replyPlaceholder} value={reply} disabled={busyAny} onChange={(event) => setReply(event.target.value)} />
       <AttachmentZone copy={copy} config={config} attachments={attachments} disabled={busyAny} inputId={`${ids}-files`} />
       <div className="helpdesk-composer-actions">
         <div className="helpdesk-composer-secondary">

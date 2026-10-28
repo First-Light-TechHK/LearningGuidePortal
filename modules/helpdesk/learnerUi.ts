@@ -2,9 +2,34 @@
 // no Node APIs). Business rules stay on the server; these only shape input,
 // pick copy and lay out what the server returned.
 import type { TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
+import { hasControlCharacters, isBlankText, textLength } from "@/contracts/helpdeskText";
 
 export type HelpdeskUiLimits = { maxFiles: number; maxFileBytes: number; subjectMax: number; bodyMax: number; emailMax: number };
 export type HelpdeskUiConfig = { categories: string[]; limits: HelpdeskUiLimits; extensions: string[]; accept: string };
+
+/**
+ * The server's free-text rule (contracts/helpdesk.ts): no control characters
+ * other than tab / line feed / carriage return, something visible after
+ * trimming, and at most max Unicode code points (not UTF-16 units).
+ */
+export function isValidText(value: string, max: number): boolean {
+  if (hasControlCharacters(value)) return false;
+  const trimmed = value.trim();
+  return !isBlankText(trimmed) && textLength(trimmed) <= max;
+}
+
+const EMAIL = /^[^\s@"<>()[\],;:\\]+@[^\s@"<>()[\],;:\\]+\.[^\s@"<>()[\],;:\\]{2,}$/;
+
+/** The server's contact email rule (isContactEmail in contracts/helpdesk.ts), after trimming. */
+export function isValidEmail(value: string, max: number): boolean {
+  const trimmed = value.trim();
+  return !hasControlCharacters(value) && trimmed.length <= max && EMAIL.test(trimmed);
+}
+
+/** An HTML maxLength (UTF-16 units) that never cuts off text within max code points; isValidText is the real check. */
+export function inputMaxLength(max: number): number {
+  return max * 2;
+}
 
 export type FileProblem = { kind: "type" | "size" | "count"; name: string };
 

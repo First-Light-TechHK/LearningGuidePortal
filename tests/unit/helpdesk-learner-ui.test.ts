@@ -3,10 +3,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, type TicketDetail } from "../../contracts/helpdesk";
+import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, parseCreateTicketInput, isContactEmail, type TicketDetail } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { helpdeskUiConfig } from "../../modules/helpdesk/learnerUiConfig";
-import { answerBlocks, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, linkify, problemMessageKey, relativeTime, screenFiles, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
+import { answerBlocks, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, problemMessageKey, relativeTime, screenFiles, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
 
 const config = helpdeskUiConfig();
 
@@ -21,6 +21,22 @@ test("UI config mirrors the server contract (limits, categories, accepted types)
   assert.equal(config.accept, config.extensions.map((extension) => `.${extension}`).join(","));
   assert.equal(HELPDESK_ATTACHMENT_TYPES.length, 9, "a new server type needs a new extension in learnerUiConfig");
   for (const unsafe of ["svg", "html", "htm", "exe", "zip", "js"]) assert.equal(config.extensions.includes(unsafe), false, unsafe);
+});
+
+test("the page's text check agrees with the server on every edge: code points, control characters, invisible-only text", () => {
+  const emoji = "\u{1F600}";
+  const samples = ["Login", "  padded  ", "", "   ", "\u200b", "\ufeff\u2060", emoji.repeat(120), emoji.repeat(121), "x".repeat(120), "x".repeat(121), "中".repeat(120),
+    "a\u0000b", "bell\u0007", "tail\u000b", "del\u007f", "c1\u0085", "tab\tand\nnew\r\nline", "\u{1F468}\u200d\u{1F469}"];
+  for (const subject of samples) {
+    let server = true;
+    try { parseCreateTicketInput({ category: "other", subject, body: "b", locale: "en-GB" }, []); } catch (error) { assert.ok(error instanceof HelpdeskProblem); server = false; }
+    assert.equal(isValidText(subject, config.limits.subjectMax), server, JSON.stringify(subject));
+  }
+  assert.equal(isValidText(emoji.repeat(5000), config.limits.bodyMax), true);
+  assert.equal(isValidText(emoji.repeat(5001), config.limits.bodyMax), false);
+  for (const email of ["emily@example.com", " emily@example.com ", "a@b", "two words@example.com", "a\u0000b@example.com", "a@b.c\nBcc: x@y.z", `${"x".repeat(250)}@example.com`]) {
+    assert.equal(isValidEmail(email, config.limits.emailMax), isContactEmail(email.trim()), JSON.stringify(email));
+  }
 });
 
 test("client file screening mirrors the server: type by extension, 10 MB each, 5 per message", () => {
