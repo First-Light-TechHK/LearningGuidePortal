@@ -159,18 +159,23 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
     </header>
     <div className="tutor-messages" ref={listRef}>
       {welcome ? <div className="tutor-message-row assistant">
-        <time className="tutor-message-time" dateTime={openedAt}>{formatTime(openedAt, locale)}</time>
         <div className="tutor-message-line">
-          <span className="tutor-avatar tutor-avatar-ai" aria-hidden="true">AI</span>
-          <div className="tutor-message assistant"><p>{welcome}</p></div>
+          <div className="tutor-message-bubble-wrap">
+            <span className="tutor-avatar tutor-avatar-ai" aria-hidden="true">AI</span>
+            <div className="tutor-message assistant"><p>{welcome}</p></div>
+            <time className="tutor-message-time" dateTime={openedAt}>{formatTime(openedAt, locale)}</time>
+          </div>
         </div>
       </div> : null}
       {messages.map((message, index) => <div className={`tutor-message-row ${message.role}`} key={`${index}-${message.role}`}>
-        <time className="tutor-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, locale)}</time>
         <div className="tutor-message-line">
-          {message.role === "assistant" ? <span className="tutor-avatar tutor-avatar-ai" aria-hidden="true">AI</span> : null}
-          <div className={`tutor-message ${message.role}`}><p>{message.content || (busy ? "..." : "")}</p></div>
-          {message.role === "user" ? <span className="tutor-avatar tutor-avatar-user" aria-hidden="true">{Array.from(copy.you)[0]}</span> : null}
+          <div className="tutor-message-bubble-wrap">
+            <span className={`tutor-avatar ${message.role === "assistant" ? "tutor-avatar-ai" : "tutor-avatar-user"}`} aria-hidden="true">
+              {message.role === "assistant" ? "AI" : Array.from(copy.you)[0]}
+            </span>
+            <div className={`tutor-message ${message.role}`}><p>{message.content || (busy ? "..." : "")}</p></div>
+            <time className="tutor-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, locale)}</time>
+          </div>
         </div>
       </div>)}
       {!messages.length && !welcome ? <p className="tutor-empty">{copy.askTutor}</p> : null}

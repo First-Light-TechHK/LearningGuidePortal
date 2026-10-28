@@ -24,6 +24,35 @@ test("same-mode ordinal excludes other modes and inactive points across lessons"
   assert.equal(knowledgeProgress({sections:[]},"video").progress,0);
 });
 
+test("Modeling life 86-percent video progress places the entitled course action on Lesson 2", async () => {
+  const user = await verifiedUser(store, "modeling-resume@example.test");
+  const { quote } = await store.createQuote(user.id, "science-pc-6");await store.completeDemoCheckout(user.id, quote.id);
+  const course = await store.getProductCourse("modeling-life");assert.ok(course);
+  const lessons = course.sections.flatMap(section => section.lessons), lesson = lessons[1];
+  const content = lesson.contents!.find(content => content.type === "video")!;
+  const record = await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lesson.id, contentId: content.id, learningMode: "video", event: "open", seconds: 0, clientEventId: "modeling-video-86" });
+  assert.equal(record?.progress, 86);
+  const firstVideo = lessons[0].contents!.find(content => content.type === "video")!;
+  const revisit = await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lessons[0].id, contentId: firstVideo.id, learningMode: "video", event: "open", seconds: 0, clientEventId: "modeling-video-review" });
+  assert.equal(revisit?.progress, 86);assert.equal(revisit?.currentLessonId, lessons[0].id);
+  assert.deepEqual(revisit?.highestProgress, { progress: 86, mode: "video", lessonId: lesson.id, contentId: content.id });
+  const page = await store.getCoursePage(course.slug, user.id);
+  assert.equal(page.progress, 86);assert.equal(page.actionLessonId, lesson.id);assert.equal(page.cta, "continue_learning");
+  const firstText = lessons[0].contents!.find(content => content.type === "text")!;
+  await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lessons[0].id, contentId: firstText.id, learningMode: "text", event: "open", seconds: 0, clientEventId: "modeling-text-review" });
+  assert.equal((await store.getCoursePage(course.slug, user.id)).actionLessonId, lesson.id, "changing review mode cannot move Start behind the highest course progress");
+  const guest = await store.getCoursePage(course.slug);
+  assert.equal(guest.actionLessonId, lessons[0].id);
+  const data = await readProductData();
+  delete data.studyRecords.find((row: { userId: string; courseId: string }) => row.userId === user.id && row.courseId === course.id).highestProgress;
+  await writeProductData(data);
+  assert.equal((await store.getCoursePage(course.slug, user.id)).actionLessonId, lesson.id, "existing DEV records recover from history without a migration");
+  assert.equal((await readProductData()).studyRecords.find((row: { userId: string }) => row.userId === user.id).highestProgress, undefined, "read-side recovery does not rewrite history");
+  data.entitlements.filter((row: { userId: string }) => row.userId === user.id).forEach((row: { validTo: string }) => { row.validTo = "2020-01-01T00:00:00Z"; });await writeProductData(data);
+  const expired = await store.getCoursePage(course.slug, user.id);
+  assert.equal(expired.progress, 86);assert.equal(expired.actionLessonId, lessons[0].id);
+});
+
 test("save current knowledge point per mode, replay safely and deny inaccessible/foreign points",async()=>{
   const user=await verifiedUser(store,"knowledge-progress@example.test");await purchaseCourse(store,user.id);
   const data=await readProductData(),course=data.courses.find((c:ProductCourse)=>c.id===COURSE_ID);
