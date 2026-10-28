@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, parseCreateTicketInput, isContactEmail, type TicketDetail } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { helpdeskUiConfig } from "../../modules/helpdesk/learnerUiConfig";
-import { answerBlocks, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, relativeTime, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
+import { assistIdsOf, chatStorageKey, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
 
 const config = helpdeskUiConfig();
 
@@ -112,7 +112,7 @@ test("a retried submit after a lost response sends the same request: same Idempo
   assert.deepEqual(retry.retryFor(signature), { suggestionId: "s-1" });
   assert.equal(retry.retryFor(submissionSignature({ ...form, body: "Edited" }, files)), null, "an edited form is a new submit");
   retry.failed(signature, null, 502);
-  assert.deepEqual(retry.retryFor(signature), { suggestionId: null }, "a direct submit is retried directly too");
+  assert.deepEqual(retry.retryFor(signature), { suggestionId: null, assistIds: [] }, "a direct submit is retried directly too");
   retry.failed(signature, "s-1", 400);
   assert.equal(retry.retryFor(signature), null, "a 4xx is final");
   retry.failed(signature, "s-1", 503);
@@ -166,18 +166,39 @@ test("names, initials, sizes and templates for the assistant modal", () => {
   assert.equal(fillTemplate("{n} out of 5", { n: 4 }), "4 out of 5");
 });
 
-test("answers stay verbatim: blocks split on blank lines, numbered first lines become headings, URLs become links", () => {
-  const answer = "1. Check your spam folder\nLook for \"Learning Guide\".\n\nIf that fails, write to us.";
-  assert.deepEqual(answerBlocks(answer), [
-    { heading: "1. Check your spam folder", lines: ["Look for \"Learning Guide\"."] },
-    { heading: null, lines: ["If that fails, write to us."] }
-  ]);
-  assert.deepEqual(answerBlocks("2. Only a numbered line"), [{ heading: null, lines: ["2. Only a numbered line"] }]);
+test("free text in messages: http(s) URLs become links, nothing else is interpreted", () => {
   assert.deepEqual(linkify("See https://www.ilovelearningguide.com/help. Or javascript:alert(1)"), [
     { text: "See " },
     { text: "https://www.ilovelearningguide.com/help", href: "https://www.ilovelearningguide.com/help" },
     { text: ". Or javascript:alert(1)" }
   ]);
+});
+
+test("chat transcript: stored per account, read back defensively, and its newest 10 answer ids go with the enquiry", () => {
+  assert.equal(chatStorageKey("user_1"), "lg-helpdesk-chat:v1:user_1");
+  const id = (n: number) => `01a18100-0000-7000-8000-${String(n).padStart(12, "0")}`;
+  const reply = { id: id(1), faqId: id(99), question: "Q?", answer: "A." };
+  const stored = JSON.stringify([
+    { kind: "question", text: "Q?" },
+    { kind: "answer", id: id(1), reply, feedback: "helpful" },
+    { kind: "answer", id: id(2), reply: null, feedback: null },
+    { kind: "error", error: "rateLimited" },
+    { kind: "answer", id: "not-a-uuid", reply: null, feedback: null },
+    { kind: "answer", id: id(3), reply: { id: id(3), faqId: 7, question: "x", answer: "y" }, feedback: null },
+    { kind: "answer", id: id(4), reply: null, feedback: "solved" },
+    { kind: "question", text: 5 },
+    "junk"
+  ]);
+  assert.deepEqual(readTranscript(stored), [
+    { kind: "question", text: "Q?" },
+    { kind: "answer", id: id(1), reply, feedback: "helpful" },
+    { kind: "answer", id: id(2), reply: null, feedback: null },
+    { kind: "error", error: "rateLimited" }
+  ], "malformed entries are dropped");
+  for (const bad of [null, "", "{", "{}", "42"]) assert.deepEqual(readTranscript(bad), []);
+  const many = Array.from({ length: 13 }, (_, index) => ({ kind: "answer" as const, id: id(index + 1), reply: null, feedback: null }));
+  assert.deepEqual(assistIdsOf([...many, { kind: "answer", id: id(13), reply: null, feedback: null }]), many.slice(3).map((entry) => entry.id), "the newest 10, once each (the server takes at most 10)");
+  assert.deepEqual(assistIdsOf([{ kind: "question", text: "x" }]), []);
 });
 
 test("relative times read naturally in both locales", () => {

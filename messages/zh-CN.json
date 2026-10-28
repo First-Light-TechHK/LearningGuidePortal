@@ -283,7 +283,11 @@
     "choosePlan": "选择访问方案",
     "heroTitle": "喜欢这门课程吗？",
     "heroBody": "延续你的发现，通过更多方式探索、思考并建立联系。",
-    "bullets": ["继续本课时并解锁完整课程", "通过 AI 导师加深理解", "发现更多展品、观点与视角"],
+    "bullets": [
+      "继续本课时并解锁完整课程",
+      "通过 AI 导师加深理解",
+      "发现更多展品、观点与视角"
+    ],
     "other": "相关课程",
     "empty": "暂无相关课程",
     "relatedBody": "从这个分类的另一种视角继续探索。",
@@ -1639,7 +1643,27 @@
       "size": "{name} 超过 10 MB。",
       "count": "最多可添加 5 个附件。"
     },
-    "commonQuestions": "常见问题",
+    "chat": {
+      "title": "AI 客服助手",
+      "subtitle": "关于 Learning Guide 的问题都可以问我",
+      "greetingTitle": "你好！有什么可以帮你？",
+      "greetingBody": "我可以解答 Learning Guide 常见问题，包括账户、课程和订阅。",
+      "greetingLimit": "我暂时无法查看你的个人账户、订单或付款记录。",
+      "ideas": "也欢迎告诉我们你的想法！",
+      "tryAsking": "试试问这些问题：",
+      "relatedFaq": "相关问题：{question}",
+      "helpful": "有帮助吗？",
+      "yes": "是",
+      "no": "否",
+      "fallback": "我在常见问题里没有找到相关答案。请使用表单提交问题，客服团队会帮你处理。",
+      "info": "需要咨询具体订单或付款？请使用左侧表单提交问题。",
+      "placeholder": "关于 Learning Guide 的问题…",
+      "inputLabel": "输入问题",
+      "send": "发送",
+      "typing": "助手正在回复…",
+      "rateLimited": "你在过去一小时内提问较多，请稍后再试，或使用表单提交问题。",
+      "error": "抱歉，暂时无法回复，请重试。"
+    },
     "assistant": {
       "title": "AI 客服助手",
       "subtitle": "根据你的问题，这里有一个可能的解答。",

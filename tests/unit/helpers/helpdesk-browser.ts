@@ -2,12 +2,12 @@
 // the My enquiries page and AccountNav): one esbuild bundle with next/* and the
 // server modules stubbed, run in Playwright Chromium inside `npm run test:unit`.
 // Every /api/ request is recorded (method, path, Idempotency-Key, JSON or
-// multipart body) and answered by the test's handler, so a test can assert
+// multipart body, repeated multipart fields such as assistIds as arrays) and answered by the test's handler, so a test can assert
 // exactly what the page sent and drive any server answer (409, 429, a lost
 // response, a slow suggestion).
 import { build } from "esbuild";
 import type { Browser, Page, Request as PlaywrightRequest } from "playwright";
-import type { CommonQuestion, LearnerAllowedAction, TicketDetail, TicketStatus, TicketSummary } from "../../../contracts/helpdesk";
+import type { LearnerAllowedAction, TicketDetail, TicketStatus, TicketSummary } from "../../../contracts/helpdesk";
 import { decide, type Command } from "../../../modules/helpdesk/domain";
 import { readMultipart } from "../../../modules/helpdesk/http";
 import { helpdeskUiConfig } from "../../../modules/helpdesk/learnerUiConfig";
@@ -27,7 +27,7 @@ import {getMessages} from './lib/i18n/messages';
 const root=createRoot(document.getElementById('root'));
 let mounts=0;
 window.__nav=[];
-window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} questions={p.questions}/>);
+window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips}/>);
 window.mountDetail=p=>root.render(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
 window.mountNav=p=>root.render(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
 window.mountList=async p=>{window.__list={...p,identities:[]};try{const page=await EnquiriesPage({params:Promise.resolve({locale:p.locale})});root.render(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
@@ -71,7 +71,7 @@ export type ApiCall = {
   path: string;
   key: string | null;
   json: Record<string, unknown> | null;
-  fields: Record<string, string>;
+  fields: Record<string, string | string[]>;
   files: SentFile[];
 };
 export type Reply = { status?: number; json?: unknown } | "abort";
@@ -87,7 +87,7 @@ async function toCall(request: PlaywrightRequest): Promise<ApiCall> {
   if (type.startsWith("multipart/form-data")) {
     // Read with the server's own parser, so fields are exactly what the route handler would see.
     const { fields, files } = await readMultipart(new Request(url, { method: "POST", headers: { "content-type": type }, body: new Uint8Array(body) }));
-    for (const [name, value] of Object.entries(fields)) call.fields[name] = String(value);
+    for (const [name, value] of Object.entries(fields)) call.fields[name] = Array.isArray(value) ? value.map(String) : String(value);
     call.files = files.map((file) => ({ name: file.fileName, size: file.bytes.byteLength, type: file.declaredType }));
   } else if (type.startsWith("application/json")) call.json = JSON.parse(body.toString("utf8"));
   return call;
@@ -128,9 +128,11 @@ export async function openHarness(browser: Browser, locale: Locale, handler: Han
 
 export const config = helpdeskUiConfig();
 
-export type ContactProps = { locale: Locale; account?: { name: string; email: string }; questions?: CommonQuestion[] };
+export type ChatChip = { id: string; question: string };
+export type ContactProps = { locale: Locale; account?: { id: string; name: string; email: string }; chips?: ChatChip[] };
+export const ACCOUNT = { id: "user_emily", name: "Emily Chen", email: "emily@example.com" };
 export async function mountContact(page: Page, props: ContactProps) {
-  await page.evaluate((p) => (window as unknown as { mountContact(p: unknown): void }).mountContact(p), { config, account: { name: "Emily Chen", email: "emily@example.com" }, questions: [], ...props });
+  await page.evaluate((p) => (window as unknown as { mountContact(p: unknown): void }).mountContact(p), { config, account: ACCOUNT, chips: [], ...props });
 }
 export async function mountDetail(page: Page, locale: Locale, ticket: TicketDetail) {
   await page.evaluate((p) => (window as unknown as { mountDetail(p: unknown): void }).mountDetail(p), { config, locale, ticket });
@@ -157,6 +159,8 @@ export async function waitForCalls(harness: Harness, predicate: (calls: ApiCall[
 export const isTicketCreate = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/tickets";
 export const isSuggestion = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/suggestions";
 export const isOutcome = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/suggestions\/[^/]+\/outcome$/.test(call.path);
+export const isAssistant = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/assistant";
+export const isAssistantFeedback = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/[^/]+\/feedback$/.test(call.path);
 
 const LEARNER_COMMANDS: Array<[LearnerAllowedAction, Command]> = [["reply", "learner_reply"], ["cancel", "cancel"], ["confirm", "confirm"], ["reject", "reject"], ["close", "close"], ["rate", "rate"]];
 const HOUR = 3_600_000;

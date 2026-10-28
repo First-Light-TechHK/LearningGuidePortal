@@ -1,10 +1,11 @@
 // Pure helpers for the learner Helpdesk pages (client-safe: type-only imports,
 // no Node APIs). Business rules stay on the server; these only shape input,
 // pick copy and lay out what the server returned.
-import type { TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
+import type { HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
 import { hasControlCharacters, isBlankText, textLength } from "@/contracts/helpdeskText";
 
-export type HelpdeskUiLimits = { maxFiles: number; maxFileBytes: number; subjectMax: number; bodyMax: number; emailMax: number };
+/** questionMax: the chat question limit (code points). */
+export type HelpdeskUiLimits = { maxFiles: number; maxFileBytes: number; subjectMax: number; bodyMax: number; emailMax: number; questionMax: number };
 export type HelpdeskUiConfig = { categories: string[]; limits: HelpdeskUiLimits; extensions: string[]; accept: string };
 
 /**
@@ -124,16 +125,16 @@ function mayHaveReachedServer(status: number) {
  * Remembers a ticket submit that failed but may still have reached the
  * server. Submitting the same form again then resends that request as it
  * was (same Idempotency-Key from SubmissionKeys, same declined suggestion,
- * no new suggestion check), so a lost response replays instead of creating
+ * same chat assistIds, no new suggestion check), so a lost response replays instead of creating
  * a second ticket.
  */
 export class RetryableSubmit {
-  private last: { signature: string; suggestionId: string | null } | null = null;
-  failed(signature: string, suggestionId: string | null, status: number) {
-    this.last = mayHaveReachedServer(status) ? { signature, suggestionId } : null;
+  private last: { signature: string; suggestionId: string | null; assistIds: string[] } | null = null;
+  failed(signature: string, suggestionId: string | null, status: number, assistIds: string[] = []) {
+    this.last = mayHaveReachedServer(status) ? { signature, suggestionId, assistIds: [...assistIds] } : null;
   }
-  retryFor(signature: string): { suggestionId: string | null } | null {
-    return this.last && this.last.signature === signature ? { suggestionId: this.last.suggestionId } : null;
+  retryFor(signature: string): { suggestionId: string | null; assistIds: string[] } | null {
+    return this.last && this.last.signature === signature ? { suggestionId: this.last.suggestionId, assistIds: [...this.last.assistIds] } : null;
   }
   clear() {
     this.last = null;
@@ -196,17 +197,46 @@ export function fillTemplate(template: string, values: Record<string, string | n
   return template.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? String(values[key]) : match));
 }
 
-export type AnswerBlock = { heading: string | null; lines: string[] };
+export type ChatEntry =
+  | { kind: "question"; text: string }
+  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null }
+  | { kind: "error"; error: "rateLimited" | "error" };
 
-/**
- * Lays out an approved Q&A answer without changing a word: paragraphs split on
- * blank lines, and a paragraph whose first line is numbered ("1. …") and has
- * more lines shows that first line as a heading (Figma 1333:249).
- */
-export function answerBlocks(answer: string): AnswerBlock[] {
-  return answer.replace(/\r\n?/g, "\n").split(/\n\s*\n/).map((block) => block.split("\n").map((line) => line.trimEnd()).filter((line) => line.trim() !== "")).filter((lines) => lines.length > 0).map((lines) => (
-    lines.length > 1 && /^\d+[.)]\s/.test(lines[0]) ? { heading: lines[0], lines: lines.slice(1) } : { heading: null, lines }
-  ));
+/** sessionStorage key of the chat transcript: per account, so a shared browser never shows one learner's chat to another. */
+export function chatStorageKey(accountId: string): string {
+  return `lg-helpdesk-chat:v1:${accountId}`;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isText = (value: unknown): value is string => typeof value === "string";
+
+function chatEntry(value: unknown): ChatEntry | null {
+  if (!value || typeof value !== "object") return null;
+  const entry = value as Record<string, unknown>;
+  if (entry.kind === "question") return isText(entry.text) ? { kind: "question", text: entry.text } : null;
+  if (entry.kind === "error") return entry.error === "rateLimited" || entry.error === "error" ? { kind: "error", error: entry.error } : null;
+  if (entry.kind !== "answer" || !isText(entry.id) || !UUID.test(entry.id)) return null;
+  const feedback = entry.feedback === "helpful" || entry.feedback === "not_helpful" ? entry.feedback : entry.feedback === null ? null : undefined;
+  if (feedback === undefined) return null;
+  if (entry.reply === null) return { kind: "answer", id: entry.id, reply: null, feedback };
+  const reply = entry.reply as Record<string, unknown> | undefined;
+  if (!reply || !isText(reply.id) || !isText(reply.faqId) || !isText(reply.question) || !isText(reply.answer)) return null;
+  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback };
+}
+
+/** The stored transcript, keeping only well-formed entries (storage is the browser's, not ours). */
+export function readTranscript(raw: string | null): ChatEntry[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  return Array.isArray(parsed) ? parsed.map(chatEntry).filter((entry): entry is ChatEntry => entry !== null) : [];
+}
+
+/** The chat answers to link to the enquiry: the newest max, once each (the server accepts at most 10 assistIds). */
+export function assistIdsOf(entries: ChatEntry[], max = 10): string[] {
+  const ids: string[] = [];
+  for (const entry of [...entries].reverse()) if (entry.kind === "answer" && !ids.includes(entry.id)) ids.push(entry.id);
+  return ids.slice(0, max).reverse();
 }
 
 export type TextSegment = { text: string; href?: string };

@@ -2,7 +2,7 @@
 // Success bodies are plain JSON; failures are RFC 9457 problems, reduced here
 // to { status, code } so the page can pick one message. A network failure is
 // status 0. Nothing here decides business rules.
-import type { HelpdeskSuggestion, SuggestionOutcome, TicketDetail } from "@/contracts/helpdesk";
+import type { AssistantFeedbackResponse, AssistantResponse, HelpdeskSuggestion, SuggestionOutcome, TicketDetail } from "@/contracts/helpdesk";
 
 export type ApiFailure = { ok: false; status: number; code?: string };
 export type ApiResult<T> = { ok: true; status: number; data: T } | ApiFailure;
@@ -38,6 +38,16 @@ export async function requestSuggestion(input: { category: string; subject: stri
 /** Fire and forget: Admin counts the outcome; the learner's next step never waits on it. */
 export function reportSuggestionOutcome(suggestionId: string, outcome: SuggestionOutcome): void {
   void call(`/api/helpdesk/suggestions/${encodeURIComponent(suggestionId)}/outcome`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outcome }), keepalive: true });
+}
+
+/** One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback). */
+export function askAssistant(body: { message: string; locale: string; faqId?: string }, idempotencyKey: string) {
+  return call<AssistantResponse>("/api/helpdesk/assistant", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) });
+}
+
+/** "Helpful?" Yes / No on a chat answer; the server keeps the first value and returns it. */
+export function sendAssistantFeedback(id: string, helpful: boolean, idempotencyKey: string) {
+  return call<AssistantFeedbackResponse>(`/api/helpdesk/assistant/${encodeURIComponent(id)}/feedback`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ helpful }) });
 }
 
 export function createTicket(form: FormData, idempotencyKey: string) {

@@ -3,7 +3,9 @@
 // Support Assistant modal (Yes / No / Edit / Close / Escape, focus trap), Cancel
 // during the suggestion check, the never-blocking suggestion (null, error,
 // 5 s timeout), Idempotency-Key reuse on a lost response, 429 / 4xx messages,
-// Common Questions and the success state, in en-GB and zh-CN.
+// the AI Support Assistant chat panel (Figma 1216:6: chips, ask, answer,
+// Related FAQ, Helpful, fallback, errors, sessionStorage, Enter / Shift+Enter,
+// assistIds on submit) and the success state, in en-GB and zh-CN.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium, type Browser, type Locator, type Page } from "playwright";
@@ -11,14 +13,14 @@ import { parseCreateTicketInput } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { fillTemplate } from "../../modules/helpdesk/learnerUi";
 import { PNG } from "./helpdesk-fixtures";
-import { LOCALES, isOutcome, isSuggestion, isTicketCreate, mountContact, openHarness, ticketFixture, waitForCalls, type ApiCall, type Handler, type Harness, type Locale, type Reply } from "./helpers/helpdesk-browser";
+import { ACCOUNT, LOCALES, isAssistant, isAssistantFeedback, isOutcome, isSuggestion, isTicketCreate, mountContact, openHarness, ticketFixture, waitForCalls, type ApiCall, type Handler, type Harness, type Locale, type Reply } from "./helpers/helpdesk-browser";
 
 let browser: Browser;
 before(async () => { browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || undefined }); });
 after(async () => { await browser?.close(); });
 
 const copyFor = (locale: Locale) => getMessages(locale).helpdesk;
-const SUGGESTION = { id: "sug-1", qaId: "qa-1", question: "How do I reset my password?", answer: "1. Reset your password\nOpen https://example.com/reset\n\n2. Still nothing?\nCheck your spam folder" };
+const SUGGESTION = { id: "01a18100-0000-7000-8000-0000000000aa", faqId: "01a18100-0000-7000-8000-0000000000fa", question: "How do I reset my password?", answer: "1. Reset your password\nOpen https://example.com/reset\n\n2. Still nothing?\nCheck your spam folder" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function deferred<T = void>() {
@@ -27,9 +29,11 @@ function deferred<T = void>() {
   return { promise, resolve };
 }
 
-/** Routes the three Contact Support endpoints; anything else is a 500. */
-function api(handlers: { suggestion?: Handler; ticket?: Handler; outcome?: Handler }): Handler {
+/** Routes the Contact Support endpoints (suggestion, outcome, ticket, chat, chat feedback); anything else is a 500. */
+function api(handlers: { suggestion?: Handler; ticket?: Handler; outcome?: Handler; assistant?: Handler; feedback?: Handler }): Handler {
   return (call) => {
+    if (isAssistant(call)) return handlers.assistant ? handlers.assistant(call) : { json: { id: "01a18100-0000-7000-8000-0000000000c0", reply: null } };
+    if (isAssistantFeedback(call)) return handlers.feedback ? handlers.feedback(call) : { json: { id: call.path.split("/")[4], feedback: (call.json as { helpful: boolean }).helpful ? "helpful" : "not_helpful" } };
     if (isSuggestion(call)) return handlers.suggestion ? handlers.suggestion(call) : { json: { suggestion: null } };
     if (isOutcome(call)) return handlers.outcome ? handlers.outcome(call) : { status: 204 };
     if (isTicketCreate(call)) return handlers.ticket ? handlers.ticket(call) : { status: 201, json: ticketFixture("OPEN") };
@@ -233,15 +237,17 @@ test("paste: a screenshot attaches anywhere in the form, text pasted into a fiel
   }, { file, text, html });
   assert.equal(await paste(".helpdesk-dropzone", { name: "image.png", type: "image/png" }, null), true, "the pasted image is taken over by the page");
   assert.match((await f.chips.allTextContents())[0], /^screenshot-\d+\.png$/, "a clipboard image without a real name gets a screenshot name");
-  assert.equal(await paste("textarea", { name: "image.png", type: "image/png" }, "A1\tB1"), false, "Excel / Word cells: the browser pastes the text");
+  assert.equal(await paste(".helpdesk-form textarea", { name: "image.png", type: "image/png" }, "A1\tB1"), false, "Excel / Word cells: the browser pastes the text");
   assert.equal(await f.chips.count(), 1, "the picture Office puts next to the text is not attached");
-  assert.equal(await paste("textarea", { name: "image.png", type: "image/png" }, null, '<img src="https://example.com/x.png">'), true, "an image copied from a web page attaches");
+  assert.equal(await paste(".helpdesk-form textarea", { name: "image.png", type: "image/png" }, null, '<img src="https://example.com/x.png">'), true, "an image copied from a web page attaches");
   assert.equal(await f.chips.count(), 2);
-  assert.equal(await paste("textarea", { name: "image.jpeg", type: "image/jpeg" }, " \n\t"), true, "blank text/plain is no text");
+  assert.equal(await paste(".helpdesk-form textarea", { name: "image.jpeg", type: "image/jpeg" }, " \n\t"), true, "blank text/plain is no text");
   assert.equal(await f.chips.count(), 3);
   assert.equal(await paste("input[aria-required]:not([type=email])", { name: "report.png", type: "image/png" }, null), true);
   assert.equal((await f.chips.allTextContents())[3], "report.png", "a named file keeps its name");
-  assert.equal(await paste("textarea", null, "just text"), false, "plain text paste is left to the browser");
+  assert.equal(await paste(".helpdesk-form textarea", null, "just text"), false, "plain text paste is left to the browser");
+  assert.equal(await f.chips.count(), 4);
+  assert.equal(await paste(".helpdesk-chat-input", { name: "chat.png", type: "image/png" }, null), false, "a paste into the chat panel is the chat's, never an attachment");
   assert.equal(await f.chips.count(), 4);
   await paste(".helpdesk-dropzone", { name: "logo.svg", type: "image/svg+xml" }, null);
   assert.equal(await f.fileAlert.textContent(), fillTemplate(f.copy.fileErrors.type, { name: "logo.svg" }), "pasted files get the same checks");
@@ -268,7 +274,8 @@ test("Yes on the suggestion records 'solved', creates no ticket and returns to t
     assert.equal(await f.dialog.getAttribute("aria-modal"), "true");
     const text = await f.dialog.textContent();
     for (const part of [fillTemplate(f.copy.assistant.greeting, { name: "Emily" }), "Cannot reset my password", f.copy.categories.technical_support, "emily@example.com", "screen.png", "Check your spam folder", f.copy.assistant.helpful]) assert.ok(text?.includes(part), `${locale}: modal shows ${part}`);
-    assert.deepEqual(await f.dialog.locator(".helpdesk-answer-heading").allTextContents(), ["1. Reset your password", "2. Still nothing?"], "numbered paragraphs show their first line as a heading");
+    assert.deepEqual(await f.dialog.locator(".helpdesk-modal-answer ol > li").allTextContents(), ["Reset your passwordOpen https://example.com/reset", "Still nothing?Check your spam folder"], "the answer goes through the shared Markdown renderer: one numbered list");
+    assert.equal(await f.dialog.locator(".helpdesk-modal-answer ol > li").first().evaluate((li) => getComputedStyle(li, "::first-line").fontWeight), "600", "each item's first line is its heading (1333:249)");
     const link = f.dialog.getByRole("link", { name: "https://example.com/reset" });
     assert.equal(await link.getAttribute("target"), "_blank");
     assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
@@ -518,47 +525,210 @@ test("a double Submit sends one suggestion check and one ticket", async () => {
   await page.close();
 });
 
-test("Common Questions: one answer open at a time, links open safely, the section is left out when Admin has none", async () => {
+const FAQ = ["01a18100-0000-7000-8000-0000000000f1", "01a18100-0000-7000-8000-0000000000f2", "01a18100-0000-7000-8000-0000000000f3"];
+const CHIPS = [
+  { id: FAQ[0], question: "How do I reset my password?" },
+  { id: FAQ[1], question: "How can I change my subscription?" },
+  { id: FAQ[2], question: "Where can I find my invoice?" }
+];
+const ASSIST = ["01a18100-0000-7000-8000-0000000000a1", "01a18100-0000-7000-8000-0000000000a2", "01a18100-0000-7000-8000-0000000000a3"];
+const ANSWER = "1. Open **Settings**\n2. Choose [Reset password](https://example.com/reset)\n\n<b>not html</b> [bad](javascript:alert(1))";
+
+function chat(page: Page, locale: Locale) {
+  const copy = copyFor(locale).chat;
+  const panel = page.getByRole("region", { name: copy.title });
+  return {
+    copy, panel,
+    log: panel.locator(".helpdesk-chat-messages"),
+    input: panel.getByRole("textbox", { name: copy.inputLabel }),
+    send: panel.getByRole("button", { name: copy.send, exact: true }),
+    chips: panel.locator(".helpdesk-chat-chip"),
+    questions: panel.locator(".helpdesk-chat-question"),
+    answers: panel.locator(".helpdesk-chat-answer")
+  };
+}
+
+test("chat panel: greeting, starter chips, a chip asks with its FAQ id; the answer is rendered safely with Related FAQ and Helpful", async () => {
   for (const locale of LOCALES) {
-    const questions = [
-      { id: "q-1", category: "technical_support", question: locale === "zh-CN" ? "如何重置密码？" : "How do I reset my password?", answer: "Open https://example.com/reset\n\nThen sign in again." },
-      { id: "q-2", category: "payments_subscriptions", question: locale === "zh-CN" ? "如何取消订阅？" : "How do I cancel?", answer: "Go to Subscription." }
-    ];
-    const harness = await open(locale, api({}), { locale, questions });
+    const release = deferred();
+    const harness = await open(locale, api({
+      assistant: async (call) => { await release.promise; const faqId = (call.json as { faqId?: string }).faqId!; return { json: { id: ASSIST[0], reply: { id: ASSIST[0], faqId, question: CHIPS[0].question, answer: ANSWER } } }; },
+      feedback: () => ({ json: { id: ASSIST[0], feedback: "helpful" } })
+    }), { locale, chips: CHIPS });
     const { page } = harness;
-    const copy = copyFor(locale);
-    const section = page.getByRole("region", { name: copy.commonQuestions });
-    const first = section.getByRole("button", { name: questions[0].question });
-    const second = section.getByRole("button", { name: questions[1].question });
-    const answer = (button: Locator) => button.evaluate((element) => { const panel = document.getElementById(element.getAttribute("aria-controls")!)!; return { hidden: panel.hidden, text: panel.textContent, paragraphs: panel.querySelectorAll("p").length }; });
-    assert.equal(await first.getAttribute("aria-expanded"), "false");
-    assert.equal((await answer(first)).hidden, true);
-    await first.click();
-    assert.equal(await first.getAttribute("aria-expanded"), "true");
-    assert.deepEqual(await answer(first), { hidden: false, text: "Open https://example.com/resetThen sign in again.", paragraphs: 2 }, "blank lines are dropped");
-    const link = section.getByRole("link", { name: "https://example.com/reset" });
+    const c = chat(page, locale);
+    assert.equal(await c.panel.getByRole("heading", { level: 2 }).textContent(), c.copy.title);
+    const text = await c.panel.textContent();
+    for (const part of [c.copy.subtitle, c.copy.greetingTitle, c.copy.greetingBody, c.copy.greetingLimit, c.copy.ideas, c.copy.tryAsking, c.copy.info]) assert.ok(text?.includes(part), `${locale}: panel shows ${part}`);
+    assert.equal(await c.input.getAttribute("placeholder"), c.copy.placeholder);
+    assert.deepEqual(await c.chips.allTextContents(), CHIPS.map((chip) => chip.question));
+    assert.equal(harness.calls.length, 0, "nothing is asked until the learner asks");
+    await c.chips.first().click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+    const asked = harness.calls.find(isAssistant)!;
+    assert.deepEqual(asked.json, { message: CHIPS[0].question, locale, faqId: FAQ[0] }, "a chip sends its question and FAQ id");
+    assert.match(asked.key ?? "", UUID);
+    assert.deepEqual(await c.questions.allTextContents(), [CHIPS[0].question], "the question shows at once");
+    assert.equal(await c.panel.getByRole("status").textContent(), c.copy.typing, "a typing state while the answer is pending");
+    assert.equal(await c.send.isDisabled(), true, "send is disabled while a reply is pending");
+    assert.equal(await c.chips.first().isDisabled(), true, "and so are the chips");
+    release.resolve();
+    await c.answers.first().waitFor();
+    const answer = c.answers.first();
+    assert.deepEqual(await answer.locator("ol > li").allTextContents(), ["Open Settings", "Choose Reset password"]);
+    assert.equal(await answer.locator("strong").textContent(), "Settings");
+    const link = answer.getByRole("link", { name: "Reset password" });
+    assert.equal(await link.getAttribute("href"), "https://example.com/reset");
     assert.equal(await link.getAttribute("target"), "_blank");
     assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
-    await second.click();
-    assert.equal(await second.getAttribute("aria-expanded"), "true");
-    assert.equal(await first.getAttribute("aria-expanded"), "false", "opening one closes the other");
-    assert.equal((await answer(first)).hidden, true);
-    await second.click();
-    assert.equal(await second.getAttribute("aria-expanded"), "false", "a second click closes it");
-    assert.equal(await page.locator(".helpdesk-card-single").count(), 0);
-    assert.equal(harness.calls.length, 0);
-    await mountContact(page, { locale, questions: [] });
-    assert.equal(await page.getByRole("region", { name: copy.commonQuestions }).count(), 0);
-    assert.equal(await page.locator(".helpdesk-card-content.helpdesk-card-single").count(), 1, "the form takes the whole card");
-    assert.equal(await page.getByRole("link", { name: copy.myEnquiries }).getAttribute("href"), `/${locale}/account/my-learning/support/enquiries`);
-    assert.equal(await page.getByRole("heading", { level: 1 }).textContent(), copy.pageTitle);
+    assert.equal(await answer.locator("b").count(), 0, "raw HTML stays text");
+    assert.ok((await answer.textContent())?.includes("<b>not html</b> bad"), "and a javascript: link keeps only its label");
+    assert.equal(await answer.locator('a[href^="javascript"]').count(), 0);
+    const related = answer.getByRole("link", { name: fillTemplate(c.copy.relatedFaq, { question: CHIPS[0].question }) });
+    assert.equal(await related.getAttribute("href"), `/${locale}/help?faq=${FAQ[0]}`, "Related FAQ opens that FAQ in the Help Centre");
+    const yes = answer.getByRole("button", { name: c.copy.yes, exact: true });
+    const no = answer.getByRole("button", { name: c.copy.no, exact: true });
+    assert.ok((await answer.textContent())?.includes(c.copy.helpful));
+    assert.equal(await yes.getAttribute("aria-pressed"), "false");
+    await yes.click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 1);
+    const feedback = harness.calls.find(isAssistantFeedback)!;
+    assert.equal(feedback.path, `/api/helpdesk/assistant/${ASSIST[0]}/feedback`);
+    assert.deepEqual(feedback.json, { helpful: true });
+    assert.match(feedback.key ?? "", UUID);
+    await page.waitForFunction(() => document.querySelector(".helpdesk-chat-answer button[aria-pressed=true]") !== null);
+    assert.equal(await yes.getAttribute("aria-pressed"), "true", "the chosen answer shows as pressed");
+    assert.equal(await no.isDisabled(), true, "and the other is disabled");
+    assert.equal(await yes.isDisabled(), true, "feedback is given once");
+    assert.equal(await c.send.isDisabled(), true, "send stays disabled with an empty input");
+    await page.close();
+  }
+});
+
+test("chat: Enter sends, Shift+Enter adds a line, blank never sends; null shows the fallback; 429 and network errors show an inline error", async () => {
+  for (const locale of LOCALES) {
+    const replies: Reply[] = [{ json: { id: ASSIST[1], reply: null } }, { status: 429, json: { code: "rate_limited" } }, "abort"];
+    const harness = await open(locale, api({ assistant: () => replies.shift() ?? { status: 500 } }), { locale, chips: [] });
+    const { page } = harness;
+    const c = chat(page, locale);
+    assert.equal(await c.chips.count(), 0, "no chips without popular FAQs");
+    assert.equal(await c.panel.getByText(c.copy.tryAsking).count(), 0, "and no heading for them");
+    await c.input.click();
+    await page.keyboard.press("Enter");
+    await c.input.fill("   ");
+    await page.keyboard.press("Enter");
+    assert.equal(count(harness.calls, isAssistant), 0, "a blank question is never sent");
+    await c.input.fill("");
+    await page.keyboard.type("Line one");
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("line two");
+    assert.equal(await c.input.inputValue(), "Line one\nline two", "Shift+Enter makes a new line");
+    assert.equal(count(harness.calls, isAssistant), 0);
+    await page.keyboard.press("Enter");
+    await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+    assert.deepEqual(harness.calls.find(isAssistant)!.json, { message: "Line one\nline two", locale }, "Enter sends the typed question");
+    assert.equal(await c.input.inputValue(), "", "the input clears");
+    await c.answers.first().waitFor();
+    assert.equal((await c.answers.first().textContent())?.trim(), c.copy.fallback, "a null reply shows the fallback");
+    assert.equal(await c.answers.first().getByRole("button").count(), 0, "with no Helpful buttons");
+    assert.equal(await c.answers.first().getByRole("link").count(), 0, "and no Related FAQ");
+    await c.input.fill("How much is it?");
+    await c.send.click();
+    const error = c.panel.locator(".helpdesk-chat-error[role=alert]");
+    await error.waitFor();
+    assert.equal(await error.textContent(), c.copy.rateLimited, "429 rate_limited");
+    await c.input.fill("Again?");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-error").length === 2);
+    assert.equal(await error.nth(1).textContent(), c.copy.error, "a network failure");
+    assert.deepEqual(await c.questions.allTextContents(), ["Line one\nline two", "How much is it?", "Again?"]);
+    assert.equal(await c.questions.first().evaluate((node) => getComputedStyle(node).whiteSpace), "pre-wrap", "line breaks in a question show");
+    assert.equal(await c.send.isDisabled(), true, "nothing pending, empty input: send is disabled");
+    const atBottom = await c.log.evaluate((node) => Math.abs(node.scrollHeight - node.clientHeight - node.scrollTop) < 2);
+    assert.ok(atBottom, "the conversation scrolls to the newest message");
+    const keys = harness.calls.filter(isAssistant).map((call) => call.key);
+    assert.equal(new Set(keys).size, 3, "each question is its own Idempotency-Key");
+    await page.close();
+  }
+});
+
+test("chat transcript is kept in sessionStorage per account; the enquiry sends the chat's assistIds with the suggestionId", async () => {
+  const locale: Locale = "en-GB";
+  let asked = 0;
+  const harness = await open(locale, api({
+    assistant: () => (++asked === 1 ? { json: { id: ASSIST[0], reply: { id: ASSIST[0], faqId: FAQ[0], question: CHIPS[0].question, answer: "Use **Reset**." } } } : { json: { id: ASSIST[1], reply: null } }),
+    suggestion: () => ({ json: { suggestion: SUGGESTION } })
+  }), { locale, chips: CHIPS });
+  const { page } = harness;
+  let c = chat(page, locale);
+  await c.chips.first().click();
+  await c.answers.first().waitFor();
+  await c.input.fill("Something else");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 2);
+  await c.answers.first().getByRole("button", { name: c.copy.no, exact: true }).click();
+  await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 1);
+  await page.waitForFunction(() => document.querySelector(".helpdesk-chat-answer button[aria-pressed=true]") !== null);
+  await mountContact(page, { locale, chips: CHIPS });
+  c = chat(page, locale);
+  await c.panel.locator(".helpdesk-chat-messages[aria-busy=false]").waitFor();
+  assert.deepEqual(await c.questions.allTextContents(), [CHIPS[0].question, "Something else"], "the transcript comes back after a reload");
+  assert.equal(await c.answers.count(), 2);
+  assert.equal(await c.answers.first().getByRole("button", { name: c.copy.no, exact: true }).getAttribute("aria-pressed"), "true", "with the feedback given");
+  await mountContact(page, { locale, chips: CHIPS, account: { id: "user_other", name: "Other", email: "other@example.com" } });
+  await c.panel.locator(".helpdesk-chat-messages[aria-busy=false]").waitFor();
+  assert.equal(await chat(page, locale).questions.count(), 0, "another account on this browser does not see it");
+  await mountContact(page, { locale, chips: CHIPS });
+  const f = form(page, locale);
+  await fillValid(page, locale, false);
+  await f.submit.click();
+  await f.dialog.waitFor();
+  await f.dialog.getByRole("button", { name: f.copy.assistant.no }).click();
+  await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+  const create = harness.calls.find(isTicketCreate)!;
+  assert.deepEqual(create.fields.assistIds, [ASSIST[0], ASSIST[1]], "the chat's answers are linked to the enquiry");
+  assert.equal(create.fields.suggestionId, SUGGESTION.id);
+  await page.close();
+});
+
+test("chat: “We’d love to hear your ideas” picks Other Enquiries and focuses Subject; the panel matches 1216:6 at 1440 × 1024", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale, api({}), { locale, chips: CHIPS });
+    const { page } = harness;
+    await page.setViewportSize({ width: 1440, height: 1024 });
+    // As in the app (globals.css): no body margin; and Figma frames have no scrollbar, so measure at the full 1440 px.
+    await page.addStyleTag({ content: "html { scrollbar-width: none; } body { margin: 0; }" });
+    const c = chat(page, locale);
+    const f = form(page, locale);
+    await c.panel.getByRole("button", { name: c.copy.ideas }).click();
+    assert.equal(await f.topic.textContent(), f.copy.categories.other);
+    assert.ok(await activeIs(f.subject), "focus moves to Subject");
+    const box = async (selector: string) => (await c.panel.locator(selector).first().boundingBox())!;
+    const card = (await page.locator(".helpdesk-card").boundingBox())!;
+    const panel = (await c.panel.boundingBox())!;
+    assert.deepEqual([panel.width, panel.height], [455, 800], "panel 455 × 800");
+    assert.equal(panel.x - card.x, 925, "the panel starts 925 px into the card");
+    assert.equal(card.width, 1399);
+    assert.equal((await box(".helpdesk-chat-header")).height, 51);
+    assert.equal((await box(".helpdesk-chat-messages")).height, 664);
+    assert.equal((await box(".helpdesk-chat-chip")).width, 404);
+    assert.equal((await box(".helpdesk-chat-chip")).height, 36);
+    assert.equal((await box(".helpdesk-chat-greeting")).width, 365);
+    assert.equal((await box(".helpdesk-chat-input")).height, 70);
+    assert.deepEqual([(await box(".helpdesk-chat-send")).width, (await box(".helpdesk-chat-send")).height], [43, 43]);
+    assert.equal((await box(".helpdesk-chat-info")).width, 404);
+    await page.setViewportSize({ width: 800, height: 1024 });
+    const narrowForm = (await page.locator("form.helpdesk-form").boundingBox())!;
+    const narrowPanel = (await c.panel.boundingBox())!;
+    assert.ok(narrowPanel.y >= narrowForm.y + narrowForm.height, "on narrow screens the panel stacks under the form");
+    assert.ok(narrowPanel.x + narrowPanel.width <= 800, "without overflowing");
     await page.close();
   }
 });
 
 test("the greeting falls back when the account has no name", async () => {
   const locale: Locale = "zh-CN";
-  const harness = await open(locale, api({ suggestion: () => ({ json: { suggestion: SUGGESTION } }) }), { locale, account: { name: "  ", email: "learner@example.com" } });
+  const harness = await open(locale, api({ suggestion: () => ({ json: { suggestion: SUGGESTION } }) }), { locale, account: { id: "user_noname", name: "  ", email: "learner@example.com" } });
   const { page } = harness;
   const f = form(page, locale);
   await fillValid(page, locale, false);

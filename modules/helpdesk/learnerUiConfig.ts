@@ -27,7 +27,8 @@ export function helpdeskUiConfig(): HelpdeskUiConfig {
       maxFileBytes: HELPDESK_LIMITS.fileMaxBytes,
       subjectMax: HELPDESK_LIMITS.subjectMax,
       bodyMax: HELPDESK_LIMITS.bodyMax,
-      emailMax: HELPDESK_LIMITS.contactEmailMax
+      emailMax: HELPDESK_LIMITS.contactEmailMax,
+      questionMax: HELPDESK_LIMITS.assistQuestionMax
     },
     extensions,
     accept: extensions.map((extension) => `.${extension}`).join(",")

@@ -1,19 +1,23 @@
 "use client";
-// Learner Contact Support (Figma 1216:6) with the AI Support Assistant modal
-// (Figma 1333:249). Submit validates in the page, asks for a suggestion (never
+// Learner Contact Support (Figma 1216:6): the enquiry form, the AI Support
+// Assistant chat panel on the right (AssistantChat), and the submit-time AI
+// Support Assistant modal (Figma 1333:249). Submit validates in the page, asks for a suggestion (never
 // blocking: no answer, an error or a slow answer submits directly), and then
 // creates the ticket with one Idempotency-Key per logical submit. Cancel or
 // leaving the page during the check never creates a ticket, and a submit
 // whose response was lost is resent as it was (same key, same declined
-// suggestion) so the server replays it.
+// suggestion, same chat assistIds) so the server replays it. The ticket links
+// the chat answers the learner saw (assistIds) and the declined suggestion.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronUp, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
-import type { CommonQuestion, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
-import { answerBlocks, fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, nextFocusIndex, problemMessageKey, RetryableSubmit, submissionSignature, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import type { HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
+import { fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, nextFocusIndex, problemMessageKey, RetryableSubmit, submissionSignature, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
 import { createTicket, newIdempotencyKey, reportSuggestionOutcome, requestSuggestion } from "./helpdeskApi";
-import { AttachmentZone, FileSummaryChip, LinkifiedText, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
+import { AssistantChat, type ChatChip } from "./AssistantChat";
+import { AttachmentZone, FileSummaryChip, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
+import { Markdown } from "./Markdown";
 import "./helpdesk.css";
 
 type Locale = "en-GB" | "zh-CN";
@@ -22,7 +26,7 @@ type Phase = "form" | "suggestion" | "thanks" | "success";
 
 const THANKS_REDIRECT_MS = 2_000;
 
-export function ContactSupport({ locale, copy, config, account, questions }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { name: string; email: string }; questions: CommonQuestion[] }) {
+export function ContactSupport({ locale, copy, config, account, chips }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[] }) {
   const router = useRouter();
   const ids = useId();
   const [category, setCategory] = useState<TicketCategory | "">("");
@@ -40,6 +44,8 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
   const keys = useRef(new SubmissionKeys(newIdempotencyKey));
   const retry = useRef(new RetryableSubmit());
   const inFlight = useRef(false);
+  /** The chat answers to link to the enquiry (newest 10), kept up to date by AssistantChat. */
+  const assistIds = useRef<string[]>([]);
   /** Set by Cancel and on unmount: a suggestion check still running must not go on to create a ticket. */
   const abandoned = useRef(false);
   const suggestionCheck = useRef<AbortController | null>(null);
@@ -75,13 +81,14 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     return { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim() };
   }
 
-  async function submitTicket(suggestionId: string | null) {
+  async function submitTicket(suggestionId: string | null, linked: string[] = assistIds.current) {
     setBusy("submitting");
     const fields = formFields();
     const signature = submissionSignature(fields, attachments.files);
     if (suggestionId) fields.suggestionId = suggestionId;
     const form = new FormData();
     for (const [name, value] of Object.entries(fields)) form.append(name, value);
+    for (const id of linked) form.append("assistIds", id);
     for (const file of attachments.files) form.append("files[]", file, file.name);
     const key = keys.current.keyFor(signature);
     const result = await createTicket(form, key);
@@ -97,7 +104,7 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     }
     // A 4xx is final for this payload; a network error or 5xx keeps the key (and the declined suggestion) so a retry replays.
     if (result.status >= 400 && result.status < 500) keys.current.done();
-    retry.current.failed(signature, suggestionId, result.status);
+    retry.current.failed(signature, suggestionId, result.status, linked);
     setPhase("form");
     setFormError(copy.errors[problemMessageKey(result.status, result.code)]);
   }
@@ -114,7 +121,7 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     try {
       // Same form as a submit that may have reached the server: resend it as it was, without a new suggestion check.
       const again = retry.current.retryFor(submissionSignature(formFields(), attachments.files));
-      if (again) { await submitTicket(again.suggestionId); return; }
+      if (again) { await submitTicket(again.suggestionId, again.assistIds); return; }
       setBusy("checking");
       const check = new AbortController();
       suggestionCheck.current = check;
@@ -145,6 +152,14 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
     void submitTicket(suggestion.id).finally(() => { inFlight.current = false; });
   }
 
+  /** "We’d love to hear your ideas, too!": an Other Enquiries enquiry, starting at Subject. */
+  function shareIdeas() {
+    if (busy !== "" || phase === "success") return;
+    setCategory("other");
+    setErrors((current) => ({ ...current, category: undefined }));
+    subjectInput.current?.focus();
+  }
+
   function cancel() {
     abandoned.current = true;
     suggestionCheck.current?.abort();
@@ -158,7 +173,7 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
   const disabled = busy !== "";
 
   return <div className="helpdesk-card">
-    <div className={`helpdesk-card-content${questions.length ? "" : " helpdesk-card-single"}`}>
+    <div className="helpdesk-card-content">
       {phase === "success" && created ? <SuccessPanel copy={copy} ticket={created} ticketHref={`/${locale}/account/my-learning/support/${created.id}`} enquiriesHref={enquiriesHref} /> :
         <form className="helpdesk-form" noValidate onSubmit={onSubmit} onPaste={attachments.onPaste}>
           <div className="helpdesk-form-title"><h1>{copy.pageTitle}</h1><Link prefetch={false} className="helpdesk-text-link" href={enquiriesHref}>{copy.myEnquiries}</Link></div>
@@ -178,7 +193,8 @@ export function ContactSupport({ locale, copy, config, account, questions }: { l
             <button ref={submitButton} type="submit" className="helpdesk-submit-button" disabled={disabled}>{busy === "checking" ? copy.assistant.checking : busy === "submitting" ? copy.submitting : copy.submit}</button>
           </div>
         </form>}
-      {questions.length ? <><div className="helpdesk-divider" aria-hidden="true" /><CommonQuestions copy={copy} questions={questions} /></> : null}
+      <div className="helpdesk-divider" aria-hidden="true" />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} />
     </div>
     {(phase === "suggestion" || phase === "thanks") && suggestion ? <AssistantModal copy={copy} locale={locale} suggestion={suggestion} thanks={phase === "thanks"} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}
@@ -221,21 +237,6 @@ function TopicSelect({ copy, options, value, onChange, disabled, buttonProps, la
       {options.map((option, index) => <li key={option} id={`${listId}-${index}`} role="option" aria-selected={value === option} className={index === active ? "is-active" : undefined} onMouseEnter={() => setActive(index)} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(index)}>{copy.categories[option]}</li>)}
     </ul> : null}
   </div>;
-}
-
-function CommonQuestions({ copy, questions }: { copy: HelpdeskCopy; questions: CommonQuestion[] }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const ids = useId();
-  return <section className="helpdesk-questions" aria-labelledby={`${ids}-title`}>
-    <h2 id={`${ids}-title`}><CircleHelp size={20} aria-hidden="true" />{copy.commonQuestions}</h2>
-    <ul>{questions.map((question) => {
-      const expanded = open === question.id;
-      return <li key={question.id} className={expanded ? "is-open" : undefined}>
-        <button type="button" aria-expanded={expanded} aria-controls={`${ids}-${question.id}`} onClick={() => setOpen(expanded ? null : question.id)}><span>{question.question}</span><ChevronRight size={16} aria-hidden="true" /></button>
-        <div id={`${ids}-${question.id}`} className="helpdesk-question-answer" hidden={!expanded}>{question.answer.split(/\n/).filter((line) => line.trim()).map((line, index) => <p key={index}><LinkifiedText text={line} /></p>)}</div>
-      </li>;
-    })}</ul>
-  </section>;
 }
 
 type Enquiry = { name: string; email: string; subject: string; category: TicketCategory; message: string; askedAt: Date; files: File[] };
@@ -294,10 +295,7 @@ function AssistantModal({ copy, locale, suggestion, enquiry, thanks, busy, accou
             <span className="helpdesk-bot-avatar" aria-hidden="true"><Bot size={18} /></span>
             <div className="helpdesk-modal-answer-content">
               <p className="helpdesk-answer-greeting">{name ? fillTemplate(copy.assistant.greeting, { name }) : copy.assistant.greetingNoName}</p>
-              {answerBlocks(suggestion.answer).map((block, index) => <div key={index} className="helpdesk-answer-block">
-                {block.heading ? <p className="helpdesk-answer-heading">{block.heading}</p> : null}
-                {block.lines.map((line, lineIndex) => <p key={lineIndex}><LinkifiedText text={line} /></p>)}
-              </div>)}
+              <Markdown className="helpdesk-answer-markdown" text={suggestion.answer} />
             </div>
           </section>
         </div>

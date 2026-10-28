@@ -283,7 +283,11 @@
     "choosePlan": "Choose access plan",
     "heroTitle": "Enjoying the course so far?",
     "heroBody": "Build on what you’ve discovered with more ways to explore, reflect, and connect.",
-    "bullets": ["Continue this lesson and unlock the full course", "Deepen your understanding with AI Tutor", "Discover more exhibits, ideas, and perspectives"],
+    "bullets": [
+      "Continue this lesson and unlock the full course",
+      "Deepen your understanding with AI Tutor",
+      "Discover more exhibits, ideas, and perspectives"
+    ],
     "other": "Related courses",
     "empty": "No related courses yet",
     "relatedBody": "Explore another perspective in this category.",
@@ -1639,7 +1643,27 @@
       "size": "{name} is larger than 10 MB.",
       "count": "You can attach up to 5 files."
     },
-    "commonQuestions": "Common Questions",
+    "chat": {
+      "title": "AI Support Assistant",
+      "subtitle": "Ask me about Learning Guide",
+      "greetingTitle": "Hi! How can I help?",
+      "greetingBody": "I can answer questions about Learning Guide FAQs, including accounts, courses and subscriptions.",
+      "greetingLimit": "I can’t access your personal account, orders or payment records yet.",
+      "ideas": "We’d love to hear your ideas, too!",
+      "tryAsking": "Try asking one of these:",
+      "relatedFaq": "Related FAQ: {question}",
+      "helpful": "Helpful?",
+      "yes": "Yes",
+      "no": "No",
+      "fallback": "I couldn’t find an answer to that in our FAQs. Please submit an enquiry using the form and our support team will help.",
+      "info": "Need help with a specific order or payment? Submit an enquiry using the form on the left.",
+      "placeholder": "Ask about Learning Guide...",
+      "inputLabel": "Ask a question",
+      "send": "Send",
+      "typing": "The assistant is replying…",
+      "rateLimited": "You’ve asked a lot of questions in the last hour. Please try again later, or submit an enquiry using the form.",
+      "error": "Sorry, I couldn’t reply just now. Please try again."
+    },
     "assistant": {
       "title": "AI Support Assistant",
       "subtitle": "Here is a possible answer based on your question.",
