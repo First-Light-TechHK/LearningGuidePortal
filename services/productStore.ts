@@ -4,6 +4,7 @@ import { SubscriptionManagementError, type SubscriptionChange, type Subscription
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
 import { withPlanAiPoints } from "./planAiPoints";
 import { highestProgressLesson } from "./courseProgressAction";
+import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
@@ -194,6 +195,7 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  selectedMode?: CourseLearningMode;
   highestProgress?: HighestCourseProgress;
   knowledgePositions?: KnowledgePositions;
   currentMode?: CourseLearningMode;
@@ -557,6 +559,12 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
     const course = data.courses.find(item => item.id === courseId && item.status === "published");
     if (!course) throw new CourseLearningModeError("notFound");
     user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
+    const record = data.studyRecords.find(record => record.userId === userId && record.courseId === course.id);
+    if (record) {
+      record.selectedMode = mode;
+      record.currentMode = mode;
+      record.updatedAt = now();
+    }
     return { courseId: course.id, mode };
   });
 }
@@ -1951,8 +1959,13 @@ export async function getLearningOverview(userId: string) {
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
       const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === courseId);
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
-      const mode = record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModes?.[courseId] || "text";
+      const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModes?.[courseId] || "text";
+      const modes = course ? availableCourseLearningModes(course) : [];
+      const mode = modes.includes(preferredMode) ? preferredMode : modes[0] || "text";
       const pointProgress = course && record?.knowledgePositions ? knowledgeProgress(course, mode, record.knowledgePositions[mode]) : null;
+      const points = course ? courseKnowledgePoints(course, mode) : [];
+      const position = pointProgress?.lessonId ? pointProgress : points.find(point => point.lessonId === record?.currentLessonId) || points[0];
+      const currentLessonId = position?.lessonId || record?.currentLessonId || null;
       const legacyProgress = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
       const computed = pointProgress ? { progress: record?.progress || 0, progressFailed: !pointProgress.total, completed: Boolean(record && record.progress >= 100) }
         : { ...legacyProgress, progress: legacyProgress.progress === null ? null : Math.max(record?.progress || 0, legacyProgress.progress), completed: Boolean(record && record.progress >= 100) || legacyProgress.completed };
@@ -1978,10 +1991,10 @@ export async function getLearningOverview(userId: string) {
         courseId,
         startedAt: record?.startedAt || null,
         updatedAt: record?.updatedAt || entitlement?.validTo || null,
-        currentLessonId: record?.currentLessonId || null,
-        currentContentId: pointProgress?.contentId || null,
+        currentLessonId,
+        currentContentId: position?.contentId || null,
         mode,
-        currentLessonTitle: lessons.find((lesson) => lesson.id === record?.currentLessonId)?.title || null,
+        currentLessonTitle: lessons.find((lesson) => lesson.id === currentLessonId)?.title || null,
         lessonCount: lessons.length,
         courseDescription: course?.description || "",
         courseCategory: course?.category || "European Humanities",

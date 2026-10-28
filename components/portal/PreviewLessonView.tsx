@@ -57,6 +57,10 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const [textNavigation, setTextNavigation] = useState<{ id: string; request: number }>();
   const [videoNavigation, setVideoNavigation] = useState<{ id: string; request: number }>();
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [modeSaving, setModeSaving] = useState(false), [modeError, setModeError] = useState("");
+  const modeSaveLock = useRef(false);
+  const modeMounted = useRef(true);
+  useEffect(() => { modeMounted.current = true;return () => { modeMounted.current = false; }; }, []);
   const selected = contents.find(content => content.id === contentId);
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
@@ -78,18 +82,28 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const filteredOutline = outline.filter(item => !item.modes || item.modes.includes(mode));
   const videoContent = contents.find(content => content.type === "video");
   const textContent = contents.find(content => content.type === "text" || content.type === "pdf");
-  function switchMode(mode: CourseLearningMode) {
+  async function switchMode(mode: CourseLearningMode) {
+    if (modeSaveLock.current) return;
     const content = mode === "video" ? videoContent : textContent;
     const currentHasMode=Boolean(content) || (mode==="text" && !contents.length && Boolean(lesson.body?.trim()));
     const destination=modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id);
     if(!destination)return;
+    modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
-    setNodeRequest(undefined);
-    setVideoProgress(null);
-    setEnded(null);
-    if(destination.lessonId===lesson.id)setContentId(content?.id || "");
-    setVideoNavigation(undefined);
-    router.push(destination.href);
+    try {
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error("mode-save");
+      if (!modeMounted.current) return;
+      setNodeRequest(undefined);
+      setVideoProgress(null);
+      setEnded(null);
+      if(destination.lessonId===lesson.id)setContentId(content?.id || "");
+      setVideoNavigation(undefined);
+      setPlayingId(null);
+      router.push(destination.href);
+    } catch { if (modeMounted.current) setModeError(messages.courseLearningMode.saveError); }
+    finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
   }
   const current = outline.find(item => item.id === lesson.id);
   const courseHref = `/${locale}/portal/courses/${courseId}`;
@@ -115,10 +129,11 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     <div className={`${styles.layout} ${mode === "text" ? styles.textLayout : ""}`}>
       <aside className={styles.sidebar}>
         <h2>{courseTitle}</h2>
-        <div className={styles.modeControl}>{hasMultipleModes ? <><select className={styles.modeSwitch} aria-label={copy.learningMode} value={mode} onChange={event => switchMode(event.target.value as CourseLearningMode)}>
+        <div className={styles.modeControl}>{hasMultipleModes ? <><select className={styles.modeSwitch} aria-label={copy.learningMode} value={mode} disabled={modeSaving} onChange={event => void switchMode(event.target.value as CourseLearningMode)}>
           <option value="video" disabled={!modeLessonDestination(outline, lesson.id, "video", Boolean(videoContent))}>{copy.videoMode}</option>
           <option value="text" disabled={!modeLessonDestination(outline, lesson.id, "text", Boolean(textContent) || (!contents.length && Boolean(lesson.body?.trim())))}>{copy.textMode}</option>
         </select><Image src="/portal/learning-mode/dropdown.svg" alt="" width={10.3923} height={9} /></> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
+        {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
           {filteredOutline.map(item => <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!item.href ? styles.lockedLesson : ""}`}>
             {item.href ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={`${item.href}${item.href.includes("?") ? "&" : "?"}viewMode=${mode}`}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true"><span>{item.number}</span>{item.title}</span>}
