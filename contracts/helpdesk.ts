@@ -1,4 +1,6 @@
-// Helpdesk Tickets v1 — API contract (docs/phase1/helpdesk-tickets.md).
+// Helpdesk Tickets v1 — API contract (docs/phase1/helpdesk-tickets.md, with
+// the 2026-10-28 Figma addendum: enquiry types, contact email, AI suggestion,
+// wider attachments, tags, unread flag and the BackOffice projections).
 // Types, limits, input parsing and RFC 9457 problem codes for the learner
 // endpoints (/api/helpdesk/**) and the Admin → Portal integration endpoints
 // (/api/integration/helpdesk/**). Success bodies are plain JSON; errors are
@@ -8,9 +10,13 @@ import { isUuid } from "@/lib/uuidv7";
 export const HELPDESK_LIMITS = {
   subjectMax: 120,
   bodyMax: 5000,
-  filesPerMessage: 3,
-  fileMaxBytes: 5 * 1024 * 1024,
+  filesPerMessage: 5,
+  fileMaxBytes: 10 * 1024 * 1024,
   fileNameMax: 120,
+  contactEmailMax: 254,
+  tagMax: 32,
+  tagsPerTicket: 10,
+  previewMax: 120,
   agentIdMax: 128,
   agentNameMax: 120,
   queryMax: 120,
@@ -20,18 +26,24 @@ export const HELPDESK_LIMITS = {
 
 export const TICKET_STATUSES = ["OPEN", "ASSIGNED", "WAITING_USER", "PENDING_CONFIRM", "CLOSED", "CANCELLED"] as const;
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
-export const TICKET_CATEGORIES = ["account", "billing", "learning", "study_group", "other"] as const;
+/** Figma 1216:6 "Enquiry Type": Technical Support, Course Content, Payments & Subscriptions, Other Enquiries. */
+export const TICKET_CATEGORIES = ["technical_support", "course_content", "payments_subscriptions", "other"] as const;
 export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
 export const HELPDESK_LOCALES = ["en-GB", "zh-CN"] as const;
 export type HelpdeskLocale = (typeof HELPDESK_LOCALES)[number];
-export const HELPDESK_ATTACHMENT_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+/** Detected from content (magic bytes / ZIP structure / clean UTF-8 text), never from the declared type. No html, no svg. */
+export const HELPDESK_ATTACHMENT_TYPES = [
+  "image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf", "text/plain", "text/csv",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+] as const;
 export type HelpdeskAttachmentType = (typeof HELPDESK_ATTACHMENT_TYPES)[number];
 export type AuthorKind = "learner" | "agent" | "system";
 export type CloseReason = "cancelled" | "user_confirmed" | "user_closed" | "auto_confirmed";
 
 export const LEARNER_ACTIONS = ["cancel", "confirm", "reject", "close", "rate"] as const;
 export type LearnerAction = (typeof LEARNER_ACTIONS)[number];
-export const AGENT_ACTIONS = ["claim", "propose_resolution"] as const;
+export const AGENT_ACTIONS = ["claim", "propose_resolution", "add_tag", "remove_tag", "mark_read"] as const;
 export type AgentAction = (typeof AGENT_ACTIONS)[number];
 /** What the learner may do now ("reply" = send a message / follow up). */
 export type LearnerAllowedAction = "reply" | LearnerAction;
@@ -90,6 +102,8 @@ export type TicketTimelineEntry = {
 
 export type TicketDetail = TicketSummary & {
   locale: HelpdeskLocale;
+  /** Where replies are emailed (defaults to the account email). */
+  contactEmail: string;
   assigneeName: string | null;
   closeReason: CloseReason | null;
   rating: number | null;
@@ -102,7 +116,8 @@ export type TicketDetail = TicketSummary & {
 
 export type HelpdeskEventName =
   | "created" | "claimed" | "agent_replied" | "internal_note_added" | "learner_replied" | "resolution_proposed"
-  | "resolution_rejected" | "confirmed" | "auto_confirmed" | "closed_by_learner" | "cancelled" | "reopened" | "rated";
+  | "resolution_rejected" | "confirmed" | "auto_confirmed" | "closed_by_learner" | "cancelled" | "reopened" | "rated"
+  | "suggestion_declined" | "tag_added" | "tag_removed";
 
 export type HelpdeskEventData = {
   from_state: TicketStatus | null;
@@ -111,6 +126,8 @@ export type HelpdeskEventData = {
   reason?: string;
   message_id?: string;
   rating?: number;
+  suggestion_id?: string;
+  tag?: string;
 };
 
 /** CloudEvents 1.0 (structured JSON field names) plus the per-ticket sequence. */
@@ -133,12 +150,45 @@ export type AgentTicketSummary = TicketSummary & {
   learner: { id: string; email: string; name: string };
   assignee: AgentIdentity | null;
   needsReply: boolean;
+  contactEmail: string;
+  /** First 120 characters of the learner's first message, on one line. */
+  preview: string;
+  /** A learner created the ticket or wrote since an agent last opened it (mark_read). */
+  unreadByAgent: boolean;
+  tags: string[];
+};
+
+/** BackOffice "Student Information" (read-only projection of existing Portal data). */
+export type StudentProjection = {
+  /** Portal user id (shown as Student ID). */
+  id: string;
+  name: string;
+  accountEmail: string;
+  contactEmail: string;
+  joinedAt: string | null;
+  totalEnquiries: number;
+  currentCourse: { id: string; title: string } | null;
+};
+
+/** BackOffice "Current Subscription Plan" (read-only; the order/payment owner owns the data). */
+export type SubscriptionProjection = {
+  planName: string;
+  /** From the plan term: 12 months = annual, 6 months = semiannual; null when the plan is gone. */
+  billingCycle: "annual" | "semiannual" | null;
+  status: "active" | "cancel_at_period_end" | "grace";
+  trial: boolean;
+  /** Next renewal; null when the plan will not renew (cancelling, or grace). */
+  renewalDate: string | null;
+  validTo: string;
 };
 
 export type AgentTicketMessageView = TicketMessageView & { authorId: string | null; internal: boolean };
 
 export type AgentTicketDetail = Omit<AgentTicketSummary, "learner"> & {
   learner: { id: string; email: string; name: string; locale: HelpdeskLocale };
+  suggestionId: string | null;
+  student: StudentProjection;
+  subscription: SubscriptionProjection | null;
   closeReason: CloseReason | null;
   rating: number | null;
   followUpUntil: string | null;
@@ -150,6 +200,17 @@ export type AgentTicketDetail = Omit<AgentTicketSummary, "learner"> & {
 export type TicketCounts = Record<TicketStatus, number> & { needs_reply: number; all: number };
 export type LearnerTicketList = { tickets: TicketSummary[] };
 export type AgentTicketList = { tickets: AgentTicketSummary[]; nextCursor: string | null; counts: TicketCounts };
+
+// ---------------------------------------------------------------- Admin-owned Q&A and suggestions (addendum §A/§C/§E)
+
+/** A published, featured Common Question from Admin; answer is plain text with line breaks. */
+export type CommonQuestion = { id: string; category: string; question: string; answer: string };
+export type CommonQuestionList = { questions: CommonQuestion[] };
+export type HelpdeskSuggestion = { id: string; qaId: string; question: string; answer: string };
+export type SuggestionResponse = { suggestion: HelpdeskSuggestion | null };
+export const SUGGESTION_OUTCOMES = ["solved", "declined", "edited"] as const;
+export type SuggestionOutcome = (typeof SUGGESTION_OUTCOMES)[number];
+export type SuggestInput = { category: TicketCategory; subject: string; message: string; locale: HelpdeskLocale };
 
 // ---------------------------------------------------------------- problems
 
@@ -172,8 +233,10 @@ export const PROBLEM_STATUS = {
   reopen_window_passed: 409,
   rating_window_passed: 409,
   already_rated: 409,
+  tag_limit_reached: 409,
   integration_disabled: 503,
-  helpdesk_unavailable: 503
+  helpdesk_unavailable: 503,
+  assistant_unavailable: 503
 } as const;
 export type HelpdeskProblemCode = keyof typeof PROBLEM_STATUS;
 
@@ -194,8 +257,10 @@ const PROBLEM_TITLES: Record<HelpdeskProblemCode, string> = {
   reopen_window_passed: "The follow-up window has passed",
   rating_window_passed: "The rating window has passed",
   already_rated: "The ticket has already been rated",
+  tag_limit_reached: "The ticket already has the maximum number of tags",
   integration_disabled: "Helpdesk integration is not configured",
-  helpdesk_unavailable: "Helpdesk is temporarily unavailable"
+  helpdesk_unavailable: "Helpdesk is temporarily unavailable",
+  assistant_unavailable: "The support assistant is temporarily unavailable"
 };
 
 export class HelpdeskProblem extends Error {
@@ -225,13 +290,24 @@ function invalid(field: string, detail: string): never {
 // ---------------------------------------------------------------- inputs
 
 export type UploadInput = { fileName: string; declaredType: string; bytes: Uint8Array };
-export type CreateTicketInput = { category: TicketCategory; subject: string; body: string; locale: HelpdeskLocale; files: UploadInput[] };
+export type CreateTicketInput = {
+  category: TicketCategory;
+  subject: string;
+  body: string;
+  locale: HelpdeskLocale;
+  /** null (or absent) = use the account email. */
+  contactEmail?: string | null;
+  /** The AI suggestion the learner declined before submitting ("No, still submit"). */
+  suggestionId?: string | null;
+  files: UploadInput[];
+};
 export type LearnerMessageInput = { body: string; expectedSequence: number; files: UploadInput[] };
 export type LearnerActionInput = { action: LearnerAction; expectedSequence: number; rating?: number; message?: string };
 export type AgentMessageInput = { body: string; internal: boolean; agent: AgentIdentity; expectedSequence: number };
-export type AgentActionInput = { action: AgentAction; agent: AgentIdentity; expectedSequence: number };
+/** expectedSequence is required for claim / propose_resolution and optional (null) for tags and mark_read. */
+export type AgentActionInput = { action: AgentAction; agent: AgentIdentity; expectedSequence: number | null; tag?: string };
 export type ListCursor = { updatedAt: string; id: string };
-export type AgentListQuery = { status: TicketStatus | "needs_reply" | null; q: string; limit: number; cursor: ListCursor | null };
+export type AgentListQuery = { status: TicketStatus | "needs_reply" | null; q: string; limit: number; cursor: ListCursor | null; category?: TicketCategory | null; tag?: string | null };
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HelpdeskProblem("invalid_request", "Send a JSON object.");
@@ -262,10 +338,10 @@ function sequence(input: Record<string, unknown>, fromForm: boolean): number {
 }
 
 function uploads(files: UploadInput[]): UploadInput[] {
-  if (files.length > HELPDESK_LIMITS.filesPerMessage) throw new HelpdeskProblem("too_many_attachments", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} images.`);
+  if (files.length > HELPDESK_LIMITS.filesPerMessage) throw new HelpdeskProblem("too_many_attachments", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} files.`);
   for (const file of files) {
     if (file.bytes.byteLength === 0) invalid("files", "An attached file is empty.");
-    if (file.bytes.byteLength > HELPDESK_LIMITS.fileMaxBytes) throw new HelpdeskProblem("attachment_too_large", "Each image must be 5 MB or smaller.");
+    if (file.bytes.byteLength > HELPDESK_LIMITS.fileMaxBytes) throw new HelpdeskProblem("attachment_too_large", "Each file must be 10 MB or smaller.");
   }
   return files;
 }
@@ -280,12 +356,46 @@ function agentIdentity(input: Record<string, unknown>): AgentIdentity {
   return { id, name };
 }
 
+const EMAIL_PATTERN = /^[^\s@"<>()\[\],;:\\]+@[^\s@"<>()\[\],;:\\]+\.[^\s@"<>()\[\],;:\\]{2,}$/;
+
+/** A plain address (no display name, no header characters), at most 254 characters. */
+export function isContactEmail(value: string): boolean {
+  return value.length <= HELPDESK_LIMITS.contactEmailMax && EMAIL_PATTERN.test(value);
+}
+
+function optionalContactEmail(input: Record<string, unknown>): string | null {
+  const raw = input.contactEmail;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") invalid("contactEmail", "contactEmail must be an email address.");
+  const value = raw.trim();
+  if (!value) return null;
+  if (!isContactEmail(value)) invalid("contactEmail", "contactEmail must be a valid email address.");
+  return value;
+}
+
+function optionalUuid(input: Record<string, unknown>, field: string): string | null {
+  const raw = input[field];
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (!isUuid(raw)) invalid(field, `${field} must be a UUID.`);
+  return raw.toLowerCase();
+}
+
+/** Tags are compared case-insensitively: trimmed, inner spaces collapsed, NFKC, lower case. */
+export function normaliseTag(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!value || value.length > HELPDESK_LIMITS.tagMax || /[\u0000-\u001f\u007f]/.test(value)) return null;
+  return value;
+}
+
 export function parseCreateTicketInput(fields: Record<string, unknown>, files: UploadInput[]): CreateTicketInput {
   return {
     category: oneOf(fields, "category", TICKET_CATEGORIES),
     subject: boundedText(fields, "subject", HELPDESK_LIMITS.subjectMax),
     body: boundedText(fields, "body", HELPDESK_LIMITS.bodyMax),
     locale: oneOf(fields, "locale", HELPDESK_LOCALES),
+    contactEmail: optionalContactEmail(fields),
+    suggestionId: optionalUuid(fields, "suggestionId"),
     files: uploads(files)
   };
 }
@@ -321,7 +431,32 @@ export function parseAgentMessageInput(value: unknown): AgentMessageInput {
 
 export function parseAgentActionInput(value: unknown): AgentActionInput {
   const input = record(value);
-  return { action: oneOf(input, "action", AGENT_ACTIONS), agent: agentIdentity(input), expectedSequence: sequence(input, false) };
+  const action = oneOf(input, "action", AGENT_ACTIONS);
+  const agent = agentIdentity(input);
+  if (action === "claim" || action === "propose_resolution") return { action, agent, expectedSequence: sequence(input, false) };
+  const expectedSequence = input.expectedSequence === undefined || input.expectedSequence === null ? null : sequence(input, false);
+  if (action === "mark_read") return { action, agent, expectedSequence };
+  const tag = normaliseTag(input.tag);
+  if (!tag) invalid("tag", `tag must be 1 to ${HELPDESK_LIMITS.tagMax} characters.`);
+  return { action, agent, expectedSequence, tag };
+}
+
+export function parseSuggestInput(value: unknown): SuggestInput {
+  const input = record(value);
+  return {
+    category: oneOf(input, "category", TICKET_CATEGORIES),
+    subject: boundedText(input, "subject", HELPDESK_LIMITS.subjectMax),
+    message: boundedText(input, "message", HELPDESK_LIMITS.bodyMax),
+    locale: oneOf(input, "locale", HELPDESK_LOCALES)
+  };
+}
+
+export function parseSuggestionOutcome(value: unknown): SuggestionOutcome {
+  return oneOf(record(value), "outcome", SUGGESTION_OUTCOMES);
+}
+
+export function parseLocaleParam(params: URLSearchParams): HelpdeskLocale {
+  return oneOf({ locale: params.get("locale") ?? "" }, "locale", HELPDESK_LOCALES);
 }
 
 export function encodeCursor(cursor: ListCursor): string {
@@ -352,7 +487,15 @@ export function parseAgentListQuery(params: URLSearchParams): AgentListQuery {
     limit = Math.min(Number(limitRaw), HELPDESK_LIMITS.listLimitMax);
   }
   const cursorRaw = params.get("cursor");
-  return { status, q, limit, cursor: cursorRaw ? decodeCursor(cursorRaw) : null };
+  const categoryRaw = (params.get("category") || "").trim();
+  if (categoryRaw && !(TICKET_CATEGORIES as readonly string[]).includes(categoryRaw)) invalid("category", "category is not valid.");
+  const tagRaw = params.get("tag");
+  let tag: string | null = null;
+  if (tagRaw !== null && tagRaw.trim() !== "") {
+    tag = normaliseTag(tagRaw);
+    if (!tag) invalid("tag", `tag must be at most ${HELPDESK_LIMITS.tagMax} characters.`);
+  }
+  return { status, q, limit, cursor: cursorRaw ? decodeCursor(cursorRaw) : null, category: (categoryRaw || null) as TicketCategory | null, tag };
 }
 
 /** Idempotency-Key (IETF httpapi draft): an sf-string; Learning Guide keys are UUIDs. */

@@ -16,8 +16,9 @@ import { createHelpdeskService } from "../../../modules/helpdesk/service";
 import { eventType, type EventRecord, type MessageRecord, type TicketRecord } from "../../../modules/helpdesk/domain";
 import { uuidv7 } from "../../../lib/uuidv7";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
+import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 
-const TABLES = ["helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const learner = { id: "pg-learner", email: "pg-learner@example.test", name: "PG Learner" };
@@ -33,7 +34,7 @@ function service(clock: () => Date = () => new Date("2026-10-28T06:00:00.000Z"))
   });
 }
 
-const input = (subject = "Upgrade did not apply") => ({ category: "billing" as const, subject, body: "Paid but still Basic.", locale: "en-GB" as const, files: [] });
+const input = (subject = "Upgrade did not apply") => ({ category: "payments_subscriptions" as const, subject, body: "Paid but still Basic.", locale: "en-GB" as const, files: [] });
 
 before(async () => {
   requireDatabaseUrl();
@@ -171,4 +172,96 @@ test("agent list in PostgreSQL: counts, needs-reply, literal search and keyset p
   }
   assert.deepEqual(seen, all.tickets.map((item) => item.id));
   assert.equal((await hd.listLearnerTickets(learner)).tickets.length, 4);
+});
+
+// ------------------------------------------------------------ Figma addendum
+
+test("addendum columns round-trip: contact email, declined suggestion event, unread flag, wider attachments", async () => {
+  const hd = service();
+  const suggestionId = "0192d4f0-7b6a-7c3e-9a10-0000000000aa";
+  const files = [
+    { fileName: "invoice.pdf", declaredType: "application/pdf", bytes: new Uint8Array(PDF_BYTES) },
+    { fileName: "steps.docx", declaredType: "", bytes: new Uint8Array(DOCX) },
+    { fileName: "rows.xlsx", declaredType: "", bytes: new Uint8Array(XLSX) },
+    { fileName: "notes.txt", declaredType: "text/plain", bytes: new Uint8Array(Buffer.from("a\nb")) },
+    { fileName: "shot.png", declaredType: "image/png", bytes: new Uint8Array(PNG) }
+  ];
+  const { ticket } = await hd.createTicket(learner, { ...input(), category: "technical_support", contactEmail: "pg@work.example", suggestionId, files }, randomUUID());
+  assert.equal(ticket.contactEmail, "pg@work.example");
+  assert.equal(ticket.sequence, 2);
+  assert.equal(ticket.messages[0].attachments.length, 5);
+  const detail = await hd.getAgentTicket(ticket.id);
+  assert.equal(detail.suggestionId, suggestionId);
+  assert.equal(detail.unreadByAgent, true);
+  assert.deepEqual(detail.events.map((item) => item.type.split(".").pop()), ["created", "suggestion_declined"]);
+  assert.equal(detail.events[1].data.suggestion_id, suggestionId);
+  const stored = await rows<{ contact_email: string; category: string; unread_by_agent: boolean }>("SELECT contact_email, category, unread_by_agent FROM helpdesk_tickets WHERE id = $1", [ticket.id]);
+  assert.deepEqual(stored, [{ contact_email: "pg@work.example", category: "technical_support", unread_by_agent: true }]);
+  await assert.rejects(getPool().query("UPDATE helpdesk_tickets SET category = 'billing' WHERE id = $1", [ticket.id]), { code: "23514" }, "old categories are refused");
+  await assert.rejects(getPool().query("UPDATE helpdesk_attachments SET content_type = 'image/svg+xml' WHERE ticket_id = $1", [ticket.id]), { code: "23514" }, "svg is refused");
+  await assert.rejects(getPool().query("UPDATE helpdesk_attachments SET size_bytes = 10485761 WHERE ticket_id = $1", [ticket.id]), { code: "23514" });
+});
+
+test("unread flag: mark_read clears it without an event; a stale agent snapshot never raises it again; a learner message does", async () => {
+  const hd = service();
+  const { ticket } = await hd.createTicket(learner, input(), randomUUID());
+  const repository = createPostgresHelpdeskRepository();
+  const snapshot = await repository.findTicket(ticket.id);
+  assert.ok(snapshot);
+  await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: null }, randomUUID());
+  assert.equal((await hd.getAgentTicket(ticket.id)).unreadByAgent, false);
+  assert.equal((await hd.getAgentTicket(ticket.id)).sequence, 1);
+  // An agent command built from the pre-mark_read snapshot (unreadByAgent: true) must not undo it.
+  const at = new Date(Date.parse(snapshot.ticket.updatedAt) + 1000).toISOString();
+  const next: TicketRecord = { ...snapshot.ticket, status: "ASSIGNED", sequence: 2, assigneeId: agent.id, assigneeName: agent.name, updatedAt: at };
+  const event: EventRecord = { id: uuidv7(), specversion: "1.0", source: "/portal/helpdesk", type: eventType("claimed"), subject: ticket.id, time: at, datacontenttype: "application/json", data: { from_state: "OPEN", to_state: "ASSIGNED", actor: { kind: "agent", id: agent.id, name: agent.name } }, sequence: 2, clientEventId: randomUUID(), payloadHash: "b".repeat(64) };
+  assert.equal(await repository.appendChange({ ticket: next, expectedSequence: 1, attachments: [], event }), "applied");
+  assert.equal((await hd.getAgentTicket(ticket.id)).unreadByAgent, false);
+  await hd.learnerMessage(learner, ticket.id, { body: "Any update?", expectedSequence: 2, files: [] }, randomUUID());
+  assert.equal((await hd.getAgentTicket(ticket.id)).unreadByAgent, true);
+});
+
+test("tags in PostgreSQL: idempotent add/remove events, limit of 10, list filter and counts, concurrent tagging all lands", async () => {
+  const hd = service();
+  const { ticket } = await hd.createTicket(learner, input(), randomUUID());
+  const other = (await hd.createTicket({ ...learner, id: "pg-other", email: "daniel.wu@example.test", name: "Daniel Wu" }, { ...input("Charged twice"), category: "technical_support" }, randomUUID())).ticket;
+  const racing = await Promise.all(["login issue", "account access", "payment", "vip"].map((tag) => hd.agentAction(ticket.id, { action: "add_tag", agent, tag, expectedSequence: null }, randomUUID())));
+  assert.equal(racing.length, 4);
+  const tagged = await hd.getAgentTicket(ticket.id);
+  assert.deepEqual([...tagged.tags].sort(), ["account access", "login issue", "payment", "vip"]);
+  assert.deepEqual(tagged.events.map((item) => item.sequence), [1, 2, 3, 4, 5]);
+  await hd.agentAction(ticket.id, { action: "add_tag", agent, tag: "vip", expectedSequence: null }, randomUUID());
+  await hd.agentAction(ticket.id, { action: "remove_tag", agent, tag: "vip", expectedSequence: null }, randomUUID());
+  await hd.agentAction(ticket.id, { action: "remove_tag", agent, tag: "vip", expectedSequence: null }, randomUUID());
+  assert.equal((await hd.getAgentTicket(ticket.id)).sequence, 6);
+  for (let index = 0; index < 7; index += 1) await hd.agentAction(ticket.id, { action: "add_tag", agent, tag: `t${index}`, expectedSequence: null }, randomUUID());
+  await assert.rejects(hd.agentAction(ticket.id, { action: "add_tag", agent, tag: "eleventh", expectedSequence: null }, randomUUID()), { code: "tag_limit_reached" });
+  assert.equal(Number((await rows<{ count: string }>("SELECT count(*) FROM helpdesk_ticket_tags WHERE ticket_id = $1", [ticket.id]))[0].count), 10);
+  const byTag = await hd.listAgentTickets({ status: null, q: "", limit: 20, cursor: null, category: null, tag: "payment" });
+  assert.deepEqual(byTag.tickets.map((item) => item.id), [ticket.id]);
+  assert.equal(byTag.counts.all, 1);
+  assert.equal(byTag.tickets[0].tags.length, 10);
+  assert.equal(byTag.tickets[0].preview, "Paid but still Basic.");
+  assert.equal(byTag.tickets[0].contactEmail, learner.email);
+  const byCategory = await hd.listAgentTickets({ status: null, q: "", limit: 20, cursor: null, category: "technical_support", tag: null });
+  assert.deepEqual(byCategory.tickets.map((item) => item.id), [other.id]);
+  assert.deepEqual((await hd.listAgentTickets({ status: null, q: "daniel w", limit: 20, cursor: null, category: null, tag: null })).tickets.map((item) => item.id), [other.id]);
+  await assert.rejects(getPool().query("INSERT INTO helpdesk_ticket_tags (ticket_id, tag, created_at) VALUES ($1, 'payment', NOW())", [ticket.id]), { code: "23505" });
+  await assert.rejects(getPool().query(`INSERT INTO helpdesk_ticket_tags (ticket_id, tag, created_at) VALUES ($1, '${"x".repeat(33)}', NOW())`, [ticket.id]), { code: "23514" });
+});
+
+test("student projection counts the learner's tickets in PostgreSQL", async () => {
+  const hd = createHelpdeskService({
+    repository: createPostgresHelpdeskRepository(),
+    blobs: { async put() {}, async get() { return new Uint8Array(); } },
+    studentDirectory: async () => ({ name: "PG Learner", accountEmail: learner.email, joinedAt: "2024-01-15T00:00:00.000Z", currentCourse: null, subscription: null }),
+    now: () => new Date("2026-10-28T06:00:00.000Z"),
+    log: () => undefined
+  });
+  await hd.createTicket(learner, input("One"), randomUUID());
+  const { ticket } = await hd.createTicket(learner, input("Two"), randomUUID());
+  await hd.createTicket({ ...learner, id: "someone-else" }, input("Three"), randomUUID());
+  const detail = await hd.getAgentTicket(ticket.id);
+  assert.equal(detail.student.totalEnquiries, 2);
+  assert.equal(detail.student.joinedAt, "2024-01-15T00:00:00.000Z");
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-const TABLES = ["helpdesk_ticket_counters", "helpdesk_tickets", "helpdesk_ticket_messages", "helpdesk_attachments", "helpdesk_ticket_events"];
+const TABLES = ["helpdesk_ticket_counters", "helpdesk_tickets", "helpdesk_ticket_messages", "helpdesk_attachments", "helpdesk_ticket_events", "helpdesk_ticket_tags"];
 const normalise = (value: string) => value.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
 
 test("017 helpdesk migration is additive, repeatable and mirrored by the runtime bootstrap and probe", async () => {
@@ -31,7 +31,19 @@ test("017 declares the idempotency, numbering, CloudEvents and optimistic-concur
   assert.match(migration, /rating SMALLINT CHECK \(rating BETWEEN 1 AND 5\)/);
   assert.match(migration, /char_length\(subject\) BETWEEN 1 AND 120/);
   assert.match(migration, /char_length\(body\) BETWEEN 1 AND 5000/);
-  assert.match(migration, /size_bytes INTEGER NOT NULL CHECK \(size_bytes BETWEEN 1 AND 5242880\)/);
-  assert.match(migration, /content_type TEXT NOT NULL CHECK \(content_type IN \('image\/png', 'image\/jpeg', 'image\/webp'\)\)/);
   assert.match(migration, /day TEXT PRIMARY KEY/);
+});
+
+test("017 carries the Figma addendum: enquiry types, contact email, suggestion, unread flag, wider attachments and tags", async () => {
+  const migration = normalise(await readFile("db/migrations/017_helpdesk_tickets.sql", "utf8"));
+  assert.match(migration, /category TEXT NOT NULL CHECK \(category IN \('technical_support', 'course_content', 'payments_subscriptions', 'other'\)\)/);
+  assert.match(migration, /contact_email TEXT NOT NULL CHECK \(char_length\(contact_email\) BETWEEN 3 AND 254\)/);
+  assert.match(migration, /suggestion_id UUID,/);
+  assert.match(migration, /unread_by_agent BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(migration, /attachment_ids UUID\[\] NOT NULL DEFAULT '\{\}' CHECK \(cardinality\(attachment_ids\) <= 5\)/);
+  assert.match(migration, /size_bytes INTEGER NOT NULL CHECK \(size_bytes BETWEEN 1 AND 10485760\)/);
+  assert.match(migration, /content_type TEXT NOT NULL CHECK \(content_type IN \('image\/png', 'image\/jpeg', 'image\/webp', 'image\/gif', 'application\/pdf', 'text\/plain', 'text\/csv', 'application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document', 'application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet'\)\)/);
+  assert.doesNotMatch(migration, /svg|html/i);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS helpdesk_ticket_tags \( ticket_id UUID NOT NULL REFERENCES helpdesk_tickets\(id\), tag TEXT NOT NULL CHECK \(char_length\(tag\) BETWEEN 1 AND 32\), created_at TIMESTAMPTZ NOT NULL, PRIMARY KEY \(ticket_id, tag\) \);/);
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS helpdesk_ticket_tags_tag_idx ON helpdesk_ticket_tags \(tag\);/);
 });

@@ -113,6 +113,12 @@ export function sendStudyGroupReminderEmail(input: { to: string; subject: string
   return sendEmail({ to: input.to, subject: input.subject, text: input.text, html: `<p>${safe}</p>` });
 }
 
+/** Helpdesk updates to the ticket's contact email (agent reply, "is it solved?"). Plain text; the HTML part is escaped text. */
+export function sendHelpdeskUpdateEmail(input: { to: string; subject: string; text: string }) {
+  const safe = input.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+  return sendEmail({ to: input.to, subject: input.subject, text: input.text, html: `<p>${safe}</p>` });
+}
+
 export function sendPasswordResetEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
   const chinese = input.locale === "zh-CN";
   const htmlUrl = input.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

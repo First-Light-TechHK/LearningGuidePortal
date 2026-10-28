@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, test } from "node:test";
+import {
+  ADMIN_QUESTIONS_TTL_MS,
+  ADMIN_SUGGEST_TIMEOUT_MS,
+  clearCommonQuestionsCache,
+  createAdminHelpdeskClient
+} from "../../modules/helpdesk/adminClient";
+
+const BASE = "http://admin.local:3100";
+const TOKEN = "local-test-admin-helpdesk-token";
+const env = { ...process.env };
+const QUESTION = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "technical_support", question: "How do I reset my password?", answer: "Open Sign in, then Forgot password." };
+const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000aa", qaId: QUESTION.id, question: QUESTION.question, answer: QUESTION.answer };
+
+type Call = { url: string; method: string; headers: Headers; body: string | null };
+
+function stubFetch(handler: (call: Call, signal: AbortSignal | undefined) => Promise<Response> | Response) {
+  const calls: Call[] = [];
+  const fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
+    const call = { url: String(input), method: init.method || "GET", headers: new Headers(init.headers), body: typeof init.body === "string" ? init.body : null };
+    calls.push(call);
+    return handler(call, init.signal ?? undefined);
+  }) as typeof globalThis.fetch;
+  return { fetch, calls };
+}
+
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
+const logs: Array<Record<string, unknown>> = [];
+
+beforeEach(() => {
+  process.env.ADMIN_HELPDESK_BASE_URL = `${BASE}/`;
+  process.env.ADMIN_HELPDESK_TOKEN = TOKEN;
+  clearCommonQuestionsCache();
+  logs.length = 0;
+});
+
+afterEach(() => {
+  for (const key of Object.keys(process.env)) if (!(key in env)) delete process.env[key];
+  Object.assign(process.env, env);
+});
+
+test("timeouts and cache lifetime match the addendum", () => {
+  assert.equal(ADMIN_QUESTIONS_TTL_MS, 60_000);
+  assert.equal(ADMIN_SUGGEST_TIMEOUT_MS, 4_000);
+});
+
+test("common questions: Bearer token, locale + featured query, cached for 60 s, then revalidated with If-None-Match", async () => {
+  let clock = 1_000_000;
+  const stub = stubFetch((call) => call.headers.get("if-none-match") === '"v1"' ? new Response(null, { status: 304, headers: { etag: '"v1"' } }) : json({ questions: [QUESTION], etag: '"v1"' }, 200, { etag: '"v1"' }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.equal(stub.calls.length, 1);
+  assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/questions?locale=en-GB&featured=true`);
+  assert.equal(stub.calls[0].headers.get("authorization"), `Bearer ${TOKEN}`);
+  assert.equal(stub.calls[0].headers.get("if-none-match"), null);
+  clock += ADMIN_QUESTIONS_TTL_MS - 1;
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.equal(stub.calls.length, 1, "served from cache inside 60 s");
+  clock += 1;
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.equal(stub.calls.length, 2);
+  assert.equal(stub.calls[1].headers.get("if-none-match"), '"v1"');
+  clock += 1000;
+  await client.commonQuestions("en-GB");
+  assert.equal(stub.calls.length, 2, "a 304 restarts the 60 s window");
+  await client.commonQuestions("zh-CN");
+  assert.equal(stub.calls.length, 3, "each locale has its own entry");
+  assert.match(stub.calls[2].url, /locale=zh-CN/);
+});
+
+test("common questions: stale data on error, hidden (null) when nothing is cached; malformed rows are dropped", async () => {
+  let clock = 0;
+  let mode: "ok" | "fail" | "throw" = "fail";
+  const stub = stubFetch(() => {
+    if (mode === "throw") throw new TypeError("fetch failed");
+    if (mode === "fail") return json({ type: "x", code: "boom" }, 500);
+    return json({ questions: [QUESTION, { id: 5 }, { ...QUESTION, id: "q2", answer: null }] });
+  });
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
+  assert.equal(await client.commonQuestions("en-GB"), null, "nothing cached: hide the column");
+  mode = "ok";
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  clock += ADMIN_QUESTIONS_TTL_MS;
+  mode = "throw";
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION], "stale on error");
+  mode = "fail";
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  assert.ok(logs.some((line) => line.event === "admin_questions_failed"));
+  assert.ok(!JSON.stringify(logs).includes(TOKEN), "the token is never logged");
+});
+
+test("not configured: no request, questions hidden, no suggestion, outcome not delivered; env is read on every call", async () => {
+  const stub = stubFetch(() => json({ questions: [QUESTION] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  delete process.env.ADMIN_HELPDESK_TOKEN;
+  assert.equal(await client.commonQuestions("en-GB"), null);
+  assert.equal(await client.suggest({ learnerId: "u1", locale: "en-GB", category: "other", subject: "s", message: "m" }), null);
+  assert.equal(await client.reportOutcome(SUGGESTION.id, "solved"), false);
+  process.env.ADMIN_HELPDESK_TOKEN = TOKEN;
+  process.env.ADMIN_HELPDESK_BASE_URL = "ftp://admin.local";
+  assert.equal(await client.commonQuestions("en-GB"), null, "only http(s) base URLs");
+  assert.equal(stub.calls.length, 0);
+  process.env.ADMIN_HELPDESK_BASE_URL = BASE;
+  assert.deepEqual(await client.commonQuestions("en-GB"), [QUESTION]);
+  process.env.ADMIN_HELPDESK_TOKEN = `${TOKEN}-rotated`;
+  clearCommonQuestionsCache();
+  await client.commonQuestions("en-GB");
+  assert.equal(stub.calls.at(-1)?.headers.get("authorization"), `Bearer ${TOKEN}-rotated`);
+});
+
+test("suggest: posts the learner's enquiry and returns the stored answer", async () => {
+  const stub = stubFetch(() => json({ suggestion: SUGGESTION }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  const input = { learnerId: "u1", locale: "en-GB" as const, category: "technical_support" as const, subject: "Cannot log in", message: "It says invalid password" };
+  assert.deepEqual(await client.suggest(input), SUGGESTION);
+  assert.equal(stub.calls[0].method, "POST");
+  assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/suggest`);
+  assert.equal(stub.calls[0].headers.get("authorization"), `Bearer ${TOKEN}`);
+  assert.equal(stub.calls[0].headers.get("content-type"), "application/json");
+  assert.deepEqual(JSON.parse(stub.calls[0].body || ""), input);
+});
+
+test("suggest returns null on no match, any error, a malformed body, or the timeout", async () => {
+  const input = { learnerId: "u1", locale: "zh-CN" as const, category: "other" as const, subject: "s", message: "m" };
+  for (const handler of [
+    () => json({ suggestion: null }),
+    () => json({ type: "x" }, 429),
+    () => json({ suggestion: { id: "x" } }),
+    () => new Response("not json", { status: 200 }),
+    () => { throw new TypeError("fetch failed"); }
+  ]) {
+    assert.equal(await createAdminHelpdeskClient({ fetch: stubFetch(handler).fetch, log: (line) => logs.push(line) }).suggest(input), null);
+  }
+  const hanging = stubFetch((_call, signal) => new Promise<Response>((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(signal.reason));
+  }));
+  const started = Date.now();
+  assert.equal(await createAdminHelpdeskClient({ fetch: hanging.fetch, timeouts: { suggest: 50 } }).suggest(input), null);
+  assert.ok(Date.now() - started < 2_000, "the timeout aborts the request");
+});
+
+test("outcome: posts { outcome } to the suggestion and reports whether Admin accepted it", async () => {
+  const ok = stubFetch(() => new Response(null, { status: 204 }));
+  assert.equal(await createAdminHelpdeskClient({ fetch: ok.fetch }).reportOutcome(SUGGESTION.id, "declined"), true);
+  assert.equal(ok.calls[0].url, `${BASE}/api/integration/helpdesk/suggestions/${SUGGESTION.id}/outcome`);
+  assert.equal(ok.calls[0].method, "POST");
+  assert.deepEqual(JSON.parse(ok.calls[0].body || ""), { outcome: "declined" });
+  assert.equal(ok.calls[0].headers.get("authorization"), `Bearer ${TOKEN}`);
+  assert.equal(await createAdminHelpdeskClient({ fetch: stubFetch(() => json({}, 404)).fetch }).reportOutcome(SUGGESTION.id, "solved"), false);
+  assert.equal(await createAdminHelpdeskClient({ fetch: stubFetch(() => { throw new Error("down"); }).fetch }).reportOutcome(SUGGESTION.id, "edited"), false);
+});

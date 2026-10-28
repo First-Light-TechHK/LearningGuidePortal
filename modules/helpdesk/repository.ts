@@ -12,7 +12,8 @@ export type NewTicket = {
   ticket: Omit<TicketRecord, "number">;
   message: MessageRecord;
   attachments: AttachmentRecord[];
-  event: EventRecord;
+  /** created (sequence 1), then suggestion_declined (sequence 2) when the learner declined an AI suggestion. */
+  events: EventRecord[];
 };
 
 export type TicketChange = {
@@ -22,7 +23,18 @@ export type TicketChange = {
   message?: MessageRecord;
   attachments: AttachmentRecord[];
   event: EventRecord;
+  /** A tag change that commits with the event (add_tag / remove_tag). */
+  tag?: { op: "add" | "remove"; tag: string; at: string };
+  /**
+   * The learner posted a public message: set unread_by_agent. The stored flag
+   * is only ever raised here and only cleared by markRead, so a stale row
+   * snapshot can never undo an agent's mark_read or a learner's new message.
+   */
+  markUnread?: boolean;
 };
+
+/** A list row: the ticket plus its one-line preview source and tags. */
+export type TicketListItem = TicketRecord & { firstMessage: string; tags: string[] };
 
 export type HelpdeskRepository = {
   findTicket(id: string): Promise<TicketAggregate | null>;
@@ -35,7 +47,10 @@ export type HelpdeskRepository = {
   appendChange(input: TicketChange): Promise<"applied" | "stale" | "duplicate">;
   listTicketsByUser(userId: string): Promise<TicketRecord[]>;
   /** Newest activity first (updated_at DESC, id DESC); returns at most limit + 1 rows so the caller can tell whether more exist. */
-  listTickets(query: AgentListQuery): Promise<{ tickets: TicketRecord[]; counts: TicketCounts }>;
+  listTickets(query: AgentListQuery): Promise<{ tickets: TicketListItem[]; counts: TicketCounts }>;
+  countTicketsByUser(userId: string): Promise<number>;
+  /** Clears unread_by_agent; not an event, never changes the sequence. */
+  markRead(ticketId: string): Promise<void>;
   listAutoConfirmDue(nowIso: string, userId?: string): Promise<TicketRecord[]>;
   findAttachment(id: string): Promise<AttachmentRecord | null>;
 };

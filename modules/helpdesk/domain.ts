@@ -28,6 +28,8 @@ export type TicketRecord = {
   userId: string;
   userEmail: string;
   userName: string;
+  /** Where replies are emailed; defaults to the account email at creation. */
+  contactEmail: string;
   locale: HelpdeskLocale;
   category: TicketCategory;
   subject: string;
@@ -45,7 +47,13 @@ export type TicketRecord = {
   lastMessageBy: AuthorKind;
   clientEventId: string;
   payloadHash: string;
+  /** The AI suggestion the learner declined before submitting, if any. */
+  suggestionId: string | null;
+  /** Set by a learner's ticket or message; cleared only by an agent's mark_read. */
+  unreadByAgent: boolean;
 };
+
+export type TagRecord = { ticketId: string; tag: string; createdAt: string };
 
 export type MessageRecord = {
   id: string;
@@ -87,11 +95,12 @@ export type EventRecord = {
   payloadHash: string | null;
 };
 
-export type TicketAggregate = { ticket: TicketRecord; messages: MessageRecord[]; attachments: AttachmentRecord[]; events: EventRecord[] };
+export type TicketAggregate = { ticket: TicketRecord; messages: MessageRecord[]; attachments: AttachmentRecord[]; events: EventRecord[]; tags: string[] };
 
 export type Command =
   | "create" | "cancel" | "claim" | "agent_reply" | "internal_note" | "learner_reply" | "propose_resolution"
-  | "confirm" | "reject" | "close" | "rate" | "auto_confirm";
+  | "confirm" | "reject" | "close" | "rate" | "auto_confirm"
+  | "decline_suggestion" | "add_tag" | "remove_tag";
 
 type Guard = "reopen_window" | "rating" | "confirm_due";
 
@@ -106,6 +115,7 @@ export type Transition = Readonly<{
 }>;
 
 const NON_TERMINAL = ["OPEN", "ASSIGNED", "WAITING_USER", "PENDING_CONFIRM"] as const;
+const EVERY_STATE = [...NON_TERMINAL, "CLOSED", "CANCELLED"] as const;
 
 /** Spec §2. Anything not listed here is rejected (409 invalid_transition). */
 export const TRANSITIONS: readonly Transition[] = [
@@ -123,8 +133,36 @@ export const TRANSITIONS: readonly Transition[] = [
   { command: "reject", actor: "learner", from: ["PENDING_CONFIRM"], to: "ASSIGNED", event: "resolution_rejected" },
   { command: "close", actor: "learner", from: ["ASSIGNED", "WAITING_USER"], to: "CLOSED", event: "closed_by_learner", closeReason: "user_closed" },
   { command: "auto_confirm", actor: "system", from: ["PENDING_CONFIRM"], to: "CLOSED", event: "auto_confirmed", closeReason: "auto_confirmed", guard: "confirm_due" },
-  { command: "rate", actor: "learner", from: ["CLOSED"], to: "unchanged", event: "rated", guard: "rating" }
+  { command: "rate", actor: "learner", from: ["CLOSED"], to: "unchanged", event: "rated", guard: "rating" },
+  // Figma addendum: bookkeeping that never changes the state.
+  { command: "decline_suggestion", actor: "learner", from: ["OPEN"], to: "unchanged", event: "suggestion_declined" },
+  { command: "add_tag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "tag_added" },
+  { command: "remove_tag", actor: "agent", from: EVERY_STATE, to: "unchanged", event: "tag_removed" }
 ];
+
+/** Events that do not move the ticket's activity time (updatedAt). */
+const BOOKKEEPING_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["internal_note_added", "suggestion_declined", "tag_added", "tag_removed"]);
+/** Agent-private events: never shown to the learner. */
+const AGENT_PRIVATE_EVENTS: ReadonlySet<HelpdeskEventName> = new Set(["internal_note_added", "tag_added", "tag_removed"]);
+
+/** Whether the learner's timeline shows this event. */
+export function isLearnerVisibleEvent(name: HelpdeskEventName) {
+  return !AGENT_PRIVATE_EVENTS.has(name) && name !== "suggestion_declined";
+}
+
+/**
+ * Optimistic concurrency ignores events the actor could not have acted on:
+ * tags never make anyone stale, and agent-private events (internal notes,
+ * tags) never make a learner stale because the learner never sees them.
+ */
+export function ignoredByStaleCheck(name: HelpdeskEventName, actor: ActorKind) {
+  if (name === "tag_added" || name === "tag_removed") return true;
+  return actor === "learner" && AGENT_PRIVATE_EVENTS.has(name);
+}
+
+export function eventName(type: string): HelpdeskEventName {
+  return type.slice(type.lastIndexOf(".") + 1) as HelpdeskEventName;
+}
 
 export type TicketState = Pick<TicketRecord, "status" | "assigneeId" | "confirmDueAt" | "closedAt" | "rating">;
 export type RejectionCode = "invalid_transition" | "reopen_window_passed" | "rating_window_passed" | "already_rated";
@@ -200,8 +238,9 @@ export function evolve(ticket: TicketRecord, decision: Extract<Decision, { ok: t
   const { transition, to } = decision;
   const at = context.now.toISOString();
   const next: TicketRecord = { ...ticket, status: to, sequence: ticket.sequence + 1 };
-  if (transition.event !== "internal_note_added") next.updatedAt = at;
+  if (!BOOKKEEPING_EVENTS.has(transition.event)) next.updatedAt = at;
   if (context.publicMessage) { next.lastMessageAt = at; next.lastMessageBy = context.actor.kind; }
+  if (context.publicMessage && context.actor.kind === "learner") next.unreadByAgent = true;
   if (context.actor.kind === "agent" && !next.assigneeId && (transition.command === "claim" || transition.command === "agent_reply" || transition.command === "propose_resolution")) {
     next.assigneeId = context.actor.id;
     next.assigneeName = context.actor.name;

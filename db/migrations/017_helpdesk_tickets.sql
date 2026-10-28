@@ -13,8 +13,9 @@ CREATE TABLE IF NOT EXISTS helpdesk_tickets (
   user_id TEXT NOT NULL,
   user_email TEXT NOT NULL DEFAULT '' CHECK (char_length(user_email) <= 254),
   user_name TEXT NOT NULL DEFAULT '' CHECK (char_length(user_name) <= 120),
+  contact_email TEXT NOT NULL CHECK (char_length(contact_email) BETWEEN 3 AND 254),
   locale TEXT NOT NULL CHECK (locale IN ('en-GB', 'zh-CN')),
-  category TEXT NOT NULL CHECK (category IN ('account', 'billing', 'learning', 'study_group', 'other')),
+  category TEXT NOT NULL CHECK (category IN ('technical_support', 'course_content', 'payments_subscriptions', 'other')),
   subject TEXT NOT NULL CHECK (char_length(subject) BETWEEN 1 AND 120),
   status TEXT NOT NULL CHECK (status IN ('OPEN', 'ASSIGNED', 'WAITING_USER', 'PENDING_CONFIRM', 'CLOSED', 'CANCELLED')),
   assignee_id TEXT,
@@ -29,7 +30,9 @@ CREATE TABLE IF NOT EXISTS helpdesk_tickets (
   last_message_at TIMESTAMPTZ NOT NULL,
   last_message_by TEXT NOT NULL CHECK (last_message_by IN ('learner', 'agent', 'system')),
   client_event_id UUID NOT NULL UNIQUE,
-  payload_hash CHAR(64) NOT NULL
+  payload_hash CHAR(64) NOT NULL,
+  suggestion_id UUID,
+  unread_by_agent BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS helpdesk_tickets_user_activity_idx ON helpdesk_tickets (user_id, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS helpdesk_tickets_activity_idx ON helpdesk_tickets (updated_at DESC, id DESC);
@@ -43,7 +46,7 @@ CREATE TABLE IF NOT EXISTS helpdesk_ticket_messages (
   author_name TEXT,
   body TEXT NOT NULL CHECK (char_length(body) BETWEEN 1 AND 5000),
   internal BOOLEAN NOT NULL DEFAULT FALSE,
-  attachment_ids UUID[] NOT NULL DEFAULT '{}' CHECK (cardinality(attachment_ids) <= 3),
+  attachment_ids UUID[] NOT NULL DEFAULT '{}' CHECK (cardinality(attachment_ids) <= 5),
   client_event_id UUID UNIQUE,
   payload_hash CHAR(64),
   created_at TIMESTAMPTZ NOT NULL
@@ -55,8 +58,8 @@ CREATE TABLE IF NOT EXISTS helpdesk_attachments (
   message_id UUID NOT NULL REFERENCES helpdesk_ticket_messages(id),
   uploader_kind TEXT NOT NULL CHECK (uploader_kind IN ('learner', 'agent')),
   file_name TEXT NOT NULL CHECK (char_length(file_name) BETWEEN 1 AND 255),
-  content_type TEXT NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/webp')),
-  size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 1 AND 5242880),
+  content_type TEXT NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf', 'text/plain', 'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+  size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 1 AND 10485760),
   storage_key TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL
 );
@@ -77,3 +80,12 @@ CREATE TABLE IF NOT EXISTS helpdesk_ticket_events (
   payload_hash CHAR(64),
   UNIQUE (subject, sequence)
 );
+-- Agent-only labels (Figma addendum §D). At most 10 per ticket, enforced by
+-- the service under the ticket's optimistic sequence.
+CREATE TABLE IF NOT EXISTS helpdesk_ticket_tags (
+  ticket_id UUID NOT NULL REFERENCES helpdesk_tickets(id),
+  tag TEXT NOT NULL CHECK (char_length(tag) BETWEEN 1 AND 32),
+  created_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (ticket_id, tag)
+);
+CREATE INDEX IF NOT EXISTS helpdesk_ticket_tags_tag_idx ON helpdesk_ticket_tags (tag);

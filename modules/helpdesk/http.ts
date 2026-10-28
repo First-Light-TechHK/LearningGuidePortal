@@ -2,7 +2,8 @@
 // authorisation, Idempotency-Key, multipart reading, RFC 9457 problems and
 // plain-JSON success bodies. No business rules here.
 import { createHash, timingSafeEqual } from "node:crypto";
-import { HELPDESK_LIMITS, HelpdeskProblem, isTicketId, parseIdempotencyKey, problemBody, type UploadInput } from "@/contracts/helpdesk";
+import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, isTicketId, parseIdempotencyKey, problemBody, type HelpdeskAttachmentType, type UploadInput } from "@/contracts/helpdesk";
+import { isInlineAttachment } from "./attachments";
 import { requestOriginMatches } from "@/services/adminHost";
 import { currentProductUserFromRequest } from "@/services/productAuth";
 import type { LearnerIdentity } from "./service";
@@ -24,16 +25,23 @@ export function jsonResponse(body: unknown, status = 200, replayed = false): Res
   return new Response(JSON.stringify(body), { status: replayed ? 200 : status, headers });
 }
 
-export function attachmentResponse(content: { bytes: Uint8Array; contentType: string; fileName: string }): Response {
+/**
+ * Stored attachment bytes. Only the allow-listed types are ever served (never
+ * html or svg); images inline, everything else as a download; always nosniff,
+ * a sandbox CSP and private, no-store.
+ */
+export function attachmentResponse(content: { bytes: Uint8Array; contentType: HelpdeskAttachmentType; fileName: string }): Response {
+  if (!(HELPDESK_ATTACHMENT_TYPES as readonly string[]).includes(content.contentType)) throw new HelpdeskProblem("not_found", "No such attachment.");
+  const textual = content.contentType.startsWith("text/");
   return new Response(new Uint8Array(content.bytes), {
     status: 200,
     headers: {
-      "Content-Type": content.contentType,
+      "Content-Type": textual ? `${content.contentType}; charset=utf-8` : content.contentType,
       "Content-Length": String(content.bytes.byteLength),
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'; sandbox",
-      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`
+      "Content-Disposition": `${isInlineAttachment(content.contentType) ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(content.fileName)}`
     }
   });
 }
@@ -83,8 +91,8 @@ export async function readMultipart(request: Request): Promise<{ fields: Record<
     if (typeof value === "string") { if (name !== "files[]" && name !== "files") fields[name] = value; continue; }
     if (name !== "files[]" && name !== "files") continue;
     // Fail before buffering bytes we would reject anyway (the contract re-checks).
-    if (files.length >= HELPDESK_LIMITS.filesPerMessage) throw new HelpdeskProblem("too_many_attachments", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} images.`);
-    if (value.size > HELPDESK_LIMITS.fileMaxBytes) throw new HelpdeskProblem("attachment_too_large", "Each image must be 5 MB or smaller.");
+    if (files.length >= HELPDESK_LIMITS.filesPerMessage) throw new HelpdeskProblem("too_many_attachments", `Attach at most ${HELPDESK_LIMITS.filesPerMessage} files.`);
+    if (value.size > HELPDESK_LIMITS.fileMaxBytes) throw new HelpdeskProblem("attachment_too_large", "Each file must be 10 MB or smaller.");
     files.push({ fileName: value.name, declaredType: value.type, bytes: new Uint8Array(await value.arrayBuffer()) });
   }
   return { fields, files };

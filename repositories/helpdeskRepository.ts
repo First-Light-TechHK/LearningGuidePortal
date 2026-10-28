@@ -7,15 +7,17 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { PoolClient, QueryResultRow } from "pg";
 import { HelpdeskProblem, TICKET_STATUSES, type AgentListQuery, type TicketCounts } from "@/contracts/helpdesk";
-import type { AttachmentRecord, EventRecord, MessageRecord, TicketAggregate, TicketRecord } from "@/modules/helpdesk/domain";
+import type { AttachmentRecord, EventRecord, MessageRecord, TagRecord, TicketAggregate, TicketRecord } from "@/modules/helpdesk/domain";
 import { formatTicketNumber, needsReply, ticketDayKey } from "@/modules/helpdesk/domain";
-import type { HelpdeskRepository, IdempotencyRecord, NewTicket, TicketChange } from "@/modules/helpdesk/repository";
+import type { HelpdeskRepository, IdempotencyRecord, NewTicket, TicketChange, TicketListItem } from "@/modules/helpdesk/repository";
 import { ensureSchema, getPool } from "@/services/persistence/db";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isProductionEnvironment } from "@/services/runtimeConfig";
 import { systemRoot } from "@/services/fileStore";
 
 const LEARNER_LIST_MAX = 200;
+/** Enough of the first message for a 120-character one-line preview after whitespace is collapsed. */
+const PREVIEW_SOURCE_CHARS = 600;
 const AUTO_CONFIRM_BATCH = 100;
 
 export function helpdeskRepository(): HelpdeskRepository {
@@ -29,10 +31,11 @@ function emptyCounts(): TicketCounts {
   return { OPEN: 0, ASSIGNED: 0, WAITING_USER: 0, PENDING_CONFIRM: 0, CLOSED: 0, CANCELLED: 0, needs_reply: 0, all: 0 };
 }
 
+/** Search: ticket number, learner name, account email, contact email or subject (case-insensitive, literal). */
 function matchesQuery(ticket: TicketRecord, q: string) {
   if (!q) return true;
   const needle = q.toLowerCase();
-  return [ticket.number, ticket.userEmail, ticket.subject].some((value) => value.toLowerCase().includes(needle));
+  return [ticket.number, ticket.userName, ticket.userEmail, ticket.contactEmail, ticket.subject].some((value) => value.toLowerCase().includes(needle));
 }
 
 function matchesStatus(ticket: TicketRecord, status: AgentListQuery["status"]) {
@@ -53,8 +56,13 @@ type LocalStore = {
   messages: MessageRecord[];
   attachments: AttachmentRecord[];
   events: EventRecord[];
+  tags: TagRecord[];
   counters: Record<string, number>;
 };
+
+function tagsOf(store: LocalStore, ticketId: string) {
+  return store.tags.filter((item) => item.ticketId === ticketId).sort((a, b) => (a.createdAt === b.createdAt ? (a.tag < b.tag ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1)).map((item) => item.tag);
+}
 
 const localLocks = new Map<string, Promise<unknown>>();
 
@@ -62,10 +70,19 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
   const file = path.join(root, "store.json");
 
   async function load(): Promise<LocalStore> {
-    try { return JSON.parse(await readFile(file, "utf8")) as LocalStore; }
-    catch (error) {
+    try {
+      const store = JSON.parse(await readFile(file, "utf8")) as LocalStore;
+      // DEV files written before the Figma addendum.
+      store.tags ||= [];
+      for (const ticket of store.tickets) {
+        ticket.contactEmail ??= ticket.userEmail;
+        ticket.suggestionId ??= null;
+        ticket.unreadByAgent ??= false;
+      }
+      return store;
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { tickets: [], messages: [], attachments: [], events: [], counters: {} };
+      return { tickets: [], messages: [], attachments: [], events: [], tags: [], counters: {} };
     }
   }
 
@@ -107,7 +124,8 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         ticket,
         messages: store.messages.filter((item) => item.ticketId === id),
         attachments: store.attachments.filter((item) => item.ticketId === id),
-        events: store.events.filter((item) => item.subject === id).sort((a, b) => a.sequence - b.sequence)
+        events: store.events.filter((item) => item.subject === id).sort((a, b) => a.sequence - b.sequence),
+        tags: tagsOf(store, id)
       };
     },
     async findTicketByKey(clientEventId) {
@@ -128,7 +146,7 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         store.tickets.push({ ...input.ticket, number });
         store.messages.push(input.message);
         store.attachments.push(...input.attachments);
-        store.events.push(input.event);
+        store.events.push(...input.events);
         await save(store);
         return { status: "created" as const, number };
       });
@@ -139,7 +157,9 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         const index = store.tickets.findIndex((item) => item.id === input.ticket.id);
         if (index < 0 || store.tickets[index].sequence !== input.expectedSequence) return "stale" as const;
         if (usedKey(store, input.event.clientEventId) || (input.message && usedKey(store, input.message.clientEventId))) return "duplicate" as const;
-        store.tickets[index] = input.ticket;
+        store.tickets[index] = { ...input.ticket, unreadByAgent: store.tickets[index].unreadByAgent || Boolean(input.markUnread) };
+        if (input.tag?.op === "add" && !store.tags.some((item) => item.ticketId === input.ticket.id && item.tag === input.tag?.tag)) store.tags.push({ ticketId: input.ticket.id, tag: input.tag.tag, createdAt: input.tag.at });
+        if (input.tag?.op === "remove") store.tags = store.tags.filter((item) => !(item.ticketId === input.ticket.id && item.tag === input.tag?.tag));
         if (input.message) store.messages.push(input.message);
         store.attachments.push(...input.attachments);
         store.events.push(input.event);
@@ -151,7 +171,11 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       return (await load()).tickets.filter((item) => item.userId === userId).sort(byActivity).slice(0, LEARNER_LIST_MAX);
     },
     async listTickets(query) {
-      const searched = (await load()).tickets.filter((item) => matchesQuery(item, query.q));
+      const store = await load();
+      const searched = store.tickets
+        .filter((item) => matchesQuery(item, query.q))
+        .filter((item) => !query.category || item.category === query.category)
+        .filter((item) => !query.tag || store.tags.some((tag) => tag.ticketId === item.id && tag.tag === query.tag));
       const counts = emptyCounts();
       for (const ticket of searched) {
         counts[ticket.status] += 1;
@@ -163,8 +187,24 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         .filter((item) => matchesStatus(item, query.status))
         .filter((item) => !cursor || item.updatedAt < cursor.updatedAt || (item.updatedAt === cursor.updatedAt && item.id < cursor.id))
         .sort(byActivity)
-        .slice(0, query.limit + 1);
+        .slice(0, query.limit + 1)
+        .map((ticket): TicketListItem => {
+          const first = store.messages.filter((item) => item.ticketId === ticket.id).sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1))[0];
+          return { ...ticket, firstMessage: (first?.body ?? "").slice(0, PREVIEW_SOURCE_CHARS), tags: tagsOf(store, ticket.id) };
+        });
       return { tickets, counts };
+    },
+    async countTicketsByUser(userId) {
+      return (await load()).tickets.filter((item) => item.userId === userId).length;
+    },
+    markRead(ticketId) {
+      return exclusive(async () => {
+        const store = await load();
+        const ticket = store.tickets.find((item) => item.id === ticketId);
+        if (!ticket || !ticket.unreadByAgent) return;
+        ticket.unreadByAgent = false;
+        await save(store);
+      });
     },
     async listAutoConfirmDue(nowIso, userId) {
       return (await load()).tickets
@@ -182,18 +222,19 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
 const iso = (value: unknown): string => (value instanceof Date ? value : new Date(String(value))).toISOString();
 const isoOrNull = (value: unknown): string | null => (value === null || value === undefined ? null : iso(value));
 
-const TICKET_COLUMNS = `id::text, number, user_id, user_email, user_name, locale, category, subject, status, assignee_id, assignee_name,
+const TICKET_COLUMNS = `id::text, number, user_id, user_email, user_name, contact_email, locale, category, subject, status, assignee_id, assignee_name,
   sequence, confirm_due_at, closed_at, close_reason, rating, created_at, updated_at, last_message_at, last_message_by,
-  client_event_id::text, payload_hash`;
+  client_event_id::text, payload_hash, suggestion_id::text, unread_by_agent`;
 
 function ticketFromRow(row: QueryResultRow): TicketRecord {
   return {
-    id: row.id, number: row.number, userId: row.user_id, userEmail: row.user_email, userName: row.user_name,
+    id: row.id, number: row.number, userId: row.user_id, userEmail: row.user_email, userName: row.user_name, contactEmail: row.contact_email,
     locale: row.locale, category: row.category, subject: row.subject, status: row.status,
     assigneeId: row.assignee_id, assigneeName: row.assignee_name, sequence: Number(row.sequence),
     confirmDueAt: isoOrNull(row.confirm_due_at), closedAt: isoOrNull(row.closed_at), closeReason: row.close_reason,
     rating: row.rating === null ? null : Number(row.rating), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
-    lastMessageAt: iso(row.last_message_at), lastMessageBy: row.last_message_by, clientEventId: row.client_event_id, payloadHash: row.payload_hash
+    lastMessageAt: iso(row.last_message_at), lastMessageBy: row.last_message_by, clientEventId: row.client_event_id, payloadHash: row.payload_hash,
+    suggestionId: row.suggestion_id ?? null, unreadByAgent: Boolean(row.unread_by_agent)
   };
 }
 
@@ -280,12 +321,13 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       return inTransaction(async (client) => {
         const ticket = (await client.query(`SELECT ${TICKET_COLUMNS} FROM helpdesk_tickets WHERE id = $1`, [id])).rows[0];
         if (!ticket) return null;
-        const [messages, attachments, events] = [
+        const [messages, attachments, events, tags] = [
           (await client.query(`SELECT ${MESSAGE_COLUMNS} FROM helpdesk_ticket_messages WHERE ticket_id = $1 ORDER BY created_at, id`, [id])).rows,
           (await client.query(`SELECT ${ATTACHMENT_COLUMNS} FROM helpdesk_attachments WHERE ticket_id = $1 ORDER BY created_at, id`, [id])).rows,
-          (await client.query(`SELECT ${EVENT_COLUMNS} FROM helpdesk_ticket_events WHERE subject = $1 ORDER BY sequence`, [id])).rows
+          (await client.query(`SELECT ${EVENT_COLUMNS} FROM helpdesk_ticket_events WHERE subject = $1 ORDER BY sequence`, [id])).rows,
+          (await client.query<{ tag: string }>("SELECT tag FROM helpdesk_ticket_tags WHERE ticket_id = $1 ORDER BY created_at, tag", [id])).rows
         ];
-        const aggregate: TicketAggregate = { ticket: ticketFromRow(ticket), messages: messages.map(messageFromRow), attachments: attachments.map(attachmentFromRow), events: events.map(eventFromRow) };
+        const aggregate: TicketAggregate = { ticket: ticketFromRow(ticket), messages: messages.map(messageFromRow), attachments: attachments.map(attachmentFromRow), events: events.map(eventFromRow), tags: tags.map((row) => row.tag) };
         return aggregate;
       }, "ISOLATION LEVEL REPEATABLE READ READ ONLY");
     },
@@ -307,16 +349,18 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
             ON CONFLICT (day) DO UPDATE SET last = helpdesk_ticket_counters.last + 1 RETURNING last`, [ticketDayKey(new Date(ticket.createdAt))])).rows[0].last;
           const number = formatTicketNumber(ticket.createdAt, Number(counter));
           const inserted = await client.query(`INSERT INTO helpdesk_tickets (id, number, user_id, user_email, user_name, locale, category, subject, status, assignee_id, assignee_name,
-              sequence, confirm_due_at, closed_at, close_reason, rating, created_at, updated_at, last_message_at, last_message_by, client_event_id, payload_hash)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+              sequence, confirm_due_at, closed_at, close_reason, rating, created_at, updated_at, last_message_at, last_message_by, client_event_id, payload_hash,
+              contact_email, suggestion_id, unread_by_agent)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
             ON CONFLICT (client_event_id) DO NOTHING RETURNING id`,
           [ticket.id, number, ticket.userId, ticket.userEmail, ticket.userName, ticket.locale, ticket.category, ticket.subject, ticket.status, ticket.assigneeId, ticket.assigneeName,
-            ticket.sequence, ticket.confirmDueAt, ticket.closedAt, ticket.closeReason, ticket.rating, ticket.createdAt, ticket.updatedAt, ticket.lastMessageAt, ticket.lastMessageBy, ticket.clientEventId, ticket.payloadHash]);
+            ticket.sequence, ticket.confirmDueAt, ticket.closedAt, ticket.closeReason, ticket.rating, ticket.createdAt, ticket.updatedAt, ticket.lastMessageAt, ticket.lastMessageBy, ticket.clientEventId, ticket.payloadHash,
+            ticket.contactEmail, ticket.suggestionId, ticket.unreadByAgent]);
           // A duplicate key must not consume a number: roll the counter back too.
           if (!inserted.rows[0]) throw new Rollback({ status: "duplicate" as const });
           await insertMessage(client, input.message);
           await insertAttachments(client, input.attachments);
-          await insertEvent(client, input.event);
+          for (const event of input.events) await insertEvent(client, event);
           return { status: "created" as const, number };
         });
       } catch (error) {
@@ -330,11 +374,14 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         return await inTransaction(async (client) => {
           const ticket = input.ticket;
           const updated = await client.query(`UPDATE helpdesk_tickets SET status = $3, assignee_id = $4, assignee_name = $5, sequence = $6, confirm_due_at = $7,
-              closed_at = $8, close_reason = $9, rating = $10, updated_at = $11, last_message_at = $12, last_message_by = $13
+              closed_at = $8, close_reason = $9, rating = $10, updated_at = $11, last_message_at = $12, last_message_by = $13,
+              unread_by_agent = unread_by_agent OR $14
             WHERE id = $1 AND sequence = $2`,
           [ticket.id, input.expectedSequence, ticket.status, ticket.assigneeId, ticket.assigneeName, ticket.sequence, ticket.confirmDueAt,
-            ticket.closedAt, ticket.closeReason, ticket.rating, ticket.updatedAt, ticket.lastMessageAt, ticket.lastMessageBy]);
+            ticket.closedAt, ticket.closeReason, ticket.rating, ticket.updatedAt, ticket.lastMessageAt, ticket.lastMessageBy, Boolean(input.markUnread)]);
           if (updated.rowCount !== 1) throw new Rollback("stale" as const);
+          if (input.tag?.op === "add") await client.query("INSERT INTO helpdesk_ticket_tags (ticket_id, tag, created_at) VALUES ($1, $2, $3) ON CONFLICT (ticket_id, tag) DO NOTHING", [ticket.id, input.tag.tag, input.tag.at]);
+          if (input.tag?.op === "remove") await client.query("DELETE FROM helpdesk_ticket_tags WHERE ticket_id = $1 AND tag = $2", [ticket.id, input.tag.tag]);
           if (input.message) await insertMessage(client, input.message);
           await insertAttachments(client, input.attachments);
           await insertEvent(client, input.event);
@@ -354,8 +401,11 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       const searchClauses: string[] = [];
       if (query.q) {
         params.push(`%${escapeLike(query.q)}%`);
-        searchClauses.push(`(number ILIKE $${params.length} OR user_email ILIKE $${params.length} OR subject ILIKE $${params.length})`);
+        const p = `$${params.length}`;
+        searchClauses.push(`(number ILIKE ${p} OR user_name ILIKE ${p} OR user_email ILIKE ${p} OR contact_email ILIKE ${p} OR subject ILIKE ${p})`);
       }
+      if (query.category) { params.push(query.category); searchClauses.push(`category = $${params.length}`); }
+      if (query.tag) { params.push(query.tag); searchClauses.push(`EXISTS (SELECT 1 FROM helpdesk_ticket_tags tags WHERE tags.ticket_id = helpdesk_tickets.id AND tags.tag = $${params.length})`); }
       const searchWhere = searchClauses.length ? `WHERE ${searchClauses.join(" AND ")}` : "";
       const countRows = await select<{ status: TicketRecord["status"]; total: string; needs: string }>(`SELECT status, count(*) AS total,
           count(*) FILTER (WHERE status IN ('OPEN', 'ASSIGNED') AND last_message_by = 'learner') AS needs
@@ -375,9 +425,18 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         clauses.push(`(updated_at, id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
       }
       params.push(query.limit + 1);
-      const rows = await select(`SELECT ${TICKET_COLUMNS} FROM helpdesk_tickets ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+      const rows = await select(`SELECT ${TICKET_COLUMNS},
+          (SELECT left(m.body, ${PREVIEW_SOURCE_CHARS}) FROM helpdesk_ticket_messages m WHERE m.ticket_id = helpdesk_tickets.id ORDER BY m.created_at, m.id LIMIT 1) AS first_message,
+          ARRAY(SELECT g.tag FROM helpdesk_ticket_tags g WHERE g.ticket_id = helpdesk_tickets.id ORDER BY g.created_at, g.tag) AS tags
+        FROM helpdesk_tickets ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
         ORDER BY updated_at DESC, id DESC LIMIT $${params.length}`, params);
-      return { tickets: rows.map(ticketFromRow), counts };
+      return { tickets: rows.map((row): TicketListItem => ({ ...ticketFromRow(row), firstMessage: row.first_message ?? "", tags: row.tags ?? [] })), counts };
+    },
+    async countTicketsByUser(userId) {
+      return Number((await select<{ total: string }>("SELECT count(*) AS total FROM helpdesk_tickets WHERE user_id = $1", [userId]))[0].total);
+    },
+    async markRead(ticketId) {
+      await select("UPDATE helpdesk_tickets SET unread_by_agent = FALSE WHERE id = $1 AND unread_by_agent", [ticketId]);
     },
     async listAutoConfirmDue(nowIso, userId) {
       const params: unknown[] = [nowIso];

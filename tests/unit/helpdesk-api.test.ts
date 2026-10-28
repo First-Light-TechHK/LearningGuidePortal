@@ -4,7 +4,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { SESSION_COOKIE } from "../../services/productAuth";
+import { PDF } from "./helpdesk-fixtures";
 
 // API-level tests: the real Route Handlers, the real session lookup and the
 // real DEV-only local storage (STORAGE_BACKEND=local), as in study-group-api.
@@ -15,7 +18,7 @@ const TOKEN = "local-test-helpdesk-token-0123456789";
 const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
 type Params = { params: Promise<Record<string, string>> };
 type Handler = (request: Request, context: Params) => Promise<Response>;
-type Routes = Record<"tickets" | "ticket" | "messages" | "actions" | "attachment" | "agentTickets" | "agentTicket" | "agentMessages" | "agentActions" | "agentAttachment", Record<string, Handler>>;
+type Routes = Record<"tickets" | "ticket" | "messages" | "actions" | "attachment" | "agentTickets" | "agentTicket" | "agentMessages" | "agentActions" | "agentAttachment" | "commonQuestions" | "suggestions" | "outcome", Record<string, Handler>>;
 let directory = "";
 let routes: Routes;
 let learnerCookie = "";
@@ -51,7 +54,10 @@ before(async () => {
     agentTicket: await import("../../app/api/integration/helpdesk/tickets/[id]/route"),
     agentMessages: await import("../../app/api/integration/helpdesk/tickets/[id]/messages/route"),
     agentActions: await import("../../app/api/integration/helpdesk/tickets/[id]/actions/route"),
-    agentAttachment: await import("../../app/api/integration/helpdesk/attachments/[id]/route")
+    agentAttachment: await import("../../app/api/integration/helpdesk/attachments/[id]/route"),
+    commonQuestions: await import("../../app/api/helpdesk/common-questions/route"),
+    suggestions: await import("../../app/api/helpdesk/suggestions/route"),
+    outcome: await import("../../app/api/helpdesk/suggestions/[id]/outcome/route")
   } as unknown as Routes;
 });
 
@@ -101,7 +107,7 @@ async function problem(response: Response, status: number, code: string) {
   return body;
 }
 
-const createFields = { category: "billing", subject: "Upgrade did not apply", body: "I paid for Everything but still see Basic.", locale: "en-GB" };
+const createFields = { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid for Everything but still see Basic.", locale: "en-GB" };
 
 test("learner endpoints require a session (401 problem) and a same-origin POST", async () => {
   await problem(await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets"), ctx()), 401, "unauthenticated");
@@ -130,7 +136,7 @@ test("submit with a screenshot -> card -> agent reply -> learner reply -> resolu
   process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
   await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm(createFields), cookie: learnerCookie }), ctx()), 400, "idempotency_key_required");
   await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "" }), cookie: learnerCookie, key: randomUUID() }), ctx()), 400, "validation_failed");
-  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm(createFields, [{ bytes: Buffer.from("GIF89a"), name: "a.png", type: "image/png" }]), cookie: learnerCookie, key: randomUUID() }), ctx()), 415, "attachment_type_unsupported");
+  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm(createFields, [{ bytes: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"/>"), name: "a.png", type: "image/png" }]), cookie: learnerCookie, key: randomUUID() }), ctx()), 415, "attachment_type_unsupported");
 
   const key = randomUUID();
   const form = () => ticketForm(createFields, [{ bytes: PNG, name: "screen.png", type: "image/png" }]);
@@ -243,4 +249,137 @@ test("storage that is not configured fails closed with 503 helpdesk_unavailable"
   } finally {
     process.env.STORAGE_BACKEND = "local";
   }
+});
+
+// ------------------------------------------------------------ Figma addendum
+
+test("create accepts contactEmail and suggestionId; the agent API tags, marks read and sees the projection; PDFs download", async () => {
+  process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  const suggestionId = "0192d4f0-7b6a-7c3e-9a10-0000000000aa";
+  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, contactEmail: "nope" }), cookie: learnerCookie, key: randomUUID() }), ctx()), 400, "validation_failed");
+  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", {
+    body: ticketForm({ ...createFields, category: "technical_support", subject: "Cannot log in", contactEmail: "lin@work.example", suggestionId }, [{ bytes: PDF, name: "error.pdf", type: "application/pdf" }]),
+    cookie: learnerCookie, key: randomUUID()
+  }), ctx());
+  assert.equal(created.status, 201, await created.clone().text());
+  const ticket = await created.json();
+  assert.equal(ticket.contactEmail, "lin@work.example");
+  assert.equal(ticket.category, "technical_support");
+  const pdf = await routes.attachment.GET(learnerRequest(ticket.messages[0].attachments[0].url, { cookie: learnerCookie }), ctx({ id: ticket.messages[0].attachments[0].id }));
+  assert.equal(pdf.status, 200);
+  assert.equal(pdf.headers.get("content-type"), "application/pdf");
+  assert.match(pdf.headers.get("content-disposition") || "", /^attachment; filename\*=UTF-8''error\.pdf$/);
+  assert.equal(pdf.headers.get("x-content-type-options"), "nosniff");
+
+  const list = await (await routes.agentTickets.GET(agentRequest(`/api/integration/helpdesk/tickets?category=technical_support&q=${encodeURIComponent("lin@work")}`), ctx())).json();
+  assert.deepEqual(list.tickets.map((item: { id: string }) => item.id), [ticket.id]);
+  assert.equal(list.tickets[0].contactEmail, "lin@work.example");
+  assert.equal(list.tickets[0].unreadByAgent, true);
+  assert.equal(typeof list.tickets[0].preview, "string");
+  const agent = { id: "emp-1", name: "Amy Agent" };
+  await problem(await routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}/actions`, { key: randomUUID(), json: { action: "add_tag", agent, tag: "" } }), ctx({ id: ticket.id })), 400, "validation_failed");
+  const tagged = await routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}/actions`, { key: randomUUID(), json: { action: "add_tag", agent, tag: "Login Issue" } }), ctx({ id: ticket.id }));
+  assert.equal(tagged.status, 200, await tagged.clone().text());
+  assert.deepEqual((await tagged.json()).tags, ["login issue"]);
+  const read = await (await routes.agentActions.POST(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}/actions`, { key: randomUUID(), json: { action: "mark_read", agent } }), ctx({ id: ticket.id }))).json();
+  assert.equal(read.unreadByAgent, false);
+  const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticket.id}`), ctx({ id: ticket.id }))).json();
+  assert.equal(detail.suggestionId, suggestionId);
+  assert.equal(detail.events[1].type, "com.ilovelearningguide.helpdesk.ticket.suggestion_declined");
+  assert.equal(detail.student.id, learnerId);
+  assert.equal(detail.student.accountEmail, "helpdesk-learner@example.test");
+  assert.equal(detail.student.contactEmail, "lin@work.example");
+  assert.match(detail.student.joinedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.ok(detail.student.totalEnquiries >= 1);
+  assert.equal(detail.subscription, null, "this learner has no plan");
+  assert.deepEqual(detail.tags, ["login issue"]);
+});
+
+// A local stand-in for Admin's integration API (addendum §A/§C/§E).
+type AdminCall = { method: string; url: string; authorization: string | undefined; body: string };
+let admin: Server;
+let adminCalls: AdminCall[] = [];
+let adminMode: "ok" | "down" | "slow" = "ok";
+const ADMIN_TOKEN = "local-test-admin-helpdesk-token";
+const QA = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "technical_support", question: "How do I reset my password?", answer: "Open Sign in, then Forgot password." };
+const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000bb", qaId: QA.id, question: QA.question, answer: QA.answer };
+
+async function readBody(request: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function startAdmin() {
+  admin = createServer(async (request, response) => {
+    const call = { method: request.method || "", url: request.url || "", authorization: request.headers.authorization, body: await readBody(request) };
+    adminCalls.push(call);
+    if (adminMode === "down") { response.writeHead(503, { "content-type": "application/problem+json" }).end("{}"); return; }
+    if (adminMode === "slow") { setTimeout(() => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: SUGGESTION })), 6_000).unref(); return; }
+    if (call.authorization !== `Bearer ${ADMIN_TOKEN}`) { response.writeHead(401).end(); return; }
+    if (call.method === "GET" && call.url.startsWith("/api/integration/helpdesk/questions?")) { response.writeHead(200, { "content-type": "application/json", etag: "\"q1\"" }).end(JSON.stringify({ questions: [QA], etag: "\"q1\"" })); return; }
+    if (call.method === "POST" && call.url === "/api/integration/helpdesk/suggest") { response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: JSON.parse(call.body).subject.includes("password") ? SUGGESTION : null })); return; }
+    if (call.method === "POST" && call.url === `/api/integration/helpdesk/suggestions/${SUGGESTION.id}/outcome`) { response.writeHead(204).end(); return; }
+    response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => admin.listen(0, "127.0.0.1", resolve));
+  process.env.ADMIN_HELPDESK_BASE_URL = `http://127.0.0.1:${(admin.address() as AddressInfo).port}`;
+  process.env.ADMIN_HELPDESK_TOKEN = ADMIN_TOKEN;
+}
+
+test("common questions, suggestions and outcomes: signed-in only, thin pass-through to Admin, never blocking", async (t) => {
+  await startAdmin();
+  t.after(() => new Promise<void>((resolve) => { admin.closeAllConnections(); admin.close(() => resolve()); }));
+  const { clearCommonQuestionsCache } = await import("../../modules/helpdesk/adminClient");
+  clearCommonQuestionsCache();
+  adminCalls = [];
+
+  await problem(await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=en-GB"), ctx()), 401, "unauthenticated");
+  await problem(await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=fr-FR", { cookie: learnerCookie }), ctx()), 400, "validation_failed");
+  const questions = await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=en-GB", { cookie: learnerCookie }), ctx());
+  assert.equal(questions.status, 200);
+  assert.equal(questions.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await questions.json(), { questions: [QA] });
+  assert.equal(adminCalls[0].url, "/api/integration/helpdesk/questions?locale=en-GB&featured=true");
+  await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=en-GB", { cookie: learnerCookie }), ctx());
+  assert.equal(adminCalls.length, 1, "served from the 60 s cache");
+
+  const enquiry = { category: "technical_support", subject: "Forgot my password", message: "I cannot sign in", locale: "en-GB" };
+  await problem(await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry }), ctx()), 401, "unauthenticated");
+  await problem(await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie, origin: "https://evil.example" }), ctx()), 403, "forbidden_origin");
+  await problem(await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, category: "billing" }, cookie: learnerCookie }), ctx()), 400, "validation_failed");
+  const suggested = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
+  assert.equal(suggested.status, 200);
+  assert.deepEqual(await suggested.json(), { suggestion: SUGGESTION });
+  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { learnerId, locale: "en-GB", category: "technical_support", subject: "Forgot my password", message: "I cannot sign in" });
+  const none = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Refund" }, cookie: learnerCookie }), ctx());
+  assert.deepEqual(await none.json(), { suggestion: null });
+  const ticketsBefore = (await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length;
+
+  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "solved" } }), ctx({ id: SUGGESTION.id })), 401, "unauthenticated");
+  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "maybe" }, cookie: learnerCookie }), ctx({ id: SUGGESTION.id })), 400, "validation_failed");
+  await problem(await routes.outcome.POST(learnerRequest("/api/helpdesk/suggestions/nope/outcome", { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: "nope" })), 404, "not_found");
+  const solved = await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: SUGGESTION.id }));
+  assert.equal(solved.status, 204);
+  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { outcome: "solved" });
+  assert.equal((await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length, ticketsBefore, "'solved' creates no ticket");
+
+  adminMode = "down";
+  const failed = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
+  assert.equal(failed.status, 200);
+  assert.deepEqual(await failed.json(), { suggestion: null }, "an Admin failure means: create the ticket directly");
+  await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${SUGGESTION.id}/outcome`, { json: { outcome: "edited" }, cookie: learnerCookie }), ctx({ id: SUGGESTION.id })), 503, "assistant_unavailable");
+  clearCommonQuestionsCache();
+  assert.deepEqual(await (await routes.commonQuestions.GET(learnerRequest("/api/helpdesk/common-questions?locale=zh-CN", { cookie: learnerCookie }), ctx())).json(), { questions: [] }, "nothing cached: the column is hidden");
+
+  adminMode = "slow";
+  const started = Date.now();
+  const slow = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
+  const elapsed = Date.now() - started;
+  assert.deepEqual(await slow.json(), { suggestion: null });
+  assert.ok(elapsed >= 3_500 && elapsed < 5_500, `4 s timeout, took ${elapsed} ms`);
+  adminMode = "ok";
+
+  delete process.env.ADMIN_HELPDESK_TOKEN;
+  assert.deepEqual(await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json(), { suggestion: null });
 });

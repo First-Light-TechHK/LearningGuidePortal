@@ -1,7 +1,9 @@
 // Helpdesk application service: the only place ticket state changes.
 // Order of checks for every command: ownership (404) -> idempotency replay /
-// conflict -> lazy auto-confirm -> expectedSequence (409 stale_ticket) ->
-// transition table (409 invalid_transition and friends) -> one atomic write.
+// conflict -> lazy auto-confirm -> expectedSequence (409 stale_ticket, except
+// across events the actor never sees, see ignoredByStaleCheck) -> transition
+// table (409 invalid_transition and friends) -> one atomic write -> learner
+// notification and email (failures are logged, never returned).
 // The idempotency payload hash covers the actor, the ticket and the command
 // content, not expectedSequence, so a retried request replays.
 import { createHash } from "node:crypto";
@@ -29,17 +31,25 @@ import {
   type TicketDetail,
   type TicketSummary,
   type UploadInput,
-  HELPDESK_LIMITS
+  type StudentProjection,
+  type SubscriptionProjection,
+  HELPDESK_LIMITS,
+  isContactEmail
 } from "@/contracts/helpdesk";
 import { uuidv7 } from "@/lib/uuidv7";
-import { sniffImage } from "@/services/portalMedia";
+import { attachmentFileName, sniffAttachment } from "./attachments";
+import type { StudentDirectoryEntry } from "./studentDirectory";
 import {
+  CONFIRM_WINDOW_HOURS,
   EVENT_SOURCE,
   decide,
+  eventName,
   eventType,
   evolve,
   followUpUntil,
+  ignoredByStaleCheck,
   isAutoConfirmDue,
+  isLearnerVisibleEvent,
   needsReply,
   type Actor,
   type AttachmentRecord,
@@ -50,15 +60,23 @@ import {
   type TicketAggregate,
   type TicketRecord
 } from "./domain";
-import type { HelpdeskRepository } from "./repository";
+import type { HelpdeskRepository, TicketListItem } from "./repository";
 
 export type LearnerIdentity = { id: string; email: string; name: string };
-export type HelpdeskNotification = { userId: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: "agent_replied" | "resolution_proposed"; title: string; body: string };
+export type LearnerUpdateKind = "agent_replied" | "resolution_proposed";
+export type HelpdeskNotification = { userId: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind; title: string; body: string };
+/** A plain-text email to the ticket's contact email (Figma: "we will reply to you by email"). */
+export type HelpdeskEmail = { to: string; subject: string; text: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind };
 export type HelpdeskBlobStore = { put(key: string, bytes: Uint8Array): Promise<void>; get(key: string): Promise<Uint8Array> };
 export type HelpdeskDeps = {
   repository: HelpdeskRepository;
   blobs: HelpdeskBlobStore;
   notify?: (notification: HelpdeskNotification) => Promise<void>;
+  email?: (email: HelpdeskEmail) => Promise<void>;
+  /** Absolute link to the learner's ticket page, or null when no public origin is configured. */
+  ticketLink?: (ticketId: string, locale: HelpdeskLocale) => string | null;
+  /** Read-only student / subscription projection for the BackOffice detail. */
+  studentDirectory?: (userId: string) => Promise<StudentDirectoryEntry | null>;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
 };
@@ -68,10 +86,38 @@ export type AttachmentContent = { bytes: Uint8Array; contentType: HelpdeskAttach
 const LEARNER_ATTACHMENT_URL = "/api/helpdesk/attachments/";
 const AGENT_ATTACHMENT_URL = "/api/integration/helpdesk/attachments/";
 
-const NOTIFICATION_COPY: Record<HelpdeskLocale, Record<HelpdeskNotification["kind"], string>> = {
-  "en-GB": { agent_replied: "Support replied to your request", resolution_proposed: "Is your request solved? Please confirm" },
-  "zh-CN": { agent_replied: "客服回复了你的工单", resolution_proposed: "你的问题解决了吗？请确认" }
+/** Tags commute, so a tag write that lost a sequence race is simply retried on the new sequence. */
+const TAG_RETRIES = 6;
+
+// The owner asked (2026-10-28 06:50Z) for the short confirm wording everywhere.
+const NOTIFICATION_COPY: Record<HelpdeskLocale, Record<LearnerUpdateKind, string>> = {
+  "en-GB": { agent_replied: "Support replied to your request", resolution_proposed: "Is it solved?" },
+  "zh-CN": { agent_replied: "客服回复了你的工单", resolution_proposed: "问题解决了吗？" }
 };
+
+/** Email copy, in the ticket's locale. The subject carries only the ticket number, never learner text. */
+export function helpdeskEmail(kind: LearnerUpdateKind, ticket: Pick<TicketRecord, "id" | "number" | "subject" | "locale" | "contactEmail">, link: string | null, reply?: string): HelpdeskEmail {
+  const zh = ticket.locale === "zh-CN";
+  const lines: string[] = [];
+  let subject: string;
+  if (kind === "agent_replied") {
+    subject = zh ? `[${ticket.number}] 客服回复了你的咨询` : `[${ticket.number}] Support replied to your enquiry`;
+    lines.push(zh ? "你好：" : "Hello,", "", zh ? `客服回复了你的咨询「${ticket.subject}」（${ticket.number}）：` : `Our support team replied to your enquiry "${ticket.subject}" (${ticket.number}):`, "", reply ?? "");
+    if (link) lines.push("", zh ? `查看或回复：${link}` : `View or reply: ${link}`);
+  } else {
+    subject = zh ? `[${ticket.number}] 问题解决了吗？` : `[${ticket.number}] Is it solved?`;
+    lines.push(zh ? "你好：" : "Hello,", "", zh ? `客服已处理你的咨询「${ticket.subject}」（${ticket.number}）。问题解决了吗？` : `Support has handled your enquiry "${ticket.subject}" (${ticket.number}). Is it solved?`);
+    if (link) lines.push("", zh ? `已解决 / 没解决：${link}` : `Solved / Not yet: ${link}`);
+    lines.push("", zh ? `${CONFIRM_WINDOW_HOURS} 小时内未确认将自动结束。` : `If we do not hear from you within ${CONFIRM_WINDOW_HOURS} hours, the enquiry will be closed automatically.`);
+  }
+  lines.push("", "Learning Guide");
+  return { to: ticket.contactEmail, subject, text: lines.join("\n"), ticketId: ticket.id, number: ticket.number, locale: ticket.locale, kind };
+}
+
+/** One-line preview of the learner's first message. */
+export function previewOf(text: string) {
+  return text.replace(/\s+/g, " ").trim().slice(0, HELPDESK_LIMITS.previewMax);
+}
 
 const LEARNER_ACTION_COMMANDS: Array<[LearnerAllowedAction, Command]> = [["reply", "learner_reply"], ["cancel", "cancel"], ["confirm", "confirm"], ["reject", "reject"], ["close", "close"], ["rate", "rate"]];
 const AGENT_ACTION_COMMANDS: Array<[AgentAllowedAction, Command]> = [["claim", "claim"], ["reply", "agent_reply"], ["internal_note", "internal_note"], ["propose_resolution", "propose_resolution"]];
@@ -82,11 +128,6 @@ function sha256(value: string | Uint8Array) {
 
 function payloadHash(value: unknown) {
   return sha256(JSON.stringify(value));
-}
-
-function cleanFileName(name: string, contentType: HelpdeskAttachmentType) {
-  const base = (name.replace(/[\u0000-\u001f\u007f]/g, "").split(/[\\/]/).pop() || "").trim().slice(0, HELPDESK_LIMITS.fileNameMax);
-  return base || `screenshot.${contentType === "image/jpeg" ? "jpg" : contentType === "image/png" ? "png" : "webp"}`;
 }
 
 function fileFingerprints(files: UploadInput[]) {
@@ -129,6 +170,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     return {
       ...learnerSummary(ticket),
       locale: ticket.locale,
+      contactEmail: ticket.contactEmail,
       assigneeName: ticket.assigneeName,
       closeReason: ticket.closeReason,
       rating: ticket.rating,
@@ -137,9 +179,9 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
         id: item.id, authorKind: item.authorKind, authorName: item.authorName, body: item.body, createdAt: item.createdAt,
         attachments: attachmentViews(aggregate, item, LEARNER_ATTACHMENT_URL)
       })),
-      timeline: aggregate.events.filter((item) => !item.type.endsWith(".internal_note_added")).map((item) => ({
+      timeline: aggregate.events.filter((item) => isLearnerVisibleEvent(eventName(item.type))).map((item) => ({
         id: item.id,
-        type: item.type.slice(item.type.lastIndexOf(".") + 1) as HelpdeskEventName,
+        type: eventName(item.type),
         time: item.time,
         fromStatus: item.data.from_state,
         toStatus: item.data.to_state,
@@ -149,13 +191,38 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     };
   }
 
-  function agentSummary(ticket: TicketRecord): AgentTicketSummary {
+  function agentSummary(ticket: TicketRecord, extra: { firstMessage: string; tags: string[] }): AgentTicketSummary {
     return {
       ...learnerSummary(ticket),
       locale: ticket.locale,
       learner: { id: ticket.userId, email: ticket.userEmail, name: ticket.userName },
       assignee: ticket.assigneeId ? { id: ticket.assigneeId, name: ticket.assigneeName || "" } : null,
-      needsReply: needsReply(ticket)
+      needsReply: needsReply(ticket),
+      contactEmail: ticket.contactEmail,
+      preview: previewOf(extra.firstMessage),
+      unreadByAgent: ticket.unreadByAgent,
+      tags: extra.tags
+    };
+  }
+
+  async function studentProjection(ticket: TicketRecord): Promise<{ student: StudentProjection; subscription: SubscriptionProjection | null }> {
+    let entry: StudentDirectoryEntry | null = null;
+    if (deps.studentDirectory) {
+      try { entry = await deps.studentDirectory(ticket.userId); }
+      catch (error) { log({ type: "helpdesk", event: "student_directory_failed", ticketId: ticket.id, error: error instanceof Error ? error.name : "unknown" }); }
+    }
+    const totalEnquiries = await repository.countTicketsByUser(ticket.userId);
+    return {
+      student: {
+        id: ticket.userId,
+        name: entry?.name || ticket.userName,
+        accountEmail: entry ? entry.accountEmail ?? "" : ticket.userEmail,
+        contactEmail: ticket.contactEmail,
+        joinedAt: entry?.joinedAt ?? null,
+        totalEnquiries,
+        currentCourse: entry?.currentCourse ?? null
+      },
+      subscription: entry?.subscription ?? null
     };
   }
 
@@ -163,12 +230,16 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     return { id: event.id, specversion: "1.0", source: EVENT_SOURCE, type: event.type, subject: event.subject, time: event.time, datacontenttype: "application/json", data: event.data, sequence: event.sequence };
   }
 
-  function agentDetail(aggregate: TicketAggregate): AgentTicketDetail {
+  async function agentDetail(aggregate: TicketAggregate): Promise<AgentTicketDetail> {
     const at = now();
     const { ticket } = aggregate;
+    const projection = await studentProjection(ticket);
     return {
-      ...agentSummary(ticket),
+      ...agentSummary(ticket, { firstMessage: aggregate.messages[0]?.body ?? "", tags: aggregate.tags }),
       learner: { id: ticket.userId, email: ticket.userEmail, name: ticket.userName, locale: ticket.locale },
+      suggestionId: ticket.suggestionId,
+      student: projection.student,
+      subscription: projection.subscription,
       closeReason: ticket.closeReason,
       rating: ticket.rating,
       followUpUntil: followUpUntil(ticket, at),
@@ -191,20 +262,22 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     };
   }
 
-  function eventData(from: TicketRecord["status"] | null, to: TicketRecord["status"], actor: Actor, extra: { reason?: string; messageId?: string; rating?: number }): HelpdeskEventData {
+  function eventData(from: TicketRecord["status"] | null, to: TicketRecord["status"], actor: Actor, extra: { reason?: string; messageId?: string; rating?: number; suggestionId?: string; tag?: string }): HelpdeskEventData {
     const data: HelpdeskEventData = { from_state: from, to_state: to, actor: { kind: actor.kind, id: actor.id, name: actor.name } };
     if (extra.reason) data.reason = extra.reason;
     if (extra.messageId) data.message_id = extra.messageId;
     if (extra.rating !== undefined) data.rating = extra.rating;
+    if (extra.suggestionId) data.suggestion_id = extra.suggestionId;
+    if (extra.tag) data.tag = extra.tag;
     return data;
   }
 
   async function storeUploads(files: UploadInput[], ticketId: string, messageId: string, at: Date): Promise<AttachmentRecord[]> {
     const prepared = files.map((file) => {
-      const contentType = sniffImage(Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength));
-      if (!contentType) throw new HelpdeskProblem("attachment_type_unsupported", "Use a PNG, JPG or WebP image.");
+      const contentType = sniffAttachment(file.bytes, file.fileName);
+      if (!contentType) throw new HelpdeskProblem("attachment_type_unsupported", "Use PNG, JPG, WebP, GIF, PDF, TXT, CSV, DOCX or XLSX files.");
       const id = uuidv7(at.getTime());
-      return { file, record: { id, ticketId, messageId, uploaderKind: "learner" as const, fileName: cleanFileName(file.fileName, contentType), contentType, sizeBytes: file.bytes.byteLength, storageKey: attachmentStorageKey(ticketId, id), createdAt: at.toISOString() } };
+      return { file, record: { id, ticketId, messageId, uploaderKind: "learner" as const, fileName: attachmentFileName(file.fileName, contentType), contentType, sizeBytes: file.bytes.byteLength, storageKey: attachmentStorageKey(ticketId, id), createdAt: at.toISOString() } };
     });
     for (const item of prepared) await deps.blobs.put(item.record.storageKey, item.file.bytes);
     return prepared.map((item) => item.record);
@@ -246,12 +319,23 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     throw new HelpdeskProblem(decision.code);
   }
 
-  async function notifyLearner(ticket: TicketRecord, kind: HelpdeskNotification["kind"]) {
-    if (!deps.notify) return;
-    try {
-      await deps.notify({ userId: ticket.userId, ticketId: ticket.id, number: ticket.number, locale: ticket.locale, kind, title: NOTIFICATION_COPY[ticket.locale][kind], body: `${ticket.number} · ${ticket.subject}` });
-    } catch {
-      log({ type: "helpdesk", event: "notification_failed", ticketId: ticket.id, kind });
+  async function notifyLearner(ticket: TicketRecord, kind: LearnerUpdateKind, reply?: string) {
+    if (deps.notify) {
+      try {
+        await deps.notify({ userId: ticket.userId, ticketId: ticket.id, number: ticket.number, locale: ticket.locale, kind, title: NOTIFICATION_COPY[ticket.locale][kind], body: `${ticket.number} · ${ticket.subject}` });
+      } catch {
+        log({ type: "helpdesk", event: "notification_failed", ticketId: ticket.id, kind });
+      }
+    }
+    if (deps.email) {
+      try {
+        let link: string | null = null;
+        try { link = deps.ticketLink ? deps.ticketLink(ticket.id, ticket.locale) : null; } catch { link = null; }
+        await deps.email(helpdeskEmail(kind, ticket, link, reply));
+      } catch (error) {
+        // Never log the address or the message: only which ticket and why.
+        log({ type: "helpdesk", event: "email_failed", ticketId: ticket.id, kind, error: error instanceof Error ? error.name : "unknown" });
+      }
     }
   }
 
@@ -262,20 +346,41 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     hash: string;
     actor: Actor;
     command: Command;
-    expectedSequence: number;
+    /** null applies the command to the current sequence (tags only). */
+    expectedSequence: number | null;
     message?: { body: string; internal: boolean; files: UploadInput[] };
     rating?: number;
+    tag?: string;
   };
+
+  function staleProblem(currentSequence: number) {
+    return new HelpdeskProblem("stale_ticket", "This request was updated. Reload it and try again.", { currentSequence });
+  }
+
+  /** The caller's view is current enough: nothing they could have acted on happened after expectedSequence. */
+  function checkSequence(aggregate: TicketAggregate, expectedSequence: number | null, actor: Actor["kind"]) {
+    const current = aggregate.ticket.sequence;
+    if (expectedSequence === null || expectedSequence === current) return;
+    const unseen = aggregate.events.filter((item) => item.sequence > expectedSequence);
+    const harmless = expectedSequence < current && unseen.length === current - expectedSequence && unseen.every((item) => ignoredByStaleCheck(eventName(item.type), actor));
+    if (!harmless) throw staleProblem(current);
+  }
 
   async function runCommand(spec: CommandSpec): Promise<{ aggregate: TicketAggregate; replayed: boolean }> {
     let aggregate = await load(spec.ticketId, spec.ownerId);
     if (await replayed(spec.key, spec.hash, spec.ticketId)) return { aggregate: await fresh(aggregate), replayed: true };
     aggregate = await fresh(aggregate);
     const ticket = aggregate.ticket;
-    if (ticket.sequence !== spec.expectedSequence) throw new HelpdeskProblem("stale_ticket", "This request was updated. Reload it and try again.", { currentSequence: ticket.sequence });
+    checkSequence(aggregate, spec.expectedSequence, spec.actor.kind);
     const at = now();
     const decision = decide(ticket, spec.command, spec.actor.kind, at);
     if (!decision.ok) reject(ticket, spec.command, spec.actor.kind, decision);
+    if (spec.tag !== undefined) {
+      // Tags are idempotent: adding a present tag or removing a missing one changes nothing.
+      const present = aggregate.tags.includes(spec.tag);
+      if (spec.command === "add_tag" ? present : !present) return { aggregate, replayed: false };
+      if (spec.command === "add_tag" && aggregate.tags.length >= HELPDESK_LIMITS.tagsPerTicket) throw new HelpdeskProblem("tag_limit_reached", `A ticket can have at most ${HELPDESK_LIMITS.tagsPerTicket} tags.`);
+    }
 
     let message: MessageRecord | undefined;
     let attachments: AttachmentRecord[] = [];
@@ -292,17 +397,20 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     const autoClaimed = spec.command === "agent_reply" && !ticket.assigneeId;
     const event = buildEvent({
       ticketId: ticket.id, sequence: next.sequence, name: decision.transition.event, at,
-      data: eventData(ticket.status, next.status, spec.actor, { reason: autoClaimed ? "auto_claimed" : decision.transition.closeReason, messageId: message?.id, rating: spec.rating }),
+      data: eventData(ticket.status, next.status, spec.actor, { reason: autoClaimed ? "auto_claimed" : decision.transition.closeReason, messageId: message?.id, rating: spec.rating, tag: spec.tag }),
       key: spec.key, hash: spec.hash
     });
-    const outcome = await repository.appendChange({ ticket: next, expectedSequence: ticket.sequence, message, attachments, event });
+    const outcome = await repository.appendChange({
+      ticket: next, expectedSequence: ticket.sequence, message, attachments, event,
+      tag: spec.tag === undefined ? undefined : { op: spec.command === "add_tag" ? "add" : "remove", tag: spec.tag, at: at.toISOString() },
+      markUnread: Boolean(message && !message.internal && spec.actor.kind === "learner")
+    });
     if (outcome !== "applied") {
       if (await replayed(spec.key, spec.hash, spec.ticketId)) return { aggregate: await load(spec.ticketId), replayed: true };
       if (outcome === "duplicate") throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
-      const current = await load(spec.ticketId);
-      throw new HelpdeskProblem("stale_ticket", "This request was updated. Reload it and try again.", { currentSequence: current.ticket.sequence });
+      throw staleProblem((await load(spec.ticketId)).ticket.sequence);
     }
-    if (decision.transition.event === "agent_replied") await notifyLearner(next, "agent_replied");
+    if (decision.transition.event === "agent_replied") await notifyLearner(next, "agent_replied", message?.body);
     if (decision.transition.event === "resolution_proposed") await notifyLearner(next, "resolution_proposed");
     return { aggregate: await load(spec.ticketId), replayed: false };
   }
@@ -323,7 +431,11 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
   // ---------------------------------------------------------------- learner
 
   async function createTicket(learner: LearnerIdentity, input: CreateTicketInput, key: string): Promise<CommandResult<TicketDetail>> {
-    const hash = payloadHash({ op: "create", userId: learner.id, category: input.category, subject: input.subject, body: input.body, locale: input.locale, files: fileFingerprints(input.files) });
+    const accountEmail = learner.email.trim();
+    const contactEmail = input.contactEmail || (accountEmail && isContactEmail(accountEmail) ? accountEmail : null);
+    if (!contactEmail) throw new HelpdeskProblem("validation_failed", "Add an email address so support can reply.", {}, "contactEmail");
+    const suggestionId = input.suggestionId ?? null;
+    const hash = payloadHash({ op: "create", userId: learner.id, category: input.category, subject: input.subject, body: input.body, locale: input.locale, contactEmail, suggestionId, files: fileFingerprints(input.files) });
     const replayTicket = async () => {
       const ticketId = await replayed(key, hash, null);
       if (!ticketId) return null;
@@ -339,15 +451,22 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     const decision = decide(null, "create", "learner", at);
     if (!decision.ok) throw new HelpdeskProblem("invalid_transition");
     const actor: Actor = { kind: "learner", id: learner.id, name: learner.name };
+    const events = [buildEvent({ ticketId, sequence: 1, name: decision.transition.event, at, data: eventData(null, decision.to, actor, { messageId }), key, hash })];
+    if (suggestionId) {
+      // "No, still submit to support team": record which suggestion did not help (addendum §B).
+      const declined = decide({ status: decision.to, assigneeId: null, confirmDueAt: null, closedAt: null, rating: null }, "decline_suggestion", "learner", at);
+      if (!declined.ok) throw new HelpdeskProblem("invalid_transition");
+      events.push(buildEvent({ ticketId, sequence: 2, name: declined.transition.event, at, data: eventData(decision.to, declined.to, actor, { suggestionId }), key: null, hash: null }));
+    }
     const outcome = await repository.insertTicket({
       ticket: {
-        id: ticketId, userId: learner.id, userEmail: learner.email, userName: learner.name, locale: input.locale, category: input.category, subject: input.subject,
-        status: decision.to, assigneeId: null, assigneeName: null, sequence: 1, confirmDueAt: null, closedAt: null, closeReason: null, rating: null,
-        createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash
+        id: ticketId, userId: learner.id, userEmail: learner.email, userName: learner.name, contactEmail, locale: input.locale, category: input.category, subject: input.subject,
+        status: decision.to, assigneeId: null, assigneeName: null, sequence: events.length, confirmDueAt: null, closedAt: null, closeReason: null, rating: null,
+        createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash, suggestionId, unreadByAgent: true
       },
       message: { id: messageId, ticketId, authorKind: "learner", authorId: learner.id, authorName: learner.name, body: input.body, internal: false, attachmentIds: attachments.map((item) => item.id), clientEventId: key, payloadHash: hash, createdAt },
       attachments,
-      event: buildEvent({ ticketId, sequence: 1, name: decision.transition.event, at, data: eventData(null, decision.to, actor, { messageId }), key, hash })
+      events
     });
     if (outcome.status === "duplicate") {
       const later = await replayTicket();
@@ -389,7 +508,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     const { tickets, counts } = await repository.listTickets(query);
     const page = tickets.slice(0, query.limit);
     const last = page[page.length - 1];
-    return { tickets: page.map(agentSummary), nextCursor: tickets.length > query.limit && last ? encodeCursor({ updatedAt: last.updatedAt, id: last.id }) : null, counts };
+    return { tickets: page.map((item: TicketListItem) => agentSummary(item, item)), nextCursor: tickets.length > query.limit && last ? encodeCursor({ updatedAt: last.updatedAt, id: last.id }) : null, counts };
   }
 
   async function getAgentTicket(ticketId: string): Promise<AgentTicketDetail> {
@@ -399,13 +518,34 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
   async function postAgentMessage(ticketId: string, input: AgentMessageInput, key: string): Promise<CommandResult<AgentTicketDetail>> {
     const hash = payloadHash({ op: "agent_message", ticketId, agent: input.agent, body: input.body, internal: input.internal });
     const result = await runCommand({ ticketId, key, hash, actor: { kind: "agent", id: input.agent.id, name: input.agent.name }, command: input.internal ? "internal_note" : "agent_reply", expectedSequence: input.expectedSequence, message: { body: input.body, internal: input.internal, files: [] } });
-    return { ticket: agentDetail(result.aggregate), replayed: result.replayed };
+    return { ticket: await agentDetail(result.aggregate), replayed: result.replayed };
   }
 
   async function agentAction(ticketId: string, input: AgentActionInput, key: string): Promise<CommandResult<AgentTicketDetail>> {
-    const hash = payloadHash({ op: "agent_action", ticketId, agent: input.agent, action: input.action });
-    const result = await runCommand({ ticketId, key, hash, actor: { kind: "agent", id: input.agent.id, name: input.agent.name }, command: input.action, expectedSequence: input.expectedSequence });
-    return { ticket: agentDetail(result.aggregate), replayed: result.replayed };
+    const actor: Actor = { kind: "agent", id: input.agent.id, name: input.agent.name };
+    if (input.action === "mark_read") {
+      // Not an event: it only clears the BackOffice unread dot, so it never makes anyone stale.
+      await load(ticketId);
+      await repository.markRead(ticketId);
+      return { ticket: await agentDetail(await fresh(await load(ticketId))), replayed: false };
+    }
+    const hash = payloadHash({ op: "agent_action", ticketId, agent: input.agent, action: input.action, ...(input.tag !== undefined ? { tag: input.tag } : {}) });
+    if (input.action === "add_tag" || input.action === "remove_tag") {
+      if (!input.tag) throw new HelpdeskProblem("validation_failed", "tag is required.", {}, "tag");
+      // Tags commute: apply to the current sequence and retry a lost race a few times.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          const result = await runCommand({ ticketId, key, hash, actor, command: input.action, expectedSequence: input.expectedSequence, tag: input.tag });
+          return { ticket: await agentDetail(result.aggregate), replayed: result.replayed };
+        } catch (error) {
+          if (!(error instanceof HelpdeskProblem) || error.code !== "stale_ticket" || attempt >= TAG_RETRIES || input.expectedSequence !== null) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 5 + Math.floor(Math.random() * 20 * attempt)));
+        }
+      }
+    }
+    if (input.expectedSequence === null) throw new HelpdeskProblem("validation_failed", "expectedSequence must be a positive integer.", {}, "expectedSequence");
+    const result = await runCommand({ ticketId, key, hash, actor, command: input.action, expectedSequence: input.expectedSequence });
+    return { ticket: await agentDetail(result.aggregate), replayed: result.replayed };
   }
 
   return {

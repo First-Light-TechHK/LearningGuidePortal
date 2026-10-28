@@ -40,7 +40,7 @@ function harness(startAt = "2026-10-28T06:00:00.000Z") {
 }
 
 const file = (bytes: Buffer, fileName = "screen.png", declaredType = "image/png"): UploadInput => ({ fileName, declaredType, bytes: new Uint8Array(bytes) });
-const ticketInput = (overrides: Record<string, unknown> = {}, files: UploadInput[] = []) => ({ category: "billing" as const, subject: "Upgrade did not apply", body: "I paid but I am still on Basic.", locale: "en-GB" as const, files, ...overrides });
+const ticketInput = (overrides: Record<string, unknown> = {}, files: UploadInput[] = []) => ({ category: "payments_subscriptions" as const, subject: "Upgrade did not apply", body: "I paid but I am still on Basic.", locale: "en-GB" as const, files, ...overrides });
 
 async function rejects(promise: Promise<unknown>, code: string) {
   await assert.rejects(promise, (error: unknown) => {
@@ -83,8 +83,10 @@ test("attachments are sniffed from magic bytes, not the declared type", async ()
   const h = harness();
   const { ticket } = await h.service.createTicket(learner, ticketInput({}, [file(PNG, "x.pdf", "application/pdf"), file(WEBP, "w.webp", "image/webp")]), randomUUID());
   assert.deepEqual(ticket.messages[0].attachments.map((item) => item.contentType), ["image/png", "image/webp"]);
-  await rejects(h.service.createTicket(learner, ticketInput({}, [file(GIF, "a.png", "image/png")]), randomUUID()), "attachment_type_unsupported");
+  const gif = await h.service.createTicket(learner, ticketInput({}, [file(GIF, "a.png", "image/png")]), randomUUID());
+  assert.equal(gif.ticket.messages[0].attachments[0].contentType, "image/gif", "addendum: GIF is allowed, recognised by magic bytes");
   await rejects(h.service.createTicket(learner, ticketInput({}, [file(Buffer.from("<svg/>"), "a.png", "image/png")]), randomUUID()), "attachment_type_unsupported");
+  await rejects(h.service.createTicket(learner, ticketInput({}, [file(Buffer.from("<svg/>"), "a.svg", "image/svg+xml")]), randomUUID()), "attachment_type_unsupported");
   const named = await h.service.createTicket(learner, ticketInput({}, [file(PNG, "../../etc/pass\u0000wd.png")]), randomUUID());
   assert.ok(!named.ticket.messages[0].attachments[0].fileName.includes("/"));
   assert.ok(!named.ticket.messages[0].attachments[0].fileName.includes("\u0000"));

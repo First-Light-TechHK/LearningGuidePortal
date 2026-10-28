@@ -8,6 +8,10 @@ import {
   confirmDueAt,
   decide,
   eventType,
+  evolve,
+  isLearnerVisibleEvent,
+  ignoredByStaleCheck,
+  type TicketRecord,
   formatTicketNumber,
   needsReply,
   reopenDeadline,
@@ -58,9 +62,13 @@ const ALLOWED: Array<[TicketStatus, Command, "learner" | "agent" | "system", Tic
   ["ASSIGNED", "close", "learner", "CLOSED"],
   ["WAITING_USER", "close", "learner", "CLOSED"],
   ["CLOSED", "learner_reply", "learner", "ASSIGNED"],
-  ["CLOSED", "rate", "learner", "CLOSED"]
+  ["CLOSED", "rate", "learner", "CLOSED"],
+  // Addendum §B/§D: a declined AI suggestion is recorded right after create;
+  // agents may tag a ticket in any state (the state never changes).
+  ["OPEN", "decline_suggestion", "learner", "OPEN"],
+  ...TICKET_STATUSES.flatMap((status) => [[status, "add_tag", "agent", status], [status, "remove_tag", "agent", status]] as Array<[TicketStatus, Command, "agent", TicketStatus]>)
 ];
-const COMMANDS: Command[] = ["cancel", "claim", "agent_reply", "internal_note", "learner_reply", "propose_resolution", "confirm", "reject", "close", "rate", "auto_confirm", "create"];
+const COMMANDS: Command[] = ["cancel", "claim", "agent_reply", "internal_note", "learner_reply", "propose_resolution", "confirm", "reject", "close", "rate", "auto_confirm", "create", "decline_suggestion", "add_tag", "remove_tag"];
 const ACTORS = ["learner", "agent", "system"] as const;
 
 test("every allowed transition in the spec table reaches its target state", () => {
@@ -99,7 +107,7 @@ test("every combination outside the table is rejected with invalid_transition", 
 });
 
 test("the transition table is the single source: each row names an event and a valid target", () => {
-  const events = new Set(["created", "claimed", "agent_replied", "internal_note_added", "learner_replied", "resolution_proposed", "resolution_rejected", "confirmed", "auto_confirmed", "closed_by_learner", "cancelled", "reopened", "rated"]);
+  const events = new Set(["created", "claimed", "agent_replied", "internal_note_added", "learner_replied", "resolution_proposed", "resolution_rejected", "confirmed", "auto_confirmed", "closed_by_learner", "cancelled", "reopened", "rated", "suggestion_declined", "tag_added", "tag_removed"]);
   for (const row of TRANSITIONS) {
     assert.ok(events.has(row.event), row.event);
     assert.ok(row.to === "unchanged" || TICKET_STATUSES.includes(row.to));
@@ -174,4 +182,53 @@ test("UUIDv7 (RFC 9562): version 7, RFC variant, embedded millisecond time, mono
   const later = uuidv7(at + 1);
   assert.ok(later > ids[ids.length - 1]);
   assert.ok(isUuid(id) && isUuid("8e03978e-40d5-43e8-bc93-6894a57f9324") && !isUuid("../etc") && !isUuid("8e03978e40d543e8bc936894a57f9324"));
+});
+
+function record(overrides: Partial<TicketRecord> = {}): TicketRecord {
+  const at = "2026-10-28T05:00:00.000Z";
+  return {
+    id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", number: "LG-261028-0001", userId: "u1", userEmail: "u1@example.test", userName: "U One", contactEmail: "contact@example.test",
+    locale: "en-GB", category: "technical_support", subject: "s", status: "ASSIGNED", assigneeId: "agent-1", assigneeName: "Amy", sequence: 3,
+    confirmDueAt: null, closedAt: null, closeReason: null, rating: null, createdAt: at, updatedAt: at, lastMessageAt: at, lastMessageBy: "agent",
+    clientEventId: "8e03978e-40d5-43e8-bc93-6894a57f9324", payloadHash: "a".repeat(64), suggestionId: null, unreadByAgent: false, ...overrides
+  };
+}
+
+test("unread by agent: a learner message sets it; agent commands and tags never touch it", () => {
+  const ticket = record();
+  const learnerReply = decide(ticket, "learner_reply", "learner", NOW);
+  assert.ok(learnerReply.ok);
+  assert.equal(evolve(ticket, learnerReply, { now: NOW, actor: { kind: "learner", id: "u1", name: "U" }, publicMessage: true }).unreadByAgent, true);
+  const confirmLike = decide(record({ status: "ASSIGNED" }), "close", "learner", NOW);
+  assert.ok(confirmLike.ok);
+  assert.equal(evolve(ticket, confirmLike, { now: NOW, actor: { kind: "learner", id: "u1", name: "U" }, publicMessage: false }).unreadByAgent, false, "an action without a message is not a new message");
+  const agentReply = decide(record({ unreadByAgent: true }), "agent_reply", "agent", NOW);
+  assert.ok(agentReply.ok);
+  assert.equal(evolve(record({ unreadByAgent: true }), agentReply, { now: NOW, actor: { kind: "agent", id: "a", name: "A" }, publicMessage: true }).unreadByAgent, true, "only mark_read clears it");
+});
+
+test("tags and declined suggestions are bookkeeping: state, activity time and last message stay as they were", () => {
+  const ticket = record({ status: "CLOSED", closedAt: NOW.toISOString(), closeReason: "user_closed" });
+  for (const command of ["add_tag", "remove_tag"] as const) {
+    const decision = decide(ticket, command, "agent", NOW);
+    assert.ok(decision.ok, command);
+    const next = evolve(ticket, decision, { now: NOW, actor: { kind: "agent", id: "a", name: "A" }, publicMessage: false });
+    assert.equal(next.status, "CLOSED");
+    assert.equal(next.sequence, ticket.sequence + 1);
+    assert.equal(next.updatedAt, ticket.updatedAt);
+    assert.equal(next.closedAt, ticket.closedAt);
+    assert.equal(next.closeReason, "user_closed");
+  }
+  assert.equal(decide(ticket, "add_tag", "learner", NOW).ok, false);
+});
+
+test("learner-visible events and the learner stale check: private agent bookkeeping never makes a learner's page stale", () => {
+  for (const name of ["internal_note_added", "tag_added", "tag_removed", "suggestion_declined"] as const) assert.equal(isLearnerVisibleEvent(name), false, name);
+  for (const name of ["created", "claimed", "agent_replied", "learner_replied", "resolution_proposed", "confirmed", "rated", "reopened"] as const) assert.equal(isLearnerVisibleEvent(name), true, name);
+  assert.equal(ignoredByStaleCheck("internal_note_added", "learner"), true);
+  assert.equal(ignoredByStaleCheck("tag_added", "learner"), true);
+  assert.equal(ignoredByStaleCheck("tag_removed", "agent"), true, "tags never make anyone stale");
+  assert.equal(ignoredByStaleCheck("internal_note_added", "agent"), false, "agents must see a colleague's new note");
+  assert.equal(ignoredByStaleCheck("agent_replied", "learner"), false);
+  assert.equal(ignoredByStaleCheck("claimed", "learner"), false);
 });
