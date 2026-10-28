@@ -1,6 +1,6 @@
 // Local-only values for the Helpdesk e2e run (tests/e2e/helpdesk-support.spec.ts).
 // These are throwaway test tokens for a dev server on 127.0.0.1 and a stub
-// Admin server started by playwright.e2e.config.ts; they are not secrets and
+// Admin server started by playwright.helpdesk.config.ts; they are not secrets and
 // are never used outside a local test run.
 export const HELPDESK_E2E = {
   adminPort: Number(process.env.E2E_HELPDESK_ADMIN_PORT || 3913),

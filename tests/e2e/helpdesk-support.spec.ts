@@ -2,7 +2,7 @@
 // AccountNav entry, Contact Support form (Figma 1216:6), AI Support Assistant
 // modal (Figma 1333:249) with its three outcomes, My enquiries and every
 // learner action on the ticket page, ownership, and attachment rejection.
-// Admin is played by tests/e2e/helpdesk-admin-stub.mjs (see playwright.e2e.config.ts);
+// Admin is played by tests/e2e/helpdesk-admin-stub.mjs (see playwright.helpdesk.config.ts);
 // agents act through Portal's integration API with a local test token.
 import { expect, test, type APIRequestContext, type Browser, type Page } from "playwright/test";
 import { randomUUID } from "node:crypto";
