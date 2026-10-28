@@ -62,7 +62,8 @@ test("the runtime bootstrap creates every 017 table and the artifact re-applies 
 
 test("20 concurrent creates get 20 distinct, gap-free numbers for the UTC day", async () => {
   const hd = service();
-  const results = await Promise.all(Array.from({ length: 20 }, (_, index) => hd.createTicket(learner, input(`Question ${index}`), randomUUID())));
+  // Twenty learners (one learner may open only ten tickets an hour).
+  const results = await Promise.all(Array.from({ length: 20 }, (_, index) => hd.createTicket({ ...learner, id: `pg-learner-${index}` }, input(`Question ${index}`), randomUUID())));
   const numbers = results.map((item) => item.ticket.number).sort();
   assert.deepEqual(numbers, Array.from({ length: 20 }, (_, index) => `LG-261028-${String(index + 1).padStart(4, "0")}`));
   assert.deepEqual(await rows("SELECT day, last FROM helpdesk_ticket_counters"), [{ day: "261028", last: 20 }]);
@@ -259,6 +260,25 @@ test("'Not yet' without a message raises unread_by_agent and counts in Needs rep
   assert.deepEqual(queue.tickets.map((item) => item.id), [ticket.id]);
   assert.equal(queue.counts.needs_reply, 1);
   assert.equal(queue.tickets[0].unreadByAgent, true);
+});
+
+test("rate limits count the learner's own tickets and messages in PostgreSQL over a rolling hour", async () => {
+  let clock = Date.parse("2026-10-28T06:00:00.000Z");
+  const hd = service(() => new Date(clock));
+  const tickets = [];
+  for (let index = 0; index < 10; index += 1) {
+    tickets.push((await hd.createTicket(learner, input(`Limit ${index}`), randomUUID())).ticket);
+    clock += 1000;
+  }
+  await assert.rejects(hd.createTicket(learner, input("Eleventh"), randomUUID()), (error: { code?: string; extra?: { retryAfter?: number } }) => error.code === "rate_limited" && error.extra?.retryAfter === 3590);
+  await hd.createTicket({ ...learner, id: "pg-someone-else" }, input("Other learner"), randomUUID());
+  // 10 opening messages so far; 50 more replies reach the 60-message limit.
+  let sequence = tickets[0].sequence;
+  for (let index = 0; index < 50; index += 1) sequence = (await hd.learnerMessage(learner, tickets[0].id, { body: `Reply ${index}`, expectedSequence: sequence, files: [] }, randomUUID())).ticket.sequence;
+  await assert.rejects(hd.learnerMessage(learner, tickets[1].id, { body: "One too many", expectedSequence: 1, files: [] }, randomUUID()), { code: "rate_limited" });
+  clock += 3_600_000;
+  assert.equal((await hd.createTicket(learner, input("Next hour"), randomUUID())).replayed, false);
+  assert.equal((await hd.learnerMessage(learner, tickets[1].id, { body: "Next hour", expectedSequence: 1, files: [] }, randomUUID())).ticket.messages.length, 2);
 });
 
 test("tags in PostgreSQL: idempotent add/remove events, limit of 10, list filter and counts, concurrent tagging all lands", async () => {

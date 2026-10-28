@@ -22,7 +22,11 @@ export const HELPDESK_LIMITS = {
   agentNameMax: 120,
   queryMax: 120,
   listLimitDefault: 20,
-  listLimitMax: 100
+  listLimitMax: 100,
+  /** Per learner, rolling hour, counted from helpdesk_tickets. */
+  ticketsPerHour: 10,
+  /** Per learner, rolling hour, counted from helpdesk_ticket_messages (every learner message, a ticket's first one included). */
+  learnerMessagesPerHour: 60
 } as const;
 
 export const TICKET_STATUSES = ["OPEN", "ASSIGNED", "WAITING_USER", "PENDING_CONFIRM", "CLOSED", "CANCELLED"] as const;
@@ -240,6 +244,7 @@ export const PROBLEM_STATUS = {
   rating_window_passed: 409,
   already_rated: 409,
   tag_limit_reached: 409,
+  rate_limited: 429,
   integration_disabled: 503,
   helpdesk_unavailable: 503,
   assistant_unavailable: 503
@@ -264,6 +269,7 @@ const PROBLEM_TITLES: Record<HelpdeskProblemCode, string> = {
   rating_window_passed: "The rating window has passed",
   already_rated: "The ticket has already been rated",
   tag_limit_reached: "The ticket already has the maximum number of tags",
+  rate_limited: "Too many requests",
   integration_disabled: "Helpdesk integration is not configured",
   helpdesk_unavailable: "Helpdesk is temporarily unavailable",
   assistant_unavailable: "The support assistant is temporarily unavailable"

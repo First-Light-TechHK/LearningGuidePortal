@@ -55,7 +55,7 @@ export function screenFiles<T extends { name: string; size: number }>(currentCou
   return { accepted, errors };
 }
 
-export type HelpdeskErrorKey = "unauthenticated" | "notFound" | "conflict" | "tooLarge" | "unsupported" | "tooMany" | "invalid" | "reopenWindow" | "ratingWindow" | "alreadyRated" | "unavailable";
+export type HelpdeskErrorKey = "unauthenticated" | "notFound" | "conflict" | "tooLarge" | "unsupported" | "tooMany" | "invalid" | "reopenWindow" | "ratingWindow" | "alreadyRated" | "rateLimited" | "unavailable";
 
 /** One learner-facing message per RFC 9457 problem (by code, falling back to the HTTP status). */
 export function problemMessageKey(status: number, code: string | undefined): HelpdeskErrorKey {
@@ -70,6 +70,7 @@ export function problemMessageKey(status: number, code: string | undefined): Hel
     case "attachment_too_large": return "tooLarge";
     case "attachment_type_unsupported": return "unsupported";
     case "too_many_attachments": return "tooMany";
+    case "rate_limited": return "rateLimited";
     case "validation_failed":
     case "invalid_request":
     case "idempotency_conflict":
@@ -82,6 +83,7 @@ export function problemMessageKey(status: number, code: string | undefined): Hel
   if (status === 409) return "conflict";
   if (status === 413) return "tooLarge";
   if (status === 415) return "unsupported";
+  if (status === 429) return "rateLimited";
   if (status === 400 || status === 422) return "invalid";
   return "unavailable";
 }

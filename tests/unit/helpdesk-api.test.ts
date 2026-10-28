@@ -274,6 +274,24 @@ test("control characters in learner and agent text are a 400 validation_failed, 
   await problem(await routes.agentTickets.GET(agentRequest(`/api/integration/helpdesk/tickets?q=${encodeURIComponent("a\u0000")}`), ctx()), 400, "validation_failed");
 });
 
+test("rate limited requests answer 429 rate_limited with a Retry-After header", async () => {
+  const { user, token } = await (async () => {
+    const created = await store.registerUser({ email: "helpdesk-busy@example.test", password: "password1", nickname: "Busy Learner" });
+    await store.verifyEmailToken(await store.issueEmailVerificationToken(created.id));
+    return { user: created, token: (await store.createSession(created.id)).token };
+  })();
+  assert.ok(user.id);
+  for (let index = 0; index < 10; index += 1) {
+    const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: `Busy ${index}` }), cookie: token, key: randomUUID() }), ctx());
+    assert.equal(created.status, 201);
+  }
+  const limited = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "One too many" }), cookie: token, key: randomUUID() }), ctx());
+  const retryAfter = Number(limited.headers.get("retry-after"));
+  const body = await problem(limited, 429, "rate_limited");
+  assert.ok(Number.isInteger(retryAfter) && retryAfter >= 3590 && retryAfter <= 3600, `Retry-After ${retryAfter}`);
+  assert.equal(body.retryAfter, retryAfter);
+});
+
 test("withdraw an OPEN request; nothing else can be done afterwards", async () => {
   const created = await (await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Withdraw me" }), cookie: learnerCookie, key: randomUUID() }), ctx())).json();
   await problem(await routes.actions.POST(learnerRequest(`/api/helpdesk/tickets/${created.id}/actions`, { cookie: strangerCookie, key: randomUUID(), json: { action: "cancel", expectedSequence: 1 } }), ctx({ id: created.id })), 404, "not_found");

@@ -121,6 +121,59 @@ test("idempotency: same key + same payload replays; changed payload or other use
   assert.equal(detail.sequence, 3);
 });
 
+test("rate limit: 10 new tickets per learner per rolling hour, 429 rate_limited with retryAfter; replays and other learners are not limited", async () => {
+  const h = harness();
+  const keys: string[] = [];
+  for (let index = 0; index < 10; index += 1) {
+    keys.push(randomUUID());
+    await h.service.createTicket(learner, ticketInput({ subject: `Question ${index}` }), keys[index]);
+    h.advance(60_000);
+  }
+  // Ten tickets from 06:00 to 06:09; it is now 06:10.
+  await assert.rejects(h.service.createTicket(learner, ticketInput({ subject: "Eleventh" }), randomUUID()), (error: unknown) => {
+    assert.ok(error instanceof HelpdeskProblem);
+    assert.equal(error.code, "rate_limited");
+    assert.equal(error.status, 429);
+    assert.equal(error.extra.retryAfter, 50 * 60, "until the oldest of the ten is an hour old");
+    return true;
+  });
+  assert.equal(h.logs.filter((line) => line.event === "rate_limited" && line.limit === "tickets").length, 1);
+  assert.equal(h.blobs.size, 0);
+  const replay = await h.service.createTicket(learner, ticketInput({ subject: "Question 9" }), keys[9]);
+  assert.equal(replay.replayed, true, "a retried create still replays at the limit");
+  assert.equal((await h.service.createTicket(stranger, ticketInput(), randomUUID())).replayed, false, "the limit is per learner");
+  h.advance(50 * 60_000 - 1);
+  await rejects(h.service.createTicket(learner, ticketInput({ subject: "Still too soon" }), randomUUID()), "rate_limited");
+  h.advance(1);
+  assert.equal((await h.service.createTicket(learner, ticketInput({ subject: "An hour later" }), randomUUID())).replayed, false);
+  assert.equal((await h.service.listLearnerTickets(learner)).tickets.length, 11);
+});
+
+test("rate limit: 60 learner messages per rolling hour across the learner's tickets (the first message of a ticket counts); agents are not limited", async () => {
+  const h = harness();
+  const { ticket } = await h.service.createTicket(learner, ticketInput(), randomUUID());
+  let sequence = 1;
+  for (let index = 0; index < 59; index += 1) {
+    sequence = (await h.service.learnerMessage(learner, ticket.id, { body: `Message ${index}`, expectedSequence: sequence, files: [] }, randomUUID())).ticket.sequence;
+  }
+  const key = randomUUID();
+  await assert.rejects(h.service.learnerMessage(learner, ticket.id, { body: "Sixty-first", expectedSequence: sequence, files: [file(PNG)] }, key), (error: unknown) => {
+    assert.ok(error instanceof HelpdeskProblem);
+    assert.equal(error.code, "rate_limited");
+    assert.equal(error.extra.retryAfter, 3600);
+    return true;
+  });
+  assert.equal(h.blobs.size, 0, "nothing is stored for a limited message");
+  assert.equal((await h.service.getLearnerTicket(learner, ticket.id)).sequence, sequence);
+  sequence = (await h.service.postAgentMessage(ticket.id, { body: "Agents are never limited", internal: false, agent, expectedSequence: sequence }, randomUUID())).ticket.sequence;
+  sequence = (await h.service.agentAction(ticket.id, { action: "propose_resolution", agent, expectedSequence: sequence }, randomUUID())).ticket.sequence;
+  await rejects(h.service.learnerAction(learner, ticket.id, { action: "reject", message: "Still broken", expectedSequence: sequence }, randomUUID()), "rate_limited");
+  const rejected = await h.service.learnerAction(learner, ticket.id, { action: "reject", expectedSequence: sequence }, randomUUID());
+  assert.equal(rejected.ticket.status, "ASSIGNED", "an action without a message is not limited");
+  h.advance(3_600_000);
+  assert.equal((await h.service.learnerMessage(learner, ticket.id, { body: "An hour later", expectedSequence: rejected.ticket.sequence, files: [] }, key)).replayed, false);
+});
+
 test("stale expectedSequence is rejected and nothing changes", async () => {
   const h = harness();
   const { ticket } = await h.service.createTicket(learner, ticketInput(), randomUUID());

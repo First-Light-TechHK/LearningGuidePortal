@@ -1729,6 +1729,7 @@
       "reopenWindow": "The 7-day follow-up window has passed. Please send a new enquiry.",
       "ratingWindow": "The rating window has passed.",
       "alreadyRated": "You have already rated this enquiry.",
+      "rateLimited": "You have sent a lot of requests in the last hour. Please try again later.",
       "unavailable": "Support is temporarily unavailable. Please try again later."
     }
   }

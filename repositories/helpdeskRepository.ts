@@ -44,6 +44,12 @@ function matchesStatus(ticket: TicketRecord, status: AgentListQuery["status"]) {
   return ticket.status === status;
 }
 
+/** createdAt of the n-th newest item after sinceIso, or null when there are fewer than n. */
+function nthNewest(createdAts: string[], sinceIso: string, n: number): string | null {
+  const recent = createdAts.filter((value) => value > sinceIso).sort().reverse();
+  return recent.length >= n ? recent[n - 1] : null;
+}
+
 function byActivity(a: TicketRecord, b: TicketRecord) {
   if (a.updatedAt !== b.updatedAt) return a.updatedAt < b.updatedAt ? 1 : -1;
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
@@ -214,6 +220,14 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     },
     async findAttachment(id) {
       return (await load()).attachments.find((item) => item.id === id) ?? null;
+    },
+    async nthRecentTicketAt(userId, sinceIso, n) {
+      return nthNewest((await load()).tickets.filter((item) => item.userId === userId).map((item) => item.createdAt), sinceIso, n);
+    },
+    async nthRecentLearnerMessageAt(userId, sinceIso, n) {
+      const store = await load();
+      const own = new Set(store.tickets.filter((item) => item.userId === userId).map((item) => item.id));
+      return nthNewest(store.messages.filter((item) => item.authorKind === "learner" && own.has(item.ticketId)).map((item) => item.createdAt), sinceIso, n);
     }
   };
 }
@@ -450,6 +464,16 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
     async findAttachment(id) {
       const row = (await select(`SELECT ${ATTACHMENT_COLUMNS} FROM helpdesk_attachments WHERE id = $1`, [id]))[0];
       return row ? attachmentFromRow(row) : null;
+    },
+    // Both use the existing indexes: helpdesk_tickets (user_id, ...) and helpdesk_ticket_messages (ticket_id, created_at, id).
+    async nthRecentTicketAt(userId, sinceIso, n) {
+      const row = (await select<{ created_at: Date }>("SELECT created_at FROM helpdesk_tickets WHERE user_id = $1 AND created_at > $2 ORDER BY created_at DESC OFFSET $3 LIMIT 1", [userId, sinceIso, n - 1]))[0];
+      return row ? iso(row.created_at) : null;
+    },
+    async nthRecentLearnerMessageAt(userId, sinceIso, n) {
+      const row = (await select<{ created_at: Date }>(`SELECT m.created_at FROM helpdesk_ticket_messages m JOIN helpdesk_tickets t ON t.id = m.ticket_id
+        WHERE t.user_id = $1 AND m.author_kind = 'learner' AND m.created_at > $2 ORDER BY m.created_at DESC OFFSET $3 LIMIT 1`, [userId, sinceIso, n - 1]))[0];
+      return row ? iso(row.created_at) : null;
     }
   };
 }

@@ -42,6 +42,8 @@ test("limits live in one place and match the spec", () => {
   assert.equal(HELPDESK_LIMITS.tagMax, 32);
   assert.equal(HELPDESK_LIMITS.tagsPerTicket, 10);
   assert.equal(HELPDESK_LIMITS.previewMax, 120);
+  assert.equal(HELPDESK_LIMITS.ticketsPerHour, 10);
+  assert.equal(HELPDESK_LIMITS.learnerMessagesPerHour, 60);
 });
 
 test("addendum: the four Figma enquiry types replace the old categories; nine attachment types, never html or svg", () => {
@@ -216,7 +218,7 @@ test("problem+json body follows RFC 9457 with a stable type URI per code", () =>
     invalid_request: 400, validation_failed: 400, too_many_attachments: 400, attachment_too_large: 413, attachment_type_unsupported: 415,
     idempotency_key_required: 400, unauthenticated: 401, invalid_token: 401, forbidden_origin: 403, not_found: 404,
     idempotency_conflict: 409, stale_ticket: 409, invalid_transition: 409, reopen_window_passed: 409, rating_window_passed: 409, already_rated: 409,
-    tag_limit_reached: 409, integration_disabled: 503, helpdesk_unavailable: 503, assistant_unavailable: 503
+    tag_limit_reached: 409, rate_limited: 429, integration_disabled: 503, helpdesk_unavailable: 503, assistant_unavailable: 503
   };
   assert.deepEqual(PROBLEM_STATUS, statuses);
 });

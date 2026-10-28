@@ -71,9 +71,11 @@ test("problem responses map to one learner message (401 / 404 / 409 / 413 / 415 
   assert.equal(problemMessageKey(413, undefined), "tooLarge", "a proxy 413 without a problem body");
   assert.equal(problemMessageKey(503, "helpdesk_unavailable"), "unavailable");
   assert.equal(problemMessageKey(0, undefined), "unavailable", "network failure");
+  assert.equal(problemMessageKey(429, "rate_limited"), "rateLimited");
+  assert.equal(problemMessageKey(429, undefined), "rateLimited", "a proxy 429 without a problem body");
   for (const locale of ["en-GB", "zh-CN"] as const) {
     const errors = getMessages(locale).helpdesk.errors;
-    for (const key of ["unauthenticated", "notFound", "conflict", "tooLarge", "unsupported", "tooMany", "invalid", "reopenWindow", "ratingWindow", "alreadyRated", "unavailable"] as const) assert.ok(errors[key], `${locale} ${key}`);
+    for (const key of ["unauthenticated", "notFound", "conflict", "tooLarge", "unsupported", "tooMany", "invalid", "reopenWindow", "ratingWindow", "alreadyRated", "rateLimited", "unavailable"] as const) assert.ok(errors[key], `${locale} ${key}`);
   }
 });
 

@@ -2,8 +2,9 @@
 // Order of checks for every command: ownership (404) -> idempotency replay /
 // conflict -> lazy auto-confirm -> expectedSequence (409 stale_ticket, except
 // across events the actor never sees, see ignoredByStaleCheck) -> transition
-// table (409 invalid_transition and friends) -> one atomic write -> learner
-// notification and email (failures are logged, never returned).
+// table (409 invalid_transition and friends) -> per-learner rate limit for
+// new tickets and learner messages (429 rate_limited) -> one atomic write ->
+// learner notification and email (failures are logged, never returned).
 // The idempotency payload hash covers the actor, the ticket and the command
 // content, not expectedSequence, so a retried request replays.
 import { createHash } from "node:crypto";
@@ -87,6 +88,8 @@ export type AttachmentContent = { bytes: Uint8Array; contentType: HelpdeskAttach
 
 const LEARNER_ATTACHMENT_URL = "/api/helpdesk/attachments/";
 const AGENT_ATTACHMENT_URL = "/api/integration/helpdesk/attachments/";
+
+const RATE_WINDOW_MS = 3_600_000;
 
 /** Tags commute, so a tag write that lost a sequence race is simply retried on the new sequence. */
 const TAG_RETRIES = 6;
@@ -305,6 +308,22 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     }
   }
 
+  /**
+   * Per-learner limits over a rolling hour, counted from the stored tickets
+   * and messages (no counter table). Requests racing each other can pass a
+   * limit by a few; it is a brake on floods, not an exact quota.
+   */
+  async function enforceRateLimit(kind: "tickets" | "messages", learnerId: string) {
+    const at = now();
+    const since = new Date(at.getTime() - RATE_WINDOW_MS).toISOString();
+    const limit = kind === "tickets" ? HELPDESK_LIMITS.ticketsPerHour : HELPDESK_LIMITS.learnerMessagesPerHour;
+    const oldest = kind === "tickets" ? await repository.nthRecentTicketAt(learnerId, since, limit) : await repository.nthRecentLearnerMessageAt(learnerId, since, limit);
+    if (!oldest) return;
+    const retryAfter = Math.max(1, Math.ceil((Date.parse(oldest) + RATE_WINDOW_MS - at.getTime()) / 1000));
+    log({ type: "helpdesk", event: "rate_limited", limit: kind, retryAfter });
+    throw new HelpdeskProblem("rate_limited", kind === "tickets" ? `You can open at most ${limit} enquiries an hour. Try again later.` : `You can send at most ${limit} messages an hour. Try again later.`, { retryAfter });
+  }
+
   async function load(ticketId: string, ownerId?: string): Promise<TicketAggregate> {
     const aggregate = await repository.findTicket(ticketId);
     if (!aggregate || (ownerId !== undefined && aggregate.ticket.userId !== ownerId)) throw new HelpdeskProblem("not_found", "No such ticket.");
@@ -407,6 +426,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     let message: MessageRecord | undefined;
     let attachments: AttachmentRecord[] = [];
     if (spec.message) {
+      if (spec.actor.kind === "learner" && spec.actor.id) await enforceRateLimit("messages", spec.actor.id);
       const messageId = uuidv7(at.getTime());
       attachments = await storeUploads(spec.message.files, ticket.id, messageId, at);
       message = {
@@ -472,6 +492,8 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     };
     const earlier = await replayTicket();
     if (earlier) return earlier;
+    await enforceRateLimit("tickets", learner.id);
+    await enforceRateLimit("messages", learner.id);
     const at = now();
     const ticketId = uuidv7(at.getTime());
     const messageId = uuidv7(at.getTime());

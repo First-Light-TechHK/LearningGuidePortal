@@ -58,5 +58,13 @@ export type HelpdeskRepository = {
    */
   markRead(ticketId: string, seenSequence: number | null): Promise<void>;
   listAutoConfirmDue(nowIso: string, userId?: string): Promise<TicketRecord[]>;
+  /**
+   * Rate limiting: createdAt of the n-th newest ticket this learner created
+   * after sinceIso, or null when there are fewer than n. Once that ticket is
+   * an hour old the learner is under the limit again.
+   */
+  nthRecentTicketAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
+  /** Rate limiting: the same for public messages this learner wrote on their own tickets (a ticket's first message included). */
+  nthRecentLearnerMessageAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
   findAttachment(id: string): Promise<AttachmentRecord | null>;
 };

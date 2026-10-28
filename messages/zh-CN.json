@@ -1729,6 +1729,7 @@
       "reopenWindow": "已超过 7 天追问期限，请提交新的问题。",
       "ratingWindow": "已超过评价期限。",
       "alreadyRated": "你已经评价过这个工单。",
+      "rateLimited": "一小时内提交的次数过多，请稍后再试。",
       "unavailable": "客服系统暂时不可用，请稍后再试。"
     }
   }

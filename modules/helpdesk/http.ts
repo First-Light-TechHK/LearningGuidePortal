@@ -16,6 +16,7 @@ export function problemResponse(error: unknown, scope: string): Response {
   const resolved = problem ?? new HelpdeskProblem("helpdesk_unavailable");
   const headers: Record<string, string> = { "Content-Type": "application/problem+json", "Cache-Control": NO_STORE };
   if (resolved.code === "invalid_token") headers["WWW-Authenticate"] = 'Bearer realm="learning-guide-helpdesk", error="invalid_token"';
+  if (resolved.code === "rate_limited" && typeof resolved.extra.retryAfter === "number") headers["Retry-After"] = String(resolved.extra.retryAfter);
   return new Response(JSON.stringify(problemBody(resolved)), { status: resolved.status, headers });
 }
 
