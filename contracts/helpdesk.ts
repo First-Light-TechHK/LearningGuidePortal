@@ -170,12 +170,17 @@ export type StudentProjection = {
   currentCourse: { id: string; title: string } | null;
 };
 
+/** Subscription states the BackOffice may receive (the live ones); Admin labels each of them. */
+export const SUBSCRIPTION_STATUSES = ["active", "cancel_at_period_end", "grace"] as const;
+/** Billing cycles the BackOffice may receive; Admin labels each of them. */
+export const BILLING_CYCLES = ["annual", "semiannual"] as const;
+
 /** BackOffice "Current Subscription Plan" (read-only; the order/payment owner owns the data). */
 export type SubscriptionProjection = {
   planName: string;
   /** From the plan term: 12 months = annual, 6 months = semiannual; null when the plan is gone. */
-  billingCycle: "annual" | "semiannual" | null;
-  status: "active" | "cancel_at_period_end" | "grace";
+  billingCycle: (typeof BILLING_CYCLES)[number] | null;
+  status: (typeof SUBSCRIPTION_STATUSES)[number];
   trial: boolean;
   /** Next renewal; null when the plan will not renew (cancelling, or grace). */
   renewalDate: string | null;

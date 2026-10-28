@@ -2,7 +2,7 @@
 // right panel (Figma 1324:2 "Student Information" / "Current Subscription
 // Plan"). Pure: it never writes, and it reads only what the account,
 // study-record and subscription owners already store.
-import type { SubscriptionProjection } from "@/contracts/helpdesk";
+import { SUBSCRIPTION_STATUSES, type SubscriptionProjection } from "@/contracts/helpdesk";
 import type { ProductCourse, ProductPlan, ProductStudyRecord, ProductSubscription, ProductUser } from "@/services/productStore";
 
 export type StudentSource = {
@@ -22,7 +22,7 @@ export type StudentDirectoryEntry = {
   subscription: SubscriptionProjection | null;
 };
 
-const LIVE_STATES = ["active", "cancel_at_period_end", "grace"] as const;
+const LIVE_STATES = SUBSCRIPTION_STATUSES;
 type LiveState = (typeof LIVE_STATES)[number];
 
 function liveUntil(subscription: StudentSource["subscriptions"][number]) {

@@ -1,0 +1,477 @@
+{
+  "$comment": [
+    "Helpdesk v1 wire contract between Portal and Admin (BackOffice), captured from a real local run of both apps on 2026-10-28 and anonymised.",
+    "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
+    "Change all copies together; each repo's tests check its own side against this file."
+  ],
+  "version": 1,
+  "enums": {
+    "ticketStatus": [
+      "OPEN",
+      "ASSIGNED",
+      "WAITING_USER",
+      "PENDING_CONFIRM",
+      "CLOSED",
+      "CANCELLED"
+    ],
+    "category": [
+      "technical_support",
+      "course_content",
+      "payments_subscriptions",
+      "other"
+    ],
+    "locale": [
+      "en-GB",
+      "zh-CN"
+    ],
+    "agentAction": [
+      "claim",
+      "propose_resolution",
+      "add_tag",
+      "remove_tag",
+      "mark_read"
+    ],
+    "attachmentContentType": [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/gif",
+      "application/pdf",
+      "text/plain",
+      "text/csv",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ],
+    "inlineAttachmentContentType": [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/gif"
+    ],
+    "subscriptionStatus": [
+      "active",
+      "cancel_at_period_end",
+      "grace"
+    ],
+    "billingCycle": [
+      "annual",
+      "semiannual"
+    ],
+    "suggestionOutcome": [
+      "solved",
+      "declined",
+      "edited"
+    ],
+    "agentProblemCode": {
+      "400": [
+        "invalid_request",
+        "validation_failed",
+        "idempotency_key_required"
+      ],
+      "401": [
+        "invalid_token"
+      ],
+      "404": [
+        "not_found"
+      ],
+      "409": [
+        "idempotency_conflict",
+        "stale_ticket",
+        "invalid_transition",
+        "tag_limit_reached"
+      ],
+      "503": [
+        "integration_disabled",
+        "helpdesk_unavailable"
+      ]
+    }
+  },
+  "adminToPortal": {
+    "auth": {
+      "header": "Authorization: Bearer <PORTAL_HELPDESK_TOKEN>",
+      "idempotencyKey": "UUID, required on every POST"
+    },
+    "listRequest": "/api/integration/helpdesk/tickets?status=needs_reply&category=payments_subscriptions&tag=refund&q=invoice&limit=30&cursor=opaque-cursor-from-portal",
+    "listResponse": {
+      "tickets": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000001",
+          "number": "LG-261028-0002",
+          "subject": "Invoice 中文 test",
+          "category": "payments_subscriptions",
+          "status": "WAITING_USER",
+          "createdAt": "2026-10-28T08:38:08.061Z",
+          "updatedAt": "2026-10-28T08:39:29.853Z",
+          "lastMessageAt": "2026-10-28T08:39:29.853Z",
+          "lastMessageBy": "agent",
+          "confirmDueAt": null,
+          "closedAt": null,
+          "sequence": 5,
+          "locale": "zh-CN",
+          "learner": {
+            "id": "user_fixture_learner",
+            "email": "learner@example.test",
+            "name": "Emily Carter"
+          },
+          "assignee": {
+            "id": "01a18100-0000-7000-8000-000000000002",
+            "name": "Alex Support"
+          },
+          "needsReply": false,
+          "contactEmail": "other@example.test",
+          "preview": "See files",
+          "unreadByAgent": true,
+          "tags": [
+            "refund"
+          ]
+        }
+      ],
+      "nextCursor": "opaque-cursor-from-portal",
+      "counts": {
+        "OPEN": 0,
+        "ASSIGNED": 0,
+        "WAITING_USER": 1,
+        "PENDING_CONFIRM": 0,
+        "CLOSED": 1,
+        "CANCELLED": 0,
+        "needs_reply": 0,
+        "all": 2
+      }
+    },
+    "detailResponse": {
+      "id": "01a18100-0000-7000-8000-000000000001",
+      "number": "LG-261028-0002",
+      "subject": "Invoice 中文 test",
+      "category": "payments_subscriptions",
+      "status": "WAITING_USER",
+      "createdAt": "2026-10-28T08:38:08.061Z",
+      "updatedAt": "2026-10-28T08:39:29.853Z",
+      "lastMessageAt": "2026-10-28T08:39:29.853Z",
+      "lastMessageBy": "agent",
+      "confirmDueAt": null,
+      "closedAt": null,
+      "sequence": 5,
+      "locale": "zh-CN",
+      "learner": {
+        "id": "user_fixture_learner",
+        "email": "learner@example.test",
+        "name": "Emily Carter",
+        "locale": "zh-CN"
+      },
+      "assignee": {
+        "id": "01a18100-0000-7000-8000-000000000002",
+        "name": "Alex Support"
+      },
+      "needsReply": false,
+      "contactEmail": "other@example.test",
+      "preview": "See files",
+      "unreadByAgent": true,
+      "tags": [
+        "refund"
+      ],
+      "suggestionId": null,
+      "student": {
+        "id": "user_fixture_learner",
+        "name": "Emily Carter",
+        "accountEmail": "learner@example.test",
+        "contactEmail": "other@example.test",
+        "joinedAt": "2026-10-28T08:32:19.715Z",
+        "totalEnquiries": 1,
+        "currentCourse": null
+      },
+      "subscription": {
+        "planName": "Epicureanism · PC · 6 months",
+        "billingCycle": "semiannual",
+        "status": "active",
+        "trial": false,
+        "renewalDate": "2027-04-28T08:39:01.859Z",
+        "validTo": "2027-04-28T08:39:01.859Z"
+      },
+      "closeReason": null,
+      "rating": null,
+      "followUpUntil": null,
+      "messages": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000003",
+          "authorKind": "learner",
+          "authorId": "user_fixture_learner",
+          "authorName": "Emily Carter",
+          "body": "See files",
+          "internal": false,
+          "createdAt": "2026-10-28T08:38:08.061Z",
+          "attachments": [
+            {
+              "id": "01a18100-0000-7000-8000-000000000004",
+              "fileName": "发票 Oct.pdf",
+              "contentType": "application/pdf",
+              "sizeBytes": 45,
+              "url": "/api/integration/helpdesk/attachments/01a18100-0000-7000-8000-000000000004"
+            },
+            {
+              "id": "01a18100-0000-7000-8000-000000000005",
+              "fileName": "data.csv",
+              "contentType": "text/csv",
+              "sizeBytes": 17,
+              "url": "/api/integration/helpdesk/attachments/01a18100-0000-7000-8000-000000000005"
+            }
+          ]
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000006",
+          "authorKind": "agent",
+          "authorId": "01a18100-0000-7000-8000-000000000002",
+          "authorName": "Alex Support",
+          "body": "Refund approved in Stripe.",
+          "internal": true,
+          "createdAt": "2026-10-28T08:39:29.495Z",
+          "attachments": []
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000007",
+          "authorKind": "agent",
+          "authorId": "01a18100-0000-7000-8000-000000000002",
+          "authorName": "Alex Support",
+          "body": "Your invoice is attached to your account now.",
+          "internal": false,
+          "createdAt": "2026-10-28T08:39:29.853Z",
+          "attachments": []
+        }
+      ],
+      "events": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000008",
+          "specversion": "1.0",
+          "source": "/portal/helpdesk",
+          "type": "com.ilovelearningguide.helpdesk.ticket.created",
+          "subject": "01a18100-0000-7000-8000-000000000001",
+          "time": "2026-10-28T08:38:08.061Z",
+          "datacontenttype": "application/json",
+          "data": {
+            "from_state": null,
+            "to_state": "OPEN",
+            "actor": {
+              "kind": "learner",
+              "id": "user_fixture_learner",
+              "name": "Emily Carter"
+            },
+            "message_id": "01a18100-0000-7000-8000-000000000003"
+          },
+          "sequence": 1
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000009",
+          "specversion": "1.0",
+          "source": "/portal/helpdesk",
+          "type": "com.ilovelearningguide.helpdesk.ticket.claimed",
+          "subject": "01a18100-0000-7000-8000-000000000001",
+          "time": "2026-10-28T08:38:23.205Z",
+          "datacontenttype": "application/json",
+          "data": {
+            "from_state": "OPEN",
+            "to_state": "ASSIGNED",
+            "actor": {
+              "kind": "agent",
+              "id": "01a18100-0000-7000-8000-000000000002",
+              "name": "Alex Support"
+            }
+          },
+          "sequence": 2
+        },
+        {
+          "id": "01a18100-0000-7000-8000-00000000000a",
+          "specversion": "1.0",
+          "source": "/portal/helpdesk",
+          "type": "com.ilovelearningguide.helpdesk.ticket.tag_added",
+          "subject": "01a18100-0000-7000-8000-000000000001",
+          "time": "2026-10-28T08:39:29.082Z",
+          "datacontenttype": "application/json",
+          "data": {
+            "from_state": "ASSIGNED",
+            "to_state": "ASSIGNED",
+            "actor": {
+              "kind": "agent",
+              "id": "01a18100-0000-7000-8000-000000000002",
+              "name": "Alex Support"
+            },
+            "tag": "refund"
+          },
+          "sequence": 3
+        },
+        {
+          "id": "01a18100-0000-7000-8000-00000000000b",
+          "specversion": "1.0",
+          "source": "/portal/helpdesk",
+          "type": "com.ilovelearningguide.helpdesk.ticket.internal_note_added",
+          "subject": "01a18100-0000-7000-8000-000000000001",
+          "time": "2026-10-28T08:39:29.495Z",
+          "datacontenttype": "application/json",
+          "data": {
+            "from_state": "ASSIGNED",
+            "to_state": "ASSIGNED",
+            "actor": {
+              "kind": "agent",
+              "id": "01a18100-0000-7000-8000-000000000002",
+              "name": "Alex Support"
+            },
+            "message_id": "01a18100-0000-7000-8000-000000000006"
+          },
+          "sequence": 4
+        },
+        {
+          "id": "01a18100-0000-7000-8000-00000000000c",
+          "specversion": "1.0",
+          "source": "/portal/helpdesk",
+          "type": "com.ilovelearningguide.helpdesk.ticket.agent_replied",
+          "subject": "01a18100-0000-7000-8000-000000000001",
+          "time": "2026-10-28T08:39:29.853Z",
+          "datacontenttype": "application/json",
+          "data": {
+            "from_state": "ASSIGNED",
+            "to_state": "WAITING_USER",
+            "actor": {
+              "kind": "agent",
+              "id": "01a18100-0000-7000-8000-000000000002",
+              "name": "Alex Support"
+            },
+            "message_id": "01a18100-0000-7000-8000-000000000007"
+          },
+          "sequence": 5
+        }
+      ],
+      "allowedActions": [
+        "reply",
+        "internal_note",
+        "propose_resolution"
+      ]
+    },
+    "messageRequest": {
+      "body": "Your invoice is attached to your account now.",
+      "internal": false,
+      "agent": {
+        "id": "01a18100-0000-7000-8000-000000000002",
+        "name": "Alex Support"
+      },
+      "expectedSequence": 5
+    },
+    "actionRequests": [
+      {
+        "action": "claim",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "expectedSequence": 1
+      },
+      {
+        "action": "propose_resolution",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "expectedSequence": 5
+      },
+      {
+        "action": "add_tag",
+        "tag": "Refund",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "expectedSequence": 3
+      },
+      {
+        "action": "remove_tag",
+        "tag": "refund",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "expectedSequence": 4
+      },
+      {
+        "action": "mark_read",
+        "agent": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        }
+      }
+    ],
+    "staleProblem": {
+      "type": "https://www.ilovelearningguide.com/problems/stale_ticket",
+      "title": "The ticket has changed",
+      "status": 409,
+      "detail": "This request was updated. Reload it and try again.",
+      "code": "stale_ticket",
+      "currentSequence": 5
+    },
+    "invalidTokenProblem": {
+      "status": 401,
+      "wwwAuthenticate": "Bearer realm=\"learning-guide-helpdesk\", error=\"invalid_token\"",
+      "code": "invalid_token"
+    },
+    "attachmentResponseHeaders": {
+      "image/png": {
+        "Content-Disposition": "inline; filename*=UTF-8''screenshot.png"
+      },
+      "text/csv": {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": "attachment; filename*=UTF-8''data.csv"
+      },
+      "application/pdf": {
+        "Content-Disposition": "attachment; filename*=UTF-8''%E5%8F%91%E7%A5%A8%20Oct.pdf"
+      }
+    }
+  },
+  "portalToAdmin": {
+    "auth": {
+      "header": "Authorization: Bearer <ADMIN_HELPDESK_TOKEN>"
+    },
+    "questionsRequest": "/api/integration/helpdesk/questions?locale=en-GB&featured=true",
+    "questionsResponse": {
+      "questions": [
+        {
+          "id": "01a18100-0000-7000-8000-00000000000d",
+          "category": "technical_support",
+          "question": "How do I reset my password?",
+          "answer": "1. Check your spam folder\nThe reset email can land there.\n2. Request a new link\nOpen https://www.ilovelearningguide.com/en-GB/forgot-password and try again."
+        }
+      ],
+      "etag": "\"bA5FoUm-D43QRPNhxUuNzqg8bs7\""
+    },
+    "suggestRequest": {
+      "learnerId": "user_fixture_learner",
+      "locale": "en-GB",
+      "category": "technical_support",
+      "subject": "Cannot reset my password",
+      "message": "The reset email never arrives."
+    },
+    "suggestResponse": {
+      "suggestion": {
+        "id": "01a18100-0000-7000-8000-00000000000e",
+        "qaId": "01a18100-0000-7000-8000-00000000000d",
+        "question": "How do I reset my password?",
+        "answer": "1. Check your spam folder\nThe reset email can land there.\n2. Request a new link\nOpen https://www.ilovelearningguide.com/en-GB/forgot-password and try again."
+      }
+    },
+    "suggestNoMatchResponse": {
+      "suggestion": null
+    },
+    "outcomeRequest": {
+      "outcome": "declined"
+    },
+    "outcomeResponse": {
+      "id": "01a18100-0000-7000-8000-00000000000e",
+      "outcome": "declined",
+      "changed": true
+    },
+    "invalidTokenProblem": {
+      "status": 401,
+      "wwwAuthenticate": "Bearer realm=\"helpdesk\", error=\"invalid_token\"",
+      "code": "invalid_token"
+    },
+    "disabledProblem": {
+      "status": 503,
+      "code": "integration_disabled"
+    }
+  }
+}
