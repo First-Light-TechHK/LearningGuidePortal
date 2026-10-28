@@ -52,6 +52,29 @@ Intended origin: `https://uat.ilovelearningguide.com` (admin: `https://admin.uat
 - Stripe sandbox webhook: `https://uat.ilovelearningguide.com/api/payment/webhook` (separate signing secret)
 - SMTP: same 163 mailbox as SIT; `SMTP_PASS` in Secrets Manager only
 
+### WeChat identity decision (accepted 2026-10-28)
+
+UAT uses its **own** WeChat website application end to end. Accepted identities:
+
+| Environment | AppID |
+|---|---|
+| DEV | `wx6ac8ba6cb18490b1` |
+| SIT | `wxe9a5c19908bc5057` |
+| UAT | `wxc39872246b27324c` |
+
+WeChat `openid` is scoped to the AppID, so the same person produces a different `providerSubject` per environment. Consequences that are now intended, not defects:
+
+- A WeChat account created in one environment can never sign in to another. There is no cross-environment identity.
+- UAT must not point `WECHAT_APP_ID` at DEV's application. The 28 October relay removal already deletes the old indirection (`services/wechatHandoff.ts`, `complete`, `redeem`, migration 011); `origin/uat` is merged with `origin/sit` so the code paths are identical.
+- Each environment's callback host must be authorised in its own application's 授权回调域: `www.ilovelearningguide.com`, `sit.ilovelearningguide.com`, `uat.ilovelearningguide.com`. This is console-only and cannot be verified from AWS.
+
+Cleanup performed with this decision (backups kept under `.backups/`, not committed):
+
+- UAT: 8 WeChat identities had been created under DEV's AppID while the relay was live, and were unreachable under `wxc398…`. 7 with zero orders/subscriptions/entitlements were deleted (`uat-dev-appid-accounts-20261028.json`, 32 rows). One (`jackcao4253@gmail.com`, 2 orders) was retained for commerce audit.
+- DEV: the `local-wechat-user` local-social-login fixture account was removed (`dev-local-wechat-fixture-20261028.json`, 3 rows). DEV now holds only real `wx6ac8…` identities.
+
+Acceptance for UAT-CASE-005 (returning WeChat sign-in) must use an identity created under `wxc398…`. Existing candidates: `mei.mcfarland@thedigitallearningguide.com`, `hlz33@hotmail.com`, `pqyydepj8@pugb.vip`.
+
 Until DNS is active, health and smoke checks use the App Runner service URL. `NEXT_PUBLIC_APP_URL` stays the UAT hostname so mail and OAuth match the intended origin once DNS is published.
 
 ## Rollback
