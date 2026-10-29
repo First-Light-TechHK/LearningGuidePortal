@@ -6,19 +6,27 @@
 // the learner's feedback is stored there first-wins and forwarded to Admin.
 // The BackOffice reads these rows through the ticket (aiAssist), never text a
 // browser sent. Any Admin failure or the timeout is a null reply.
+// v3 (helpdesk-v3-alternatives-rating): with no answer Admin may offer up to
+// three "You might be asking" FAQs (chosen in Admin's code, never by the
+// model); Portal passes them on, keeps them with the row, and stores the
+// learner's 1-5 rating of an answer (first wins) for the BackOffice.
 import { createHash } from "node:crypto";
 import {
   HELPDESK_LIMITS,
   HelpdeskProblem,
+  type AdminSuggestReply,
   type AdminSuggestRequest,
   type AssistFeedback,
+  type AssistantRatingResponse,
+  type HelpdeskAlternative,
   type AssistSource,
   type AssistantFeedbackResponse,
   type AssistantInput,
   type AssistantResponse,
   type HelpdeskSuggestion,
   type SuggestInput,
-  type SuggestionOutcome
+  type SuggestionOutcome,
+  type SuggestionResponse
 } from "@/contracts/helpdesk";
 import { textLength } from "@/contracts/helpdeskText";
 import { uuidv7 } from "@/lib/uuidv7";
@@ -42,11 +50,13 @@ const askInFlight = new Map<string, Promise<unknown>>();
 
 export type AssistantAdmin = {
   suggest(input: AdminSuggestRequest): Promise<HelpdeskSuggestion | null>;
+  /** v3: the answer and, without one, Admin's alternatives. Used when present; an Admin client without it means no alternatives. */
+  suggestReply?(input: AdminSuggestRequest): Promise<AdminSuggestReply>;
   reportOutcome(suggestionId: string, outcome: AssistFeedback): Promise<boolean>;
 };
 
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist">;
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "insertAiRating">;
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
@@ -56,6 +66,25 @@ export type AssistantDeps = {
 
 function clip(text: string, max: number) {
   return textLength(text) <= max ? text : [...text].slice(0, max).join("");
+}
+
+/**
+ * What Portal passes on (defensively, whatever Admin sent): none next to an
+ * answer, never the FAQ just shown (the chip asked), each FAQ once, at most
+ * HELPDESK_LIMITS.alternativesMax.
+ */
+function offered(reply: AdminSuggestReply, request: AdminSuggestRequest): HelpdeskAlternative[] {
+  if (reply.suggestion) return [];
+  const shown = request.faqId?.toLowerCase();
+  const found: HelpdeskAlternative[] = [];
+  for (const item of reply.alternatives ?? []) {
+    if (found.length >= HELPDESK_LIMITS.alternativesMax) break;
+    if (typeof item?.faqId !== "string" || typeof item.question !== "string" || !item.question) continue;
+    const faqId = item.faqId.toLowerCase();
+    if (faqId === shown || found.some((entry) => entry.faqId === faqId)) continue;
+    found.push({ faqId, question: clip(item.question, 200) });
+  }
+  return found;
 }
 
 function hashOf(value: unknown) {
@@ -68,14 +97,18 @@ export function createAssistantService(deps: AssistantDeps) {
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
   const timeoutMs = deps.timeoutMs ?? ADMIN_SUGGEST_TIMEOUT_MS;
 
-  /** Admin's answer, or null on no match, any failure or the timeout. */
-  async function askAdmin(request: AdminSuggestRequest): Promise<HelpdeskSuggestion | null> {
+  /** Admin's answer and alternatives; no answer and none on no match, any failure or the timeout. */
+  async function askAdmin(request: AdminSuggestRequest): Promise<SuggestionResponse> {
+    const nothing: SuggestionResponse = { suggestion: null, alternatives: [] };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); });
+    const late = new Promise<SuggestionResponse>((resolve) => { timer = setTimeout(() => resolve(nothing), timeoutMs); });
+    const asked: Promise<AdminSuggestReply> = deps.admin.suggestReply
+      ? deps.admin.suggestReply(request)
+      : deps.admin.suggest(request).then((suggestion) => ({ suggestion, alternatives: [] }));
     try {
-      return await Promise.race([deps.admin.suggest(request).catch((error: unknown) => {
+      return await Promise.race([asked.then((reply) => ({ suggestion: reply.suggestion, alternatives: offered(reply, request) })).catch((error: unknown) => {
         log({ type: "helpdesk", event: "assistant_admin_failed", source: request.source, error: error instanceof Error ? error.name : "unknown" });
-        return null;
+        return nothing;
       }), late]);
     } finally {
       clearTimeout(timer);
@@ -94,17 +127,19 @@ export function createAssistantService(deps: AssistantDeps) {
     return { runId: uuidv7(at.getTime()), parentRunId };
   }
 
-  function record(runId: string, learner: LearnerIdentity, source: AssistSource, locale: AssistRecord["locale"], question: string, reply: HelpdeskSuggestion | null, at: Date, key: string | null, hash: string | null): AssistRecord {
+  function record(runId: string, learner: LearnerIdentity, source: AssistSource, locale: AssistRecord["locale"], question: string, { suggestion: reply, alternatives }: SuggestionResponse, at: Date, key: string | null, hash: string | null): AssistRecord {
     return {
       // Admin answers with the run id; an older Admin may still send its own suggestion id.
       id: reply?.id ?? runId, learnerId: learner.id, source, locale, question: clip(question, HELPDESK_LIMITS.assistQuestionMax),
       faqId: reply?.faqId ?? null, faqQuestion: reply ? clip(reply.question, 200) : null, answer: reply ? clip(reply.answer, 4000) : null,
-      feedback: null, ticketId: null, clientEventId: key, payloadHash: hash, createdAt: at.toISOString(), feedbackDeliveredAt: null, feedbackAttemptedAt: null
+      feedback: null, ticketId: null, clientEventId: key, payloadHash: hash, createdAt: at.toISOString(), feedbackDeliveredAt: null, feedbackAttemptedAt: null,
+      alternatives: reply ? [] : alternatives
     };
   }
 
   function replyOf(row: AssistRecord): AssistantResponse {
-    return { id: row.id, reply: row.answer !== null && row.faqId !== null ? { id: row.id, faqId: row.faqId, question: row.faqQuestion ?? "", answer: row.answer } : null };
+    const reply = row.answer !== null && row.faqId !== null ? { id: row.id, faqId: row.faqId, question: row.faqQuestion ?? "", answer: row.answer } : null;
+    return { id: row.id, reply, alternatives: reply ? [] : row.alternatives };
   }
 
   async function replay(key: string, hash: string): Promise<AssistantResponse | null> {
@@ -204,13 +239,18 @@ export function createAssistantService(deps: AssistantDeps) {
     return { id: stored.id, feedback: stored.feedback };
   }
 
-  /** The submit-time check (1333:249): Admin's suggestion for the enquiry, logged with source submit. */
-  async function suggestForSubmit(learner: LearnerIdentity, input: SuggestInput): Promise<HelpdeskSuggestion | null> {
+  /**
+   * The submit-time check (1333:249): Admin's suggestion for the enquiry,
+   * logged with source submit, and without one Admin's alternatives (v3 §1;
+   * the page offers them before submitting). Never blocks: over the budget,
+   * on a failure or the timeout it is no answer and no alternatives.
+   */
+  async function checkForSubmit(learner: LearnerIdentity, input: SuggestInput): Promise<SuggestionResponse> {
     // Over the hourly budget the learner simply gets no suggestion: Admin is not asked and nothing is logged.
     const at = now();
     if (await repository.nthRecentAssistAt(learner.id, new Date(at.getTime() - RATE_WINDOW_MS).toISOString(), HELPDESK_LIMITS.submitChecksPerHour, SUBMIT_SOURCES)) {
       log({ type: "helpdesk", event: "rate_limited", limit: "submit_check" });
-      return null;
+      return { suggestion: null, alternatives: [] };
     }
     const run = await runIds(learner.id);
     const reply = await askAdmin({ learnerId: learner.id, locale: input.locale, source: "submit", category: input.category, subject: input.subject, message: input.message, ...run });
@@ -219,13 +259,34 @@ export function createAssistantService(deps: AssistantDeps) {
     return reply;
   }
 
+  /** The v2 view of checkForSubmit: the suggestion, or null. */
+  async function suggestForSubmit(learner: LearnerIdentity, input: SuggestInput): Promise<HelpdeskSuggestion | null> {
+    return (await checkForSubmit(learner, input)).suggestion;
+  }
+
+  /**
+   * POST /api/helpdesk/assistant/{id}/rating (v3 §2): the learner's 1-5
+   * rating of an answer they were shown (the submit suggestion or a chosen
+   * alternative; any of their answered rows). One per answer: the first is
+   * kept, a repeat with the same value answers with it, a different value is
+   * 409 answer_already_rated. Stored in Portal only; the BackOffice reads it
+   * on aiAssist.
+   */
+  async function rate(learner: LearnerIdentity, id: string, rating: number): Promise<AssistantRatingResponse> {
+    const row = await repository.findAssist(id);
+    if (!row || row.learnerId !== learner.id || row.answer === null) throw new HelpdeskProblem("not_found", "No such answer.");
+    const stored = await repository.insertAiRating({ runId: row.id, learnerId: learner.id, source: row.source, rating, createdAt: now().toISOString() });
+    if (stored !== rating) throw new HelpdeskProblem("answer_already_rated", "This answer was already rated.", { rating: stored });
+    return { id: row.id, rating: stored };
+  }
+
   /** What the learner did in the submit-time modal: stored first-wins, then forwarded (Admin being down does not lose it). */
   async function submitOutcome(learner: LearnerIdentity, id: string, outcome: SuggestionOutcome): Promise<AssistantFeedbackResponse & { delivered: boolean }> {
     const { stored, delivered } = await storeFeedback(learner, id, outcome, ["submit"]);
     return { id: stored.id, feedback: stored.feedback, delivered };
   }
 
-  return { ask, feedback, suggestForSubmit, submitOutcome, deliverOutcome, deliverPending };
+  return { ask, feedback, checkForSubmit, suggestForSubmit, submitOutcome, rate, deliverOutcome, deliverPending };
 }
 
 export type AssistantService = ReturnType<typeof createAssistantService>;

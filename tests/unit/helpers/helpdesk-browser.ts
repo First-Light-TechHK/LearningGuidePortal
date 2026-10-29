@@ -180,6 +180,7 @@ export const isSuggestion = (call: ApiCall) => call.method === "POST" && call.pa
 export const isOutcome = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/suggestions\/[^/]+\/outcome$/.test(call.path);
 export const isAssistant = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/assistant";
 export const isAssistantFeedback = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/[^/]+\/feedback$/.test(call.path);
+export const isAssistantRating = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/[^/]+\/rating$/.test(call.path);
 
 const LEARNER_COMMANDS: Array<[LearnerAllowedAction, Command]> = [["reply", "learner_reply"], ["cancel", "cancel"], ["confirm", "confirm"], ["reject", "reject"], ["close", "close"], ["rate", "rate"]];
 const HOUR = 3_600_000;

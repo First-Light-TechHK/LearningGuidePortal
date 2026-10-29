@@ -37,6 +37,8 @@ export const HELPDESK_LIMITS = {
   assistIdsPerTicket: 10,
   /** v2 §4a: only answers younger than this are linked to a new ticket. */
   assistLinkWindowHours: 24,
+  /** v3 §1: "You might be asking" questions shown when there is no answer (Admin sends 0-3). */
+  alternativesMax: 3,
   learnerIdMax: 128
 } as const;
 
@@ -237,7 +239,16 @@ export type HelpFaq = { id: string; category: FaqCategory; popular: boolean; que
 export type FaqFilter = { popular?: boolean; category?: FaqCategory | null; q?: string; limit?: number };
 /** One stored answer, shown verbatim. */
 export type HelpdeskSuggestion = { id: string; faqId: string; question: string; answer: string };
-export type SuggestionResponse = { suggestion: HelpdeskSuggestion | null };
+/**
+ * v3 §1 "You might be asking / 你可能想问": an FAQ the learner may pick when
+ * there is no answer. Admin chooses them in code (retrieval rank, else popular
+ * FAQs), never by asking the model; picking one asks it as a chip (faqId).
+ */
+export type HelpdeskAlternative = { faqId: string; question: string };
+/** POST /api/helpdesk/suggestions. alternatives (v3, additive) is [] whenever suggestion is set, and when rate limited or Admin failed. */
+export type SuggestionResponse = { suggestion: HelpdeskSuggestion | null; alternatives: HelpdeskAlternative[] };
+/** Admin's POST /api/integration/helpdesk/suggest answer as Portal reads it (contract v4). */
+export type AdminSuggestReply = SuggestionResponse;
 /** Where an assistant answer was shown: the submit-time modal, the chat panel, or a starter chip. */
 export const ASSIST_SOURCES = ["submit", "chat", "chip"] as const;
 export type AssistSource = (typeof ASSIST_SOURCES)[number];
@@ -256,11 +267,13 @@ export type SuggestInput = { category: TicketCategory; subject: string; message:
 export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string; runId: string; parentRunId: string | null };
 /** POST /api/helpdesk/assistant body (v2 §4b). */
 export type AssistantInput = { message: string; locale: HelpdeskLocale; faqId: string | null };
-/** id is the assist log row (link it with assistIds); reply null = show the fallback copy. */
-export type AssistantResponse = { id: string; reply: HelpdeskSuggestion | null };
+/** id is the assist log row (link it with assistIds); reply null = show the fallback copy, then the alternatives (v3, additive) as chips. */
+export type AssistantResponse = { id: string; reply: HelpdeskSuggestion | null; alternatives: HelpdeskAlternative[] };
+/** POST /api/helpdesk/assistant/{id}/rating answer (v3 §2): the rating stored for that answer. */
+export type AssistantRatingResponse = { id: string; rating: number };
 export type AssistantFeedbackResponse = { id: string; feedback: AssistFeedback | null };
 /** BackOffice AI block (v2 §3d / §4a). */
-export type AiAssistView = { id: string; source: AssistSource; question: string; faqId: string | null; faqQuestion: string | null; answer: string | null; feedback: AssistFeedback | null; createdAt: string };
+export type AiAssistView = { id: string; source: AssistSource; question: string; faqId: string | null; faqQuestion: string | null; answer: string | null; feedback: AssistFeedback | null; createdAt: string; /** v3 §2: the learner's 1-5 rating of this answer, or null (none given, or skipped). */ rating: number | null };
 
 // ---------------------------------------------------------------- problems
 
@@ -284,6 +297,7 @@ export const PROBLEM_STATUS = {
   reopen_window_passed: 409,
   rating_window_passed: 409,
   already_rated: 409,
+  answer_already_rated: 409,
   tag_limit_reached: 409,
   rate_limited: 429,
   integration_disabled: 503,
@@ -309,6 +323,7 @@ const PROBLEM_TITLES: Record<HelpdeskProblemCode, string> = {
   reopen_window_passed: "The follow-up window has passed",
   rating_window_passed: "The rating window has passed",
   already_rated: "The ticket has already been rated",
+  answer_already_rated: "This answer has already been rated",
   tag_limit_reached: "The ticket already has the maximum number of tags",
   rate_limited: "Too many requests",
   integration_disabled: "Helpdesk integration is not configured",
@@ -549,6 +564,13 @@ export function parseAssistantInput(value: unknown): AssistantInput {
     locale: oneOf(input, "locale", HELPDESK_LOCALES),
     faqId: optionalUuid(input, "faqId")
   };
+}
+
+/** POST /api/helpdesk/assistant/{id}/rating: { rating: 1..5 } (v3 §2). */
+export function parseAssistantRating(value: unknown): number {
+  const rating = record(value).rating;
+  if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) invalid("rating", "rating must be an integer from 1 to 5.");
+  return rating;
 }
 
 /** POST /api/helpdesk/assistant/{id}/feedback: { helpful: boolean }. */

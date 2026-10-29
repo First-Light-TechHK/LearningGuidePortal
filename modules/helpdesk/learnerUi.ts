@@ -1,7 +1,7 @@
 // Pure helpers for the learner Helpdesk pages (client-safe: type-only imports,
 // no Node APIs). Business rules stay on the server; these only shape input,
 // pick copy and lay out what the server returned.
-import type { HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
+import type { HelpdeskAlternative, HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
 import { hasControlCharacters, isBlankText, textLength } from "@/contracts/helpdeskText";
 
 /** questionMax: the chat question limit (code points). */
@@ -199,7 +199,7 @@ export function fillTemplate(template: string, values: Record<string, string | n
 
 export type ChatEntry =
   | { kind: "question"; text: string }
-  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null }
+  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null; /** v3: "You might be asking" chips under a fallback (left out when none). */ alternatives?: HelpdeskAlternative[] }
   | { kind: "error"; error: "rateLimited" | "error" };
 
 /** sessionStorage key of the chat transcript: per account, so a shared browser never shows one learner's chat to another. */
@@ -210,6 +210,14 @@ export function chatStorageKey(accountId: string): string {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isText = (value: unknown): value is string => typeof value === "string";
 
+function storedAlternatives(value: unknown): HelpdeskAlternative[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item: unknown) => {
+    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return isText(entry.faqId) && UUID.test(entry.faqId) && isText(entry.question) && entry.question ? [{ faqId: entry.faqId, question: entry.question }] : [];
+  });
+}
+
 function chatEntry(value: unknown): ChatEntry | null {
   if (!value || typeof value !== "object") return null;
   const entry = value as Record<string, unknown>;
@@ -218,7 +226,10 @@ function chatEntry(value: unknown): ChatEntry | null {
   if (entry.kind !== "answer" || !isText(entry.id) || !UUID.test(entry.id)) return null;
   const feedback = entry.feedback === "helpful" || entry.feedback === "not_helpful" ? entry.feedback : entry.feedback === null ? null : undefined;
   if (feedback === undefined) return null;
-  if (entry.reply === null) return { kind: "answer", id: entry.id, reply: null, feedback };
+  if (entry.reply === null) {
+    const alternatives = storedAlternatives(entry.alternatives);
+    return alternatives.length ? { kind: "answer", id: entry.id, reply: null, feedback, alternatives } : { kind: "answer", id: entry.id, reply: null, feedback };
+  }
   const reply = entry.reply as Record<string, unknown> | undefined;
   if (!reply || !isText(reply.id) || !isText(reply.faqId) || !isText(reply.question) || !isText(reply.answer)) return null;
   return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback };
@@ -241,6 +252,17 @@ export function settleTranscript(entries: ChatEntry[]): ChatEntry[] {
 export function assistIdsOf(entries: ChatEntry[], max = 10): string[] {
   const ids: string[] = [];
   for (const entry of [...entries].reverse()) if (entry.kind === "answer" && !ids.includes(entry.id)) ids.push(entry.id);
+  return ids.slice(0, max).reverse();
+}
+
+/**
+ * v3: what a ticket from the submit modal links — the chat answers and the
+ * answers of the alternatives the learner picked there — the newest max, once
+ * each (the server accepts at most 10 assistIds).
+ */
+export function linkedAssistIds(chatIds: string[], pickedIds: string[], max = 10): string[] {
+  const ids: string[] = [];
+  for (const id of [...chatIds, ...pickedIds].reverse()) if (!ids.includes(id)) ids.push(id);
   return ids.slice(0, max).reverse();
 }
 

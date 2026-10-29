@@ -7,7 +7,7 @@
 // a rotated token applies without a restart. The token is never logged.
 // Every call carries a W3C traceparent: a child of the learner request's
 // own (deps.traceparent) when that is valid, otherwise a new trace.
-import { FAQ_CATEGORIES, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type HelpFaq, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
+import { FAQ_CATEGORIES, HELPDESK_LIMITS, type AdminSuggestReply, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
 import { outgoingTraceparent } from "@/lib/traceparent";
 import { isUuid } from "@/lib/uuidv7";
 
@@ -114,6 +114,29 @@ function suggestion(value: unknown): HelpdeskSuggestion | null {
   const item = value as Record<string, unknown>;
   if (!isUuid(item.id) || !isUuid(item.faqId) || !isText(item.question) || !isText(item.answer)) return null;
   return { id: item.id.toLowerCase(), faqId: item.faqId.toLowerCase(), question: item.question, answer: item.answer };
+}
+
+/** Stored FAQ questions are at most 200 code points (helpdesk_assist_log.faq_question); an alternative is kept to the same. */
+const ALTERNATIVE_QUESTION_MAX = 200;
+
+/**
+ * v3 §1: Admin's "You might be asking" list, read tolerantly. An older Admin
+ * sends none; malformed items are dropped, each FAQ is kept once, at most
+ * HELPDESK_LIMITS.alternativesMax, and none next to an answer.
+ */
+function alternativesOf(value: unknown, answered: boolean): HelpdeskAlternative[] {
+  if (answered || !Array.isArray(value)) return [];
+  const found: HelpdeskAlternative[] = [];
+  for (const raw of value) {
+    if (found.length >= HELPDESK_LIMITS.alternativesMax) break;
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    if (!isUuid(item.faqId) || !isText(item.question) || !item.question.trim()) continue;
+    const faqId = item.faqId.toLowerCase();
+    if (found.some((entry) => entry.faqId === faqId)) continue;
+    found.push({ faqId, question: [...item.question].slice(0, ALTERNATIVE_QUESTION_MAX).join("") });
+  }
+  return found;
 }
 
 /** The list query in a fixed order (locale, popular, category, q, limit). */
@@ -245,13 +268,16 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   }
 
   /**
-   * One stored answer, or null (no match, not configured, error or the 4 s
-   * timeout). source says where it is shown: the submit-time modal, the chat
-   * panel, or a starter chip (with faqId, which Admin returns directly).
+   * One stored answer or none, and when there is none Admin's alternatives
+   * (v3; [] from an older Admin). No match, not configured, an error, a
+   * malformed body or the 4 s timeout are { suggestion: null, alternatives: [] }.
+   * source says where it is shown: the submit-time modal, the chat panel, or
+   * a starter chip (with faqId, which Admin returns directly).
    */
-  async function suggest(input: AdminSuggestRequest): Promise<HelpdeskSuggestion | null> {
+  async function suggestReply(input: AdminSuggestRequest): Promise<AdminSuggestReply> {
+    const nothing: AdminSuggestReply = { suggestion: null, alternatives: [] };
     const destination = target();
-    if (!destination) return null;
+    if (!destination) return nothing;
     try {
       // Fixed key order; optional fields only when set; the run ids always, last.
       const body: Record<string, string | null> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
@@ -263,15 +289,20 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       body.parentRunId = input.parentRunId;
       const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
-      const reply = JSON.parse(result.text) as { suggestion?: unknown };
-      if (reply.suggestion === null) return null;
+      const reply = JSON.parse(result.text) as { suggestion?: unknown; alternatives?: unknown };
+      if (reply.suggestion === null) return { suggestion: null, alternatives: alternativesOf(reply.alternatives, false) };
       const parsed = suggestion(reply.suggestion);
       if (!parsed) throw new Error("malformed");
-      return parsed;
+      return { suggestion: parsed, alternatives: [] };
     } catch (error) {
       failure("admin_suggest_failed", error);
-      return null;
+      return nothing;
     }
+  }
+
+  /** The v2 view of suggestReply: the stored answer, or null. */
+  async function suggest(input: AdminSuggestRequest): Promise<HelpdeskSuggestion | null> {
+    return (await suggestReply(input)).suggestion;
   }
 
   /** Report what the learner did with a suggestion; true when Admin accepted it. */
@@ -288,7 +319,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     }
   }
 
-  return { faqs, faq, suggest, reportOutcome };
+  return { faqs, faq, suggest, suggestReply, reportOutcome };
 }
 
 export type AdminHelpdeskClient = ReturnType<typeof createAdminHelpdeskClient>;

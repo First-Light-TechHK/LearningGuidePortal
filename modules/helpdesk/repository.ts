@@ -2,7 +2,7 @@
 // repositories/helpdeskRepository.ts (PostgreSQL, and a DEV-only local file
 // fallback). Every write is atomic: the ticket row, the optional message and
 // attachments, and exactly one event commit together or not at all.
-import type { AgentListQuery, AssistFeedback, AssistSource, HelpdeskLocale, TicketCounts } from "@/contracts/helpdesk";
+import type { AgentListQuery, AssistFeedback, AssistSource, HelpdeskAlternative, HelpdeskLocale, TicketCounts } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TicketAggregate, TicketRecord } from "./domain";
 
 export type IdempotencyRecord = { ticketId: string; payloadHash: string };
@@ -48,7 +48,12 @@ export type AssistRecord = {
   feedbackDeliveredAt: string | null;
   /** The last attempt to tell Admin (the sweep tries the least recently tried first). */
   feedbackAttemptedAt: string | null;
+  /** v3 §1: the "You might be asking" questions shown with a missing answer ([] when none), so a replay shows the same. */
+  alternatives: HelpdeskAlternative[];
 };
+
+/** v3 §2: the learner's rating of one answer they were shown (helpdesk_ai_ratings); runId is the assist log row. */
+export type AiRatingRecord = { runId: string; learnerId: string; source: AssistSource; rating: number; createdAt: string };
 
 export type TicketChange = {
   /** The full row after the change; its sequence must equal expectedSequence + 1. */
@@ -116,6 +121,10 @@ export type HelpdeskRepository = {
   conversationRootAssist(learnerId: string, sinceIso: string): Promise<string | null>;
   /** Rows with feedback Admin has not confirmed, created after sinceIso: never tried first, then least recently tried, then oldest. */
   listUndeliveredAssists(sinceIso: string, limit: number): Promise<AssistRecord[]>;
-  /** Rows linked to a ticket, oldest first. */
-  listAssistsByTicket(ticketId: string): Promise<AssistRecord[]>;
+  /** Rows linked to a ticket, oldest first, each with the learner's rating (v3 §2) or null. */
+  listAssistsByTicket(ticketId: string): Promise<Array<AssistRecord & { rating: number | null }>>;
+  // ---- v3 §2 AI service rating
+  /** Stores the rating unless that run already has one (first wins); returns the rating stored afterwards. */
+  insertAiRating(record: AiRatingRecord): Promise<number>;
+  findAiRating(runId: string): Promise<number | null>;
 };

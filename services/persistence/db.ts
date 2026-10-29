@@ -71,6 +71,7 @@ const SCHEMA_PROBE = `
     AND to_regclass('helpdesk_ticket_events') IS NOT NULL
     AND to_regclass('helpdesk_ticket_tags') IS NOT NULL
     AND to_regclass('helpdesk_assist_log') IS NOT NULL
+    AND to_regclass('helpdesk_ai_ratings') IS NOT NULL
     AND to_regclass('lesson_assessments') IS NOT NULL
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
@@ -108,6 +109,12 @@ const SCHEMA_PROBE = `
       SELECT 1 FROM information_schema.columns
       WHERE table_name = 'helpdesk_assist_log'
         AND column_name = 'feedback_attempted_at'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'alternatives'
         AND table_schema = ANY (current_schemas(false))
     )
   ) AS ready
@@ -293,6 +300,17 @@ CREATE INDEX IF NOT EXISTS helpdesk_assist_log_ticket_idx ON helpdesk_assist_log
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_delivered_at TIMESTAMPTZ;
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_attempted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS helpdesk_assist_log_undelivered_idx ON helpdesk_assist_log (feedback_attempted_at NULLS FIRST, created_at, id) WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL;
+
+-- Mirrors db/migrations/020_helpdesk_ai_ratings.sql (the AI service rating
+-- and the offered alternatives); same parity rule as 017 above.
+CREATE TABLE IF NOT EXISTS helpdesk_ai_ratings (
+  run_id UUID PRIMARY KEY REFERENCES helpdesk_assist_log(id),
+  learner_id TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('submit', 'chat', 'chip')),
+  rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  created_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;
 
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,

@@ -83,3 +83,19 @@ test("019 records when Admin confirmed an assist outcome; additive, repeatable, 
   assert.match(plain, /CREATE INDEX IF NOT EXISTS helpdesk_assist_log_undelivered_idx ON helpdesk_assist_log \(feedback_attempted_at NULLS FIRST, created_at, id\) WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL;/);
   assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'feedback_attempted_at'/, "the probe covers the newest column");
 });
+
+test("020 (v3) adds the AI answer ratings and the offered alternatives; additive, repeatable, mirrored by the bootstrap and probe; 017–019 untouched", async () => {
+  const migration = await readFile("db/migrations/020_helpdesk_ai_ratings.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS|ALTER TABLE)[\s\S]*?;/g) || [];
+  assert.equal(statements.length, 2);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  // One rating per answer: the run id (the assist log row the learner was shown) is the key, so the first rating wins.
+  assert.match(plain, /CREATE TABLE IF NOT EXISTS helpdesk_ai_ratings \( run_id UUID PRIMARY KEY REFERENCES helpdesk_assist_log\(id\), learner_id TEXT NOT NULL, source TEXT NOT NULL CHECK \(source IN \('submit', 'chat', 'chip'\)\), rating SMALLINT NOT NULL CHECK \(rating BETWEEN 1 AND 5\), created_at TIMESTAMPTZ NOT NULL \);/);
+  assert.match(plain, /ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;/, "a nullable column: existing rows read as no alternatives");
+  assert.match(bootstrap, /to_regclass\('helpdesk_ai_ratings'\) IS NOT NULL/);
+  assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'alternatives'/, "the probe covers the newest column");
+  for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /helpdesk_ai_ratings|alternatives/);
+});

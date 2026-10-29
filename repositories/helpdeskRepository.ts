@@ -9,7 +9,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { HelpdeskProblem, TICKET_STATUSES, type AgentListQuery, type TicketCounts } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TagRecord, TicketAggregate, TicketRecord } from "@/modules/helpdesk/domain";
 import { formatTicketNumber, needsReply, ticketDayKey } from "@/modules/helpdesk/domain";
-import type { AssistRecord, HelpdeskRepository, IdempotencyRecord, NewTicket, TicketChange, TicketListItem } from "@/modules/helpdesk/repository";
+import type { AiRatingRecord, AssistRecord, HelpdeskRepository, IdempotencyRecord, NewTicket, TicketChange, TicketListItem } from "@/modules/helpdesk/repository";
 import { ensureSchema, getPool } from "@/services/persistence/db";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isProductionEnvironment } from "@/services/runtimeConfig";
@@ -72,6 +72,7 @@ type LocalStore = {
   tags: TagRecord[];
   counters: Record<string, number>;
   assists: AssistRecord[];
+  aiRatings: AiRatingRecord[];
 };
 
 function tagsOf(store: LocalStore, ticketId: string) {
@@ -93,7 +94,10 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       for (const row of store.assists) {
         row.feedbackDeliveredAt ??= null;
         row.feedbackAttemptedAt ??= null;
+        // ... and before v3.
+        row.alternatives ??= [];
       }
+      store.aiRatings ||= [];
       for (const ticket of store.tickets) {
         ticket.contactEmail ??= ticket.userEmail;
         ticket.suggestionId ??= null;
@@ -104,7 +108,7 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       return store;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { tickets: [], messages: [], attachments: [], events: [], tags: [], counters: {}, assists: [] };
+      return { tickets: [], messages: [], attachments: [], events: [], tags: [], counters: {}, assists: [], aiRatings: [] };
     }
   }
 
@@ -306,7 +310,22 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         .slice(0, limit);
     },
     async listAssistsByTicket(ticketId) {
-      return (await load()).assists.filter((item) => item.ticketId === ticketId).sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1));
+      const store = await load();
+      return store.assists.filter((item) => item.ticketId === ticketId).sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1))
+        .map((item) => ({ ...item, rating: store.aiRatings.find((rating) => rating.runId === item.id)?.rating ?? null }));
+    },
+    insertAiRating(record) {
+      return exclusive(async () => {
+        const store = await load();
+        const stored = store.aiRatings.find((item) => item.runId === record.runId);
+        if (stored) return stored.rating;
+        store.aiRatings.push(record);
+        await save(store);
+        return record.rating;
+      });
+    },
+    async findAiRating(runId) {
+      return (await load()).aiRatings.find((item) => item.runId === runId)?.rating ?? null;
     }
   };
 }
@@ -333,14 +352,25 @@ function ticketFromRow(row: QueryResultRow): TicketRecord {
   };
 }
 
-const ASSIST_COLUMNS = "id::text, learner_id, source, locale, question, faq_id::text, faq_question, answer, feedback, ticket_id::text, client_event_id::text, payload_hash, created_at, feedback_delivered_at, feedback_attempted_at";
+const ASSIST_COLUMNS = "id::text, learner_id, source, locale, question, faq_id::text, faq_question, answer, feedback, ticket_id::text, client_event_id::text, payload_hash, created_at, feedback_delivered_at, feedback_attempted_at, alternatives";
+
+/** helpdesk_assist_log.alternatives (020): JSONB, null on rows written before v3. */
+function alternativesFromRow(value: unknown): AssistRecord["alternatives"] {
+  const list = typeof value === "string" ? JSON.parse(value) as unknown : value;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((item: unknown) => {
+    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return typeof entry.faqId === "string" && typeof entry.question === "string" ? [{ faqId: entry.faqId, question: entry.question }] : [];
+  });
+}
 
 function assistFromRow(row: QueryResultRow): AssistRecord {
   return {
     id: row.id, learnerId: row.learner_id, source: row.source, locale: row.locale, question: row.question, faqId: row.faq_id ?? null,
     faqQuestion: row.faq_question ?? null, answer: row.answer ?? null, feedback: row.feedback ?? null, ticketId: row.ticket_id ?? null,
     clientEventId: row.client_event_id ?? null, payloadHash: row.payload_hash ?? null, createdAt: iso(row.created_at),
-    feedbackDeliveredAt: isoOrNull(row.feedback_delivered_at), feedbackAttemptedAt: isoOrNull(row.feedback_attempted_at)
+    feedbackDeliveredAt: isoOrNull(row.feedback_delivered_at), feedbackAttemptedAt: isoOrNull(row.feedback_attempted_at),
+    alternatives: alternativesFromRow(row.alternatives)
   };
 }
 
@@ -582,9 +612,9 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       return row ? iso(row.created_at) : null;
     },
     async insertAssist(record) {
-      const rows = await select(`INSERT INTO helpdesk_assist_log (id, learner_id, source, locale, question, faq_id, faq_question, answer, feedback, ticket_id, client_event_id, payload_hash, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING RETURNING id`,
-      [record.id, record.learnerId, record.source, record.locale, record.question, record.faqId, record.faqQuestion, record.answer, record.feedback, record.ticketId, record.clientEventId, record.payloadHash, record.createdAt]);
+      const rows = await select(`INSERT INTO helpdesk_assist_log (id, learner_id, source, locale, question, faq_id, faq_question, answer, feedback, ticket_id, client_event_id, payload_hash, created_at, alternatives)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb) ON CONFLICT DO NOTHING RETURNING id`,
+      [record.id, record.learnerId, record.source, record.locale, record.question, record.faqId, record.faqQuestion, record.answer, record.feedback, record.ticketId, record.clientEventId, record.payloadHash, record.createdAt, record.alternatives.length ? JSON.stringify(record.alternatives) : null]);
       return rows.length ? "inserted" : "duplicate";
     },
     async findAssist(id) {
@@ -622,7 +652,20 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         ORDER BY feedback_attempted_at ASC NULLS FIRST, created_at, id LIMIT $2`, [sinceIso, limit])).map(assistFromRow);
     },
     async listAssistsByTicket(ticketId) {
-      return (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE ticket_id = $1 ORDER BY created_at, id`, [ticketId])).map(assistFromRow);
+      const columns = ASSIST_COLUMNS.split(", ").map((column) => `l.${column}`).join(", ");
+      return (await select(`SELECT ${columns}, r.rating FROM helpdesk_assist_log l LEFT JOIN helpdesk_ai_ratings r ON r.run_id = l.id
+        WHERE l.ticket_id = $1 ORDER BY l.created_at, l.id`, [ticketId])).map((row) => ({ ...assistFromRow(row), rating: row.rating === null || row.rating === undefined ? null : Number(row.rating) }));
+    },
+    async insertAiRating(record) {
+      // First rating wins: the run id is the key; then read what is stored.
+      await select(`INSERT INTO helpdesk_ai_ratings (run_id, learner_id, source, rating, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (run_id) DO NOTHING`,
+        [record.runId, record.learnerId, record.source, record.rating, record.createdAt]);
+      const row = (await select<{ rating: number }>("SELECT rating FROM helpdesk_ai_ratings WHERE run_id = $1", [record.runId]))[0];
+      return Number(row.rating);
+    },
+    async findAiRating(runId) {
+      const row = (await select<{ rating: number }>("SELECT rating FROM helpdesk_ai_ratings WHERE run_id = $1", [runId]))[0];
+      return row ? Number(row.rating) : null;
     }
   };
 }

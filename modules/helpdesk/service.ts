@@ -213,8 +213,8 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
   }
 
   /** v2 §4a: what Portal stored when the answer was shown — never text a client sent. */
-  function aiAssistView(row: AssistRecord): AiAssistView {
-    return { id: row.id, source: row.source, question: row.question, faqId: row.faqId, faqQuestion: row.faqQuestion, answer: row.answer, feedback: row.feedback, createdAt: row.createdAt };
+  function aiAssistView(row: AssistRecord & { rating: number | null }): AiAssistView {
+    return { id: row.id, source: row.source, question: row.question, faqId: row.faqId, faqQuestion: row.faqQuestion, answer: row.answer, feedback: row.feedback, createdAt: row.createdAt, rating: row.rating };
   }
 
   async function studentProjection(ticket: TicketRecord): Promise<{ student: StudentProjection; subscription: SubscriptionProjection | null }> {

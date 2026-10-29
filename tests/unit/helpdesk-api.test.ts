@@ -18,7 +18,7 @@ const TOKEN = "local-test-helpdesk-token-0123456789";
 const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
 type Params = { params: Promise<Record<string, string>> };
 type Handler = (request: Request, context: Params) => Promise<Response>;
-type Routes = Record<"tickets" | "ticket" | "messages" | "actions" | "attachment" | "agentTickets" | "agentTicket" | "agentMessages" | "agentActions" | "agentAttachment" | "assistant" | "assistantFeedback" | "suggestions" | "outcome", Record<string, Handler>>;
+type Routes = Record<"tickets" | "ticket" | "messages" | "actions" | "attachment" | "agentTickets" | "agentTicket" | "agentMessages" | "agentActions" | "agentAttachment" | "assistant" | "assistantFeedback" | "assistantRating" | "suggestions" | "outcome", Record<string, Handler>>;
 let directory = "";
 let routes: Routes;
 let learnerCookie = "";
@@ -63,6 +63,7 @@ before(async () => {
     agentAttachment: await import("../../app/api/integration/helpdesk/attachments/[id]/route"),
     assistant: await import("../../app/api/helpdesk/assistant/route"),
     assistantFeedback: await import("../../app/api/helpdesk/assistant/[id]/feedback/route"),
+    assistantRating: await import("../../app/api/helpdesk/assistant/[id]/rating/route"),
     suggestions: await import("../../app/api/helpdesk/suggestions/route"),
     outcome: await import("../../app/api/helpdesk/suggestions/[id]/outcome/route")
   } as unknown as Routes;
@@ -417,6 +418,7 @@ let adminCalls: AdminCall[] = [];
 let adminMode: "ok" | "down" | "slow" = "ok";
 const ADMIN_TOKEN = "local-test-admin-helpdesk-token";
 const FAQ = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password.", updatedAt: "2026-10-28T08:30:00.000Z" };
+const ALTERNATIVE = { faqId: FAQ.id, question: FAQ.question };
 let suggestionSeq = 0;
 const suggestionFor = () => ({ id: `0192d4f0-7b6a-7c3e-9a10-${String(++suggestionSeq).padStart(12, "0")}`, faqId: FAQ.id, question: FAQ.question, answer: FAQ.answer });
 
@@ -436,7 +438,9 @@ async function startAdmin() {
     if (call.method === "POST" && call.url === "/api/integration/helpdesk/suggest") {
       const body = JSON.parse(call.body) as { subject?: string; message: string; faqId?: string };
       const hit = body.faqId === FAQ.id || /password/i.test(`${body.subject ?? ""} ${body.message}`);
-      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: hit ? suggestionFor() : null }));
+      // v4 of the contract: no answer for an "account" question comes with "You might be asking" alternatives.
+      const alternatives = !hit && /account/i.test(`${body.subject ?? ""} ${body.message}`) ? [ALTERNATIVE] : undefined;
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: hit ? suggestionFor() : null, ...(alternatives ? { alternatives } : {}) }));
       return;
     }
     if (call.method === "POST" && /^\/api\/integration\/helpdesk\/suggestions\/[^/]+\/outcome$/.test(call.url)) { response.writeHead(204).end(); return; }
@@ -470,7 +474,7 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie, traceparent: INCOMING }), ctx());
   assertContinues(adminCalls.at(-1)!.traceparent, "the suggestions route");
   const none = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Refund", message: "money back" }, cookie: learnerCookie }), ctx());
-  assert.deepEqual(await none.json(), { suggestion: null });
+  assert.deepEqual(await none.json(), { suggestion: null, alternatives: [] });
   const ticketsBefore = (await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length;
 
   await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" } }), ctx({ id: suggestion.id })), 401, "unauthenticated");
@@ -487,7 +491,7 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   adminMode = "down";
   const failed = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
   assert.equal(failed.status, 200);
-  assert.deepEqual(await failed.json(), { suggestion: null }, "an Admin failure means: create the ticket directly");
+  assert.deepEqual(await failed.json(), { suggestion: null, alternatives: [] }, "an Admin failure means: create the ticket directly");
   adminMode = "ok";
   const second = (await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json()).suggestion as { id: string };
   adminMode = "down";
@@ -520,12 +524,12 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   const started = Date.now();
   const slow = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
   const elapsed = Date.now() - started;
-  assert.deepEqual(await slow.json(), { suggestion: null });
+  assert.deepEqual(await slow.json(), { suggestion: null, alternatives: [] });
   assert.ok(elapsed >= 3_500 && elapsed < 5_500, `4 s timeout, took ${elapsed} ms`);
   adminMode = "ok";
 
   delete process.env.ADMIN_HELPDESK_TOKEN;
-  assert.deepEqual(await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json(), { suggestion: null });
+  assert.deepEqual(await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json(), { suggestion: null, alternatives: [] });
 });
 
 test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers, fallback null, replay, 30/hour then 429 with Retry-After", async (t) => {
@@ -628,4 +632,58 @@ test("agent flag / unflag and the flagged / learnerId list filters over HTTP", a
   assert.equal((await unflagged.json()).flagged, false);
   const learnerView = await (await routes.ticket.GET(learnerRequest(`/api/helpdesk/tickets/${ticket.id}`, { cookie: learnerCookie }), ctx({ id: ticket.id }))).json();
   assert.equal(learnerView.timeline.some((item: { type: string }) => item.type === "flagged" || item.type === "unflagged"), false);
+});
+
+test("v3: the submit check and the chat pass on Admin's alternatives; rating an answer is own-only, first wins, 409 on a different value, RFC 9457 errors", async (t) => {
+  await startAdmin();
+  t.after(() => new Promise<void>((resolve) => { admin.closeAllConnections(); admin.close(() => resolve()); }));
+  adminCalls = [];
+  // A learner of its own: the other tests have used up their hourly budgets.
+  const user = await store.registerUser({ email: "helpdesk-rater@example.test", password: "password1", nickname: "Rae Rater" });
+  await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
+  const learnerCookie = (await store.createSession(user.id)).token;
+  const enquiry = { category: "technical_support", subject: "Cannot open my account", message: "It just spins", locale: "en-GB" };
+  const offered = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
+  assert.equal(offered.status, 200);
+  assert.deepEqual(await offered.json(), { suggestion: null, alternatives: [ALTERNATIVE] });
+  const answered = await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Forgot my password" }, cookie: learnerCookie }), ctx())).json() as { suggestion: { id: string }; alternatives: unknown[] };
+  assert.deepEqual(answered.alternatives, []);
+
+  const ask = (json: unknown) => routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json, cookie: learnerCookie, key: randomUUID() }), ctx());
+  const fallback = await (await ask({ message: "my account is locked", locale: "en-GB" })).json() as { id: string; reply: null; alternatives: unknown[] };
+  assert.equal(fallback.reply, null);
+  assert.deepEqual(fallback.alternatives, [ALTERNATIVE]);
+  const chip = await (await ask({ message: ALTERNATIVE.question, locale: "en-GB", faqId: ALTERNATIVE.faqId })).json() as { id: string; reply: { faqId: string }; alternatives: unknown[] };
+  assert.equal(chip.reply.faqId, FAQ.id);
+  assert.deepEqual(chip.alternatives, []);
+
+  const rate = (id: string, json: unknown, init: { cookie?: string; key?: boolean; origin?: string } = {}) => routes.assistantRating.POST(learnerRequest(`/api/helpdesk/assistant/${id}/rating`, { json, cookie: init.cookie === undefined ? learnerCookie : init.cookie || undefined, key: init.key === false ? undefined : randomUUID(), origin: init.origin }), ctx({ id }));
+  const suggestionId = answered.suggestion.id;
+  await problem(await rate(suggestionId, { rating: 5 }, { cookie: "" }), 401, "unauthenticated");
+  await problem(await rate(suggestionId, { rating: 5 }, { origin: "https://evil.example" }), 403, "forbidden_origin");
+  await problem(await rate(suggestionId, { rating: 5 }, { key: false }), 400, "idempotency_key_required");
+  await problem(await rate(suggestionId, { rating: 6 }), 400, "validation_failed");
+  await problem(await rate("nope", { rating: 5 }), 404, "not_found");
+  await problem(await rate(suggestionId, { rating: 5 }, { cookie: strangerCookie }), 404, "not_found");
+  await problem(await rate(fallback.id, { rating: 5 }), 404, "not_found");
+  const first = await rate(suggestionId, { rating: 5 });
+  assert.equal(first.status, 200, await first.clone().text());
+  assert.equal(first.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await first.json(), { id: suggestionId, rating: 5 });
+  assert.deepEqual(await (await rate(suggestionId, { rating: 5 })).json(), { id: suggestionId, rating: 5 }, "idempotent");
+  const conflict = await problem(await rate(suggestionId, { rating: 2 }), 409, "answer_already_rated");
+  assert.equal(conflict.rating, 5);
+  assert.deepEqual(await (await rate(chip.id, { rating: 3 })).json(), { id: chip.id, rating: 3 }, "a chosen alternative's answer is rated on its own");
+  assert.ok(!adminCalls.some((call) => call.url.includes("/rating")), "ratings stay in Portal");
+
+  // The BackOffice reads the rating on the AI blocks of the ticket that links the answers.
+  process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
+  const form = ticketForm({ ...createFields, subject: "Rated answers" });
+  form.append("assistIds", fallback.id);
+  form.append("assistIds", chip.id);
+  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: form, key: randomUUID(), cookie: learnerCookie }), ctx());
+  assert.equal(created.status, 201, await created.clone().text());
+  const ticketId = (await created.json()).id as string;
+  const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticketId}`), ctx({ id: ticketId }))).json();
+  assert.deepEqual(detail.aiAssist.map((item: { id: string; rating: number | null }) => [item.id, item.rating]), [[fallback.id, null], [chip.id, 3]]);
 });

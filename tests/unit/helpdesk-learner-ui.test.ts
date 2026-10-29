@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, parseCreateTicketInput, isContactEmail, type TicketDetail } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { helpdeskUiConfig } from "../../modules/helpdesk/learnerUiConfig";
-import { assistIdsOf, chatStorageKey, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, settleTranscript, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
+import { assistIdsOf, chatStorageKey, conversationItems, linkedAssistIds, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, settleTranscript, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
 
 const config = helpdeskUiConfig();
 
@@ -251,4 +251,26 @@ test("a transcript read back after a reload: a trailing unanswered question gets
   const answered = [question, { kind: "answer" as const, id: "01a18100-0000-7000-8000-0000000000a1", reply: null, feedback: null }];
   assert.deepEqual(settleTranscript(answered), answered);
   assert.deepEqual(settleTranscript([]), []);
+});
+
+test("v3: a stored chat answer keeps its alternatives (well-formed ones only); older transcripts read as none", async () => {
+  const id = "01a18100-0000-7000-8000-0000000000a1";
+  const alternatives = [{ faqId: "01a18100-0000-7000-8000-0000000000d1", question: "How do I reset my password?" }];
+  const entries = readTranscript(JSON.stringify([
+    { kind: "answer", id, reply: null, feedback: null, alternatives: [...alternatives, { faqId: "nope", question: "x" }, { faqId: alternatives[0].faqId }, "junk"] },
+    { kind: "answer", id, reply: null, feedback: null },
+    { kind: "answer", id, reply: null, feedback: null, alternatives: "nope" }
+  ]));
+  assert.deepEqual(entries, [
+    { kind: "answer", id, reply: null, feedback: null, alternatives },
+    { kind: "answer", id, reply: null, feedback: null },
+    { kind: "answer", id, reply: null, feedback: null }
+  ]);
+});
+
+test("v3: the enquiry links the chat answers and the chosen alternatives' answers, newest 10, once each", () => {
+  const chatIds = Array.from({ length: 10 }, (_, index) => `01a18100-0000-7000-8000-0000000000${String(index).padStart(2, "0")}`);
+  assert.deepEqual(linkedAssistIds(chatIds, ["01a18100-0000-7000-8000-0000000000e1"]), [...chatIds.slice(1), "01a18100-0000-7000-8000-0000000000e1"]);
+  assert.deepEqual(linkedAssistIds(chatIds.slice(0, 2), [chatIds[1], "01a18100-0000-7000-8000-0000000000e1"]), [chatIds[0], chatIds[1], "01a18100-0000-7000-8000-0000000000e1"]);
+  assert.deepEqual(linkedAssistIds([], []), []);
 });

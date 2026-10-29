@@ -377,7 +377,7 @@ test("ticket create links the learner's own, unlinked, < 24 h old assist rows (a
   assert.deepEqual(detail.aiAssist.map((item) => item.id), [chat.response.id, fallback.response.id, submit.id]);
   assert.deepEqual(detail.aiAssist[0], {
     id: chat.response.id, source: "chat", question: "I forgot my password", faqId: FAQ_ID, faqQuestion: "How do I reset my password?",
-    answer: "Open **Sign in**, then Forgot password.", feedback: "helpful", createdAt: "2026-10-29T06:00:00.001Z"
+    answer: "Open **Sign in**, then Forgot password.", feedback: "helpful", createdAt: "2026-10-29T06:00:00.001Z", rating: null
   });
   assert.equal(detail.aiAssist[1].answer, null);
   assert.equal(detail.aiAssist[2].feedback, "declined");

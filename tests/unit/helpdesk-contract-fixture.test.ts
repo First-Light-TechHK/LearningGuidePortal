@@ -7,7 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { SESSION_COOKIE } from "../../services/productAuth";
 import {
-  AGENT_ACTIONS, ASSIST_FEEDBACK, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
+  AGENT_ACTIONS, ASSIST_FEEDBACK, HELPDESK_LIMITS, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
   SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentListQuery, parseAgentMessageInput, problemBody
 } from "../../contracts/helpdesk";
 import { createAdminHelpdeskClient } from "../../modules/helpdesk/adminClient";
@@ -24,7 +24,7 @@ type Fixture = {
   adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json; detailResponse: Json & { subscription: Json }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
   portalToAdmin: Record<string, Json> & {
     faqsRequest: string; faqsSearchRequest: string; faqsResponse: { faqs: Json[]; etag: string }; faqRequest: string; faqResponse: Json;
-    suggestRequest: Record<string, string | null>; suggestChatRequest: Record<string, string | null>; suggestChipRequest: Record<string, string | null>; traceparentHeader: string; suggestResponse: { suggestion: Json };
+    suggestRequest: Record<string, string | null>; suggestChatRequest: Record<string, string | null>; suggestChipRequest: Record<string, string | null>; traceparentHeader: string; suggestResponse: { suggestion: Json; alternatives: Json[] }; suggestNoMatchResponse: { suggestion: Json; alternatives: Json[] }; suggestAlternativesResponse: { suggestion: Json; alternatives: Json[] };
     outcomeRequest: Json; helpfulOutcomeRequest: Json; outcomeResponse: Json;
   };
 };
@@ -89,7 +89,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "e0bd7971609bc6059b2c55f0e2ca54d77b0cb9cb63c88fc88ae16687784a79ad";
+const FIXTURE_SHA256 = "c62c2f56f7fcbcd1090b9c8a8da0dfe93ad2aa795994a8a031c97915884ff4e8";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -248,6 +248,14 @@ test("Portal's Admin client sends the contract's requests and reads the contract
     replies.push(new Response(JSON.stringify({ ...p.outcomeResponse as object, outcome: "helpful" }), { status: 200 }));
     assert.equal(await client.reportOutcome(suggestionId, "helpful"), true);
     assert.deepEqual(sent[8].body, p.helpfulOutcomeRequest);
+
+    // v4: "You might be asking" alternatives, read as the contract sends them (only when there is no answer).
+    for (const response of [p.suggestResponse, p.suggestNoMatchResponse, p.suggestAlternativesResponse]) {
+      replies.push(new Response(JSON.stringify(response), { status: 200 }));
+      assert.deepEqual(await client.suggestReply(p.suggestRequest as unknown as Parameters<typeof client.suggest>[0]), response);
+    }
+    assert.equal(p.suggestAlternativesResponse.suggestion, null);
+    assert.ok(p.suggestAlternativesResponse.alternatives.length > 0 && p.suggestAlternativesResponse.alternatives.length <= HELPDESK_LIMITS.alternativesMax);
   } finally {
     delete process.env.ADMIN_HELPDESK_BASE_URL;
     delete process.env.ADMIN_HELPDESK_TOKEN;

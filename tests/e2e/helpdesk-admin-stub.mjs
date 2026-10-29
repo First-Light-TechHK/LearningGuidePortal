@@ -5,7 +5,11 @@
 //   GET  /api/integration/helpdesk/faqs?locale=&popular=&category=&q=&limit=   published FAQs, popular first
 //   GET  /api/integration/helpdesk/faqs/:id?locale=                         one FAQ or 404
 //   POST /api/integration/helpdesk/suggest      chip (faqId) → that FAQ; chat / submit → a match on the words, else null;
-//                                               the suggestion id is the runId Portal sent; the traceparent header is recorded
+//                                               the suggestion id is the runId Portal sent; the traceparent header is recorded.
+//                                               Contract v4: alternatives ("You might be asking") only with no answer —
+//                                               for an "account" / "账号" question with no match, the account FAQs
+//                                               (as Admin's retrieval ranks them), never the chip just asked; [] otherwise
+//                                               (as Admin with no popular FAQs marked), so other submits still go straight through
 //   POST /api/integration/helpdesk/suggestions/:id/outcome   first outcome wins
 //   GET  /__health, /__suggestions, /__outcomes/:id    test inspection
 // Usage: node tests/e2e/helpdesk-admin-stub.mjs <port> <bearer-token>
@@ -34,6 +38,8 @@ const ROWS = [
   [8, "other", false, "Can I suggest a new feature?", "Yes. Choose **Other Enquiries** on the Contact Support form and tell us your idea.", "可以提出新功能建议吗？", "可以。在联系客服表单中选择**其他问题**，告诉我们你的想法。", ["feature", "建议"]]
 ];
 
+/** The FAQs an "account" question is closest to, in rank order (reset password, access courses, course materials). */
+const ACCOUNT_ALTERNATIVES = [1, 7, 2];
 const faqId = (n) => `0192f000-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const faqs = (locale) => ROWS.map(([n, category, popular, en, enAnswer, zh, zhAnswer, words]) => ({
   id: faqId(n), category, popular,
@@ -90,8 +96,12 @@ createServer(async (request, response) => {
     }
     // As Admin does: the run id Portal sent is the suggestion id.
     const suggestion = found ? { id: body.runId || randomUUID(), faqId: found.id, question: found.question, answer: found.answer } : null;
-    suggestions.push({ request: body, suggestion, traceparent: request.headers.traceparent ?? null });
-    return send(response, 200, { suggestion });
+    const asked = `${body.subject || ""} ${body.message || ""}`.toLowerCase();
+    const alternatives = !suggestion && /account|账号/.test(asked)
+      ? ACCOUNT_ALTERNATIVES.map((n) => list.find((faq) => faq.id === faqId(n))).filter((faq) => faq.id !== body.faqId).slice(0, 3).map((faq) => ({ faqId: faq.id, question: faq.question }))
+      : [];
+    suggestions.push({ request: body, suggestion, alternatives, traceparent: request.headers.traceparent ?? null });
+    return send(response, 200, { suggestion, alternatives });
   }
   const outcome = /^\/api\/integration\/helpdesk\/suggestions\/([^/]+)\/outcome$/.exec(url.pathname);
   if (request.method === "POST" && outcome) {

@@ -76,7 +76,7 @@ const bearer = { Authorization: `Bearer ${HELPDESK_E2E.portalToken}` };
 async function agentTicket(request: APIRequestContext, id: string) {
   const response = await request.get(`/api/integration/helpdesk/tickets/${id}`, { headers: bearer });
   expect(response.status()).toBe(200);
-  return await response.json() as { sequence: number; status: string; suggestionId: string | null; flagged: boolean; events: { type: string }[]; aiAssist: { id: string; source: string; question: string; faqId: string | null; faqQuestion: string | null; answer: string | null; feedback: string | null }[] };
+  return await response.json() as { sequence: number; status: string; suggestionId: string | null; flagged: boolean; events: { type: string }[]; aiAssist: { id: string; source: string; question: string; faqId: string | null; faqQuestion: string | null; answer: string | null; feedback: string | null; rating: number | null }[] };
 }
 
 async function agentAction(request: APIRequestContext, id: string, action: "flag" | "unflag") {
@@ -123,6 +123,11 @@ async function lastSuggestionId(request: APIRequestContext, subject: string) {
   const { suggestions } = await (await request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { subject: string }; suggestion: { id: string } | null }[] };
   const match = suggestions.filter((entry) => entry.request.subject === subject).at(-1);
   return match?.suggestion?.id ?? null;
+}
+
+/** v3 §2: the learner's rating of one of their answers, as the rating card sends it. */
+async function rateByApi(page: Page, id: string, rating: number) {
+  return page.request.post(`/api/helpdesk/assistant/${id}/rating`, { headers: { "Idempotency-Key": randomUUID(), Origin: origin(page) }, data: { rating } });
 }
 
 async function openSupport(page: Page, locale: Locale = "en-GB") {
@@ -300,7 +305,7 @@ test("submit without a suggestion creates a ticket with a pasted screenshot and 
   await context.close();
 });
 
-test("assistant suggestion: Yes reports solved and creates no ticket", async ({ browser }) => {
+test("assistant suggestion: Yes reports solved, creates no ticket and asks for a rating before going back", async ({ browser }) => {
   const { context, page } = await newLearner(browser, "en-GB", "Emily Carter");
   const text = copy("en-GB");
   await openSupport(page);
@@ -317,11 +322,22 @@ test("assistant suggestion: Yes reports solved and creates no ticket", async ({ 
   await expect(modal.locator(".helpdesk-avatar")).toHaveText("EC");
   await modal.getByRole("button", { name: text.assistant.yes }).click();
   await expect(page.getByText(text.assistant.thanksTitle)).toBeVisible();
+  // v3 §2: the rating card (5 stars, Skip) comes before going back to the account.
+  const card = modal.getByRole("group", { name: text.assistant.rateTitle });
+  await expect(card).toBeFocused();
+  await card.getByRole("button", { name: fillTemplate(text.assistant.rateStar, { n: 4 }) }).click();
+  await expect(modal.getByText(text.assistant.rated)).toBeVisible();
   await page.waitForURL("**/en-GB/account/my-learning", { timeout: 30_000 });
   const suggestionId = await lastSuggestionId(page.request, subject);
   expect(suggestionId).not.toBeNull();
   expect(await outcomeOf(page.request, suggestionId!)).toBe("solved");
   expect(await learnerTickets(page)).toEqual([]);
+  // One rating per answer: the same value again is fine, another is 409 answer_already_rated.
+  expect((await rateByApi(page, suggestionId!, 4)).status()).toBe(200);
+  const refused = await rateByApi(page, suggestionId!, 1);
+  expect(refused.status()).toBe(409);
+  expect(refused.headers()["content-type"]).toContain("application/problem+json");
+  expect(await refused.json()).toMatchObject({ code: "answer_already_rated", status: 409, rating: 4 });
   await context.close();
 });
 
@@ -634,6 +650,135 @@ test("attachments: wrong type, over 10 MB and a sixth file are refused in the pa
   await expect(page.locator("main").getByRole("alert")).toHaveText(text.errors.unsupported);
   await expect(page.getByLabel(text.subject)).not.toHaveValue("");
   expect(await learnerTickets(page)).toEqual([]);
+  await context.close();
+});
+
+// ---------------------------------------------------------------- v3: alternatives and the rating card (helpdesk-v3-alternatives-rating)
+// No Figma frame for these states (待视觉验收); the stub Admin offers the account FAQs for an "account" question with no answer.
+
+test("no answer: the modal offers “You might be asking”; a picked question answers, Yes creates no ticket and the rating card rates that answer", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN", "陈艾米");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const subject = `账号打不开 ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "zh-CN", { category: "technical_support", subject, message: "我的账号一直在转圈。" });
+  await page.getByRole("button", { name: text.submit }).click();
+  const modal = page.getByRole("dialog", { name: text.assistant.title });
+  const list = modal.getByRole("list", { name: text.assistant.alternativesTitle });
+  await expect(list.getByRole("button")).toHaveText(["如何重置密码？", "如何访问我的课程？", "如何访问我的课程资料？"]);
+  await expect(modal.getByRole("button", { name: text.assistant.noneOfThese })).toBeVisible();
+  await expect(modal).toContainText(subject);
+  expect(await learnerTickets(page)).toEqual([]);
+  // 待视觉验收: screenshots of the states that have no Figma frame.
+  await mkdir(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/portal-zh-CN-v3-alternatives.png` });
+  await list.getByRole("button", { name: "如何访问我的课程？" }).click();
+  const heading = modal.getByRole("heading", { name: "如何访问我的课程？" });
+  await expect(heading).toBeFocused();
+  await expect(modal.locator(".helpdesk-modal-answer-content")).toContainText("你可以在“我的学习”中找到已报名的课程");
+  const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { source: string; faqId?: string; subject?: string }; suggestion: { id: string } | null }[] };
+  const chip = suggestions.filter((entry) => entry.request.source === "chip").at(-1)!;
+  expect(chip.request.faqId).toBe("0192f000-0000-7000-8000-000000000007");
+  await modal.getByRole("button", { name: text.assistant.yes }).click();
+  const card = modal.getByRole("group", { name: text.assistant.rateTitle });
+  await expect(card).toBeFocused();
+  await page.screenshot({ path: `${SHOTS}/portal-zh-CN-v3-rating-card.png` });
+  await card.getByRole("button", { name: fillTemplate(text.assistant.rateStar, { n: 5 }) }).click();
+  await expect(modal.getByText(text.assistant.rated)).toBeVisible();
+  await page.waitForURL("**/zh-CN/account/my-learning", { timeout: 30_000 });
+  expect(await learnerTickets(page)).toEqual([]);
+  expect(await outcomeOf(page.request, chip.suggestion!.id)).toBe("helpful");
+  expect((await rateByApi(page, chip.suggestion!.id, 3)).status(), "the chip answer was rated 5 by the card").toBe(409);
+  await context.close();
+});
+
+test("no answer: “None of these” submits at once, and No after a picked answer submits with that answer; the agent sees what the learner tried", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await openSupport(page);
+  const first = `Account locked ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "en-GB", { category: "technical_support", subject: first, message: "My account will not open." });
+  await page.getByRole("button", { name: text.submit }).click();
+  const modal = page.getByRole("dialog", { name: text.assistant.title });
+  await modal.getByRole("button", { name: text.assistant.noneOfThese }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  const [direct] = await learnerTickets(page);
+  const directView = await agentTicket(page.request, direct.id);
+  expect(directView.suggestionId).toBeNull();
+  expect(directView.events.map((event) => event.type)).not.toContain("com.ilovelearningguide.helpdesk.ticket.suggestion_declined");
+
+  await openSupport(page);
+  const second = `Account still locked ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "en-GB", { category: "technical_support", subject: second, message: "My account will not open again." });
+  await page.getByRole("button", { name: text.submit }).click();
+  await modal.getByRole("list", { name: text.assistant.alternativesTitle }).getByRole("button", { name: "How do I reset my password?" }).click();
+  await expect(modal.locator(".helpdesk-modal-answer-content strong").first()).toHaveText("Check your spam folder");
+  await mkdir(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/portal-en-GB-v3-alternative-answer.png` });
+  await modal.getByRole("button", { name: text.assistant.no }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  const ticket = (await learnerTickets(page)).find((item) => item.subject === second)!;
+  const seen = await agentTicket(page.request, ticket.id);
+  expect(seen.aiAssist.map((item) => [item.source, item.faqQuestion, item.feedback, item.rating])).toEqual([["chip", "How do I reset my password?", "not_helpful", null]]);
+  expect(seen.aiAssist[0].answer).toContain("Check your spam folder");
+  await context.close();
+});
+
+test("chat: a fallback reply shows the alternatives as chips; one asks like a starter chip and answers from the FAQ", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const text = copy("en-GB");
+  await openSupport(page);
+  const panel = page.getByRole("region", { name: text.chat.title });
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("Something is wrong with my account");
+  await input.press("Enter");
+  const fallback = panel.locator(".helpdesk-chat-answer").first();
+  await expect(fallback.locator(".helpdesk-chat-fallback")).toHaveText(text.chat.fallback);
+  const chips = fallback.getByRole("list", { name: text.chat.alternativesTitle }).getByRole("button");
+  await expect(chips).toHaveText(["How do I reset my password?", "How do I access my courses?", "How can I access my course materials?"]);
+  await chips.nth(1).click();
+  const answer = panel.locator(".helpdesk-chat-answer").nth(1);
+  await expect(answer).toContainText("You can find your enrolled courses in My Learning");
+  await expect(panel.locator(".helpdesk-chat-question")).toHaveText(["Something is wrong with my account", "How do I access my courses?"]);
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/portal-en-GB-v3-chat-alternatives.png` });
+  await page.reload();
+  await expect(panel.locator(".helpdesk-chat-answer").first().getByRole("list", { name: text.chat.alternativesTitle }).getByRole("button")).toHaveCount(3);
+  await context.close();
+});
+
+test("rating API: the learner's own answered runs only, RFC 9457 errors; the agent's AI block carries the rating", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  const other = await newLearner(browser);
+  const ask = async (data: Record<string, string>) => {
+    const response = await page.request.post("/api/helpdesk/assistant", { headers: { "Idempotency-Key": randomUUID(), Origin: origin(page) }, data: { locale: "en-GB", ...data } });
+    expect(response.status()).toBe(200);
+    return await response.json() as { id: string; reply: unknown; alternatives: { faqId: string; question: string }[] };
+  };
+  const fallback = await ask({ message: "My account is acting up" });
+  expect(fallback.reply).toBeNull();
+  expect(fallback.alternatives.length).toBe(3);
+  const answered = await ask({ message: fallback.alternatives[0].question, faqId: fallback.alternatives[0].faqId });
+  expect((await rateByApi(other.page, answered.id, 5)).status(), "someone else's answer").toBe(404);
+  expect((await rateByApi(page, fallback.id, 5)).status(), "a fallback has no answer to rate").toBe(404);
+  const invalid = await rateByApi(page, answered.id, 9);
+  expect(invalid.status()).toBe(400);
+  expect(await invalid.json()).toMatchObject({ code: "validation_failed", field: "rating" });
+  const unsigned = await page.request.post(`/api/helpdesk/assistant/${answered.id}/rating`, { headers: { Origin: origin(page) }, data: { rating: 5 } });
+  expect(unsigned.status()).toBe(400);
+  expect((await unsigned.json()).code).toBe("idempotency_key_required");
+  const rated = await rateByApi(page, answered.id, 5);
+  expect(rated.status()).toBe(200);
+  expect(await rated.json()).toEqual({ id: answered.id, rating: 5 });
+  const response = await page.request.post("/api/helpdesk/tickets", {
+    headers: { "Idempotency-Key": randomUUID(), Origin: origin(page) },
+    multipart: { category: "technical_support", subject: "Rated answer", body: "Linking the rated answer.", locale: "en-GB", assistIds: answered.id }
+  });
+  expect(response.status()).toBe(201);
+  const { id } = await response.json() as { id: string };
+  const seen = await agentTicket(page.request, id);
+  expect(seen.aiAssist.map((item) => [item.id, item.rating])).toEqual([[answered.id, 5]]);
+  await other.context.close();
   await context.close();
 });
 

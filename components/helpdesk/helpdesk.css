@@ -205,6 +205,21 @@
 .helpdesk-modal-thanks { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px 20px; text-align: center; }
 .helpdesk-modal-thanks h3 { margin: 0; color: #111827; font-size: 20px; font-weight: 600; }
 .helpdesk-modal-thanks p { margin: 0; color: #6b7280; font-size: 14px; }
+/* v3 (helpdesk-v3-alternatives-rating): no Figma frame for these states — 待视觉验收. They reuse the
+   chip (.helpdesk-chat-chip), the 1333:249 answer box and buttons, and the enquiry page's star card. */
+.helpdesk-modal-thanks-status { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.helpdesk-modal-thanks .helpdesk-modal-rated { color: #027a48; }
+.helpdesk-modal-rating { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.helpdesk-modal-rating h3 { margin: 0; color: #15233a; font-size: 16px; font-weight: 600; }
+.helpdesk-modal-rating:focus { outline: none; }
+.helpdesk-modal-rating:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.helpdesk-modal-rating p.helpdesk-inline-error { color: #b91c1c; }
+.helpdesk-modal-alternatives { margin: 0; }
+.helpdesk-modal-alternatives .helpdesk-chat-chip { width: 100%; max-width: 520px; height: auto; min-height: 40px; font-size: 14px; line-height: 20px; }
+.helpdesk-answer-question { margin: 0; font-size: 16px; }
+.helpdesk-answer-question:focus { outline: none; }
+.helpdesk-chat-alternatives { align-self: stretch; margin: 2px 0 4px; }
+.helpdesk-chat-alternatives .helpdesk-chat-chip { width: 100%; }
 
 /* ---- My enquiries + enquiry page (待视觉验收; account page look) ---- */
 .portal-account-page.helpdesk-account-page > .helpdesk-account-section { min-width: 0; padding-top: 50px; padding-bottom: 64px; }

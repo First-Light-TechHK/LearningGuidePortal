@@ -1692,7 +1692,8 @@
       "rateLimited": "你在过去一小时内提问较多，请稍后再试，或使用表单提交问题。",
       "error": "抱歉，暂时无法回复，请重试。",
       "voteError": "反馈未能保存，请重试。",
-      "infoStacked": "需要咨询具体订单或付款？请使用上方表单提交问题。"
+      "infoStacked": "需要咨询具体订单或付款？请使用上方表单提交问题。",
+      "alternativesTitle": "你可能想问："
     },
     "assistant": {
       "title": "AI 客服助手",
@@ -1707,7 +1708,18 @@
       "checking": "正在查找快速解答…",
       "thanksTitle": "很高兴帮到你！",
       "thanksBody": "本次没有提交工单，正在返回你的账户…",
-      "backToAccount": "返回我的账户"
+      "backToAccount": "返回我的账户",
+      "alternativesSubtitle": "没有找到完全匹配的解答，请选择与你最接近的问题。",
+      "alternativesTitle": "你可能想问",
+      "alternativesHint": "都不是你要找的？",
+      "noneOfThese": "都不是，提交给客服",
+      "alternativeLoading": "正在查找解答…",
+      "alternativeError": "抱歉，暂时无法显示这个解答。请换一个问题，或提交给客服。",
+      "rateTitle": "本次服务满意吗？",
+      "rateStar": "{n} 分（满分 5 分）",
+      "skip": "跳过",
+      "rated": "感谢你的评价！",
+      "rateError": "抱歉，评价未能保存。请重试，或选择跳过。"
     },
     "success": {
       "title": "问题已提交",

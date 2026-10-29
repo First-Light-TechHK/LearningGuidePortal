@@ -2,7 +2,7 @@
 // Success bodies are plain JSON; failures are RFC 9457 problems, reduced here
 // to { status, code } so the page can pick one message. A network failure is
 // status 0. Nothing here decides business rules.
-import type { AssistantFeedbackResponse, AssistantResponse, HelpdeskSuggestion, SuggestionOutcome, TicketDetail } from "@/contracts/helpdesk";
+import type { AssistantFeedbackResponse, AssistantRatingResponse, AssistantResponse, HelpdeskAlternative, SuggestionOutcome, SuggestionResponse, TicketDetail } from "@/contracts/helpdesk";
 
 export type ApiFailure = { ok: false; status: number; code?: string };
 export type ApiResult<T> = { ok: true; status: number; data: T } | ApiFailure;
@@ -21,15 +21,26 @@ async function call<T>(input: string, init: RequestInit = {}): Promise<ApiResult
   }
 }
 
-/** The AI suggestion must never block submitting: any failure or a slow answer counts as "no suggestion". */
-export async function requestSuggestion(input: { category: string; subject: string; message: string; locale: string }, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<HelpdeskSuggestion | null> {
+/** Up to 3 well-formed alternatives from a body the server sent (an older server sends none). */
+export function alternativesIn(value: unknown): HelpdeskAlternative[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is HelpdeskAlternative => Boolean(item) && typeof item === "object" && typeof (item as HelpdeskAlternative).faqId === "string" && typeof (item as HelpdeskAlternative).question === "string" && (item as HelpdeskAlternative).question !== "").slice(0, 3);
+}
+
+/**
+ * The AI suggestion must never block submitting: any failure or a slow answer
+ * counts as "no suggestion" and no alternatives (v3), so the page submits.
+ */
+export async function requestSuggestion(input: { category: string; subject: string; message: string; locale: string }, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<SuggestionResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 5_000);
   // The page aborts when the learner cancels or leaves.
   options.signal?.addEventListener("abort", () => controller.abort(), { once: true });
   try {
-    const result = await call<{ suggestion: HelpdeskSuggestion | null }>("/api/helpdesk/suggestions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: controller.signal });
-    return result.ok && result.data?.suggestion ? result.data.suggestion : null;
+    const result = await call<Partial<SuggestionResponse>>("/api/helpdesk/suggestions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: controller.signal });
+    if (!result.ok || !result.data) return { suggestion: null, alternatives: [] };
+    if (result.data.suggestion) return { suggestion: result.data.suggestion, alternatives: [] };
+    return { suggestion: null, alternatives: alternativesIn(result.data.alternatives) };
   } finally {
     clearTimeout(timer);
   }
@@ -57,6 +68,11 @@ export async function askAssistant(body: { message: string; locale: string; faqI
 /** "Helpful?" Yes / No on a chat answer; the server keeps the first value and returns it. */
 export function sendAssistantFeedback(id: string, helpful: boolean, idempotencyKey: string) {
   return call<AssistantFeedbackResponse>(`/api/helpdesk/assistant/${encodeURIComponent(id)}/feedback`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ helpful }) });
+}
+
+/** v3 §2 rating card: 1-5 stars for an answer the learner was shown; the server keeps the first (409 answer_already_rated for another value). */
+export function rateAnswer(id: string, rating: number, idempotencyKey: string) {
+  return call<AssistantRatingResponse>(`/api/helpdesk/assistant/${encodeURIComponent(id)}/rating`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ rating }) });
 }
 
 export function createTicket(form: FormData, idempotencyKey: string) {

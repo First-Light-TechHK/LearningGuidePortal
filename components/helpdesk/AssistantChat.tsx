@@ -5,11 +5,14 @@
 // the FAQ answer verbatim, or null for the fallback. The panel only renders
 // what came back. The transcript lives in sessionStorage for this tab, per
 // account, and its answer ids go with the enquiry as assistIds.
+// v3 (helpdesk-v3-alternatives-rating §1): a fallback reply is followed by
+// Admin's "You might be asking" questions as chips (the starter chip style;
+// no Figma frame, 待视觉验收); a chip asks with its FAQ id like a starter chip.
 import { Bot, Check, ChevronRight, CircleHelp, Send } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { assistIdsOf, chatStorageKey, fillTemplate, readTranscript, settleTranscript, type ChatEntry } from "@/modules/helpdesk/learnerUi";
 import { plainText } from "@/modules/helpdesk/markdown";
-import { askAssistant, newIdempotencyKey, sendAssistantFeedback } from "./helpdeskApi";
+import { alternativesIn, askAssistant, newIdempotencyKey, sendAssistantFeedback } from "./helpdeskApi";
 import type { HelpdeskCopy } from "./HelpdeskParts";
 import { Markdown } from "./Markdown";
 
@@ -74,8 +77,9 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     setPending(false);
     if (result.ok && result.data) {
       const { id, reply } = result.data;
-      setEntries((current) => [...current, { kind: "answer", id, reply, feedback: null }]);
-      setAnnouncement(reply ? plainText(reply.answer) : text.fallback);
+      const alternatives = reply ? [] : alternativesIn(result.data.alternatives);
+      setEntries((current) => [...current, alternatives.length ? { kind: "answer", id, reply, feedback: null, alternatives } : { kind: "answer", id, reply, feedback: null }]);
+      setAnnouncement(reply ? plainText(reply.answer) : alternatives.length ? `${text.fallback} ${text.alternativesTitle} ${alternatives.map((item) => item.question).join("; ")}` : text.fallback);
       return true;
     }
     setEntries((current) => [...current, { kind: "error", error: result.status === 429 ? "rateLimited" : "error" }]);
@@ -147,7 +151,16 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
                 <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-no" aria-pressed={entry.feedback === "not_helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, false)}>{text.no}</button>
               </div>
               {voteError === entry.id && entry.feedback === null ? <p className="helpdesk-chat-vote-error" role="alert">{text.voteError}</p> : null}
-            </> : <p className="helpdesk-chat-fallback">{text.fallback}</p>}
+            </> : <>
+              <p className="helpdesk-chat-fallback">{text.fallback}</p>
+              {/* v3 alternatives under the fallback: no Figma frame, 待视觉验收 (reuses .helpdesk-chat-try / .helpdesk-chat-chip). */}
+              {entry.alternatives?.length ? <>
+                <p className="helpdesk-chat-try" id={`${ids}-alternatives-${index}`}>{text.alternativesTitle}</p>
+                <ul className="helpdesk-chat-chips helpdesk-chat-alternatives" aria-labelledby={`${ids}-alternatives-${index}`}>
+                  {entry.alternatives.map((item) => <li key={item.faqId}><button type="button" className="helpdesk-chat-chip" title={item.question} disabled={pending} onClick={() => void ask(item.question, item.faqId)}><span>{item.question}</span><ChevronRight size={14} aria-hidden="true" /></button></li>)}
+                </ul>
+              </> : null}
+            </>}
           </div>
         </div>;
       })}

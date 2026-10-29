@@ -19,10 +19,11 @@ import { uuidv7 } from "../../../lib/uuidv7";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
 import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 
-const TABLES = ["helpdesk_assist_log", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
 const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
 const MIGRATION_019 = readFileSync(path.join(process.cwd(), "db", "migrations", "019_helpdesk_outcome_delivery.sql"), "utf8");
+const MIGRATION_020 = readFileSync(path.join(process.cwd(), "db", "migrations", "020_helpdesk_ai_ratings.sql"), "utf8");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const learner = { id: "pg-learner", email: "pg-learner@example.test", name: "PG Learner" };
 const agent = { id: "emp-pg", name: "PG Agent" };
@@ -470,4 +471,48 @@ test("019 in PostgreSQL: re-applies; declined is stored with the ticket; undeliv
   await hd.agentAction(ticket.id, { action: "add_tag", agent, tag: "pg", expectedSequence: null }, randomUUID());
   await hd.agentAction(ticket.id, { action: "flag", agent, expectedSequence: seen + 1 }, randomUUID());
   assert.equal((await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: seen }, randomUUID())).ticket.unreadByAgent, false);
+});
+
+test("020 in PostgreSQL: re-applies; alternatives round-trip and replay; one rating per answer under a race; aiAssist carries it", async () => {
+  await getPool().query(MIGRATION_020);
+  await getPool().query(MIGRATION_020);
+  let clock = Date.parse("2026-10-29T06:00:00.000Z");
+  const now = () => new Date(clock);
+  const repository = createPostgresHelpdeskRepository();
+  const ALTERNATIVES = [{ faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000a1", question: "Reset my password?" }, { faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000a2", question: "Where is my invoice?" }];
+  const assistant = createAssistantService({
+    repository, now, log: () => undefined,
+    admin: {
+      async suggest() { return null; },
+      async suggestReply(request) {
+        return request.faqId || /password/.test(request.message)
+          ? { suggestion: { id: request.runId, faqId: request.faqId ?? "0192d4f0-7b6a-7c3e-9a10-0000000000f1", question: "Reset?", answer: "Use **Forgot password**." }, alternatives: [] }
+          : { suggestion: null, alternatives: ALTERNATIVES };
+      },
+      async reportOutcome() { return true; }
+    }
+  });
+  const key = randomUUID();
+  const fallback = await assistant.ask(learner, { message: "account locked", locale: "en-GB", faqId: null }, key);
+  assert.deepEqual(fallback.response.alternatives, ALTERNATIVES);
+  assert.deepEqual((await repository.findAssist(fallback.response.id))?.alternatives, ALTERNATIVES);
+  const replay = await assistant.ask(learner, { message: "account locked", locale: "en-GB", faqId: null }, key);
+  assert.deepEqual(replay.response, fallback.response, "the replay shows the same chips");
+  const check = await assistant.checkForSubmit(learner, { category: "technical_support", subject: "Locked", message: "account locked", locale: "en-GB" });
+  assert.deepEqual(check, { suggestion: null, alternatives: ALTERNATIVES });
+  clock += 1000;
+  const chip = await assistant.ask(learner, { message: ALTERNATIVES[0].question, locale: "en-GB", faqId: ALTERNATIVES[0].faqId }, randomUUID());
+  assert.deepEqual((await repository.findAssist(chip.response.id))?.alternatives, [], "an answer row stores none (NULL)");
+  const racing = await Promise.allSettled([5, 1, 3].map((rating) => assistant.rate(learner, chip.response.id, rating)));
+  const stored = await repository.findAiRating(chip.response.id);
+  assert.ok(stored !== null);
+  assert.equal(racing.filter((result) => result.status === "fulfilled").length, 1, "the database keeps the first rating; the others get 409");
+  assert.deepEqual(await assistant.rate(learner, chip.response.id, stored), { id: chip.response.id, rating: stored });
+  const count = await rows<{ n: number }>("SELECT count(*)::int AS n FROM helpdesk_ai_ratings WHERE run_id = $1", [chip.response.id]);
+  assert.equal(count[0].n, 1);
+  await assert.rejects(getPool().query("INSERT INTO helpdesk_ai_ratings (run_id, learner_id, source, rating, created_at) VALUES ($1, 'x', 'chat', 3, now())", [randomUUID()]), /foreign key/i, "a rating needs a logged answer");
+  await assert.rejects(getPool().query("INSERT INTO helpdesk_ai_ratings (run_id, learner_id, source, rating, created_at) VALUES ($1, 'x', 'chat', 6, now())", [fallback.response.id]), /check constraint/i);
+  const hd = service(now);
+  const ticket = (await hd.createTicket(learner, { ...input("Rated"), assistIds: [fallback.response.id, chip.response.id] }, randomUUID())).ticket;
+  assert.deepEqual((await hd.getAgentTicket(ticket.id)).aiAssist.map((item) => [item.id, item.rating]), [[fallback.response.id, null], [chip.response.id, stored]]);
 });

@@ -346,3 +346,45 @@ test("search text is normalised before it becomes a cache key: case and spacing 
   assert.equal(stub.calls.length, 1);
   assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/faqs?locale=en-GB&q=invoice+pdf`);
 });
+
+// ---------------------------------------------------------------- v3: "You might be asking" alternatives (helpdesk-v3-alternatives-rating §1)
+
+const ALT_A = { faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000a1", question: "How do I reset my password?" };
+const ALT_B = { faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000a2", question: "Where can I find my invoice?" };
+const ALT_C = { faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000a3", question: "How do I change my subscription?" };
+
+test("suggestReply: the answer and Admin's alternatives; suggest() still returns only the answer", async () => {
+  const input = { learnerId: "u1", locale: "en-GB" as const, source: "submit" as const, category: "technical_support" as const, subject: "s", message: "m", runId: RUN_ID, parentRunId: null };
+  const answered = stubFetch(() => json({ suggestion: SUGGESTION, alternatives: [] }));
+  assert.deepEqual(await createAdminHelpdeskClient({ fetch: answered.fetch }).suggestReply(input), { suggestion: SUGGESTION, alternatives: [] });
+  const offered = stubFetch(() => json({ suggestion: null, alternatives: [ALT_A, { faqId: ALT_B.faqId.toUpperCase(), question: ALT_B.question }] }));
+  const client = createAdminHelpdeskClient({ fetch: offered.fetch });
+  assert.deepEqual(await client.suggestReply(input), { suggestion: null, alternatives: [ALT_A, ALT_B] }, "ids are lower-cased");
+  assert.equal(await client.suggest(input), null, "suggest() keeps its v2 meaning");
+  assert.deepEqual(JSON.parse(offered.calls[0].body || ""), input, "the request is unchanged (no model is asked for alternatives; Portal sends nothing new)");
+});
+
+test("suggestReply: an older Admin without alternatives, malformed, duplicate or extra items, and alternatives next to an answer all read safely", async () => {
+  const input = { learnerId: "u1", locale: "zh-CN" as const, source: "chat" as const, message: "m", runId: RUN_ID, parentRunId: null };
+  const read = async (body: unknown) => createAdminHelpdeskClient({ fetch: stubFetch(() => json(body)).fetch, log: (line) => logs.push(line) }).suggestReply(input);
+  assert.deepEqual(await read({ suggestion: null }), { suggestion: null, alternatives: [] }, "v2 Admin: no field");
+  assert.deepEqual(await read({ suggestion: null, alternatives: "nope" }), { suggestion: null, alternatives: [] });
+  assert.deepEqual(await read({ suggestion: null, alternatives: [ALT_A, { faqId: "x", question: "q" }, { faqId: ALT_B.faqId }, { faqId: ALT_C.faqId, question: "" }, null, ALT_A, ALT_B, ALT_C, { faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000a4", question: "Fourth" }] }),
+    { suggestion: null, alternatives: [ALT_A, ALT_B, ALT_C] }, "malformed dropped, duplicates once, at most 3");
+  assert.deepEqual(await read({ suggestion: null, alternatives: [{ ...ALT_A, question: "Q".repeat(250) }] }), { suggestion: null, alternatives: [{ faqId: ALT_A.faqId, question: "Q".repeat(200) }] }, "a question is clipped to 200 code points as stored");
+  assert.deepEqual(await read({ suggestion: SUGGESTION, alternatives: [ALT_A] }), { suggestion: SUGGESTION, alternatives: [] }, "alternatives only stand in for a missing answer");
+  assert.deepEqual(await read({ suggestion: { ...SUGGESTION, faqId: "bad" }, alternatives: [ALT_A] }), { suggestion: null, alternatives: [] }, "a malformed body is a failure: nothing at all");
+});
+
+test("suggestReply: not configured, any error or the timeout is no answer and no alternatives", async () => {
+  const input = { learnerId: "u1", locale: "en-GB" as const, source: "submit" as const, category: "other" as const, subject: "s", message: "m", runId: RUN_ID, parentRunId: null };
+  for (const handler of [() => json({ type: "x" }, 429), () => new Response("not json", { status: 200 }), () => { throw new TypeError("fetch failed"); }]) {
+    assert.deepEqual(await createAdminHelpdeskClient({ fetch: stubFetch(handler).fetch, log: () => undefined }).suggestReply(input), { suggestion: null, alternatives: [] });
+  }
+  const hanging = stubFetch((_call, signal) => new Promise<Response>((_resolve, reject) => { signal?.addEventListener("abort", () => reject(signal.reason)); }));
+  assert.deepEqual(await createAdminHelpdeskClient({ fetch: hanging.fetch, timeouts: { suggest: 50 }, log: () => undefined }).suggestReply(input), { suggestion: null, alternatives: [] });
+  delete process.env.ADMIN_HELPDESK_TOKEN;
+  const unused = stubFetch(() => json({ suggestion: null, alternatives: [ALT_A] }));
+  assert.deepEqual(await createAdminHelpdeskClient({ fetch: unused.fetch }).suggestReply(input), { suggestion: null, alternatives: [] });
+  assert.equal(unused.calls.length, 0);
+});
