@@ -16,6 +16,8 @@ test("test:ci runs the Helpdesk learner e2e, and CI runs test:ci after installin
   const workflow = read(".github/workflows/ci.yml");
   const install = workflow.indexOf("npx playwright install --with-deps chromium");
   assert.ok(install > 0 && workflow.indexOf("run: npm run test:ci") > install);
-  assert.match(read("playwright.helpdesk.config.ts"), /NEXT_DIST_DIR: "\.next-ui-check"/);
+  const config = read("playwright.helpdesk.config.ts");
+  assert.match(config, /NEXT_DIST_DIR: "\.next-ui-check"/);
+  assert.match(config, /globalTeardown: "\.\/tests\/e2e\/helpdesk-global-teardown\.ts"/, "next-env.d.ts is pointed back at .next");
   assert.match(read("tsconfig.json"), /"\.next-ui-check\/types\/\*\*\/\*\.ts"/, "the dev server's types are already included, so next dev leaves tsconfig alone");
 });

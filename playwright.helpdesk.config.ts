@@ -4,7 +4,8 @@
 // spec it already covers, is unchanged. Starts its own DEV server on 3014 (the
 // DEV-only local Helpdesk store) and the stub Admin (tests/e2e/helpdesk-admin-stub.mjs).
 // The dev server writes to .next-ui-check (already in tsconfig and .gitignore), so a
-// production build in .next, which CI starts later, is left alone.
+// production build in .next, which CI starts later, is left alone; the teardown points
+// next-env.d.ts back at .next.
 // All tokens are throwaway local test values (tests/e2e/helpdesk-e2e-env.ts).
 import "./scripts/register-tsconfig-paths.cjs";
 import { defineConfig } from "playwright/test";
@@ -31,6 +32,7 @@ const env = {
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: ["**/helpdesk-support.spec.ts"],
+  globalTeardown: "./tests/e2e/helpdesk-global-teardown.ts",
   workers: 1,
   timeout: 60_000,
   // next dev compiles a route (server and client chunks) on its first visit; a cold compile
