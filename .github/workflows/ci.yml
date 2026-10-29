@@ -57,6 +57,28 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  helpdesk-corpus:
+    # Helpdesk v5 Part G5: free (no model, no key, no database). The PII scrubber corpus shared
+    # with Admin (pinned by hash in both repositories) and the scrubber's own cases. Independent
+    # of the Typecheck -> Lint -> Build and test chain, so it reports on its own.
+    name: HelpDesk scrubber corpus
+    runs-on: ubuntu-latest
+    env:
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Scrubber corpus
+        run: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/helpdesk-pii-corpus-fixture.test.ts tests/unit/helpdesk-pii-scrubber.test.ts
+
   test:
     name: Build and test
     needs: lint
