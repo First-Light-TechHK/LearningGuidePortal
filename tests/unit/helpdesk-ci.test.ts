@@ -1,15 +1,21 @@
 // The Helpdesk learner browser specs (tests/e2e/helpdesk-support.spec.ts) run in
-// the Verify workflow's "Build and test" job, after Chromium is installed.
+// CI: npm run test:ci → test:integration → test:e2e:helpdesk, and the Verify
+// workflow runs test:ci after installing Chromium. The suite's dev server keeps
+// out of .next, where CI's production build lives.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-test("CI runs the Helpdesk learner e2e after installing Chromium", () => {
-  const workflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+
+test("test:ci runs the Helpdesk learner e2e, and CI runs test:ci after installing Chromium", () => {
+  const { scripts } = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
+  assert.match(scripts["test:ci"], /npm run test:integration/);
+  assert.match(scripts["test:integration"], /npm run test:e2e:helpdesk/);
+  assert.match(scripts["test:e2e:helpdesk"], /playwright test --config=playwright\.helpdesk\.config\.ts/);
+  const workflow = read(".github/workflows/ci.yml");
   const install = workflow.indexOf("npx playwright install --with-deps chromium");
-  const helpdesk = workflow.indexOf("run: npm run test:e2e:helpdesk");
-  assert.ok(install > 0, "Chromium is installed");
-  assert.ok(helpdesk > install, "npm run test:e2e:helpdesk runs after it");
-  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> };
-  assert.match(pkg.scripts["test:e2e:helpdesk"], /playwright test --config=playwright\.helpdesk\.config\.ts/);
+  assert.ok(install > 0 && workflow.indexOf("run: npm run test:ci") > install);
+  assert.match(read("playwright.helpdesk.config.ts"), /NEXT_DIST_DIR: "\.next-ui-check"/);
+  assert.match(read("tsconfig.json"), /"\.next-ui-check\/types\/\*\*\/\*\.ts"/, "the dev server's types are already included, so next dev leaves tsconfig alone");
 });

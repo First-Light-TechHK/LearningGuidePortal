@@ -1,7 +1,10 @@
-// Local-only Helpdesk learner browser check (tests/e2e/helpdesk-support.spec.ts).
+// Helpdesk learner browser check (tests/e2e/helpdesk-support.spec.ts), part of
+// npm run test:integration and so of test:ci (CI runs it after installing Chromium).
 // Kept apart from playwright.e2e.config.ts so the shared e2e run, and every
 // spec it already covers, is unchanged. Starts its own DEV server on 3014 (the
 // DEV-only local Helpdesk store) and the stub Admin (tests/e2e/helpdesk-admin-stub.mjs).
+// The dev server writes to .next-ui-check (already in tsconfig and .gitignore), so a
+// production build in .next, which CI starts later, is left alone.
 // All tokens are throwaway local test values (tests/e2e/helpdesk-e2e-env.ts).
 import "./scripts/register-tsconfig-paths.cjs";
 import { defineConfig } from "playwright/test";
@@ -21,6 +24,7 @@ const env = {
   // In DEV, localhost / 127.0.0.1 count as BackOffice hosts unless ADMIN_HOSTS
   // says otherwise; learner pages need the learner site (as playwright.studygroup.config.ts).
   ADMIN_HOSTS: "admin.ilovelearningguide.com,admin.sit.ilovelearningguide.com",
+  NEXT_DIST_DIR: ".next-ui-check",
   ...helpdeskE2eServerEnv(),
 };
 

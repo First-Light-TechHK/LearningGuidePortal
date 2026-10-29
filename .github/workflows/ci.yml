@@ -7,8 +7,6 @@
 # UAT / PPE deploy workflows exist but require provisioned ARNs.
 # Local PAYMENT_MODE=demo / next dev / 3011 is not this workflow's default env.
 # smoke:product, test:e2e, ast-grep, semgrep, and knip stay off Actions.
-# test:e2e:helpdesk runs here (dev server + stub Admin, local store, throwaway tokens);
-# the two-app helpdesk-integration spec needs the BackOffice and PostgreSQL and stays local.
 
 name: Verify
 
@@ -87,9 +85,6 @@ jobs:
 
       - name: Payment regression tests
         run: npm run test:payment
-
-      - name: Helpdesk learner e2e
-        run: npm run test:e2e:helpdesk
 
       - name: Production missing-configuration rejection test
         env:

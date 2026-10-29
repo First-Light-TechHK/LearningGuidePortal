@@ -411,7 +411,7 @@ Fixes from the final review of v2. Each one is locked by a test that runs in CI.
   - A `?faq=` for an archived or unknown FAQ shows a notice. Visual sign-off for the notice is still pending (待视觉验收).
   - A `?faq=` FAQ is loaded by id only into the popular list or into its own topic, never into search results.
   - With Admin down, a `?category=` shows the static copy under the popular heading, not under the topic's name.
-- **CI:** `npm run test:e2e:helpdesk` runs in Verify (`tests/unit/helpdesk-ci.test.ts`). The suite's 20 s expect timeout covers `next dev` compiling a page on its first visit.
+- **CI:** `npm run test:e2e:helpdesk` is part of `test:integration`, and so of `test:ci`, which Verify runs after installing Chromium. `.github/workflows/ci.yml` is a forge `deny_paths` entry and is unchanged. The suite's dev server writes to `.next-ui-check`, so CI's production build in `.next` is untouched. A 20 s expect timeout covers `next dev` compiling a page on its first visit. This is locked by `tests/unit/helpdesk-ci.test.ts`.
 - **Left open (low):**
   - The Help Centre has no paging. Lists stop at 10 popular articles and at 50 search or topic results, as §4d specifies with no frame for more.
   - "Popular articles" shows the newest FAQs when none is marked popular, as designed.

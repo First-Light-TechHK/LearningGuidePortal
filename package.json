@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "test:auth": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.auth.config.ts",
     "test:unit": "node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test tests/unit/*.test.ts tests/unit/*.test.mjs",
-    "test:integration": "npm run test:auth",
+    "test:integration": "npm run test:auth && npm run test:e2e:helpdesk",
     "test:e2e": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.e2e.config.ts",
     "test:e2e:studygroup": "playwright test --config=playwright.studygroup.config.ts",
     "test:e2e:helpdesk": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.helpdesk.config.ts",
