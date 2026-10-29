@@ -8,7 +8,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { parseMarkdown, safeHref, summaryLine } from "../../modules/helpdesk/markdown";
+import { parseMarkdown, safeHref, summaryLine, unsafeLinks } from "../../modules/helpdesk/markdown";
+import { readFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import path from "node:path";
 import { Markdown } from "../../components/helpdesk/Markdown";
 
 const html = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }));
@@ -72,4 +75,30 @@ test("summary line: the first plain-text line with Markdown stripped, truncated 
   assert.ok(cut.endsWith("…"));
   assert.equal(summaryLine("短答案", 40), "短答案");
   assert.equal([...summaryLine("😀".repeat(50), 10)].length, 10, "counts code points, never splits a surrogate pair");
+});
+
+// One corpus for every renderer of FAQ answers (tickets-v2-figma-addendum §1:
+// the Admin Preview must show what learners see). The same bytes are in the
+// Admin repo, where its client renderer and the server save check run it too.
+const CORPUS_FILE = path.join(process.cwd(), "tests/fixtures/helpdesk-markdown-corpus.json");
+const CORPUS_SHA256 = "45ece9b892722705fa064ef580ebaa1b0afdb094758eebdf021238565a97c852";
+const ADMIN_CORPUS_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-markdown-corpus.json", "client/tests/fixtures/helpdesk-markdown-corpus.json"];
+type CorpusCase = { name: string; input: string; blocks: unknown; summaryMax: number; summary: string; unsafeLinks: string[] };
+
+test("the shared Markdown corpus is the pinned copy, byte-identical to the Admin copies when that repo is checked out", (t) => {
+  const bytes = readFileSync(CORPUS_FILE);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), CORPUS_SHA256);
+  const admin = path.resolve(process.cwd(), process.env.LEARNINGGUIDE_ADMIN_DIR || "../learningguideadmin");
+  if (!existsSync(path.join(admin, ADMIN_CORPUS_COPIES[0]))) { t.diagnostic(`Admin repo not found at ${admin}; checked the pin only`); return; }
+  for (const copy of ADMIN_CORPUS_COPIES) assert.ok(bytes.equals(readFileSync(path.join(admin, copy))), `${copy} differs from Portal's corpus`);
+});
+
+test("every corpus case parses, summarises and reports unsafe links exactly as the corpus says", () => {
+  const corpus = JSON.parse(readFileSync(CORPUS_FILE, "utf8")) as { cases: CorpusCase[] };
+  assert.ok(corpus.cases.length >= 20);
+  for (const item of corpus.cases) {
+    assert.deepEqual(parseMarkdown(item.input), item.blocks, `blocks: ${item.name}`);
+    assert.equal(summaryLine(item.input, item.summaryMax), item.summary, `summary: ${item.name}`);
+    assert.deepEqual(unsafeLinks(item.input), item.unsafeLinks, `unsafe links: ${item.name}`);
+  }
 });
