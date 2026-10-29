@@ -12,6 +12,9 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   useImperativeHandle(ref, () => media.current!);
   const t = lessonMessages(locale);
   const [playing, setPlaying] = useState(false), [time, setTime] = useState(0), [duration, setDuration] = useState(0), [muted, setMuted] = useState(false);
+  // Volume is kept beside muted so the slider can show the level that a mute
+  // action will restore; the media element stays the single source of truth.
+  const [volume, setVolume] = useState(1);
   const [rate, setRate] = useState(1), [pipSupported, setPipSupported] = useState(false), [pipActive, setPipActive] = useState(false);
   useEffect(() => {
     const video = media.current;
@@ -67,17 +70,21 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       onTimeUpdate={event => { if (!scrubbing.current) setTime(event.currentTarget.currentTime); updateDuration(event.currentTarget); onTimeUpdate?.(event); }}
       onLoadedMetadata={event => { updateDuration(event.currentTarget); onLoadedMetadata?.(event); }}
       onDurationChange={event => { updateDuration(event.currentTarget); onDurationChange?.(event); }}
-      onVolumeChange={event => { setMuted(event.currentTarget.muted); onVolumeChange?.(event); }}
+      onVolumeChange={event => { setMuted(event.currentTarget.muted); setVolume(event.currentTarget.volume); onVolumeChange?.(event); }}
       onRateChange={event => { setRate(event.currentTarget.playbackRate); onRateChange?.(event); }}/>
     {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
-      <input type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
+      <input className="la-video-seek" type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
         onPointerDown={event => { scrubbing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }}
         onPointerUp={() => { scrubbing.current = false; }} onPointerCancel={() => { scrubbing.current = false; }} onBlur={() => { scrubbing.current = false; }}
         onChange={event => { const nextTime = Number(event.target.value); setTime(nextTime); if (media.current) media.current.currentTime = nextTime; }}/>
       <span>{clock(time)} / {clock(duration)}</span>
-      <button type="button" aria-label={muted ? t.videoUnmute : t.videoMute} onClick={() => { if (media.current) media.current.muted = !media.current.muted; }}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+      <span className="la-video-volume">
+        <button type="button" aria-label={muted ? t.videoUnmute : t.videoMute} onClick={() => { const video = media.current; if (!video) return; if (video.muted || video.volume === 0) { if (video.volume === 0) video.volume = 0.6; video.muted = false; } else video.muted = true; }}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+        <input className="la-video-volume-range" type="range" aria-label={t.videoVolume} aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`} min={0} max={1} step={0.05} value={muted ? 0 : volume}
+          onChange={event => { const video = media.current; if (!video) return; const next = Number(event.target.value); video.volume = next; video.muted = next === 0; }}/>
+      </span>
       <span className="la-video-speed">
         <span aria-hidden="true">{rate === 1 ? t.videoNormalSpeed : `${rate}×`}</span><ChevronDown size={12} aria-hidden="true" />
         <select aria-label={t.videoSpeed} title={t.videoSpeed} value={rate} onChange={event => { if (media.current) { media.current.playbackRate = Number(event.target.value); setRate(media.current.playbackRate); } }}>

@@ -177,10 +177,12 @@ async function checkVideoControls(media, deadline) {
   requireCheck(await player.evaluate(el => el.classList.contains('la-controlled-video')), 'custom_video_toolbar_missing');
   requireCheck(await media.evaluate(el => el.controls === false), 'unexpected_native_video_toolbar');
   const buttons = player.locator('.la-video-controls button');
-  requireCheck(await buttons.count() === 3, 'custom_video_buttons_missing');
+  requireCheck(await buttons.count() === 4, 'custom_video_buttons_missing');
   const labels = await buttons.evaluateAll(elements => elements.map(el => el.getAttribute('aria-label')));
-  requireCheck(labels.every(label => label?.trim() && !/^\?+$/.test(label)) && new Set(labels).size === 3, 'custom_video_labels_invalid');
-  const seek = player.locator('.la-video-controls input[type="range"]');
+  requireCheck(labels.every(label => label?.trim() && !/^\?+$/.test(label)) && new Set(labels).size === 4, 'custom_video_labels_invalid');
+  // The toolbar now carries a seek bar and a volume slider, so the time control
+  // must be addressed by its own class instead of by input[type=range].
+  const seek = player.locator('.la-video-controls .la-video-seek');
   await seek.focus({ timeout: remaining(deadline) });
   await seek.press('Home', { timeout: remaining(deadline) });
   for (let index = 0; index < 10; index++) await seek.press('ArrowRight', { timeout: remaining(deadline) });
@@ -197,13 +199,18 @@ async function checkVideoControls(media, deadline) {
   await buttons.nth(1).click({ timeout: remaining(deadline) });
   requireCheck(await media.evaluate(el => el.muted) !== muted, 'custom_video_mute_failed');
   await buttons.nth(1).click({ timeout: remaining(deadline) });
-  await buttons.nth(2).click({ timeout: remaining(deadline) });
+  // Volume is adjustable independently of the mute action.
+  const volumeLevel = player.locator('.la-video-controls .la-video-volume-range');
+  await volumeLevel.fill('0.35', { timeout: remaining(deadline) });
+  requireCheck(Math.abs((await media.evaluate(el => el.volume)) - 0.35) < 0.02, 'custom_video_volume_failed');
+  requireCheck(await media.evaluate(el => !el.muted), 'custom_video_volume_stayed_muted');
+  await buttons.nth(3).click({ timeout: remaining(deadline) });
   await media.page().waitForFunction(el => document.fullscreenElement === el || el.classList.contains('la-video-expanded'),
     await player.elementHandle(), { timeout: remaining(deadline) });
-  await buttons.nth(2).click({ timeout: remaining(deadline) });
+  await buttons.nth(3).click({ timeout: remaining(deadline) });
   await media.page().waitForFunction(el => !document.fullscreenElement && !el.classList.contains('la-video-expanded'),
     await player.elementHandle(), { timeout: remaining(deadline) });
-  return { play: true, pause: true, keyboardSeek: true, mute: true, fullscreen: true };
+  return { play: true, pause: true, keyboardSeek: true, mute: true, volume: true, fullscreen: true };
 }
 
 function auditPage(page, scope, origin, fail, expectedNotFoundPath) {
