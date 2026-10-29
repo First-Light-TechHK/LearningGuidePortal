@@ -1,10 +1,10 @@
 {
   "$comment": [
-    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number. v5 (helpdesk-v4-order-and-chat-end Part A, 2026-10-29) adds the enquiry's order: orderId (string or null) on every list and detail ticket, and detail.order, a read-only projection Portal builds by code from the learner's own order record ({ id, status, amount (minor units), currency, planName, kind, createdAt, paymentMode }, nothing else; null without an order), with the orderStatus, orderKind and paymentMode enums Admin labels. The suggest requests are unchanged: the AI agent never receives order data.",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
-  "version": 4,
+  "version": 5,
   "enums": {
     "ticketStatus": [
       "OPEN",
@@ -58,6 +58,22 @@
     "billingCycle": [
       "annual",
       "semiannual"
+    ],
+    "orderStatus": [
+      "paid",
+      "pending",
+      "failed",
+      "canceled",
+      "refunded"
+    ],
+    "orderKind": [
+      "purchase",
+      "trial_activation",
+      "upgrade"
+    ],
+    "paymentMode": [
+      "demo",
+      "stripe"
     ],
     "suggestionOutcome": [
       "solved",
@@ -148,7 +164,8 @@
           "tags": [
             "refund"
           ],
-          "flagged": false
+          "flagged": false,
+          "orderId": "order_1761640741859_9f3a2c1d"
         }
       ],
       "nextCursor": "opaque-cursor-from-portal",
@@ -195,6 +212,7 @@
         "refund"
       ],
       "flagged": true,
+      "orderId": "order_1761640741859_9f3a2c1d",
       "suggestionId": null,
       "student": {
         "id": "user_fixture_learner",
@@ -392,7 +410,17 @@
           "createdAt": "2026-10-28T08:38:01.002Z",
           "rating": null
         }
-      ]
+      ],
+      "order": {
+        "id": "order_1761640741859_9f3a2c1d",
+        "status": "paid",
+        "amount": 3900,
+        "currency": "usd",
+        "planName": "Epicureanism · PC · 6 months",
+        "kind": "purchase",
+        "createdAt": "2026-10-28T08:39:01.859Z",
+        "paymentMode": "stripe"
+      }
     },
     "messageRequest": {
       "body": "Your invoice is attached to your account now.",

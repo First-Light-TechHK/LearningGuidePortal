@@ -99,3 +99,18 @@ test("020 (v3) adds the AI answer ratings and the offered alternatives; additive
   assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'alternatives'/, "the probe covers the newest column");
   for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /helpdesk_ai_ratings|alternatives/);
 });
+
+test("021 (v4) adds the enquiry's order number; additive, repeatable, mirrored by the bootstrap and probe; 017–020 untouched", async () => {
+  const migration = await readFile("db/migrations/021_helpdesk_order_link.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS|ALTER TABLE)[\s\S]*?;/g) || [];
+  assert.equal(statements.length, 1);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  // Nullable (every existing ticket has no order), no foreign key: the order record stays the payment module's.
+  assert.match(plain, /^ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS order_id TEXT CHECK \(order_id IS NULL OR char_length\(order_id\) BETWEEN 1 AND 64\);$/);
+  assert.doesNotMatch(plain, /NOT NULL|REFERENCES/);
+  assert.match(bootstrap, /table_name = 'helpdesk_tickets'\s+AND column_name = 'order_id'/, "the probe covers the newest column");
+  for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /order_id/);
+});

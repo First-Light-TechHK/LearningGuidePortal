@@ -3,9 +3,9 @@
 // Notification Center write path for in-app notifications, the existing
 // SMTP path (services/emailService.ts) for learner emails, and a read-only
 // projection of existing account / study / subscription data for the
-// BackOffice right panel.
+// BackOffice right panel, and (v4 Part A) of the learner's own orders.
 import path from "node:path";
-import type { HelpdeskLocale } from "@/contracts/helpdesk";
+import type { HelpdeskLocale, OrderProjection } from "@/contracts/helpdesk";
 import { helpdeskRepository } from "@/repositories/helpdeskRepository";
 import { sendHelpdeskUpdateEmail } from "@/services/emailService";
 import { readBinary, removeDir, systemRoot, writeBinary } from "@/services/fileStore";
@@ -13,6 +13,7 @@ import { ensureProductData, recordUserNotification } from "@/services/productSto
 import { publicAppOrigin } from "@/services/runtimeConfig";
 import { createAdminHelpdeskClient } from "./adminClient";
 import { createAssistantService, type AssistantService } from "./assistant";
+import { projectOrder } from "./orderDirectory";
 import { createHelpdeskService, type HelpdeskService } from "./service";
 import { projectStudent } from "./studentDirectory";
 
@@ -55,8 +56,15 @@ export function helpdeskService(): HelpdeskService {
     },
     ticketLink: helpdeskTicketLink,
     // Read-only: the same product aggregate that getUserById reads; nothing is written.
-    studentDirectory: async (userId) => projectStudent(await ensureProductData(), userId, new Date())
+    studentDirectory: async (userId) => projectStudent(await ensureProductData(), userId, new Date()),
+    // v4 Part A: read-only, the learner's own order only; the AI path never calls it.
+    orders: learnerOrder
   });
+}
+
+/** v4 Part A: the learner's own order as the read-only projection, or null (not theirs, or no such order). */
+export async function learnerOrder(userId: string, orderId: string): Promise<OrderProjection | null> {
+  return projectOrder(await ensureProductData(), userId, orderId);
 }
 
 /**

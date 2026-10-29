@@ -796,6 +796,103 @@ test("rating API: the learner's own answered runs only, RFC 9457 errors; the age
   await context.close();
 });
 
+/** v4 Part A: a paid demo order of the signed-in learner (the payment module's own demo checkout; nothing about payment changes). */
+async function demoOrder(page: Page) {
+  const consents = { renewal: true, terms: true, refund: true };
+  const quote = await page.request.post("/api/purchase/quote", { data: { planId: "epicureanism-pc-6", kind: "purchase" } });
+  expect(quote.status()).toBe(200);
+  const checkout = await page.request.post("/api/purchase/checkout", { headers: { Origin: origin(page) }, data: { quoteId: (await quote.json()).quote.id, locale: "en-GB", consents } });
+  expect(checkout.status(), await checkout.text()).toBe(200);
+  const orderId = (await checkout.json()).order.id as string;
+  const completed = await page.request.post("/api/purchase/demo/confirm", { headers: { Origin: origin(page) }, data: { orderId, action: "complete" } });
+  expect(completed.status()).toBe(200);
+  return orderId;
+}
+
+test("v4 order entry: Contact support on a payment record carries the order; the agent sees the order projection; another learner's order is refused", async ({ browser }) => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const { context, page } = await newLearner(browser, locale);
+    await page.goto(`/${locale}/account/my-learning`);
+    const orderId = await demoOrder(page);
+    const records = getMessages(locale).subscriptionDesign;
+    const text = copy(locale);
+    // My Learning > Subscription: every payment record shown has "Contact support" for its order.
+    await page.goto(`/${locale}/account/my-learning/subscription`);
+    await page.getByRole("button", { name: records.paymentHistory }).first().click();
+    const link = page.getByRole("link", { name: records.contactSupportLabel.replace("{number}", orderId), exact: true });
+    await expect(link).toHaveText(records.contactSupport);
+    await expect(page.locator("a[data-contact-support]")).toHaveCount(await page.locator("table tbody tr").count());
+    await link.click();
+    await page.waitForURL(`**/${locale}/account/my-learning/support?orderId=${orderId}`);
+    // Contact Support: Payments & Subscriptions preset, the read-only order line above Subject with Remove.
+    await expect(page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.payments_subscriptions);
+    const line = page.getByRole("group", { name: text.order.label, exact: true });
+    await expect(line).toContainText(orderId);
+    await expect(line.getByRole("button", { name: fillTemplate(text.order.removeLabel, { number: orderId }), exact: true })).toBeVisible();
+    await mkdir(SHOTS, { recursive: true });
+    await page.screenshot({ path: `${SHOTS}/v4-order-line-${locale}.png`, fullPage: true });
+    const subject = `Refund please ${randomUUID().slice(0, 6)}`;
+    await page.getByLabel(text.subject).fill(subject);
+    await page.getByLabel(text.message).fill("I was charged twice for the same plan.");
+    await page.getByRole("button", { name: text.submit }).click();
+    await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+    // The AI check never saw the order.
+    const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: Record<string, unknown> }[] };
+    const asked = suggestions.filter((entry) => entry.request.subject === subject);
+    expect(asked).toHaveLength(1);
+    expect(JSON.stringify(asked[0].request)).not.toContain(orderId);
+    expect(JSON.stringify(asked[0].request)).not.toMatch(/order/i);
+    // BackOffice (integration API): orderId on the list, the projection with only the listed fields on the detail.
+    const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
+    const listed = (await (await page.request.get(`/api/integration/helpdesk/tickets?q=${encodeURIComponent(subject)}`, { headers: bearer })).json() as { tickets: { id: string; orderId: string | null }[] }).tickets;
+    expect(listed.find((item) => item.id === ticket.id)?.orderId).toBe(orderId);
+    const detail = await (await page.request.get(`/api/integration/helpdesk/tickets/${ticket.id}`, { headers: bearer })).json() as { orderId: string; order: Record<string, unknown>; category: string };
+    expect(detail.category).toBe("payments_subscriptions");
+    expect(detail.orderId).toBe(orderId);
+    expect(Object.keys(detail.order)).toEqual(["id", "status", "amount", "currency", "planName", "kind", "createdAt", "paymentMode"]);
+    expect(detail.order).toMatchObject({ id: orderId, status: "paid", kind: "purchase", paymentMode: "demo", currency: "usd" });
+    expect(typeof detail.order.amount).toBe("number");
+
+    // Another learner can neither see nor attach this order.
+    const other = await newLearner(browser, locale, "Other Learner");
+    await other.page.goto(`/${locale}/account/my-learning/support?orderId=${orderId}`);
+    await expect(other.page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
+    await expect(other.page.getByRole("group", { name: text.order.label, exact: true })).toHaveCount(0);
+    await expect(other.page.getByText(orderId)).toHaveCount(0);
+    await expect(other.page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.technical_support);
+    const refused = await other.page.request.post("/api/helpdesk/tickets", {
+      headers: { "Idempotency-Key": randomUUID(), Origin: origin(other.page) },
+      multipart: { category: "payments_subscriptions", subject: "Not my order", body: "Trying someone else's order.", locale, orderId }
+    });
+    expect(refused.status()).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: "validation_failed", field: "orderId" });
+    expect(await learnerTickets(other.page)).toHaveLength(0);
+    await other.context.close();
+    await context.close();
+  }
+});
+
+test("v4 order entry: Remove sends the enquiry without the order", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  await page.goto("/en-GB/account/my-learning");
+  const orderId = await demoOrder(page);
+  const text = copy("en-GB");
+  await page.goto(`/en-GB/account/my-learning/support?orderId=${orderId}`);
+  await page.getByRole("button", { name: fillTemplate(text.order.removeLabel, { number: orderId }), exact: true }).click();
+  await expect(page.getByRole("group", { name: text.order.label, exact: true })).toHaveCount(0);
+  await expect(page.getByLabel(text.subject)).toBeFocused();
+  const subject = `No order after all ${randomUUID().slice(0, 6)}`;
+  await page.getByLabel(text.subject).fill(subject);
+  await page.getByLabel(text.message).fill("Something else.");
+  await page.getByRole("button", { name: text.submit }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
+  const detail = await (await page.request.get(`/api/integration/helpdesk/tickets/${ticket.id}`, { headers: bearer })).json() as { orderId: string | null; order: unknown };
+  expect(detail.orderId).toBeNull();
+  expect(detail.order).toBeNull();
+  await context.close();
+});
+
 test("visual capture for Figma comparison (en-GB and zh-CN)", async ({ browser }) => {
   await mkdir(SHOTS, { recursive: true });
   for (const locale of ["en-GB", "zh-CN"] as const) {

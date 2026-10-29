@@ -1481,7 +1481,9 @@
     "proratedUpgrade": "升级（按剩余周期计费）",
     "noCurrent": "您目前没有有效订阅。",
     "pointsUnavailable": "积分余额暂未开放。",
-    "pointsNote": "积分在所属订阅有效期间可用，并于付款当日发放。"
+    "pointsNote": "积分在所属订阅有效期间可用，并于付款当日发放。",
+    "contactSupport": "联系客服",
+    "contactSupportLabel": "就订单 {number} 联系客服"
   },
   "cancelDesign": {
     "category": "分类",
@@ -1639,6 +1641,13 @@
     "pageTitle": "联系客服",
     "myEnquiries": "我的工单",
     "enquiryType": "问题类型",
+    "order": {
+      "label": "订单",
+      "remove": "移除",
+      "removeLabel": "从本次咨询中移除订单 {number}",
+      "removed": "已从本次咨询中移除订单。",
+      "invalid": "无法将此订单关联到你的咨询。请移除后重新提交。"
+    },
     "selectTopic": "请选择问题类型",
     "categories": {
       "technical_support": "技术支持",

@@ -35,6 +35,7 @@ import {
   type UploadInput,
   type StudentProjection,
   type SubscriptionProjection,
+  type OrderProjection,
   HELPDESK_LIMITS,
   isContactEmail
 } from "@/contracts/helpdesk";
@@ -81,6 +82,12 @@ export type HelpdeskDeps = {
   ticketLink?: (ticketId: string, locale: HelpdeskLocale) => string | null;
   /** Read-only student / subscription projection for the BackOffice detail. */
   studentDirectory?: (userId: string) => Promise<StudentDirectoryEntry | null>;
+  /**
+   * v4 Part A: the learner's own order as a read-only projection (null: not
+   * theirs, or no such order). Used to check a new enquiry's orderId and for
+   * the BackOffice "Order" block; never given to the AI agent.
+   */
+  orders?: (userId: string, orderId: string) => Promise<OrderProjection | null>;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
 };
@@ -208,8 +215,29 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       preview: previewOf(extra.firstMessage),
       unreadByAgent: ticket.unreadByAgent,
       tags: extra.tags,
-      flagged: Boolean(ticket.flaggedAt)
+      flagged: Boolean(ticket.flaggedAt),
+      orderId: ticket.orderId ?? null
     };
+  }
+
+  /**
+   * v4 Part A: the order read by code from the order record, for the ticket's
+   * own learner only. A failing lookup is logged (no order number, no learner
+   * data) and returns "failed", so each caller decides what that means.
+   */
+  async function lookupOrder(userId: string, orderId: string, ticketId: string | null): Promise<OrderProjection | null | "failed"> {
+    if (!deps.orders) return null;
+    try { return await deps.orders(userId, orderId); }
+    catch (error) {
+      log({ type: "helpdesk", event: "order_lookup_failed", ticketId, error: error instanceof Error ? error.name : "unknown" });
+      return "failed";
+    }
+  }
+
+  async function orderProjection(ticket: TicketRecord): Promise<OrderProjection | null> {
+    if (!ticket.orderId) return null;
+    const found = await lookupOrder(ticket.userId, ticket.orderId, ticket.id);
+    return found === "failed" ? null : found;
   }
 
   /** v2 §4a: what Portal stored when the answer was shown — never text a client sent. */
@@ -261,7 +289,8 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       })),
       events: aggregate.events.map(cloudEvent),
       allowedActions: allowed(ticket, AGENT_ACTION_COMMANDS, "agent", at),
-      aiAssist: (await repository.listAssistsByTicket(ticket.id)).map(aiAssistView)
+      aiAssist: (await repository.listAssistsByTicket(ticket.id)).map(aiAssistView),
+      order: await orderProjection(ticket)
     };
   }
 
@@ -501,7 +530,9 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     if (!contactEmail) throw new HelpdeskProblem("validation_failed", "Add an email address so support can reply.", {}, "contactEmail");
     const suggestionId = input.suggestionId ?? null;
     const assistIds = [...new Set(input.assistIds ?? [])].sort();
-    const hash = payloadHash({ op: "create", userId: learner.id, category: input.category, subject: input.subject, body: input.body, locale: input.locale, contactEmail, suggestionId, files: fileFingerprints(input.files), ...(assistIds.length ? { assistIds } : {}) });
+    const requestedOrderId = input.orderId || null;
+    // orderId joins the hash only when sent, so every pre-v4 request hashes (and replays) as before.
+    const hash = payloadHash({ op: "create", userId: learner.id, category: input.category, subject: input.subject, body: input.body, locale: input.locale, contactEmail, suggestionId, files: fileFingerprints(input.files), ...(assistIds.length ? { assistIds } : {}), ...(requestedOrderId ? { orderId: requestedOrderId } : {}) });
     const replayTicket = async () => {
       const ticketId = await replayed(key, hash, null);
       if (!ticketId) return null;
@@ -509,6 +540,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     };
     const earlier = await replayTicket();
     if (earlier) return earlier;
+    const orderId = requestedOrderId ? await ownOrder(learner, requestedOrderId) : null;
     await enforceRateLimit("tickets", learner.id);
     await enforceRateLimit("messages", learner.id);
     const at = now();
@@ -533,7 +565,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
           id: ticketId, userId: learner.id, userEmail: learner.email, userName: learner.name, contactEmail, locale: input.locale, category: input.category, subject: input.subject,
           status: decision.to, assigneeId: null, assigneeName: null, sequence: events.length, confirmDueAt: null, closedAt: null, closeReason: null, rating: null,
           createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastMessageBy: "learner", clientEventId: key, payloadHash: hash, suggestionId, unreadByAgent: true,
-          flaggedAt: null, flaggedBy: null
+          flaggedAt: null, flaggedBy: null, orderId
         },
         message: { id: messageId, ticketId, authorKind: "learner", authorId: learner.id, authorName: learner.name, body: input.body, internal: false, attachmentIds: attachments.map((item) => item.id), clientEventId: key, payloadHash: hash, createdAt },
         attachments,
@@ -558,6 +590,21 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
     }
     return { ticket: learnerDetail(await load(ticketId)), replayed: false };
+  }
+
+  /**
+   * v4 Part A: a new enquiry may link only the signed-in learner's own order,
+   * checked here by code against the order record: someone else's order or an
+   * unknown one is 400 validation_failed (field orderId), so the browser can
+   * never attach another learner's order. Creation is never blocked by the
+   * order store: when the check itself fails, the enquiry is created without
+   * the link (an order that could not be checked is never stored).
+   */
+  async function ownOrder(learner: LearnerIdentity, orderId: string): Promise<string | null> {
+    const found = await lookupOrder(learner.id, orderId, null);
+    if (found === "failed") return null;
+    if (!found || found.id !== orderId) throw new HelpdeskProblem("validation_failed", "This order cannot be linked to your enquiry.", {}, "orderId");
+    return found.id;
   }
 
   async function listLearnerTickets(learner: LearnerIdentity): Promise<LearnerTicketList> {

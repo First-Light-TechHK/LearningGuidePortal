@@ -41,7 +41,9 @@ export const HELPDESK_LIMITS = {
   alternativesMax: 3,
   /** v3: Admin refuses more than 20 shownFaqIds (400). */
   shownFaqIdsMax: 20,
-  learnerIdMax: 128
+  learnerIdMax: 128,
+  /** v4 Part A: an order number as the order owner writes it (order_<ms>_<hex>); letters, digits, _ and - only. */
+  orderIdMax: 64
 } as const;
 
 export const TICKET_STATUSES = ["OPEN", "ASSIGNED", "WAITING_USER", "PENDING_CONFIRM", "CLOSED", "CANCELLED"] as const;
@@ -179,6 +181,8 @@ export type AgentTicketSummary = TicketSummary & {
   tags: string[];
   /** v2 §4a: an agent flagged the enquiry for follow-up. */
   flagged: boolean;
+  /** v4 Part A: the learner's order this enquiry is about (checked by Portal when it was created), or null. */
+  orderId: string | null;
 };
 
 /** BackOffice "Student Information" (read-only projection of existing Portal data). */
@@ -210,6 +214,31 @@ export type SubscriptionProjection = {
   validTo: string;
 };
 
+/** v4 Part A: the order owner's values (services/productStore.ts ProductOrder); Admin labels each of them. */
+export const ORDER_STATUSES = ["paid", "pending", "failed", "canceled", "refunded"] as const;
+export const ORDER_KINDS = ["purchase", "trial_activation", "upgrade"] as const;
+export const PAYMENT_MODES = ["demo", "stripe"] as const;
+
+/**
+ * v4 Part A "Order" block: a read-only projection built by Portal code from
+ * the learner's own order record (modules/helpdesk/orderDirectory.ts). These
+ * fields and nothing else: no card data, no Stripe ids or secrets, no
+ * addresses. The AI agent never receives it.
+ */
+export type OrderProjection = {
+  /** The order number the learner sees on the receipt and in the payment records. */
+  id: string;
+  status: (typeof ORDER_STATUSES)[number];
+  /** In the currency's minor units, as stored (3900 = 39.00). */
+  amount: number;
+  /** ISO 4217, lower case as stored ("usd"). */
+  currency: string;
+  planName: string;
+  kind: (typeof ORDER_KINDS)[number];
+  createdAt: string;
+  paymentMode: (typeof PAYMENT_MODES)[number];
+};
+
 export type AgentTicketMessageView = TicketMessageView & { authorId: string | null; internal: boolean };
 
 export type AgentTicketDetail = Omit<AgentTicketSummary, "learner"> & {
@@ -225,6 +254,8 @@ export type AgentTicketDetail = Omit<AgentTicketSummary, "learner"> & {
   allowedActions: AgentAllowedAction[];
   /** v2 §4a: the AI Support Assistant answers linked to this enquiry, oldest first (as stored by Portal; never client text). */
   aiAssist: AiAssistView[];
+  /** v4 Part A: the linked order, read live from the order record; null without one (or while the order store is unavailable). */
+  order: OrderProjection | null;
 };
 
 export type TicketCounts = Record<TicketStatus, number> & { needs_reply: number; all: number };
@@ -373,6 +404,8 @@ export type CreateTicketInput = {
   suggestionId?: string | null;
   /** v2 §4a: chat answers (helpdesk_assist_log ids) to link to the new ticket; at most 10. */
   assistIds?: string[];
+  /** v4 Part A: the learner's own order the enquiry is about; the server checks it belongs to them. */
+  orderId?: string | null;
   files: UploadInput[];
 };
 export type LearnerMessageInput = { body: string; expectedSequence: number; files: UploadInput[] };
@@ -488,8 +521,27 @@ export function parseCreateTicketInput(fields: Record<string, unknown>, files: U
     contactEmail: optionalContactEmail(fields),
     suggestionId: optionalUuid(fields, "suggestionId"),
     assistIds: assistIdList(fields.assistIds),
+    orderId: optionalOrderId(fields.orderId),
     files: uploads(files)
   };
+}
+
+const ORDER_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/** v4 Part A: the order number as the order owner wrote it (trimmed, never rewritten); empty = none. Ownership is checked by the service. */
+function optionalOrderId(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") invalid("orderId", "orderId must be an order number.");
+  const value = raw.trim();
+  if (!value) return null;
+  if (value.length > HELPDESK_LIMITS.orderIdMax || !ORDER_ID_PATTERN.test(value)) invalid("orderId", "orderId is not a valid order number.");
+  return value;
+}
+
+/** v4 Part A: the Contact Support page's ?orderId= (anything unreadable is ignored, like the Help Centre query). */
+export function parseOrderIdParam(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  try { return optionalOrderId(value); } catch { return null; }
 }
 
 /** v2 §4a: up to 10 distinct assist log ids (multipart repeats the field; one value arrives as a string). */

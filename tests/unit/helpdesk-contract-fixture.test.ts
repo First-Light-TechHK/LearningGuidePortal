@@ -7,11 +7,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { SESSION_COOKIE } from "../../services/productAuth";
 import {
-  AGENT_ACTIONS, ASSIST_FEEDBACK, HELPDESK_LIMITS, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
+  AGENT_ACTIONS, ASSIST_FEEDBACK, HELPDESK_LIMITS, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, ORDER_KINDS, ORDER_STATUSES, PAYMENT_MODES, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
   SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentListQuery, parseAgentMessageInput, problemBody
 } from "../../contracts/helpdesk";
 import { createAdminHelpdeskClient } from "../../modules/helpdesk/adminClient";
 import { isInlineAttachment } from "../../modules/helpdesk/attachments";
+import { ORDER_PROJECTION_FIELDS } from "../../modules/helpdesk/orderDirectory";
 import { projectStudent } from "../../modules/helpdesk/studentDirectory";
 import { CSV, PDF } from "./helpdesk-fixtures";
 
@@ -21,7 +22,8 @@ import { CSV, PDF } from "./helpdesk-fixtures";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Fixture = {
   enums: Record<string, string[]> & { agentProblemCode: Record<string, string[]> };
-  adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json; detailResponse: Json & { subscription: Json; aiAssist: Json[] }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
+  version: number;
+  adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json & { tickets: Array<Record<string, Json>> }; detailResponse: Json & { subscription: Json; aiAssist: Json[]; orderId: Json; order: Record<string, Json> }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
   portalToAdmin: Record<string, Json> & {
     faqsRequest: string; faqsSearchRequest: string; faqsResponse: { faqs: Json[]; etag: string }; faqRequest: string; faqResponse: Json;
     suggestRequest: Record<string, string | null>; suggestChatRequest: Record<string, string | null>; suggestChipRequest: Record<string, string | null>; traceparentHeader: string; suggestResponse: { suggestion: Json; alternatives: Json[] }; suggestNoMatchResponse: { suggestion: Json; alternatives: Json[] }; suggestAlternativesResponse: { suggestion: Json; alternatives: Json[] };
@@ -89,7 +91,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "aca8a9cc1e2f2cc06bf23a772d9197a4540a4cd7876a747131022d0d7bf30500";
+const FIXTURE_SHA256 = "12f7ea599e2385fe47914ece62643a0b5caa7ae8503569762d705209eecd1ca4";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -112,6 +114,10 @@ test("contract enums match Portal's own constants", () => {
   assert.deepEqual(fixture.enums.assistFeedback, [...ASSIST_FEEDBACK]);
   assert.deepEqual(fixture.enums.assistSource, [...ASSIST_SOURCES]);
   assert.deepEqual(fixture.enums.faqCategory, [...FAQ_CATEGORIES]);
+  // v5: the order block's values.
+  assert.deepEqual(fixture.enums.orderStatus, [...ORDER_STATUSES]);
+  assert.deepEqual(fixture.enums.orderKind, [...ORDER_KINDS]);
+  assert.deepEqual(fixture.enums.paymentMode, [...PAYMENT_MODES]);
   for (const [status, codes] of Object.entries(fixture.enums.agentProblemCode)) {
     for (const code of codes) assert.equal(PROBLEM_STATUS[code as keyof typeof PROBLEM_STATUS], Number(status), code);
   }
@@ -183,9 +189,14 @@ test("the integration list and detail Portal serves have the contract's shape", 
     headers: new Headers({ host: "localhost:3000", origin: ORIGIN, cookie: `${SESSION_COOKIE}=${cookie}`, "idempotency-key": randomUUID(), "content-type": "application/json" })
   }), { params: Promise.resolve({ id: assistId }) });
   assert.equal(rated.status, 200, await rated.clone().text());
+  // v5: the learner's own (demo) order, linked from the payment records.
+  const { quote } = await store.createQuote(user.id, "epicureanism-pc-6", "purchase");
+  const { order } = await store.createPendingDemoOrder(user.id, quote.id);
+  await store.completeDemoOrder(user.id, order.id);
   const form = new FormData();
   for (const [key, value] of Object.entries({ category: "payments_subscriptions", subject: "Invoice 中文 test", body: "See files", locale: "zh-CN", contactEmail: "other@example.test" })) form.set(key, value);
   form.append("assistIds", assistId);
+  form.set("orderId", order.id);
   form.append("files[]", new File([new Uint8Array(PDF)], "发票 Oct.pdf", { type: "application/pdf" }));
   form.append("files[]", new File([new Uint8Array(CSV)], "data.csv", { type: "text/csv" }));
   const created = await tickets.POST(new Request(`${ORIGIN}/api/helpdesk/tickets`, {
@@ -209,8 +220,19 @@ test("the integration list and detail Portal serves have the contract's shape", 
   assert.equal(detail.aiAssist.length, 1, "the chat answer is linked and compared against the contract's aiAssist item");
   assert.equal((detail.aiAssist[0] as Record<string, Json>).rating, fixtureAssist.rating, "v4: the learner's rating reaches Admin as the number the contract shows");
   assert.equal(detail.flagged, true);
+  // v5: the order number on the list and the detail, and the projection with exactly the contract's keys and values Admin labels.
+  assert.equal((list as { tickets: Array<{ orderId: Json }> }).tickets[0].orderId, order.id);
+  const linked = detail as unknown as { orderId: string; order: Record<string, Json> };
+  assert.equal(linked.orderId, order.id);
+  assert.deepEqual(Object.keys(linked.order), Object.keys(fixture.adminToPortal.detailResponse.order), "same keys, same order");
+  assert.deepEqual(Object.keys(fixture.adminToPortal.detailResponse.order), [...ORDER_PROJECTION_FIELDS]);
+  assert.equal(linked.order.id, order.id);
+  assert.ok(fixture.enums.orderStatus.includes(String(linked.order.status)) && fixture.enums.orderKind.includes(String(linked.order.kind)) && fixture.enums.paymentMode.includes(String(linked.order.paymentMode)));
+  assert.equal(fixture.adminToPortal.detailResponse.orderId, fixture.adminToPortal.detailResponse.order.id);
+  assert.equal(fixture.adminToPortal.listResponse.tickets[0].orderId, fixture.adminToPortal.detailResponse.order.id);
+  assert.ok(fixture.version >= 5);
 
-  // The subscription block (null for this learner) has the contract's keys when present.
+  // The subscription block has the contract's keys when present (this learner now has one from the demo order above; projectStudent pins the values).
   const projected = projectStudent({
     users: [{ id: "u1", email: "learner@example.test", nickname: "Emily Carter", createdAt: "2026-10-28T08:32:19.715Z" }],
     plans: [{ id: "p6", name: "Epicureanism · PC · 6 months", termMonths: 6 }],
@@ -250,6 +272,8 @@ test("Portal's Admin client sends the contract's requests and reads the contract
     assert.deepEqual(await client.faq(faqId, "en-GB"), p.faqResponse);
     assert.equal(sent[2].url, `http://admin.local.test${p.faqRequest}`);
 
+    // v5: the AI agent never receives order data; the suggest requests are unchanged.
+    for (const body of [p.suggestRequest, p.suggestChatRequest, p.suggestChipRequest]) assert.doesNotMatch(JSON.stringify(body), /order/i);
     for (const [index, body] of [p.suggestRequest, p.suggestChatRequest, p.suggestChipRequest].entries()) {
       replies.push(new Response(JSON.stringify(p.suggestResponse), { status: 200 }));
       assert.deepEqual(await client.suggest(body as unknown as Parameters<typeof client.suggest>[0]), p.suggestResponse.suggestion);

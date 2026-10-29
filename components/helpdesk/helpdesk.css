@@ -29,6 +29,12 @@
 .helpdesk-field-error { margin: 0; color: #dc2626; font-size: 12px; line-height: 16px; }
 .helpdesk-inline-error { margin: 0; padding: 10px 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; line-height: 20px; }
 .helpdesk-email-note { margin: 0; color: #6b7280; font-size: 12px; font-weight: 600; line-height: normal; }
+/* v4 Part A order line (no Figma frame, 待视觉验收): the field label above, the number as plain text, Remove as the text link. */
+.helpdesk-order-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; color: #111827; font-size: 14px; line-height: normal; }
+.helpdesk-order-number { overflow-wrap: anywhere; }
+.helpdesk-order-remove { padding: 0; border: 0; background: none; font-family: inherit; cursor: pointer; }
+.helpdesk-order-remove:disabled { color: #9ca3af; cursor: default; text-decoration: none; }
+.helpdesk-order-remove:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 2px; }
 
 /* Enquiry Type select (Figma 1262:12): opens in place, pushing the form down as in the frame. */
 .helpdesk-select { display: flex; flex-direction: column; }

@@ -4,7 +4,8 @@
 // status 0. Nothing here decides business rules.
 import type { AssistantFeedbackResponse, AssistantRatingResponse, AssistantResponse, HelpdeskAlternative, SuggestionOutcome, SuggestionResponse, TicketDetail } from "@/contracts/helpdesk";
 
-export type ApiFailure = { ok: false; status: number; code?: string };
+/** field (v4, additive): the problem's field, when the server names one (for example orderId). */
+export type ApiFailure = { ok: false; status: number; code?: string; field?: string };
 export type ApiResult<T> = { ok: true; status: number; data: T } | ApiFailure;
 
 async function call<T>(input: string, init: RequestInit = {}): Promise<ApiResult<T>> {
@@ -15,7 +16,8 @@ async function call<T>(input: string, init: RequestInit = {}): Promise<ApiResult
     try { body = text ? JSON.parse(text) : null; } catch { body = null; }
     if (response.ok) return { ok: true, status: response.status, data: body as T };
     const code = body && typeof body === "object" && typeof (body as { code?: unknown }).code === "string" ? (body as { code: string }).code : undefined;
-    return { ok: false, status: response.status, code };
+    const field = body && typeof body === "object" && typeof (body as { field?: unknown }).field === "string" ? (body as { field: string }).field : undefined;
+    return { ok: false, status: response.status, code, ...(field ? { field } : {}) };
   } catch {
     return { ok: false, status: 0 };
   }

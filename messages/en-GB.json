@@ -1481,7 +1481,9 @@
     "proratedUpgrade": "Upgrade (prorated)",
     "noCurrent": "You have no current subscriptions.",
     "pointsUnavailable": "Points balance is not available yet.",
-    "pointsNote": "Points stay valid while the subscription they came with is active, and are added on the day you pay."
+    "pointsNote": "Points stay valid while the subscription they came with is active, and are added on the day you pay.",
+    "contactSupport": "Contact support",
+    "contactSupportLabel": "Contact support about order {number}"
   },
   "cancelDesign": {
     "category": "Category",
@@ -1639,6 +1641,13 @@
     "pageTitle": "Contact Support",
     "myEnquiries": "My enquiries",
     "enquiryType": "Enquiry Type",
+    "order": {
+      "label": "Order",
+      "remove": "Remove",
+      "removeLabel": "Remove order {number} from this enquiry",
+      "removed": "The order was removed from this enquiry.",
+      "invalid": "This order can’t be linked to your enquiry. Remove it and submit again."
+    },
     "selectTopic": "Select a topic",
     "categories": {
       "technical_support": "Technical Support",

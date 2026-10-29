@@ -104,6 +104,8 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         ticket.unreadByAgent ??= false;
         ticket.flaggedAt ??= null;
         ticket.flaggedBy ??= null;
+        // ... and before v4.
+        ticket.orderId ??= null;
       }
       return store;
     } catch (error) {
@@ -342,7 +344,7 @@ const isoOrNull = (value: unknown): string | null => (value === null || value ==
 
 const TICKET_COLUMNS = `id::text, number, user_id, user_email, user_name, contact_email, locale, category, subject, status, assignee_id, assignee_name,
   sequence, confirm_due_at, closed_at, close_reason, rating, created_at, updated_at, last_message_at, last_message_by,
-  client_event_id::text, payload_hash, suggestion_id::text, unread_by_agent, flagged_at, flagged_by`;
+  client_event_id::text, payload_hash, suggestion_id::text, unread_by_agent, flagged_at, flagged_by, order_id`;
 
 function ticketFromRow(row: QueryResultRow): TicketRecord {
   return {
@@ -353,7 +355,7 @@ function ticketFromRow(row: QueryResultRow): TicketRecord {
     rating: row.rating === null ? null : Number(row.rating), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
     lastMessageAt: iso(row.last_message_at), lastMessageBy: row.last_message_by, clientEventId: row.client_event_id, payloadHash: row.payload_hash,
     suggestionId: row.suggestion_id ?? null, unreadByAgent: Boolean(row.unread_by_agent),
-    flaggedAt: isoOrNull(row.flagged_at), flaggedBy: row.flagged_by ?? null
+    flaggedAt: isoOrNull(row.flagged_at), flaggedBy: row.flagged_by ?? null, orderId: row.order_id ?? null
   };
 }
 
@@ -491,12 +493,12 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
           const number = formatTicketNumber(ticket.createdAt, Number(counter));
           const inserted = await client.query(`INSERT INTO helpdesk_tickets (id, number, user_id, user_email, user_name, locale, category, subject, status, assignee_id, assignee_name,
               sequence, confirm_due_at, closed_at, close_reason, rating, created_at, updated_at, last_message_at, last_message_by, client_event_id, payload_hash,
-              contact_email, suggestion_id, unread_by_agent, flagged_at, flagged_by)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+              contact_email, suggestion_id, unread_by_agent, flagged_at, flagged_by, order_id)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
             ON CONFLICT (client_event_id) DO NOTHING RETURNING id`,
           [ticket.id, number, ticket.userId, ticket.userEmail, ticket.userName, ticket.locale, ticket.category, ticket.subject, ticket.status, ticket.assigneeId, ticket.assigneeName,
             ticket.sequence, ticket.confirmDueAt, ticket.closedAt, ticket.closeReason, ticket.rating, ticket.createdAt, ticket.updatedAt, ticket.lastMessageAt, ticket.lastMessageBy, ticket.clientEventId, ticket.payloadHash,
-            ticket.contactEmail, ticket.suggestionId, ticket.unreadByAgent, ticket.flaggedAt, ticket.flaggedBy]);
+            ticket.contactEmail, ticket.suggestionId, ticket.unreadByAgent, ticket.flaggedAt, ticket.flaggedBy, ticket.orderId ?? null]);
           // A duplicate key must not consume a number: roll the counter back too.
           if (!inserted.rows[0]) throw new Rollback({ status: "duplicate" as const });
           await insertMessage(client, input.message);

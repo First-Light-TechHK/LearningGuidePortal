@@ -117,6 +117,12 @@ const SCHEMA_PROBE = `
         AND column_name = 'alternatives'
         AND table_schema = ANY (current_schemas(false))
     )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_tickets'
+        AND column_name = 'order_id'
+        AND table_schema = ANY (current_schemas(false))
+    )
   ) AS ready
 `;
 
@@ -311,6 +317,10 @@ CREATE TABLE IF NOT EXISTS helpdesk_ai_ratings (
   created_at TIMESTAMPTZ NOT NULL
 );
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;
+
+-- Mirrors db/migrations/021_helpdesk_order_link.sql (the learner's own order an
+-- enquiry is about); same parity rule as 017 above.
+ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS order_id TEXT CHECK (order_id IS NULL OR char_length(order_id) BETWEEN 1 AND 64);
 
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,
