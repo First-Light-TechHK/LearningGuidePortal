@@ -21,12 +21,13 @@ import { uuidv7 } from "../../../lib/uuidv7";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
 import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 
-const TABLES = ["helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
 const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
 const MIGRATION_019 = readFileSync(path.join(process.cwd(), "db", "migrations", "019_helpdesk_outcome_delivery.sql"), "utf8");
 const MIGRATION_020 = readFileSync(path.join(process.cwd(), "db", "migrations", "020_helpdesk_ai_ratings.sql"), "utf8");
 const MIGRATION_022 = readFileSync(path.join(process.cwd(), "db", "migrations", "022_helpdesk_order_link.sql"), "utf8");
+const MIGRATION_023 = readFileSync(path.join(process.cwd(), "db", "migrations", "023_helpdesk_chat_sessions.sql"), "utf8");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const learner = { id: "pg-learner", email: "pg-learner@example.test", name: "PG Learner" };
 const agent = { id: "emp-pg", name: "PG Agent" };
@@ -606,4 +607,72 @@ test("022 in PostgreSQL: re-applies; the bootstrap adds order_id to a database a
   assert.deepEqual((await linked.getAgentTicket(created.ticket.id)).order, projection);
   await assert.rejects(linked.createTicket({ ...learner, id: "pg-other" }, { ...input("Not mine"), orderId: ORDER }, randomUUID()), (error: unknown) => (error as { code?: string; field?: string }).code === "validation_failed" && (error as { field?: string }).field === "orderId");
   await assert.rejects(getPool().query("UPDATE helpdesk_tickets SET order_id = $1 WHERE id = $2", ["x".repeat(65), created.ticket.id]), /check constraint/);
+});
+
+test("023 in PostgreSQL: re-applies; the bootstrap adds the sessions and turn columns to a database at 022; turns of one session get distinct indexes under a race; clicks and ends round-trip", async () => {
+  await getPool().query(MIGRATION_023);
+  await getPool().query(MIGRATION_023);
+  const repository = createPostgresHelpdeskRepository();
+  const at = "2026-10-30T09:00:00.000Z";
+  const clock = () => new Date(at);
+  const release = { version: 3, publishedAt: at, locale: "en-GB" as const, nodes: [
+    { id: "01a18100-0000-7000-8000-000000000020", key: "pay", type: "choice" as const, entry: true, category: "payments_subscriptions" as const, popular: true, question: "Payment trouble?", answer: "Which is it?", blocks: [], signals: [] },
+    { id: "01a18100-0000-7000-8000-000000000021", key: "failed", type: "answer" as const, entry: true, category: "payments_subscriptions" as const, popular: false, question: "My payment failed", answer: "Try another card.", blocks: [{ id: "b1", text: "Try another card." }], signals: ["payment_failed" as const] }
+  ], edges: [{ parentId: "01a18100-0000-7000-8000-000000000020", childId: "01a18100-0000-7000-8000-000000000021", kind: "option" as const, position: 0, label: "It failed" }] };
+  const assistant = createAssistantService({
+    repository, now: clock, log: () => undefined, traceId: "0af7651916cd43dd8448eb211c80319c",
+    admin: { async suggest() { return null; }, async suggestReply() { return { suggestion: null, alternatives: [], turn: { kind: "smalltalk", intent: "greeting", confidence: null, nodeId: null, blocks: [], opening: null, closing: null, reply: "Hi! What can I help with?", explanation: null, covered: null, guard: { result: "passed", reason: null, fallback: [] }, releaseVersion: 3 } }; }, async reportOutcome() { return true; } },
+    release: { async current() { return release; } },
+    learnerRecords: async () => ({ user: { email: learner.email, emailVerifiedAt: null }, orders: [], subscriptions: [] })
+  });
+  const { sessionId } = await assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  const stored = await repository.findChatSession(sessionId);
+  assert.deepEqual(stored?.signals, ["email_unverified"]);
+  assert.equal(stored?.releaseVersion, 3);
+  // Ten turns of one session at once: the session row lock gives each its own index.
+  const turns = await Promise.all(Array.from({ length: 10 }, (_, index) => assistant.ask(learner, { message: `hello ${index}`, locale: "en-GB", faqId: null, sessionId }, randomUUID())));
+  const indexes = turns.map((item) => (item.response as { turn: { turnIndex: number } }).turn.turnIndex).sort((a, b) => a - b);
+  assert.deepEqual(indexes, Array.from({ length: 10 }, (_, index) => index + 1));
+  assert.equal((await repository.findChatSession(sessionId))?.turns, 10);
+  // The last three learner messages, oldest first, in the order the lock gave them indexes.
+  const byIndex = new Map(turns.map((item, sent) => [(item.response as { turn: { turnIndex: number } }).turn.turnIndex, `hello ${sent}`]));
+  assert.deepEqual(await repository.sessionLearnerTurns(sessionId, 3), [byIndex.get(8), byIndex.get(9), byIndex.get(10)]);
+  const option = await assistant.click(learner, { locale: "en-GB", nodeId: "01a18100-0000-7000-8000-000000000021", fromNodeId: "01a18100-0000-7000-8000-000000000020", via: "option", sessionId, label: null }, randomUUID());
+  const row = (await rows<Record<string, unknown>>("SELECT session_id::text, turn_index, node_id::text, parent_node_id::text, via, kind, intent, guard, release_version, trace_id, signals, blocks, texts FROM helpdesk_assist_log WHERE id = $1", [option.response.id]))[0];
+  assert.deepEqual(row, {
+    session_id: sessionId, turn_index: 11, node_id: "01a18100-0000-7000-8000-000000000021", parent_node_id: "01a18100-0000-7000-8000-000000000020", via: "option", kind: "answer", intent: null, guard: null,
+    release_version: 3, trace_id: "0af7651916cd43dd8448eb211c80319c", signals: ["email_unverified"], blocks: [], texts: { opening: "Here's how to sort this out:", closing: "If anything's unclear, just ask.", reply: null, explanation: null, nodeType: "answer" }
+  });
+  assert.equal((await repository.findChatSession(sessionId))?.currentNodeId, "01a18100-0000-7000-8000-000000000021");
+  const replay = await repository.findAssist(option.response.id);
+  assert.equal(replay?.texts?.opening, "Here's how to sort this out:");
+  assert.deepEqual(await assistant.expand(learner, option.response.id), { id: option.response.id, expanded: true });
+  assert.equal((await repository.findAssist(option.response.id))?.expanded, true);
+  // An enquiry linking the chat ends the session as ticket; an end by the learner afterwards does not overwrite it.
+  const helpdesk = service(clock);
+  const created = await helpdesk.createTicket(learner, { ...input("Still stuck"), assistIds: [option.response.id] }, randomUUID());
+  const ended = await repository.findChatSession(sessionId);
+  assert.equal(ended?.endReason, "ticket");
+  assert.equal(ended?.endedAt, created.ticket.createdAt);
+  assert.equal((await repository.endChatSession(sessionId, learner.id, "ended_by_learner", "2026-10-30T10:00:00.000Z"))?.endReason, "ticket", "the first end wins");
+  assert.equal(await repository.endChatSession(sessionId, "pg-other", "idle", at), null);
+  // The constraints back the enums.
+  await assert.rejects(getPool().query("UPDATE helpdesk_assist_log SET via = 'teleport' WHERE id = $1", [option.response.id]), /check constraint/);
+  await assert.rejects(getPool().query("UPDATE helpdesk_assist_log SET signals = ARRAY['rich']::text[] WHERE id = $1", [option.response.id]), /check constraint/);
+  await assert.rejects(getPool().query("UPDATE helpdesk_assist_log SET guard = 'maybe' WHERE id = $1", [option.response.id]), /check constraint/);
+  await assert.rejects(getPool().query("UPDATE helpdesk_assist_log SET trace_id = 'nope' WHERE id = $1", [option.response.id]), /check constraint/);
+  await assert.rejects(getPool().query("UPDATE helpdesk_chat_sessions SET end_reason = NULL WHERE id = $1", [sessionId]), /check constraint/);
+  await assert.rejects(getPool().query("UPDATE helpdesk_assist_log SET turn_index = 1 WHERE id = $1", [option.response.id]), /unique|duplicate key/);
+  // Back to the 022 schema, keeping a v4 row: the bootstrap adds everything on start and the old row reads as "no session".
+  const v4 = await createAssistantService({ repository, now: clock, log: () => undefined, admin: { async suggest() { return null; }, async reportOutcome() { return true; } } }).checkForSubmit(learner, { category: "technical_support", subject: "Old", message: "Old row", locale: "en-GB" });
+  assert.equal(v4.suggestion, null);
+  await getPool().query(`ALTER TABLE helpdesk_assist_log ${["session_id", "turn_index", "node_id", "parent_node_id", "via", "kind", "intent", "guard", "release_version", "trace_id", "signals", "blocks", "expanded", "covered", "texts"].map((column) => `DROP COLUMN ${column}`).join(", ")}`);
+  await getPool().query("DROP TABLE helpdesk_chat_sessions");
+  await coldStartBootstrap();
+  assert.equal((await rows<{ name: string | null }>("SELECT to_regclass('helpdesk_chat_sessions')::text AS name"))[0].name, "helpdesk_chat_sessions");
+  const old = (await rows<{ id: string }>("SELECT id::text FROM helpdesk_assist_log WHERE question = 'Old'"))[0];
+  const oldRow = await repository.findAssist(old.id);
+  assert.equal(oldRow?.sessionId, null);
+  assert.equal(oldRow?.kind, null);
+  assert.equal(oldRow?.texts, null);
 });

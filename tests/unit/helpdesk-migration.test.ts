@@ -114,3 +114,37 @@ test("022 (v4) adds the enquiry's order number; additive, repeatable, mirrored b
   assert.match(bootstrap, /table_name = 'helpdesk_tickets'\s+AND column_name = 'order_id'/, "the probe covers the newest column");
   for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /order_id/);
 });
+
+test("023 (v5) adds the chat sessions and the assist log's turn columns; additive, repeatable, mirrored by the bootstrap and probe; 017–022 untouched", async () => {
+  const migration = await readFile("db/migrations/023_helpdesk_chat_sessions.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS|ALTER TABLE)[\s\S]*?;/g) || [];
+  assert.equal(statements.length, 18);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  assert.match(plain, /CREATE TABLE IF NOT EXISTS helpdesk_chat_sessions \( id UUID PRIMARY KEY, learner_id TEXT NOT NULL, locale TEXT NOT NULL CHECK \(locale IN \('en-GB', 'zh-CN'\)\),/);
+  assert.match(plain, /end_reason TEXT CHECK \(end_reason IN \('idle', 'ended_by_learner', 'handover', 'ticket'\)\)/);
+  assert.match(plain, /turns SMALLINT NOT NULL DEFAULT 0 CHECK \(turns >= 0\), unsolved_streak SMALLINT NOT NULL DEFAULT 0 CHECK \(unsolved_streak >= 0\), current_node_id UUID,/);
+  assert.match(plain, /CHECK \(\(ended_at IS NULL\) = \(end_reason IS NULL\)\)/);
+  // Every assist log column is nullable (rows before v5 and submit checks read as "no session"), and every enum is the contract's.
+  const columns = (plain.match(/ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS (\w+)/g) || []).map((line) => line.split(" ").pop());
+  assert.deepEqual(columns, ["session_id", "turn_index", "node_id", "parent_node_id", "via", "kind", "intent", "guard", "release_version", "trace_id", "signals", "blocks", "expanded", "covered", "texts"]);
+  for (const statement of plain.match(/ALTER TABLE [^;]*;/g) || []) {
+    assert.match(statement, /^ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS /);
+    assert.doesNotMatch(statement, /NOT NULL|DEFAULT/, `nullable, no default: ${statement}`);
+  }
+  const { ASSIST_VIAS, GUARD_REASONS, SITUATION_SIGNALS, SUGGEST_INTENTS, SUGGEST_KINDS, CHAT_END_REASONS } = await import("../../contracts/helpdesk");
+  const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
+  assert.ok(plain.includes(`via TEXT CHECK (via IN (${list(ASSIST_VIAS)}))`));
+  assert.ok(plain.includes(`kind TEXT CHECK (kind IN (${list([...SUGGEST_KINDS, "handover"])}))`));
+  assert.ok(plain.includes(`intent TEXT CHECK (intent IN (${list(SUGGEST_INTENTS)}))`));
+  assert.ok(plain.includes(`guard TEXT CHECK (guard IN (${list(["passed", "fallback", ...GUARD_REASONS])}))`));
+  assert.ok(plain.includes(`end_reason TEXT CHECK (end_reason IN (${list(CHAT_END_REASONS)}))`));
+  assert.equal(plain.split(`signals <@ ARRAY[${list(SITUATION_SIGNALS)}]::text[]`).length - 1, 2, "both signal columns allow the Part A enum only");
+  assert.match(plain, /session_id UUID REFERENCES helpdesk_chat_sessions\(id\)/);
+  assert.match(plain, /CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_assist_log_session_turn_idx ON helpdesk_assist_log \(session_id, turn_index\) WHERE session_id IS NOT NULL;/);
+  assert.match(bootstrap, /to_regclass\('helpdesk_chat_sessions'\) IS NOT NULL/);
+  assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'texts'/, "the probe covers the newest column");
+  for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql", "022_helpdesk_order_link.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /helpdesk_chat_sessions|session_id|turn_index/);
+});

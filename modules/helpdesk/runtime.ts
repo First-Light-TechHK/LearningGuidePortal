@@ -12,7 +12,9 @@ import { readBinary, removeDir, systemRoot, writeBinary } from "@/services/fileS
 import { ensureProductData, recordUserNotification } from "@/services/productStore";
 import { publicAppOrigin } from "@/services/runtimeConfig";
 import { createAdminHelpdeskClient } from "./adminClient";
+import { outgoingTraceparent, parseTraceparent } from "@/lib/traceparent";
 import { createAssistantService, type AssistantService } from "./assistant";
+import { sharedFaqReleaseCache } from "./faqReleaseCache";
 import { projectOrder } from "./orderDirectory";
 import { createHelpdeskService, type HelpdeskService } from "./service";
 import { projectStudent } from "./studentDirectory";
@@ -72,5 +74,21 @@ export async function learnerOrder(userId: string, orderId: string): Promise<Ord
  * The request's W3C traceparent, when valid, is continued on the calls to Admin.
  */
 export function helpdeskAssistant(request?: Request): AssistantService {
-  return createAssistantService({ repository: helpdeskRepository(), admin: createAdminHelpdeskClient({ traceparent: request?.headers.get("traceparent") }) });
+  // v5 Part G1: one trace per learner request, logged with the turn; a valid incoming traceparent is continued.
+  const incoming = request?.headers.get("traceparent");
+  const traceparent = parseTraceparent(incoming) ? incoming as string : outgoingTraceparent(null);
+  const admin = createAdminHelpdeskClient({ traceparent });
+  return createAssistantService({
+    repository: helpdeskRepository(),
+    admin: { suggest: admin.suggest, suggestReply: admin.suggestReply, reportOutcome: admin.reportOutcome, faqs: (locale) => admin.faqs(locale), faq: (id, locale) => admin.faq(id, locale) },
+    // v5: the cached published release (60 s revalidation, the last good one kept while Admin is down).
+    release: { current: (locale, options) => sharedFaqReleaseCache.current(admin, locale, options) },
+    // v5 Part A: read-only, the learner's own records; only enum signals come out, and they never reach Admin or the model.
+    learnerRecords: async (learnerId) => {
+      const data = await ensureProductData();
+      return { user: data.users.find((user) => user.id === learnerId) ?? null, orders: data.orders.filter((order) => order.userId === learnerId), subscriptions: data.subscriptions.filter((item) => item.userId === learnerId) };
+    },
+    ownsOrder: async (learnerId, orderId) => (await learnerOrder(learnerId, orderId)) !== null,
+    traceId: parseTraceparent(traceparent)?.traceId ?? null
+  });
 }

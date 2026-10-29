@@ -9,7 +9,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { HelpdeskProblem, TICKET_STATUSES, type AgentListQuery, type TicketCounts } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TagRecord, TicketAggregate, TicketRecord } from "@/modules/helpdesk/domain";
 import { formatTicketNumber, needsReply, ticketDayKey } from "@/modules/helpdesk/domain";
-import type { AiRatingRecord, AssistRecord, HelpdeskRepository, IdempotencyRecord, NewTicket, TicketChange, TicketListItem } from "@/modules/helpdesk/repository";
+import { answeredByPortal, type AiRatingRecord, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type IdempotencyRecord, type NewTicket, type TicketChange, type TicketListItem, type TurnUpdate } from "@/modules/helpdesk/repository";
 import { ensureSchema, getPool } from "@/services/persistence/db";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isProductionEnvironment } from "@/services/runtimeConfig";
@@ -73,7 +73,17 @@ type LocalStore = {
   counters: Record<string, number>;
   assists: AssistRecord[];
   aiRatings: AiRatingRecord[];
+  /** v5 chat sessions. */
+  sessions: ChatSessionRecord[];
 };
+
+/** v5: what a recorded turn does to its session's streak and card on screen (both repositories). */
+function nextStreak(streak: number, update: TurnUpdate) {
+  return update.unsolved === "reset" ? 0 : update.unsolved === "increment" ? Math.min(streak + 1, 32767) : streak;
+}
+
+/** v5: a session's own open rows (the ones a ticket links) end with reason ticket. */
+const TICKET_END = "ticket" as const;
 
 function tagsOf(store: LocalStore, ticketId: string) {
   return store.tags.filter((item) => item.ticketId === ticketId).sort((a, b) => (a.createdAt === b.createdAt ? (a.tag < b.tag ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1)).map((item) => item.tag);
@@ -98,6 +108,8 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         row.alternatives ??= [];
       }
       store.aiRatings ||= [];
+      // ... and before v5.
+      store.sessions ||= [];
       for (const ticket of store.tickets) {
         ticket.contactEmail ??= ticket.userEmail;
         ticket.suggestionId ??= null;
@@ -110,7 +122,7 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       return store;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { tickets: [], messages: [], attachments: [], events: [], tags: [], counters: {}, assists: [], aiRatings: [] };
+      return { tickets: [], messages: [], attachments: [], events: [], tags: [], counters: {}, assists: [], aiRatings: [], sessions: [] };
     }
   }
 
@@ -182,6 +194,10 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
               row.ticketId = input.ticket.id;
               if (row.id === links.declinedId && row.source === "submit" && row.feedback === null) row.feedback = "declined";
             }
+          }
+          const linkedSessions = new Set(store.assists.filter((row) => row.ticketId === input.ticket.id && row.sessionId).map((row) => row.sessionId));
+          for (const session of store.sessions) {
+            if (linkedSessions.has(session.id) && session.endedAt === null) { session.endedAt = input.ticket.createdAt; session.endReason = TICKET_END; }
           }
         }
         await save(store);
@@ -312,7 +328,7 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     async listUndeliveredAssists(sinceIso, limit) {
       const order = (row: AssistRecord) => `${row.feedbackAttemptedAt === null ? "0" : `1${row.feedbackAttemptedAt}`}|${row.createdAt}|${row.id}`;
       return (await load()).assists
-        .filter((item) => item.feedback !== null && !item.feedbackDeliveredAt && item.createdAt > sinceIso)
+        .filter((item) => item.feedback !== null && !item.feedbackDeliveredAt && item.createdAt > sinceIso && !answeredByPortal(item))
         .sort((a, b) => (order(a) < order(b) ? -1 : 1))
         .slice(0, limit);
     },
@@ -333,6 +349,55 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     },
     async findAiRating(runId) {
       return (await load()).aiRatings.find((item) => item.runId === runId)?.rating ?? null;
+    },
+    createChatSession(record) {
+      return exclusive(async () => {
+        const store = await load();
+        if (!store.sessions.some((item) => item.id === record.id)) store.sessions.push({ ...record, signals: [...record.signals] });
+        await save(store);
+      });
+    },
+    async findChatSession(id) {
+      return (await load()).sessions.find((item) => item.id === id) ?? null;
+    },
+    recordTurn(record, update) {
+      return exclusive(async () => {
+        const store = await load();
+        if (store.assists.some((item) => item.id === record.id || (record.clientEventId !== null && item.clientEventId === record.clientEventId))) return { status: "duplicate" as const };
+        const session = store.sessions.find((item) => item.id === record.sessionId && item.learnerId === record.learnerId);
+        if (!session) return { status: "no_session" as const };
+        const turnIndex = session.turns + 1;
+        store.assists.push({ ...record, turnIndex });
+        session.turns = turnIndex;
+        session.lastTurnAt = record.createdAt > session.lastTurnAt ? record.createdAt : session.lastTurnAt;
+        session.unsolvedStreak = nextStreak(session.unsolvedStreak, update);
+        if (update.currentNodeId !== undefined) session.currentNodeId = update.currentNodeId;
+        await save(store);
+        return { status: "inserted" as const, turnIndex };
+      });
+    },
+    endChatSession(id, learnerId, reason, atIso) {
+      return exclusive(async () => {
+        const store = await load();
+        const session = store.sessions.find((item) => item.id === id && item.learnerId === learnerId);
+        if (!session) return null;
+        if (session.endedAt === null) { session.endedAt = atIso; session.endReason = reason; await save(store); }
+        return session;
+      });
+    },
+    async sessionLearnerTurns(sessionId, limit) {
+      const rows = (await load()).assists.filter((item) => item.sessionId === sessionId && item.via === "typed");
+      rows.sort((a, b) => (a.turnIndex ?? 0) - (b.turnIndex ?? 0));
+      return rows.map((item) => item.question).slice(-limit);
+    },
+    setAssistExpanded(id, learnerId) {
+      return exclusive(async () => {
+        const store = await load();
+        const row = store.assists.find((item) => item.id === id && item.learnerId === learnerId);
+        if (!row) return null;
+        if (!row.expanded) { row.expanded = true; await save(store); }
+        return row;
+      });
     }
   };
 }
@@ -359,7 +424,27 @@ function ticketFromRow(row: QueryResultRow): TicketRecord {
   };
 }
 
-const ASSIST_COLUMNS = "id::text, learner_id, source, locale, question, faq_id::text, faq_question, answer, feedback, ticket_id::text, client_event_id::text, payload_hash, created_at, feedback_delivered_at, feedback_attempted_at, alternatives";
+const ASSIST_COLUMNS = "id::text, learner_id, source, locale, question, faq_id::text, faq_question, answer, feedback, ticket_id::text, client_event_id::text, payload_hash, created_at, feedback_delivered_at, feedback_attempted_at, alternatives, "
+  + "session_id::text, turn_index, node_id::text, parent_node_id::text, via, kind, intent, guard, release_version, trace_id, signals, blocks, expanded, covered, texts";
+
+/** helpdesk_assist_log.texts (023): JSONB, null on rows written before v5. */
+function textsFromRow(value: unknown): AssistTexts | null {
+  const raw = typeof value === "string" ? JSON.parse(value) as unknown : value;
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as Record<string, unknown>;
+  const text = (key: string) => (typeof entry[key] === "string" ? entry[key] as string : null);
+  return { opening: text("opening"), closing: text("closing"), reply: text("reply"), explanation: text("explanation"), nodeType: entry.nodeType === "answer" || entry.nodeType === "choice" ? entry.nodeType : null };
+}
+
+const SESSION_COLUMNS = "id::text, learner_id, locale, release_version, started_at, last_turn_at, ended_at, end_reason, turns, unsolved_streak, current_node_id::text, signals";
+
+function sessionFromRow(row: QueryResultRow): ChatSessionRecord {
+  return {
+    id: row.id, learnerId: row.learner_id, locale: row.locale, releaseVersion: row.release_version === null ? null : Number(row.release_version),
+    startedAt: iso(row.started_at), lastTurnAt: iso(row.last_turn_at), endedAt: isoOrNull(row.ended_at), endReason: row.end_reason ?? null,
+    turns: Number(row.turns), unsolvedStreak: Number(row.unsolved_streak), currentNodeId: row.current_node_id ?? null, signals: row.signals ?? []
+  };
+}
 
 /** helpdesk_assist_log.alternatives (020): JSONB, null on rows written before v3. */
 function alternativesFromRow(value: unknown): AssistRecord["alternatives"] {
@@ -377,8 +462,24 @@ function assistFromRow(row: QueryResultRow): AssistRecord {
     faqQuestion: row.faq_question ?? null, answer: row.answer ?? null, feedback: row.feedback ?? null, ticketId: row.ticket_id ?? null,
     clientEventId: row.client_event_id ?? null, payloadHash: row.payload_hash ?? null, createdAt: iso(row.created_at),
     feedbackDeliveredAt: isoOrNull(row.feedback_delivered_at), feedbackAttemptedAt: isoOrNull(row.feedback_attempted_at),
-    alternatives: alternativesFromRow(row.alternatives)
+    alternatives: alternativesFromRow(row.alternatives),
+    sessionId: row.session_id ?? null, turnIndex: row.turn_index === null || row.turn_index === undefined ? null : Number(row.turn_index),
+    nodeId: row.node_id ?? null, parentNodeId: row.parent_node_id ?? null, via: row.via ?? null, kind: row.kind ?? null, intent: row.intent ?? null,
+    guard: row.guard ?? null, releaseVersion: row.release_version === null || row.release_version === undefined ? null : Number(row.release_version),
+    traceId: row.trace_id ?? null, signals: row.signals ?? null, blocks: row.blocks ?? null, expanded: row.expanded ?? null, covered: row.covered ?? null,
+    texts: textsFromRow(row.texts)
   };
+}
+
+const ASSIST_INSERT = `INSERT INTO helpdesk_assist_log (id, learner_id, source, locale, question, faq_id, faq_question, answer, feedback, ticket_id, client_event_id, payload_hash, created_at, alternatives,
+    session_id, turn_index, node_id, parent_node_id, via, kind, intent, guard, release_version, trace_id, signals, blocks, expanded, covered, texts)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::text[],$26::text[],$27,$28,$29::jsonb) ON CONFLICT DO NOTHING RETURNING id`;
+
+function assistParams(record: AssistRecord, turnIndex: number | null) {
+  return [record.id, record.learnerId, record.source, record.locale, record.question, record.faqId, record.faqQuestion, record.answer, record.feedback, record.ticketId, record.clientEventId, record.payloadHash, record.createdAt,
+    record.alternatives.length ? JSON.stringify(record.alternatives) : null,
+    record.sessionId ?? null, turnIndex, record.nodeId ?? null, record.parentNodeId ?? null, record.via ?? null, record.kind ?? null, record.intent ?? null, record.guard ?? null,
+    record.releaseVersion ?? null, record.traceId ?? null, record.signals ?? null, record.blocks ?? null, record.expanded ?? null, record.covered ?? null, record.texts ? JSON.stringify(record.texts) : null];
 }
 
 function messageFromRow(row: QueryResultRow): MessageRecord {
@@ -513,6 +614,9 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
               await client.query(`UPDATE helpdesk_assist_log SET feedback = 'declined'
                 WHERE id = $1::uuid AND ticket_id = $2 AND source = 'submit' AND feedback IS NULL`, [links.declinedId, ticket.id]);
             }
+            // v5: the chat that led to the enquiry ends there.
+            await client.query(`UPDATE helpdesk_chat_sessions SET ended_at = $2, end_reason = '${TICKET_END}'
+              WHERE ended_at IS NULL AND id IN (SELECT session_id FROM helpdesk_assist_log WHERE ticket_id = $1 AND session_id IS NOT NULL)`, [ticket.id, ticket.createdAt]);
           }
           return { status: "created" as const, number };
         });
@@ -619,9 +723,7 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       return row ? iso(row.created_at) : null;
     },
     async insertAssist(record) {
-      const rows = await select(`INSERT INTO helpdesk_assist_log (id, learner_id, source, locale, question, faq_id, faq_question, answer, feedback, ticket_id, client_event_id, payload_hash, created_at, alternatives)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb) ON CONFLICT DO NOTHING RETURNING id`,
-      [record.id, record.learnerId, record.source, record.locale, record.question, record.faqId, record.faqQuestion, record.answer, record.feedback, record.ticketId, record.clientEventId, record.payloadHash, record.createdAt, record.alternatives.length ? JSON.stringify(record.alternatives) : null]);
+      const rows = await select(ASSIST_INSERT, assistParams(record, record.turnIndex ?? null));
       return rows.length ? "inserted" : "duplicate";
     },
     async findAssist(id) {
@@ -662,6 +764,7 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
     async listUndeliveredAssists(sinceIso, limit) {
       return (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log
         WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL AND created_at > $1
+          AND NOT (via IS NOT NULL AND via <> 'typed' AND release_version IS NOT NULL)
         ORDER BY feedback_attempted_at ASC NULLS FIRST, created_at, id LIMIT $2`, [sinceIso, limit])).map(assistFromRow);
     },
     async listAssistsByTicket(ticketId) {
@@ -679,6 +782,49 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
     async findAiRating(runId) {
       const row = (await select<{ rating: number }>("SELECT rating FROM helpdesk_ai_ratings WHERE run_id = $1", [runId]))[0];
       return row ? Number(row.rating) : null;
+    },
+    async createChatSession(record) {
+      await select(`INSERT INTO helpdesk_chat_sessions (id, learner_id, locale, release_version, started_at, last_turn_at, ended_at, end_reason, turns, unsolved_streak, current_node_id, signals)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::text[]) ON CONFLICT (id) DO NOTHING`,
+      [record.id, record.learnerId, record.locale, record.releaseVersion, record.startedAt, record.lastTurnAt, record.endedAt, record.endReason, record.turns, record.unsolvedStreak, record.currentNodeId, record.signals]);
+    },
+    async findChatSession(id) {
+      const row = (await select(`SELECT ${SESSION_COLUMNS} FROM helpdesk_chat_sessions WHERE id = $1`, [id]))[0];
+      return row ? sessionFromRow(row) : null;
+    },
+    async recordTurn(record, update) {
+      try {
+        return await inTransaction(async (client) => {
+          // The session row lock orders concurrent turns of one session, so turn indexes never collide.
+          const session = (await client.query<{ turns: number; unsolved_streak: number }>("SELECT turns, unsolved_streak FROM helpdesk_chat_sessions WHERE id = $1 AND learner_id = $2 FOR UPDATE", [record.sessionId, record.learnerId])).rows[0];
+          if (!session) return { status: "no_session" as const };
+          const turnIndex = Number(session.turns) + 1;
+          const inserted = await client.query(ASSIST_INSERT, assistParams(record, turnIndex));
+          if (!inserted.rows[0]) return { status: "duplicate" as const };
+          await client.query(`UPDATE helpdesk_chat_sessions SET turns = $2, last_turn_at = GREATEST(last_turn_at, $3::timestamptz), unsolved_streak = $4,
+              current_node_id = CASE WHEN $5::boolean THEN $6::uuid ELSE current_node_id END WHERE id = $1`,
+          [record.sessionId, turnIndex, record.createdAt, nextStreak(Number(session.unsolved_streak), update), update.currentNodeId !== undefined, update.currentNodeId ?? null]);
+          return { status: "inserted" as const, turnIndex };
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) return { status: "duplicate" };
+        throw error;
+      }
+    },
+    async endChatSession(id, learnerId, reason, atIso) {
+      await select("UPDATE helpdesk_chat_sessions SET ended_at = $3, end_reason = $4 WHERE id = $1 AND learner_id = $2 AND ended_at IS NULL", [id, learnerId, atIso, reason]);
+      const row = (await select(`SELECT ${SESSION_COLUMNS} FROM helpdesk_chat_sessions WHERE id = $1 AND learner_id = $2`, [id, learnerId]))[0];
+      return row ? sessionFromRow(row) : null;
+    },
+    async sessionLearnerTurns(sessionId, limit) {
+      const rows = await select<{ question: string }>(`SELECT question FROM (SELECT question, turn_index FROM helpdesk_assist_log WHERE session_id = $1 AND via = 'typed'
+        ORDER BY turn_index DESC LIMIT $2) recent ORDER BY turn_index`, [sessionId, limit]);
+      return rows.map((row) => row.question);
+    },
+    async setAssistExpanded(id, learnerId) {
+      await select("UPDATE helpdesk_assist_log SET expanded = TRUE WHERE id = $1 AND learner_id = $2 AND expanded IS NOT TRUE", [id, learnerId]);
+      const row = (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE id = $1 AND learner_id = $2`, [id, learnerId]))[0];
+      return row ? assistFromRow(row) : null;
     }
   };
 }

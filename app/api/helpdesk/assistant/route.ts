@@ -1,4 +1,4 @@
-import { parseAssistantInput } from "@/contracts/helpdesk";
+import { parseAssistantTurnInput } from "@/contracts/helpdesk";
 import { idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireLearner } from "@/modules/helpdesk/http";
 import { helpdeskAssistant } from "@/modules/helpdesk/runtime";
 
@@ -13,12 +13,17 @@ export const dynamic = "force-dynamic";
  * alternatives as chips, [] with an answer. 30 per learner per
  * hour, then 429 rate_limited with Retry-After. id is the logged answer the
  * learner's next enquiry can link (assistIds).
+ * v5 (additive): sessionId (from POST /api/helpdesk/assistant/sessions; a
+ * missing, ended or idle one starts a new session) and, with faqId, via (the
+ * chip's reason). The answer adds turn: kind answer / smalltalk / clarify /
+ * no_match, the guarded short strings, the excerpt and next steps from the
+ * cached release, and the session it was recorded in (contracts AssistantTurn).
  */
 export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
     const key = idempotencyKey(request);
-    const input = parseAssistantInput(await readJsonBody(request));
+    const input = parseAssistantTurnInput(await readJsonBody(request));
     const result = await helpdeskAssistant(request).ask(learner, input, key);
     return jsonResponse(result.response, 200, result.replayed);
   } catch (error) { return problemResponse(error, "learner.assistant"); }

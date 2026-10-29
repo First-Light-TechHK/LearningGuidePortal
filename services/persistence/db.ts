@@ -72,6 +72,7 @@ const SCHEMA_PROBE = `
     AND to_regclass('helpdesk_ticket_tags') IS NOT NULL
     AND to_regclass('helpdesk_assist_log') IS NOT NULL
     AND to_regclass('helpdesk_ai_ratings') IS NOT NULL
+    AND to_regclass('helpdesk_chat_sessions') IS NOT NULL
     AND to_regclass('lesson_assessments') IS NOT NULL
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
@@ -131,6 +132,12 @@ const SCHEMA_PROBE = `
       SELECT 1 FROM information_schema.columns
       WHERE table_name = 'helpdesk_tickets'
         AND column_name = 'order_id'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'texts'
         AND table_schema = ANY (current_schemas(false))
     )
   ) AS ready
@@ -331,6 +338,41 @@ ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;
 -- Mirrors db/migrations/022_helpdesk_order_link.sql (the learner's own order an
 -- enquiry is about); same parity rule as 017 above.
 ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS order_id TEXT CHECK (order_id IS NULL OR char_length(order_id) BETWEEN 1 AND 64);
+
+-- Mirrors db/migrations/023_helpdesk_chat_sessions.sql (v5 chat sessions and the
+-- assist log's turn columns); same parity rule as 017 above.
+CREATE TABLE IF NOT EXISTS helpdesk_chat_sessions (
+  id UUID PRIMARY KEY,
+  learner_id TEXT NOT NULL,
+  locale TEXT NOT NULL CHECK (locale IN ('en-GB', 'zh-CN')),
+  release_version INTEGER CHECK (release_version IS NULL OR release_version >= 1),
+  started_at TIMESTAMPTZ NOT NULL,
+  last_turn_at TIMESTAMPTZ NOT NULL,
+  ended_at TIMESTAMPTZ,
+  end_reason TEXT CHECK (end_reason IN ('idle', 'ended_by_learner', 'handover', 'ticket')),
+  turns SMALLINT NOT NULL DEFAULT 0 CHECK (turns >= 0),
+  unsolved_streak SMALLINT NOT NULL DEFAULT 0 CHECK (unsolved_streak >= 0),
+  current_node_id UUID,
+  signals TEXT[] NOT NULL DEFAULT '{}' CHECK (signals <@ ARRAY['trial_ending', 'payment_failed', 'payment_pending', 'recent_purchase', 'subscription_cancelled', 'subscription_expired', 'email_unverified', 'open_ticket_waiting', 'from_order']::text[]),
+  CHECK ((ended_at IS NULL) = (end_reason IS NULL))
+);
+CREATE INDEX IF NOT EXISTS helpdesk_chat_sessions_learner_idx ON helpdesk_chat_sessions (learner_id, last_turn_at DESC);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES helpdesk_chat_sessions(id);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS turn_index SMALLINT CHECK (turn_index IS NULL OR turn_index >= 1);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS node_id UUID;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS parent_node_id UUID;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS via TEXT CHECK (via IN ('typed', 'follow_up', 'option', 'starter', 'signal', 'alternative'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS kind TEXT CHECK (kind IN ('answer', 'smalltalk', 'clarify', 'no_match', 'handover'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS intent TEXT CHECK (intent IN ('question', 'own_account', 'someone_else', 'exception', 'private_data', 'instructions', 'off_topic', 'greeting', 'farewell', 'vague', 'clarify'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS guard TEXT CHECK (guard IN ('passed', 'fallback', 'missing', 'too_long', 'link', 'email', 'digit', 'markup', 'blocked_phrase', 'ai_filler', 'script', 'ungrounded', 'not_covered', 'timeout', 'error'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS release_version INTEGER CHECK (release_version IS NULL OR release_version >= 1);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS trace_id TEXT CHECK (trace_id ~ '^[0-9a-f]{32}$');
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS signals TEXT[] CHECK (signals <@ ARRAY['trial_ending', 'payment_failed', 'payment_pending', 'recent_purchase', 'subscription_cancelled', 'subscription_expired', 'email_unverified', 'open_ticket_waiting', 'from_order']::text[]);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS blocks TEXT[] CHECK (cardinality(blocks) <= 3);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS expanded BOOLEAN;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS covered BOOLEAN;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS texts JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_assist_log_session_turn_idx ON helpdesk_assist_log (session_id, turn_index) WHERE session_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,

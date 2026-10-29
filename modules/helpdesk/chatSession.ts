@@ -3,6 +3,13 @@
 // code only; the model is never asked (GB/T 47746-2026: the human entry is
 // visible, an explicit request for a person is transferred promptly, and the
 // history goes with the handover, as the chat's assistIds).
+// v5 (helpdesk-v5-context-chips-and-smalltalk.md Parts B §3 and D §4): small
+// talk (hello, thanks, "I have a problem", off-topic) and an explanation of
+// the card on screen (clarify) never count toward the 8-question check-in or
+// the unsolved run; small talk neither breaks the run, while an explanation is
+// an answered turn (it breaks the run unless voted down). A clarify the card
+// does not cover counts as unsolved, like a turn with no answer. Small talk
+// still counts as activity for the idle end.
 // Client-safe: pure functions over the transcript (learnerUi ChatEntry), no
 // Node APIs. A session is everything after the last "ended" line, so the next
 // message after an end starts a new session with every counter at zero.
@@ -79,14 +86,30 @@ export function currentSession(entries: ChatEntry[]): ChatEntry[] {
   return entries.slice(start);
 }
 
-/** Learner questions in the current session (typed, chips, and a request for a person alike). */
+type AnswerEntry = Extract<ChatEntry, { kind: "answer" }>;
+
+/** v5: a small-talk reply (no card). */
+const isSmalltalk = (entry: AnswerEntry) => entry.turn?.kind === "smalltalk";
+/** v5: an explanation of the card on screen; covered = the card said what the learner asked. */
+const isClarify = (entry: AnswerEntry) => entry.turn?.kind === "clarify";
+/** An answered turn: a card, or (v5) an explanation the card covered. */
+const isAnswered = (entry: AnswerEntry) => (entry.reply !== null && !isSmalltalk(entry) && !isClarify(entry)) || (isClarify(entry) && entry.turn?.covered === true);
+
+/**
+ * Learner questions in the current session (typed, chips, and a request for a person alike), except (v5) the ones
+ * answered with small talk or an explanation of the card on screen.
+ */
 export function sessionQuestions(entries: ChatEntry[]): number {
-  return currentSession(entries).filter((entry) => entry.kind === "question").length;
+  const session = currentSession(entries);
+  const asked = session.filter((entry) => entry.kind === "question").length;
+  const notCounted = session.filter((entry) => entry.kind === "answer" && (isSmalltalk(entry) || isClarify(entry))).length;
+  return Math.max(0, asked - notCounted);
 }
 
 /**
  * Unsolved learner turns in a row at the end of the current session: a reply
- * with no answer (the fallback), an answer marked not helpful, or a call that
+ * with no answer (the fallback; v5: or a clarify the card does not cover), an
+ * answer (v5: or an explanation) marked not helpful, or a call that
  * failed or was rate limited (the error bubble: a turn with no answer too, and
  * the learner who most needs a person then). A handover card shown restarts
  * the count.
@@ -99,7 +122,9 @@ export function unsolvedStreak(entries: ChatEntry[]): number {
     if (entry.kind === "handover") break;
     if (entry.kind === "error") { streak += 1; continue; }
     if (entry.kind !== "answer") continue;
-    if (entry.reply !== null && entry.feedback !== "not_helpful") break;
+    // v5: small talk neither counts nor breaks the run.
+    if (isSmalltalk(entry)) continue;
+    if (isAnswered(entry) && entry.feedback !== "not_helpful") break;
     streak += 1;
   }
   return streak;
@@ -117,17 +142,18 @@ export function cardsAfterChange(entries: ChatEntry[], rules: ChatSessionRules =
   const last = session[session.length - 1];
   if (!last) return [];
   if (unsolvedStreak(session) >= rules.unsolvedInARow) return [{ kind: "handover", reason: "unsolved" }];
-  if (last.kind === "answer" && sessionQuestions(session) >= rules.checkInAfterQuestions && !session.some((entry) => entry.kind === "checkin")) return [{ kind: "checkin" }];
+  // v5: small talk and an explanation do not count, so the check-in waits for the reply to a counted question.
+  if (last.kind === "answer" && !isSmalltalk(last) && !isClarify(last) && sessionQuestions(session) >= rules.checkInAfterQuestions && !session.some((entry) => entry.kind === "checkin")) return [{ kind: "checkin" }];
   return [];
 }
 
-/** The assist the end-of-session rating card rates: the newest answered one (not a fallback) of this session, unless it was rated already. */
+/** The assist the end-of-session rating card rates: the newest answered one (not a fallback; v5: not small talk; an explanation the card covered counts) of this session, unless it was rated already. */
 export function lastAnsweredAssist(entries: ChatEntry[]): string | null {
   const rated = new Set(entries.flatMap((entry) => (entry.kind === "ended" && entry.rating === "rated" && entry.ratingFor ? [entry.ratingFor] : [])));
   const session = currentSession(entries);
   for (let index = session.length - 1; index >= 0; index -= 1) {
     const entry = session[index];
-    if (entry.kind === "answer" && entry.reply !== null) return rated.has(entry.id) ? null : entry.id;
+    if (entry.kind === "answer" && isAnswered(entry)) return rated.has(entry.id) ? null : entry.id;
   }
   return null;
 }
@@ -145,7 +171,8 @@ export function endSession(entries: ChatEntry[], reason: "idle" | "learner"): Ch
  */
 export function idleDeadline(entries: ChatEntry[], lastInputMs: number, rules: ChatSessionRules = CHAT_SESSION_RULES): number | null {
   const session = currentSession(entries);
-  if (!session.some((entry) => entry.kind === "answer")) return null;
+  // v5: small talk alone does not arm the idle end, but its time counts as activity once an answer is there.
+  if (!session.some((entry) => entry.kind === "answer" && !isSmalltalk(entry))) return null;
   let latest = lastInputMs;
   for (const entry of session) {
     if ((entry.kind === "question" || entry.kind === "answer") && entry.at) latest = Math.max(latest, Date.parse(entry.at));

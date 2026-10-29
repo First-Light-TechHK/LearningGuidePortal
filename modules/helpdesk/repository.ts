@@ -2,7 +2,7 @@
 // repositories/helpdeskRepository.ts (PostgreSQL, and a DEV-only local file
 // fallback). Every write is atomic: the ticket row, the optional message and
 // attachments, and exactly one event commit together or not at all.
-import type { AgentListQuery, AssistFeedback, AssistSource, HelpdeskAlternative, HelpdeskLocale, TicketCounts } from "@/contracts/helpdesk";
+import type { AgentListQuery, AssistFeedback, AssistSource, AssistVia, ChatEndReason, FaqNodeType, HelpdeskAlternative, HelpdeskLocale, SituationSignal, SuggestIntent, SuggestKind, TicketCounts } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TicketAggregate, TicketRecord } from "./domain";
 
 export type IdempotencyRecord = { ticketId: string; payloadHash: string };
@@ -20,7 +20,8 @@ export type NewTicket = {
    * linked; any other id is skipped silently. declinedId (the submit-time
    * suggestion the learner declined by submitting) also gets feedback
    * 'declined' when it is one of those rows, from source submit, with no
-   * feedback yet (first wins).
+   * feedback yet (first wins). v5: the open chat sessions of the linked rows
+   * end with reason ticket.
    */
   assistLinks?: { ids: string[]; learnerId: string; sinceIso: string; declinedId?: string | null };
 };
@@ -50,7 +51,69 @@ export type AssistRecord = {
   feedbackAttemptedAt: string | null;
   /** v3 §1: the "You might be asking" questions shown with a missing answer ([] when none), so a replay shows the same. */
   alternatives: HelpdeskAlternative[];
+} & Partial<AssistTurnColumns>;
+
+/**
+ * v5 (migration 023, spec Part G1 and graph design §3): the turn's place in the chat session and what it was, enum
+ * names only. Left out (or null) on rows written before v5 and on submit-time checks.
+ */
+export type AssistTurnColumns = {
+  sessionId: string | null;
+  /** 1, 2, 3 ... within the session, assigned when the row is recorded. */
+  turnIndex: number | null;
+  /** The node shown this turn (the answer, the choice node, or the card a clarify explained). */
+  nodeId: string | null;
+  /** The node on screen before it (the card a follow-up or option was clicked on). */
+  parentNodeId: string | null;
+  via: AssistVia | null;
+  kind: SuggestKind | "handover" | null;
+  intent: SuggestIntent | null;
+  /** "passed", "fallback" or a guard reason code (Admin's, or Portal's own check when it refused a string). */
+  guard: string | null;
+  releaseVersion: number | null;
+  traceId: string | null;
+  /** The session's situation signals (enum names) when the turn was shown. */
+  signals: SituationSignal[] | null;
+  /** The excerpt's block ids shown ([] or null = the whole answer). */
+  blocks: string[] | null;
+  /** The learner opened "show the full answer". */
+  expanded: boolean | null;
+  /** clarify: whether the card covered the follow-up. */
+  covered: boolean | null;
+  /** The short strings shown with the card (so an Idempotency-Key replay shows the same) and the node type. */
+  texts: AssistTexts | null;
 };
+
+export type AssistTexts = { opening: string | null; closing: string | null; reply: string | null; explanation: string | null; nodeType: FaqNodeType | null };
+
+/**
+ * v5: a click answered from the cached release (never sent to Admin): its feedback stays in Portal, so the
+ * outcome sweep never forwards it (Admin would not know the run). Typed turns and chips asked through Admin's
+ * per-FAQ path (no release version on the row) are Admin's runs.
+ */
+export function answeredByPortal(row: Pick<AssistRecord, "via" | "releaseVersion">): boolean {
+  return Boolean(row.via && row.via !== "typed" && row.releaseVersion);
+}
+
+/** v5 (graph design §3): one chat session of the learner (helpdesk_chat_sessions); Portal is its only writer. */
+export type ChatSessionRecord = {
+  id: string;
+  learnerId: string;
+  locale: HelpdeskLocale;
+  releaseVersion: number | null;
+  startedAt: string;
+  lastTurnAt: string;
+  endedAt: string | null;
+  endReason: ChatEndReason | null;
+  turns: number;
+  unsolvedStreak: number;
+  /** The card on screen (the last node shown). */
+  currentNodeId: string | null;
+  signals: SituationSignal[];
+};
+
+/** How a recorded turn changes the session's unsolved streak (v4 rules: smalltalk keeps it, an answer resets it). */
+export type TurnUpdate = { unsolved: "reset" | "increment" | "keep"; currentNodeId?: string | null };
 
 /** v3 §2: the learner's rating of one answer they were shown (helpdesk_ai_ratings); runId is the assist log row. */
 export type AiRatingRecord = { runId: string; learnerId: string; source: AssistSource; rating: number; createdAt: string };
@@ -129,4 +192,19 @@ export type HelpdeskRepository = {
   /** Stores the rating unless that run already has one (first wins); returns the rating stored afterwards. */
   insertAiRating(record: AiRatingRecord): Promise<number>;
   findAiRating(runId: string): Promise<number | null>;
+  // ---- v5 chat sessions (migration 023)
+  createChatSession(record: ChatSessionRecord): Promise<void>;
+  findChatSession(id: string): Promise<ChatSessionRecord | null>;
+  /**
+   * Records one turn of a session (record.sessionId) atomically: the row gets the next turn index, and the session its
+   * turn count, last turn time, unsolved streak and card on screen. "duplicate" (nothing changed) when the id or the
+   * Idempotency-Key is already stored; "no_session" when the session does not exist or belongs to someone else.
+   */
+  recordTurn(record: AssistRecord, update: TurnUpdate): Promise<{ status: "inserted"; turnIndex: number } | { status: "duplicate" } | { status: "no_session" }>;
+  /** The first end wins; returns the session as stored afterwards (null: no such session of this learner). */
+  endChatSession(id: string, learnerId: string, reason: ChatEndReason, atIso: string): Promise<ChatSessionRecord | null>;
+  /** What the learner typed in this session (via typed), oldest first, the newest limit. */
+  sessionLearnerTurns(sessionId: string, limit: number): Promise<string[]>;
+  /** Marks that the learner opened the full answer of their own row; returns the row (null: not theirs). */
+  setAssistExpanded(id: string, learnerId: string): Promise<AssistRecord | null>;
 };

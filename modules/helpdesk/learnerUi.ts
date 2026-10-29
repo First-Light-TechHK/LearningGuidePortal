@@ -1,7 +1,7 @@
 // Pure helpers for the learner Helpdesk pages (client-safe: type-only imports,
 // no Node APIs). Business rules stay on the server; these only shape input,
 // pick copy and lay out what the server returned.
-import type { HelpdeskAlternative, HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
+import type { AssistantTurn, HelpdeskAlternative, HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
 import { hasControlCharacters, isBlankText, textLength } from "@/contracts/helpdeskText";
 
 /** questionMax: the chat question limit (code points). */
@@ -205,10 +205,12 @@ export function fillTemplate(template: string, values: Record<string, string | n
  * two unsolved turns in a row), the "Still need help?" check-in, and the end
  * of a session ("idle" or the learner's End chat) with the rating card state
  * of the assist it rates (ratingFor; null: nothing was answered).
+ * v5: an answer carries the server's turn (smalltalk, clarify, the excerpt and
+ * next steps), so the v4 rules can tell small talk and clarify turns apart.
  */
 export type ChatEntry =
   | { kind: "question"; text: string; at?: string }
-  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null; /** v3: "You might be asking" chips under a fallback (left out when none). */ alternatives?: HelpdeskAlternative[]; at?: string }
+  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null; /** v3: "You might be asking" chips under a fallback (left out when none). */ alternatives?: HelpdeskAlternative[]; at?: string; /** v5: the server's turn (kind, guarded strings, excerpt, next steps); left out by older transcripts and an older server. */ turn?: AssistantTurn }
   | { kind: "error"; error: "rateLimited" | "error" }
   | { kind: "handover"; reason: "requested" | "unsolved" }
   | { kind: "checkin" }
@@ -251,13 +253,63 @@ function chatEntry(value: unknown): ChatEntry | null {
   const feedback = entry.feedback === "helpful" || entry.feedback === "not_helpful" ? entry.feedback : entry.feedback === null ? null : undefined;
   if (feedback === undefined) return null;
   const at = storedAt(entry.at);
+  const turn = storedTurn(entry.turn);
+  const withTurn = turn ? { turn } : {};
   if (entry.reply === null) {
     const alternatives = storedAlternatives(entry.alternatives);
-    return alternatives.length ? { kind: "answer", id: entry.id, reply: null, feedback, alternatives, ...at } : { kind: "answer", id: entry.id, reply: null, feedback, ...at };
+    return alternatives.length ? { kind: "answer", id: entry.id, reply: null, feedback, alternatives, ...at, ...withTurn } : { kind: "answer", id: entry.id, reply: null, feedback, ...at, ...withTurn };
   }
   const reply = entry.reply as Record<string, unknown> | undefined;
   if (!reply || !isText(reply.id) || !isText(reply.faqId) || !isText(reply.question) || !isText(reply.answer)) return null;
-  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback, ...at };
+  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback, ...at, ...withTurn };
+}
+
+const TURN_KINDS = ["answer", "smalltalk", "clarify", "no_match"] as const;
+const TURN_INTENTS = ["question", "own_account", "someone_else", "exception", "private_data", "instructions", "off_topic", "greeting", "farewell", "vague", "clarify"] as const;
+const TURN_VIAS = ["typed", "follow_up", "option", "starter", "signal", "alternative"] as const;
+const BLOCK_ID = /^b[1-9]\d{0,3}$/;
+const oneOf = <T extends string>(values: readonly T[], value: unknown): T | null => ((values as readonly unknown[]).includes(value) ? value as T : null);
+const textOrNull = (value: unknown): string | null => (isText(value) && value !== "" ? value : null);
+
+/**
+ * v5: the stored turn of an answer (the browser's storage, so read tolerantly). A turn without a known kind, via,
+ * session or turn index is dropped (the entry then reads as before v5); malformed parts read as absent.
+ */
+export function storedTurn(value: unknown): AssistantTurn | null {
+  if (!value || typeof value !== "object") return null;
+  const turn = value as Record<string, unknown>;
+  const kind = oneOf(TURN_KINDS, turn.kind);
+  const via = oneOf(TURN_VIAS, turn.via);
+  if (!kind || !via || !isText(turn.sessionId) || !UUID.test(turn.sessionId) || typeof turn.turnIndex !== "number" || !Number.isInteger(turn.turnIndex) || turn.turnIndex < 1) return null;
+  const id = (raw: unknown) => (isText(raw) && UUID.test(raw) ? raw : null);
+  const excerpt = Array.isArray(turn.excerpt)
+    ? turn.excerpt.flatMap((item: unknown) => {
+      const block = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return isText(block.id) && BLOCK_ID.test(block.id) && isText(block.text) && block.text ? [{ id: block.id, text: block.text }] : [];
+    })
+    : [];
+  const rawNext = turn.next && typeof turn.next === "object" ? turn.next as Record<string, unknown> : null;
+  const nextKind = rawNext ? oneOf(["follow_up", "option"] as const, rawNext.kind) : null;
+  const steps = rawNext && Array.isArray(rawNext.steps)
+    ? rawNext.steps.flatMap((item: unknown) => {
+      const step = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const nodeId = id(step.nodeId);
+      return nodeId && isText(step.label) && step.label ? [{ nodeId, label: step.label }] : [];
+    })
+    : [];
+  const rawSource = turn.source && typeof turn.source === "object" ? turn.source as Record<string, unknown> : null;
+  const sourceId = rawSource ? id(rawSource.faqId) : null;
+  return {
+    kind, intent: oneOf(TURN_INTENTS, turn.intent), via, nodeId: id(turn.nodeId), nodeType: oneOf(["answer", "choice"] as const, turn.nodeType),
+    opening: textOrNull(turn.opening), closing: textOrNull(turn.closing), reply: textOrNull(turn.reply), explanation: textOrNull(turn.explanation),
+    covered: typeof turn.covered === "boolean" ? turn.covered : null,
+    excerpt: excerpt.length ? excerpt : null,
+    next: nextKind && steps.length ? { kind: nextKind, steps } : null,
+    source: sourceId && rawSource && isText(rawSource.question) && rawSource.question ? { faqId: sourceId, question: rawSource.question } : null,
+    releaseVersion: typeof turn.releaseVersion === "number" && Number.isInteger(turn.releaseVersion) && turn.releaseVersion >= 1 ? turn.releaseVersion : null,
+    sessionId: turn.sessionId, turnIndex: turn.turnIndex,
+    unsolved: turn.unsolved === true, countsAsQuestion: turn.countsAsQuestion !== false
+  };
 }
 
 /** The stored transcript, keeping only well-formed entries (storage is the browser's, not ours). */

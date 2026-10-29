@@ -10,11 +10,37 @@
 // three "You might be asking" FAQs (chosen in Admin's code, never by the
 // model); Portal passes them on, keeps them with the row, and stores the
 // learner's 1-5 rating of an answer (first wins) for the BackOffice.
+// v5 (helpdesk-v5-context-chips-and-smalltalk.md, helpdesk-v5-faq-graph-design.md):
+// every chat turn belongs to a chat session (helpdesk_chat_sessions), which
+// starts with the situation chips Portal's code picks from the learner's own
+// records (the signals never go to Admin or the model). A typed question
+// carries the context (the card on screen, the session, the learner's own
+// last 3 turns, all from Portal's log, never account data) and Admin answers
+// with its turn (answer / smalltalk / clarify / no_match); a click on a chip,
+// follow-up or option is checked against the cached release's edges and
+// rendered from it verbatim with fixed templates (no model, no Admin call).
+// The short strings Admin wrote are checked once more here (assistantTurn.ts).
 import { createHash } from "node:crypto";
 import {
   HELPDESK_LIMITS,
   HelpdeskProblem,
+  buildSuggestContext,
   type AdminSuggestReply,
+  type AssistantClickInput,
+  type AssistantSessionInput,
+  type AssistantSessionResponse,
+  type AssistantTurn,
+  type AssistantTurnResponse,
+  type ClickVia,
+  type FaqNode,
+  type FaqRelease,
+  type GuardReason,
+  type GuardedField,
+  type HelpFaq,
+  type HelpdeskLocale,
+  type LearnerEndReason,
+  type SituationSignal,
+  type SuggestTurn,
   type AdminSuggestRequest,
   type AssistFeedback,
   type AssistantRatingResponse,
@@ -31,8 +57,13 @@ import {
 import { textLength } from "@/contracts/helpdeskText";
 import { uuidv7 } from "@/lib/uuidv7";
 import { ADMIN_SUGGEST_TIMEOUT_MS } from "./adminClient";
-import type { AssistRecord, HelpdeskRepository } from "./repository";
+import { TURN_TEMPLATES, excerptOf, nextOf, replyTemplate, screenTurnText } from "./assistantTurn";
+import { CHAT_SESSION_RULES } from "./chatSession";
+import { releaseGraph, type ReleaseGraph } from "./faqReleaseCache";
+import { learnerSignals, type SignalSources } from "./learnerSignals";
+import { answeredByPortal, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type TurnUpdate } from "./repository";
 import type { LearnerIdentity } from "./service";
+import { chooseSituationChips, waitingTicketOf, type ChipCandidate } from "./situationChips";
 
 const RATE_WINDOW_MS = 3_600_000;
 /** Chat and chips share the learner's hourly budget; submit-time checks have their own (HELPDESK_LIMITS.submitChecksPerHour). */
@@ -53,15 +84,31 @@ export type AssistantAdmin = {
   /** v3: the answer and, without one, Admin's alternatives. Used when present; an Admin client without it means no alternatives. */
   suggestReply?(input: AdminSuggestRequest): Promise<AdminSuggestReply>;
   reportOutcome(suggestionId: string, outcome: AssistFeedback): Promise<boolean>;
+  /** v5: the published FAQs (cached; the chips before Admin has a release). */
+  faqs?(locale: HelpdeskLocale): Promise<HelpFaq[] | null>;
+  /** v5: one published FAQ (cached; the card a clarify explains when the release does not have it). */
+  faq?(id: string, locale: HelpdeskLocale): Promise<HelpFaq | null>;
 };
 
+/** v5: the learner's own product records the signals are worked out from (read only; never sent anywhere). */
+export type LearnerRecords = Pick<SignalSources, "user" | "orders" | "subscriptions">;
+
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating">;
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
+    | "createChatSession" | "findChatSession" | "recordTurn" | "endChatSession" | "sessionLearnerTurns" | "setAssistExpanded" | "listTicketsByUser">;
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
   /** Upper bound on waiting for Admin (v2 §4b: 4 s). */
   timeoutMs?: number;
+  /** v5: Admin's published release (the cached copy, modules/helpdesk/faqReleaseCache.ts); without it there is never a release. */
+  release?: { current(locale: HelpdeskLocale, options?: { waitMs?: number; minVersion?: number | null }): Promise<FaqRelease | null> };
+  /** v5 Part A: the learner's own product records (services/productStore.ts); without it no product signal is ever on. */
+  learnerRecords?: (learnerId: string) => Promise<LearnerRecords>;
+  /** v4 Part A: whether the order is the learner's own (the from_order signal). */
+  ownsOrder?: (learnerId: string, orderId: string) => Promise<boolean>;
+  /** v5 Part G1: the W3C trace id this request's Admin calls carry, logged with the turn. */
+  traceId?: string | null;
 };
 
 function clip(text: string, max: number) {
@@ -98,16 +145,16 @@ export function createAssistantService(deps: AssistantDeps) {
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
   const timeoutMs = deps.timeoutMs ?? ADMIN_SUGGEST_TIMEOUT_MS;
 
-  /** Admin's answer and alternatives; no answer and none on no match, any failure or the timeout. */
-  async function askAdmin(request: AdminSuggestRequest): Promise<SuggestionResponse> {
-    const nothing: SuggestionResponse = { suggestion: null, alternatives: [] };
+  /** Admin's answer and alternatives (and, v6, its turn); no answer and none on no match, any failure or the timeout. */
+  async function askAdmin(request: AdminSuggestRequest): Promise<AdminSuggestReply> {
+    const nothing: AdminSuggestReply = { suggestion: null, alternatives: [] };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<SuggestionResponse>((resolve) => { timer = setTimeout(() => resolve(nothing), timeoutMs); });
+    const late = new Promise<AdminSuggestReply>((resolve) => { timer = setTimeout(() => resolve(nothing), timeoutMs); });
     const asked: Promise<AdminSuggestReply> = deps.admin.suggestReply
       ? deps.admin.suggestReply(request)
       : deps.admin.suggest(request).then((suggestion) => ({ suggestion, alternatives: [] }));
     try {
-      return await Promise.race([asked.then((reply) => ({ suggestion: reply.suggestion, alternatives: offered(reply, request) })).catch((error: unknown) => {
+      return await Promise.race([asked.then((reply): AdminSuggestReply => ({ suggestion: reply.suggestion, alternatives: offered(reply, request), ...(reply.turn ? { turn: reply.turn } : {}) })).catch((error: unknown) => {
         log({ type: "helpdesk", event: "assistant_admin_failed", source: request.source, error: error instanceof Error ? error.name : "unknown" });
         return nothing;
       }), late]);
@@ -143,16 +190,159 @@ export function createAssistantService(deps: AssistantDeps) {
     };
   }
 
+  /** The v3 view of a row: the FAQ card verbatim (never a clarify explanation or a small-talk line, which only the v5 turn carries). */
   function replyOf(row: AssistRecord): AssistantResponse {
-    const reply = row.answer !== null && row.faqId !== null ? { id: row.id, faqId: row.faqId, question: row.faqQuestion ?? "", answer: row.answer } : null;
+    const card = row.kind !== "clarify" && row.kind !== "smalltalk";
+    const reply = card && row.answer !== null && row.faqId !== null ? { id: row.id, faqId: row.faqId, question: row.faqQuestion ?? "", answer: row.answer } : null;
     return { id: row.id, reply, alternatives: reply ? [] : row.alternatives };
+  }
+
+  // ------------------------------------------------------------ v5: the release, sessions and turns
+
+  const graphs = new WeakMap<FaqRelease, ReleaseGraph>();
+  /** The cached release as a graph, or null (no release yet, or Admin not reachable before anything was cached). */
+  async function graphFor(locale: HelpdeskLocale, options: { waitMs?: number; minVersion?: number | null } = {}): Promise<ReleaseGraph | null> {
+    if (!deps.release) return null;
+    const release = await deps.release.current(locale, options).catch(() => null);
+    if (!release || release.locale !== locale) return null;
+    let graph = graphs.get(release);
+    if (!graph) { graph = releaseGraph(release); graphs.set(release, graph); }
+    return graph;
+  }
+
+  /** The learner's situation signals right now (Part A), from Portal's own records only; any failure means none from that source. */
+  async function signalsOf(learner: LearnerIdentity, fromOrder: boolean): Promise<SituationSignal[]> {
+    const [records, tickets] = await Promise.all([
+      deps.learnerRecords ? deps.learnerRecords(learner.id).catch(() => null) : Promise.resolve(null),
+      repository.listTicketsByUser(learner.id).catch(() => [])
+    ]);
+    return learnerSignals(learner.id, { now: now(), user: records?.user ?? null, orders: records?.orders ?? [], subscriptions: records?.subscriptions ?? [], tickets, fromOrder });
+  }
+
+  async function newSession(learner: LearnerIdentity, locale: HelpdeskLocale, signals: SituationSignal[], releaseVersion: number | null): Promise<ChatSessionRecord> {
+    const at = now().toISOString();
+    const session: ChatSessionRecord = { id: uuidv7(now().getTime()), learnerId: learner.id, locale, releaseVersion, startedAt: at, lastTurnAt: at, endedAt: null, endReason: null, turns: 0, unsolvedStreak: 0, currentNodeId: null, signals };
+    await repository.createChatSession(session);
+    return session;
+  }
+
+  /**
+   * The session a turn belongs to: the one the chat sent when it is the learner's, open, in the same locale and not idle
+   * (v4: 10 minutes without a turn ends it, as reason idle); otherwise a new one (its signals worked out now).
+   */
+  async function sessionFor(learner: LearnerIdentity, locale: HelpdeskLocale, sessionId: string | null): Promise<ChatSessionRecord> {
+    const found = sessionId ? await repository.findChatSession(sessionId) : null;
+    if (found && found.learnerId === learner.id && found.endedAt === null && found.locale === locale) {
+      if (now().getTime() - Date.parse(found.lastTurnAt) < CHAT_SESSION_RULES.idleMs) return found;
+      await repository.endChatSession(found.id, learner.id, "idle", new Date(Date.parse(found.lastTurnAt) + CHAT_SESSION_RULES.idleMs).toISOString());
+    }
+    const graph = await graphFor(locale, { waitMs: 0 });
+    return newSession(learner, locale, await signalsOf(learner, false), graph?.release.version ?? null);
+  }
+
+  /** Portal's own check of one short string; a refusal is logged (field and reason only, never the text). */
+  function screened(field: GuardedField, text: string | null | undefined, groundedIn: string | null = null): { text: string | null; refused: GuardReason | null } {
+    if (text === null || text === undefined) return { text: null, refused: null };
+    const result = screenTurnText(field, text, groundedIn);
+    if (result.text === null) log({ type: "helpdesk", event: "assistant_portal_guard", field, reason: result.reason });
+    return { text: result.text, refused: result.text === null ? result.reason : null };
+  }
+
+  /** The guard column: Portal's own refusal first, then Admin's result ("passed", or its reason, or "fallback"). */
+  function guardOf(turn: SuggestTurn | null, refused: GuardReason | null): string | null {
+    if (refused) return refused;
+    if (!turn?.guard) return null;
+    return turn.guard.result === "passed" ? "passed" : turn.guard.reason ?? "fallback";
+  }
+
+  /** The card a clarify explains: the release node, else the published FAQ (cached), else nothing. */
+  async function shownCard(graph: ReleaseGraph | null, nodeId: string, locale: HelpdeskLocale): Promise<{ question: string; answer: string } | null> {
+    const node = graph?.node(nodeId);
+    if (node) return node;
+    const faq = deps.admin.faq ? await deps.admin.faq(nodeId, locale).catch(() => null) : null;
+    return faq ? { question: faq.question, answer: faq.answer } : null;
+  }
+
+  type TurnRow = { row: AssistRecord; update: TurnUpdate };
+
+  /** One typed question's row from Admin's reply: what kind of turn it is, the guarded strings and the card. */
+  async function typedRow(base: AssistRecord, reply: AdminSuggestReply, session: ChatSessionRecord, locale: HelpdeskLocale): Promise<TurnRow> {
+    const turn = reply.turn ?? null;
+    const releaseVersion = turn?.releaseVersion ?? null;
+    const columns = { sessionId: session.id, parentNodeId: session.currentNodeId, via: "typed" as const, intent: turn?.intent ?? null, releaseVersion, traceId: deps.traceId ?? null, signals: session.signals, blocks: null, expanded: null };
+    const graph = await graphFor(locale, { minVersion: releaseVersion });
+    if (reply.suggestion) {
+      // The card is locked content: whatever kind Admin said, an answer with a card is an answer.
+      const node = graph?.node(reply.suggestion.faqId) ?? null;
+      const nodeType = node?.type ?? "answer";
+      const opening = nodeType === "choice" || !turn ? { text: null, refused: null } : screened("opening", turn.opening);
+      const closing = nodeType === "choice" || !turn ? { text: null, refused: null } : screened("closing", turn.closing);
+      const excerpt = node && node.answer === reply.suggestion.answer && turn ? excerptOf(node, turn.blocks) : null;
+      const texts: AssistTexts = {
+        // An Admin with turns frames an answer node always (its template when its own line failed); Portal's template when Portal refused it.
+        opening: turn && nodeType === "answer" ? opening.text ?? TURN_TEMPLATES[locale].opening : null,
+        closing: turn && nodeType === "answer" ? closing.text ?? TURN_TEMPLATES[locale].closing : null,
+        reply: null, explanation: null, nodeType
+      };
+      return {
+        row: { ...base, ...columns, nodeId: reply.suggestion.faqId, kind: "answer", guard: guardOf(turn, opening.refused ?? closing.refused), blocks: excerpt ? excerpt.map((block) => block.id) : [], covered: null, texts },
+        update: { unsolved: "reset", currentNodeId: reply.suggestion.faqId }
+      };
+    }
+    if (turn?.kind === "smalltalk") {
+      const line = screened("reply", turn.reply);
+      const texts: AssistTexts = { opening: null, closing: null, reply: line.text ?? replyTemplate(locale, turn.intent), explanation: null, nodeType: null };
+      return { row: { ...base, ...columns, nodeId: null, kind: "smalltalk", guard: guardOf(turn, line.refused), covered: null, texts, alternatives: [] }, update: { unsolved: "keep" } };
+    }
+    if (turn?.kind === "clarify" && session.currentNodeId) {
+      // Only the card Portal knows is on screen can be explained; its own words ground the explanation.
+      const nodeId = session.currentNodeId;
+      const card = await shownCard(graph, nodeId, locale);
+      const onScreen = turn.nodeId === nodeId && card !== null;
+      const line = onScreen && turn.covered === true ? screened("explanation", turn.explanation, card.answer) : { text: null, refused: null };
+      const covered = line.text !== null;
+      const texts: AssistTexts = { opening: null, closing: null, reply: null, explanation: line.text, nodeType: null };
+      const refused = line.refused ?? (onScreen ? null : "not_covered");
+      return {
+        row: { ...base, ...columns, faqId: nodeId, faqQuestion: card ? clip(card.question, 200) : null, answer: covered ? line.text : null, alternatives: [], nodeId, kind: "clarify", guard: guardOf(turn, refused), covered, texts },
+        update: { unsolved: covered ? "reset" : "increment" }
+      };
+    }
+    // No answer (no match, a clarify with no card on screen, Admin down or late): the v3 fallback and alternatives.
+    return { row: { ...base, ...columns, nodeId: null, kind: "no_match", guard: null, covered: null, texts: null }, update: { unsolved: "increment" } };
+  }
+
+  /** The v5 turn of a row, built from the row alone (so a fresh answer and an Idempotency-Key replay are the same) and the cached release. */
+  async function turnOf(row: AssistRecord): Promise<AssistantTurn | null> {
+    if (!row.kind || row.kind === "handover" || !row.sessionId || !row.turnIndex || !row.via) return null;
+    const graph = row.nodeId && (row.kind === "answer") ? await graphFor(row.locale) : null;
+    const node: FaqNode | null = row.nodeId ? graph?.node(row.nodeId) ?? null : null;
+    const texts = row.texts ?? null;
+    const answered = row.kind === "answer" && row.answer !== null;
+    const covered = row.kind === "clarify" ? row.covered === true : null;
+    return {
+      kind: row.kind, intent: row.intent ?? null, via: row.via, nodeId: row.nodeId ?? null, nodeType: row.kind === "answer" ? texts?.nodeType ?? node?.type ?? "answer" : null,
+      opening: texts?.opening ?? null, closing: texts?.closing ?? null, reply: texts?.reply ?? null, explanation: texts?.explanation ?? null, covered,
+      excerpt: answered && node && node.answer === row.answer ? excerptOf(node, row.blocks ?? []) : null,
+      next: answered ? nextOf(graph, node) : null,
+      source: row.kind === "clarify" && row.faqId && row.faqQuestion ? { faqId: row.faqId, question: row.faqQuestion } : null,
+      releaseVersion: row.releaseVersion ?? null, sessionId: row.sessionId, turnIndex: row.turnIndex,
+      unsolved: row.kind === "no_match" || (row.kind === "clarify" && !covered) || (row.kind === "answer" && row.answer === null),
+      countsAsQuestion: row.kind === "answer" || row.kind === "no_match"
+    };
+  }
+
+  async function responseOf(row: AssistRecord): Promise<AssistantResponse | AssistantTurnResponse> {
+    const base = replyOf(row);
+    const turn = await turnOf(row).catch(() => null);
+    return turn ? { ...base, turn } : base;
   }
 
   async function replay(key: string, hash: string): Promise<AssistantResponse | null> {
     const earlier = await repository.findAssistByKey(key);
     if (!earlier) return null;
     if (earlier.payloadHash !== hash) throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
-    return replyOf(earlier);
+    return responseOf(earlier);
   }
 
   async function enforceRateLimit(learnerId: string) {
@@ -164,46 +354,149 @@ export function createAssistantService(deps: AssistantDeps) {
     throw new HelpdeskProblem("rate_limited", `You can ask at most ${HELPDESK_LIMITS.assistantPerHour} questions an hour. Try again later.`, { retryAfter });
   }
 
-  /** POST /api/helpdesk/assistant: one chat question or starter chip (faqId). */
-  async function ask(learner: LearnerIdentity, input: AssistantInput, key: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
-    const hash = hashOf({ op: "assistant", learnerId: learner.id, message: input.message, locale: input.locale, faqId: input.faqId });
+  /** One logical request per Idempotency-Key on this instance: a second one with the same key waits for the first and replays it. */
+  async function once(key: string, hash: string, work: () => Promise<{ response: AssistantResponse; replayed: boolean }>): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const running = askInFlight.get(key);
     if (running) {
       await running.catch(() => undefined);
       const stored = await replay(key, hash);
       if (stored) return { response: stored, replayed: true };
     }
-    const work = askOnce(learner, input, key, hash);
-    askInFlight.set(key, work);
+    const started = (async () => {
+      const earlier = await replay(key, hash);
+      if (earlier) return { response: earlier, replayed: true };
+      return work();
+    })();
+    askInFlight.set(key, started);
     try {
-      return await work;
+      return await started;
     } finally {
-      if (askInFlight.get(key) === work) askInFlight.delete(key);
+      if (askInFlight.get(key) === started) askInFlight.delete(key);
     }
   }
 
-  async function askOnce(learner: LearnerIdentity, input: AssistantInput, key: string, hash: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
-    const earlier = await replay(key, hash);
-    if (earlier) return { response: earlier, replayed: true };
-    await enforceRateLimit(learner.id);
-    const source: AssistSource = input.faqId ? "chip" : "chat";
-    const run = await runIds(learner.id);
-    const request: AdminSuggestRequest = { learnerId: learner.id, locale: input.locale, source, message: input.message, ...(input.faqId ? { faqId: input.faqId } : {}), ...run };
-    const reply = await askAdmin(request);
-    const row = record(run.runId, learner, source, input.locale, input.message, reply, now(), key, hash);
-    if ((await repository.insertAssist(row)) === "duplicate") {
-      // The same key raced in, or Admin repeated a suggestion id: answer with what is stored.
+  /** Stores a session turn; a duplicate (the same key raced in) answers with what is stored. */
+  async function storeTurn({ row, update }: TurnRow, key: string, hash: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
+    const result = await repository.recordTurn(row, update);
+    if (result.status === "inserted") return { response: await responseOf({ ...row, turnIndex: result.turnIndex }), replayed: false };
+    if (result.status === "duplicate") {
       const stored = await replay(key, hash);
       if (stored) return { response: stored, replayed: true };
       throw new HelpdeskProblem("idempotency_conflict", "This answer was already recorded.");
     }
+    // The session vanished between reading and recording (it cannot, short of a manual delete): record the row alone.
+    if ((await repository.insertAssist({ ...row, sessionId: null, turnIndex: null })) === "duplicate") throw new HelpdeskProblem("idempotency_conflict", "This answer was already recorded.");
     return { response: replyOf(row), replayed: false };
+  }
+
+  type AskInput = AssistantInput & { sessionId?: string | null; via?: ClickVia | null };
+
+  /** POST /api/helpdesk/assistant: one chat question, or (with faqId) a chip asked through Admin's per-FAQ path. */
+  async function ask(learner: LearnerIdentity, input: AskInput, key: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
+    const hash = hashOf({ op: "assistant", learnerId: learner.id, message: input.message, locale: input.locale, faqId: input.faqId, ...(input.sessionId ? { sessionId: input.sessionId } : {}), ...(input.via ? { via: input.via } : {}) });
+    return once(key, hash, () => askOnce(learner, input, key, hash));
+  }
+
+  async function askOnce(learner: LearnerIdentity, input: AskInput, key: string, hash: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
+    await enforceRateLimit(learner.id);
+    const source: AssistSource = input.faqId ? "chip" : "chat";
+    const session = await sessionFor(learner, input.locale, input.sessionId ?? null);
+    const run = await runIds(learner.id);
+    // v5 Part D: the card on screen, the session, and what the learner typed earlier in it (Portal's own log; never account data).
+    const recentTurns = input.faqId ? [] : await repository.sessionLearnerTurns(session.id, HELPDESK_LIMITS.recentTurnsMax).catch(() => [] as string[]);
+    const context = buildSuggestContext({ nodeId: session.currentNodeId, sessionId: session.id, recentTurns });
+    const request: AdminSuggestRequest = { learnerId: learner.id, locale: input.locale, source, message: input.message, ...(input.faqId ? { faqId: input.faqId } : {}), ...run, context };
+    const reply = await askAdmin(request);
+    const base = record(run.runId, learner, source, input.locale, input.message, reply, now(), key, hash);
+    if (!input.faqId) return storeTurn(await typedRow(base, reply, session, input.locale), key, hash);
+    // A chip through Admin's per-FAQ path (no release yet): no model, so the fixed click templates frame the card.
+    const texts: AssistTexts | null = reply.suggestion ? { opening: TURN_TEMPLATES[input.locale].opening, closing: TURN_TEMPLATES[input.locale].closing, reply: null, explanation: null, nodeType: "answer" } : null;
+    const row: AssistRecord = {
+      ...base, sessionId: session.id, nodeId: reply.suggestion?.faqId ?? null, parentNodeId: session.currentNodeId, via: input.via ?? "starter", kind: reply.suggestion ? "answer" : "no_match",
+      intent: null, guard: null, releaseVersion: null, traceId: deps.traceId ?? null, signals: session.signals, blocks: [], expanded: null, covered: null, texts
+    };
+    return storeTurn({ row, update: reply.suggestion ? { unsolved: "reset", currentNodeId: reply.suggestion.faqId } : { unsolved: "increment" } }, key, hash);
+  }
+
+  /**
+   * POST /api/helpdesk/assistant/click (graph design §4): a chip, follow-up or option. Code only: the node must be in
+   * the cached release, a follow-up or option must be an edge of that kind from the card it was clicked on, and a
+   * chip must open an entry node; anything else is 400. The node is shown verbatim with the fixed templates; neither
+   * the model nor Admin is asked. Before Admin has a release, a chip goes through Admin's per-FAQ path (as before v5).
+   */
+  async function click(learner: LearnerIdentity, input: AssistantClickInput, key: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
+    const hash = hashOf({ op: "assistant_click", learnerId: learner.id, ...input });
+    return once(key, hash, async () => {
+      await enforceRateLimit(learner.id);
+      const graph = await graphFor(input.locale);
+      const step = input.via === "follow_up" || input.via === "option";
+      if (!graph) {
+        if (step) throw new HelpdeskProblem("invalid_request", "That step is not available in this chat.");
+        if (!input.label) throw new HelpdeskProblem("validation_failed", "label is required.", {}, "label");
+        return askOnce(learner, { message: input.label, locale: input.locale, faqId: input.nodeId, sessionId: input.sessionId, via: input.via }, key, hash);
+      }
+      const node = graph.node(input.nodeId);
+      const edge = step && input.fromNodeId ? graph.edge(input.fromNodeId, input.nodeId) : null;
+      if (!node || (step ? !edge || edge.kind !== input.via : !node.entry)) {
+        log({ type: "helpdesk", event: "assistant_click_refused", via: input.via, release: graph.release.version });
+        throw new HelpdeskProblem("invalid_request", "That step is not available in this chat.");
+      }
+      const session = await sessionFor(learner, input.locale, input.sessionId);
+      const at = now();
+      const texts: AssistTexts = { opening: node.type === "answer" ? TURN_TEMPLATES[input.locale].opening : null, closing: node.type === "answer" ? TURN_TEMPLATES[input.locale].closing : null, reply: null, explanation: null, nodeType: node.type };
+      const row: AssistRecord = {
+        id: uuidv7(at.getTime()), learnerId: learner.id, source: "chip", locale: input.locale, question: clip(edge?.label ?? node.question, HELPDESK_LIMITS.assistQuestionMax),
+        faqId: node.id, faqQuestion: clip(node.question, 200), answer: clip(node.answer, 4000), feedback: null, ticketId: null, clientEventId: key, payloadHash: hash,
+        createdAt: at.toISOString(), feedbackDeliveredAt: null, feedbackAttemptedAt: null, alternatives: [],
+        sessionId: session.id, nodeId: node.id, parentNodeId: input.fromNodeId ?? session.currentNodeId, via: input.via, kind: "answer", intent: null, guard: null,
+        releaseVersion: graph.release.version, traceId: deps.traceId ?? null, signals: session.signals, blocks: [], expanded: null, covered: null, texts
+      };
+      return storeTurn({ row, update: { unsolved: "reset", currentNodeId: node.id } }, key, hash);
+    });
+  }
+
+  /**
+   * POST /api/helpdesk/assistant/sessions (Part A): a new chat session and its chips, when the panel loads and after an
+   * idle end. Signals come from the learner's own records (and from_order only for their own order); the chips from the
+   * release's entry nodes, or the published FAQs before there is a release. Nothing here asks the model.
+   */
+  async function startSession(learner: LearnerIdentity, input: AssistantSessionInput): Promise<AssistantSessionResponse> {
+    const fromOrder = input.orderId && deps.ownsOrder ? await deps.ownsOrder(learner.id, input.orderId).catch(() => false) : false;
+    const [signals, graph] = await Promise.all([signalsOf(learner, fromOrder), graphFor(input.locale)]);
+    const candidates: ChipCandidate[] = graph
+      ? graph.release.nodes.filter((node) => node.entry)
+      : ((deps.admin.faqs ? await deps.admin.faqs(input.locale).catch(() => null) : null) ?? []);
+    const chosen = chooseSituationChips(signals, candidates);
+    const waitingTicket = signals.includes("open_ticket_waiting") ? waitingTicketOf(await repository.listTicketsByUser(learner.id).catch(() => [])) : null;
+    const session = await newSession(learner, input.locale, signals, graph?.release.version ?? null);
+    // Enum names only: which signals were on and which produced chips.
+    log({ type: "helpdesk", event: "assistant_session_started", signals, chipSignals: chosen.matched, release: session.releaseVersion });
+    return { sessionId: session.id, chips: chosen.chips, situational: chosen.situational, waitingTicket, releaseVersion: session.releaseVersion };
+  }
+
+  /** POST /api/helpdesk/assistant/sessions/{id}/end: the first end wins (the chat's End chat, its idle end, or a handover). */
+  async function endSession(learner: LearnerIdentity, id: string, reason: LearnerEndReason): Promise<{ sessionId: string; endedAt: string; endReason: string }> {
+    const session = await repository.endChatSession(id, learner.id, reason, now().toISOString());
+    if (!session || !session.endedAt || !session.endReason) throw new HelpdeskProblem("not_found", "No such chat session.");
+    return { sessionId: session.id, endedAt: session.endedAt, endReason: session.endReason };
+  }
+
+  /** POST /api/helpdesk/assistant/{id}/expanded (Part H): the learner opened the full answer of an excerpt (logged once). */
+  async function expand(learner: LearnerIdentity, id: string): Promise<{ id: string; expanded: true }> {
+    // Only the learner's own answer card: a choice card, small talk or an explanation has nothing to expand.
+    const found = await repository.findAssist(id);
+    if (!found || found.learnerId !== learner.id || found.answer === null || found.kind !== "answer" || found.texts?.nodeType === "choice") throw new HelpdeskProblem("not_found", "No such answer.");
+    const row = await repository.setAssistExpanded(id, learner.id);
+    if (!row) throw new HelpdeskProblem("not_found", "No such answer.");
+    return { id: row.id, expanded: true };
   }
 
   /** Tells Admin the stored feedback unless it already confirmed it; true when Admin has it. */
   async function deliver(row: AssistRecord): Promise<boolean> {
     if (row.feedback === null) return false;
     if (row.feedbackDeliveredAt) return true;
+    // v5: a click answered from the release was never Admin's run; its feedback stays in Portal.
+    if (answeredByPortal(row)) return false;
     const delivered = await deps.admin.reportOutcome(row.id, row.feedback).catch(() => false);
     await repository.recordAssistDelivery(row.id, now().toISOString(), delivered);
     if (!delivered) log({ type: "helpdesk", event: "assistant_outcome_not_delivered", feedback: row.feedback });
@@ -262,7 +555,7 @@ export function createAssistantService(deps: AssistantDeps) {
     const reply = await askAdmin({ learnerId: learner.id, locale: input.locale, source: "submit", category: input.category, subject: input.subject, message: input.message, ...run });
     const row = record(run.runId, learner, "submit", input.locale, input.subject, reply, now(), null, null);
     if ((await repository.insertAssist(row)) === "duplicate") log({ type: "helpdesk", event: "assistant_duplicate_suggestion" });
-    return reply;
+    return { suggestion: reply.suggestion, alternatives: reply.alternatives };
   }
 
   /** The v2 view of checkForSubmit: the suggestion, or null. */
@@ -292,7 +585,7 @@ export function createAssistantService(deps: AssistantDeps) {
     return { id: stored.id, feedback: stored.feedback, delivered };
   }
 
-  return { ask, feedback, checkForSubmit, suggestForSubmit, submitOutcome, rate, deliverOutcome, deliverPending };
+  return { ask, click, startSession, endSession, expand, feedback, checkForSubmit, suggestForSubmit, submitOutcome, rate, deliverOutcome, deliverPending };
 }
 
 export type AssistantService = ReturnType<typeof createAssistantService>;

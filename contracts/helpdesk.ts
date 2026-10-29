@@ -861,3 +861,98 @@ export function parseFaqRelease(value: unknown): FaqRelease | null {
   }
   return { version, publishedAt: typeof raw.publishedAt === "string" ? raw.publishedAt : "", locale, nodes, edges };
 }
+
+// ---------------------------------------------------------------- Helpdesk v5, the learner chat API (Portal only; Admin never sees these)
+// Specs: helpdesk-v5-context-chips-and-smalltalk.md (Parts A, B, D, H) and helpdesk-v5-faq-graph-design.md (§3, §4).
+// A chat session is Portal's own record (helpdesk_chat_sessions, migration 023); every turn is one helpdesk_assist_log row.
+
+/** How a turn came about: typed by the learner, or a click (code only, never the model or Admin). */
+export const ASSIST_VIAS = ["typed", "follow_up", "option", "starter", "signal", "alternative"] as const;
+export type AssistVia = (typeof ASSIST_VIAS)[number];
+/** The clicks: follow_up / option need the edge from the card on screen; starter / signal / alternative open an entry node. */
+export const CLICK_VIAS = ["follow_up", "option", "starter", "signal", "alternative"] as const;
+export type ClickVia = (typeof CLICK_VIAS)[number];
+/** Why a session ended (graph design §3). */
+export const CHAT_END_REASONS = ["idle", "ended_by_learner", "handover", "ticket"] as const;
+export type ChatEndReason = (typeof CHAT_END_REASONS)[number];
+/** What the learner may end a session with (ticket is set by Portal when an enquiry links the chat). */
+export const LEARNER_END_REASONS = ["idle", "ended_by_learner", "handover"] as const satisfies readonly ChatEndReason[];
+export type LearnerEndReason = (typeof LEARNER_END_REASONS)[number];
+
+/** A next step under the shown card: a follow-up chip (answer node) or an A/B/C/D option (choice node); label is the edge's resolved label. */
+export type AssistantNextStep = { nodeId: string; label: string };
+/**
+ * The v5 part of an assistant turn, as Portal returns it to its own chat. Every string is plain text (never Markdown or
+ * HTML), already through Admin's guard or a fixed template, and through Portal's own check (modules/helpdesk/assistantTurn.ts).
+ * - answer: reply is the FAQ card verbatim. opening / closing frame it (null for a choice node, whose prompt is reply.answer
+ *   and whose options are next). excerpt: the blocks to show (verbatim, from the cached release); null = the whole answer and
+ *   no "show the full answer".
+ * - smalltalk: reply holds the short line; no card. intent says which (greeting / vague / farewell / off_topic).
+ * - clarify: explanation of the card on screen (source), or covered false (explanation null: the fixed copy and the handover card).
+ * - no_match: the fallback copy and the v3 alternatives.
+ * unsolved: this turn counts toward v4's "2 unsolved in a row" (no answer, or clarify not covered).
+ * countsAsQuestion: toward v4's 8-question check-in (smalltalk and clarify do not count).
+ */
+export type AssistantTurn = {
+  kind: SuggestKind; intent: SuggestIntent | null; via: AssistVia; nodeId: string | null; nodeType: FaqNodeType | null;
+  opening: string | null; closing: string | null; reply: string | null; explanation: string | null; covered: boolean | null;
+  excerpt: FaqBlock[] | null; next: { kind: FaqEdgeKind; steps: AssistantNextStep[] } | null; source: { faqId: string; question: string } | null;
+  releaseVersion: number | null; sessionId: string; turnIndex: number; unsolved: boolean; countsAsQuestion: boolean;
+};
+/** POST /api/helpdesk/assistant and /assistant/click (v5): the v3 answer plus turn (additive). */
+export type AssistantTurnResponse = AssistantResponse & { turn: AssistantTurn };
+/** A situation chip (Part A §3): an entry FAQ / node whose question is the chip text; reason signal = it matched the learner's situation. */
+export type SituationChip = { id: string; question: string; reason: "signal" | "popular" };
+/**
+ * POST /api/helpdesk/assistant/sessions (v5): a new chat session with the chips worked out by Portal code from the learner's
+ * own records. situational: at least one chip matched a signal ("你可能遇到的问题" instead of "试试问这些问题"). waitingTicket:
+ * the learner's newest enquiry waiting for their reply (the fixed card), or null. No signal names, amounts, order numbers or dates.
+ */
+export type AssistantSessionResponse = { sessionId: string; chips: SituationChip[]; situational: boolean; waitingTicket: { id: string; number: string } | null; releaseVersion: number | null };
+/** POST /api/helpdesk/assistant/click body (v5): a click is checked against the cached release's edges, never asked of the model. */
+export type AssistantClickInput = { locale: HelpdeskLocale; nodeId: string; fromNodeId: string | null; via: ClickVia; sessionId: string | null; label: string | null };
+export type AssistantSessionInput = { locale: HelpdeskLocale; orderId: string | null };
+
+function optionalSessionId(input: Record<string, unknown>): string | null {
+  return optionalUuid(input, "sessionId");
+}
+
+/** POST /api/helpdesk/assistant (v5): { message, locale, faqId?, sessionId?, via? }; via (a chip's reason) only with faqId. */
+export function parseAssistantTurnInput(value: unknown): AssistantInput & { sessionId: string | null; via: ClickVia | null } {
+  const base = parseAssistantInput(value);
+  const input = record(value);
+  let via: ClickVia | null = null;
+  if (input.via !== undefined && input.via !== null) {
+    via = oneOf(input, "via", ["starter", "signal", "alternative"] as const);
+    if (!base.faqId) invalid("via", "via is only for a chip (faqId).");
+  }
+  return { ...base, sessionId: optionalSessionId(input), via };
+}
+
+/** POST /api/helpdesk/assistant/click: { locale, nodeId, fromNodeId?, via, sessionId?, label? }. */
+export function parseAssistantClick(value: unknown): AssistantClickInput {
+  const input = record(value);
+  const locale = oneOf(input, "locale", HELPDESK_LOCALES);
+  const via = oneOf(input, "via", CLICK_VIAS);
+  if (!isUuid(input.nodeId)) invalid("nodeId", "nodeId must be a UUID.");
+  const fromNodeId = optionalUuid(input, "fromNodeId");
+  if ((via === "follow_up" || via === "option") && !fromNodeId) invalid("fromNodeId", "fromNodeId is required for a follow-up or an option.");
+  let label: string | null = null;
+  if (input.label !== undefined && input.label !== null) {
+    if (typeof input.label !== "string") invalid("label", "label must be text.");
+    const text = cleanText(input.label, "label", HELPDESK_LIMITS.assistQuestionMax);
+    label = isBlankText(text) ? null : text;
+  }
+  return { locale, nodeId: input.nodeId.toLowerCase(), fromNodeId, via, sessionId: optionalSessionId(input), label };
+}
+
+/** POST /api/helpdesk/assistant/sessions: { locale, orderId? } (orderId: Contact Support opened from an order; checked to be the learner's). */
+export function parseAssistantSessionInput(value: unknown): AssistantSessionInput {
+  const input = record(value);
+  return { locale: oneOf(input, "locale", HELPDESK_LOCALES), orderId: optionalOrderId(input.orderId) };
+}
+
+/** POST /api/helpdesk/assistant/sessions/{id}/end: { reason: idle | ended_by_learner | handover }. */
+export function parseChatEndReason(value: unknown): LearnerEndReason {
+  return oneOf(record(value), "reason", LEARNER_END_REASONS);
+}
