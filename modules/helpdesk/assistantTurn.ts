@@ -15,6 +15,7 @@
 import { type AssistantNextStep, type AssistantTurn, type FaqBlock, type FaqNode, type GuardReason, type GuardedField, type HelpdeskLocale, type SuggestIntent } from "@/contracts/helpdesk";
 import { textLength } from "@/contracts/helpdeskText";
 import type { ReleaseGraph } from "./faqReleaseCache";
+import { hasTraditionalOnly } from "./traditionalChinese";
 
 /** Portal's caps in code points: Admin's English limits (its Chinese ones are lower and already applied). */
 export const TURN_TEXT_MAX: Record<GuardedField, number> = { opening: 80, closing: 80, reply: 200, explanation: 350 };
@@ -24,8 +25,14 @@ export const EXCERPT_RULES = { maxBlocks: 3, shortBlocks: 3, shortChars: 200 } a
 export const NEXT_STEPS_MAX = 4;
 const LABEL_MAX = 200;
 
-/** Portal's fixed copy: the click frame (Part H; clicks never ask the model) and the fallbacks for a string Portal refuses. */
-export const TURN_TEMPLATES: Record<HelpdeskLocale, { opening: string; closing: string; greeting: string; farewell: string; offTopic: string }> = {
+/** The language of Portal's fixed copy: the page's two locales, and Traditional Chinese for a learner who writes it (as Admin's templates). */
+export type TemplateVariant = HelpdeskLocale | "zh-TW";
+
+/**
+ * Portal's fixed copy: the click frame (Part H; clicks never ask the model) and the fallbacks for a string Portal refuses.
+ * The zh-TW lines are Admin's own (workflow/guard.ts TEMPLATES), word for word.
+ */
+export const TURN_TEMPLATES: Record<TemplateVariant, { opening: string; closing: string; greeting: string; farewell: string; offTopic: string }> = {
   "en-GB": {
     opening: "Here's how to sort this out:",
     closing: "If anything's unclear, just ask.",
@@ -39,10 +46,41 @@ export const TURN_TEMPLATES: Record<HelpdeskLocale, { opening: string; closing: 
     greeting: "你好！遇到什么问题了？可以直接告诉我，或者看看下面这些常见情况。",
     farewell: "不客气！之后有问题随时来问我。",
     offTopic: "这个我帮不上忙。关于 Learning Guide 的使用、课程或订阅，随时问我。"
+  },
+  "zh-TW": {
+    opening: "好的，這個問題可以這樣處理：",
+    closing: "還有不清楚的，接著問我就好。",
+    greeting: "你好！遇到什麼問題了？可以直接告訴我，或者看看下面這些常見情況。",
+    farewell: "不客氣！之後有問題隨時來問我。",
+    offTopic: "這個我幫不上忙。關於 Learning Guide 的使用、課程或訂閱，隨時問我。"
   }
 };
 
-export function replyTemplate(locale: HelpdeskLocale, intent: SuggestIntent | null): string {
+const HAN_SCRIPT = /\p{Script=Han}/u;
+const LATIN_SCRIPT = /\p{Script=Latin}/u;
+
+/**
+ * The template language for what the learner wrote, decided as Admin's guard decides it (learnerOf): Chinese
+ * characters -> zh-TW when one of them is Traditional-only, else zh-CN; only Latin letters -> English; neither
+ * (emoji, punctuation) -> the page's language.
+ */
+export function templateVariant(text: string, locale: HelpdeskLocale): TemplateVariant {
+  if (HAN_SCRIPT.test(text)) return hasTraditionalOnly(text) ? "zh-TW" : "zh-CN";
+  if (LATIN_SCRIPT.test(text)) return "en-GB";
+  return locale;
+}
+
+/**
+ * The frame of a click (no text of its own): in the zh-CN chat, the script of the learner's newest Chinese words
+ * in the session (oldest first in learnerTexts); the English chat's cards are English, so its frame is too.
+ */
+export function frameVariant(locale: HelpdeskLocale, learnerTexts: readonly string[]): TemplateVariant {
+  if (locale !== "zh-CN") return locale;
+  for (const text of [...learnerTexts].reverse()) if (HAN_SCRIPT.test(text)) return hasTraditionalOnly(text) ? "zh-TW" : "zh-CN";
+  return locale;
+}
+
+export function replyTemplate(locale: TemplateVariant, intent: SuggestIntent | null): string {
   const copy = TURN_TEMPLATES[locale];
   if (intent === "farewell") return copy.farewell;
   if (intent === "off_topic") return copy.offTopic;

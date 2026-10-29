@@ -57,7 +57,7 @@ import {
 import { textLength } from "@/contracts/helpdeskText";
 import { uuidv7 } from "@/lib/uuidv7";
 import { ADMIN_SUGGEST_TIMEOUT_MS } from "./adminClient";
-import { TURN_TEMPLATES, excerptOf, nextOf, replyTemplate, screenTurnText } from "./assistantTurn";
+import { TURN_TEMPLATES, excerptOf, frameVariant, nextOf, replyTemplate, screenTurnText, templateVariant } from "./assistantTurn";
 import { CHAT_SESSION_RULES } from "./chatSession";
 import { releaseGraph, type ReleaseGraph } from "./faqReleaseCache";
 import { learnerSignals, type SignalSources } from "./learnerSignals";
@@ -265,12 +265,19 @@ export function createAssistantService(deps: AssistantDeps) {
 
   type TurnRow = { row: AssistRecord; update: TurnUpdate };
 
+  /** What the learner typed earlier in the session (Portal's own log), for the frame of a click; none when it cannot be read. */
+  function learnerWords(sessionId: string): Promise<string[]> {
+    return repository.sessionLearnerTurns(sessionId, HELPDESK_LIMITS.recentTurnsMax).catch(() => [] as string[]);
+  }
+
   /** One typed question's row from Admin's reply: what kind of turn it is, the guarded strings and the card. */
   async function typedRow(base: AssistRecord, reply: AdminSuggestReply, session: ChatSessionRecord, locale: HelpdeskLocale): Promise<TurnRow> {
     const turn = reply.turn ?? null;
     const releaseVersion = turn?.releaseVersion ?? null;
     const columns = { sessionId: session.id, parentNodeId: session.currentNodeId, via: "typed" as const, intent: turn?.intent ?? null, releaseVersion, traceId: deps.traceId ?? null, signals: session.signals, blocks: null, expanded: null };
     const graph = await graphFor(locale, { minVersion: releaseVersion });
+    // Portal's own fallbacks speak the learner's language and script, as Admin's templates do (zh-TW for Traditional).
+    const variant = templateVariant(base.question, locale);
     if (reply.suggestion) {
       // The card is locked content: whatever kind Admin said, an answer with a card is an answer.
       const node = graph?.node(reply.suggestion.faqId) ?? null;
@@ -280,8 +287,8 @@ export function createAssistantService(deps: AssistantDeps) {
       const excerpt = node && node.answer === reply.suggestion.answer && turn ? excerptOf(node, turn.blocks) : null;
       const texts: AssistTexts = {
         // An Admin with turns frames an answer node always (its template when its own line failed); Portal's template when Portal refused it.
-        opening: turn && nodeType === "answer" ? opening.text ?? TURN_TEMPLATES[locale].opening : null,
-        closing: turn && nodeType === "answer" ? closing.text ?? TURN_TEMPLATES[locale].closing : null,
+        opening: turn && nodeType === "answer" ? opening.text ?? TURN_TEMPLATES[variant].opening : null,
+        closing: turn && nodeType === "answer" ? closing.text ?? TURN_TEMPLATES[variant].closing : null,
         reply: null, explanation: null, nodeType
       };
       return {
@@ -291,7 +298,7 @@ export function createAssistantService(deps: AssistantDeps) {
     }
     if (turn?.kind === "smalltalk") {
       const line = screened("reply", turn.reply);
-      const texts: AssistTexts = { opening: null, closing: null, reply: line.text ?? replyTemplate(locale, turn.intent), explanation: null, nodeType: null };
+      const texts: AssistTexts = { opening: null, closing: null, reply: line.text ?? replyTemplate(variant, turn.intent), explanation: null, nodeType: null };
       return { row: { ...base, ...columns, nodeId: null, kind: "smalltalk", guard: guardOf(turn, line.refused), covered: null, texts, alternatives: [] }, update: { unsolved: "keep" } };
     }
     if (turn?.kind === "clarify" && session.currentNodeId) {
@@ -416,7 +423,8 @@ export function createAssistantService(deps: AssistantDeps) {
     const graph = reply.suggestion ? await graphFor(input.locale) : null;
     const nodeType = (reply.suggestion && graph?.node(reply.suggestion.faqId)?.type) || "answer";
     const framed = nodeType === "answer";
-    const texts: AssistTexts | null = reply.suggestion ? { opening: framed ? TURN_TEMPLATES[input.locale].opening : null, closing: framed ? TURN_TEMPLATES[input.locale].closing : null, reply: null, explanation: null, nodeType } : null;
+    const frame = TURN_TEMPLATES[frameVariant(input.locale, await learnerWords(session.id))];
+    const texts: AssistTexts | null = reply.suggestion ? { opening: framed ? frame.opening : null, closing: framed ? frame.closing : null, reply: null, explanation: null, nodeType } : null;
     const row: AssistRecord = {
       ...base, sessionId: session.id, nodeId: reply.suggestion?.faqId ?? null, parentNodeId: session.currentNodeId, via: input.via ?? "starter", kind: reply.suggestion ? "answer" : "no_match",
       intent: null, guard: null, releaseVersion: null, traceId: deps.traceId ?? null, signals: session.signals, blocks: [], expanded: null, covered: null, texts
@@ -456,8 +464,9 @@ export function createAssistantService(deps: AssistantDeps) {
         const shown = session.currentNodeId === input.fromNodeId || await repository.sessionShowedNode(sessions, learner.id, input.fromNodeId);
         if (!shown) throw refuse();
       }
+      const frame = TURN_TEMPLATES[frameVariant(input.locale, await learnerWords(session.id))];
       const at = now();
-      const texts: AssistTexts = { opening: node.type === "answer" ? TURN_TEMPLATES[input.locale].opening : null, closing: node.type === "answer" ? TURN_TEMPLATES[input.locale].closing : null, reply: null, explanation: null, nodeType: node.type };
+      const texts: AssistTexts = { opening: node.type === "answer" ? frame.opening : null, closing: node.type === "answer" ? frame.closing : null, reply: null, explanation: null, nodeType: node.type };
       const row: AssistRecord = {
         id: uuidv7(at.getTime()), learnerId: learner.id, source: "chip", locale: input.locale, question: clip(edge?.label ?? node.question, HELPDESK_LIMITS.assistQuestionMax),
         faqId: node.id, faqQuestion: clip(node.question, 200), answer: clip(node.answer, 4000), feedback: null, ticketId: null, clientEventId: key, payloadHash: hash,
