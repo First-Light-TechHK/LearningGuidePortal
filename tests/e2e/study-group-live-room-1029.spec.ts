@@ -124,3 +124,51 @@ test("1029-4: the room AI Tutor's LaTeX renders as math, one point per line, wit
     await room.close();
   }
 });
+
+test("1029-5: a shared screen goes full screen with the people, the chat (AI Tutor) and the controls floating over it", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "1029-focus");
+  try {
+    test.skip(!(await displayCaptureAvailable(room.pageA)), "this machine cannot start getDisplayMedia");
+    const { pageA, pageB } = room;
+    await pageB.setViewportSize({ width: 1440, height: 900 });
+    await pageA.getByRole("button", { name: "Share" }).click();
+    const stage = pageB.getByTestId("share-stage");
+    await expect(stage).toBeVisible();
+    // Out of full screen the shared screen already takes most of the window's height.
+    expect((await stage.boundingBox())!.height).toBeGreaterThanOrEqual(560);
+    // The people float over the screen and fold away.
+    const people = pageB.getByRole("list", { name: "Participants" });
+    await expect(people.getByRole("listitem")).toHaveCount(2);
+    await pageB.getByRole("button", { name: /Hide participants/ }).click();
+    await expect(people).toHaveCount(0);
+    await pageB.getByRole("button", { name: /Show participants/ }).click();
+    await expect(people.getByRole("listitem")).toHaveCount(2);
+
+    await pageB.getByRole("button", { name: "Full screen" }).click();
+    const room1 = pageB.locator('section[data-focus="true"]');
+    await expect(room1).toBeVisible();
+    const box = (await stage.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(1430);
+    expect(box.height).toBeGreaterThanOrEqual(890);
+    // Controls float over the screen; the chat panel starts folded and opens on demand.
+    await expect(pageB.getByRole("button", { name: "Mic" })).toBeVisible();
+    await expect(pageB.locator('section[data-focus] > aside')).toBeHidden();
+    await pageB.getByRole("button", { name: "Chat", exact: true }).first().click();
+    await expect(pageB.locator('section[data-focus] > aside')).toBeVisible();
+    await askTutor(pageB, "[latex] derivatives in full screen");
+    await expect(tutorLine(pageB).locator(".katex").first()).toBeVisible({ timeout: 60_000 });
+
+    await pageB.getByRole("button", { name: "Exit full screen" }).click();
+    await expect(pageB.locator('section[data-focus="false"]')).toBeVisible();
+    await expect(pageB.locator('section[data-focus] > aside')).toBeVisible();
+    // A share that ends takes full screen with it.
+    await pageB.getByRole("button", { name: "Full screen" }).click();
+    await expect(room1).toBeVisible();
+    await pageA.getByRole("button", { name: "Share" }).click();
+    await expect(pageB.locator('section[data-focus="false"]')).toBeVisible();
+    await expect(pageB.getByTestId("share-stage")).toHaveCount(0);
+  } finally {
+    await room.close();
+  }
+});

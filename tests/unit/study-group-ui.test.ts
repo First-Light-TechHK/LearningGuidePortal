@@ -993,3 +993,19 @@ test("the background group refresh and the unload release beacons never surface 
   assert.equal(app.split("keepalive: true }).catch(() => undefined)").length - 1, 1);
   assert.equal(app.includes("keepalive: true });"), false);
 });
+
+test("a shared screen can go full screen with the people, chat and controls floating over it (owner 2026-10-29)", () => {
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(room, /data-focus=\{focus \? "true" : "false"\}/);
+  assert.match(room, /roomEl\.current\?\.requestFullscreen\?\.\(\)/);
+  assert.match(room, /addEventListener\("fullscreenchange"/);
+  assert.match(room, /if \(shareTrack \|\| !focus\) return;/);
+  assert.match(css, /\.room\[data-focus="true"\] \{ position: fixed; inset: 0;/);
+  assert.match(css, /\.room\[data-focus="true"\]\[data-side="closed"\] \.side \{ display: none; \}/);
+  for (const key of ["fullScreen", "exitFullScreen", "hideParticipants", "showParticipants"] as const) {
+    assert.ok(en.studyGroupsPage.room[key], key);
+    assert.ok(zh.studyGroupsPage.room[key], key);
+  }
+  assert.equal(zh.studyGroupsPage.room.fullScreen, "全屏");
+});

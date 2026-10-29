@@ -1150,6 +1150,10 @@
       "backToGroups": "Back to Study Groups",
       "shareFailed": "Screen sharing did not start. Check that this browser may share your screen, then try again.",
       "sharingNotice": "You are sharing your screen.",
+      "fullScreen": "Full screen",
+      "exitFullScreen": "Exit full screen",
+      "hideParticipants": "Hide participants",
+      "showParticipants": "Show participants",
       "tutorNotSent": "Not sent to AI Tutor: {reason}",
       "tutorNotLive": "AI Tutor answers only while the Live Session is live."
     },

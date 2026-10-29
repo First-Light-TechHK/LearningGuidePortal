@@ -226,7 +226,28 @@
 .shareMain { width: 100%; min-height: 360px; max-height: 62vh; background: #101828; border-radius: 12px; object-fit: contain; }
 .videos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 990px; }
 .videosSingle { grid-template-columns: minmax(0, 490px); justify-content: center; }
-/* Avatars-only people strip under a shared screen (owner 2026-10-29); no Figma frame yet, reuses the roster initial and tile mic styles (待视觉验收). */
+/* Shared screen (owner 2026-10-29, Tencent Meeting style; no Figma frame yet, reuses the room's styles, 待视觉验收):
+   the screen takes the stage's height, the people float over its top-right corner as collapsible avatars, and
+   Full screen puts the whole room on the screen with the chat (and AI Tutor) and the controls floating over it. */
+.shareStage { position: relative; height: max(360px, calc(100dvh - 300px)); border-radius: 12px; overflow: hidden; background: #101828; }
+.shareStage .shareMain { width: 100%; height: 100%; min-height: 0; max-height: none; border-radius: 0; display: block; }
+.shareTools { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 8px; }
+.shareTools button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: rgba(16, 24, 40, .7); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.shareTools button[aria-pressed="true"] { background: #1d6bff; }
+.shareTools .tabCount { margin-left: 2px; }
+.avatarFloat { position: absolute; top: 12px; right: 12px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-height: calc(100% - 24px); }
+.avatarToggle { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 8px; background: rgba(16, 24, 40, .7); color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
+.avatarFloat .avatarStrip { margin: 0; padding: 10px; flex-direction: column; flex-wrap: nowrap; overflow-y: auto; border-radius: 12px; background: rgba(16, 24, 40, .55); }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.room[data-focus="true"] { position: fixed; inset: 0; z-index: 1000; display: block; padding: 0; background: #0b1220; }
+.room[data-focus="true"] .stage { height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.room[data-focus="true"] .stageHead, .room[data-focus="true"] .roomFocus, .room[data-focus="true"] .meta { display: none; }
+.room[data-focus="true"] .shareStage { height: 100%; border-radius: 0; }
+.room[data-focus="true"] .shareTools { top: 12px; bottom: auto; }
+.room[data-focus="true"] .controls { position: absolute; left: 50%; bottom: 16px; z-index: 4; transform: translateX(-50%); margin: 0; padding: 8px; border-radius: 12px; background: rgba(255, 255, 255, .92); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); flex-wrap: nowrap; max-width: calc(100% - 32px); overflow-x: auto; }
+.room[data-focus="true"] .side { position: absolute; right: 16px; bottom: 96px; z-index: 4; width: min(340px, calc(100% - 32px)); height: min(560px, calc(100% - 180px)); min-height: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
+.room[data-focus="true"][data-side="closed"] .side { display: none; }
+.room[data-focus="true"] .avatarFloat { top: 56px; }
 .avatarStrip { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; }
 .avatar { position: relative; width: 48px; height: 48px; flex: none; }
 .avatarFace { width: 48px; height: 48px; border-radius: 24px; overflow: hidden; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 18px; font-weight: 600; box-shadow: 0 0 0 2px #fff; }
