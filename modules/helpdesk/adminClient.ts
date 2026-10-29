@@ -14,22 +14,54 @@ export const ADMIN_FAQS_TIMEOUT_MS = 3_000;
 export const ADMIN_FAQS_WAIT_MS = 500;
 /** After a failed fetch, no new request for this long (stale or hidden meanwhile), so an outage costs one request per window, not one per page load. */
 export const ADMIN_FAQS_RETRY_MS = 15_000;
-/** Distinct FAQ queries kept (searches make many); the oldest entry goes first. */
+/** Distinct FAQ queries kept per kind (lists; searches and deep links); the oldest entry of that kind goes first. */
 export const ADMIN_FAQS_CACHE_ENTRIES = 200;
+/**
+ * Uncached searches (?q=) and deep links (?faq=) asked of Admin per minute by
+ * this instance. The Help Centre is public, so every new value would
+ * otherwise be one Admin search; over the budget the page shows what is
+ * cached or the static fallback until the minute has passed.
+ */
+export const ADMIN_SEARCHES_PER_MINUTE = 120;
+const SEARCH_WINDOW_MS = 60_000;
 export const ADMIN_SUGGEST_TIMEOUT_MS = 4_000;
 export const ADMIN_OUTCOME_TIMEOUT_MS = 4_000;
 
 type CacheEntry<T> = { etag: string | null; value: T; fetchedAt: number };
-const faqCache = new Map<string, CacheEntry<HelpFaq[] | HelpFaq | null>>();
+/** Popular, category and full lists: few distinct keys. */
+const listCache = new Map<string, CacheEntry<HelpFaq[] | HelpFaq | null>>();
+/** Searches and single FAQs: one key per value a visitor types or links, so they can never push the lists out. */
+const searchCache = new Map<string, CacheEntry<HelpFaq[] | HelpFaq | null>>();
 /** One request per base URL + query at a time. */
 const faqsInFlight = new Map<string, Promise<HelpFaq[] | HelpFaq | null | undefined>>();
+/** Last failure per key, bounded like the caches (oldest goes first). */
 const faqsFailedAt = new Map<string, number>();
+/** Start times of uncached searches and deep links in the last minute. */
+const searchStarts: number[] = [];
+let throttledLoggedAt = -Infinity;
 
 /** Test hook and operational reset: forget every cached FAQ answer. */
 export function clearFaqCache() {
-  faqCache.clear();
+  listCache.clear();
+  searchCache.clear();
   faqsInFlight.clear();
   faqsFailedAt.clear();
+  searchStarts.length = 0;
+  throttledLoggedAt = -Infinity;
+}
+
+/** Test and ops hook: how many entries each bounded map holds. */
+export function faqCacheSizes() {
+  return { lists: listCache.size, searches: searchCache.size, failed: faqsFailedAt.size };
+}
+
+const isSearchPath = (path: string) => /[?&]q=/.test(path) || /\/faqs\/[^/?]+\?/.test(path);
+const cacheFor = (path: string) => (isSearchPath(path) ? searchCache : listCache);
+
+function bounded<T>(map: Map<string, T>, key: string, value: T) {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > ADMIN_FAQS_CACHE_ENTRIES) map.delete(map.keys().next().value as string);
 }
 
 /** The value, or undefined when it is not there within ms (the work itself goes on). */
@@ -84,7 +116,9 @@ export function faqsPath(locale: HelpdeskLocale, filter: FaqFilter = {}) {
   const query = new URLSearchParams({ locale });
   if (filter.popular) query.set("popular", "true");
   if (filter.category) query.set("category", filter.category);
-  if (filter.q) query.set("q", filter.q);
+  // One cache key (and one Admin search) per search, whatever its case or spacing.
+  const q = filter.q?.replace(/\s+/g, " ").trim().toLowerCase();
+  if (q) query.set("q", q);
   if (filter.limit) query.set("limit", String(Math.min(100, Math.max(1, Math.floor(filter.limit)))));
   return `/api/integration/helpdesk/faqs?${query}`;
 }
@@ -116,15 +150,11 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     log({ type: "helpdesk", event, reason: error instanceof Error ? (error.message === "timeout" ? "timeout" : error.name) : String(error), ...extra });
   }
 
-  function remember(key: string, entry: CacheEntry<HelpFaq[] | HelpFaq | null>) {
-    faqCache.delete(key);
-    faqCache.set(key, entry);
-    while (faqCache.size > ADMIN_FAQS_CACHE_ENTRIES) faqCache.delete(faqCache.keys().next().value as string);
-  }
-
   /** undefined = Admin could not answer (keep / hide); null = a single FAQ that does not exist (404). */
   async function fetchFaqs(destination: Target, key: string, path: string, single: boolean): Promise<HelpFaq[] | HelpFaq | null | undefined> {
-    const cached = faqCache.get(key);
+    const cache = cacheFor(path);
+    const remember = (entryKey: string, entry: CacheEntry<HelpFaq[] | HelpFaq | null>) => bounded(cache, entryKey, entry);
+    const cached = cache.get(key);
     try {
       const result = await call(destination, path, { method: "GET", timeout: timeouts.faqs, headers: cached?.etag ? { "If-None-Match": cached.etag } : {} });
       if (result.status === 304 && cached) {
@@ -154,7 +184,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       return value;
     } catch (error) {
       failure("admin_faqs_failed", error, { stale: Boolean(cached) });
-      faqsFailedAt.set(key, now());
+      bounded(faqsFailedAt, key, now());
       return cached ? cached.value : undefined;
     }
   }
@@ -171,11 +201,23 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     const destination = target();
     if (!destination) return undefined;
     const key = `${destination.baseUrl}|${path}`;
-    const cached = faqCache.get(key);
+    const cached = cacheFor(path).get(key);
     if (cached && now() - cached.fetchedAt < ADMIN_FAQS_TTL_MS) return cached.value;
     const failedAt = faqsFailedAt.get(key);
     if (failedAt !== undefined && now() - failedAt < ADMIN_FAQS_RETRY_MS) return cached ? cached.value : undefined;
     let pending = faqsInFlight.get(key);
+    if (!pending && !cached && isSearchPath(path)) {
+      const at = now();
+      while (searchStarts.length && at - searchStarts[0] >= SEARCH_WINDOW_MS) searchStarts.shift();
+      if (searchStarts.length >= ADMIN_SEARCHES_PER_MINUTE) {
+        if (at - throttledLoggedAt >= SEARCH_WINDOW_MS) {
+          throttledLoggedAt = at;
+          log({ type: "helpdesk", event: "admin_faqs_throttled", perMinute: ADMIN_SEARCHES_PER_MINUTE });
+        }
+        return undefined;
+      }
+      searchStarts.push(at);
+    }
     if (!pending) {
       pending = fetchFaqs(destination, key, path, single).finally(() => faqsInFlight.delete(key));
       faqsInFlight.set(key, pending);

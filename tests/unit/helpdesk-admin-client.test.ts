@@ -5,8 +5,10 @@ import {
   ADMIN_FAQS_RETRY_MS,
   ADMIN_FAQS_TTL_MS,
   ADMIN_FAQS_WAIT_MS,
+  ADMIN_SEARCHES_PER_MINUTE,
   ADMIN_SUGGEST_TIMEOUT_MS,
   clearFaqCache,
+  faqCacheSizes,
   createAdminHelpdeskClient
 } from "../../modules/helpdesk/adminClient";
 
@@ -241,7 +243,9 @@ test("FAQ list filters: category, search text and limit in a fixed order; each q
 
 test("FAQ cache keeps at most ADMIN_FAQS_CACHE_ENTRIES queries (searches cannot grow it without bound)", async () => {
   const stub = stubFetch(() => json({ faqs: [QUESTION] }));
-  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  // One search a second stays inside the per-minute search budget.
+  let clock = 5_000_000;
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => (clock += 1_000) });
   for (let index = 0; index <= ADMIN_FAQS_CACHE_ENTRIES; index += 1) await client.faqs("en-GB", { q: `query ${index}` });
   await client.faqs("en-GB", { q: `query ${ADMIN_FAQS_CACHE_ENTRIES}` });
   assert.equal(stub.calls.length, ADMIN_FAQS_CACHE_ENTRIES + 1, "the newest entry is still cached");
@@ -264,4 +268,54 @@ test("single FAQ: GET /faqs/{id}?locale=, bare or wrapped as { faq }; 404 and ba
   assert.equal(await client.faq(other, "en-GB"), null);
   assert.equal(await client.faq("../../tickets", "en-GB"), null);
   assert.equal(stub.calls.length, 3, "a bad id never reaches Admin");
+});
+
+test("searches and deep links have their own bounded cache: unique ?q= values never evict the popular list", async () => {
+  let clock = 9_000_000;
+  let down = false;
+  const stub = stubFetch(() => (down ? json({}, 503) : json({ faqs: [QUESTION] })));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: () => undefined });
+  await client.faqs("en-GB", POPULAR);
+  for (let index = 0; index < ADMIN_FAQS_CACHE_ENTRIES + 20; index += 1) {
+    clock += 600; // inside the per-minute search budget
+    await client.faqs("en-GB", { q: `unique ${index}`, limit: 50 });
+  }
+  assert.deepEqual(faqCacheSizes(), { lists: 1, searches: ADMIN_FAQS_CACHE_ENTRIES, failed: 0 });
+  // Admin goes down: the popular list is still there to serve stale.
+  down = true;
+  clock += 60_000;
+  assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
+});
+
+test("failed lookups are remembered in a bounded map: an outage plus unique ?q= values cannot grow memory", async () => {
+  let clock = 20_000_000;
+  const stub = stubFetch(() => json({}, 503));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => (clock += 1_000), log: () => undefined });
+  for (let index = 0; index < ADMIN_FAQS_CACHE_ENTRIES * 3; index += 1) assert.equal(await client.faqs("en-GB", { q: `outage ${index}` }), null);
+  assert.ok(faqCacheSizes().failed <= ADMIN_FAQS_CACHE_ENTRIES, `failed keys: ${faqCacheSizes().failed}`);
+});
+
+test("uncached searches and deep links are throttled per instance: over ADMIN_SEARCHES_PER_MINUTE Admin is not asked", async () => {
+  let clock = 30_000_000;
+  const stub = stubFetch(() => json({ faqs: [QUESTION] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, now: () => clock, log: (line) => logs.push(line) });
+  assert.equal(ADMIN_SEARCHES_PER_MINUTE, 120);
+  for (let index = 0; index < ADMIN_SEARCHES_PER_MINUTE; index += 1) assert.ok(await client.faqs("en-GB", { q: `burst ${index}` }));
+  assert.equal(await client.faqs("en-GB", { q: "one too many" }), null);
+  assert.equal(await client.faq("0192d4f0-7b6a-7c3e-9a10-00000000beef", "en-GB"), null);
+  assert.equal(stub.calls.length, ADMIN_SEARCHES_PER_MINUTE, "Admin is not asked over the budget");
+  assert.ok(logs.some((line) => line.event === "admin_faqs_throttled"));
+  assert.ok(await client.faqs("en-GB", { q: "burst 3" }), "a cached search is still answered");
+  assert.ok(await client.faqs("en-GB", POPULAR), "lists are never throttled");
+  clock += 60_001;
+  assert.ok(await client.faqs("en-GB", { q: "one too many" }), "the budget refills after a minute");
+});
+
+test("search text is normalised before it becomes a cache key: case and spacing do not make a new Admin call", async () => {
+  const stub = stubFetch(() => json({ faqs: [QUESTION] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  await client.faqs("en-GB", { q: "  Invoice   PDF " });
+  await client.faqs("en-GB", { q: "invoice pdf" });
+  assert.equal(stub.calls.length, 1);
+  assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/faqs?locale=en-GB&q=invoice+pdf`);
 });

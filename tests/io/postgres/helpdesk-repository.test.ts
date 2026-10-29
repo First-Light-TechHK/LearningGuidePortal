@@ -22,6 +22,7 @@ import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 const TABLES = ["helpdesk_assist_log", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
 const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
+const MIGRATION_019 = readFileSync(path.join(process.cwd(), "db", "migrations", "019_helpdesk_outcome_delivery.sql"), "utf8");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const learner = { id: "pg-learner", email: "pg-learner@example.test", name: "PG Learner" };
 const agent = { id: "emp-pg", name: "PG Agent" };
@@ -420,4 +421,47 @@ test("v2 in PostgreSQL: assist log rows, first-wins feedback under a race, the h
   assert.deepEqual(detail.aiAssist.map((item) => item.id), [late.response.id]);
   assert.equal(detail.aiAssist[0].answer, "Use **Forgot password**.");
   assert.match(detail.aiAssist[0].createdAt, /^2026-10-29T06:00:01\.000Z$/);
+});
+
+test("019 in PostgreSQL: re-applies; declined is stored with the ticket; undelivered outcomes are listed least recently tried first; mark_read ignores agent-only events", async () => {
+  await getPool().query(MIGRATION_019);
+  await getPool().query(MIGRATION_019);
+  const columns = await rows<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'helpdesk_assist_log' AND column_name LIKE 'feedback_%' ORDER BY column_name");
+  assert.deepEqual(columns.map((row) => row.column_name), ["feedback_attempted_at", "feedback_delivered_at"]);
+  let clock = Date.parse("2026-10-28T06:00:00.000Z");
+  const now = () => new Date(clock);
+  const repository = createPostgresHelpdeskRepository();
+  let up = false;
+  const reported: string[] = [];
+  const assistant = createAssistantService({
+    repository, now, log: () => undefined,
+    admin: {
+      async suggest() { return { id: uuidv7(clock), faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000f1", question: "Reset?", answer: "Use **Forgot password**." }; },
+      async reportOutcome(id) { if (!up) return false; reported.push(id); return true; }
+    }
+  });
+  const submit = await assistant.suggestForSubmit(learner, { category: "technical_support", subject: "Password", message: "password", locale: "en-GB" });
+  assert.ok(submit);
+  clock += 1000;
+  const hd = service(now);
+  const ticket = (await hd.createTicket(learner, { ...input("Declined"), suggestionId: submit.id }, randomUUID())).ticket;
+  assert.equal((await repository.findAssist(submit.id))?.feedback, "declined");
+  assert.equal((await hd.getAgentTicket(ticket.id)).aiAssist[0].feedback, "declined");
+  const chat = await assistant.ask(learner, { message: "password", locale: "en-GB", faqId: null }, randomUUID());
+  clock += 1000;
+  await assistant.feedback(learner, chat.response.id, true);
+  clock += 1000;
+  assert.equal(await assistant.deliverOutcome(submit.id), false, "Admin is down");
+  const pending = await repository.listUndeliveredAssists("2026-10-27T00:00:00.000Z", 5);
+  assert.deepEqual(pending.map((row) => row.id), [chat.response.id, submit.id], "the most recently tried goes last");
+  up = true;
+  assert.equal(await assistant.deliverPending(), 2);
+  assert.deepEqual(reported.sort(), [chat.response.id, submit.id].sort());
+  assert.ok((await repository.findAssist(submit.id))?.feedbackDeliveredAt);
+  assert.deepEqual(await repository.listUndeliveredAssists("2026-10-27T00:00:00.000Z", 5), []);
+  // mark_read for the seen sequence after another agent's tag and flag still clears the dot.
+  const seen = (await hd.getAgentTicket(ticket.id)).sequence;
+  await hd.agentAction(ticket.id, { action: "add_tag", agent, tag: "pg", expectedSequence: null }, randomUUID());
+  await hd.agentAction(ticket.id, { action: "flag", agent, expectedSequence: seen + 1 }, randomUUID());
+  assert.equal((await hd.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: seen }, randomUUID())).ticket.unreadByAgent, false);
 });

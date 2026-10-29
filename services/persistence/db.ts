@@ -104,6 +104,12 @@ const SCHEMA_PROBE = `
         AND column_name = 'flagged_at'
         AND table_schema = ANY (current_schemas(false))
     )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'feedback_attempted_at'
+        AND table_schema = ANY (current_schemas(false))
+    )
   ) AS ready
 `;
 
@@ -281,6 +287,12 @@ CREATE TABLE IF NOT EXISTS helpdesk_assist_log (
 );
 CREATE INDEX IF NOT EXISTS helpdesk_assist_log_learner_idx ON helpdesk_assist_log (learner_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS helpdesk_assist_log_ticket_idx ON helpdesk_assist_log (ticket_id, created_at, id) WHERE ticket_id IS NOT NULL;
+
+-- Mirrors db/migrations/019_helpdesk_outcome_delivery.sql (whether Admin
+-- confirmed an assist outcome); same parity rule as 017 above.
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_delivered_at TIMESTAMPTZ;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_attempted_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS helpdesk_assist_log_undelivered_idx ON helpdesk_assist_log (feedback_attempted_at NULLS FIRST, created_at, id) WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL;
 
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,

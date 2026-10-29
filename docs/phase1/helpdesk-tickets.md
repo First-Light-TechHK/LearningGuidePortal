@@ -53,7 +53,7 @@ Constants in one place: CONFIRM_WINDOW_HOURS=72, REOPEN_WINDOW_DAYS=7.
 ## 4. Standards (no home-made protocols)
 
 - IDs: UUIDv7 (RFC 9562). Times: RFC 3339, stored UTC.
-- Idempotency: `Idempotency-Key` request header (IETF httpapi draft) on every POST that creates something (ticket, message, action). Same key + same payload → same result (200, `Idempotent-Replayed: true` header); same key + different payload → 409 `idempotency_conflict`. Stored as client_event_id + payload_hash with UNIQUE constraint.
+- Idempotency: `Idempotency-Key` request header (IETF httpapi draft) on every POST that creates something (ticket, message, action). Same key + same payload → same result (200, `Idempotent-Replayed: true` header); same key + different payload → 422 `idempotency_conflict` (draft-ietf-httpapi-idempotency-key-header; 409 stays for stale/invalid state). Stored as client_event_id + payload_hash with UNIQUE constraint.
 - Concurrency: actions carry `expectedSequence`; mismatch → 409 `stale_ticket` (page reloads).
 - Errors for the new endpoints: RFC 9457 `application/problem+json` `{ type, title, status, detail, code }` (`type` = `https://www.ilovelearningguide.com/problems/<code>`). Success bodies are plain JSON (no `{ok:true}` envelope) for these new endpoints.
 - Service auth (Admin → Portal): `Authorization: Bearer <token>` (RFC 6750). Portal env `PORTAL_HELPDESK_TOKEN`; read on every request (no caching) so a rotated value applies without code change; if unset → 503 problem `integration_disabled`. Constant-time compare. Admin env `PORTAL_HELPDESK_BASE_URL` + `PORTAL_HELPDESK_TOKEN`, also read per request.

@@ -62,7 +62,7 @@ test("problem responses map to one learner message (401 / 404 / 409 / 413 / 415 
   assert.equal(problemMessageKey(409, "reopen_window_passed"), "reopenWindow");
   assert.equal(problemMessageKey(409, "rating_window_passed"), "ratingWindow");
   assert.equal(problemMessageKey(409, "already_rated"), "alreadyRated");
-  assert.equal(problemMessageKey(409, "idempotency_conflict"), "invalid");
+  assert.equal(problemMessageKey(422, "idempotency_conflict"), "invalid");
   assert.equal(problemMessageKey(413, "attachment_too_large"), "tooLarge");
   assert.equal(problemMessageKey(415, "attachment_type_unsupported"), "unsupported");
   assert.equal(problemMessageKey(400, "too_many_attachments"), "tooMany");

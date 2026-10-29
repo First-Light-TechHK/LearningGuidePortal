@@ -17,9 +17,12 @@ export type NewTicket = {
   /**
    * v2 §4a: link these helpdesk_assist_log rows to the new ticket in the same
    * transaction — only rows of learnerId, created after sinceIso and not yet
-   * linked; any other id is skipped silently.
+   * linked; any other id is skipped silently. declinedId (the submit-time
+   * suggestion the learner declined by submitting) also gets feedback
+   * 'declined' when it is one of those rows, from source submit, with no
+   * feedback yet (first wins).
    */
-  assistLinks?: { ids: string[]; learnerId: string; sinceIso: string };
+  assistLinks?: { ids: string[]; learnerId: string; sinceIso: string; declinedId?: string | null };
 };
 
 /** One AI Support Assistant answer as shown to the learner (helpdesk_assist_log, v2 §4a). */
@@ -41,6 +44,10 @@ export type AssistRecord = {
   clientEventId: string | null;
   payloadHash: string | null;
   createdAt: string;
+  /** When Admin confirmed the feedback (null: not yet told; the sweep retries). */
+  feedbackDeliveredAt: string | null;
+  /** The last attempt to tell Admin (the sweep tries the least recently tried first). */
+  feedbackAttemptedAt: string | null;
 };
 
 export type TicketChange = {
@@ -103,6 +110,10 @@ export type HelpdeskRepository = {
   setAssistFeedback(id: string, learnerId: string, feedback: AssistFeedback): Promise<AssistRecord | null>;
   /** Rate limiting: createdAt of the n-th newest row of this learner from these sources after sinceIso, or null. */
   nthRecentAssistAt(learnerId: string, sinceIso: string, n: number, sources: readonly AssistSource[]): Promise<string | null>;
+  /** Records one attempt to forward the row's feedback to Admin; delivered sets feedbackDeliveredAt. */
+  recordAssistDelivery(id: string, atIso: string, delivered: boolean): Promise<void>;
+  /** Rows with feedback Admin has not confirmed, created after sinceIso: never tried first, then least recently tried, then oldest. */
+  listUndeliveredAssists(sinceIso: string, limit: number): Promise<AssistRecord[]>;
   /** Rows linked to a ticket, oldest first. */
   listAssistsByTicket(ticketId: string): Promise<AssistRecord[]>;
 };

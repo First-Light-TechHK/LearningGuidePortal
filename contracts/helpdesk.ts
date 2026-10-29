@@ -29,6 +29,8 @@ export const HELPDESK_LIMITS = {
   learnerMessagesPerHour: 60,
   /** v2 §4b: assistant questions (chat + chip) per learner, rolling hour, counted from helpdesk_assist_log. */
   assistantPerHour: 30,
+  /** v2 §2/§4b: submit-time suggestion checks per learner, rolling hour, counted from helpdesk_assist_log (Admin's own limit is the same 10). */
+  submitChecksPerHour: 10,
   /** v2 §4a: what the learner typed (or the chip question) as stored in helpdesk_assist_log. */
   assistQuestionMax: 500,
   /** v2 §4a: assistant answers a new ticket may link. */
@@ -271,7 +273,8 @@ export const PROBLEM_STATUS = {
   invalid_token: 401,
   forbidden_origin: 403,
   not_found: 404,
-  idempotency_conflict: 409,
+  // draft-ietf-httpapi-idempotency-key-header: a key reused with a different payload is 422.
+  idempotency_conflict: 422,
   stale_ticket: 409,
   invalid_transition: 409,
   reopen_window_passed: 409,

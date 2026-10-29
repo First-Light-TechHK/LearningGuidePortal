@@ -232,7 +232,7 @@ test("submit with a screenshot -> card -> agent reply -> learner reply -> resolu
   assert.equal(replay.status, 200);
   assert.equal(replay.headers.get("idempotent-replayed"), "true");
   assert.equal((await replay.json()).id, ticket.id);
-  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Other" }), cookie: learnerCookie, key }), ctx()), 409, "idempotency_conflict");
+  await problem(await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Other" }), cookie: learnerCookie, key }), ctx()), 422, "idempotency_conflict");
 
   const list = await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json();
   assert.deepEqual(list.tickets.map((item: { id: string }) => item.id), [ticket.id]);
@@ -483,6 +483,19 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   const ticketId = (await created.json()).id as string;
   const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticketId}`), ctx({ id: ticketId }))).json();
   assert.deepEqual(detail.aiAssist.map((item: { id: string; source: string; feedback: string }) => [item.id, item.source, item.feedback]), [[second.id, "submit", "declined"]]);
+  const outcomeCalls = (id: string) => adminCalls.filter((call) => call.url === `/api/integration/helpdesk/suggestions/${id}/outcome`).map((call) => JSON.parse(call.body).outcome);
+  const eventually = async (check: () => boolean) => { for (let attempt = 0; attempt < 50 && !check(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 20)); return check(); };
+  assert.ok(await eventually(() => outcomeCalls(second.id).length === 2), "the server re-delivers the outcome Admin missed");
+  assert.deepEqual(outcomeCalls(second.id), ["declined", "declined"]);
+  // The browser's outcome call is lost: submitting alone records and forwards "declined" from the server.
+  const third = (await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json()).suggestion as { id: string };
+  const direct = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Third", suggestionId: third.id }), key: randomUUID(), cookie: learnerCookie }), ctx());
+  assert.equal(direct.status, 201);
+  const directId = (await direct.json()).id as string;
+  const directDetail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${directId}`), ctx({ id: directId }))).json();
+  assert.deepEqual(directDetail.aiAssist.map((item: { feedback: string }) => item.feedback), ["declined"]);
+  assert.ok(await eventually(() => outcomeCalls(third.id).length === 1));
+  assert.deepEqual(outcomeCalls(third.id), ["declined"]);
 
   adminMode = "slow";
   const started = Date.now();
@@ -518,7 +531,7 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
   assert.equal(replayed.headers.get("idempotent-replayed"), "true");
   assert.deepEqual(await replayed.json(), answered);
   assert.equal(adminCalls.length, callsBefore, "a replay never asks Admin again");
-  await problem(await ask({ message: "something else", locale: "en-GB" }, { cookie: strangerCookie, key }), 409, "idempotency_conflict");
+  await problem(await ask({ message: "something else", locale: "en-GB" }, { cookie: strangerCookie, key }), 422, "idempotency_conflict");
 
   const chip = await (await ask({ message: FAQ.question, locale: "zh-CN", faqId: FAQ.id }, { cookie: strangerCookie })).json();
   assert.equal(chip.reply.faqId, FAQ.id);

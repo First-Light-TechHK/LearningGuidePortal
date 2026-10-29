@@ -27,8 +27,18 @@ import type { AssistRecord, HelpdeskRepository } from "./repository";
 import type { LearnerIdentity } from "./service";
 
 const RATE_WINDOW_MS = 3_600_000;
-/** Chat and chips share the learner's hourly budget; submit-time checks are limited by Admin. */
+/** Chat and chips share the learner's hourly budget; submit-time checks have their own (HELPDESK_LIMITS.submitChecksPerHour). */
 const LIMITED_SOURCES: readonly AssistSource[] = ["chat", "chip"];
+const SUBMIT_SOURCES: readonly AssistSource[] = ["submit"];
+/** Feedback Admin has not confirmed is retried for this long, a few rows per sweep. */
+const REDELIVERY_WINDOW_MS = 7 * 24 * 3_600_000;
+const REDELIVERY_BATCH = 5;
+/**
+ * Requests in flight on this instance by Idempotency-Key: a second request
+ * with the same key waits for the first and replays it instead of asking
+ * Admin again (a double click or a retry racing the original).
+ */
+const askInFlight = new Map<string, Promise<unknown>>();
 
 export type AssistantAdmin = {
   suggest(input: AdminSuggestRequest): Promise<HelpdeskSuggestion | null>;
@@ -36,7 +46,7 @@ export type AssistantAdmin = {
 };
 
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt">;
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists">;
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
@@ -76,7 +86,7 @@ export function createAssistantService(deps: AssistantDeps) {
     return {
       id: reply?.id ?? uuidv7(at.getTime()), learnerId: learner.id, source, locale, question: clip(question, HELPDESK_LIMITS.assistQuestionMax),
       faqId: reply?.faqId ?? null, faqQuestion: reply ? clip(reply.question, 200) : null, answer: reply ? clip(reply.answer, 4000) : null,
-      feedback: null, ticketId: null, clientEventId: key, payloadHash: hash, createdAt: at.toISOString()
+      feedback: null, ticketId: null, clientEventId: key, payloadHash: hash, createdAt: at.toISOString(), feedbackDeliveredAt: null, feedbackAttemptedAt: null
     };
   }
 
@@ -103,6 +113,22 @@ export function createAssistantService(deps: AssistantDeps) {
   /** POST /api/helpdesk/assistant: one chat question or starter chip (faqId). */
   async function ask(learner: LearnerIdentity, input: AssistantInput, key: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const hash = hashOf({ op: "assistant", learnerId: learner.id, message: input.message, locale: input.locale, faqId: input.faqId });
+    const running = askInFlight.get(key);
+    if (running) {
+      await running.catch(() => undefined);
+      const stored = await replay(key, hash);
+      if (stored) return { response: stored, replayed: true };
+    }
+    const work = askOnce(learner, input, key, hash);
+    askInFlight.set(key, work);
+    try {
+      return await work;
+    } finally {
+      if (askInFlight.get(key) === work) askInFlight.delete(key);
+    }
+  }
+
+  async function askOnce(learner: LearnerIdentity, input: AssistantInput, key: string, hash: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const earlier = await replay(key, hash);
     if (earlier) return { response: earlier, replayed: true };
     await enforceRateLimit(learner.id);
@@ -119,15 +145,42 @@ export function createAssistantService(deps: AssistantDeps) {
     return { response: replyOf(row), replayed: false };
   }
 
+  /** Tells Admin the stored feedback unless it already confirmed it; true when Admin has it. */
+  async function deliver(row: AssistRecord): Promise<boolean> {
+    if (row.feedback === null) return false;
+    if (row.feedbackDeliveredAt) return true;
+    const delivered = await deps.admin.reportOutcome(row.id, row.feedback).catch(() => false);
+    await repository.recordAssistDelivery(row.id, now().toISOString(), delivered);
+    if (!delivered) log({ type: "helpdesk", event: "assistant_outcome_not_delivered", feedback: row.feedback });
+    return delivered;
+  }
+
+  /** The sweep: forwards a few outcomes Admin has not confirmed (never tried first, then least recently tried). Returns how many Admin took. */
+  async function deliverPending(): Promise<number> {
+    const rows = await repository.listUndeliveredAssists(new Date(now().getTime() - REDELIVERY_WINDOW_MS).toISOString(), REDELIVERY_BATCH);
+    let delivered = 0;
+    for (const row of rows) if (await deliver(row)) delivered += 1;
+    return delivered;
+  }
+
+  /** Forwards one row's stored outcome (e.g. the "declined" a new ticket recorded); true when Admin has it. */
+  async function deliverOutcome(id: string): Promise<boolean> {
+    const row = await repository.findAssist(id);
+    if (!row) return false;
+    const delivered = await deliver(row);
+    if (delivered) await deliverPending();
+    return delivered;
+  }
+
   async function storeFeedback(learner: LearnerIdentity, id: string, feedback: AssistFeedback, sources: readonly AssistSource[]) {
     const row = await repository.findAssist(id);
     if (!row || row.learnerId !== learner.id || row.answer === null || !sources.includes(row.source)) throw new HelpdeskProblem("not_found", "No such answer.");
     const stored = await repository.setAssistFeedback(id, learner.id, feedback);
     if (!stored) throw new HelpdeskProblem("not_found", "No such answer.");
-    // Admin keeps its own first-wins record; tell it only when this call set the value.
-    const first = row.feedback === null && stored.feedback === feedback;
-    const delivered = first ? await deps.admin.reportOutcome(id, feedback).catch(() => false) : true;
-    if (!delivered) log({ type: "helpdesk", event: "assistant_outcome_not_delivered", feedback });
+    // Admin keeps its own first-wins record: forward what is stored until Admin confirms it,
+    // and while Admin is answering, also catch up on outcomes it missed earlier.
+    const delivered = await deliver(stored);
+    if (delivered) await deliverPending();
     return { stored, delivered };
   }
 
@@ -139,6 +192,12 @@ export function createAssistantService(deps: AssistantDeps) {
 
   /** The submit-time check (1333:249): Admin's suggestion for the enquiry, logged with source submit. */
   async function suggestForSubmit(learner: LearnerIdentity, input: SuggestInput): Promise<HelpdeskSuggestion | null> {
+    // Over the hourly budget the learner simply gets no suggestion: Admin is not asked and nothing is logged.
+    const at = now();
+    if (await repository.nthRecentAssistAt(learner.id, new Date(at.getTime() - RATE_WINDOW_MS).toISOString(), HELPDESK_LIMITS.submitChecksPerHour, SUBMIT_SOURCES)) {
+      log({ type: "helpdesk", event: "rate_limited", limit: "submit_check" });
+      return null;
+    }
     const reply = await askAdmin({ learnerId: learner.id, locale: input.locale, source: "submit", category: input.category, subject: input.subject, message: input.message });
     const row = record(learner, "submit", input.locale, input.subject, reply, now(), null, null);
     if ((await repository.insertAssist(row)) === "duplicate") log({ type: "helpdesk", event: "assistant_duplicate_suggestion" });
@@ -151,7 +210,7 @@ export function createAssistantService(deps: AssistantDeps) {
     return { id: stored.id, feedback: stored.feedback, delivered };
   }
 
-  return { ask, feedback, suggestForSubmit, submitOutcome };
+  return { ask, feedback, suggestForSubmit, submitOutcome, deliverOutcome, deliverPending };
 }
 
 export type AssistantService = ReturnType<typeof createAssistantService>;

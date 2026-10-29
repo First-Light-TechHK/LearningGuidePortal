@@ -349,3 +349,142 @@ test("assistIds are part of the create payload: same key + same ids replays, oth
   assert.equal(replay.ticket.id, first.ticket.id);
   await rejects(h.service.createTicket(learner, enquiry({ assistIds: [] }), key), "idempotency_conflict");
 });
+
+// ---------------------------------------------------------------- final verification (2026-10-29)
+
+test("submit-time checks: at most 10 per learner per rolling hour; over it the answer is null without asking Admin or writing a row", async () => {
+  const h = harness();
+  const since = () => new Date(Date.parse("2026-10-28T06:00:00.000Z") - 1).toISOString();
+  for (let index = 0; index < HELPDESK_LIMITS.submitChecksPerHour; index += 1) {
+    assert.ok(await h.assistant.suggestForSubmit(learner, { category: "other", subject: `s${index}`, message: "password", locale: "en-GB" }));
+    h.advance(1000);
+  }
+  assert.equal(HELPDESK_LIMITS.submitChecksPerHour, 10);
+  assert.equal(await h.assistant.suggestForSubmit(learner, { category: "other", subject: "one more", message: "password", locale: "en-GB" }), null);
+  assert.equal(h.suggestCalls.length, 10, "Admin is not asked over the limit");
+  assert.equal(await h.repository.nthRecentAssistAt(learner.id, since(), 11, ["submit"]), null, "no row is written over the limit");
+  assert.ok(h.logs.some((line) => line.event === "rate_limited" && line.limit === "submit_check"));
+  assert.ok(await h.assistant.suggestForSubmit(other, { category: "other", subject: "other learner", message: "password", locale: "en-GB" }));
+  h.advance(HOUR);
+  assert.ok(await h.assistant.suggestForSubmit(learner, { category: "other", subject: "an hour later", message: "password", locale: "en-GB" }));
+  // The chat budget is separate.
+  assert.ok((await h.assistant.ask(learner, { message: "password", locale: "en-GB", faqId: null }, randomUUID())).response.reply);
+});
+
+test("submitting after a suggestion stores 'declined' on the server in the ticket's transaction (first wins) and the server forwards it to Admin", async () => {
+  const h = harness();
+  const suggestion = await h.assistant.suggestForSubmit(learner, { category: "technical_support", subject: "Password", message: "reset password", locale: "en-GB" });
+  assert.ok(suggestion);
+  // The browser's own outcome call never arrives (tab closed, network blip).
+  const ticket = (await h.service.createTicket(learner, enquiry({ suggestionId: suggestion.id }), randomUUID())).ticket;
+  const row = await h.repository.findAssist(suggestion.id);
+  assert.equal(row?.feedback, "declined");
+  assert.equal(row?.ticketId, ticket.id);
+  assert.equal((await h.service.getAgentTicket(ticket.id)).aiAssist[0].feedback, "declined");
+  assert.deepEqual(h.outcomes, []);
+  assert.equal(await h.assistant.deliverOutcome(suggestion.id), true);
+  assert.deepEqual(h.outcomes, [[suggestion.id, "declined"]]);
+  assert.equal(await h.assistant.deliverOutcome(suggestion.id), true, "already delivered");
+  assert.equal(h.outcomes.length, 1, "Admin is told once");
+  // A value the learner set before (e.g. edited) is kept.
+  const edited = await h.assistant.suggestForSubmit(learner, { category: "technical_support", subject: "Password 2", message: "reset password", locale: "en-GB" });
+  assert.ok(edited);
+  await h.assistant.submitOutcome(learner, edited.id, "edited");
+  await h.service.createTicket(learner, enquiry({ subject: "Again", suggestionId: edited.id }), randomUUID());
+  assert.equal((await h.repository.findAssist(edited.id))?.feedback, "edited");
+  // Someone else's suggestion id is neither linked nor marked.
+  const foreign = await h.assistant.suggestForSubmit(other, { category: "technical_support", subject: "Theirs", message: "reset password", locale: "en-GB" });
+  assert.ok(foreign);
+  await h.service.createTicket(learner, enquiry({ subject: "Third", suggestionId: foreign.id }), randomUUID());
+  assert.equal((await h.repository.findAssist(foreign.id))?.feedback, null);
+});
+
+test("an outcome Admin did not confirm is delivered later: on a repeat and by the sweep once Admin answers again", async () => {
+  let up = false;
+  const delivered: Array<[string, string]> = [];
+  const h = { ...harness({ async reportOutcome(id, outcome) { if (!up) return false; delivered.push([id, outcome]); return true; } }), outcomes: delivered };
+  const first = await h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: null }, randomUUID());
+  const second = await h.assistant.ask(learner, { message: "password again", locale: "en-GB", faqId: null }, randomUUID());
+  const third = await h.assistant.ask(learner, { message: "password once more", locale: "en-GB", faqId: null }, randomUUID());
+  await h.assistant.feedback(learner, first.response.id, false);
+  await h.assistant.feedback(learner, second.response.id, true);
+  assert.equal(h.outcomes.length, 0, "Admin is down");
+  assert.equal((await h.repository.findAssist(first.response.id))?.feedbackDeliveredAt, null);
+  up = true;
+  // A repeat of the same vote (e.g. a retry) delivers the stored value ...
+  assert.deepEqual(await h.assistant.feedback(learner, first.response.id, true), { id: first.response.id, feedback: "not_helpful" });
+  assert.deepEqual(h.outcomes, [[first.response.id, "not_helpful"], [second.response.id, "helpful"]], "... and the sweep delivers the other pending one");
+  assert.ok((await h.repository.findAssist(second.response.id))?.feedbackDeliveredAt);
+  await h.assistant.feedback(learner, third.response.id, true);
+  assert.deepEqual(h.outcomes.map(([id]) => id), [first.response.id, second.response.id, third.response.id], "nothing is delivered twice");
+  assert.equal(await h.assistant.deliverPending(), 0);
+});
+
+test("the delivery sweep takes the least recently tried first, so a refused outcome cannot block the others", async () => {
+  const refused = new Set<string>();
+  const delivered: Array<[string, string]> = [];
+  const h = { ...harness({ async reportOutcome(id, outcome) { if (refused.has(id)) return false; delivered.push([id, outcome]); return true; } }), outcomes: delivered };
+  const ids: string[] = [];
+  for (let index = 0; index < 7; index += 1) {
+    const asked = await h.assistant.ask(learner, { message: `password ${index}`, locale: "en-GB", faqId: null }, randomUUID());
+    ids.push(asked.response.id);
+    refused.add(asked.response.id);
+    await h.assistant.feedback(learner, asked.response.id, true);
+    h.advance(1000);
+  }
+  for (const id of ids.slice(5)) refused.delete(id);
+  assert.equal(await h.assistant.deliverPending(), 0, "the 5 oldest are refused");
+  assert.equal(await h.assistant.deliverPending(), 2, "the next sweep reaches the 2 others");
+  assert.deepEqual(h.outcomes.map(([id]) => id), ids.slice(5));
+});
+
+test("two requests with the same Idempotency-Key at once ask Admin once and get the same reply", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const calls: AdminSuggestRequest[] = [];
+  const h = { ...harness({ async suggest(input) { calls.push(input); await gate; return { id: randomUUID(), faqId: FAQ_ID, question: "How do I reset my password?", answer: "Open **Sign in**." }; } }), suggestCalls: calls };
+  const key = randomUUID();
+  const one = h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: null }, key);
+  const two = h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: null }, key);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  release();
+  const [a, b] = await Promise.all([one, two]);
+  assert.equal(h.suggestCalls.length, 1);
+  assert.deepEqual(a.response, b.response);
+  assert.deepEqual([a.replayed, b.replayed].sort(), [false, true]);
+  // A different payload under the same key while the first is in flight is still a conflict.
+  const key2 = randomUUID();
+  const gate2 = h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: null }, key2);
+  await rejects(h.assistant.ask(learner, { message: "different", locale: "en-GB", faqId: null }, key2), "idempotency_conflict");
+  await gate2;
+});
+
+test("what is logged is clipped to the stored limits in code points: answer 4000, FAQ question 200, question 500", async () => {
+  const long = "😀".repeat(4100);
+  const h = harness({ async suggest() { return { id: randomUUID(), faqId: FAQ_ID, question: "问".repeat(250), answer: long }; } });
+  const asked = await h.assistant.ask(learner, { message: "𠀀".repeat(500), locale: "zh-CN", faqId: null }, randomUUID());
+  const row = await h.repository.findAssist(asked.response.id);
+  assert.equal([...(row?.answer ?? "")].length, 4000);
+  assert.equal(row?.answer, "😀".repeat(4000), "never splits a surrogate pair");
+  assert.equal([...(row?.faqQuestion ?? "")].length, 200);
+  assert.equal([...(row?.question ?? "")].length, 500);
+  assert.equal(asked.response.reply?.answer, "😀".repeat(4000), "the reply is what was stored");
+  const submit = await h.assistant.suggestForSubmit(learner, { category: "other", subject: "s".repeat(120), message: "m", locale: "en-GB" });
+  assert.equal([...((await h.repository.findAssist(submit?.id ?? ""))?.answer ?? "")].length, 4000);
+});
+
+test("mark_read for a snapshot is not undone by another agent's tag, flag or internal note; only learner activity keeps the dot", async () => {
+  const h = harness();
+  const { ticket } = await h.service.createTicket(learner, enquiry(), randomUUID());
+  const seen = (await h.service.getAgentTicket(ticket.id)).sequence;
+  await h.service.agentAction(ticket.id, { action: "add_tag", agent, tag: "billing", expectedSequence: null }, randomUUID());
+  await h.service.agentAction(ticket.id, { action: "flag", agent, expectedSequence: seen + 1 }, randomUUID());
+  await h.service.postAgentMessage(ticket.id, { body: "note", internal: true, agent, expectedSequence: seen + 2 }, randomUUID());
+  const read = await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: seen }, randomUUID());
+  assert.equal(read.ticket.sequence, seen + 3);
+  assert.equal(read.ticket.unreadByAgent, false, "agent-only events after the snapshot do not keep it unread");
+  const now = read.ticket.sequence;
+  await h.service.learnerMessage(learner, ticket.id, { body: "Any news?", expectedSequence: now, files: [] }, randomUUID());
+  await h.service.agentAction(ticket.id, { action: "add_tag", agent, tag: "second", expectedSequence: null }, randomUUID());
+  assert.equal((await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: now }, randomUUID())).ticket.unreadByAgent, true, "a learner message after the snapshot keeps it");
+});

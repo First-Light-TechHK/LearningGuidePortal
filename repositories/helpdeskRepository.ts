@@ -90,6 +90,10 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       store.tags ||= [];
       // ... and before v2.
       store.assists ||= [];
+      for (const row of store.assists) {
+        row.feedbackDeliveredAt ??= null;
+        row.feedbackAttemptedAt ??= null;
+      }
       for (const ticket of store.tickets) {
         ticket.contactEmail ??= ticket.userEmail;
         ticket.suggestionId ??= null;
@@ -168,7 +172,10 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         const links = input.assistLinks;
         if (links) {
           for (const row of store.assists) {
-            if (links.ids.includes(row.id) && row.learnerId === links.learnerId && row.createdAt > links.sinceIso && row.ticketId === null) row.ticketId = input.ticket.id;
+            if (links.ids.includes(row.id) && row.learnerId === links.learnerId && row.createdAt > links.sinceIso && row.ticketId === null) {
+              row.ticketId = input.ticket.id;
+              if (row.id === links.declinedId && row.source === "submit" && row.feedback === null) row.feedback = "declined";
+            }
           }
         }
         await save(store);
@@ -227,7 +234,8 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         const store = await load();
         const ticket = store.tickets.find((item) => item.id === ticketId);
         if (!ticket || !ticket.unreadByAgent) return;
-        if (seenSequence !== null && ticket.sequence > seenSequence) return;
+        // Only learner activity after the agent's snapshot keeps the dot; agent-only events (tags, flags, notes) do not.
+        if (seenSequence !== null && store.events.some((event) => event.subject === ticketId && event.sequence > seenSequence && event.data.actor?.kind === "learner")) return;
         ticket.unreadByAgent = false;
         await save(store);
       });
@@ -275,6 +283,23 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     async nthRecentAssistAt(learnerId, sinceIso, n, sources) {
       return nthNewest((await load()).assists.filter((item) => item.learnerId === learnerId && sources.includes(item.source)).map((item) => item.createdAt), sinceIso, n);
     },
+    recordAssistDelivery(id, atIso, delivered) {
+      return exclusive(async () => {
+        const store = await load();
+        const row = store.assists.find((item) => item.id === id);
+        if (!row) return;
+        row.feedbackAttemptedAt = atIso;
+        if (delivered) row.feedbackDeliveredAt ??= atIso;
+        await save(store);
+      });
+    },
+    async listUndeliveredAssists(sinceIso, limit) {
+      const order = (row: AssistRecord) => `${row.feedbackAttemptedAt === null ? "0" : `1${row.feedbackAttemptedAt}`}|${row.createdAt}|${row.id}`;
+      return (await load()).assists
+        .filter((item) => item.feedback !== null && !item.feedbackDeliveredAt && item.createdAt > sinceIso)
+        .sort((a, b) => (order(a) < order(b) ? -1 : 1))
+        .slice(0, limit);
+    },
     async listAssistsByTicket(ticketId) {
       return (await load()).assists.filter((item) => item.ticketId === ticketId).sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1));
     }
@@ -303,13 +328,14 @@ function ticketFromRow(row: QueryResultRow): TicketRecord {
   };
 }
 
-const ASSIST_COLUMNS = "id::text, learner_id, source, locale, question, faq_id::text, faq_question, answer, feedback, ticket_id::text, client_event_id::text, payload_hash, created_at";
+const ASSIST_COLUMNS = "id::text, learner_id, source, locale, question, faq_id::text, faq_question, answer, feedback, ticket_id::text, client_event_id::text, payload_hash, created_at, feedback_delivered_at, feedback_attempted_at";
 
 function assistFromRow(row: QueryResultRow): AssistRecord {
   return {
     id: row.id, learnerId: row.learner_id, source: row.source, locale: row.locale, question: row.question, faqId: row.faq_id ?? null,
     faqQuestion: row.faq_question ?? null, answer: row.answer ?? null, feedback: row.feedback ?? null, ticketId: row.ticket_id ?? null,
-    clientEventId: row.client_event_id ?? null, payloadHash: row.payload_hash ?? null, createdAt: iso(row.created_at)
+    clientEventId: row.client_event_id ?? null, payloadHash: row.payload_hash ?? null, createdAt: iso(row.created_at),
+    feedbackDeliveredAt: isoOrNull(row.feedback_delivered_at), feedbackAttemptedAt: isoOrNull(row.feedback_attempted_at)
   };
 }
 
@@ -440,6 +466,11 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
           if (links && links.ids.length) {
             await client.query(`UPDATE helpdesk_assist_log SET ticket_id = $1
               WHERE id = ANY($2::uuid[]) AND learner_id = $3 AND created_at > $4 AND ticket_id IS NULL`, [ticket.id, links.ids, links.learnerId, links.sinceIso]);
+            // Submitting after the modal is the "declined" outcome, recorded with the ticket (first wins).
+            if (links.declinedId) {
+              await client.query(`UPDATE helpdesk_assist_log SET feedback = 'declined'
+                WHERE id = $1::uuid AND ticket_id = $2 AND source = 'submit' AND feedback IS NULL`, [links.declinedId, ticket.id]);
+            }
           }
           return { status: "created" as const, number };
         });
@@ -519,9 +550,11 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       return Number((await select<{ total: string }>("SELECT count(*) AS total FROM helpdesk_tickets WHERE user_id = $1", [userId]))[0].total);
     },
     async markRead(ticketId, seenSequence) {
-      // One conditional UPDATE: a learner message committed after the agent's
-      // snapshot has raised the sequence, so the row no longer matches.
-      await select("UPDATE helpdesk_tickets SET unread_by_agent = FALSE WHERE id = $1 AND unread_by_agent AND ($2::int IS NULL OR sequence <= $2::int)", [ticketId, seenSequence]);
+      // One conditional UPDATE: learner activity committed after the agent's
+      // snapshot (an event by the learner above that sequence) keeps the dot;
+      // agent-only events (tags, flags, internal notes) do not.
+      await select(`UPDATE helpdesk_tickets t SET unread_by_agent = FALSE WHERE t.id = $1 AND t.unread_by_agent AND ($2::int IS NULL OR NOT EXISTS (
+          SELECT 1 FROM helpdesk_ticket_events e WHERE e.subject = t.id AND e.sequence > $2::int AND e.data->'actor'->>'kind' = 'learner'))`, [ticketId, seenSequence]);
     },
     async listAutoConfirmDue(nowIso, userId) {
       const params: unknown[] = [nowIso];
@@ -567,6 +600,16 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       const row = (await select<{ created_at: Date }>(`SELECT created_at FROM helpdesk_assist_log WHERE learner_id = $1 AND created_at > $2 AND source = ANY($3::text[])
         ORDER BY created_at DESC OFFSET $4 LIMIT 1`, [learnerId, sinceIso, [...sources], n - 1]))[0];
       return row ? iso(row.created_at) : null;
+    },
+    async recordAssistDelivery(id, atIso, delivered) {
+      await select(`UPDATE helpdesk_assist_log SET feedback_attempted_at = $2,
+          feedback_delivered_at = CASE WHEN $3::boolean THEN COALESCE(feedback_delivered_at, $2) ELSE feedback_delivered_at END
+        WHERE id = $1`, [id, atIso, delivered]);
+    },
+    async listUndeliveredAssists(sinceIso, limit) {
+      return (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log
+        WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL AND created_at > $1
+        ORDER BY feedback_attempted_at ASC NULLS FIRST, created_at, id LIMIT $2`, [sinceIso, limit])).map(assistFromRow);
     },
     async listAssistsByTicket(ticketId) {
       return (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE ticket_id = $1 ORDER BY created_at, id`, [ticketId])).map(assistFromRow);

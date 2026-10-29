@@ -1,6 +1,6 @@
 import { parseCreateTicketInput } from "@/contracts/helpdesk";
 import { adminHostResponse, idempotencyKey, jsonResponse, problemResponse, readMultipart, requireLearner } from "@/modules/helpdesk/http";
-import { helpdeskService } from "@/modules/helpdesk/runtime";
+import { helpdeskAssistant, helpdeskService } from "@/modules/helpdesk/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +23,15 @@ export async function POST(request: Request) {
     const learner = await requireLearner(request, { write: true });
     const key = idempotencyKey(request);
     const { fields, files } = await readMultipart(request);
-    const result = await helpdeskService().createTicket(learner, parseCreateTicketInput(fields, files), key);
+    const input = parseCreateTicketInput(fields, files);
+    const result = await helpdeskService().createTicket(learner, input, key);
+    // The ticket's transaction recorded "declined" for the submit-time suggestion; tell Admin from
+    // the server (in the background: Admin being slow never delays the learner; the sweep retries).
+    if (input.suggestionId && !result.replayed) {
+      void helpdeskAssistant().deliverOutcome(input.suggestionId).catch((error: unknown) => {
+        console.info(JSON.stringify({ type: "helpdesk", event: "assistant_outcome_not_delivered", error: error instanceof Error ? error.name : "unknown" }));
+      });
+    }
     return jsonResponse(result.ticket, 201, result.replayed);
   } catch (error) { return problemResponse(error, "learner.create"); }
 }

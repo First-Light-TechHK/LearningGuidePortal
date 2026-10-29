@@ -89,7 +89,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "390d82c91ff3d4c37dab439d0a6a8be037399ac124ab7c36bf14104de1bc9e1d";
+const FIXTURE_SHA256 = "9d7a003c9d01009c794587d061e4e8f35671aecb6b403b2fd29b6e05cb281839";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {

@@ -542,7 +542,9 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
         assistLinks: {
           ids: [...new Set([...assistIds, ...(suggestionId ? [suggestionId] : [])])],
           learnerId: learner.id,
-          sinceIso: new Date(at.getTime() - HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000).toISOString()
+          sinceIso: new Date(at.getTime() - HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000).toISOString(),
+          // Submitting is the learner's "No, still submit": the server records it, not a separate browser call.
+          declinedId: suggestionId
         }
       });
     } catch (error) {

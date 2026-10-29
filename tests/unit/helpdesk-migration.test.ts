@@ -69,3 +69,17 @@ test("018 (v2) is a new additive, repeatable migration mirrored by the bootstrap
   assert.doesNotMatch(plain, /CREATE TABLE (?!IF NOT EXISTS)/);
   assert.doesNotMatch(plain, /CREATE (?:UNIQUE )?INDEX (?!IF NOT EXISTS)/);
 });
+
+test("019 records when Admin confirmed an assist outcome; additive, repeatable, mirrored by the bootstrap; 017 and 018 untouched", async () => {
+  const migration = await readFile("db/migrations/019_helpdesk_outcome_delivery.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS|ALTER TABLE)[\s\S]*?;/g) || [];
+  assert.equal(statements.length, 3);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  assert.match(plain, /ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_delivered_at TIMESTAMPTZ;/);
+  assert.match(plain, /ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_attempted_at TIMESTAMPTZ;/);
+  assert.match(plain, /CREATE INDEX IF NOT EXISTS helpdesk_assist_log_undelivered_idx ON helpdesk_assist_log \(feedback_attempted_at NULLS FIRST, created_at, id\) WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL;/);
+  assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'feedback_attempted_at'/, "the probe covers the newest column");
+});

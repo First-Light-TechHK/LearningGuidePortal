@@ -95,10 +95,12 @@
         "not_found"
       ],
       "409": [
-        "idempotency_conflict",
         "stale_ticket",
         "invalid_transition",
         "tag_limit_reached"
+      ],
+      "422": [
+        "idempotency_conflict"
       ],
       "503": [
         "integration_disabled",
