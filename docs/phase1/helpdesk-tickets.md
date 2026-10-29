@@ -375,3 +375,44 @@ The v2 addendum (`/mnt/project-files/lg-helpdesk/tickets-v2-figma-addendum.md`) 
 - **待视觉验收 (no frame):** chat typing dots, error and fallback bubbles, pressed Yes / No, the ideas-link behaviour, the narrow-screen stacked panel; Help Centre search results heading and subtitle, empty states, the expanded answer, the fallback notice, the "Back to popular articles" link, and the narrow layout. zh-CN copy for all new strings is ours.
 - **Tests:** `tests/unit/helpdesk-v2.test.ts`, `helpdesk-markdown.test.ts`, `helpdesk-help-centre.test.ts`, browser suites `helpdesk-contact-support-page.test.ts` (chat) and `helpdesk-help-centre-page.test.ts`, extended api / admin-client / contract / fixture / migration / PG suites, and `tests/e2e/helpdesk-support.spec.ts` (chip → Helpful → Admin outcome; chat + submit → the agent's `aiAssist` and flag / unflag / filters; the Help Centre for visitors and learners; the old help URLs). The stub Admin (`tests/e2e/helpdesk-admin-stub.mjs`) serves the v2 endpoints with the Figma example FAQs.
 - **Two-app run, v2 (2026-10-28):** the same set-up as §14 (Portal dev with local storage, the Admin server on local PostgreSQL 16 with every Prisma migration, the Vite client, local-only tokens), with the scripts updated in `lg-helpdesk/integration-harness/` (`start-admin.sh` uses a local fake OpenRouter endpoint through `OPENROUTER_BASE_URL` that picks the first candidate id; `start-admin-nokey.sh` runs with no model key). `tests/e2e/helpdesk-integration.spec.ts` now drives the v2 screens end to end: an employee creates, edits, previews and deletes bilingual FAQs in the drawer (two popular) → the public Help Centre (popular list, search, topic, `?faq=` deep link, zh-CN, Contact Support `returnTo`) → the learner's chips and chat (Helpful No on a chat answer, Yes on a chip, a no-match fallback, transcript kept on reload) → a submit-time "No, still submit" with a pasted screenshot → the BackOffice student timeline (both enquiries, the attachment bytes, four AI blocks with the right feedback lines) → Claim, Email student, Internal note, Flag / Flagged filter / unflag, Mark as reviewed → the learner sees the reply but not the note and confirms 问题解决了吗？→ 已解决 → Closed; plan "—" and a tag in the right column; a zh-CN learner with a plan (方案名称 / 按半年 / 生效中) whose reply makes the row unread again until it is opened; a helpDesk VIEW employee sees no write controls and gets 403 on writes; zh-CN copy on both sides; with no model (fake answers null, or no key) chat and submit get no answer while a chip still returns its FAQ; "Yes, this solved my issue" creates no ticket. With the fake model: 10/10; with no key (`HELPDESK_INT_NO_MODEL=1 --grep "bilingual FAQs|model picks nothing"`): 2/2. The bugs it found were all in the BackOffice client and are locked by its component tests: a filter changed while the search was still debouncing was lost (FAQs tab and Enquiries list), the selected card's scroll hid the date separator above it, and a deep link to an older card was pushed out of view when the cards above it finished loading.
+
+## 17. Helpdesk v2 verification pass (2026-10-29)
+
+Fixes from the final review of v2. Each one is locked by a test that runs in CI.
+
+- **One Markdown parser, three copies:** the Admin Preview (client) and the Admin save check (server) are line-for-line ports of `modules/helpdesk/markdown.ts`. Their parity is locked by `tests/fixtures/helpdesk-markdown-corpus.json`, which is sha256-pinned and byte-identical in Portal, Admin client and Admin server. The corpus covers bare URLs, `+` / `1)` items, lazy continuation lines, balanced parentheses in link targets and the summary line. Admin refuses to save an answer that has a link Portal would drop (`unsafeLinks`).
+- **Assistant writes:**
+  - The submit-time check is limited to `submitChecksPerHour` = 10 per learner; above that it returns null without calling Admin or logging.
+  - Concurrent chat requests with the same Idempotency-Key share one Admin call. This is per instance only; the stored row still makes a retry replay.
+  - The "declined" outcome is recorded in the ticket-create transaction, not by a separate client call.
+- **Outcome redelivery:** migration `019_helpdesk_outcome_delivery.sql` adds `feedback_delivered_at` / `feedback_attempted_at` and a partial index. An outcome that Admin did not take is resent later: after the next successful delivery, at most 5 rows, least recently tried first, within 7 days.
+- **Idempotency-Key reuse with a different payload** answers **422** `idempotency_conflict` (IETF idempotency-key draft); 409 stays for conflicts. The shared contract fixture is version-bumped in both repos.
+- **`mark_read`:** an agent's tag, flag or internal note after the learner's message no longer turns it into a no-op. Only a newer *learner* event does.
+- **Help Centre client to Admin:**
+  - List and search caches are bounded and separate, and so is the failure map.
+  - At most 120 Admin searches per minute per instance; above that the stale or static copy is shown.
+  - `q` is normalised (whitespace collapsed, lower case) before it becomes a cache key.
+- **Chat (1216:6):**
+  - Scrolling:
+    - the view scrolls only when the transcript grows;
+    - a long answer lands at its top;
+    - a Helpful vote no longer jumps the view.
+  - Answers, errors and the typing state are announced through one polite live region.
+  - Enter is ignored while an IME is composing (`isComposing` or keyCode 229).
+  - A failed question gives its words back to the input.
+  - A failed vote says so.
+  - The assistant gives up after 15 s.
+  - A question that a reload left unanswered gets an error bubble.
+  - Chips carry their full question as a `title`.
+  - The stacked (≤1100 px) layout points at "the form above". Visual sign-off for this layout is still pending (待视觉验收).
+- **Help Centre (1387:2):**
+  - The search box follows `?q=` on an in-place navigation (a topic link, All articles, Back) and keeps words typed while a search is running.
+  - While a search runs the list is `aria-busy`; a polite status then gives the result count.
+  - A `?faq=` for an archived or unknown FAQ shows a notice. Visual sign-off for the notice is still pending (待视觉验收).
+  - A `?faq=` FAQ is loaded by id only into the popular list or into its own topic, never into search results.
+  - With Admin down, a `?category=` shows the static copy under the popular heading, not under the topic's name.
+- **CI:** `npm run test:e2e:helpdesk` runs in Verify (`tests/unit/helpdesk-ci.test.ts`). The suite's 20 s expect timeout covers `next dev` compiling a page on its first visit.
+- **Left open (low):**
+  - The Help Centre has no paging. Lists stop at 10 popular articles and at 50 search or topic results, as §4d specifies with no frame for more.
+  - "Popular articles" shows the newest FAQs when none is marked popular, as designed.
+  - Admin's zh-CN retrieval does not match Latin words or one-character queries. That is a retrieval change for Admin.
