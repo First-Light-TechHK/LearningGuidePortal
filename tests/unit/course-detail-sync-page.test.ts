@@ -58,6 +58,8 @@ test("course restoration refreshes changed Study/access once and keeps the curre
     assert.ok(release);current = { ...initial, cta: "continue_preview" };await release!();await page.waitForLoadState("networkidle");
     assert.equal(await refreshes(), 1, "a response after unmount cannot refresh another page");
     delay = false;await mount(initial);await page.waitForLoadState("networkidle");
+    // router.refresh() runs after the response body is parsed, which can land after networkidle under load.
+    await page.waitForFunction(() => (window as unknown as { refreshCount: number }).refreshCount >= 2, undefined, { timeout: 5_000 }).catch(() => undefined);
     assert.equal(await refreshes(), 2, "changed access is refreshed through the same server-owned snapshot");
     assert.equal(await page.locator("#root").innerHTML(), "", "reconciliation adds no UI or progress notices");
   } finally { await browser.close(); }

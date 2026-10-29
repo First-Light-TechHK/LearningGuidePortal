@@ -1,0 +1,978 @@
+{
+  "version": 1,
+  "about": "Shared Helpdesk FAQ Markdown corpus. Byte-identical in learningguideportal tests/fixtures and learningguideadmin server/src/backoffice/tests/fixtures + client/tests/fixtures; every renderer and the Admin save check run it.",
+  "cases": [
+    {
+      "name": "paragraphs, bold, bullet and ordered lists with a start",
+      "input": "Hello **there**\nsecond line\n\n- one\n- [two](https://x.test/a)\n\n3. three\n4. four",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "Hello "
+              },
+              {
+                "kind": "strong",
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "there"
+                  }
+                ]
+              }
+            ],
+            [
+              {
+                "kind": "text",
+                "text": "second line"
+              }
+            ]
+          ]
+        },
+        {
+          "kind": "bullet",
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "one"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "link",
+                  "href": "https://x.test/a",
+                  "external": true,
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "two"
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        },
+        {
+          "kind": "ordered",
+          "start": 3,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "three"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "four"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Hello there",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a line straight after a list item continues it (lazy continuation)",
+      "input": "1. Open Settings\nthen tap Save\n2. Done",
+      "blocks": [
+        {
+          "kind": "ordered",
+          "start": 1,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "Open Settings"
+                }
+              ],
+              [
+                {
+                  "kind": "text",
+                  "text": "then tap Save"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "Done"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Open Settings",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a list may follow a paragraph line; a later plain line continues the last item",
+      "input": "Steps:\n1. a\n2. b\nThanks",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "Steps:"
+              }
+            ]
+          ]
+        },
+        {
+          "kind": "ordered",
+          "start": 1,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "a"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "b"
+                }
+              ],
+              [
+                {
+                  "kind": "text",
+                  "text": "Thanks"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Steps:",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a bare http(s) URL is a link without its trailing punctuation",
+      "input": "Visit https://learningguide.com/billing. Then **retry**",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "Visit "
+              },
+              {
+                "kind": "link",
+                "href": "https://learningguide.com/billing",
+                "external": true,
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "https://learningguide.com/billing"
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": ". Then "
+              },
+              {
+                "kind": "strong",
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "retry"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Visit https://learningguide.com/billing. Then retry",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a URL with an apostrophe is not a link: only the label stays",
+      "input": "[q](https://x.com/?q=it's)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "q"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "q",
+      "unsafeLinks": [
+        "https://x.com/?q=it's"
+      ]
+    },
+    {
+      "name": "Murphy's law: an apostrophe in the target drops the link",
+      "input": "[Murphy's law](https://en.wikipedia.org/wiki/Murphy's_law)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "Murphy's law"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Murphy's law",
+      "unsafeLinks": [
+        "https://en.wikipedia.org/wiki/Murphy's_law"
+      ]
+    },
+    {
+      "name": "mailto needs an address",
+      "input": "[m](mailto:foo) and [Email us](mailto:support@example.com)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "m and "
+              },
+              {
+                "kind": "link",
+                "href": "mailto:support@example.com",
+                "external": false,
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "Email us"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "m and Email us",
+      "unsafeLinks": [
+        "mailto:foo"
+      ]
+    },
+    {
+      "name": "a URL without a host is not a link",
+      "input": "[a](https:///x)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "a"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "a",
+      "unsafeLinks": [
+        "https:///x"
+      ]
+    },
+    {
+      "name": "quotes, angle brackets, backticks and backslashes in a target drop the link",
+      "input": "[a](https://x.test/\"y) [b](https://x.test/<y>) [c](https://x.test/`y) [d](https://x.test/\\y)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "a b c d"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "a b c d",
+      "unsafeLinks": [
+        "https://x.test/\"y",
+        "https://x.test/<y>",
+        "https://x.test/`y",
+        "https://x.test/\\y"
+      ]
+    },
+    {
+      "name": "javascript:, data:, relative and protocol-relative targets keep only the label",
+      "input": "[j](javascript:alert(1)) [d](data:text/html,x) [r](/relative) [p](//evil.test)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "j d r p"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "j d r p",
+      "unsafeLinks": [
+        "javascript:alert(1)",
+        "data:text/html,x",
+        "/relative",
+        "//evil.test"
+      ]
+    },
+    {
+      "name": "a target with balanced parentheses is one link",
+      "input": "[wiki](https://en.wikipedia.org/wiki/Foo_(bar)) next",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "link",
+                "href": "https://en.wikipedia.org/wiki/Foo_(bar)",
+                "external": true,
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "wiki"
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": " next"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "wiki next",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a bare URL keeps a balanced closing parenthesis and drops an unbalanced one",
+      "input": "See https://en.wikipedia.org/wiki/Foo_(bar) and (https://x.test/a).",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "See "
+              },
+              {
+                "kind": "link",
+                "href": "https://en.wikipedia.org/wiki/Foo_(bar)",
+                "external": true,
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "https://en.wikipedia.org/wiki/Foo_(bar)"
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": " and ("
+              },
+              {
+                "kind": "link",
+                "href": "https://x.test/a",
+                "external": true,
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "https://x.test/a"
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": ")."
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "See https://en.wikipedia.org/wiki/Foo_(bar) and (https://x.test/a).",
+      "unsafeLinks": []
+    },
+    {
+      "name": "1) numbers, indented bullets, * and + are list items",
+      "input": "1) x\n2) y\n\n  - a\n* b\n+ c",
+      "blocks": [
+        {
+          "kind": "ordered",
+          "start": 1,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "x"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "y"
+                }
+              ]
+            ]
+          ]
+        },
+        {
+          "kind": "bullet",
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "a"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "b"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "c"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "x",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a blank line between items keeps one list",
+      "input": "- a\n\n- b",
+      "blocks": [
+        {
+          "kind": "bullet",
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "a"
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "b"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "a",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a 4-space indented dash after an item is continuation text",
+      "input": "- a\n    - nested",
+      "blocks": [
+        {
+          "kind": "bullet",
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "a"
+                }
+              ],
+              [
+                {
+                  "kind": "text",
+                  "text": "- nested"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "a",
+      "unsafeLinks": []
+    },
+    {
+      "name": "an indented line after a blank line continues the item; an unindented one ends the list",
+      "input": "- one\n\n   indented more\n\nAfter",
+      "blocks": [
+        {
+          "kind": "bullet",
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "one"
+                }
+              ],
+              [
+                {
+                  "kind": "text",
+                  "text": "indented more"
+                }
+              ]
+            ]
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "After"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "one",
+      "unsafeLinks": []
+    },
+    {
+      "name": "switching list kind starts a new list",
+      "input": "1. a\n- b",
+      "blocks": [
+        {
+          "kind": "ordered",
+          "start": 1,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "a"
+                }
+              ]
+            ]
+          ]
+        },
+        {
+          "kind": "bullet",
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "b"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "a",
+      "unsafeLinks": []
+    },
+    {
+      "name": "raw HTML stays text",
+      "input": "<script>alert(1)</script><img src=x onerror=\"alert(2)\"> &amp; <b>bold</b>",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "<script>alert(1)</script><img src=x onerror=\"alert(2)\"> &amp; <b>bold</b>"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "<script>alert(1)</script><img src=x onerror=\"alert(2)\"> &amp; <b>bold</b>",
+      "unsafeLinks": []
+    },
+    {
+      "name": "an unclosed ** and a lone * are literal",
+      "input": "**not closed and 2 * 3",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "**not closed and 2 * 3"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "**not closed and 2 * 3",
+      "unsafeLinks": []
+    },
+    {
+      "name": "a number without a space after the dot is text",
+      "input": "1.5 million learners",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "1.5 million learners"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "1.5 million learners",
+      "unsafeLinks": []
+    },
+    {
+      "name": "bold inside a link label; the href is normalised",
+      "input": "[**Bold** link](HTTP://Example.com)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "link",
+                "href": "http://example.com/",
+                "external": true,
+                "children": [
+                  {
+                    "kind": "strong",
+                    "children": [
+                      {
+                        "kind": "text",
+                        "text": "Bold"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "text",
+                    "text": " link"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Bold link",
+      "unsafeLinks": []
+    },
+    {
+      "name": "backslash escapes",
+      "input": "\\*\\*not bold\\*\\* and \\[not a link\\](https://x.test)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "**not bold** and [not a link]("
+              },
+              {
+                "kind": "link",
+                "href": "https://x.test/",
+                "external": true,
+                "children": [
+                  {
+                    "kind": "text",
+                    "text": "https://x.test"
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": ")"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "**not bold** and [not a link](https://x.test)",
+      "unsafeLinks": []
+    },
+    {
+      "name": "CRLF line breaks and blank lines with spaces",
+      "input": "a\r\nb\r\n  \r\nc",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "a"
+              }
+            ],
+            [
+              {
+                "kind": "text",
+                "text": "b"
+              }
+            ]
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "c"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "a",
+      "unsafeLinks": []
+    },
+    {
+      "name": "blank input",
+      "input": " \n\r\n  ",
+      "blocks": [],
+      "summaryMax": 160,
+      "summary": "",
+      "unsafeLinks": []
+    },
+    {
+      "name": "summary: first line of the first block, Markdown stripped",
+      "input": "\n\n1. Open **Account** and [reset](https://example.com) it\nSecond line",
+      "blocks": [
+        {
+          "kind": "ordered",
+          "start": 1,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "Open "
+                },
+                {
+                  "kind": "strong",
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "Account"
+                    }
+                  ]
+                },
+                {
+                  "kind": "text",
+                  "text": " and "
+                },
+                {
+                  "kind": "link",
+                  "href": "https://example.com/",
+                  "external": true,
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "reset"
+                    }
+                  ]
+                },
+                {
+                  "kind": "text",
+                  "text": " it"
+                }
+              ],
+              [
+                {
+                  "kind": "text",
+                  "text": "Second line"
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "Open Account and reset it",
+      "unsafeLinks": []
+    },
+    {
+      "name": "summary: truncated in code points with an ellipsis",
+      "input": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 40,
+      "summary": "word word word word word word word word…",
+      "unsafeLinks": []
+    },
+    {
+      "name": "summary: never splits a surrogate pair",
+      "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+              }
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 10,
+      "summary": "😀😀😀😀😀😀😀😀😀…",
+      "unsafeLinks": []
+    },
+    {
+      "name": "Chinese answer with a list",
+      "input": "请按以下步骤操作：\n1. 打开**账户**\n2. 点击[忘记密码](https://www.ilovelearningguide.com/zh-CN/forgot-password)",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "lines": [
+            [
+              {
+                "kind": "text",
+                "text": "请按以下步骤操作："
+              }
+            ]
+          ]
+        },
+        {
+          "kind": "ordered",
+          "start": 1,
+          "items": [
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "打开"
+                },
+                {
+                  "kind": "strong",
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "账户"
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              [
+                {
+                  "kind": "text",
+                  "text": "点击"
+                },
+                {
+                  "kind": "link",
+                  "href": "https://www.ilovelearningguide.com/zh-CN/forgot-password",
+                  "external": true,
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "忘记密码"
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        }
+      ],
+      "summaryMax": 160,
+      "summary": "请按以下步骤操作：",
+      "unsafeLinks": []
+    }
+  ]
+}
