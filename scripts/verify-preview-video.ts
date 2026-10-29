@@ -102,11 +102,14 @@ try {
       await page.waitForFunction(() => document.querySelector("video")!.currentTime > 0);
       await page.locator(".la-video-controls button").first().click();
       assert(await page.locator("video").evaluate((video: HTMLVideoElement) => video.paused));
-      await page.locator(".la-video-controls input").focus();
-      await page.locator(".la-video-controls input").press("End");
+      await page.locator(".la-video-controls .la-video-seek").focus();
+      await page.locator(".la-video-controls .la-video-seek").press("End");
       await page.waitForFunction(() => document.querySelector("video")!.currentTime >= 1);
       await page.locator(".la-video-controls button").nth(1).click();
       assert(await page.locator("video").evaluate((video: HTMLVideoElement) => video.muted));
+      await page.locator(".la-video-controls .la-video-volume-range").fill("0.4");
+      assert(Math.abs(await page.locator("video").evaluate((video: HTMLVideoElement) => video.volume) - 0.4) < 0.02, "volume slider adjusts playback level");
+      assert(!await page.locator("video").evaluate((video: HTMLVideoElement) => video.muted), "raising the volume restores audio");
       continue;
     }
     assert.equal(await page.locator("h1").innerText(), "Looking closely");
@@ -117,7 +120,7 @@ try {
     assert(!(await page.content()).includes("PRIVATE_BODY_SENTINEL"));
     assert(await page.locator(".la-video-badge").isVisible());
     assert.equal(await page.locator("video").evaluate((video: HTMLVideoElement) => video.controls), false);
-    assert.equal(await page.locator(".la-video-controls button").count(), 3);
+    assert.equal(await page.locator(".la-video-controls button").count(), 4);
     await page.locator(".la-video-controls button").last().click();
     await page.waitForFunction(() => document.fullscreenElement?.classList.contains("la-controlled-video") || !!document.querySelector(".la-video-expanded"));
     assert.equal(await page.locator("video").evaluate((video: HTMLVideoElement) => video.controls), false);

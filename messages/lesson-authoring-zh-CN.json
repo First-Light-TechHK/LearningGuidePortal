@@ -7,6 +7,7 @@
   "videoSeek": "播放进度",
   "videoMute": "静音",
   "videoUnmute": "取消静音",
+  "videoVolume": "音量",
   "videoFullscreen": "切换全屏",
   "videoSpeed": "播放速度",
   "videoNormalSpeed": "1×",

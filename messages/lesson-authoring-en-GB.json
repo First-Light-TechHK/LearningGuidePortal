@@ -7,6 +7,7 @@
   "videoSeek": "Seek",
   "videoMute": "Mute",
   "videoUnmute": "Unmute",
+  "videoVolume": "Volume",
   "videoFullscreen": "Toggle fullscreen",
   "videoSpeed": "Playback speed",
   "videoNormalSpeed": "1×",
