@@ -7,6 +7,8 @@ import {chromium} from "playwright";
 import {modelingLifeCourse} from "../../db/data-migrations/008_upgrade_modeling_life";
 import * as textExhibits from "../../db/data-migrations/016_add_modeling_life_lesson1_text_exhibits";
 import * as videoStarts from "../../db/data-migrations/017_fix_modeling_life_video_starts";
+import * as lesson2Readings from "../../db/data-migrations/018_add_modeling_life_lesson2_readings";
+import * as lesson2Exhibits from "../../db/data-migrations/019_add_modeling_life_lesson2_exhibits";
 import {createMemoryOrm} from "../../services/dataMigrations";
 import type {ProductCourse} from "../../services/productStore";
 import {buildTextLessonPreview} from "../../services/textLessonPreview";
@@ -32,6 +34,8 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
     const fixture=modelingLifeCourse("2026-10-23T00:00:00Z"),orm=createMemoryOrm({tables:{courses:[fixture]}});
     textExhibits.apply(orm,{store:"memory",dryRun:true,now:"2026-10-26T12:00:00Z"});
     videoStarts.apply(orm,{store:"memory",dryRun:true,now:"2026-10-26T12:00:00Z"});
+    lesson2Readings.apply(orm,{store:"memory",dryRun:true,now:"2026-10-29T05:00:00Z"});
+    lesson2Exhibits.apply(orm,{store:"memory",dryRun:true,now:"2026-10-29T08:00:00Z"});
     const course=orm.table<ProductCourse>("courses").findById(fixture.id)!,[first,second]=course.sections[0].lessons;
     for(const locale of ["en-GB","zh-CN"] as const){
       const user=await verifiedUser(store,`modeling-browser-${locale}@example.test`),session=await store.createSession(user.id);setCookie(SESSION_COOKIE,session.token);
@@ -125,8 +129,13 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await page.getByRole('button',{name:messages.previewVideoDesign.explore,exact:true}).click();let dialog=page.getByRole('dialog');
       assert.equal(await dialog.locator('article').count(),3);await dialog.getByText('Wikipedia, State Space Representation.',{exact:true}).waitFor();
       await page.screenshot({path:path.join(output,`${locale}-reading-list.png`),fullPage:true});
+      await dialog.getByRole('button',{name:messages.exploration.wholeCourse,exact:true}).click();
+      assert.equal(await dialog.locator('article').count(),6,"Whole course includes three readings for each Lesson");
+      await dialog.getByText('Garfinkel, Shevtsov, Guo: Modeling Life, pp 16 – 23.',{exact:true}).waitFor();
+      await dialog.getByText('Garfinkel, Shevtsov, Guo: Modeling Life, pp 24 – 31.',{exact:true}).waitFor();
+      await dialog.getByRole('button',{name:messages.exploration.thisLesson,exact:true}).click();
       await dialog.getByRole('tab',{name:messages.exploration.exhibits,exact:true}).click();assert.equal(await dialog.locator('article').count(),2);
-      await dialog.getByRole('button',{name:messages.exploration.wholeCourse,exact:true}).click();assert.equal(await dialog.locator('article').count(),2,"Whole course has only the two Lesson 1 exhibits");
+      await dialog.getByRole('button',{name:messages.exploration.wholeCourse,exact:true}).click();assert.equal(await dialog.locator('article').count(),4,"Whole course has two exhibits per Lesson");
       assert.equal(await dialog.locator('[data-exhibit-id="modeling-life-exhibit-1-3"],[data-exhibit-id="modeling-life-exhibit-1-8"]').count(),0);
       const exhibits=[['modeling-life-exhibit-1-2','1b00006f-08ed-4f77-8285-a4685e3237de','9a88e350-e44f-47b1-9518-ed8b50cc4d36'],['modeling-life-exhibit-1-4','1d1e5a63-48ef-47b9-aeaf-b4a41b065515','3d1a37f4-6535-450c-879a-22c3cad48b08']] as const;
       for(const [id,thumb,full] of exhibits){
@@ -136,6 +145,38 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       }
       await page.screenshot({path:path.join(output,`${locale}-exploration-two-exhibits.png`),fullPage:true});
       await page.keyboard.press('Escape');
+      await mount({...base,key:"lesson-2-readings",description:second.summary,lesson:{id:second.id,title:second.title,body:"",durationMinutes:second.durationMinutes,contents:second.contents},assessmentAvailability:lessonAssessmentAvailability(second),explorationData:courseExploration(course)});
+      await page.getByRole('button',{name:messages.previewVideoDesign.explore,exact:true}).click();
+      assert.equal(await dialog.locator('article').count(),3,"Lesson 2 has its own three readings");
+      for(const reading of second.exploration!.readings)await dialog.getByText(reading.title,{exact:true}).waitFor();
+      assert.equal(await dialog.getByText(first.exploration!.readings[0].title,{exact:true}).count(),0,"This lesson does not show Lesson 1 page ranges");
+      await page.screenshot({path:path.join(output,`${locale}-lesson-2-reading-list-desktop.png`),fullPage:true});
+      await page.setViewportSize({width:390,height:844});
+      assert.equal(await dialog.locator('article').count(),3);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await page.screenshot({path:path.join(output,`${locale}-lesson-2-reading-list-mobile.png`),fullPage:true});
+      await dialog.getByRole('tab',{name:messages.exploration.exhibits,exact:true}).click();
+      assert.equal(await dialog.locator('article').count(),2,"Lesson 2 has its own two Exhibits");
+      for(const entry of second.exploration!.exhibits){
+        const card=dialog.locator(`[data-exhibit-id="${entry.node.id}"]`);
+        await card.locator(`img[src="${entry.thumbnail}"]`).waitFor();
+        await card.click();await dialog.locator(`img[src="${entry.node.url}"]`).waitFor();await page.keyboard.press('Escape');
+      }
+      await page.keyboard.press('Escape');await page.setViewportSize({width:1440,height:1024});
+      for(const [index,anchor] of ["T: Well let's work on that a little bit. 2m is of course, by definition, N plus P.","S: So stability changes as A moves past K then."].entries()){
+        const card=page.locator(`[data-text-exhibit="modeling-life-l2-text-exhibit-${index+1}"]`),source=first.contents!.find(content=>content.type==='video')!.nodes[index];
+        await card.waitFor();await card.scrollIntoViewIfNeeded();
+        assert.equal(await page.locator(`[data-text-point-id="modeling-life-l2-text-${index+1}"] [data-text-exhibit]`).count(),1);
+        assert.equal(await card.evaluate((element,anchor)=>element.nextElementSibling?.textContent?.trim().startsWith(anchor),anchor),true);
+        await page.screenshot({path:path.join(output,`${locale}-lesson-2-text-exhibit-${index+1}-desktop.png`),fullPage:true});
+        await card.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();
+        await dialog.locator(`img[src="${source.url}"]`).waitFor();await page.getByText(source.description!,{exact:true}).waitFor();await page.keyboard.press('Escape');
+        await page.setViewportSize({width:390,height:844});await card.scrollIntoViewIfNeeded();
+        assert.equal(await card.evaluate(element=>element.scrollWidth<=element.clientWidth),true);
+        await page.screenshot({path:path.join(output,`${locale}-lesson-2-text-exhibit-${index+1}-mobile.png`),fullPage:true});
+        await card.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator(`img[src="${source.url}"]`).waitFor();await page.keyboard.press('Escape');
+        await page.setViewportSize({width:1440,height:1024});
+      }
       await mount({...base,key:"video",preferredMode:"video"});
       const video=page.locator('video.la-lesson-video');await video.waitFor();
       const metadata=async()=>video.evaluate(el=>{Object.defineProperty(el,"duration",{configurable:true,value:1469});Object.defineProperty(el,"currentTime",{configurable:true,writable:true,value:0});el.dispatchEvent(new Event("loadedmetadata"));});
@@ -145,6 +186,17 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await bar.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator('img[src$="9a88e350-e44f-47b1-9518-ed8b50cc4d36"]').waitFor();await page.getByText(first.contents!.find(c=>c.type==="video")!.nodes[0].description!,{exact:true}).waitFor();await page.screenshot({path:path.join(output,`${locale}-video-exhibit.png`),fullPage:true});await page.keyboard.press('Escape');
       await time(160);await bar.getByText('Three examples of one-dimensional state spaces',{exact:true}).waitFor();assert.equal(await bar.locator('img[src$="1d1e5a63-48ef-47b9-aeaf-b4a41b065515"]').count(),1);
       await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),412);await bar.waitFor({state:"detached",timeout:5000}).catch(()=>{});assert.equal(await bar.count(),0);
+      await mount({...base,key:"lesson-2-video",preferredMode:"video",description:second.summary,lesson:{id:second.id,title:second.title,body:"",durationMinutes:second.durationMinutes,contents:second.contents},assessmentAvailability:lessonAssessmentAvailability(second),explorationData:courseExploration(course)});
+      await metadata();await time(36.9);assert.equal(await bar.count(),0);
+      for(const [index,seconds] of [37,160].entries()){
+        if(index===1){await time(159.9);assert.equal(await bar.count(),0);}
+        await time(seconds);await bar.waitFor();
+        const source=first.contents!.find(content=>content.type==='video')!.nodes[index];
+        await bar.getByText(source.title,{exact:true}).waitFor();await bar.locator(`img[src="${source.thumbnail}"]`).waitFor();
+        await page.screenshot({path:path.join(output,`${locale}-lesson-2-video-exhibit-${index+1}.png`),fullPage:true});
+        await bar.getByRole('button',{name:messages.videoExhibit.view,exact:true}).click();await dialog.locator(`img[src="${source.url}"]`).waitFor();await page.getByText(source.description!,{exact:true}).waitFor();await page.keyboard.press('Escape');
+        assert.equal(await bar.count(),0);
+      }
       await mount({...base,key:"video-preview",entitled:false,preferredMode:"video",lesson:{...base.lesson,...preview},textPreview:preview.textPreview,trialGate:{pricingHref:`/${locale}/subscription`,recommendations:[],videoLimitSeconds:600}});
       await metadata();await time(599);assert.equal(await dialog.count(),0);await time(600);await dialog.waitFor();assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),600);await page.keyboard.press('Escape');
       await mount({view:"assessment",kind:"knowledge",key:"knowledge",locale,courseId:course.id,lessonId:first.id,lessonTitle:first.title,lessonNumber:"01"});

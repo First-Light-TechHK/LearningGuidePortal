@@ -195,15 +195,14 @@ async function checkVideoControls(media, deadline) {
     { element: await media.elementHandle(), target }, { timeout: remaining(deadline, LIMIT.resource) });
   await buttons.nth(0).click({ timeout: remaining(deadline) });
   requireCheck(await media.evaluate(el => el.paused), 'custom_video_pause_failed');
-  const muted = await media.evaluate(el => el.muted);
   await buttons.nth(1).click({ timeout: remaining(deadline) });
-  requireCheck(await media.evaluate(el => el.muted) !== muted, 'custom_video_mute_failed');
-  await buttons.nth(1).click({ timeout: remaining(deadline) });
-  // Volume is adjustable independently of the mute action.
   const volumeLevel = player.locator('.la-video-controls .la-video-volume-range');
-  await volumeLevel.fill('0.35', { timeout: remaining(deadline) });
+  await volumeLevel.fill('0', { timeout: remaining(deadline) });
+  requireCheck(await media.evaluate(el => el.muted), 'custom_video_mute_failed');
+  await volumeLevel.fill('35', { timeout: remaining(deadline) });
   requireCheck(Math.abs((await media.evaluate(el => el.volume)) - 0.35) < 0.02, 'custom_video_volume_failed');
   requireCheck(await media.evaluate(el => !el.muted), 'custom_video_volume_stayed_muted');
+  await buttons.nth(1).click({ timeout: remaining(deadline) });
   await buttons.nth(3).click({ timeout: remaining(deadline) });
   await media.page().waitForFunction(el => document.fullscreenElement === el || el.classList.contains('la-video-expanded'),
     await player.elementHandle(), { timeout: remaining(deadline) });

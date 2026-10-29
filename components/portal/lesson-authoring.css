@@ -117,13 +117,11 @@
 .la-video-speed:has(select:focus-visible) { outline:2px solid #167568; outline-offset:2px; }
 .la-video-controls .la-video-speed select { position:absolute; inset:0; width:100%; height:100%; min-height:0; max-width:none; padding:0; border:0; opacity:0; cursor:pointer; background:#101820; color:white; font-size:12px; }
 .la-video-controls button:disabled { opacity:.45; cursor:not-allowed; }
-/* Volume level sits beside the mute action; the seek bar keeps the flexible width.
-   The width is expressed as a flex basis because `.la input:not(...)` forces
-   width:100% at a higher specificity than a class selector can reach. */
-.la-video-controls .la-video-volume { display:inline-flex; flex:0 0 auto; align-items:center; gap:6px; }
-.la-video-controls .la-video-volume input[type=range] { flex:0 0 72px; width:72px; min-width:0; accent-color:#2563eb; touch-action:none; }
-.la-video-controls .la-video-volume input[type=range]:focus-visible { outline:2px solid #167568; outline-offset:2px; }
-@media(max-width:480px) { .la-video-controls { flex-wrap:wrap; }.la-video-controls input[type=range] { flex-basis:calc(100% - 52px); }.la-video-controls .la-video-volume input[type=range] { flex:0 0 56px; width:56px; }.la-video-controls > span:not(.la-video-speed):not(.la-video-volume) { margin-right:auto; } }
+.la-video-volume { position:relative; display:flex; flex:0 0 36px; }
+.la-video-volume-panel { position:absolute; right:0; bottom:calc(100% + 8px); display:flex; align-items:center; gap:8px; width:176px; padding:10px 12px; border:1px solid #64748b; border-radius:6px; background:#101820; box-shadow:0 4px 16px #0004; }
+.la .la-video-volume-panel input[type=range] { flex:1 1 0; width:0; min-width:0; height:28px; padding:0; border:0; background:transparent; cursor:pointer; }
+.la-video-volume-panel > span { flex:0 0 3ch; text-align:right; font-size:12px; }
+@media(max-width:480px) { .la-video-controls { flex-wrap:wrap; }.la-video-controls input[type=range] { flex-basis:calc(100% - 52px); }.la-video-controls > span:not(.la-video-speed) { margin-right:auto; } }
 .la-controlled-video:fullscreen, .la-video-expanded { display:flex; flex-direction:column; justify-content:center; width:100%; height:100dvh; background:#101820; }
 .la-video-expanded { position:fixed; inset:0; z-index:2500; }
 .la-controlled-video:fullscreen video, .la-video-expanded video { flex:1; min-height:0; max-height:calc(100dvh - 52px); aspect-ratio:auto; object-fit:contain; }

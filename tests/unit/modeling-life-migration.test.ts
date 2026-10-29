@@ -9,6 +9,8 @@ import * as logicalMedia from "../../db/data-migrations/013_logical_modeling_lif
 import * as addLesson2Assessments from "../../db/data-migrations/015_add_modeling_life_lesson2_assessments";
 import * as addTextExhibits from "../../db/data-migrations/016_add_modeling_life_lesson1_text_exhibits";
 import * as fixVideoStarts from "../../db/data-migrations/017_fix_modeling_life_video_starts";
+import * as addLesson2Readings from "../../db/data-migrations/018_add_modeling_life_lesson2_readings";
+import * as addLesson2Exhibits from "../../db/data-migrations/019_add_modeling_life_lesson2_exhibits";
 import { modelingLifeCourse as legacyModelingLifeCourse } from "../../db/data-migrations/006_add_modeling_life_course";
 import { dataMigrations } from "../../db/data-migrations";
 import { applyOrmMigrations, createMemoryOrm, assertMigrationRegistry } from "../../services/dataMigrations";
@@ -62,9 +64,11 @@ test("shipped whole-Lesson courses upgrade without user writes and fresh registr
   assert.equal(migration.apply(orm,{now:createdAt,store:"memory",dryRun:true})[0].action,"skip");
   const fresh=createMemoryOrm(),recorded=recordOrm(fresh);
   const report=await applyOrmMigrations(recorded.orm,dataMigrations.filter(item=>Number(item.id.slice(0,3))>=6),{now:createdAt});
-  assert.deepEqual(report.applied,[migration.id,addLesson2Assessments.id,addTextExhibits.id,fixVideoStarts.id]);assert.ok(report.skipped.includes("006_add_modeling_life_course"));assert.ok(report.skipped.includes("007_repair_modeling_life_media"));assert.ok(report.skipped.includes("013_logical_modeling_life_media"));
+  assert.deepEqual(report.applied,[migration.id,addLesson2Assessments.id,addTextExhibits.id,fixVideoStarts.id,addLesson2Readings.id,addLesson2Exhibits.id]);assert.ok(report.skipped.includes("006_add_modeling_life_course"));assert.ok(report.skipped.includes("007_repair_modeling_life_media"));assert.ok(report.skipped.includes("013_logical_modeling_life_media"));
   assert.equal(compileOrmOps(recorded.ops).objects.length,0,"fresh DEV/SIT needs no legacy S3 media copy");
   assert.equal(fresh.table<ProductCourse>("courses").findById(course.id)!.sections[0].lessons[0].contents!.length,10);
+  assert.deepEqual(fresh.table<ProductCourse>("courses").findById(course.id)!.sections[0].lessons.map(lesson=>lesson.exploration!.readings.length),[3,3]);
+  assert.deepEqual(fresh.table<ProductCourse>("courses").findById(course.id)!.sections[0].lessons.map(lesson=>lesson.exploration!.exhibits.length),[2,2]);
 });
 
 test("013 rewrites leftover staging and exhibit files to course-media ids without touching users",async()=>{
