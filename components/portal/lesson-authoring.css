@@ -117,6 +117,10 @@
 .la-video-speed:has(select:focus-visible) { outline:2px solid #167568; outline-offset:2px; }
 .la-video-controls .la-video-speed select { position:absolute; inset:0; width:100%; height:100%; min-height:0; max-width:none; padding:0; border:0; opacity:0; cursor:pointer; background:#101820; color:white; font-size:12px; }
 .la-video-controls button:disabled { opacity:.45; cursor:not-allowed; }
+.la-video-volume { position:relative; display:flex; flex:0 0 36px; }
+.la-video-volume-panel { position:absolute; right:0; bottom:calc(100% + 8px); display:flex; align-items:center; gap:8px; width:176px; padding:10px 12px; border:1px solid #64748b; border-radius:6px; background:#101820; box-shadow:0 4px 16px #0004; }
+.la .la-video-volume-panel input[type=range] { flex:1 1 0; width:0; min-width:0; height:28px; padding:0; border:0; background:transparent; cursor:pointer; }
+.la-video-volume-panel > span { flex:0 0 3ch; text-align:right; font-size:12px; }
 @media(max-width:480px) { .la-video-controls { flex-wrap:wrap; }.la-video-controls input[type=range] { flex-basis:calc(100% - 52px); }.la-video-controls > span:not(.la-video-speed) { margin-right:auto; } }
 .la-controlled-video:fullscreen, .la-video-expanded { display:flex; flex-direction:column; justify-content:center; width:100%; height:100dvh; background:#101820; }
 .la-video-expanded { position:fixed; inset:0; z-index:2500; }

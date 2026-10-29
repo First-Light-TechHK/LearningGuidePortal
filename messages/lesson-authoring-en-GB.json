@@ -5,6 +5,7 @@
   "videoPlay": "Play",
   "videoPause": "Pause",
   "videoSeek": "Seek",
+  "videoVolume": "Volume",
   "videoMute": "Mute",
   "videoUnmute": "Unmute",
   "videoFullscreen": "Toggle fullscreen",
