@@ -26,7 +26,7 @@ const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017
 const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
 const MIGRATION_019 = readFileSync(path.join(process.cwd(), "db", "migrations", "019_helpdesk_outcome_delivery.sql"), "utf8");
 const MIGRATION_020 = readFileSync(path.join(process.cwd(), "db", "migrations", "020_helpdesk_ai_ratings.sql"), "utf8");
-const MIGRATION_021 = readFileSync(path.join(process.cwd(), "db", "migrations", "021_helpdesk_order_link.sql"), "utf8");
+const MIGRATION_022 = readFileSync(path.join(process.cwd(), "db", "migrations", "022_helpdesk_order_link.sql"), "utf8");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const learner = { id: "pg-learner", email: "pg-learner@example.test", name: "PG Learner" };
 const agent = { id: "emp-pg", name: "PG Agent" };
@@ -579,9 +579,9 @@ test("shownFaqIds in PostgreSQL: the open conversation's answered FAQs, newest f
   assert.deepEqual(await repository.conversationShownFaqIds(learner.id, "2026-10-29T00:00:00.000Z", 20), [FAQ[0], FAQ[1]], "the repeat of FAQ 0 is still open");
 });
 
-test("021 in PostgreSQL: re-applies; the bootstrap adds order_id to a database at 020; the learner's own order round-trips; old tickets read as no order", async () => {
-  await getPool().query(MIGRATION_021);
-  await getPool().query(MIGRATION_021);
+test("022 in PostgreSQL: re-applies; the bootstrap adds order_id to a database at 020; the learner's own order round-trips; old tickets read as no order", async () => {
+  await getPool().query(MIGRATION_022);
+  await getPool().query(MIGRATION_022);
   const ORDER = "order_1761640741859_9f3a2c1d";
   const projection = { id: ORDER, status: "paid" as const, amount: 3900, currency: "usd", planName: "Epicureanism · PC · 6 months", kind: "purchase" as const, createdAt: "2026-10-28T08:39:01.859Z", paymentMode: "stripe" as const };
   const blobs = new Map<string, Uint8Array>();

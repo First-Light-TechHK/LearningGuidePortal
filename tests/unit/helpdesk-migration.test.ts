@@ -100,8 +100,8 @@ test("020 (v3) adds the AI answer ratings and the offered alternatives; additive
   for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /helpdesk_ai_ratings|alternatives/);
 });
 
-test("021 (v4) adds the enquiry's order number; additive, repeatable, mirrored by the bootstrap and probe; 017–020 untouched", async () => {
-  const migration = await readFile("db/migrations/021_helpdesk_order_link.sql", "utf8");
+test("022 (v4) adds the enquiry's order number; additive, repeatable, mirrored by the bootstrap and probe; 017–020 untouched", async () => {
+  const migration = await readFile("db/migrations/022_helpdesk_order_link.sql", "utf8");
   const bootstrap = await readFile("services/persistence/db.ts", "utf8");
   const plain = normalise(migration);
   assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");

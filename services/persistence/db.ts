@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS helpdesk_ai_ratings (
 );
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;
 
--- Mirrors db/migrations/021_helpdesk_order_link.sql (the learner's own order an
+-- Mirrors db/migrations/022_helpdesk_order_link.sql (the learner's own order an
 -- enquiry is about); same parity rule as 017 above.
 ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS order_id TEXT CHECK (order_id IS NULL OR char_length(order_id) BETWEEN 1 AND 64);
 
