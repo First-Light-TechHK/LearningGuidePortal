@@ -636,11 +636,11 @@ test("023 in PostgreSQL: re-applies; the bootstrap adds the sessions and turn co
   assert.equal(stored?.releaseVersion, 3);
   // Ten turns of one session at once: the session row lock gives each its own index.
   const turns = await Promise.all(Array.from({ length: 10 }, (_, index) => assistant.ask(learner, { message: `hello ${index}`, locale: "en-GB", faqId: null, sessionId }, randomUUID())));
-  const indexes = turns.map((item) => (item.response as { turn: { turnIndex: number } }).turn.turnIndex).sort((a, b) => a - b);
+  const indexes = turns.map((item) => (item.response as unknown as { turn: { turnIndex: number } }).turn.turnIndex).sort((a, b) => a - b);
   assert.deepEqual(indexes, Array.from({ length: 10 }, (_, index) => index + 1));
   assert.equal((await repository.findChatSession(sessionId))?.turns, 10);
   // The last three learner messages, oldest first, in the order the lock gave them indexes.
-  const byIndex = new Map(turns.map((item, sent) => [(item.response as { turn: { turnIndex: number } }).turn.turnIndex, `hello ${sent}`]));
+  const byIndex = new Map(turns.map((item, sent) => [(item.response as unknown as { turn: { turnIndex: number } }).turn.turnIndex, `hello ${sent}`]));
   assert.deepEqual(await repository.sessionLearnerTurns(sessionId, 3), [byIndex.get(8), byIndex.get(9), byIndex.get(10)]);
   // An option is clicked on the choice card the chat showed (graph design §4).
   await assistant.click(learner, { locale: "en-GB", nodeId: "01a18100-0000-7000-8000-000000000020", fromNodeId: null, via: "starter", sessionId, label: null }, randomUUID());
