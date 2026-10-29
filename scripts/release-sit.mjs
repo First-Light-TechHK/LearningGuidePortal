@@ -40,16 +40,22 @@ if (source.ImageRepository) {
 }
 source.AutoDeploymentsEnabled = false;
 const update = aws('apprunner','update-service', { ServiceArn: summary.ServiceArn, SourceConfiguration: source });
-if (!update.OperationId) throw new Error('SIT source configuration update returned no OperationId');
-console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.OperationId, sha, branch }));
-let complete = false;
-for (let i = 0; i < 120; i++) {
-  await new Promise(resolve => setTimeout(resolve, 20000));
-  const operation = aws('apprunner','list-operations', { ServiceArn: summary.ServiceArn }).OperationSummaryList.find(x => x.Id === update.OperationId);
-  if (operation?.Status === 'SUCCEEDED') { complete = true; break; }
-  if (operation && /FAILED|ROLLBACK/.test(operation.Status)) throw new Error(`Deployment ${operation.Status}`);
+// When the source configuration already matches, App Runner treats update-service
+// as a no-op and returns no operation. That is not a failure: the source build
+// below is what actually ships the branch.
+if (update.OperationId) {
+  console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.OperationId, sha, branch }));
+  let complete = false;
+  for (let i = 0; i < 120; i++) {
+    await new Promise(resolve => setTimeout(resolve, 20000));
+    const operation = aws('apprunner','list-operations', { ServiceArn: summary.ServiceArn }).OperationSummaryList.find(x => x.Id === update.OperationId);
+    if (operation?.Status === 'SUCCEEDED') { complete = true; break; }
+    if (operation && /FAILED|ROLLBACK/.test(operation.Status)) throw new Error(`Deployment ${operation.Status}`);
+  }
+  if (!complete) throw new Error('Timed out waiting for the deployment');
+} else {
+  console.log(JSON.stringify({ service: summary.ServiceArn, operation: null, sha, branch, note: 'source configuration already current' }));
 }
-if (!complete) throw new Error('Timed out waiting for the deployment');
 await buildService(summary.ServiceArn);
 if (branchSha(branch) !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
 const response = await fetch(`https://${summary.ServiceUrl}/api/health`);
