@@ -25,12 +25,12 @@ function ItemLines({ lines }: { lines: Line[] }) {
     : <Fragment key={index}><br /><span className="md-line"><InlineParts parts={line} /></span></Fragment>)}</>;
 }
 
-export function Markdown({ text, className }: { text: string; className?: string }) {
+export function Markdown({ text, className, id }: { text: string; className?: string; /** v5: so a control (show the full answer) can name what it expands. */ id?: string }) {
   const blocks = parseMarkdown(text).map((block, index) => {
     if (block.kind === "paragraph") return <p key={index}><Lines lines={block.lines} /></p>;
     const items = block.items.map((item, itemIndex) => <li key={itemIndex}><ItemLines lines={item} /></li>);
     if (block.kind === "bullet") return <ul key={index}>{items}</ul>;
     return <ol key={index} start={block.start === 1 ? undefined : block.start}>{items}</ol>;
   });
-  return className ? <div className={className}>{blocks}</div> : <>{blocks}</>;
+  return className || id ? <div className={className} id={id}>{blocks}</div> : <>{blocks}</>;
 }

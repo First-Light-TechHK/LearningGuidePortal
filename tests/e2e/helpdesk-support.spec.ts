@@ -164,13 +164,17 @@ test("AccountNav Contact support opens the support page with the AI Support Assi
   await expect(page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
   await expect(page.getByLabel(text.email)).toHaveValue(email);
   const panel = page.getByRole("region", { name: text.chat.title });
-  await expect(panel.getByText(text.chat.greetingTitle)).toBeVisible();
-  await expect(panel.locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?"]);
+  // v5 Part B §4 (spec change): the greeting names the learner (nickname "Hana Learner").
+  await expect(panel.getByText(fillTemplate(text.chat.greetingTitleNamed, { name: "Hana" }))).toBeVisible();
+  // v5 Part A (spec change): the session's situation chips (up to 4; no signal matched, so the popular ones) replace the 3 starter chips.
+  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?", "Where can I find my invoice?"]);
   await panel.locator(".helpdesk-chat-chip").nth(1).click();
   const answer = panel.locator(".helpdesk-chat-answer").first();
   await expect(answer).toContainText("Find your enrolled courses and open the available lessons and resources.");
   await expect(answer.locator("strong")).toHaveText("My Learning");
-  await expect(answer.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "How can I access my course materials?" }) })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
+  // v5 Part H (spec change): the card is quoted with its source line and "Open in Help Centre".
+  await expect(answer.locator(".helpdesk-chat-source")).toHaveText(fillTemplate(text.chat.excerptSource, { question: "How can I access my course materials?" }));
+  await expect(answer.getByRole("link", { name: text.chat.openInHelpCentre })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
   await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
   await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(answer.getByRole("button", { name: text.chat.no, exact: true })).toBeDisabled();
@@ -747,7 +751,8 @@ test("chat: a fallback reply shows the alternatives as chips; one asks like a st
   await input.fill("Something is wrong with my account");
   await input.press("Enter");
   const fallback = panel.locator(".helpdesk-chat-answer").first();
-  await expect(fallback.locator(".helpdesk-chat-fallback")).toHaveText(text.chat.fallback);
+  // v5 Part B §3 (spec change): the softened copy that points at the alternatives.
+  await expect(fallback.locator(".helpdesk-chat-fallback")).toHaveText(text.chat.fallbackAlternatives);
   const chips = fallback.getByRole("list", { name: text.chat.alternativesTitle }).getByRole("button");
   await expect(chips).toHaveText(["How do I reset my password?", "How do I access my courses?", "How can I access my course materials?"]);
   await chips.nth(1).click();
@@ -965,6 +970,8 @@ test("visual capture v2: Contact Support with the chat panel (1216:6) and the He
     const answer = panel.locator(".helpdesk-chat-answer").first();
     await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
     await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
+    // v5 Part C / H (待视觉验收): the panel with the three-part answer and the polish, for the visual check.
+    await panel.screenshot({ path: `${SHOTS}/v5-chat-panel-${locale}.png` });
     await page.getByRole("combobox", { name: text.enquiryType }).click();
     await page.mouse.move(0, 0);
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -1015,4 +1022,151 @@ test("v4 chat handover: asking for a person shows the handover card at once with
     expect(seen.aiAssist.map((item) => [item.source, item.question])).toEqual([["chat", first]]);
     await context.close();
   }
+});
+
+// ---- Helpdesk v5 (helpdesk-v5-context-chips-and-smalltalk.md, helpdesk-v5-faq-graph-design.md). The stub Admin has a
+// published release for zh-CN (a choice node, a 3-level follow-up chain, a shared node) and none for en-GB, so both the
+// release path (clicks answered by Portal from its cached copy) and the per-FAQ path run. New states: 待视觉验收.
+
+async function learnerIdOf(page: Page) {
+  return (await (await page.request.get("/api/auth/me")).json() as { user: { id: string } }).user.id;
+}
+
+/** What Admin's suggest was asked for this learner (the stub records every request). */
+async function suggestCalls(page: Page, learnerId: string) {
+  const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { learnerId?: string; message?: string; source?: string; context?: unknown } }[] };
+  return suggestions.filter((entry) => entry.request.learnerId === learnerId);
+}
+
+test("v5 small talk: “你好” shows a reply bubble and the situation chips, never the fallback; “谢谢” after an answer shows the rating card", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const panel = page.getByRole("region", { name: text.chat.title });
+  await expect(panel.locator(".helpdesk-chat-greeting-title")).toHaveText(fillTemplate(text.chat.greetingTitleNamed, { name: "Hana" }));
+  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["如何重置密码？", "如何访问我的课程资料？", "如何更改我的订阅？", "在哪里可以找到发票？"]);
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("你好");
+  await input.press("Enter");
+  const hello = panel.locator(".helpdesk-chat-answer").first();
+  await expect(hello.locator(".helpdesk-chat-reply")).toHaveText("你好呀！想了解哪方面的问题？");
+  await expect(hello.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveCount(4);
+  await expect(hello.locator(".helpdesk-chat-fallback")).toHaveCount(0);
+  await expect(panel).not.toContainText(text.chat.fallback);
+  await expect(panel).not.toContainText(text.chat.fallbackAlternatives);
+  const learnerId = await learnerIdOf(page);
+  const [greeting] = await suggestCalls(page, learnerId);
+  expect(greeting.request.context, "the context goes with every typed question").toMatchObject({ sessionId: expect.any(String) });
+  expect(JSON.stringify(greeting.request.context)).not.toMatch(/order|signal|payment/i);
+  await input.fill("在哪里可以找到发票？");
+  await input.press("Enter");
+  await expect(panel.locator(".helpdesk-chat-answer").nth(1).locator(".helpdesk-chat-excerpt li")).toHaveText(["打开我的订阅", "选择记录"]);
+  await input.fill("谢谢");
+  await input.press("Enter");
+  await expect(panel.locator(".helpdesk-chat-answer").nth(2).locator(".helpdesk-chat-reply")).toHaveText("不客气！有问题随时再来问我。");
+  const card = panel.getByRole("group", { name: text.assistant.rateTitle, exact: true });
+  await expect(card).toBeVisible();
+  await expect(panel.locator(".helpdesk-chat-ended")).toHaveCount(0);
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-smalltalk-rating-zh-CN.png` });
+  await card.getByRole("button", { name: fillTemplate(text.assistant.rateStar, { n: 5 }), exact: true }).click();
+  await expect(panel.locator(".helpdesk-chat-rated")).toHaveText(text.assistant.rated);
+  await context.close();
+});
+
+test("v5 situation chips: a learner whose latest payment failed sees the payment chip first, in both locales", async ({ browser }) => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const { context, page } = await newLearner(browser, locale);
+    const text = copy(locale);
+    await page.goto(`/${locale}/account/my-learning`);
+    const quote = await page.request.post("/api/purchase/quote", { data: { planId: "epicureanism-pc-6", kind: "purchase" } });
+    const checkout = await page.request.post("/api/purchase/checkout", { headers: { Origin: origin(page) }, data: { quoteId: (await quote.json()).quote.id, locale, consents: { renewal: true, terms: true, refund: true } } });
+    expect(checkout.status()).toBe(200);
+    const failed = await page.request.post("/api/purchase/demo/confirm", { headers: { Origin: origin(page) }, data: { orderId: (await checkout.json()).order.id, action: "fail" } });
+    expect((await failed.json()).status).toBe("failed");
+    await openSupport(page, locale);
+    const panel = page.getByRole("region", { name: text.chat.title });
+    const chips = panel.getByRole("list", { name: text.chat.situationTitle }).locator(".helpdesk-chat-chip");
+    await expect(chips.first()).toHaveText(locale === "zh-CN" ? "为什么我的付款失败了？" : "Why did my payment fail?");
+    await expect(chips).toHaveCount(4);
+    // The chip text is the FAQ question: no amount, order number or date of the learner's.
+    await expect(panel.locator(".helpdesk-chat-chips")).not.toContainText(/\d/);
+    await mkdir(SHOTS, { recursive: true });
+    await panel.screenshot({ path: `${SHOTS}/v5-chat-situation-chips-${locale}.png` });
+    await chips.first().click();
+    await expect(panel.locator(".helpdesk-chat-answer").first().locator(".helpdesk-chat-excerpt")).toContainText(locale === "zh-CN" ? "查看常见的付款问题" : "Check common payment issues");
+    await context.close();
+  }
+});
+
+test("v5 three-part answer: opening, the picked blocks quoted with their source, closing and a follow-up; “查看完整答案” opens the whole card in place and is logged", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const panel = page.getByRole("region", { name: text.chat.title });
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("我付款成功了，但是课程没开通");
+  await input.press("Enter");
+  const answer = panel.locator(".helpdesk-chat-answer").first();
+  await expect(answer.locator(".helpdesk-chat-opening")).toHaveText("别着急，这个问题可以这样处理：");
+  const quoted = answer.locator("blockquote.helpdesk-chat-excerpt");
+  await expect(quoted.locator("li")).toHaveText(["退出登录后重新登录，让账号重新读取你的订阅状态", "打开我的学习，查看课程是否已经出现在你的课程列表里"]);
+  await expect(quoted).toContainText("仍然没有开通？");
+  await expect(quoted).not.toContainText("银行确认扣款");
+  await expect(quoted.locator(".helpdesk-chat-source")).toHaveText(fillTemplate(text.chat.excerptSource, { question: "付款成功但没有开通" }));
+  await expect(answer.locator(".helpdesk-chat-closing")).toHaveText("按上面试一下，还不行就告诉我。");
+  await expect(answer.getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button")).toHaveText(["还是不行，怎么联系客服？"]);
+  const order = await answer.evaluate((node) => [...node.children].map((child) => child.className.split(" ")[0]));
+  expect(order.slice(0, 3)).toEqual(["helpdesk-chat-opening", "helpdesk-chat-excerpt", "helpdesk-chat-closing"]);
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-three-part-zh-CN.png` });
+  const logged = page.waitForResponse((response) => /\/api\/helpdesk\/assistant\/[^/]+\/expanded$/.test(new URL(response.url()).pathname));
+  await quoted.getByRole("button", { name: text.chat.showFull }).click();
+  expect((await logged).status()).toBe(200);
+  await expect(quoted).toContainText("银行确认扣款");
+  await expect(quoted).toContainText("请联系客服并附上订单号");
+  await expect(quoted.getByRole("button", { name: text.chat.showLess })).toHaveAttribute("aria-expanded", "true");
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-three-part-expanded-zh-CN.png` });
+  await context.close();
+});
+
+test("v5 FAQ tree: a 3-level follow-up chain and an A/B/C/D choice are walked by clicks that never reach Admin's suggest", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const learnerId = await learnerIdOf(page);
+  const panel = page.getByRole("region", { name: text.chat.title });
+  const answers = panel.locator(".helpdesk-chat-answer");
+  // The chain: a chip, then three follow-ups deep (the last one a shared node).
+  await panel.getByRole("list", { name: text.chat.tryAsking }).getByRole("button", { name: "如何重置密码？" }).click();
+  await expect(answers.first().locator(".helpdesk-chat-excerpt")).toContainText("检查垃圾邮件文件夹");
+  for (const [index, label, body] of [[0, "收不到重置邮件怎么办？", "请先检查垃圾邮件文件夹"], [1, "换了邮箱还能找回账号吗？", "说明注册时使用的邮箱"], [2, "如何联系客服？", "客服团队会通过邮件回复你"]] as const) {
+    const followUps = answers.nth(index).getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button");
+    await expect(followUps).toHaveText([label]);
+    await followUps.first().click();
+    await expect(answers.nth(index + 1).locator(".helpdesk-chat-excerpt")).toContainText(body);
+  }
+  await expect(panel.locator(".helpdesk-chat-question")).toHaveText(["如何重置密码？", "收不到重置邮件怎么办？", "换了邮箱还能找回账号吗？", "如何联系客服？"]);
+  // Clicks use the fixed frame (no model line).
+  await expect(answers.nth(3).locator(".helpdesk-chat-opening")).toHaveText("好的，这个问题可以这样处理：");
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-follow-up-chain-zh-CN.png` });
+  expect(await suggestCalls(page, learnerId), "every click was answered by Portal from the release").toHaveLength(0);
+  // The choice: typed, unsure, so Admin shows the A/B/C/D node; the learner picks B.
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("付款有问题");
+  await input.press("Enter");
+  const choice = answers.nth(4);
+  await expect(choice.locator(".helpdesk-chat-choice-prompt")).toHaveText("你遇到的是哪种情况？");
+  const options = choice.getByRole("list", { name: "你遇到的是哪种情况？" }).getByRole("button");
+  await expect(options).toHaveText(["A付款失败", "B扣款了但没开通", "C被重复扣款"]);
+  await expect(choice.getByRole("button", { name: text.chat.yes })).toHaveCount(0);
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-choice-zh-CN.png` });
+  await options.nth(1).click();
+  const picked = answers.nth(5);
+  await expect(picked.locator(".helpdesk-chat-excerpt")).toContainText("银行确认扣款");
+  await expect(picked.getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button")).toHaveText(["还是不行，怎么联系客服？"]);
+  const asked = await suggestCalls(page, learnerId);
+  expect(asked.map((entry) => entry.request.message), "only the typed question asked Admin").toEqual(["付款有问题"]);
+  await context.close();
 });

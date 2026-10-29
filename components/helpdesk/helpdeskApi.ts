@@ -2,7 +2,7 @@
 // Success bodies are plain JSON; failures are RFC 9457 problems, reduced here
 // to { status, code } so the page can pick one message. A network failure is
 // status 0. Nothing here decides business rules.
-import type { AssistantFeedbackResponse, AssistantRatingResponse, AssistantResponse, HelpdeskAlternative, SuggestionOutcome, SuggestionResponse, TicketDetail } from "@/contracts/helpdesk";
+import type { AssistantFeedbackResponse, AssistantRatingResponse, AssistantResponse, AssistantSessionResponse, ClickVia, HelpdeskAlternative, LearnerEndReason, SuggestionOutcome, SuggestionResponse, TicketDetail } from "@/contracts/helpdesk";
 
 /** field (v4, additive): the problem's field, when the server names one (for example orderId). */
 export type ApiFailure = { ok: false; status: number; code?: string; field?: string };
@@ -56,15 +56,46 @@ export function reportSuggestionOutcome(suggestionId: string, outcome: Suggestio
 /** The server answers within about 4 s (its Admin timeout); a request still open after this is given up as a network failure. */
 export const ASSISTANT_TIMEOUT_MS = 15_000;
 
-/** One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback). */
-export async function askAssistant(body: { message: string; locale: string; faqId?: string }, idempotencyKey: string) {
+/**
+ * One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback).
+ * v5: sessionId (the chat session) and via (a chip's reason, only with faqId) are sent when the chat has a session;
+ * the response then carries the server's turn (read with storedTurn).
+ */
+export async function askAssistant(body: { message: string; locale: string; faqId?: string; sessionId?: string; via?: ClickVia }, idempotencyKey: string) {
+  return post<AssistantResponse & { turn?: unknown }>("/api/helpdesk/assistant", body, idempotencyKey);
+}
+
+async function post<T>(path: string, body: unknown, idempotencyKey: string) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
   try {
-    return await call<AssistantResponse>("/api/helpdesk/assistant", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body), signal: controller.signal });
+    return await call<T>(path, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body), signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * v5 (graph design §4): a chip, follow-up or A/B/C/D option of Admin's published release. The server checks the click
+ * against its cached release (fromNodeId: the card it was clicked on) and shows the node verbatim; no model is asked.
+ */
+export function clickAssistant(body: { locale: string; nodeId: string; fromNodeId: string | null; via: ClickVia; sessionId: string | null; label: string }, idempotencyKey: string) {
+  return post<AssistantResponse & { turn?: unknown }>("/api/helpdesk/assistant/click", body, idempotencyKey);
+}
+
+/** v5 Part A: a new chat session and its situation chips (after an end; the page starts the first one). */
+export function startAssistantSession(body: { locale: string; orderId?: string }) {
+  return call<AssistantSessionResponse>("/api/helpdesk/assistant/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+/** v5: fire and forget; the server keeps the first end of a session. */
+export function endAssistantSession(sessionId: string, reason: LearnerEndReason): void {
+  void call(`/api/helpdesk/assistant/sessions/${encodeURIComponent(sessionId)}/end`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }), keepalive: true });
+}
+
+/** v5 Part H: fire and forget; the learner opened the full answer under an excerpt (logged once by the server). */
+export function reportExpanded(assistId: string): void {
+  void call(`/api/helpdesk/assistant/${encodeURIComponent(assistId)}/expanded`, { method: "POST", keepalive: true });
 }
 
 /** "Helpful?" Yes / No on a chat answer; the server keeps the first value and returns it. */

@@ -1689,7 +1689,7 @@
     "chat": {
       "title": "AI Support Assistant",
       "subtitle": "Ask me about Learning Guide",
-      "greetingTitle": "Hi! How can I help?",
+      "greetingTitle": "Hi! What can I help you with?",
       "greetingBody": "I can answer questions about Learning Guide FAQs, including accounts, courses and subscriptions.",
       "greetingLimit": "I can’t access your personal account, orders or payment records yet.",
       "ideas": "We’d love to hear your ideas, too!",
@@ -1698,7 +1698,7 @@
       "helpful": "Helpful?",
       "yes": "Yes",
       "no": "No",
-      "fallback": "I couldn’t find an answer to that in our FAQs. Please submit an enquiry using the form and our support team will help.",
+      "fallback": "I can’t answer that one well yet. Try asking another way, or contact a person on our support team.",
       "info": "Need help with a specific order or payment? Submit an enquiry using the form on the left.",
       "placeholder": "Ask about Learning Guide...",
       "inputLabel": "Ask a question",
@@ -1716,7 +1716,19 @@
       "endChat": "End chat",
       "contactPerson": "Contact a person",
       "ended": "This chat has ended.",
-      "endThanks": "Thanks for chatting. Ask again any time."
+      "endThanks": "Thanks for chatting. Ask again any time.",
+      "greetingTitleNamed": "Hi {name}! What can I help you with?",
+      "situationTitle": "You might be running into:",
+      "waitingTitle": "One of your enquiries is waiting for your reply",
+      "waitingLink": "View your enquiry",
+      "fallbackAlternatives": "I can’t answer that one well yet. You might be asking one of these, or you can contact a person on our support team.",
+      "excerptSource": "From: {question}",
+      "showFull": "Show the full answer",
+      "showLess": "Show less",
+      "openInHelpCentre": "Open in Help Centre",
+      "followUpsTitle": "You might also ask:",
+      "clarifySource": "Explained from “{question}”",
+      "clarifyNotCovered": "The answer doesn’t cover that point, so let’s check it with our support team."
     },
     "assistant": {
       "title": "AI Support Assistant",

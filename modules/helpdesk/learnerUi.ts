@@ -214,7 +214,9 @@ export type ChatEntry =
   | { kind: "error"; error: "rateLimited" | "error" }
   | { kind: "handover"; reason: "requested" | "unsolved" }
   | { kind: "checkin" }
-  | { kind: "ended"; reason: "idle" | "learner"; ratingFor: string | null; rating: "open" | "rated" | "skipped" };
+  | { kind: "ended"; reason: "idle" | "learner"; ratingFor: string | null; rating: "open" | "rated" | "skipped" }
+  /** v5 Part B §3: the v3 rating card after "thanks" / "bye" that followed an answered assist (the session goes on). */
+  | { kind: "rate"; ratingFor: string; rating: "open" | "rated" | "skipped" };
 
 /** sessionStorage key of the chat transcript: per account, so a shared browser never shows one learner's chat to another. */
 export function chatStorageKey(accountId: string): string {
@@ -248,6 +250,10 @@ function chatEntry(value: unknown): ChatEntry | null {
     const rating = entry.rating === "open" || entry.rating === "rated" || entry.rating === "skipped" ? entry.rating : null;
     const ratingFor = entry.ratingFor === null ? null : isText(entry.ratingFor) && UUID.test(entry.ratingFor) ? entry.ratingFor : undefined;
     return reason && rating && ratingFor !== undefined ? { kind: "ended", reason, ratingFor, rating } : null;
+  }
+  if (entry.kind === "rate") {
+    const rating = entry.rating === "open" || entry.rating === "rated" || entry.rating === "skipped" ? entry.rating : null;
+    return rating && isText(entry.ratingFor) && UUID.test(entry.ratingFor) ? { kind: "rate", ratingFor: entry.ratingFor, rating } : null;
   }
   if (entry.kind !== "answer" || !isText(entry.id) || !UUID.test(entry.id)) return null;
   const feedback = entry.feedback === "helpful" || entry.feedback === "not_helpful" ? entry.feedback : entry.feedback === null ? null : undefined;
@@ -310,6 +316,11 @@ export function storedTurn(value: unknown): AssistantTurn | null {
     sessionId: turn.sessionId, turnIndex: turn.turnIndex,
     unsolved: turn.unsolved === true, countsAsQuestion: turn.countsAsQuestion !== false
   };
+}
+
+/** v5 (graph design §1): the letter of a choice card's option, A to D. */
+export function optionLetter(index: number): string {
+  return String.fromCharCode(65 + index);
 }
 
 /** The stored transcript, keeping only well-formed entries (storage is the browser's, not ours). */

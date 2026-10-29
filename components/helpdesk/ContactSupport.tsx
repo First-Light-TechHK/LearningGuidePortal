@@ -34,7 +34,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Star, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
-import type { HelpdeskAlternative, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
+import type { AssistantSessionResponse, HelpdeskAlternative, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
 import { fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, linkedAssistIds, nextFocusIndex, problemMessageKey, readSeenAnswers, rememberSeenAnswer, RetryableSubmit, seenStorageKey, submissionSignature, SubmissionKeys, type HelpdeskUiConfig, type SeenAnswer } from "@/modules/helpdesk/learnerUi";
 import { alternativesIn, askAssistant, createTicket, newIdempotencyKey, rateAnswer, reportSuggestionOutcome, requestSuggestion, sendAssistantFeedback } from "./helpdeskApi";
 import { AssistantChat, type ChatChip } from "./AssistantChat";
@@ -51,7 +51,7 @@ export type Picked = { status: "pending"; faqId: string } | { status: "answer"; 
 
 const THANKS_REDIRECT_MS = 2_000;
 
-export function ContactSupport({ locale, copy, config, account, chips, order = null, orderUnavailable = false }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null; /** v4: opened for an order that could not be attached (not the learner's, unknown, or the order store failed). */ orderUnavailable?: boolean }) {
+export function ContactSupport({ locale, copy, config, account, chips, order = null, orderUnavailable = false, session = null }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null; /** v4: opened for an order that could not be attached (not the learner's, unknown, or the order store failed). */ orderUnavailable?: boolean; /** v5 Part A: the chat session the page started, with its situation chips (none: the starter chips). */ session?: AssistantSessionResponse | null }) {
   const router = useRouter();
   const ids = useId();
   // Figma 1.2 Help Page: defaults to Technical Support; v4: Payments & Subscriptions when opened from a payment record.
@@ -398,7 +398,7 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
           </div>
         </form>}
       <div className="helpdesk-divider" aria-hidden="true" />
-      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} pageInput={pageInput} />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} pageInput={pageInput} name={firstName(account.name)} session={session} orderId={order?.id ?? null} />
     </div>
     {phase === "suggestion" || phase === "alternatives" || phase === "rating" || phase === "thanks" ? <AssistantModal copy={copy} locale={locale} stage={phase} suggestion={suggestion} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}

@@ -1689,7 +1689,7 @@
     "chat": {
       "title": "AI 客服助手",
       "subtitle": "关于 Learning Guide 的问题都可以问我",
-      "greetingTitle": "你好！有什么可以帮你？",
+      "greetingTitle": "你好！遇到什么问题了？",
       "greetingBody": "我可以解答 Learning Guide 常见问题，包括账户、课程和订阅。",
       "greetingLimit": "我暂时无法查看你的个人账户、订单或付款记录。",
       "ideas": "也欢迎告诉我们你的想法！",
@@ -1698,7 +1698,7 @@
       "helpful": "有帮助吗？",
       "yes": "是",
       "no": "否",
-      "fallback": "我在常见问题里没有找到相关答案。请使用表单提交问题，客服团队会帮你处理。",
+      "fallback": "这个问题我还答不好，你可以换个说法再问，或者直接联系人工客服。",
       "info": "需要咨询具体订单或付款？请使用左侧表单提交问题。",
       "placeholder": "关于 Learning Guide 的问题…",
       "inputLabel": "输入问题",
@@ -1716,7 +1716,19 @@
       "endChat": "结束对话",
       "contactPerson": "联系人工",
       "ended": "本次对话已结束",
-      "endThanks": "感谢你的咨询，有问题随时再问。"
+      "endThanks": "感谢你的咨询，有问题随时再问。",
+      "greetingTitleNamed": "{name}，你好！遇到什么问题了？",
+      "situationTitle": "你可能遇到的问题：",
+      "waitingTitle": "你有一个工单在等你回复",
+      "waitingLink": "查看工单",
+      "fallbackAlternatives": "这个问题我还答不好，你可能想问下面这些，或者直接联系人工客服。",
+      "excerptSource": "来自：{question}",
+      "showFull": "查看完整答案",
+      "showLess": "收起",
+      "openInHelpCentre": "在帮助中心打开",
+      "followUpsTitle": "你可能还想问：",
+      "clarifySource": "根据「{question}」解释",
+      "clarifyNotCovered": "这一点答案里没有写到，我帮你转给客服确认一下。"
     },
     "assistant": {
       "title": "AI 客服助手",

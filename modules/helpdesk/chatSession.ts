@@ -92,8 +92,10 @@ type AnswerEntry = Extract<ChatEntry, { kind: "answer" }>;
 const isSmalltalk = (entry: AnswerEntry) => entry.turn?.kind === "smalltalk";
 /** v5: an explanation of the card on screen; covered = the card said what the learner asked. */
 const isClarify = (entry: AnswerEntry) => entry.turn?.kind === "clarify";
-/** An answered turn: a card, or (v5) an explanation the card covered. */
-const isAnswered = (entry: AnswerEntry) => (entry.reply !== null && !isSmalltalk(entry) && !isClarify(entry)) || (isClarify(entry) && entry.turn?.covered === true);
+/** v5 (graph design §1): an A/B/C/D choice card, a step towards an answer (neither answered nor unsolved). */
+export const isChoiceTurn = (entry: ChatEntry) => entry.kind === "answer" && entry.turn?.kind === "answer" && entry.turn.nodeType === "choice";
+/** An answered turn: a card, or (v5) an explanation the card covered; never a choice card. */
+const isAnswered = (entry: AnswerEntry) => (entry.reply !== null && !isSmalltalk(entry) && !isClarify(entry) && !isChoiceTurn(entry)) || (isClarify(entry) && entry.turn?.covered === true);
 
 /**
  * Learner questions in the current session (typed, chips, and a request for a person alike), except (v5) the ones
@@ -122,8 +124,8 @@ export function unsolvedStreak(entries: ChatEntry[]): number {
     if (entry.kind === "handover") break;
     if (entry.kind === "error") { streak += 1; continue; }
     if (entry.kind !== "answer") continue;
-    // v5: small talk neither counts nor breaks the run.
-    if (isSmalltalk(entry)) continue;
+    // v5: small talk and a choice card neither count nor break the run.
+    if (isSmalltalk(entry) || isChoiceTurn(entry)) continue;
     if (isAnswered(entry) && entry.feedback !== "not_helpful") break;
     streak += 1;
   }
@@ -149,7 +151,7 @@ export function cardsAfterChange(entries: ChatEntry[], rules: ChatSessionRules =
 
 /** The assist the end-of-session rating card rates: the newest answered one (not a fallback; v5: not small talk; an explanation the card covered counts) of this session, unless it was rated already. */
 export function lastAnsweredAssist(entries: ChatEntry[]): string | null {
-  const rated = new Set(entries.flatMap((entry) => (entry.kind === "ended" && entry.rating === "rated" && entry.ratingFor ? [entry.ratingFor] : [])));
+  const rated = new Set(entries.flatMap((entry) => ((entry.kind === "ended" || entry.kind === "rate") && entry.rating === "rated" && entry.ratingFor ? [entry.ratingFor] : [])));
   const session = currentSession(entries);
   for (let index = session.length - 1; index >= 0; index -= 1) {
     const entry = session[index];
@@ -178,4 +180,30 @@ export function idleDeadline(entries: ChatEntry[], lastInputMs: number, rules: C
     if ((entry.kind === "question" || entry.kind === "answer") && entry.at) latest = Math.max(latest, Date.parse(entry.at));
   }
   return latest > 0 ? latest + rules.idleMs : null;
+}
+
+/**
+ * v5 Part B §3: after "thanks" / "bye" (small talk, intent farewell) that follows an answered assist of this session,
+ * the v3 rating card for it, unless that assist already had one after a farewell (rated, skipped or still open) or was rated.
+ */
+export function ratingAfterFarewell(entries: ChatEntry[]): Extract<ChatEntry, { kind: "rate" }> | null {
+  const session = currentSession(entries);
+  const last = session[session.length - 1];
+  if (!last || last.kind !== "answer" || !isSmalltalk(last) || last.turn?.intent !== "farewell") return null;
+  const assist = lastAnsweredAssist(entries);
+  if (!assist || entries.some((entry) => entry.kind === "rate" && entry.ratingFor === assist)) return null;
+  return { kind: "rate", ratingFor: assist, rating: "open" };
+}
+
+/**
+ * v5: the chat session the next turn belongs to: the server's session of the newest turn in the current session, else
+ * fallback (the one the page or the chat started); after an end line only fallback, so an ended session is not continued.
+ */
+export function chatSessionId(entries: ChatEntry[], fallback: string | null): string | null {
+  const session = currentSession(entries);
+  for (let index = session.length - 1; index >= 0; index -= 1) {
+    const entry = session[index];
+    if (entry.kind === "answer" && entry.turn?.sessionId) return entry.turn.sessionId;
+  }
+  return fallback;
 }
