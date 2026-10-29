@@ -35,6 +35,8 @@ function ControlIcon({ kind }: { kind: "mic" | "mic-off" | "camera" | "share" | 
   return <svg {...props}><path d="M14 4h4v4M18 4l-7 7M10 6H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4" /></svg>;
 }
 
+const FOCUS_IDLE_MS = 3000;
+
 function CrumbChevron() {
   return <svg className={styles.crumbChevron} viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
@@ -176,6 +178,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [focus, setFocus] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(true);
   const [sideOpen, setSideOpen] = useState(false);
+  // In full screen the controls fade out after the pointer rests a while and
+  // come back on any pointer, touch or key activity (owner 2026-10-29).
+  const [idle, setIdle] = useState(false);
   const audioRoot = useRef<HTMLDivElement>(null);
   const groupRef = useRef<StudyGroupDetail | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
@@ -715,6 +720,23 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
   useEffect(() => {
+    const element = roomEl.current;
+    setIdle(false);
+    if (!focus || !element) return;
+    let timer = window.setTimeout(() => setIdle(true), FOCUS_IDLE_MS);
+    const wake = () => {
+      setIdle(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setIdle(true), FOCUS_IDLE_MS);
+    };
+    const events = ["pointermove", "pointerdown", "keydown", "touchstart"] as const;
+    for (const name of events) element.addEventListener(name, wake, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      for (const name of events) element.removeEventListener(name, wake);
+    };
+  }, [focus]);
+  useEffect(() => {
     if (shareTrack || !focus) return;
     setFocus(false);
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -1098,7 +1120,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   return (
     <>
     {path()}
-    <section ref={roomEl} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"}>
+    <section ref={roomEl} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
       <div className={styles.stage}>
         <div className={styles.stageHead}>
           <h1>{session.title}</h1>

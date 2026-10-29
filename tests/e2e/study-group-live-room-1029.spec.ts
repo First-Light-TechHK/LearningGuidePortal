@@ -159,6 +159,14 @@ test("1029-5: a shared screen goes full screen with the people, the chat (AI Tut
     await askTutor(pageB, "[latex] derivatives in full screen");
     await expect(tutorLine(pageB).locator(".katex").first()).toBeVisible({ timeout: 60_000 });
 
+    // Left alone, the controls fade out; any pointer move brings them back.
+    await pageB.mouse.move(700, 450);
+    await expect(pageB.locator('section[data-idle="true"]')).toBeVisible({ timeout: 8_000 });
+    await expect.poll(() => pageB.locator('[class*="controls"]').first().evaluate((element) => getComputedStyle(element).opacity), { timeout: 5_000 }).toBe("0");
+    await pageB.mouse.move(720, 460);
+    await expect(pageB.locator('section[data-idle="false"]')).toBeVisible();
+    await expect.poll(() => pageB.locator('[class*="controls"]').first().evaluate((element) => getComputedStyle(element).opacity), { timeout: 5_000 }).toBe("1");
+
     await pageB.getByRole("button", { name: "Exit full screen" }).click();
     await expect(pageB.locator('section[data-focus="false"]')).toBeVisible();
     await expect(pageB.locator('section[data-focus] > aside')).toBeVisible();

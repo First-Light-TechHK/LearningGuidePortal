@@ -1008,4 +1008,8 @@ test("a shared screen can go full screen with the people, chat and controls floa
     assert.ok(zh.studyGroupsPage.room[key], key);
   }
   assert.equal(zh.studyGroupsPage.room.fullScreen, "全屏");
+  // Idle controls fade in full screen and come back on activity.
+  assert.match(room, /const FOCUS_IDLE_MS = 3000;/);
+  assert.match(room, /data-idle=\{focus && idle \? "true" : "false"\}/);
+  assert.match(css, /\.room\[data-idle="true"\] \.controls:not\(:hover\):not\(:focus-within\)/);
 });
