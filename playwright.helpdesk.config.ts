@@ -29,6 +29,9 @@ export default defineConfig({
   testMatch: ["**/helpdesk-support.spec.ts"],
   workers: 1,
   timeout: 60_000,
+  // next dev compiles a route (server and client chunks) on its first visit; a cold compile
+  // can outlast the 5 s default, so the first test on a page flaked in a fresh checkout or CI.
+  expect: { timeout: 20_000 },
   use: {
     baseURL,
     browserName: "chromium",
