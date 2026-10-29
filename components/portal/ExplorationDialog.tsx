@@ -57,7 +57,7 @@ export function ExplorationDialog({locale,courseId,lessonNumber="01",lessons,tut
           <span className={styles.readingKind}>{copy[item.kind]}</span><div className={styles.readingTitle}><h4>{item.title}</h4><span className={styles.author}>{item.author}</span></div><p>{item.description}</p>
         </article>)}</div>:<div className={styles.grid}>{exhibits.filter(item=>item.lessonNumber===number).map(item=><article key={item.node.id}>
           <button type="button" className={styles.card} data-exhibit-id={item.node.id} aria-label={`${messages.videoExhibit.view}: ${item.node.title}`} onClick={()=>{position.current=scroll.current?.scrollTop||0;selectedId.current=item.node.id;setSelected(item.node);}}>
-            <Image className={styles.thumbnail} src={item.thumbnail} width={56} height={56} alt=""/><span className={styles.cardCopy}><span className={styles.kind}>{messages.videoExhibit.types[item.node.type]}</span><span className={styles.exhibitTitle}>{item.node.title}</span></span><Image src="/portal/exploration/arrow-right.svg" width={16} height={16} alt=""/>
+            <Image className={styles.thumbnail} src={item.thumbnail} unoptimized width={56} height={56} alt=""/><span className={styles.cardCopy}><span className={styles.kind}>{messages.videoExhibit.types[item.node.type]}</span><span className={styles.exhibitTitle}>{item.node.title}</span></span><Image src="/portal/exploration/arrow-right.svg" width={16} height={16} alt=""/>
           </button>
         </article>)}</div>}
       </section>)}

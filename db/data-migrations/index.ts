@@ -14,6 +14,8 @@ import * as shortenDevScienceSubscription from "./014_shorten_dev_science_subscr
 import * as addModelingLifeLesson2Assessments from "./015_add_modeling_life_lesson2_assessments";
 import * as addModelingLifeLesson1TextExhibits from "./016_add_modeling_life_lesson1_text_exhibits";
 import * as fixModelingLifeVideoStarts from "./017_fix_modeling_life_video_starts";
+import * as addModelingLifeLesson2Readings from "./018_add_modeling_life_lesson2_readings";
+import * as addModelingLifeLesson2Exhibits from "./019_add_modeling_life_lesson2_exhibits";
 
 // Keep shipped ledger identities. Their pending media-copy work is superseded
 // by 008's repository images and logical course-media URLs, including on fresh SIT.
@@ -21,5 +23,5 @@ function supersededMediaImport(migration: DataMigration): DataMigration {
   return { ...migration, touches: ["courses"], apply: () => [{ action: "skip", kind: "course", id: "modeling-life", reason: "superseded-by-008_upgrade_modeling_life" }] };
 }
 
-export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, fixModelingLifeMediaUrls, logicalModelingLifeMedia, shortenDevScienceSubscription, addModelingLifeLesson2Assessments, addModelingLifeLesson1TextExhibits, fixModelingLifeVideoStarts];
+export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, fixModelingLifeMediaUrls, logicalModelingLifeMedia, shortenDevScienceSubscription, addModelingLifeLesson2Assessments, addModelingLifeLesson1TextExhibits, fixModelingLifeVideoStarts, addModelingLifeLesson2Readings, addModelingLifeLesson2Exhibits];
 export { type DataChange, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "./types";

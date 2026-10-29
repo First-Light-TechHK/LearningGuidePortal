@@ -106,10 +106,12 @@ try {
       await page.locator(".la-video-controls .la-video-seek").press("End");
       await page.waitForFunction(() => document.querySelector("video")!.currentTime >= 1);
       await page.locator(".la-video-controls button").nth(1).click();
+      await page.locator(".la-video-controls .la-video-volume-range").fill("0");
       assert(await page.locator("video").evaluate((video: HTMLVideoElement) => video.muted));
-      await page.locator(".la-video-controls .la-video-volume-range").fill("0.4");
+      await page.locator(".la-video-controls .la-video-volume-range").fill("40");
       assert(Math.abs(await page.locator("video").evaluate((video: HTMLVideoElement) => video.volume) - 0.4) < 0.02, "volume slider adjusts playback level");
       assert(!await page.locator("video").evaluate((video: HTMLVideoElement) => video.muted), "raising the volume restores audio");
+      await page.locator(".la-video-controls button").nth(1).click();
       continue;
     }
     assert.equal(await page.locator("h1").innerText(), "Looking closely");
