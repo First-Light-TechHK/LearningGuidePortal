@@ -40,9 +40,18 @@ export function reportSuggestionOutcome(suggestionId: string, outcome: Suggestio
   void call(`/api/helpdesk/suggestions/${encodeURIComponent(suggestionId)}/outcome`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outcome }), keepalive: true });
 }
 
+/** The server answers within about 4 s (its Admin timeout); a request still open after this is given up as a network failure. */
+export const ASSISTANT_TIMEOUT_MS = 15_000;
+
 /** One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback). */
-export function askAssistant(body: { message: string; locale: string; faqId?: string }, idempotencyKey: string) {
-  return call<AssistantResponse>("/api/helpdesk/assistant", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) });
+export async function askAssistant(body: { message: string; locale: string; faqId?: string }, idempotencyKey: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
+  try {
+    return await call<AssistantResponse>("/api/helpdesk/assistant", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body), signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** "Helpful?" Yes / No on a chat answer; the server keeps the first value and returns it. */

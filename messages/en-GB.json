@@ -1688,7 +1688,9 @@
       "send": "Send",
       "typing": "The assistant is replying…",
       "rateLimited": "You’ve asked a lot of questions in the last hour. Please try again later, or submit an enquiry using the form.",
-      "error": "Sorry, I couldn’t reply just now. Please try again."
+      "error": "Sorry, I couldn’t reply just now. Please try again.",
+      "voteError": "Sorry, your answer wasn’t saved. Please try again.",
+      "infoStacked": "Need help with a specific order or payment? Submit an enquiry using the form above."
     },
     "assistant": {
       "title": "AI Support Assistant",

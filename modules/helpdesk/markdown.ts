@@ -169,6 +169,16 @@ function plain(parts: Inline[]): string {
   return parts.map((part) => (part.kind === "text" ? part.text : plain(part.children))).join("");
 }
 
+/** The whole answer as plain text (one space between lines and blocks), e.g. for a screen-reader announcement. */
+export function plainText(source: string): string {
+  return parseMarkdown(source)
+    .flatMap((block) => (block.kind === "paragraph" ? block.lines : block.items.flat()))
+    .map(plain)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Help Centre list subtitle: the first line of the answer as plain text, at most max code points (ellipsis included). */
 export function summaryLine(source: string, max = 160): string {
   const first = parseMarkdown(source)[0];

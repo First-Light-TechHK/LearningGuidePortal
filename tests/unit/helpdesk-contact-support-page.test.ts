@@ -643,7 +643,8 @@ test("chat: Enter sends, Shift+Enter adds a line, blank never sends; null shows 
     assert.equal(await error.nth(1).textContent(), c.copy.error, "a network failure");
     assert.deepEqual(await c.questions.allTextContents(), ["Line one\nline two", "How much is it?", "Again?"]);
     assert.equal(await c.questions.first().evaluate((node) => getComputedStyle(node).whiteSpace), "pre-wrap", "line breaks in a question show");
-    assert.equal(await c.send.isDisabled(), true, "nothing pending, empty input: send is disabled");
+    assert.equal(await c.input.inputValue(), "Again?", "the unanswered question is back in the input");
+    assert.equal(await c.send.isDisabled(), false, "nothing pending: it can be sent again");
     const atBottom = await c.log.evaluate((node) => Math.abs(node.scrollHeight - node.clientHeight - node.scrollTop) < 2);
     assert.ok(atBottom, "the conversation scrolls to the newest message");
     const keys = harness.calls.filter(isAssistant).map((call) => call.key);
@@ -781,4 +782,178 @@ test("the greeting falls back when the account has no name", async () => {
   assert.equal(await f.dialog.locator(".helpdesk-answer-greeting").textContent(), f.copy.assistant.greetingNoName);
   assert.ok((await f.dialog.locator(".helpdesk-modal-meta").textContent())?.startsWith("learner@example.com · "));
   await page.close();
+});
+
+// ---------------------------------------------------------------- final verification (2026-10-29)
+
+const LONG_ANSWER = Array.from({ length: 40 }, (_, index) => `Step ${index + 1}: follow the instructions on this line.`).join("\n\n");
+const answerReply = (id: string, answer: string, question = CHIPS[0].question) => ({ json: { id, reply: { id, faqId: FAQ[0], question, answer } } });
+
+test("chat scrolling: a long answer opens at its start, a short one shows the newest; a vote never moves the view", async () => {
+  const replies: Reply[] = [answerReply(ASSIST[0], "Short **one**."), answerReply(ASSIST[1], "Short two."), answerReply(ASSIST[2], LONG_ANSWER)];
+  const harness = await open("en-GB", api({ assistant: () => replies.shift() ?? { status: 500 } }), { locale: "en-GB", chips: [] });
+  const { page } = harness;
+  const c = chat(page, "en-GB");
+  for (const question of ["one", "two"]) {
+    await c.input.fill(question);
+    await page.keyboard.press("Enter");
+    await page.waitForFunction((n) => document.querySelectorAll(".helpdesk-chat-answer").length === n, question === "one" ? 1 : 2);
+  }
+  await c.input.fill("long");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 3);
+  const long = c.answers.nth(2);
+  const box = (await c.log.boundingBox())!;
+  const top = (await long.boundingBox())!;
+  assert.ok(top.y >= box.y - 1 && top.y <= box.y + 40, `the long answer starts at the top of the panel (answer ${top.y}, panel ${box.y})`);
+  assert.ok(top.height > box.height, "it is taller than the panel");
+  // Scroll up to the first answer and rate it: the view stays where the learner is.
+  await c.log.evaluate((node) => { node.scrollTop = 0; });
+  await c.answers.first().getByRole("button", { name: c.copy.yes, exact: true }).click();
+  await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 1);
+  await page.waitForFunction(() => document.querySelector(".helpdesk-chat-answer button[aria-pressed=true]") !== null);
+  assert.equal(await c.log.evaluate((node) => node.scrollTop), 0, "the vote did not scroll the panel");
+  await page.close();
+});
+
+test("chat answers, the fallback and the typing state are announced through one live region that is always there", async () => {
+  for (const locale of LOCALES) {
+    const release = deferred();
+    const replies: Reply[] = [answerReply(ASSIST[0], "Open **Settings**, then [Reset](https://example.com/reset)."), { json: { id: ASSIST[1], reply: null } }];
+    const harness = await open(locale, api({ assistant: async () => { await release.promise; return replies.shift() ?? { status: 500 }; } }), { locale, chips: [] });
+    const { page } = harness;
+    const c = chat(page, locale);
+    const live = c.panel.locator(".helpdesk-chat-live");
+    assert.equal(await live.getAttribute("role"), "status");
+    assert.equal(await live.getAttribute("aria-live"), "polite");
+    assert.equal(await live.textContent(), "", "silent until something happens");
+    await c.input.fill("reset");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector(".helpdesk-chat-live")?.textContent !== "");
+    assert.equal(await live.textContent(), c.copy.typing);
+    release.resolve();
+    await c.answers.first().waitFor();
+    await page.waitForFunction((typing) => document.querySelector(".helpdesk-chat-live")?.textContent !== typing, c.copy.typing);
+    assert.equal(await live.textContent(), "Open Settings, then Reset.", "the answer as plain text");
+    await c.input.fill("refund");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 2);
+    await page.waitForFunction((fallback) => document.querySelector(".helpdesk-chat-live")?.textContent === fallback, c.copy.fallback);
+    assert.equal(await c.panel.getByRole("status").count(), 1, "one status region");
+    await page.close();
+  }
+});
+
+test("chat: Enter while an IME is composing (isComposing, or keyCode 229 as Safari sends it) never sends", async () => {
+  const harness = await open("zh-CN", api({}), { locale: "zh-CN", chips: [] });
+  const { page } = harness;
+  const c = chat(page, "zh-CN");
+  await c.input.fill("怎么重置密码");
+  for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+    await c.input.evaluate((node, extra) => {
+      const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: Boolean((extra as { isComposing?: boolean }).isComposing) });
+      if ((extra as { keyCode?: number }).keyCode) Object.defineProperty(event, "keyCode", { value: (extra as { keyCode: number }).keyCode });
+      node.dispatchEvent(event);
+    }, init);
+  }
+  await page.waitForTimeout(100);
+  assert.equal(count(harness.calls, isAssistant), 0, "the candidate confirmation is not a send");
+  assert.equal(await c.input.inputValue(), "怎么重置密码");
+  await page.keyboard.press("Enter");
+  await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+  await page.close();
+});
+
+test("chat: a failed question goes back into the input; a failed vote says so and can be retried; the server's first value is shown", async () => {
+  for (const locale of LOCALES) {
+    const feedbackReplies: Reply[] = ["abort", { status: 429, json: { code: "rate_limited" } }, { json: { id: ASSIST[0], feedback: "not_helpful" } }];
+    const replies: Reply[] = ["abort", answerReply(ASSIST[0], "Answer.")];
+    const harness = await open(locale, api({ assistant: () => replies.shift() ?? { status: 500 }, feedback: () => feedbackReplies.shift() ?? { status: 500 } }), { locale, chips: [] });
+    const { page } = harness;
+    const c = chat(page, locale);
+    await c.input.fill("Where is my invoice?");
+    await page.keyboard.press("Enter");
+    await c.panel.locator(".helpdesk-chat-error").waitFor();
+    assert.equal(await c.input.inputValue(), "Where is my invoice?", "the learner does not retype it");
+    await page.keyboard.press("Enter");
+    await c.answers.first().waitFor();
+    assert.equal(await c.input.inputValue(), "");
+    const answer = c.answers.first();
+    const yes = answer.getByRole("button", { name: c.copy.yes, exact: true });
+    const no = answer.getByRole("button", { name: c.copy.no, exact: true });
+    const voteError = answer.locator(".helpdesk-chat-vote-error[role=alert]");
+    await yes.click();
+    await voteError.waitFor();
+    assert.equal(await voteError.textContent(), c.copy.voteError);
+    assert.equal(await yes.isDisabled(), false, "it can be tried again");
+    await yes.click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 2);
+    await page.waitForFunction(() => document.querySelector(".helpdesk-chat-vote-error") !== null);
+    await yes.click();
+    await page.waitForFunction(() => document.querySelector(".helpdesk-chat-answer button[aria-pressed=true]") !== null);
+    assert.equal(await no.getAttribute("aria-pressed"), "true", "the server kept an earlier No: that is what shows");
+    assert.equal(await yes.getAttribute("aria-pressed"), "false");
+    assert.equal(await voteError.count(), 0, "the error goes once the vote is stored");
+    await page.close();
+  }
+});
+
+test("chat: a question with no reply after 15 s shows the error; a reload during a question does not leave it unanswered; blocked storage still works", async () => {
+  const harness = await open("en-GB", api({ assistant: () => new Promise<Reply>(() => undefined) }), { locale: "en-GB", chips: [] });
+  const { page } = harness;
+  await page.clock.install();
+  const c = chat(page, "en-GB");
+  await c.input.fill("Hello?");
+  await page.keyboard.press("Enter");
+  await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+  assert.equal(await c.send.isDisabled(), true);
+  await page.clock.runFor(15_100);
+  await c.panel.locator(".helpdesk-chat-error").waitFor();
+  assert.equal(await c.panel.locator(".helpdesk-chat-error").textContent(), c.copy.error);
+  assert.equal(await c.input.inputValue(), "Hello?");
+  await page.close();
+
+  const reload = await open("en-GB", api({ assistant: () => new Promise<Reply>(() => undefined) }), { locale: "en-GB", chips: [] });
+  let r = chat(reload.page, "en-GB");
+  await r.input.fill("Asked just before a reload");
+  await reload.page.keyboard.press("Enter");
+  await waitForCalls(reload, (calls) => count(calls, isAssistant) === 1);
+  await mountContact(reload.page, { locale: "en-GB", chips: [] });
+  r = chat(reload.page, "en-GB");
+  await r.panel.locator(".helpdesk-chat-messages[aria-busy=false]").waitFor();
+  assert.deepEqual(await r.questions.allTextContents(), ["Asked just before a reload"]);
+  assert.equal(await r.panel.locator(".helpdesk-chat-error").textContent(), r.copy.error, "the unanswered question gets the error, so the learner can ask again");
+  await reload.page.close();
+
+  const blocked = await openHarness(browser, "en-GB", api({ assistant: () => answerReply(ASSIST[0], "Works.") }));
+  await blocked.page.evaluate("Object.defineProperty(window, 'sessionStorage', { configurable: true, get() { throw new DOMException('blocked', 'SecurityError'); } })");
+  await mountContact(blocked.page, { locale: "en-GB", chips: [] });
+  const b = chat(blocked.page, "en-GB");
+  await b.input.fill("Storage blocked");
+  await blocked.page.keyboard.press("Enter");
+  await b.answers.first().waitFor();
+  assert.equal((await b.answers.first().locator(".helpdesk-chat-answer-text").textContent())?.trim(), "Works.");
+  await blocked.page.close();
+});
+
+test("chat chips show the full question on hover when it is cut off", async () => {
+  const longChip = { id: FAQ[2], question: `How do I ${"really ".repeat(30)}change my plan?` };
+  const harness = await open("en-GB", api({}), { locale: "en-GB", chips: [longChip] });
+  const chip = chat(harness.page, "en-GB").chips.first();
+  assert.equal(await chip.getAttribute("title"), longChip.question);
+  await harness.page.close();
+});
+
+test("the info box points at the form above when the chat is stacked under it", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale, api({}), { locale, chips: [] });
+    const { page } = harness;
+    const c = chat(page, locale);
+    const info = c.panel.locator(".helpdesk-chat-info p");
+    await page.setViewportSize({ width: 1440, height: 1024 });
+    assert.equal(await info.innerText(), c.copy.info, "Figma copy beside the form");
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await info.innerText(), c.copy.infoStacked, "the stacked layout says where the form is");
+    await page.close();
+  }
 });

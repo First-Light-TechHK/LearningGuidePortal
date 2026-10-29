@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { parseMarkdown, safeHref, summaryLine, unsafeLinks } from "../../modules/helpdesk/markdown";
+import { parseMarkdown, plainText, safeHref, summaryLine, unsafeLinks } from "../../modules/helpdesk/markdown";
 import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -101,4 +101,9 @@ test("every corpus case parses, summarises and reports unsafe links exactly as t
     assert.equal(summaryLine(item.input, item.summaryMax), item.summary, `summary: ${item.name}`);
     assert.deepEqual(unsafeLinks(item.input), item.unsafeLinks, `unsafe links: ${item.name}`);
   }
+});
+
+test("plainText: the whole answer without Markdown, for a screen-reader announcement", () => {
+  assert.equal(plainText("1. Open **Settings**\nthen tap Save\n2. [Reset](https://x.test)\n\nDone <b>x</b>"), "Open Settings then tap Save Reset Done <b>x</b>");
+  assert.equal(plainText("  "), "");
 });

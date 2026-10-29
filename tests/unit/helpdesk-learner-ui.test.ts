@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, parseCreateTicketInput, isContactEmail, type TicketDetail } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { helpdeskUiConfig } from "../../modules/helpdesk/learnerUiConfig";
-import { assistIdsOf, chatStorageKey, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
+import { assistIdsOf, chatStorageKey, conversationItems, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, settleTranscript, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
 
 const config = helpdeskUiConfig();
 
@@ -243,4 +243,12 @@ test("en-GB and zh-CN copy: same keys, spec status labels, every enquiry type, s
   const nav = await readFile("components/portal/AccountNav.tsx", "utf8");
   assert.match(nav, /\/account\/my-learning\/support`/, "AccountNav Contact support goes to the signed-in support page");
   assert.doesNotMatch(nav, /\/\$\{locale\}\/contact`/);
+});
+
+test("a transcript read back after a reload: a trailing unanswered question gets the error bubble", () => {
+  const question = { kind: "question" as const, text: "Hello?" };
+  assert.deepEqual(settleTranscript([question]), [question, { kind: "error", error: "error" }]);
+  const answered = [question, { kind: "answer" as const, id: "01a18100-0000-7000-8000-0000000000a1", reply: null, feedback: null }];
+  assert.deepEqual(settleTranscript(answered), answered);
+  assert.deepEqual(settleTranscript([]), []);
 });

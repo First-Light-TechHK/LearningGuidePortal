@@ -132,6 +132,9 @@
 .helpdesk-chat-info { display: flex; align-items: center; gap: 9px; min-height: 52px; box-sizing: border-box; margin-top: 15px; padding: 9px 11px 9px 10px; border-radius: 8px; background: #ebf3ff; }
 .helpdesk-chat-info svg { flex: 0 0 19px; color: #2468f5; }
 .helpdesk-chat-info p { color: #516985; font-size: 11px; line-height: 13px; }
+.helpdesk-chat-info-stacked { display: none; }
+/* No frame (待视觉验收): a vote that was not saved, in the inline error colour. */
+.helpdesk-chat-vote-error { margin: 2px 0 0; color: #b42318; font-size: 11px; line-height: 13px; }
 /* 11px Inter in a 13px line: Figma draws the glyphs 1px lower than Chrome does. Nudge them without moving the layout. */
 .helpdesk-chat-header p, .helpdesk-chat-greeting-limit, .helpdesk-chat-ideas, .helpdesk-chat-related, .helpdesk-chat-feedback > span, .helpdesk-chat-info p { position: relative; top: 1px; }
 .helpdesk-chat-footer { display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
@@ -280,6 +283,9 @@
   .helpdesk-chat-messages > * { width: 100%; }
   .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error { width: auto; flex: 1 1 0; min-width: 0; }
   .helpdesk-chat-input { flex: 1 1 0; width: auto; min-width: 0; }
+  /* Stacked under the form: the info box points up, not left (no frame, 待视觉验收). */
+  .helpdesk-chat-info-side { display: none; }
+  .helpdesk-chat-info-stacked { display: inline; }
 }
 @media (max-width: 720px) {
   .helpdesk-card { width: calc(100% - 24px); margin: 12px auto; }

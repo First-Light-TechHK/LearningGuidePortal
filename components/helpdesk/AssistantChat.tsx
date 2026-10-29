@@ -7,7 +7,8 @@
 // account, and its answer ids go with the enquiry as assistIds.
 import { Bot, Check, ChevronRight, CircleHelp, Send } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { assistIdsOf, chatStorageKey, fillTemplate, readTranscript, type ChatEntry } from "@/modules/helpdesk/learnerUi";
+import { assistIdsOf, chatStorageKey, fillTemplate, readTranscript, settleTranscript, type ChatEntry } from "@/modules/helpdesk/learnerUi";
+import { plainText } from "@/modules/helpdesk/markdown";
 import { askAssistant, newIdempotencyKey, sendAssistantFeedback } from "./helpdeskApi";
 import type { HelpdeskCopy } from "./HelpdeskParts";
 import { Markdown } from "./Markdown";
@@ -31,57 +32,82 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const [voting, setVoting] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState<string | null>(null);
+  /** What the one live region says after the reply (the typing text while pending). Errors use role=alert. */
+  const [announcement, setAnnouncement] = useState("");
   const log = useRef<HTMLDivElement>(null);
+  const shown = useRef({ count: 0, pending: false });
   const report = useRef(onAssistIds);
   report.current = onAssistIds;
 
   // sessionStorage is read after mount, so the server render and the first client render match.
-  useEffect(() => { setEntries(readStored(storageKey)); setLoaded(true); }, [storageKey]);
+  useEffect(() => { setEntries(settleTranscript(readStored(storageKey))); setLoaded(true); }, [storageKey]);
   useEffect(() => {
     if (!loaded) return;
     store(storageKey, entries);
     report.current(assistIdsOf(entries));
   }, [entries, loaded, storageKey]);
+  // Scroll only when something new appears: a question or the typing state shows the newest line;
+  // an answer taller than the panel opens at its start. A vote (same entries, updated) never scrolls.
   useLayoutEffect(() => {
     const node = log.current;
-    if (node && entries.length) node.scrollTop = node.scrollHeight;
+    const before = shown.current;
+    shown.current = { count: entries.length, pending };
+    if (!node || !entries.length) return;
+    const grew = entries.length > before.count;
+    if (!grew && !(pending && !before.pending)) return;
+    const last = entries[entries.length - 1];
+    const element = node.querySelector<HTMLElement>(`[data-entry="${entries.length - 1}"]`);
+    if (grew && before.count > 0 && last.kind !== "question" && element && element.offsetHeight > node.clientHeight - 26) {
+      node.scrollTop += element.getBoundingClientRect().top - node.getBoundingClientRect().top - 13;
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
   }, [entries, pending]);
 
-  async function ask(message: string, faqId?: string) {
-    if (pending || !message.trim()) return;
+  async function ask(message: string, faqId?: string): Promise<boolean> {
+    if (pending || !message.trim()) return false;
     setPending(true);
+    setAnnouncement("");
     setEntries((current) => [...current, { kind: "question", text: message }]);
     const result = await askAssistant(faqId ? { message, locale, faqId } : { message, locale }, newIdempotencyKey());
     setPending(false);
     if (result.ok && result.data) {
       const { id, reply } = result.data;
       setEntries((current) => [...current, { kind: "answer", id, reply, feedback: null }]);
-    } else setEntries((current) => [...current, { kind: "error", error: result.status === 429 ? "rateLimited" : "error" }]);
+      setAnnouncement(reply ? plainText(reply.answer) : text.fallback);
+      return true;
+    }
+    setEntries((current) => [...current, { kind: "error", error: result.status === 429 ? "rateLimited" : "error" }]);
+    return false;
   }
 
-  function sendDraft() {
+  async function sendDraft() {
     const message = draft.trim();
     if (!message || pending) return;
     setDraft("");
-    void ask(message);
+    // Not answered (network, 429, timeout): give the question back unless the learner already typed something else.
+    if (!(await ask(message))) setDraft((current) => (current === "" ? message : current));
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    // Safari confirms an IME candidate with a keydown whose isComposing is already false but keyCode is 229.
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
     event.preventDefault();
-    sendDraft();
+    void sendDraft();
   }
 
   async function vote(id: string, helpful: boolean) {
     if (voting) return;
     setVoting(id);
+    setVoteError(null);
     const result = await sendAssistantFeedback(id, helpful, newIdempotencyKey());
     setVoting(null);
     // The server keeps the first value; show what it stored.
     if (result.ok && result.data && (result.data.feedback === "helpful" || result.data.feedback === "not_helpful")) {
       const stored = result.data.feedback;
       setEntries((current) => current.map((entry) => (entry.kind === "answer" && entry.id === id ? { ...entry, feedback: stored } : entry)));
-    }
+    } else setVoteError(id);
   }
 
   return <section className="helpdesk-chat" aria-labelledby={`${ids}-title`}>
@@ -103,13 +129,13 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
       {chips.length ? <>
         <p className="helpdesk-chat-try">{text.tryAsking}</p>
         <ul className="helpdesk-chat-chips">
-          {chips.map((chip) => <li key={chip.id}><button type="button" className="helpdesk-chat-chip" disabled={pending} onClick={() => void ask(chip.question, chip.id)}><span>{chip.question}</span><ChevronRight size={14} aria-hidden="true" /></button></li>)}
+          {chips.map((chip) => <li key={chip.id}><button type="button" className="helpdesk-chat-chip" title={chip.question} disabled={pending} onClick={() => void ask(chip.question, chip.id)}><span>{chip.question}</span><ChevronRight size={14} aria-hidden="true" /></button></li>)}
         </ul>
       </> : null}
       {entries.map((entry, index) => {
-        if (entry.kind === "question") return <div key={index} className="helpdesk-chat-mine"><p className="helpdesk-chat-question">{entry.text}</p></div>;
-        if (entry.kind === "error") return <div key={index} className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span><p className="helpdesk-chat-error" role="alert">{entry.error === "rateLimited" ? text.rateLimited : text.error}</p></div>;
-        return <div key={index} className="helpdesk-chat-row">
+        if (entry.kind === "question") return <div key={index} data-entry={index} className="helpdesk-chat-mine"><p className="helpdesk-chat-question">{entry.text}</p></div>;
+        if (entry.kind === "error") return <div key={index} data-entry={index} className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span><p className="helpdesk-chat-error" role="alert">{entry.error === "rateLimited" ? text.rateLimited : text.error}</p></div>;
+        return <div key={index} data-entry={index} className="helpdesk-chat-row">
           <span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>
           <div className="helpdesk-chat-answer">
             {entry.reply ? <>
@@ -120,16 +146,19 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
                 <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-yes" aria-pressed={entry.feedback === "helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, true)}><Check size={13} aria-hidden="true" />{text.yes}</button>
                 <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-no" aria-pressed={entry.feedback === "not_helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, false)}>{text.no}</button>
               </div>
+              {voteError === entry.id && entry.feedback === null ? <p className="helpdesk-chat-vote-error" role="alert">{text.voteError}</p> : null}
             </> : <p className="helpdesk-chat-fallback">{text.fallback}</p>}
           </div>
         </div>;
       })}
-      {pending ? <div className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span><div className="helpdesk-chat-typing"><span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" /><span className="helpdesk-visually-hidden" role="status">{text.typing}</span></div></div> : null}
-      <div className="helpdesk-chat-info"><CircleHelp size={19} aria-hidden="true" /><p>{text.info}</p></div>
+      {pending ? <div className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span><div className="helpdesk-chat-typing"><span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" /></div></div> : null}
+      <div className="helpdesk-chat-info"><CircleHelp size={19} aria-hidden="true" /><p><span className="helpdesk-chat-info-side">{text.info}</span><span className="helpdesk-chat-info-stacked">{text.infoStacked}</span></p></div>
     </div>
+    {/* Always mounted, so screen readers announce what is put in it: the typing state, then the answer or the fallback. */}
+    <p className="helpdesk-visually-hidden helpdesk-chat-live" role="status" aria-live="polite">{pending ? text.typing : announcement}</p>
     <div className="helpdesk-chat-footer">
       <textarea className="helpdesk-chat-input" aria-label={text.inputLabel} placeholder={text.placeholder} maxLength={questionMax} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKeyDown} />
-      <button type="button" className="helpdesk-chat-send" aria-label={text.send} disabled={pending || !draft.trim()} onClick={sendDraft}><Send size={19} aria-hidden="true" /></button>
+      <button type="button" className="helpdesk-chat-send" aria-label={text.send} disabled={pending || !draft.trim()} onClick={() => void sendDraft()}><Send size={19} aria-hidden="true" /></button>
     </div>
   </section>;
 }

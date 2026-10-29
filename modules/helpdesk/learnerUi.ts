@@ -232,6 +232,11 @@ export function readTranscript(raw: string | null): ChatEntry[] {
   return Array.isArray(parsed) ? parsed.map(chatEntry).filter((entry): entry is ChatEntry => entry !== null) : [];
 }
 
+/** A transcript read back after a reload: a question whose answer never arrived (the tab went away mid-request) gets the error bubble, so the learner can ask again. */
+export function settleTranscript(entries: ChatEntry[]): ChatEntry[] {
+  return entries.length && entries[entries.length - 1].kind === "question" ? [...entries, { kind: "error", error: "error" }] : entries;
+}
+
 /** The chat answers to link to the enquiry: the newest max, once each (the server accepts at most 10 assistIds). */
 export function assistIdsOf(entries: ChatEntry[], max = 10): string[] {
   const ids: string[] = [];
