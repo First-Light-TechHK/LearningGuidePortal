@@ -10,7 +10,11 @@ import { readReleaseHealth } from './release/health-read.mjs';
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const branch = process.env.GITHUB_REF_NAME || execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
-const gh = endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8' }));
+const gh = endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }));
+// The commits endpoint returns the whole commit including a `files` array; a
+// large dev->uat merge overflows Node's 1 MiB default. The branch ref answers
+// the same question in a few hundred bytes.
+const branchSha = branch => gh(`repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`).object.sha;
 function aws(service, operation, input = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'lg-release-'));
   try {
@@ -23,7 +27,7 @@ if (aws('sts','get-caller-identity').Account !== '851987565851') throw new Error
 if (branch !== 'uat') throw new Error('UAT releases must use the uat branch');
 if (execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim()) throw new Error('Commit and verify tracked changes before releasing');
 checkRequiredCI({ sha, branch });
-if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch moved; verify and release the new revision');
+if (branchSha(branch) !== sha) throw new Error('Branch moved; verify and release the new revision');
 const reference = await captureCurriculum('sit');
 if (!reference.courses.length) throw new Error('SIT reference is empty');
 assetInventory(reference);
@@ -42,18 +46,23 @@ if (source.ImageRepository) {
 }
 source.AutoDeploymentsEnabled = false;
 const update = aws('apprunner','update-service', { ServiceArn: summary.ServiceArn, SourceConfiguration: source });
-if (!update.OperationId) throw new Error('UAT source configuration update returned no OperationId');
-console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.OperationId, sha, branch }));
-let complete = false;
-for (let i = 0; i < 120; i++) {
-  await new Promise(resolve => setTimeout(resolve, 20000));
-  const operation = aws('apprunner','list-operations', { ServiceArn: summary.ServiceArn }).OperationSummaryList.find(x => x.Id === update.OperationId);
-  if (operation?.Status === 'SUCCEEDED') { complete = true; break; }
-  if (operation && /FAILED|ROLLBACK/.test(operation.Status)) throw new Error(`Deployment ${operation.Status}`);
+// update-service is a no-op when the source configuration already matches and then
+// returns no operation; the source build below is what actually ships the branch.
+if (update.OperationId) {
+  console.log(JSON.stringify({ service: summary.ServiceArn, operation: update.OperationId, sha, branch }));
+  let complete = false;
+  for (let i = 0; i < 120; i++) {
+    await new Promise(resolve => setTimeout(resolve, 20000));
+    const operation = aws('apprunner','list-operations', { ServiceArn: summary.ServiceArn }).OperationSummaryList.find(x => x.Id === update.OperationId);
+    if (operation?.Status === 'SUCCEEDED') { complete = true; break; }
+    if (operation && /FAILED|ROLLBACK/.test(operation.Status)) throw new Error(`Deployment ${operation.Status}`);
+  }
+  if (!complete) throw new Error('Timed out waiting for the deployment');
+} else {
+  console.log(JSON.stringify({ service: summary.ServiceArn, operation: null, sha, branch, note: 'source configuration already current' }));
 }
-if (!complete) throw new Error('Timed out waiting for the deployment');
 await buildService(summary.ServiceArn);
-if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
+if (branchSha(branch) !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
 const { health } = await readReleaseHealth(`https://${summary.ServiceUrl}`);
 if (health.environment !== 'UAT' || health.version !== sha) throw new Error('Deployed readiness or release identity mismatch');
 const acceptance = await verifyUatAcceptance({ sha, reference, outputDir: process.env.RELEASE_EVIDENCE_DIR });
