@@ -10,7 +10,12 @@ const required = [
   "SESSION_SECRET",
   "WECHAT_APP_ID",
   "WECHAT_APP_SECRET",
-  "SES_FROM_EMAIL",
+  // The application sends through SMTP only (services/emailService.ts). SES is
+  // not wired into the Portal, so requiring SES_FROM_EMAIL passed preflight while
+  // every send failed for lack of SMTP credentials.
+  "SMTP_HOST",
+  "SMTP_USER",
+  "SMTP_PASS",
   "OPENROUTER_API_KEY",
   "STUDY_GROUP_TOKEN_LOG_KEY"
 ];

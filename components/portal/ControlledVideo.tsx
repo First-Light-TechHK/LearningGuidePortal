@@ -88,7 +88,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
-      <input type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
+      <input className="la-video-seek" type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
         onPointerDown={event => { scrubbing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }}
         onPointerUp={() => { scrubbing.current = false; }} onPointerCancel={() => { scrubbing.current = false; }} onBlur={() => { scrubbing.current = false; }}
         onChange={event => { const nextTime = Number(event.target.value); setTime(nextTime); if (media.current) media.current.currentTime = nextTime; }}/>
@@ -97,7 +97,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
         onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setVolumeOpen(false); volumeButton.current?.focus(); } }}>
         <button ref={volumeButton} type="button" aria-label={t.videoVolume} title={t.videoVolume} aria-expanded={volumeOpen} aria-controls={volumeOpen ? volumeId : undefined} onClick={() => setVolumeOpen(value => !value)}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
         {volumeOpen && <div id={volumeId} className="la-video-volume-panel">
-          <input type="range" aria-label={t.videoVolume} min={0} max={100} step={1} value={volume} aria-valuetext={`${volume}%`}
+          <input className="la-video-volume-range" type="range" aria-label={t.videoVolume} min={0} max={100} step={1} value={volume} aria-valuetext={`${volume}%`}
             onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)}
             onChange={event => {
               const video = media.current;

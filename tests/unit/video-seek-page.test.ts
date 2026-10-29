@@ -11,7 +11,7 @@ test("video toolbar reveals on hover or keyboard focus during playback and prese
     const context=await browser.newContext({viewport:{width:touch?390:1100,height:800},hasTouch:touch});const page=await context.newPage();
     await page.setContent('<div id="root"></div>');await page.addScriptTag({content:'window.__name=value=>value'});await page.addStyleTag({content:await readFile("components/portal/lesson-authoring.css","utf8")});
     await page.addScriptTag({content:bundle.outputFiles[0].text});await page.evaluate(locale=>(window as any).mount(locale),locale);
-    const seek=page.getByRole("slider");await seek.waitFor();assert.equal(await seek.isDisabled(),true);
+    const seek=page.locator(".la-video-seek");await seek.waitFor();assert.equal(await seek.isDisabled(),true);
     await page.locator("video").evaluate(video=>{Object.defineProperty(video,"duration",{value:120});let position=0;Object.defineProperty(video,"currentTime",{get:()=>position,set:value=>{position=value;},configurable:true});video.dispatchEvent(new Event("loadedmetadata"));});
     const controls=page.locator(".la-video-controls");
     const opacity=()=>controls.evaluate(element=>getComputedStyle(element).opacity);
@@ -49,7 +49,7 @@ test("video toolbar reveals on hover or keyboard focus during playback and prese
     await seek.focus();await page.keyboard.press("ArrowLeft");assert.ok(Number(await seek.inputValue())<selected);
     if(!touch){await seek.click({position:{x:box.width*.25,y:box.height/2}});assert.ok(Number(await seek.inputValue())<40);}
     await page.locator("video").evaluate(v=>{(v as HTMLVideoElement).currentTime=20;v.dispatchEvent(new Event("timeupdate"));});
-    await page.waitForFunction(()=>document.querySelector('input[type="range"]')?.getAttribute('value')==='20');
+    await page.waitForFunction(()=>document.querySelector('.la-video-seek')?.getAttribute('value')==='20');
     await seek.evaluate(element=>(element as HTMLElement).blur());await page.mouse.move(0,790);
     await page.locator("video").evaluate(video=>video.dispatchEvent(new Event("ended")));
     await page.waitForFunction(()=>getComputedStyle(document.querySelector(".la-video-controls")!).opacity==="1");
