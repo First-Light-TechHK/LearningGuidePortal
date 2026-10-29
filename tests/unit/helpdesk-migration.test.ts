@@ -148,3 +148,34 @@ test("023 (v5) adds the chat sessions and the assist log's turn columns; additiv
   assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'texts'/, "the probe covers the newest column");
   for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql", "022_helpdesk_order_link.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /helpdesk_chat_sessions|session_id|turn_index/);
 });
+
+test("024 (v5 Part G) adds the retention marker, the job runs, the paging indexes and the ticket-outcome view; additive, repeatable, mirrored by the bootstrap and probe; 017–023 untouched", async () => {
+  const migration = await readFile("db/migrations/024_helpdesk_flywheel.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS|CREATE OR REPLACE VIEW|ALTER TABLE)[\s\S]*?;/g) || [];
+  assert.equal(statements.length, 9);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  // The only new column is nullable with no default: every existing row reads as "raw text not yet replaced".
+  const columns = (plain.match(/ALTER TABLE [^;]*;/g) || []);
+  assert.deepEqual(columns, ["ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS scrubbed_at TIMESTAMPTZ;"]);
+  assert.match(plain, /CREATE TABLE IF NOT EXISTS helpdesk_job_runs \( id UUID PRIMARY KEY, job TEXT NOT NULL CHECK \(job IN \('assist_retention'\)\), run_day DATE NOT NULL, trigger TEXT NOT NULL CHECK \(trigger IN \('schedule', 'manual'\)\), status TEXT NOT NULL CHECK \(status IN \('running', 'succeeded', 'failed'\)\),/);
+  assert.match(plain, /client_event_id UUID UNIQUE/, "a manual run is idempotent by its Idempotency-Key");
+  assert.match(plain, /CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_job_runs_daily_idx ON helpdesk_job_runs \(job, run_day\) WHERE trigger = 'schedule';/, "one scheduled run per job and day");
+  assert.match(plain, /CREATE INDEX IF NOT EXISTS helpdesk_assist_log_created_idx ON helpdesk_assist_log \(created_at, id\);/);
+  assert.match(plain, /CREATE INDEX IF NOT EXISTS helpdesk_assist_log_retention_idx ON helpdesk_assist_log \(created_at, id\) WHERE scrubbed_at IS NULL;/);
+  assert.match(plain, /CREATE INDEX IF NOT EXISTS helpdesk_tickets_user_created_idx ON helpdesk_tickets \(user_id, created_at, id\);/);
+  // The outcome is read from the tickets and their messages (no copy of either): linked, or the learner's next enquiry within 24 hours.
+  assert.match(plain, /CREATE OR REPLACE VIEW helpdesk_assist_outcomes AS SELECT a\.id AS assist_id,/);
+  assert.match(plain, /resolved_by_agent/);
+  assert.match(plain, /agent_reply_id/);
+  assert.match(plain, /INTERVAL '24 hours'/);
+  assert.match(plain, /author_kind = 'agent' AND m\.internal = FALSE/);
+  assert.match(bootstrap, /to_regclass\('helpdesk_job_runs'\) IS NOT NULL/);
+  assert.match(bootstrap, /to_regclass\('helpdesk_assist_outcomes'\) IS NOT NULL/);
+  assert.match(bootstrap, /table_name = 'helpdesk_assist_log'\s+AND column_name = 'scrubbed_at'/, "the probe covers the newest column");
+  assert.doesNotMatch(plain, /CREATE TABLE (?!IF NOT EXISTS)/);
+  assert.doesNotMatch(plain, /CREATE (?:UNIQUE )?INDEX (?!IF NOT EXISTS)/);
+  for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql", "022_helpdesk_order_link.sql", "023_helpdesk_chat_sessions.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /scrubbed_at|helpdesk_job_runs|helpdesk_assist_outcomes/);
+});

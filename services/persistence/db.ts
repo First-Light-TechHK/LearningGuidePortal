@@ -73,6 +73,8 @@ const SCHEMA_PROBE = `
     AND to_regclass('helpdesk_assist_log') IS NOT NULL
     AND to_regclass('helpdesk_ai_ratings') IS NOT NULL
     AND to_regclass('helpdesk_chat_sessions') IS NOT NULL
+    AND to_regclass('helpdesk_job_runs') IS NOT NULL
+    AND to_regclass('helpdesk_assist_outcomes') IS NOT NULL
     AND to_regclass('lesson_assessments') IS NOT NULL
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
@@ -138,6 +140,12 @@ const SCHEMA_PROBE = `
       SELECT 1 FROM information_schema.columns
       WHERE table_name = 'helpdesk_assist_log'
         AND column_name = 'texts'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'scrubbed_at'
         AND table_schema = ANY (current_schemas(false))
     )
   ) AS ready
@@ -373,6 +381,60 @@ ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS expanded BOOLEAN;
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS covered BOOLEAN;
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS texts JSONB;
 CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_assist_log_session_turn_idx ON helpdesk_assist_log (session_id, turn_index) WHERE session_id IS NOT NULL;
+
+-- Mirrors db/migrations/024_helpdesk_flywheel.sql (v5 Part G: the retention
+-- marker, the job runs, the paging indexes and the ticket-outcome view); same
+-- parity rule as 017 above.
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS scrubbed_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS helpdesk_assist_log_created_idx ON helpdesk_assist_log (created_at, id);
+CREATE INDEX IF NOT EXISTS helpdesk_assist_log_retention_idx ON helpdesk_assist_log (created_at, id) WHERE scrubbed_at IS NULL;
+CREATE INDEX IF NOT EXISTS helpdesk_tickets_user_created_idx ON helpdesk_tickets (user_id, created_at, id);
+CREATE INDEX IF NOT EXISTS helpdesk_ticket_messages_agent_reply_idx ON helpdesk_ticket_messages (ticket_id, created_at DESC, id DESC) WHERE author_kind = 'agent' AND internal = FALSE;
+CREATE TABLE IF NOT EXISTS helpdesk_job_runs (
+  id UUID PRIMARY KEY,
+  job TEXT NOT NULL CHECK (job IN ('assist_retention')),
+  run_day DATE NOT NULL,
+  trigger TEXT NOT NULL CHECK (trigger IN ('schedule', 'manual')),
+  status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+  attempts SMALLINT NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+  started_at TIMESTAMPTZ NOT NULL,
+  finished_at TIMESTAMPTZ,
+  cutoff TIMESTAMPTZ NOT NULL,
+  rows_scrubbed INTEGER NOT NULL DEFAULT 0 CHECK (rows_scrubbed >= 0),
+  more_due BOOLEAN NOT NULL DEFAULT FALSE,
+  instance TEXT CHECK (char_length(instance) <= 120),
+  requested_by_id TEXT CHECK (char_length(requested_by_id) BETWEEN 1 AND 128),
+  requested_by_name TEXT CHECK (char_length(requested_by_name) <= 120),
+  client_event_id UUID UNIQUE,
+  error_code TEXT CHECK (char_length(error_code) <= 64),
+  CHECK ((trigger = 'manual') = (requested_by_id IS NOT NULL)),
+  CHECK ((status = 'running') = (finished_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_job_runs_daily_idx ON helpdesk_job_runs (job, run_day) WHERE trigger = 'schedule';
+CREATE INDEX IF NOT EXISTS helpdesk_job_runs_recent_idx ON helpdesk_job_runs (job, started_at DESC, id DESC);
+CREATE OR REPLACE VIEW helpdesk_assist_outcomes AS SELECT a.id AS assist_id,
+    t.id AS ticket_id,
+    (a.ticket_id IS NOT NULL) AS ticket_linked,
+    t.created_at AS ticket_created_at,
+    t.status AS ticket_status,
+    t.close_reason,
+    t.closed_at,
+    COALESCE(t.close_reason IN ('user_confirmed', 'auto_confirmed'), FALSE) AS resolved_by_agent,
+    r.id AS agent_reply_id,
+    r.created_at AS agent_reply_at
+  FROM helpdesk_assist_log a
+  LEFT JOIN LATERAL (
+    (SELECT x.id, x.created_at, x.status, x.close_reason, x.closed_at FROM helpdesk_tickets x WHERE x.id = a.ticket_id)
+    UNION ALL
+    (SELECT y.id, y.created_at, y.status, y.close_reason, y.closed_at FROM helpdesk_tickets y
+      WHERE a.ticket_id IS NULL AND y.user_id = a.learner_id AND y.created_at >= a.created_at AND y.created_at < a.created_at + INTERVAL '24 hours'
+      ORDER BY y.created_at, y.id LIMIT 1)
+  ) t ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT m.id, m.created_at FROM helpdesk_ticket_messages m
+    WHERE m.ticket_id = t.id AND m.author_kind = 'agent' AND m.internal = FALSE
+    ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+  ) r ON TRUE;
 
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,

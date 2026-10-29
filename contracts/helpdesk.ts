@@ -960,3 +960,123 @@ export function parseAssistantSessionInput(value: unknown): AssistantSessionInpu
 export function parseChatEndReason(value: unknown): LearnerEndReason {
   return oneOf(record(value), "reason", LEARNER_END_REASONS);
 }
+
+// ---------------------------------------------------------------- Helpdesk v5 Part G (contract fixture v7): the flywheel feed and Portal's jobs
+// Spec: helpdesk-v5-context-chips-and-smalltalk.md Part G (G1 capture, G2 clean) and helpdesk-v5-faq-graph-design.md §3, §5.5.
+// Portal is the single writer of learner text. Admin's nightly gap mining reads every turn through
+// GET /api/integration/helpdesk/insights (bearer, read-only, paged): the learner's words only after the code-only scrubber
+// (modules/helpdesk/piiScrubber.ts), the turn's labels as enum names, never a learner id, name, email, order or plan.
+
+/** Why a ticket closed (helpdesk_tickets.close_reason). */
+export const CLOSE_REASONS = ["cancelled", "user_confirmed", "user_closed", "auto_confirmed"] as const satisfies readonly CloseReason[];
+/** What a turn was (helpdesk_assist_log.kind): Admin's suggest kinds and Portal's own handover. */
+export const TURN_KINDS = [...SUGGEST_KINDS, "handover"] as const;
+export type TurnKind = (typeof TURN_KINDS)[number];
+/** The guard column: passed, fallback, or the reason code of the string that was refused (Admin's, or Portal's own check). */
+export const TURN_GUARDS = [...GUARD_RESULTS, ...GUARD_REASONS] as const;
+export type TurnGuard = (typeof TURN_GUARDS)[number];
+/** The placeholders the scrubber writes (modules/helpdesk/piiScrubber.ts PII_KINDS). */
+export const PII_PLACEHOLDER_KINDS = ["url", "email", "token", "id", "order", "ticket", "student_id", "handle", "ip", "phone", "card", "number", "name"] as const;
+
+export const INSIGHT_LIMITS = {
+  pageDefault: 200,
+  pageMax: 500,
+  /** The learner's scrubbed text, at most this many code points (the assist log keeps 500). */
+  textMax: 500,
+  /** Turns newer than this are left for the next read (a turn still being written, a clock a little behind). */
+  settleMs: 60_000,
+  /** The agent's reply on a resolved enquiry, scrubbed, at most this many code points. */
+  agentReplyMax: 2000,
+  /** The learner's ticket within this long after a turn counts as "a ticket after the chat" (G6: AI-solved = none within 24 h). */
+  ticketAfterMs: 24 * 3_600_000
+} as const;
+
+/**
+ * The enquiry a turn led to (helpdesk_assist_outcomes, migration 024): the ticket the chat was linked to, otherwise the
+ * learner's next enquiry within 24 hours. resolvedByAgent: the learner confirmed the agent's proposed resolution, or it
+ * auto-confirmed. agentReply: the agent's last public reply, scrubbed, only when resolvedByAgent (a human answer, the
+ * draft source for a new FAQ; Admin marks any draft 草稿 待核实). No ticket id, number, subject or contact.
+ */
+export type InsightTicket = { linked: boolean; status: TicketStatus; closeReason: CloseReason | null; resolvedByAgent: boolean; agentReplied: boolean; agentReply: string | null };
+
+/**
+ * One assist log row as the flywheel sees it. text: what the learner typed (chat), the chip or step label (a click), or the
+ * enquiry subject (submit), always scrubbed. sessionId / turnIndex rebuild the path (null before v5 and for submit checks);
+ * lastTurn: the session's newest turn (null without a session). answered: a card was shown. vote: the "Helpful?" or submit
+ * outcome; rating: the 1-5 rating. handover: the chat was handed to a person after this turn (kind handover, or the
+ * session's last turn when it ended with handover or an enquiry). ticketAfterChat: an enquiry followed (linked, or the
+ * learner's next one within 24 hours). signals: the session's situation signals, enum names only.
+ */
+export type InsightTurn = {
+  id: string; createdAt: string; source: AssistSource; locale: HelpdeskLocale; text: string;
+  sessionId: string | null; turnIndex: number | null; lastTurn: boolean | null; sessionEndReason: ChatEndReason | null;
+  kind: TurnKind | null; intent: SuggestIntent | null; guard: TurnGuard | null; via: AssistVia | null;
+  faqId: string | null; nodeId: string | null; parentNodeId: string | null; releaseVersion: number | null;
+  answered: boolean; vote: AssistFeedback | null; rating: number | null; covered: boolean | null; expanded: boolean | null;
+  handover: boolean; ticketAfterChat: boolean; ticket: InsightTicket | null; signals: SituationSignal[];
+};
+
+/** GET /api/integration/helpdesk/insights: oldest first by (createdAt, id); until is the window's end, the same on every page. */
+export type InsightsPage = { turns: InsightTurn[]; nextCursor: string | null; until: string };
+export type InsightsCursor = { createdAt: string; id: string; until: string };
+export type InsightsQuery = { since: string; until: string | null; cursor: InsightsCursor | null; limit: number };
+
+function isoParam(params: URLSearchParams, field: string, required: boolean): string | null {
+  const raw = (params.get(field) || "").trim();
+  if (!raw) return required ? invalid(field, `${field} is required (an ISO 8601 date-time).`) : null;
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(raw) || !Number.isFinite(Date.parse(raw))) invalid(field, `${field} must be an ISO 8601 date-time.`);
+  return new Date(raw).toISOString();
+}
+
+export function encodeInsightsCursor(cursor: InsightsCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
+function decodeInsightsCursor(raw: string): InsightsCursor {
+  try {
+    const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Record<string, unknown>;
+    if (typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) && isUuid(value.id) && typeof value.until === "string" && Number.isFinite(Date.parse(value.until))) {
+      return { createdAt: new Date(value.createdAt).toISOString(), id: value.id.toLowerCase(), until: new Date(value.until).toISOString() };
+    }
+  } catch { /* fall through */ }
+  return invalid("cursor", "cursor is not valid.");
+}
+
+/** ?since= (required) &until= &cursor= &limit= (1-500, default 200). A cursor keeps the first page's until. */
+export function parseInsightsQuery(params: URLSearchParams): InsightsQuery {
+  const since = isoParam(params, "since", true) as string;
+  const until = isoParam(params, "until", false);
+  if (until !== null && until < since) invalid("until", "until must not be before since.");
+  let limit: number = INSIGHT_LIMITS.pageDefault;
+  const limitRaw = params.get("limit");
+  if (limitRaw !== null && limitRaw !== "") {
+    if (!/^[0-9]{1,6}$/.test(limitRaw) || Number(limitRaw) < 1) invalid("limit", "limit must be a positive integer.");
+    limit = Math.min(Number(limitRaw), INSIGHT_LIMITS.pageMax);
+  }
+  const cursorRaw = params.get("cursor");
+  return { since, until, cursor: cursorRaw ? decodeInsightsCursor(cursorRaw) : null, limit };
+}
+
+/** Portal's background jobs (helpdesk_job_runs, migration 024). assist_retention: after 180 days only scrubbed text stays. */
+export const HELPDESK_JOBS = ["assist_retention"] as const;
+export type HelpdeskJob = (typeof HELPDESK_JOBS)[number];
+export const JOB_TRIGGERS = ["schedule", "manual"] as const;
+export type JobTrigger = (typeof JOB_TRIGGERS)[number];
+export const JOB_STATUSES = ["running", "succeeded", "failed"] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+export const ASSIST_RETENTION_DAYS = 180;
+
+/** One run: day is its UTC date; cutoff the createdAt before which raw text is replaced; moreDue: it stopped at its batch bound. */
+export type HelpdeskJobRun = {
+  id: string; job: HelpdeskJob; day: string; trigger: JobTrigger; status: JobStatus; attempts: number; startedAt: string; finishedAt: string | null;
+  cutoff: string; rowsScrubbed: number; moreDue: boolean; requestedBy: AgentIdentity | null; errorCode: string | null;
+};
+/** GET /api/integration/helpdesk/jobs/assist-retention: the newest runs first. */
+export type JobRunsResponse = { job: HelpdeskJob; retentionDays: number; runs: HelpdeskJobRun[] };
+/** POST /api/integration/helpdesk/jobs/assist-retention/run (Idempotency-Key): already_running = another instance holds the job. */
+export type JobRunResponse = { outcome: "completed" | "already_running"; run: HelpdeskJobRun | null };
+
+/** POST .../run body: { agent: { id, name } }, the staff member BackOffice checked (role-gated and audited there). */
+export function parseJobRunInput(value: unknown): { agent: AgentIdentity } {
+  return { agent: agentIdentity(record(value)) };
+}
