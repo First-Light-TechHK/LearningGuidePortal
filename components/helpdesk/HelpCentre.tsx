@@ -3,8 +3,11 @@
 // page loads the articles (modules/helpdesk/helpCentre.ts); this renders them.
 // Search is debounced into ?q= so Admin's own retrieval answers it on the
 // server; ?category= and ?faq= are plain links. Answers open inline through
-// the shared Markdown renderer. Search results, the empty states, the
-// expanded answer and the fallback notice have no frame (待视觉验收).
+// the shared Markdown renderer. The box follows ?q= when the page changes in
+// place (a topic link, All articles, Back); while a search is on its way the
+// list is aria-busy, and a polite status announces how many articles it found.
+// Search results, the empty states, the expanded answer, the fallback and
+// missing-article notices have no frame (待视觉验收).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, CircleHelp, Search } from "lucide-react";
@@ -27,15 +30,29 @@ export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB
   const root = `/${locale}/help`;
   const [value, setValue] = useState(view.q);
   const [open, setOpen] = useState<Set<string>>(() => new Set(view.openId ? [view.openId] : []));
+  const [waiting, setWaiting] = useState<string | null>(null);
+  const awaited = useRef<string | null>(null);
   const typed = useRef(false);
   const sent = useRef(view.q);
 
-  useEffect(() => { sent.current = view.q; }, [view.q]);
+  // The answer to our own search keeps what the learner typed since; any other
+  // new page (a topic link, All articles, Back) is the truth, so the box shows its words.
+  useEffect(() => {
+    const ours = awaited.current !== null && awaited.current === view.q;
+    awaited.current = null;
+    setWaiting(null);
+    if (ours) return;
+    sent.current = view.q;
+    typed.current = false;
+    setValue(view.q);
+  }, [view.q, view.mode, view.category]);
 
   function search(raw: string) {
     const q = raw.trim();
     if (q === sent.current) return;
     sent.current = q;
+    awaited.current = q;
+    setWaiting(q);
     router.replace(q ? `${root}?${new URLSearchParams({ q })}` : root);
   }
 
@@ -81,13 +98,15 @@ export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB
       </form>
     </section>
     <div className="help-centre-content">
-      <section className="help-centre-list" aria-labelledby="help-centre-list-title">
+      <section className="help-centre-list" aria-labelledby="help-centre-list-title" aria-busy={waiting !== null}>
         <header className="help-centre-list-header">
           <h2 id="help-centre-list-title">{title}</h2>
           <p>{subtitle}</p>
           {view.mode === "popular" ? null : <Link prefetch={false} className="help-centre-back" href={root}>{copy.allArticles}</Link>}
         </header>
+        <p className="helpdesk-visually-hidden help-centre-status" role="status" aria-live="polite">{view.mode === "search" && waiting === null ? fillTemplate(copy.searchCount, { count: String(view.articles.length) }) : ""}</p>
         {view.fallback ? <p className="help-centre-notice" role="status">{copy.unavailable}</p> : null}
+        {view.missingFaq ? <p className="help-centre-notice" role="status">{copy.faqMissing}</p> : null}
         {view.articles.length === 0 ? <p className="help-centre-empty">{empty}</p> : <ul className="help-centre-articles">
           {view.articles.map((article) => {
             const expanded = open.has(article.id);

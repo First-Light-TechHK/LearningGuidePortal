@@ -66,6 +66,32 @@ test("?faq= opens an article in the list, or loads it by id and puts it first; a
   const unknown = await loadHelpCentre(fakeClient({ list: () => [faq(1)] }).client, "en-GB", { ...NONE, faq: id(8) }, STATIC);
   assert.equal(unknown.openId, null);
   assert.deepEqual(unknown.articles.map((article) => article.id), [id(1)]);
+  assert.equal(inList.missingFaq, false);
+  assert.equal(loaded.missingFaq, false);
+  assert.equal(unknown.missingFaq, true, "an archived or unknown ?faq= says so instead of silently showing the list");
+  const plain = await loadHelpCentre(fakeClient({ list: () => [faq(1)] }).client, "en-GB", NONE, STATIC);
+  assert.equal(plain.missingFaq, false);
+});
+
+test("?faq= never adds an unrelated FAQ to search results or to another topic's list", async () => {
+  const other = faq(9, { category: "other", popular: false });
+  const search = fakeClient({ list: () => [faq(4)], one: () => other });
+  const found = await loadHelpCentre(search.client, "en-GB", { q: "password", category: null, faq: id(9) }, STATIC);
+  assert.deepEqual(found.articles.map((article) => article.id), [id(4)], "search results are Admin's matches only");
+  assert.equal(found.openId, null);
+  assert.equal(found.missingFaq, false);
+  assert.deepEqual(search.calls.map((call) => call[0]), ["faqs"], "a search does not load the deep link by id");
+  const topic = fakeClient({ list: () => [faq(5, { category: "account_technical" })], one: () => other });
+  const listed = await loadHelpCentre(topic.client, "en-GB", { q: "", category: "account_technical", faq: id(9) }, STATIC);
+  assert.deepEqual(listed.articles.map((article) => article.id), [id(5)], "an FAQ from another topic is not shown under this one");
+  assert.equal(listed.openId, null);
+  assert.equal(listed.missingFaq, false);
+  const same = fakeClient({ list: () => [faq(5, { category: "other" })], one: () => other });
+  const sameTopic = await loadHelpCentre(same.client, "en-GB", { q: "", category: "other", faq: id(9) }, STATIC);
+  assert.deepEqual(sameTopic.articles.map((article) => article.id), [id(9), id(5)], "an FAQ of this topic past the list limit is loaded and opened");
+  assert.equal(sameTopic.openId, id(9));
+  const gone = await loadHelpCentre(fakeClient({ list: () => [faq(5, { category: "other" })], one: () => null }).client, "en-GB", { q: "", category: "other", faq: id(9) }, STATIC);
+  assert.equal(gone.missingFaq, true);
 });
 
 test("Admin unavailable with nothing cached: the static copy, searchable in the page, never an error", async () => {
@@ -79,6 +105,11 @@ test("Admin unavailable with nothing cached: the static copy, searchable in the 
   assert.equal(view.openId, null);
   const searched = await loadHelpCentre(fakeClient({ list: () => null }).client, "en-GB", { q: "PAYMENT", category: null, faq: null }, STATIC);
   assert.deepEqual(searched.articles.map((article) => article.question), [STATIC[1].question], "the fallback is filtered by the search words");
+  assert.equal(view.missingFaq, false, "with Admin down the deep link cannot be checked");
+  const topic = await loadHelpCentre(fakeClient({ list: () => null }).client, "en-GB", { q: "", category: "other", faq: null }, STATIC);
+  assert.equal(topic.mode, "popular", "the static copy has no topics, so it is not shown under a topic's name");
+  assert.equal(topic.category, null);
+  assert.equal(topic.articles.length, STATIC.length);
   const thrown = await loadHelpCentre({ async faqs() { throw new Error("boom"); }, async faq() { return null; } }, "en-GB", NONE, STATIC);
   assert.equal(thrown.fallback, true, "a thrown error is the fallback too");
 });

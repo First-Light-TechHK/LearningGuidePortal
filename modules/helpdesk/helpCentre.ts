@@ -1,9 +1,12 @@
 // Server-side data for the public Help Centre, /{locale}/help (Figma 1387:2,
 // tickets-v2-figma-addendum §4d). Admin owns the FAQs; this only decides what
 // to ask for (popular, a ?q= search through Admin's own retrieval, or a
-// ?category=), loads a ?faq= deep link by id when it is not listed, and falls
-// back to the static messages.helpPage.design copy when Admin is unavailable
-// and nothing is cached, so the page never breaks. The 60 s cache and
+// ?category=), loads a ?faq= deep link by id when it is not listed (in the
+// popular list, or in its own topic; never into search results or another
+// topic), says so when that FAQ is archived or unknown, and falls back to the
+// static messages.helpPage.design copy when Admin is unavailable and nothing
+// is cached, so the page never breaks (the static copy has no topics, so a
+// ?category= falls back to the popular heading). The 60 s cache and
 // stale-on-error live in the Admin client.
 import type { FaqCategory, FaqFilter, HelpCentreQuery, HelpFaq, HelpdeskLocale } from "@/contracts/helpdesk";
 import { supportPaths } from "./learnerPages";
@@ -24,6 +27,8 @@ export type HelpCentreView = {
   openId: string | null;
   /** True when Admin was unavailable and the static copy is shown. */
   fallback: boolean;
+  /** True when the ?faq= deep link names an FAQ Admin no longer publishes. */
+  missingFaq: boolean;
 };
 
 export const HELP_POPULAR_LIMIT = 10;
@@ -48,18 +53,20 @@ export async function loadHelpCentre(client: HelpCentreClient, locale: HelpdeskL
   if (!listed) {
     const words = query.q.toLocaleLowerCase(locale);
     const items = fallbackItems.map((item, index) => ({ id: `static-${index}`, category: null, question: item.question, answer: item.answer }));
-    return { ...base, articles: words ? items.filter((item) => `${item.question}\n${item.answer}`.toLocaleLowerCase(locale).includes(words)) : items, openId: null, fallback: true };
+    return { ...base, mode: mode === "category" ? "popular" : mode, category: null, articles: words ? items.filter((item) => `${item.question}\n${item.answer}`.toLocaleLowerCase(locale).includes(words)) : items, openId: null, fallback: true, missingFaq: false };
   }
   const articles = listed.map(article);
   let openId: string | null = null;
+  let missingFaq = false;
   if (query.faq) {
     if (articles.some((item) => item.id === query.faq)) openId = query.faq;
-    else {
+    else if (mode !== "search") {
       const one = await safely(() => client.faq(query.faq as string, locale));
-      if (one) { articles.unshift(article(one)); openId = one.id; }
+      if (!one) missingFaq = true;
+      else if (mode === "popular" || one.category === base.category) { articles.unshift(article(one)); openId = one.id; }
     }
   }
-  return { ...base, articles, openId, fallback: false };
+  return { ...base, articles, openId, fallback: false, missingFaq };
 }
 
 /** Contact Support: the form for a signed-in learner; sign-in first (and back) for a visitor. */

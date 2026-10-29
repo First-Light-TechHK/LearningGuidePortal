@@ -2,7 +2,9 @@
 // the real page (server component) against a stubbed Admin client. Popular
 // articles with their summary line and category link, inline answers through
 // the shared Markdown renderer, debounced ?q= search with results and an empty
-// state, ?category=, the ?faq= deep link (listed or loaded by id), the static
+// state, the box following ?q= on in-place navigation, the busy list and the
+// result count, ?category=, the ?faq= deep link (listed, loaded by id, or
+// missing; never added to search results or another topic), the static
 // fallback when Admin is down, the Contact Support button signed-in and
 // signed-out, and the 1387:2 measurements at 1440 px, in en-GB and zh-CN.
 import assert from "node:assert/strict";
@@ -148,6 +150,88 @@ test("?faq= opens and scrolls to the article, loading it by id when it is not li
   }
 });
 
+test("the search box follows ?q= when the page changes in place: a topic link, All articles, browser Back", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale);
+    const { page } = harness;
+    const v = view(page, locale);
+    const searchFaqs = { invoice: [FAQS[3]], inv: [FAQS[3], FAQS[4]] };
+    const go = (searchParams: Record<string, string>) => mountHelp(page, { locale, faqs: FAQS, search: searchFaqs, searchParams, inPlace: true });
+    await v.search.pressSequentially("invoice", { delay: 20 });
+    await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 0, null, { timeout: 3_000 });
+    await go({ q: "invoice" });
+    assert.equal(await v.search.inputValue(), "invoice");
+    await go({ category: "courses_learning" });
+    assert.equal(await page.getByRole("heading", { level: 2 }).first().textContent(), v.copy.categories.courses_learning);
+    assert.equal(await v.search.inputValue(), "", "a topic link clears the box");
+    await go({ q: "inv" });
+    assert.equal(await v.search.inputValue(), "inv", "Back to an older search shows its words");
+    await go({});
+    assert.equal(await v.search.inputValue(), "", "All articles clears the box");
+    await page.waitForTimeout(400);
+    assert.deepEqual(await harness.nav(), [["replace", `/${locale}/help?q=invoice`]], "following the URL does not start a search of its own");
+    await v.search.pressSequentially("invoice", { delay: 20 });
+    await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 1, null, { timeout: 3_000 });
+    assert.deepEqual((await harness.nav())[1], ["replace", `/${locale}/help?q=invoice`], "the same words can be searched again");
+    await page.close();
+  }
+});
+
+test("words typed while a search is on its way are kept when its results land, and searched next", async () => {
+  const locale: Locale = "en-GB";
+  const harness = await open(locale);
+  const { page } = harness;
+  const v = view(page, locale);
+  await v.search.pressSequentially("invoice", { delay: 20 });
+  await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 0, null, { timeout: 3_000 });
+  await v.search.pressSequentially(" fee", { delay: 20 });
+  await mountHelp(page, { locale, faqs: FAQS, search: { invoice: [FAQS[3]] }, searchParams: { q: "invoice" }, inPlace: true });
+  assert.equal(await v.search.inputValue(), "invoice fee");
+  await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 1, null, { timeout: 3_000 });
+  assert.deepEqual((await harness.nav())[1], ["replace", `/${locale}/help?q=invoice+fee`]);
+  await page.close();
+});
+
+test("a search marks the list busy until its results land, and announces how many it found", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale);
+    const { page } = harness;
+    const v = view(page, locale);
+    const list = page.locator(".help-centre-list");
+    const status = page.locator(".help-centre-status");
+    assert.equal(await list.getAttribute("aria-busy"), "false");
+    assert.equal(await status.getAttribute("role"), "status");
+    assert.equal(await status.textContent(), "");
+    await v.search.pressSequentially("invoice", { delay: 20 });
+    await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 0, null, { timeout: 3_000 });
+    assert.equal(await list.getAttribute("aria-busy"), "true", "busy while the server answers");
+    await mountHelp(page, { locale, faqs: FAQS, search: { invoice: [FAQS[3]] }, searchParams: { q: "invoice" }, inPlace: true });
+    assert.equal(await list.getAttribute("aria-busy"), "false");
+    assert.equal(await status.textContent(), fillTemplate(v.copy.searchCount, { count: "1" }));
+    await mountHelp(page, { locale, faqs: FAQS, searchParams: { q: "zzz" }, inPlace: true });
+    assert.equal(await status.textContent(), fillTemplate(v.copy.searchCount, { count: "0" }));
+    await page.close();
+  }
+});
+
+test("?faq= for an archived or unknown FAQ says so above the list; it never joins search results or another topic", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale, { searchParams: { faq: id(99) } });
+    const { page } = harness;
+    const v = view(page, locale);
+    const notice = page.locator(".help-centre-notice");
+    assert.equal(await notice.textContent(), v.copy.faqMissing);
+    assert.equal(await notice.getAttribute("role"), "status");
+    assert.deepEqual(await v.questions.allTextContents(), FAQS.slice(0, 6).map((faq) => faq.question), "the popular list is still there");
+    await mountHelp(page, { locale, faqs: FAQS.slice(0, 6), extra: [FAQS[6]], search: { password: [FAQS[0]] }, searchParams: { q: "password", faq: id(7) } });
+    assert.deepEqual(await v.questions.allTextContents(), [FAQS[0].question], "search results are Admin's matches only");
+    assert.equal(await notice.count(), 0);
+    await mountHelp(page, { locale, faqs: FAQS.slice(0, 6), extra: [FAQS[6]], searchParams: { category: "account_technical", faq: id(7) } });
+    assert.deepEqual(await v.questions.allTextContents(), [FAQS[0].question], "an FAQ of another topic is not listed under this one");
+    await page.close();
+  }
+});
+
 test("Contact Support goes to the form when signed in and through sign-in when not; Admin down shows the static copy", async () => {
   for (const locale of LOCALES) {
     const harness = await open(locale, { user: { id: "user_1", email: "emily@example.com", nickname: "Emily" } });
@@ -161,6 +245,9 @@ test("Contact Support goes to the form when signed in and through sign-in when n
     assert.deepEqual(await v.questions.allTextContents(), design.faqItems.map((item) => item.question), "the static copy keeps the page useful");
     assert.equal(await page.locator(".help-centre-notice").textContent(), v.copy.unavailable);
     assert.equal(await v.articles.first().locator(".help-centre-article-category").count(), 0, "static items have no category");
+    await mountHelp(page, { locale, fail: true, searchParams: { category: "other" } });
+    assert.equal(await page.getByRole("heading", { level: 2 }).first().textContent(), v.copy.popularTitle, "the static copy is not shown under a topic's name");
+    assert.equal(await v.topics.nth(3).getAttribute("aria-current"), null);
     await page.close();
   }
 });

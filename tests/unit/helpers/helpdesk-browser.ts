@@ -31,7 +31,7 @@ window.__nav=[];
 window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips}/>);
 window.mountDetail=p=>root.render(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
 window.mountNav=p=>root.render(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
-window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});root.render(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
+window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});root.render(<React.Fragment key={p.inPlace?mounts:++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
 window.mountList=async p=>{window.__list={...p,identities:[]};try{const page=await EnquiriesPage({params:Promise.resolve({locale:p.locale})});root.render(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
 `;
 
@@ -153,8 +153,11 @@ export async function mountList(page: Page, props: ListProps): Promise<{ result:
   return { result, identities };
 }
 
-export type HelpProps = { locale: Locale; user?: { id: string; email?: string; nickname?: string } | null; searchParams?: Record<string, string>; faqs?: unknown[]; search?: Record<string, unknown[]>; extra?: unknown[]; fail?: boolean };
-/** Renders the real /{locale}/help page (server component) against the stubbed Admin client; returns what it asked Admin. */
+export type HelpProps = { locale: Locale; user?: { id: string; email?: string; nickname?: string } | null; searchParams?: Record<string, string>; faqs?: unknown[]; search?: Record<string, unknown[]>; extra?: unknown[]; fail?: boolean; inPlace?: boolean };
+/**
+ * Renders the real /{locale}/help page (server component) against the stubbed Admin client; returns what it asked Admin.
+ * inPlace re-renders into the mounted tree, as a client-side navigation (a link, router.replace, Back) does, so client state survives.
+ */
 export async function mountHelp(page: Page, props: HelpProps): Promise<{ result: string; requests: Array<{ kind: string; locale: string; filter?: Record<string, unknown>; id?: string }> }> {
   const result = await page.evaluate((p) => (window as unknown as { mountHelp(p: unknown): Promise<string> }).mountHelp(p), { user: null, ...props });
   const requests = await page.evaluate(() => (window as unknown as { __help: { requests: [] } }).__help.requests);

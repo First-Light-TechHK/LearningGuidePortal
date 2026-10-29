@@ -949,6 +949,8 @@
     "popularEmpty": "There are no help articles yet.",
     "allArticles": "Back to popular articles",
     "unavailable": "Help articles are temporarily unavailable. Here are some common answers.",
+    "faqMissing": "This article is no longer available. Here are some other answers that may help.",
+    "searchCount": "Articles found: {count}",
     "topicsTitle": "Popular topics",
     "contactTitle": "Contact Support",
     "contactBody": "Still need help? Send a message to our support team. We will reply by email.",

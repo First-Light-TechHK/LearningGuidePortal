@@ -949,6 +949,8 @@
     "popularEmpty": "暂时还没有帮助文章。",
     "allArticles": "返回热门文章",
     "unavailable": "帮助文章暂时无法加载，以下是一些常见解答。",
+    "faqMissing": "这篇文章已不再提供。以下是其他可能有帮助的解答。",
+    "searchCount": "找到的文章：{count} 篇",
     "topicsTitle": "热门主题",
     "contactTitle": "联系客服",
     "contactBody": "仍需帮助？给客服团队留言，我们会通过邮件回复你。",
