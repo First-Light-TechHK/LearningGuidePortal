@@ -24,6 +24,7 @@ test("course outline percentages only increase across revisits, modes, concurren
     assert.equal((await send(PREVIEW_LP, "t3", "text"))!.progress, 60);
     const old = await send(PREVIEW_LP, "t2", "text");
     assert.equal(old!.progress, 60); assert.equal(old!.knowledgePositions?.text?.contentId, "t2", "resume position may move without lowering progress");
+    assert.deepEqual(old!.highestProgress, { progress: 60, mode: "text", lessonId: PREVIEW_LP, contentId: "t3" });
     const sameId = randomUUID(); const same = await send(PREVIEW_LP, "t3", "text", sameId);
     const beforeReplay = (await readProductData()).studyEvents.length;
     assert.deepEqual(await send(PREVIEW_LP, "t1", "text", sameId), same);
@@ -37,6 +38,7 @@ test("course outline percentages only increase across revisits, modes, concurren
     assert.equal((await send(PREVIEW_LP, "v1", "video"))!.progress, 60, "switching mode retains the course maximum");
     await Promise.all([send(PRIVATE_LP, "t4", "text"), send(PREVIEW_LP, "v2", "video")]);
     assert.equal((await store.getLearningOverview(user.id)).courses[0].progress, 80);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).actionLessonId, PRIVATE_LP, "Start follows the maximum even if a concurrent video cursor returns to the first Lesson");
     const final = await store.recordStudyEvent({ ...complete, lessonId: PRIVATE_LP, clientEventId: randomUUID() });
     assert.equal(final!.progress, 100); assert.ok(final!.completedAt);
     await send(PREVIEW_LP, "t1", "text");

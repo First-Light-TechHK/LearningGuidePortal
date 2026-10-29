@@ -5,6 +5,7 @@
   "videoPlay": "播放",
   "videoPause": "暂停",
   "videoSeek": "播放进度",
+  "videoVolume": "音量",
   "videoMute": "静音",
   "videoUnmute": "取消静音",
   "videoFullscreen": "切换全屏",

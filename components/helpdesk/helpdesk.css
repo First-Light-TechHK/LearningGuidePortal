@@ -1,0 +1,380 @@
+/* Helpdesk learner pages.
+   Contact Support + AI Support Assistant chat panel: Figma 1216:6. Submit-time AI Support Assistant modal: Figma 1333:249.
+   Everything marked 待视觉验收 has no frame yet and reuses the account page look.
+   All values live here so the pages are easy to adjust when the design changes. */
+
+.portal-page.helpdesk-page { background: #f9fafb; }
+
+/* ---- page card (Figma "Contact Support Content") ---- */
+.helpdesk-card { width: calc(100% - 41px); max-width: 1399px; min-height: calc(100vh - 70px - 40px); margin: 20px auto 20px max(20px, calc(50% - 700px)); box-sizing: border-box; overflow: visible; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, .1), 0 1px 2px -1px rgba(0, 0, 0, .1); }
+.helpdesk-card-content { display: flex; gap: 48px; align-items: flex-start; padding: 40px 19px 40px 48px; }
+.helpdesk-divider { flex: 0 0 1px; width: 1px; height: 800px; background: #f3f4f6; }
+
+/* ---- form ---- */
+.helpdesk-form { display: flex; flex: 0 1 780px; flex-direction: column; gap: 24px; min-width: 0; }
+.helpdesk-form-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.helpdesk-form-title h1, .helpdesk-success h1 { margin: 0; color: #111827; font-size: 24px; font-weight: 700; line-height: normal; }
+.helpdesk-text-link { color: #2563eb; font-size: 14px; font-weight: 500; text-decoration: none; }
+.helpdesk-text-link:hover { text-decoration: underline; }
+.helpdesk-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.helpdesk-label { display: flex; gap: 2px; color: #374151; font-size: 14px; font-weight: 500; line-height: normal; }
+.helpdesk-label > span[aria-hidden] { color: #ef4444; }
+.helpdesk-composer .helpdesk-label > span[aria-hidden] { display: none; }
+.helpdesk-input { width: 100%; height: 44px; box-sizing: border-box; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #374151; font: inherit; font-size: 14px; line-height: normal; }
+.helpdesk-input::placeholder { color: #9ca3af; opacity: 1; }
+.helpdesk-input:focus, .helpdesk-select-trigger:focus-visible { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.helpdesk-input[aria-invalid="true"], .helpdesk-select-trigger[aria-invalid="true"] { border-color: #ef4444; }
+.helpdesk-input:disabled { background: #f9fafb; }
+.helpdesk-textarea { height: 120px; resize: none; }
+.helpdesk-field-error { margin: 0; color: #dc2626; font-size: 12px; line-height: 16px; }
+.helpdesk-inline-error { margin: 0; padding: 10px 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; line-height: 20px; }
+.helpdesk-email-note { margin: 0; color: #6b7280; font-size: 12px; font-weight: 600; line-height: normal; }
+
+/* Enquiry Type select (Figma 1262:12): opens in place, pushing the form down as in the frame. */
+.helpdesk-select { display: flex; flex-direction: column; }
+.helpdesk-select-trigger { display: flex; height: 44px; align-items: center; justify-content: space-between; box-sizing: border-box; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #6b7280; font: inherit; font-size: 14px; line-height: normal; text-align: left; cursor: pointer; }
+.helpdesk-select-trigger.has-value { color: #374151; }
+.helpdesk-select-trigger svg { flex: 0 0 16px; color: #6b7280; }
+.helpdesk-select.is-open .helpdesk-select-trigger { padding: 9px 13px; border: 2px solid #3b82f6; border-radius: 8px 8px 0 0; box-shadow: none; }
+/* Figma draws the list border inside its 160px (4 × 40) box, so it is an overlay here, not extra height. */
+.helpdesk-select-options { position: relative; margin: 0; padding: 0; overflow: hidden; border-radius: 0 0 8px 8px; background: #fff; list-style: none; }
+.helpdesk-select-options::after { position: absolute; inset: 0; border: 1px solid #e5e7eb; border-top: 0; border-radius: inherit; content: ""; pointer-events: none; }
+.helpdesk-select-options li { display: flex; height: 40px; align-items: center; box-sizing: border-box; padding: 10px 14px; color: #374151; font-size: 14px; line-height: normal; cursor: pointer; }
+.helpdesk-select-options li.is-active, .helpdesk-select-options li[aria-selected="true"] { background: #eff6ff; color: #2563eb; }
+
+/* Attachment drop zone (Figma 1262:37) */
+.helpdesk-attachments { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.helpdesk-dropzone { display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; padding: 11px 15px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; }
+.helpdesk-dropzone:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+.helpdesk-dropzone.is-dragging { border-color: #3b82f6; border-style: dashed; background: #eff6ff; }
+.helpdesk-dropzone-text { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.helpdesk-dropzone-clip { flex: 0 0 20px; color: #9ca3af; }
+.helpdesk-dropzone-text p { margin: 0; color: #374151; font-size: 13px; line-height: 16px; }
+.helpdesk-dropzone-text p + p { margin-top: 2px; color: #9ca3af; font-size: 11px; line-height: 13px; }
+.helpdesk-upload-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 7px 13px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #374151; font: inherit; font-size: 13px; font-weight: 500; line-height: 16px; cursor: pointer; }
+.helpdesk-upload-button:hover { background: #f3f4f6; }
+.helpdesk-file-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+/* File chip (Figma 1341:29) */
+.helpdesk-file-chip { display: inline-flex; max-width: 100%; align-items: center; gap: 8px; box-sizing: border-box; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; color: #374151; text-decoration: none; }
+.helpdesk-file-thumb { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; overflow: hidden; border-radius: 4px; background: #e5e7eb; color: #9ca3af; }
+.helpdesk-file-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.helpdesk-file-name { overflow: hidden; color: #374151; font-size: 12px; line-height: normal; text-overflow: ellipsis; white-space: nowrap; }
+.helpdesk-file-size { flex: 0 0 auto; color: #6b7280; font-size: 11px; line-height: normal; }
+.helpdesk-file-chip button { display: grid; width: 22px; height: 22px; place-items: center; padding: 0; border: 0; border-radius: 11px; background: transparent; color: #6b7280; cursor: pointer; }
+.helpdesk-file-chip button:hover { background: #e5e7eb; color: #111827; }
+
+/* Buttons (Figma 1262:56) */
+.helpdesk-form-actions { display: flex; align-items: center; justify-content: space-between; }
+.helpdesk-cancel-button { padding: 10px 20px; border: 0; background: #fff; color: #374151; font: inherit; font-size: 14px; font-weight: 500; line-height: normal; cursor: pointer; }
+.helpdesk-cancel-button:hover { color: #111827; text-decoration: underline; }
+.helpdesk-submit-button, .helpdesk-secondary-button, .helpdesk-danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; padding: 10px 24px; border: 1px solid #2563eb; border-radius: 8px; background: #2563eb; color: #fff !important; font: inherit; font-size: 14px; font-weight: 500; line-height: normal; text-decoration: none; cursor: pointer; }
+.helpdesk-submit-button:hover { border-color: #1d4ed8; background: #1d4ed8; }
+/* Figma 1262:59 is 150 × 37 with no stroke: the 1px border comes out of the padding. */
+.helpdesk-form-actions .helpdesk-submit-button { padding: 9px 23px; line-height: 17px; }
+.helpdesk-secondary-button { border-color: #d1d5db; background: #fff; color: #374151 !important; }
+.helpdesk-secondary-button:hover { background: #f3f4f6; }
+.helpdesk-danger-button { border-color: #dc2626; background: #dc2626; }
+.helpdesk-submit-button:disabled, .helpdesk-secondary-button:disabled, .helpdesk-danger-button:disabled, .helpdesk-cancel-button:disabled, .helpdesk-upload-button:disabled, .helpdesk-feedback-button:disabled { cursor: not-allowed; opacity: .6; }
+
+/* ---- AI Support Assistant chat panel (Figma 1262:62 / 1394:2). Typing dots, errors, fallback and focus states are 待视觉验收 ---- */
+.helpdesk-chat { display: flex; flex: 0 0 455px; flex-direction: column; width: 455px; height: 800px; box-sizing: border-box; overflow: hidden; border: 1px solid #dce5f2; border-radius: 11px; background: #fff; }
+.helpdesk-chat p { margin: 0; }
+.helpdesk-chat-header { display: flex; flex: 0 0 51px; flex-direction: column; justify-content: flex-start; gap: 2px; width: 426px; height: 51px; box-sizing: border-box; padding: 7px 12px 0 14px; }
+.helpdesk-chat-header h2 { margin: 0; color: #17283f; font-size: 15px; font-weight: 600; line-height: 18px; }
+.helpdesk-chat-header p { color: #7a8ba1; font-size: 11px; line-height: 13px; }
+.helpdesk-chat-divider { flex: 0 0 1px; width: 426px; height: 1px; background: #e4ebf3; }
+.helpdesk-chat-messages { display: flex; flex: 0 0 664px; flex-direction: column; align-items: flex-start; height: 664px; box-sizing: border-box; padding: 13px 38px 13px 11px; overflow-y: auto; background: #f7faff; line-height: normal; overscroll-behavior: contain; }
+.helpdesk-chat-messages > * { flex: 0 0 auto; width: 404px; max-width: 100%; }
+.helpdesk-chat-messages > * + .helpdesk-chat-mine, .helpdesk-chat-messages > * + .helpdesk-chat-row { margin-top: 9px; }
+.helpdesk-chat-chips + .helpdesk-chat-mine, .helpdesk-chat-chips + .helpdesk-chat-row { margin-top: 17px !important; }
+.helpdesk-chat-row { display: flex; align-items: flex-start; gap: 8px; }
+.helpdesk-chat-avatar { display: grid; flex: 0 0 31px; width: 31px; height: 31px; place-items: center; border-radius: 16px; background: #e0ecff; color: #2468f5; }
+.helpdesk-chat-greeting { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; width: 365px; box-sizing: border-box; padding: 12px 13px; border: 1px solid #e1e9f4; border-radius: 10px; background: #fff; }
+.helpdesk-chat-greeting-title { color: #1c2d48; font-size: 14px; font-weight: 600; line-height: 17px; }
+.helpdesk-chat-greeting-body { color: #465a75; font-size: 12px; line-height: 15px; }
+.helpdesk-chat-greeting-limit { color: #60728d; font-size: 11px; line-height: 13px; }
+.helpdesk-chat-ideas { padding: 0; border: 0; background: none; color: #2370e9; font: inherit; font-size: 11px; font-weight: 500; line-height: 13px; text-align: left; cursor: pointer; }
+.helpdesk-chat-ideas:hover { text-decoration: underline; }
+.helpdesk-chat-try { margin-top: 10px !important; color: #516784; font-size: 12px; font-weight: 600; line-height: 15px; }
+/* Figma 1394:30 is a 124px box holding 3 × 36 + 2 × 7 = 122px of chips. */
+.helpdesk-chat-chips { display: flex; flex-direction: column; gap: 7px; margin: 9px 0 2px; padding: 0; list-style: none; }
+.helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 7px 12px; border: 1px solid #dce7f7; border-radius: 8px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; }
+.helpdesk-chat-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.helpdesk-chat-chip svg { flex: 0 0 14px; color: #7a8ba3; }
+.helpdesk-chat-chip:hover:not(:disabled) { border-color: #b8d2fb; background: #f7faff; }
+.helpdesk-chat-chip:disabled { cursor: default; opacity: .7; }
+/* Figma 1394:44: a 48px row with the 46px bubble centred in it. */
+.helpdesk-chat-mine { display: flex; min-height: 48px; align-items: center; justify-content: flex-end; }
+.helpdesk-chat-question { width: 281px; max-width: 100%; min-height: 46px; box-sizing: border-box; padding: 13px 12px 8px; border-radius: 10px; background: #e0ecff; color: #254772; font-size: 12px; font-weight: 500; line-height: 15px; overflow-wrap: anywhere; white-space: pre-wrap; }
+/* Figma 1394:54 is 102px tall: 1 + 11 + text + 6 + link + 6 + 28 feedback row, clipped at the bottom. */
+.helpdesk-chat-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 365px; box-sizing: border-box; padding: 11px 11px 6px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; }
+.helpdesk-chat-answer-text, .helpdesk-chat-fallback { color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
+.helpdesk-chat-answer-text { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.helpdesk-chat-answer-text ol, .helpdesk-chat-answer-text ul { margin: 0; padding-left: 18px; }
+.helpdesk-chat-answer-text a { color: #1f6cf4; }
+.helpdesk-chat-related { color: #1f6cf4; font-size: 11px; font-weight: 500; line-height: 13px; text-decoration: none; }
+.helpdesk-chat-related:hover { text-decoration: underline; }
+.helpdesk-chat-feedback { display: flex; align-items: center; gap: 10px; height: 28px; }
+.helpdesk-chat-feedback > span { width: 69px; color: #7a8ba3; font-size: 11px; line-height: 13px; }
+.helpdesk-chat-vote { display: flex; height: 25px; box-sizing: border-box; align-items: center; gap: 5px; padding: 4px 6px 4px 7px; border: 1px solid #dce8f6; border-radius: 6px; background: #f2f8ff; font: inherit; font-size: 11px; font-weight: 500; line-height: 13px; cursor: pointer; }
+.helpdesk-chat-vote-yes { min-width: 64px; color: #2c649e; }
+.helpdesk-chat-vote-no { min-width: 47px; padding: 4px 7px 4px 8px; color: #5e7089; }
+.helpdesk-chat-vote[aria-pressed="true"] { border-color: #2468f5; background: #e0ecff; color: #1f4fa8; }
+.helpdesk-chat-vote:disabled { cursor: default; }
+.helpdesk-chat-vote:disabled:not([aria-pressed="true"]) { opacity: .5; }
+.helpdesk-chat-error { width: 365px; box-sizing: border-box; padding: 11px; border: 1px solid #fecaca; border-radius: 9px; background: #fef2f2; color: #b42318; font-size: 12px; line-height: 15px; }
+.helpdesk-chat-typing { display: flex; align-items: center; gap: 4px; height: 31px; box-sizing: border-box; padding: 0 12px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; }
+.helpdesk-chat-typing > span[aria-hidden] { width: 6px; height: 6px; border-radius: 3px; background: #95a3b8; animation: helpdesk-typing 1s infinite ease-in-out; }
+.helpdesk-chat-typing > span[aria-hidden]:nth-child(2) { animation-delay: .15s; }
+.helpdesk-chat-typing > span[aria-hidden]:nth-child(3) { animation-delay: .3s; }
+@keyframes helpdesk-typing { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .helpdesk-chat-typing > span[aria-hidden] { animation: none; } }
+.helpdesk-chat-info { display: flex; align-items: center; gap: 9px; min-height: 52px; box-sizing: border-box; margin-top: 15px; padding: 9px 11px 9px 10px; border-radius: 8px; background: #ebf3ff; }
+.helpdesk-chat-info svg { flex: 0 0 19px; color: #2468f5; }
+.helpdesk-chat-info p { color: #516985; font-size: 11px; line-height: 13px; }
+.helpdesk-chat-info-stacked { display: none; }
+/* No frame (待视觉验收): a vote that was not saved, in the inline error colour. */
+.helpdesk-chat-vote-error { margin: 2px 0 0; color: #b42318; font-size: 11px; line-height: 13px; }
+/* 11px Inter in a 13px line: Figma draws the glyphs 1px lower than Chrome does. Nudge them without moving the layout. */
+.helpdesk-chat-header p, .helpdesk-chat-greeting-limit, .helpdesk-chat-ideas, .helpdesk-chat-related, .helpdesk-chat-feedback > span, .helpdesk-chat-info p { position: relative; top: 1px; }
+.helpdesk-chat-footer { display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
+.helpdesk-chat-input { flex: 0 0 351px; width: 351px; height: 70px; box-sizing: border-box; padding: 27px 11px 10px 12px; border: 1px solid #cad8ea; border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: 15px; resize: none; }
+.helpdesk-chat-input::placeholder { color: #95a3b8; opacity: 1; }
+.helpdesk-chat-input:focus { border-color: #2468f5; outline: none; box-shadow: 0 0 0 3px rgba(36, 104, 245, .12); }
+.helpdesk-chat-send { display: grid; flex: 0 0 43px; width: 43px; height: 43px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: #2468f5; color: #fff; cursor: pointer; }
+.helpdesk-chat-send:disabled { cursor: default; }
+.helpdesk-chat-send:hover:not(:disabled) { background: #1d58d6; }
+.helpdesk-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- success state (待视觉验收) ---- */
+.helpdesk-success { display: flex; flex: 0 1 780px; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; padding-top: 8px; }
+.helpdesk-success h1:focus { outline: none; }
+.helpdesk-success p { margin: 0; color: #374151; font-size: 14px; line-height: 22px; }
+.helpdesk-success-number { color: #111827; font-weight: 600; }
+.helpdesk-success-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 22px; background: #ecfdf3; color: #039855; }
+.helpdesk-success-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+
+/* ---- AI Support Assistant modal (Figma 1333:249 / 1341:6): 1032 × 900, 40px from the top, centred across ---- */
+.helpdesk-modal-backdrop { position: fixed; z-index: 60; inset: 0; display: grid; place-items: start center; padding: 40px 20px 20px; background: rgba(0, 0, 0, .4); }
+.helpdesk-modal { display: flex; width: min(1032px, 100%); height: min(900px, calc(100vh - 60px)); flex-direction: column; overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 4px 16px -4px rgba(0, 0, 0, .16), 0 8px 32px -4px rgba(0, 0, 0, .24); }
+.helpdesk-modal:focus { outline: none; }
+.helpdesk-modal-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 15px; border-bottom: 1px solid #e5e7eb; }
+.helpdesk-modal-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.helpdesk-modal-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 8px; background: #eff6ff; color: #2563eb; }
+.helpdesk-modal-heading h2 { margin: 0; color: #111827; font-size: 20px; font-weight: 600; line-height: 24px; }
+.helpdesk-modal-heading p { margin: 2px 0 0; color: #6b7280; font-size: 12px; line-height: 15px; }
+.helpdesk-modal-close { display: grid; flex: 0 0 28px; width: 28px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 14px; background: #f3f4f6; color: #6b7280; cursor: pointer; }
+.helpdesk-modal-close:hover { background: #e5e7eb; color: #111827; }
+.helpdesk-modal-body { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+/* Figma 1341:17 is 286px: the 262px card sits 20px from the top and 4px above the divider. */
+.helpdesk-modal-query { display: flex; gap: 12px; padding: 20px 20px 4px; border-bottom: 1px solid #e5e7eb; }
+.helpdesk-avatar { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 16px; background: #e5f0ff; color: #005cff; font-size: 12px; font-weight: 700; line-height: normal; }
+/* Figma 1341:21: the enquiry sits in a bordered card (stroke inside its 16 / 14px padding). */
+.helpdesk-modal-query-content { display: flex; flex: 1 1 0; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 13px 15px; border: 1px solid #e3e8f0; border-radius: 8px; background: #fff; }
+.helpdesk-modal-query-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.helpdesk-modal-query-title h3 { margin: 0; color: #111827; font-size: 16px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; }
+.helpdesk-type-tag { display: inline-flex; padding: 2px 8px; border-radius: 4px; background: #eff6ff; color: #2563eb; font-size: 11px; font-weight: 500; line-height: normal; }
+.helpdesk-modal-meta { margin: 0; color: #6b7280; font-size: 12px; line-height: 15px; }
+.helpdesk-modal-text { align-self: stretch; color: #374151; font-size: 16px; line-height: 24px; }
+.helpdesk-modal-text p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+/* Figma 1341:27 / 1341:28: lines are 6px apart; an empty line is one blank 24px line with no extra gap. */
+.helpdesk-modal-text p:not(.is-blank) + p:not(.is-blank) { margin-top: 6px; }
+.helpdesk-modal-files { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Figma 1341:33: a light-blue 924px answer box with the bot avatar on its right, on white. */
+.helpdesk-modal-answer { display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 20px; padding: 20px 36px 20px 20px; background: #fff; }
+.helpdesk-bot-avatar { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 16px; background: #2563eb; color: #fff; }
+.helpdesk-modal-answer-content { display: flex; flex: 1 1 0; flex-direction: column; gap: 12px; min-width: 0; padding: 16px 20px; border-radius: 8px; background: #e8f2ff; color: #374151; font-size: 16px; line-height: 24px; }
+.helpdesk-modal-answer-content p { margin: 0; overflow-wrap: anywhere; }
+.helpdesk-answer-greeting { color: #111827; font-weight: 600; }
+.helpdesk-answer-markdown { display: flex; flex-direction: column; gap: 12px; }
+.helpdesk-answer-markdown ol, .helpdesk-answer-markdown ul { display: flex; flex-direction: column; gap: 12px; margin: 0; padding-left: 0; list-style-position: inside; }
+.helpdesk-answer-markdown ol > li::first-line, .helpdesk-answer-markdown ol > li::marker { font-weight: 600; }
+/* Figma 1341:39: 4px between a numbered step's title line and its text. */
+.helpdesk-answer-markdown li > .md-line { display: inline-block; margin-top: 4px; vertical-align: top; }
+.helpdesk-modal-answer a, .helpdesk-message-body a { color: #2563eb; }
+.helpdesk-modal-footer { flex: 0 0 auto; border-top: 1px solid #e5e7eb; background: #fff; }
+/* Figma 1341:50: a 64px row (with the footer's top border): prompt, the 443px Yes / No group, then Edit at the right. */
+.helpdesk-modal-helpful { display: flex; flex-wrap: wrap; min-height: 63px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 20px; border-bottom: 1px solid #e5e7eb; }
+.helpdesk-modal-helpful > p { margin: 0; color: #6b7280; font-size: 13px; line-height: normal; }
+.helpdesk-modal-helpful > div { display: flex; flex: 0 1 auto; flex-wrap: wrap; min-width: min(443px, 100%); gap: 8px; }
+.helpdesk-feedback-button { display: inline-flex; min-height: 40px; box-sizing: border-box; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #374151; font: inherit; font-size: 13px; line-height: 16px; cursor: pointer; }
+.helpdesk-feedback-button:hover { background: #f9fafb; }
+.helpdesk-feedback-yes { border-color: #1d6bff; }
+.helpdesk-feedback-no { border-color: #146eff; }
+.helpdesk-modal-footer-spacer { height: 68px; }
+.helpdesk-modal-thanks { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px 20px; text-align: center; }
+.helpdesk-modal-thanks h3 { margin: 0; color: #111827; font-size: 20px; font-weight: 600; }
+.helpdesk-modal-thanks p { margin: 0; color: #6b7280; font-size: 14px; }
+/* v3 (helpdesk-v3-alternatives-rating): no Figma frame for these states — 待视觉验收. They reuse the
+   chip (.helpdesk-chat-chip), the 1333:249 answer box and buttons, and the enquiry page's star card. */
+.helpdesk-modal-thanks-status { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.helpdesk-modal-thanks .helpdesk-modal-rated { color: #027a48; }
+.helpdesk-modal-rating { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.helpdesk-modal-rating h3 { margin: 0; color: #15233a; font-size: 16px; font-weight: 600; }
+.helpdesk-modal-rating:focus { outline: none; }
+.helpdesk-modal-rating:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.helpdesk-modal-rating p.helpdesk-inline-error { color: #b91c1c; }
+.helpdesk-modal-alternatives { margin: 0; }
+.helpdesk-modal-alternatives .helpdesk-chat-chip { width: 100%; max-width: 520px; height: auto; min-height: 40px; font-size: 14px; line-height: 20px; }
+.helpdesk-answer-question { margin: 0; font-size: 16px; }
+.helpdesk-answer-question:focus { outline: none; }
+.helpdesk-answer-back { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 8px; padding: 0; border: 0; background: none; color: #2563eb; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; }
+.helpdesk-answer-back:hover { text-decoration: underline; }
+.helpdesk-answer-back:disabled { cursor: not-allowed; opacity: .6; text-decoration: none; }
+.helpdesk-chat-alternatives { align-self: stretch; margin: 2px 0 4px; }
+.helpdesk-chat-alternatives .helpdesk-chat-chip { width: 100%; }
+
+/* ---- My enquiries + enquiry page (待视觉验收; account page look) ---- */
+.portal-account-page.helpdesk-account-page > .helpdesk-account-section { min-width: 0; padding-top: 50px; padding-bottom: 64px; }
+.helpdesk-list-heading { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+.helpdesk-list-heading h1 { margin: 0; color: #15233a; line-height: 40.3px; }
+.helpdesk-list-heading p { margin: 4px 0 0; color: #64748b; font-size: 14px; }
+.helpdesk-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 28px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #fff; color: #64748b; }
+.helpdesk-empty p { margin: 0; }
+.helpdesk-enquiry-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.helpdesk-enquiry-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 23px; border: 1px solid #dbe3f0; border-radius: 10px; background: #fff; color: inherit; text-decoration: none; transition: border-color .15s ease, box-shadow .15s ease; }
+.helpdesk-enquiry-card:hover { border-color: #93b4f5; box-shadow: 0 2px 8px rgba(16, 24, 40, .06); }
+.helpdesk-enquiry-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.helpdesk-enquiry-main strong { overflow: hidden; color: #15233a; font-size: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.helpdesk-enquiry-number { color: #64748b; font-size: 12px; }
+.helpdesk-enquiry-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 6px; }
+.helpdesk-enquiry-updated { color: #64748b; font-size: 12px; }
+.helpdesk-status-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: #eff6ff; color: #2563eb; font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.helpdesk-status-assigned { background: #fff7e6; color: #b54708; }
+.helpdesk-status-waiting-user { background: #fff1e6; color: #c4320a; }
+.helpdesk-status-pending-confirm { background: #f4f3ff; color: #5925dc; }
+.helpdesk-status-closed { background: #ecfdf3; color: #027a48; }
+.helpdesk-status-cancelled { background: #f2f4f7; color: #475467; }
+
+.helpdesk-detail { display: flex; flex-direction: column; gap: 20px; max-width: 900px; }
+.helpdesk-back-link { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; color: #475569; font-size: 14px; font-weight: 500; text-decoration: none; }
+.helpdesk-back-link:hover { color: #1660d8; }
+.helpdesk-detail-header { display: flex; flex-direction: column; gap: 6px; }
+.helpdesk-detail-number, .helpdesk-detail-meta { margin: 0; color: #64748b; font-size: 13px; }
+.helpdesk-detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.helpdesk-detail-title h1 { margin: 0; color: #15233a; font-size: 28px; line-height: 36px; overflow-wrap: anywhere; }
+.helpdesk-confirm-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 18px 23px; border: 1px solid #c7d7fe; border-radius: 10px; background: #eef4ff; }
+.helpdesk-confirm-banner h2 { margin: 0; color: #15233a; font-size: 18px; font-weight: 600; }
+.helpdesk-confirm-banner p { margin: 4px 0 0; color: #475569; font-size: 13px; }
+.helpdesk-confirm-actions { display: flex; gap: 10px; }
+.helpdesk-conversation { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 23px; border: 1px solid #dbe3f0; border-radius: 10px; background: #fff; list-style: none; }
+.helpdesk-message { display: flex; max-width: 78%; flex-direction: column; gap: 6px; align-self: flex-start; }
+.helpdesk-message-learner { align-items: flex-end; align-self: flex-end; }
+.helpdesk-message-author { display: flex; align-items: baseline; gap: 8px; margin: 0; color: #64748b; font-size: 12px; }
+.helpdesk-message-author strong { color: #15233a; font-size: 13px; font-weight: 600; }
+.helpdesk-message-body { padding: 12px 14px; border-radius: 10px; background: #f3f4f6; color: #1f2937; font-size: 14px; line-height: 22px; }
+.helpdesk-message-learner .helpdesk-message-body { background: #e8f1ff; }
+.helpdesk-message-body p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.helpdesk-message-attachments { display: flex; flex-wrap: wrap; gap: 8px; }
+.helpdesk-attachment-image { display: block; width: 120px; height: 90px; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
+.helpdesk-attachment-image img { width: 100%; height: 100%; object-fit: cover; }
+.helpdesk-event { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; color: #64748b; font-size: 12px; text-align: center; }
+.helpdesk-event time::before { content: "· "; }
+.helpdesk-rating { padding: 18px 23px; border: 1px solid #dbe3f0; border-radius: 10px; background: #fff; }
+.helpdesk-rating h2 { margin: 0 0 10px; color: #15233a; font-size: 16px; font-weight: 600; }
+.helpdesk-rating p { margin: 0; color: #027a48; font-size: 14px; }
+.helpdesk-stars { display: flex; gap: 6px; }
+.helpdesk-stars button { display: grid; width: 40px; height: 40px; place-items: center; padding: 0; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #f59e0b; cursor: pointer; }
+.helpdesk-stars button:hover, .helpdesk-stars button:focus-visible { border-color: #f59e0b; background: #fffbeb; }
+.helpdesk-stars button:hover svg, .helpdesk-stars button:focus-visible svg { fill: #fbbf24; }
+.helpdesk-composer { display: flex; flex-direction: column; gap: 12px; padding: 23px; border: 1px solid #dbe3f0; border-radius: 10px; background: #fff; }
+.helpdesk-composer-hint { margin: 0; color: #64748b; font-size: 13px; }
+.helpdesk-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.helpdesk-composer-secondary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.helpdesk-withdraw-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.helpdesk-withdraw-confirm p { margin: 0; color: #991b1b; font-size: 14px; }
+.helpdesk-withdraw-confirm div { display: flex; gap: 8px; }
+.helpdesk-readonly-note { margin: 0; padding: 14px 18px; border-radius: 10px; background: #f2f4f7; color: #475467; font-size: 14px; }
+
+@media (max-width: 1320px) {
+  .portal-account-page.helpdesk-account-page > .helpdesk-account-section { padding-right: 40px; }
+}
+/* ---- smaller screens (no frame: keep the same look, avoid overflow) ---- */
+@media (max-width: 1100px) {
+  .helpdesk-card-content { flex-direction: column; gap: 32px; }
+  .helpdesk-form, .helpdesk-success { flex-basis: auto; width: 100%; }
+  .helpdesk-divider { width: 100%; height: 1px; flex-basis: auto; }
+  .helpdesk-card-content { padding-right: 48px; }
+  .helpdesk-chat { width: 100%; max-width: 455px; flex-basis: auto; }
+  .helpdesk-chat-header, .helpdesk-chat-divider, .helpdesk-chat-footer { width: 100%; }
+  .helpdesk-chat-messages { padding-right: 11px; }
+  .helpdesk-chat-messages > * { width: 100%; }
+  .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error { width: auto; flex: 1 1 0; min-width: 0; }
+  .helpdesk-chat-input { flex: 1 1 0; width: auto; min-width: 0; }
+  /* Stacked under the form: the info box points up, not left (no frame, 待视觉验收). */
+  .helpdesk-chat-info-side { display: none; }
+  .helpdesk-chat-info-stacked { display: inline; }
+}
+@media (max-width: 720px) {
+  .helpdesk-card { width: calc(100% - 24px); margin: 12px auto; }
+  .helpdesk-card-content { padding: 24px 20px; }
+  .helpdesk-dropzone { flex-wrap: wrap; }
+  .helpdesk-form-actions { flex-wrap: wrap-reverse; gap: 12px; }
+  .helpdesk-modal-backdrop { padding: 10px; }
+  .helpdesk-modal { height: calc(100vh - 20px); }
+  .helpdesk-modal-text, .helpdesk-modal-answer-content { font-size: 15px; }
+  .portal-account-page.helpdesk-account-page > .helpdesk-account-section { padding: 28px 20px 48px; }
+  .helpdesk-enquiry-card { flex-direction: column; align-items: flex-start; }
+  .helpdesk-enquiry-side { align-items: flex-start; }
+  .helpdesk-message { max-width: 92%; }
+}
+
+/* ---- public Help Centre (Figma 1387:2). Search results, empty states, the expanded answer and the fallback notice are 待视觉验收 ---- */
+.portal-page.help-centre-page { background: #fff; }
+.help-centre { color: #1d2c46; line-height: normal; }
+.help-centre-hero { display: flex; height: 255px; box-sizing: border-box; flex-direction: column; align-items: center; gap: 11px; padding: 26px 20px 20px; background: #1e61f4; text-align: center; }
+.help-centre-hero h1 { width: min(1000px, 100%); margin: 0; color: #fff; font-size: 41px; font-weight: 700; line-height: 50px; }
+.help-centre-hero > p { width: min(900px, 100%); margin: 0 0 13px; color: #eff5ff; font-size: 16px; line-height: 19px; }
+.help-centre-search { display: flex; width: 830px; max-width: 100%; height: 61px; box-sizing: border-box; flex: 0 0 61px; align-items: center; gap: 14px; padding: 0 18px 0 20px; border: 1px solid #b8d2fb; border-radius: 10px; background: #fff; }
+.help-centre-search:focus-within { box-shadow: 0 0 0 3px rgba(255, 255, 255, .45); }
+.help-centre-search svg { flex: 0 0 22px; color: #6b7f9b; }
+.help-centre-search input { flex: 1 1 auto; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: transparent; color: #1d2c46; font: inherit; font-size: 17px; }
+.help-centre-search input::placeholder { color: #91a0b5; opacity: 1; }
+.help-centre-search input::-webkit-search-cancel-button { cursor: pointer; }
+.help-centre-content { display: flex; align-items: flex-start; gap: 73px; box-sizing: border-box; max-width: 1440px; min-height: 701px; margin: 0 auto; padding: 41px 85px 25px; }
+.help-centre-list { flex: 0 1 826px; min-width: 0; }
+.help-centre-list-header h2 { margin: 0; color: #1d2c46; font-size: 25px; font-weight: 600; line-height: normal; }
+.help-centre-list-header p { margin: 6px 0 0; color: #7587a0; font-size: 13px; line-height: 16px; }
+.help-centre-back { display: inline-block; margin-top: 8px; color: #2566e8; font-size: 13px; font-weight: 500; text-decoration: none; }
+.help-centre-back:hover { text-decoration: underline; }
+.help-centre-notice { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; background: #fff7e6; color: #8a5a00; font-size: 13px; }
+.help-centre-empty { margin: 23px 0 0; color: #405370; font-size: 14px; }
+.help-centre-articles { margin: 23px 0 0; padding: 0; list-style: none; }
+/* Figma 1388:17: a 62px text block in an 87px row. The 25px is padding, so a wrapped row (narrow screens, long questions) keeps its gap. */
+.help-centre-article { display: flex; box-sizing: border-box; align-items: flex-start; gap: 15px; padding-bottom: 25px; scroll-margin-top: 24px; }
+.help-centre-article-icon { display: flex; flex: 0 0 23px; padding-top: 2px; color: #246bff; }
+.help-centre-article-text { display: flex; flex: 0 1 788px; min-width: 0; flex-direction: column; align-items: flex-start; gap: 5px; }
+.help-centre-article-question { padding: 0; border: 0; background: none; color: #2566e8; font: inherit; font-size: 17px; font-weight: 600; line-height: 21px; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.help-centre-article-question:hover { text-decoration: underline; }
+.help-centre-article-summary { max-width: 785px; margin: 0; overflow: hidden; color: #405370; font-size: 13px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.help-centre-article.is-open .help-centre-article-summary { display: none; }
+.help-centre-article-category { color: #437ce0; font-size: 12px; line-height: 15px; text-decoration: none; }
+.help-centre-article-category:hover { text-decoration: underline; }
+.help-centre-answer { display: flex; flex-direction: column; gap: 8px; max-width: 785px; margin: 4px 0 0; padding: 14px 16px; border: 1px solid #e2e8f2; border-radius: 10px; background: #f8fbff; color: #405370; font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.help-centre-answer p, .help-centre-answer ol, .help-centre-answer ul { margin: 0; }
+.help-centre-answer ol, .help-centre-answer ul { padding-left: 22px; }
+.help-centre-answer a { color: #2566e8; }
+.help-centre-side { display: flex; flex: 0 0 371px; width: 371px; min-height: 542px; box-sizing: border-box; flex-direction: column; padding: 28px 26px 22px; border-radius: 11px; background: #f5f8fd; }
+.help-centre-side h2 { margin: 0 0 21px; padding-top: 1px; color: #2a3952; font-size: 18px; font-weight: 600; line-height: 22px; }
+.help-centre-topics { display: flex; flex-direction: column; }
+.help-centre-topic { display: flex; height: 51px; align-items: center; gap: 8px; color: #2468ed; font-size: 15px; font-weight: 500; text-decoration: none; }
+.help-centre-topic span { flex: 0 1 292px; min-width: 0; }
+.help-centre-topic svg { flex: 0 0 14px; color: #7f91aa; }
+.help-centre-topic:hover span, .help-centre-topic[aria-current="page"] span { text-decoration: underline; }
+.help-centre-side-divider { height: 1px; margin: 5px 0 21px; background: #e2e8f2; }
+.help-centre-contact h3 { display: flex; height: 26px; align-items: center; gap: 8px; margin: 0; color: #2468ed; font-size: 16px; font-weight: 600; line-height: normal; }
+.help-centre-contact h3 svg { flex: 0 0 20px; color: #2a6af3; }
+.help-centre-contact p { max-width: 312px; margin: 10px 0 21px; color: #667b97; font-size: 13px; line-height: normal; }
+.help-centre-contact-button { display: flex; width: 316px; max-width: 100%; height: 42px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 7px; background: #2367f4; color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; }
+.help-centre-contact-button:hover { background: #1d58d6; }
+@media (max-width: 1100px) {
+  .help-centre-content { flex-direction: column; gap: 40px; padding: 32px 24px 40px; }
+  .help-centre-list { flex-basis: auto; width: 100%; }
+  .help-centre-side { width: 100%; max-width: 560px; flex-basis: auto; min-height: 0; }
+}
+@media (max-width: 720px) {
+  .help-centre-hero { height: auto; padding: 24px 16px; }
+  .help-centre-hero h1 { font-size: 30px; }
+  .help-centre-content { padding: 24px 16px 32px; }
+  .help-centre-article-summary { white-space: normal; }
+}

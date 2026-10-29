@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useLayoutEffect, useImperativeHandle, useRef, useState, type ReactNode, type VideoHTMLAttributes } from 'react';
+import { forwardRef, useEffect, useLayoutEffect, useImperativeHandle, useId, useRef, useState, type ReactNode, type VideoHTMLAttributes } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, PictureInPicture2, ChevronDown } from 'lucide-react';
 import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
 import { playbackDuration } from '@/lib/videoLessonCompletion';
@@ -9,10 +9,26 @@ import { playbackDuration } from '@/lib/videoLessonCompletion';
 export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement> & { locale: LessonLocale; fullscreenOverlay?: ReactNode; onFullscreenChange?: (active:boolean)=>void; exitFullscreenRequested?:boolean }>(function ControlledVideo({ locale, fullscreenOverlay, onFullscreenChange, exitFullscreenRequested, onPlay, onPause, onEnded, onTimeUpdate, onLoadedMetadata, onDurationChange, onVolumeChange, onRateChange, ...props }, ref) {
   const media = useRef<HTMLVideoElement>(null), container = useRef<HTMLDivElement>(null);
   const scrubbing = useRef(false);
+  const volumeControl = useRef<HTMLDivElement>(null), volumeButton = useRef<HTMLButtonElement>(null);
+  const volumeId = useId();
   useImperativeHandle(ref, () => media.current!);
   const t = lessonMessages(locale);
   const [playing, setPlaying] = useState(false), [time, setTime] = useState(0), [duration, setDuration] = useState(0), [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1), [pipSupported, setPipSupported] = useState(false), [pipActive, setPipActive] = useState(false);
+  const [volume, setVolume] = useState(100), [volumeOpen, setVolumeOpen] = useState(false);
+  useEffect(() => {
+    if (!volumeOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !volumeControl.current?.contains(event.target)) setVolumeOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, [volumeOpen]);
+  function updateVolume(video: HTMLVideoElement) {
+    setMuted(video.muted || video.volume === 0);
+    setVolume(video.muted ? 0 : Math.round(video.volume * 100));
+  }
+  useLayoutEffect(() => { if (media.current) updateVolume(media.current); }, [props.muted]);
   useEffect(() => {
     const video = media.current;
     if (!video) return;
@@ -65,19 +81,35 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       onPause={event => { setPlaying(false); onPause?.(event); }}
       onEnded={event => { setPlaying(false); onEnded?.(event); }}
       onTimeUpdate={event => { if (!scrubbing.current) setTime(event.currentTarget.currentTime); updateDuration(event.currentTarget); onTimeUpdate?.(event); }}
-      onLoadedMetadata={event => { updateDuration(event.currentTarget); onLoadedMetadata?.(event); }}
+      onLoadedMetadata={event => { updateDuration(event.currentTarget); updateVolume(event.currentTarget); onLoadedMetadata?.(event); }}
       onDurationChange={event => { updateDuration(event.currentTarget); onDurationChange?.(event); }}
-      onVolumeChange={event => { setMuted(event.currentTarget.muted); onVolumeChange?.(event); }}
+      onVolumeChange={event => { updateVolume(event.currentTarget); onVolumeChange?.(event); }}
       onRateChange={event => { setRate(event.currentTarget.playbackRate); onRateChange?.(event); }}/>
     {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
-      <input type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
+      <input className="la-video-seek" type="range" aria-label={t.videoSeek} min={0} max={duration || 0} step={0.1} value={Math.min(time, duration)} disabled={!duration}
         onPointerDown={event => { scrubbing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }}
         onPointerUp={() => { scrubbing.current = false; }} onPointerCancel={() => { scrubbing.current = false; }} onBlur={() => { scrubbing.current = false; }}
         onChange={event => { const nextTime = Number(event.target.value); setTime(nextTime); if (media.current) media.current.currentTime = nextTime; }}/>
       <span>{clock(time)} / {clock(duration)}</span>
-      <button type="button" aria-label={muted ? t.videoUnmute : t.videoMute} onClick={() => { if (media.current) media.current.muted = !media.current.muted; }}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+      <div ref={volumeControl} className="la-video-volume" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setVolumeOpen(false); }}
+        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setVolumeOpen(false); volumeButton.current?.focus(); } }}>
+        <button ref={volumeButton} type="button" aria-label={t.videoVolume} title={t.videoVolume} aria-expanded={volumeOpen} aria-controls={volumeOpen ? volumeId : undefined} onClick={() => setVolumeOpen(value => !value)}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+        {volumeOpen && <div id={volumeId} className="la-video-volume-panel">
+          <input className="la-video-volume-range" type="range" aria-label={t.videoVolume} min={0} max={100} step={1} value={volume} aria-valuetext={`${volume}%`}
+            onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)}
+            onChange={event => {
+              const video = media.current;
+              if (!video) return;
+              const nextVolume = Number(event.currentTarget.value);
+              video.volume = nextVolume / 100;
+              video.muted = nextVolume === 0;
+              updateVolume(video);
+            }}/>
+          <span aria-hidden="true">{volume}</span>
+        </div>}
+      </div>
       <span className="la-video-speed">
         <span aria-hidden="true">{rate === 1 ? t.videoNormalSpeed : `${rate}×`}</span><ChevronDown size={12} aria-hidden="true" />
         <select aria-label={t.videoSpeed} title={t.videoSpeed} value={rate} onChange={event => { if (media.current) { media.current.playbackRate = Number(event.target.value); setRate(media.current.playbackRate); } }}>

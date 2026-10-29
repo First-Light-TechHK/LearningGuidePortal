@@ -10,6 +10,7 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
+import { TutorAnswer } from "./TutorAnswer";
 import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
@@ -19,15 +20,22 @@ function tileStatus(copy: { muted: string; speaking: string; micOn: string }, ti
   return copy.micOn;
 }
 
-function ControlIcon({ kind }: { kind: "mic" | "camera" | "share" | "people" | "hand" | "leave" }) {
+function ControlIcon({ kind }: { kind: "mic" | "mic-off" | "camera" | "share" | "people" | "hand" | "leave" | "expand" | "collapse" | "chat" }) {
   const props = { viewBox: "0 0 24 24", width: 16, height: 16, "aria-hidden": true as const, fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  if (kind === "mic") return <svg {...props}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
+  if (kind === "mic") return <svg {...props} data-icon="mic"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
+  // The same crossed-out microphone the tile caption shows for a muted participant.
+  if (kind === "mic-off") return <svg {...props} data-icon="mic-off"><path d="M9 10v2a3 3 0 0 0 5 2M15 11V6a3 3 0 0 0-5.5-1.5M5 5l14 14M12 17v3M8 11a4 4 0 0 0 .5 2" /></svg>;
   if (kind === "camera") return <svg {...props}><path d="M3 8h11v9H3zM14 11l6-3v9l-6-3" /></svg>;
   if (kind === "share") return <svg {...props}><rect x="4" y="5" width="16" height="12" rx="2" /><path d="M10 11h4M12 9v4" /></svg>;
+  if (kind === "expand") return <svg {...props}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>;
+  if (kind === "collapse") return <svg {...props}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>;
+  if (kind === "chat") return <svg {...props}><path d="M5 5h14v10H9l-4 4z" /></svg>;
   if (kind === "people") return <svg {...props}><circle cx="9" cy="8" r="2.5" /><circle cx="16" cy="9" r="2" /><path d="M4 18c.6-2.4 2.4-3.5 5-3.5s4.4 1.1 5 3.5M14 14.5c1.6 0 3 .7 3.8 2.5" /></svg>;
   if (kind === "hand") return <svg {...props}><path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11M11 8V5.5a1.5 1.5 0 0 1 3 0V12M14 9V7.5a1.5 1.5 0 0 1 3 0V14c0 3-2 5-5 5h-1c-2 0-3-.8-4-2l-2.5-3.5a1.5 1.5 0 0 1 2.2-2L8 13" /></svg>;
   return <svg {...props}><path d="M14 4h4v4M18 4l-7 7M10 6H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4" /></svg>;
 }
+
+const FOCUS_IDLE_MS = 3000;
 
 function CrumbChevron() {
   return <svg className={styles.crumbChevron} viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -163,6 +171,16 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const permissionWatchRef = useRef<PermissionStatus | null>(null);
   const [clock, setClock] = useState("00:00");
   const shareVideo = useRef<HTMLVideoElement>(null);
+  // Owner 2026-10-29: a shared screen can take the whole screen (Tencent
+  // Meeting style): the people, the chat with the AI Tutor and the controls
+  // float over it, each one collapsible.
+  const roomEl = useRef<HTMLElement>(null);
+  const [focus, setFocus] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(true);
+  const [sideOpen, setSideOpen] = useState(false);
+  // In full screen the controls fade out after the pointer rests a while and
+  // come back on any pointer, touch or key activity (owner 2026-10-29).
+  const [idle, setIdle] = useState(false);
   const audioRoot = useRef<HTMLDivElement>(null);
   const groupRef = useRef<StudyGroupDetail | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
@@ -694,6 +712,36 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     repaintRef.current?.();
   }, [group]);
 
+  // Leaving full screen with Esc (or the browser's own control) leaves focus
+  // mode too; a share that ends takes focus mode with it.
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFocus(false); };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  useEffect(() => {
+    const element = roomEl.current;
+    setIdle(false);
+    if (!focus || !element) return;
+    let timer = window.setTimeout(() => setIdle(true), FOCUS_IDLE_MS);
+    const wake = () => {
+      setIdle(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setIdle(true), FOCUS_IDLE_MS);
+    };
+    const events = ["pointermove", "pointerdown", "keydown", "touchstart"] as const;
+    for (const name of events) element.addEventListener(name, wake, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      for (const name of events) element.removeEventListener(name, wake);
+    };
+  }, [focus]);
+  useEffect(() => {
+    if (shareTrack || !focus) return;
+    setFocus(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, [shareTrack, focus]);
+
   useEffect(() => {
     const element = shareVideo.current;
     if (!shareTrack || !element) return;
@@ -713,6 +761,18 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   useEffect(() => () => {
     if (permissionWatchRef.current) permissionWatchRef.current.onchange = null;
   }, []);
+
+  function toggleFocus() {
+    if (focus) {
+      setFocus(false);
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    setFocus(true);
+    setSideOpen(false);
+    // Without the Fullscreen API (iPhone Safari) the room still covers the window.
+    void roomEl.current?.requestFullscreen?.().catch(() => undefined);
+  }
 
   async function setMedia(kind: "mic" | "camera" | "share", enabled: boolean) {
     const local = roomApi?.localParticipant;
@@ -1060,7 +1120,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   return (
     <>
     {path()}
-    <section className={styles.room}>
+    <section ref={roomEl} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
       <div className={styles.stage}>
         <div className={styles.stageHead}>
           <h1>{session.title}</h1>
@@ -1071,9 +1131,33 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         {!reconnecting && errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setBlocked(false); failuresRef.current = 0; setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
         {audioBlocked ? <p className={styles.alert} role="alert"><button className={styles.textButton} type="button" onClick={() => { const room = roomRef.current; void room?.startAudio().catch(() => undefined).finally(() => { if (roomRef.current === room) setAudioBlocked(Boolean(room && !room.canPlaybackAudio)); }); }}>{roomCopy.enableAudio}</button></p> : null}
         <div ref={audioRoot} hidden />
-        {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
+        {shareTrack ? <div className={styles.shareStage} data-testid="share-stage">
+          <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted />
+          <div className={styles.shareTools}>
+            <button type="button" aria-pressed={focus} onClick={toggleFocus}><ControlIcon kind={focus ? "collapse" : "expand"} />{focus ? roomCopy.exitFullScreen : roomCopy.fullScreen}</button>
+            {focus ? <button type="button" aria-pressed={sideOpen} onClick={() => { setSideOpen((open) => !open); setSideTab("chat"); }}><ControlIcon kind="chat" />{roomCopy.chat}{unread > 0 ? <span className={styles.tabCount} aria-label={fill(roomCopy.unread, { count: unread })}>{unread}</span> : null}</button> : null}
+          </div>
+        {/* Owner 2026-10-29: while someone else's screen fills the stage, the people float
+            over it as avatars only (collapsible), so the shared screen keeps the room's space. */}
+        {shareTrack && tiles.length > 0 ? <div className={styles.avatarFloat} data-open={peopleOpen ? "true" : "false"}>
+          <button type="button" className={styles.avatarToggle} aria-expanded={peopleOpen} onClick={() => setPeopleOpen((open) => !open)}><ControlIcon kind="people" /><span>{tiles.length}</span><span className={styles.srOnly}>{peopleOpen ? roomCopy.hideParticipants : roomCopy.showParticipants}</span></button>
+          {peopleOpen ? <ul className={styles.avatarStrip} aria-label={roomCopy.participants}>
+          {tiles.map((tile) => {
+            const camera = cameraTracks[tile.identity] ?? null;
+            const label = `${tile.name}${tile.host ? ` · ${roomCopy.host}` : ""} · ${tileStatus(roomCopy, tile)}`;
+            return (
+              <li className={styles.avatar} data-speaking={tile.speaking ? "true" : "false"} key={tile.identity} title={label} aria-label={label}>
+                <span className={styles.avatarFace} data-video={camera ? "on" : "off"}>{camera ? <ParticipantCamera track={camera} /> : <span aria-hidden="true">{tile.name.slice(0, 1)}</span>}</span>
+                {hands.includes(tile.identity) ? <span className={styles.avatarHand} role="img" aria-label={roomCopy.raiseHand}>✋</span> : null}
+                <TileMic status={participantStatus(tile)} label={tileStatus(roomCopy, tile)} />
+              </li>
+            );
+          })}
+        </ul> : null}
+        </div> : null}
+        </div> : null}
         {sharing ? <p className={styles.meta} role="status">{roomCopy.sharingNotice}</p> : null}
-        <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
+        {shareTrack ? null : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
           {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
             return (
@@ -1086,13 +1170,13 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               </div>
             );
           })}
-        </div>
+        </div>}
         {mediaNotice ? <p className={styles.alert} role="alert">{mediaNotice.device ? roomCopy.mediaDeviceBlocked : mediaNotice.kind === "camera" ? roomCopy.mediaBlockedCamera : roomCopy.mediaBlockedMic} <button className={styles.textButton} type="button" onClick={() => setMediaNotice(null)}>{copy.close}</button></p> : null}
         {shareFailed ? <p className={styles.alert} role="alert">{roomCopy.shareFailed} <button className={styles.textButton} type="button" onClick={() => setShareFailed(false)}>{copy.close}</button></p> : null}
         {/* BUG-0196: the focus carries the same "Session Focus" label and 12px body as the waiting dialog (599:755), so it never reads as a second title. */}
         {session.focus ? <section className={styles.roomFocus} aria-labelledby="study-session-focus"><h2 id="study-session-focus" className={styles.waitingFocus}>{copy.focus}</h2><p>{session.focus}</p></section> : null}
         <div className={styles.controls}>
-          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
+          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind={micOn ? "mic" : "mic-off"} />{roomCopy.mic}</button> : null}
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
           {controls.includes("share") && canShare ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => {
             const start = !sharing;
@@ -1149,7 +1233,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               chatPinnedRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
             }}>
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
-                <p className={`${styles.chatBody} ${styles.tutorBody}`}>
+                <div className={`${styles.chatBody} ${styles.tutorBody}`}>
                   {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participant, question: line.replyTo.question })}</span> : null}
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
@@ -1158,12 +1242,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                         const pending = tutorPendingState(session, line.id, line.queuedPosition);
                         return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
-                    : <>
-                        {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
-                          ? <span key="lead" className={styles.tutorLead}>{row}</span>
-                          : <span key={index} className={styles.tutorRow}>{row}</span>)}
-                      </>}
-                </p>
+                    : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
+                </div>
               ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>

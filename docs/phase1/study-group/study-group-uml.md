@@ -94,7 +94,7 @@ classDiagram
 
 `AttendanceIntent` does not hold a seat. `Presence` holds a seat while `enteredAt` is set and `leftAt` is empty. `Meeting` exists only after Host Start, one row for that Live Session.
 
-`durationSeconds` is one of 1800, 2700, 3600, or 5400. Those are the choices 30, 45, 60, and 90 minutes. The Figma session card shows `45 mins`. Branch `18a1046` named the field `durationMinutes` and accepted any integer of at least 1; HEAD stores `durationSeconds` with only those four values.
+`durationSeconds` is one of 600, 1200, 1800, or 2400. Those are the choices 10, 20, 30, and 40 minutes (owner 2026-10-29); a Session scheduled before keeps its 2700, 3600, or 5400. The Figma session card shows `45 mins`. Branch `18a1046` named the field `durationMinutes` and accepted any integer of at least 1; HEAD stores `durationSeconds` with only those four values.
 
 `TutorQueueItem` is one session-scoped queue item. `receivedAt` is the server receipt time. The queue is not Chat, and it is not a seat or a token. Branch `18a1046` did not have this queue; HEAD stores it and the service drains it in process. Durable delivery ownership is target design gated on the RDS phase.
 

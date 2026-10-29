@@ -44,6 +44,10 @@ const nextEnv = {
   STUDY_GROUP_TOKEN_LOG_KEY: Buffer.alloc(32, 11).toString("base64"),
   STUDY_GROUP_TUTOR_KEYS: JSON.stringify([{ id: "mock", secret: "mock-tutor-secret-0123456789abcdef" }]),
   STUDY_GROUP_TUTOR_URL: "http://127.0.0.1:8788/v1/chat/completions",
+  // The room Tutor goes through KnowledgeSystem (services/ksTutorClient.ts);
+  // the same local mock serves KS's tutor list and chat stream.
+  KS_TUTOR_BASE_URL: "http://127.0.0.1:8788",
+  KS_TUTOR_API_KEY: "mock-ks-key",
   // Reminder and notification mail goes to the local sink
   // (scripts/studygroup-smtp-sink.mjs) so the QA regression spec can read it.
   SMTP_HOST: "127.0.0.1",
