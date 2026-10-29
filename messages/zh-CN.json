@@ -1702,7 +1702,15 @@
       "error": "抱歉，暂时无法回复，请重试。",
       "voteError": "反馈未能保存，请重试。",
       "infoStacked": "需要咨询具体订单或付款？请使用上方表单提交问题。",
-      "alternativesTitle": "你可能想问："
+      "alternativesTitle": "你可能想问：",
+      "handoverTitle": "为你转接人工客服",
+      "handoverBody": "填写咨询表单提交后，客服也会看到这段对话，你无需重复说明。",
+      "handoverButton": "联系客服",
+      "checkinTitle": "还需要帮忙吗？",
+      "endChat": "结束对话",
+      "contactPerson": "联系人工",
+      "ended": "本次对话已结束",
+      "endThanks": "感谢你的咨询，有问题随时再问。"
     },
     "assistant": {
       "title": "AI 客服助手",

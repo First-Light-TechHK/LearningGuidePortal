@@ -1702,7 +1702,15 @@
       "error": "Sorry, I couldn’t reply just now. Please try again.",
       "voteError": "Sorry, your answer wasn’t saved. Please try again.",
       "infoStacked": "Need help with a specific order or payment? Submit an enquiry using the form above.",
-      "alternativesTitle": "You might be asking:"
+      "alternativesTitle": "You might be asking:",
+      "handoverTitle": "Let’s get you to a person",
+      "handoverBody": "Fill in the enquiry form and our support team will see this chat too, so you won’t need to repeat yourself.",
+      "handoverButton": "Contact Support",
+      "checkinTitle": "Still need help?",
+      "endChat": "End chat",
+      "contactPerson": "Contact a person",
+      "ended": "This chat has ended.",
+      "endThanks": "Thanks for chatting. Ask again any time."
     },
     "assistant": {
       "title": "AI Support Assistant",

@@ -305,7 +305,7 @@
   .helpdesk-chat-header, .helpdesk-chat-divider, .helpdesk-chat-footer { width: 100%; }
   .helpdesk-chat-messages { padding-right: 11px; }
   .helpdesk-chat-messages > * { width: 100%; }
-  .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error { width: auto; flex: 1 1 0; min-width: 0; }
+  .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error, .helpdesk-chat-card { width: auto; flex: 1 1 0; min-width: 0; }
   .helpdesk-chat-input { flex: 1 1 0; width: auto; min-width: 0; }
   /* Stacked under the form: the info box points up, not left (no frame, 待视觉验收). */
   .helpdesk-chat-info-side { display: none; }
@@ -384,3 +384,20 @@
   .help-centre-content { padding: 24px 16px 32px; }
   .help-centre-article-summary { white-space: normal; }
 }
+/* v4 Part B chat cards (handover, "Still need help?", the end line with the rating card): no Figma frame, 待视觉验收.
+   They reuse the answer bubble, the greeting title, the answer text, the form buttons and the v3 stars. */
+.helpdesk-chat-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 365px; box-sizing: border-box; padding: 11px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; }
+.helpdesk-chat-card:focus { outline: none; }
+.helpdesk-chat-card:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.helpdesk-chat-card-title { color: #1c2d48; font-size: 14px; font-weight: 600; line-height: 17px; }
+.helpdesk-chat-card-text, .helpdesk-chat-ended { color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
+.helpdesk-chat-ended { color: #60728d; font-weight: 600; }
+.helpdesk-chat-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.helpdesk-chat-card-actions .helpdesk-submit-button, .helpdesk-chat-card-actions .helpdesk-secondary-button, .helpdesk-chat-rating .helpdesk-secondary-button { padding: 6px 14px; font-size: 12px; }
+.helpdesk-chat-rating { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; align-self: stretch; padding: 12px; }
+.helpdesk-chat-rating h3 { margin: 0; color: #15233a; font-size: 14px; font-weight: 600; }
+.helpdesk-chat-rating:focus { outline: none; }
+.helpdesk-chat-rating:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.helpdesk-chat-rating .helpdesk-stars button { width: 36px; height: 36px; }
+.helpdesk-chat-rating p.helpdesk-inline-error { color: #b91c1c; font-size: 12px; }
+.helpdesk-chat-rated { color: #027a48; }

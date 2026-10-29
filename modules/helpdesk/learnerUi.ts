@@ -197,10 +197,22 @@ export function fillTemplate(template: string, values: Record<string, string | n
   return template.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? String(values[key]) : match));
 }
 
+/**
+ * One line of the chat transcript. v4 Part B (helpdesk-v4-order-and-chat-end):
+ * questions and answers carry the time they were shown (at, ISO; left out by
+ * older transcripts) for the idle end, and three code-decided cards join them:
+ * the handover card ("requested": the learner asked for a person; "unsolved":
+ * two unsolved turns in a row), the "Still need help?" check-in, and the end
+ * of a session ("idle" or the learner's End chat) with the rating card state
+ * of the assist it rates (ratingFor; null: nothing was answered).
+ */
 export type ChatEntry =
-  | { kind: "question"; text: string }
-  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null; /** v3: "You might be asking" chips under a fallback (left out when none). */ alternatives?: HelpdeskAlternative[] }
-  | { kind: "error"; error: "rateLimited" | "error" };
+  | { kind: "question"; text: string; at?: string }
+  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null; /** v3: "You might be asking" chips under a fallback (left out when none). */ alternatives?: HelpdeskAlternative[]; at?: string }
+  | { kind: "error"; error: "rateLimited" | "error" }
+  | { kind: "handover"; reason: "requested" | "unsolved" }
+  | { kind: "checkin" }
+  | { kind: "ended"; reason: "idle" | "learner"; ratingFor: string | null; rating: "open" | "rated" | "skipped" };
 
 /** sessionStorage key of the chat transcript: per account, so a shared browser never shows one learner's chat to another. */
 export function chatStorageKey(accountId: string): string {
@@ -218,21 +230,34 @@ function storedAlternatives(value: unknown): HelpdeskAlternative[] {
   });
 }
 
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+/** v4: { at } when the stored time is a well-formed ISO time, otherwise nothing (older transcripts have none). */
+const storedAt = (value: unknown): { at?: string } => (isText(value) && ISO_TIME.test(value) && Number.isFinite(Date.parse(value)) ? { at: value } : {});
+
 function chatEntry(value: unknown): ChatEntry | null {
   if (!value || typeof value !== "object") return null;
   const entry = value as Record<string, unknown>;
-  if (entry.kind === "question") return isText(entry.text) ? { kind: "question", text: entry.text } : null;
+  if (entry.kind === "question") return isText(entry.text) ? { kind: "question", text: entry.text, ...storedAt(entry.at) } : null;
   if (entry.kind === "error") return entry.error === "rateLimited" || entry.error === "error" ? { kind: "error", error: entry.error } : null;
+  if (entry.kind === "handover") return entry.reason === "requested" || entry.reason === "unsolved" ? { kind: "handover", reason: entry.reason } : null;
+  if (entry.kind === "checkin") return { kind: "checkin" };
+  if (entry.kind === "ended") {
+    const reason = entry.reason === "idle" || entry.reason === "learner" ? entry.reason : null;
+    const rating = entry.rating === "open" || entry.rating === "rated" || entry.rating === "skipped" ? entry.rating : null;
+    const ratingFor = entry.ratingFor === null ? null : isText(entry.ratingFor) && UUID.test(entry.ratingFor) ? entry.ratingFor : undefined;
+    return reason && rating && ratingFor !== undefined ? { kind: "ended", reason, ratingFor, rating } : null;
+  }
   if (entry.kind !== "answer" || !isText(entry.id) || !UUID.test(entry.id)) return null;
   const feedback = entry.feedback === "helpful" || entry.feedback === "not_helpful" ? entry.feedback : entry.feedback === null ? null : undefined;
   if (feedback === undefined) return null;
+  const at = storedAt(entry.at);
   if (entry.reply === null) {
     const alternatives = storedAlternatives(entry.alternatives);
-    return alternatives.length ? { kind: "answer", id: entry.id, reply: null, feedback, alternatives } : { kind: "answer", id: entry.id, reply: null, feedback };
+    return alternatives.length ? { kind: "answer", id: entry.id, reply: null, feedback, alternatives, ...at } : { kind: "answer", id: entry.id, reply: null, feedback, ...at };
   }
   const reply = entry.reply as Record<string, unknown> | undefined;
   if (!reply || !isText(reply.id) || !isText(reply.faqId) || !isText(reply.question) || !isText(reply.answer)) return null;
-  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback };
+  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback, ...at };
 }
 
 /** The stored transcript, keeping only well-formed entries (storage is the browser's, not ours). */

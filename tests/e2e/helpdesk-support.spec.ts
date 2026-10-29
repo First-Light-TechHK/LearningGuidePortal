@@ -959,3 +959,44 @@ test("visual capture v2: Contact Support with the chat panel (1216:6) and the He
     await context.close();
   }
 });
+
+test("v4 chat handover: asking for a person shows the handover card at once with no AI call; its button opens the form and the enquiry links the chat", async ({ browser }) => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const { context, page } = await newLearner(browser, locale);
+    const text = copy(locale);
+    await openSupport(page, locale);
+    const learnerId = (await (await page.request.get("/api/auth/me")).json() as { user: { id: string } }).user.id;
+    const panel = page.getByRole("region", { name: text.chat.title });
+    const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+    const first = locale === "zh-CN" ? "在哪里可以找到发票？" : "Where can I find my invoice?";
+    await input.fill(first);
+    await input.press("Enter");
+    await expect(panel.locator(".helpdesk-chat-answer .helpdesk-chat-answer-text")).toHaveCount(1);
+    // The request also names the invoice, which the AI would answer: it must not be asked.
+    const request = locale === "zh-CN" ? "我要投诉，发票不对" : "I want to SPEAK TO SOMEONE about my invoice";
+    await input.fill(request);
+    await input.press("Enter");
+    const card = panel.getByRole("group", { name: text.chat.handoverTitle, exact: true });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(text.chat.handoverBody);
+    await expect(panel.locator(".helpdesk-chat-question")).toHaveText([first, request]);
+    await expect(panel.locator(".helpdesk-chat-answer")).toHaveCount(1);
+    const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { learnerId?: string; message?: string } }[] };
+    expect(suggestions.filter((entry) => entry.request.learnerId === learnerId).map((entry) => entry.request.message), "the request for a person never reached the AI").toEqual([first]);
+    await expect(input).toBeEnabled();
+    await expect(panel.locator(".helpdesk-chat-info")).toBeVisible();
+    await mkdir(SHOTS, { recursive: true });
+    await panel.screenshot({ path: `${SHOTS}/v4-chat-handover-${locale}.png` });
+    // The card opens Contact Support (the form on this page); the enquiry carries the chat's history.
+    await card.getByRole("button", { name: text.chat.handoverButton, exact: true }).click();
+    await expect(page.getByLabel(text.subject)).toBeFocused();
+    const subject = `Need a person ${randomUUID().slice(0, 6)}`;
+    await fillEnquiry(page, locale, { category: "other", subject, message: "Please call me back." });
+    await page.getByRole("button", { name: text.submit }).click();
+    await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+    const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
+    const seen = await agentTicket(page.request, ticket.id);
+    expect(seen.aiAssist.map((item) => [item.source, item.question])).toEqual([["chat", first]]);
+    await context.close();
+  }
+});

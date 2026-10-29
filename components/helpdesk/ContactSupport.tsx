@@ -26,6 +26,10 @@
 // so and the learner can remove it and submit). The order never goes to the
 // AI suggestion check. No Figma frame: the line reuses the field, label and
 // text-link styles and is 待视觉验收.
+// v4 Part B: the chat's handover card ("Let's get you to a person", and
+// "Contact a person" on "Still need help?") opens this form: focus moves to
+// Subject, and the enquiry carries the chat's assistIds as before. After an
+// enquiry was sent, it opens a fresh form for the next one.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Star, ThumbsDown, ThumbsUp, X } from "lucide-react";
@@ -313,6 +317,30 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
     setPhase("thanks");
   }
 
+  /**
+   * v4 Part B: the chat hands over to a person. The form is on this page, so
+   * focus moves to it (Subject); the chat's assistIds go with the enquiry. A
+   * sent enquiry makes way for a fresh form (same topic and email); while the
+   * assistant modal is open the form is already in use, so nothing changes.
+   */
+  function openFormFromChat(chatIds: string[]) {
+    assistIds.current = chatIds;
+    if (busy !== "") return;
+    if (phase === "success") {
+      setCreated(null);
+      setSubject("");
+      setMessage("");
+      attachments.clear();
+      setLinkedOrder(null);
+      setErrors({});
+      setFormError("");
+      setPhase("form");
+      setTimeout(() => subjectInput.current?.focus(), 0);
+      return;
+    }
+    if (phase === "form") subjectInput.current?.focus();
+  }
+
   /** "We’d love to hear your ideas, too!": an Other Enquiries enquiry, starting at Subject. */
   function shareIdeas() {
     if (busy !== "" || phase === "success") return;
@@ -362,7 +390,7 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
           </div>
         </form>}
       <div className="helpdesk-divider" aria-hidden="true" />
-      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} />
     </div>
     {phase === "suggestion" || phase === "alternatives" || phase === "rating" || phase === "thanks" ? <AssistantModal copy={copy} locale={locale} stage={phase} suggestion={suggestion} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}
