@@ -1240,3 +1240,263 @@ test("chat: the fallback shows Admin's alternatives as chips under it; a chip as
     await page.close();
   }
 });
+
+// ---------------------------------------------------------------- v3 final check: linking, the way back, retries and late answers
+
+/** A chip answer whose id names the alternative (…e1, …e2, …e3), so each picked answer is its own logged row. */
+const ANSWER_IDS = ["01a18100-0000-7000-8000-0000000000e1", "01a18100-0000-7000-8000-0000000000e2", "01a18100-0000-7000-8000-0000000000e3"];
+const ownAnswer = (call: ApiCall): Reply => {
+  const faqId = (call.json as { faqId: string }).faqId;
+  const index = ALTERNATIVES.findIndex((item) => item.faqId === faqId);
+  return { json: { id: ANSWER_IDS[index], reply: { id: ANSWER_IDS[index], faqId, question: ALTERNATIVES[index].question, answer: "Open **Settings**." }, alternatives: [] } };
+};
+const seenStored = (page: Page, accountId = ACCOUNT.id) => page.evaluate((key) => window.sessionStorage.getItem(key), `lg-helpdesk-seen:v1:${accountId}`);
+
+test("v3: a picked answer the learner read goes with the enquiry even after Edit; one that showed no answer never does; linked once, the list is cleared", async () => {
+  const locale: Locale = "en-GB";
+  const checks: Reply[] = [{ json: { suggestion: null, alternatives: ALTERNATIVES } }, { json: { suggestion: null, alternatives: [] } }];
+  const chipReplies: Reply[] = [{ json: { id: ASSIST[1], reply: null, alternatives: [] } }];
+  const harness = await open(locale, api({ suggestion: () => checks.shift() ?? { json: { suggestion: null, alternatives: [] } }, assistant: (call) => chipReplies.shift() ?? ownAnswer(call) }), { locale, chips: [] });
+  const { page } = harness;
+  const v = alternativesView(page, locale);
+  await fillValid(page, locale, false);
+  await v.submit.click();
+  await v.chips.first().click();
+  await v.dialog.locator("[role=alert]").waitFor();
+  await v.chips.nth(1).click();
+  await v.dialog.getByRole("heading", { name: ALTERNATIVES[1].question }).waitFor();
+  await v.dialog.getByRole("button", { name: v.copy.assistant.edit }).click();
+  await v.dialog.waitFor({ state: "detached" });
+  await v.subject.fill("Cannot reset my password at all");
+  await v.submit.click();
+  await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+  const create = harness.calls.find(isTicketCreate)!;
+  assert.deepEqual(create.fields.assistIds, [ANSWER_IDS[1]], "the answer read before Edit is linked; the empty answer (…a2) is not");
+  await page.locator(".helpdesk-success").waitFor();
+  assert.equal(await seenStored(page), "[]", "linked to that enquiry, so the next one starts afresh");
+  await page.close();
+});
+
+test("v3: an answer that solved it and was rated goes with the learner's next enquiry from this tab, so the agent sees it with its rating; never another account's", async () => {
+  const locale: Locale = "zh-CN";
+  const checks: Reply[] = [{ json: { suggestion: SUGGESTION, alternatives: [] } }];
+  const harness = await open(locale, api({ suggestion: () => checks.shift() ?? { json: { suggestion: null, alternatives: [] } } }));
+  const { page } = harness;
+  const v = alternativesView(page, locale);
+  await fillValid(page, locale, false);
+  await v.submit.click();
+  await v.dialog.getByRole("button", { name: v.copy.assistant.yes }).click();
+  await v.stars.nth(3).click();
+  await v.dialog.getByText(v.copy.assistant.rated).waitFor();
+  // Another learner on this browser: nothing of the first learner's goes with their enquiry.
+  await mountContact(page, { locale, account: { id: "user_other", name: "Other", email: "other@example.com" } });
+  await fillValid(page, locale, false);
+  await v.submit.click();
+  await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+  assert.equal("assistIds" in harness.calls.filter(isTicketCreate)[0].fields, false, "another account links nothing");
+  // The same learner comes back later in this tab with a new enquiry: no suggestion this time, so it is submitted directly.
+  await mountContact(page, { locale });
+  await fillValid(page, locale, false);
+  await v.submit.click();
+  await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 2);
+  const create = harness.calls.filter(isTicketCreate)[1];
+  assert.deepEqual(create.fields.assistIds, [SUGGESTION.id], "the rated answer is linked");
+  assert.equal("suggestionId" in create.fields, false, "it was not declined");
+  await page.close();
+});
+
+test("v3: after picking a question the learner can go back to the list without asking again; No then links every answer they read", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale, api({ assistant: ownAnswer, suggestion: () => ({ json: { suggestion: null, alternatives: ALTERNATIVES } }) }), { locale, chips: [] });
+    const { page } = harness;
+    const v = alternativesView(page, locale);
+    await fillValid(page, locale, false);
+    await v.submit.click();
+    await v.chips.first().click();
+    await v.dialog.getByRole("heading", { name: ALTERNATIVES[0].question }).waitFor();
+    const back = v.dialog.getByRole("button", { name: v.copy.assistant.backToQuestions, exact: true });
+    assert.equal(await back.isVisible(), true, `${locale}: the way back to the list is there with the answer`);
+    await back.click();
+    await v.list.waitFor();
+    assert.deepEqual(await v.chips.allTextContents(), ALTERNATIVES.map((item) => item.question), "the same list, not asked again");
+    await page.waitForFunction((faqId) => document.activeElement?.getAttribute("data-faq-id") === faqId, ALTERNATIVES[0].faqId);
+    assert.equal(await v.none.isVisible(), true, "None is there again");
+    assert.equal(count(harness.calls, isSuggestion), 1);
+    assert.equal(count(harness.calls, isAssistant), 1);
+    assert.equal(count(harness.calls, isAssistantFeedback), 0, "going back is not feedback");
+    await v.chips.nth(2).click();
+    await v.dialog.getByRole("heading", { name: ALTERNATIVES[2].question }).waitFor();
+    await v.dialog.getByRole("button", { name: v.copy.assistant.no }).click();
+    await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+    assert.deepEqual(harness.calls.find(isTicketCreate)!.fields.assistIds, [ANSWER_IDS[0], ANSWER_IDS[2]]);
+    await page.locator(".helpdesk-success").waitFor();
+    await page.close();
+  }
+});
+
+test("v3: a lost ticket response from None or from No after a picked answer is resent as it was: same key, same assistIds, no new check", async () => {
+  const locale: Locale = "en-GB";
+  for (const path of ["none", "no"] as const) {
+    let creates = 0;
+    const harness = await open(locale, api({
+      assistant: ownAnswer,
+      suggestion: () => ({ json: { suggestion: null, alternatives: ALTERNATIVES } }),
+      ticket: () => (++creates === 1 ? { status: 503, json: { code: "helpdesk_unavailable" } } : { status: 201, json: ticketFixture("OPEN") })
+    }), { locale, chips: [] });
+    const { page } = harness;
+    const v = alternativesView(page, locale);
+    await fillValid(page, locale, false);
+    await v.submit.click();
+    await v.chips.nth(1).click();
+    await v.dialog.getByRole("heading", { name: ALTERNATIVES[1].question }).waitFor();
+    if (path === "none") {
+      await v.dialog.getByRole("button", { name: v.copy.assistant.backToQuestions, exact: true }).click();
+      await v.none.click();
+    } else await v.dialog.getByRole("button", { name: v.copy.assistant.no }).click();
+    await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+    await v.alert.waitFor();
+    assert.equal(await v.alert.textContent(), v.copy.errors.unavailable, path);
+    assert.equal(await v.dialog.count(), 0, "back on the form");
+    await v.submit.click();
+    await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 2);
+    const [first, second] = harness.calls.filter(isTicketCreate);
+    assert.equal(second.key, first.key, `${path}: the same logical submit`);
+    assert.deepEqual(second.fields, first.fields, `${path}: the same fields`);
+    assert.deepEqual(second.fields.assistIds, [ANSWER_IDS[1]], `${path}: the read answer stays linked`);
+    assert.equal(count(harness.calls, isSuggestion), 1, `${path}: no second check, so no second modal`);
+    await page.locator(".helpdesk-success").waitFor();
+    assert.equal(count(harness.calls, isTicketCreate), 2);
+    await page.close();
+  }
+});
+
+test("v3: a late answer is dropped: alternatives after Cancel or the 5 s timeout, a picked answer after Escape / Edit, or after None", async () => {
+  const locale: Locale = "en-GB";
+  // Cancel during the check, then the alternatives arrive.
+  {
+    const release = deferred();
+    const harness = await open(locale, api({ suggestion: async () => { await release.promise; return { json: { suggestion: null, alternatives: ALTERNATIVES } }; } }));
+    const { page } = harness;
+    const f = form(page, locale);
+    await fillValid(page, locale, false);
+    await f.submit.click();
+    await waitForCalls(harness, (calls) => count(calls, isSuggestion) === 1);
+    await f.cancel.click();
+    release.resolve();
+    await page.waitForTimeout(300);
+    assert.equal(await f.dialog.count(), 0, "alternatives after Cancel are not shown");
+    assert.equal(count(harness.calls, isTicketCreate), 0);
+    await page.close();
+  }
+  // No answer within 5 s: submitted directly; alternatives arriving later are ignored.
+  {
+    const hang = deferred<Reply>();
+    const harness = await open(locale, api({ suggestion: () => hang.promise }));
+    const { page } = harness;
+    await page.clock.install();
+    await fillValid(page, locale, false);
+    await form(page, locale).submit.click();
+    await waitForCalls(harness, (calls) => count(calls, isSuggestion) === 1);
+    await page.clock.runFor(5_200);
+    await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+    await page.locator(".helpdesk-success").waitFor();
+    hang.resolve({ json: { suggestion: null, alternatives: ALTERNATIVES } });
+    await page.waitForTimeout(200);
+    assert.equal(await form(page, locale).dialog.count(), 0, "late alternatives are ignored");
+    assert.equal(count(harness.calls, isTicketCreate), 1);
+    await page.close();
+  }
+  // A picked answer arriving after Escape or Edit: not shown, not linked, no feedback.
+  for (const leave of ["Escape", "Edit"] as const) {
+    const release = deferred();
+    const checks: Reply[] = [{ json: { suggestion: null, alternatives: ALTERNATIVES } }];
+    const harness = await open(locale, api({ assistant: async (call) => { await release.promise; return ownAnswer(call); }, suggestion: () => checks.shift() ?? { json: { suggestion: null, alternatives: [] } } }), { locale, chips: [] });
+    const { page } = harness;
+    const v = alternativesView(page, locale);
+    await fillValid(page, locale, false);
+    await v.submit.click();
+    await v.chips.first().click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+    if (leave === "Escape") await page.keyboard.press("Escape");
+    else await v.dialog.getByRole("button", { name: v.copy.assistant.edit }).click();
+    await v.dialog.waitFor({ state: "detached" });
+    release.resolve();
+    await page.waitForTimeout(300);
+    assert.equal(await v.dialog.count(), 0, `${leave}: the late answer does not reopen the modal`);
+    await v.submit.click();
+    await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+    assert.equal("assistIds" in harness.calls.find(isTicketCreate)!.fields, false, `${leave}: an answer the learner never saw is not linked`);
+    assert.equal(count(harness.calls, isAssistantFeedback), 0);
+    await page.close();
+  }
+  // None while a picked answer is loading: the ticket goes without it and the answer never replaces the submitting modal.
+  {
+    const answer = deferred();
+    const ticket = deferred();
+    const harness = await open(locale, api({
+      assistant: async (call) => { await answer.promise; return ownAnswer(call); },
+      suggestion: () => ({ json: { suggestion: null, alternatives: ALTERNATIVES } }),
+      ticket: async () => { await ticket.promise; return { status: 201, json: ticketFixture("OPEN") }; }
+    }), { locale, chips: [] });
+    const { page } = harness;
+    const v = alternativesView(page, locale);
+    await fillValid(page, locale, false);
+    await v.submit.click();
+    await v.chips.first().click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+    assert.equal(await v.none.isDisabled(), false, "the human entry stays available while an answer loads");
+    await v.none.click();
+    await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
+    answer.resolve();
+    await page.waitForTimeout(300);
+    assert.equal(await v.dialog.getByRole("heading", { name: ALTERNATIVES[0].question }).count(), 0, "the late answer does not replace the submitting modal");
+    assert.equal(await v.dialog.getByRole("button", { name: v.copy.assistant.yes }).count(), 0);
+    ticket.resolve();
+    await page.locator(".helpdesk-success").waitFor();
+    assert.equal("assistIds" in harness.calls.find(isTicketCreate)!.fields, false, "not shown, so not linked");
+    await page.close();
+  }
+});
+
+test("v3: a rating save that hangs never traps the learner: Skip stays available, a late answer is dropped, and the save gives up after 5 s with the retry message", async () => {
+  const locale: Locale = "en-GB";
+  {
+    const hang = deferred<Reply>();
+    const harness = await open(locale, api({ suggestion: () => ({ json: { suggestion: SUGGESTION, alternatives: [] } }), rating: () => hang.promise }));
+    const { page } = harness;
+    const v = alternativesView(page, locale);
+    await fillValid(page, locale, false);
+    await v.submit.click();
+    await v.dialog.getByRole("button", { name: v.copy.assistant.yes }).click();
+    await v.stars.nth(2).click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistantRating) === 1);
+    assert.equal(await v.stars.nth(2).isDisabled(), true, "one save at a time");
+    assert.equal(await v.skip.isDisabled(), false, "Skip is never disabled");
+    await v.skip.click();
+    await v.dialog.getByText(v.copy.assistant.thanksBody).waitFor();
+    hang.resolve({ json: { id: SUGGESTION.id, rating: 3 } });
+    await page.waitForTimeout(200);
+    assert.equal(await v.dialog.getByText(v.copy.assistant.rated).count(), 0, "a save that lands after Skip changes nothing");
+    await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 0, null, { timeout: 5_000 });
+    await page.close();
+  }
+  {
+    const harness = await open(locale, api({ suggestion: () => ({ json: { suggestion: SUGGESTION, alternatives: [] } }), rating: () => new Promise<Reply>(() => undefined) }));
+    const { page } = harness;
+    const v = alternativesView(page, locale);
+    await page.clock.install();
+    await fillValid(page, locale, false);
+    await v.submit.click();
+    await v.dialog.getByRole("button", { name: v.copy.assistant.yes }).click();
+    await v.stars.first().click();
+    await waitForCalls(harness, (calls) => count(calls, isAssistantRating) === 1);
+    await page.clock.runFor(4_800);
+    await page.waitForTimeout(100);
+    assert.equal(await v.dialog.locator("[role=alert]").count(), 0, "still saving before 5 s");
+    await page.clock.runFor(400);
+    await v.dialog.locator("[role=alert]").waitFor();
+    assert.equal(await v.dialog.locator("[role=alert]").textContent(), v.copy.assistant.rateError);
+    assert.equal(await v.stars.first().isDisabled(), false, "it can be tried again");
+    await page.close();
+  }
+});

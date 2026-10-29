@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number.",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
@@ -379,7 +379,7 @@
           "answer": "Open **My Subscription**, then choose an order to see its invoice.",
           "feedback": "not_helpful",
           "createdAt": "2026-10-28T08:36:41.120Z",
-          "rating": null
+          "rating": 4
         },
         {
           "id": "01a18100-0000-7000-8000-000000000011",

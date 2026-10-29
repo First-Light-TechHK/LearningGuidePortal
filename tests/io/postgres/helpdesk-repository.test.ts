@@ -6,7 +6,9 @@
 // concurrent call below runs on its own pooled connection, so the database
 // alone arbitrates each race.
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { promisify } from "node:util";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, test } from "node:test";
@@ -515,4 +517,63 @@ test("020 in PostgreSQL: re-applies; alternatives round-trip and replay; one rat
   const hd = service(now);
   const ticket = (await hd.createTicket(learner, { ...input("Rated"), assistIds: [fallback.response.id, chip.response.id] }, randomUUID())).ticket;
   assert.deepEqual((await hd.getAgentTicket(ticket.id)).aiAssist.map((item) => [item.id, item.rating]), [[fallback.response.id, null], [chip.response.id, stored]]);
+});
+
+/** ensureSchema in a fresh process, as a deploy's cold start runs it (this process has already memoised a ready schema). */
+async function coldStartBootstrap() {
+  const db = path.join(process.cwd(), "services", "persistence", "db.ts");
+  const script = `const loaded = await import(${JSON.stringify(db)}); const { ensureSchema, getPool } = loaded.ensureSchema ? loaded : loaded.default; await ensureSchema(); await getPool().end();`;
+  await promisify(execFile)(process.execPath, ["--import", "tsx", "--require", path.join(process.cwd(), "scripts", "register-tsconfig-paths.cjs"), "--input-type=module", "-e", script], { env: process.env, timeout: 60_000 });
+}
+
+test("020 by the runtime bootstrap: a database at 019 with logged answers gains helpdesk_ai_ratings and the alternatives column on start; old rows read as no alternatives", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  const assistant = createAssistantService({
+    repository, now: () => new Date("2026-10-29T06:00:00.000Z"), log: () => undefined,
+    admin: { async suggest(request) { return { id: request.runId, faqId: "0192d4f0-7b6a-7c3e-9a10-0000000000f1", question: "Reset?", answer: "Use **Forgot password**." }; }, async reportOutcome() { return true; } }
+  });
+  const old = (await assistant.ask(learner, { message: "password help", locale: "en-GB", faqId: null }, randomUUID())).response;
+  // Back to the 019 schema, keeping the logged answer.
+  await getPool().query("DROP TABLE helpdesk_ai_ratings");
+  await getPool().query("ALTER TABLE helpdesk_assist_log DROP COLUMN alternatives");
+  await coldStartBootstrap();
+  const table = await rows<{ name: string | null }>("SELECT to_regclass('helpdesk_ai_ratings')::text AS name");
+  assert.equal(table[0].name, "helpdesk_ai_ratings");
+  const column = await rows<{ data_type: string }>("SELECT data_type FROM information_schema.columns WHERE table_name = 'helpdesk_assist_log' AND column_name = 'alternatives'");
+  assert.deepEqual(column, [{ data_type: "jsonb" }]);
+  const stored = await repository.findAssist(old.id);
+  assert.equal(stored?.answer, "Use **Forgot password**.", "the old row is kept");
+  assert.deepEqual(stored?.alternatives, [], "NULL reads as no alternatives");
+  assert.deepEqual(await assistant.rate(learner, old.id, 4), { id: old.id, rating: 4 }, "an answer logged before 020 can be rated");
+});
+
+test("shownFaqIds in PostgreSQL: the open conversation's answered FAQs, newest first, once each; no other learner's, no linked or unanswered rows", async () => {
+  let clock = Date.parse("2026-10-29T06:00:00.000Z");
+  const repository = createPostgresHelpdeskRepository();
+  const FAQ = ["0192d4f0-7b6a-7c3e-9a10-0000000000b1", "0192d4f0-7b6a-7c3e-9a10-0000000000b2", "0192d4f0-7b6a-7c3e-9a10-0000000000b3"];
+  const seen: (string[] | undefined)[] = [];
+  const assistant = createAssistantService({
+    repository, now: () => new Date(clock), log: () => undefined,
+    admin: {
+      async suggest() { return null; },
+      async suggestReply(request) {
+        seen.push(request.shownFaqIds);
+        return request.faqId ? { suggestion: { id: request.runId, faqId: request.faqId, question: "Q", answer: "A" }, alternatives: [] } : { suggestion: null, alternatives: [] };
+      },
+      async reportOutcome() { return true; }
+    }
+  });
+  const ask = async (who: typeof learner, faqId: string | null) => { clock += 1000; return (await assistant.ask(who, { message: "q", locale: "en-GB", faqId }, randomUUID())).response; };
+  const first = await ask(learner, FAQ[0]);
+  await ask(learner, FAQ[1]);
+  await ask(learner, FAQ[0]);
+  await ask(learner, null);
+  await ask({ ...learner, id: "pg-other" }, FAQ[2]);
+  assert.deepEqual(await repository.conversationShownFaqIds(learner.id, "2026-10-29T00:00:00.000Z", 20), [FAQ[0], FAQ[1]]);
+  assert.deepEqual(await repository.conversationShownFaqIds(learner.id, "2026-10-29T00:00:00.000Z", 1), [FAQ[0]]);
+  assert.deepEqual(await repository.conversationShownFaqIds(learner.id, "2026-10-29T06:00:02.500Z", 20), [FAQ[0]], "only after sinceIso");
+  await ask(learner, null);
+  assert.deepEqual(seen.at(-1), [FAQ[0], FAQ[1]], "Admin is told");
+  await service(() => new Date(clock)).createTicket(learner, { ...input("Linked"), assistIds: [first.id] }, randomUUID());
+  assert.deepEqual(await repository.conversationShownFaqIds(learner.id, "2026-10-29T00:00:00.000Z", 20), [FAQ[0], FAQ[1]], "the repeat of FAQ 0 is still open");
 });

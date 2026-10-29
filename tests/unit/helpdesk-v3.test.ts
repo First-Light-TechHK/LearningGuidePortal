@@ -139,6 +139,41 @@ test("chat: the fallback reply carries the alternatives; an answer carries none;
   assert.equal(h.calls.at(-1)?.source, "chip");
 });
 
+test("Admin is told which FAQs this conversation already showed (shownFaqIds), so its alternatives never repeat one; Portal drops any it still sends", async () => {
+  const h = harness();
+  const fresh = await h.assistant.checkForSubmit(learner, enquiry);
+  assert.equal("shownFaqIds" in h.calls[0], false, "nothing shown yet: the request is as in v2");
+  assert.equal(fresh.suggestion, null);
+  // The learner reads two answers in this conversation (a chip, then the submit suggestion), and one answer with no match.
+  const chip = (await h.assistant.ask(learner, { message: ALTERNATIVES[1].question, locale: "en-GB", faqId: ALTERNATIVES[1].faqId }, randomUUID())).response;
+  h.advance(1_000);
+  await h.assistant.checkForSubmit(learner, { ...enquiry, subject: "Password" });
+  h.advance(1_000);
+  await h.assistant.ask(learner, { message: "Something odd", locale: "en-GB", faqId: null }, randomUUID());
+  // Another learner's answers never count.
+  await h.assistant.ask(other, { message: ALTERNATIVES[0].question, locale: "en-GB", faqId: ALTERNATIVES[0].faqId }, randomUUID());
+  h.advance(1_000);
+  const next = await h.assistant.ask(learner, { message: "Still locked out", locale: "en-GB", faqId: null }, randomUUID());
+  assert.deepEqual(h.calls.at(-1)?.shownFaqIds, [FAQ_ID, ALTERNATIVES[1].faqId], "newest first, each once, answered rows only");
+  assert.deepEqual(next.response.alternatives.map((item) => item.faqId), [ALTERNATIVES[0].faqId], "Portal also drops a shown FAQ Admin still offers");
+  // Once those answers are linked to a ticket the conversation starts afresh.
+  await h.service.createTicket(learner, { category: "technical_support", subject: "Still stuck", body: "Neither helped.", locale: "en-GB", contactEmail: null, suggestionId: null, assistIds: [chip.id, h.calls[2].runId], files: [] }, randomUUID());
+  await h.assistant.ask(learner, { message: "A new question", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal("shownFaqIds" in h.calls.at(-1)!, false, "a linked conversation is over");
+});
+
+test("shownFaqIds: at most 20 (Admin refuses more), and a failing lookup never stops the question", async () => {
+  const h = harness(async (input) => ({ suggestion: { id: input.runId, faqId: input.faqId ?? FAQ_ID, question: "Q", answer: "A" }, alternatives: [] }));
+  for (let index = 0; index < 23; index += 1) {
+    await h.assistant.ask(learner, { message: `chip ${index}`, locale: "en-GB", faqId: `0192d4f0-7b6a-7c3e-9a10-0000000002${String(index).padStart(2, "0")}` }, randomUUID());
+    h.advance(1_000);
+  }
+  assert.equal(h.calls.at(-1)?.shownFaqIds?.length, 20);
+  assert.equal(h.calls.at(-1)?.shownFaqIds?.[0], "0192d4f0-7b6a-7c3e-9a10-000000000221", "the newest first");
+  const broken = createAssistantService({ repository: { ...h.repository, conversationShownFaqIds: async () => { throw new Error("db down"); } }, admin: { suggest: async () => null, suggestReply: async () => ({ suggestion: null, alternatives: ALTERNATIVES }), reportOutcome: async () => true }, log: () => undefined });
+  assert.deepEqual((await broken.ask(other, { message: "x", locale: "en-GB", faqId: null }, randomUUID())).response.alternatives, ALTERNATIVES);
+});
+
 test("an older Admin client without suggestReply still works: the answer, and no alternatives", async () => {
   const repository = createLocalHelpdeskRepository(path.join(root, randomUUID()));
   const assistant = createAssistantService({ repository, admin: { suggest: async () => null, reportOutcome: async () => true }, log: () => undefined });

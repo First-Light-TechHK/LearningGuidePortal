@@ -280,11 +280,14 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     if (!destination) return nothing;
     try {
       // Fixed key order; optional fields only when set; the run ids always, last.
-      const body: Record<string, string | null> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
+      const body: Record<string, string | string[] | null> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
       if (input.category) body.category = input.category;
       if (input.subject) body.subject = input.subject;
       body.message = input.message;
       if (input.faqId) body.faqId = input.faqId;
+      // v3: Admin refuses a malformed id or more than 20 with 400, which would lose the answer too.
+      const shown = [...new Set((input.shownFaqIds ?? []).filter((id) => isUuid(id)).map((id) => id.toLowerCase()))].slice(0, HELPDESK_LIMITS.shownFaqIdsMax);
+      if (shown.length) body.shownFaqIds = shown;
       body.runId = input.runId;
       body.parentRunId = input.parentRunId;
       const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });

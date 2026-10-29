@@ -560,7 +560,7 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
   const chip = await (await ask({ message: FAQ.question, locale: "zh-CN", faqId: FAQ.id }, { cookie: strangerCookie })).json();
   assert.equal(chip.reply.faqId, FAQ.id);
   const { runId: chipRun, parentRunId: chipParent, ...chipAsked } = JSON.parse(adminCalls.at(-1)!.body) as Record<string, unknown>;
-  assert.deepEqual(chipAsked, { learnerId: strangerId, locale: "zh-CN", source: "chip", message: FAQ.question, faqId: FAQ.id });
+  assert.deepEqual(chipAsked, { learnerId: strangerId, locale: "zh-CN", source: "chip", message: FAQ.question, faqId: FAQ.id, shownFaqIds: [FAQ.id] }, "v3: the FAQ the chat already showed is named, so Admin does not offer it again");
   assert.match(String(chipRun), UUID_V7);
   assert.match(String(chipParent), UUID_V7, "the chip belongs to the conversation the chat started");
   assert.match(adminCalls.at(-1)!.traceparent ?? "", TRACEPARENT);
@@ -646,13 +646,16 @@ test("v3: the submit check and the chat pass on Admin's alternatives; rating an 
   const offered = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx());
   assert.equal(offered.status, 200);
   assert.deepEqual(await offered.json(), { suggestion: null, alternatives: [ALTERNATIVE] });
-  const answered = await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Forgot my password" }, cookie: learnerCookie }), ctx())).json() as { suggestion: { id: string }; alternatives: unknown[] };
-  assert.deepEqual(answered.alternatives, []);
-
   const ask = (json: unknown) => routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json, cookie: learnerCookie, key: randomUUID() }), ctx());
   const fallback = await (await ask({ message: "my account is locked", locale: "en-GB" })).json() as { id: string; reply: null; alternatives: unknown[] };
   assert.equal(fallback.reply, null);
   assert.deepEqual(fallback.alternatives, [ALTERNATIVE]);
+  const answered = await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Forgot my password" }, cookie: learnerCookie }), ctx())).json() as { suggestion: { id: string }; alternatives: unknown[] };
+  assert.deepEqual(answered.alternatives, []);
+  // That suggestion showed the FAQ: Admin is told (shownFaqIds) and it is never offered again in this conversation.
+  const after = await (await ask({ message: "my account is still locked", locale: "en-GB" })).json() as { reply: null; alternatives: unknown[] };
+  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body).shownFaqIds, [FAQ.id]);
+  assert.deepEqual(after.alternatives, [], "the FAQ just shown is not offered again");
   const chip = await (await ask({ message: ALTERNATIVE.question, locale: "en-GB", faqId: ALTERNATIVE.faqId })).json() as { id: string; reply: { faqId: string }; alternatives: unknown[] };
   assert.equal(chip.reply.faqId, FAQ.id);
   assert.deepEqual(chip.alternatives, []);

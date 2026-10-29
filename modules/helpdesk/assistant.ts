@@ -56,7 +56,7 @@ export type AssistantAdmin = {
 };
 
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "insertAiRating">;
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating">;
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
@@ -71,17 +71,18 @@ function clip(text: string, max: number) {
 /**
  * What Portal passes on (defensively, whatever Admin sent): none next to an
  * answer, never the FAQ just shown (the chip asked), each FAQ once, at most
- * HELPDESK_LIMITS.alternativesMax.
+ * HELPDESK_LIMITS.alternativesMax. "Just shown" is the chip asked and every
+ * FAQ the conversation already showed (shownFaqIds).
  */
 function offered(reply: AdminSuggestReply, request: AdminSuggestRequest): HelpdeskAlternative[] {
   if (reply.suggestion) return [];
-  const shown = request.faqId?.toLowerCase();
+  const shown = new Set([request.faqId, ...(request.shownFaqIds ?? [])].filter((id): id is string => Boolean(id)).map((id) => id.toLowerCase()));
   const found: HelpdeskAlternative[] = [];
   for (const item of reply.alternatives ?? []) {
     if (found.length >= HELPDESK_LIMITS.alternativesMax) break;
     if (typeof item?.faqId !== "string" || typeof item.question !== "string" || !item.question) continue;
     const faqId = item.faqId.toLowerCase();
-    if (faqId === shown || found.some((entry) => entry.faqId === faqId)) continue;
+    if (shown.has(faqId) || found.some((entry) => entry.faqId === faqId)) continue;
     found.push({ faqId, question: clip(item.question, 200) });
   }
   return found;
@@ -121,10 +122,15 @@ export function createAssistantService(deps: AssistantDeps) {
    * parentRunId the first row of the learner's open conversation (unlinked,
    * inside the ticket link window), or null when this run starts one.
    */
-  async function runIds(learnerId: string): Promise<{ runId: string; parentRunId: string | null }> {
+  async function runIds(learnerId: string): Promise<{ runId: string; parentRunId: string | null; shownFaqIds?: string[] }> {
     const at = now();
-    const parentRunId = await repository.conversationRootAssist(learnerId, new Date(at.getTime() - HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000).toISOString()).catch(() => null);
-    return { runId: uuidv7(at.getTime()), parentRunId };
+    const since = new Date(at.getTime() - HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000).toISOString();
+    const [parentRunId, shownFaqIds] = await Promise.all([
+      repository.conversationRootAssist(learnerId, since).catch(() => null),
+      // v3: what this conversation already showed, so Admin's alternatives never repeat it; a failed lookup only means none.
+      repository.conversationShownFaqIds(learnerId, since, HELPDESK_LIMITS.shownFaqIdsMax).catch(() => [] as string[])
+    ]);
+    return { runId: uuidv7(at.getTime()), parentRunId, ...(shownFaqIds.length ? { shownFaqIds } : {}) };
   }
 
   function record(runId: string, learner: LearnerIdentity, source: AssistSource, locale: AssistRecord["locale"], question: string, { suggestion: reply, alternatives }: SuggestionResponse, at: Date, key: string | null, hash: string | null): AssistRecord {

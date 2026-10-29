@@ -689,6 +689,20 @@ test("no answer: the modal offers “You might be asking”; a picked question a
   expect(await learnerTickets(page)).toEqual([]);
   expect(await outcomeOf(page.request, chip.suggestion!.id)).toBe("helpful");
   expect((await rateByApi(page, chip.suggestion!.id, 3)).status(), "the chip answer was rated 5 by the card").toBe(409);
+  // The learner comes back in this tab with a new enquiry: the answer they rated goes with it, so the agent sees it
+  // with its feedback and rating, and Admin is told it was shown (shownFaqIds), so it is not offered again.
+  await openSupport(page, "zh-CN");
+  const again = `账号还是打不开 ${randomUUID().slice(0, 6)}`;
+  await fillEnquiry(page, "zh-CN", { category: "technical_support", subject: again, message: "我的账号还是一直在转圈。" });
+  await page.getByRole("button", { name: text.submit }).click();
+  await expect(list.getByRole("button")).toHaveText(["如何重置密码？", "如何访问我的课程资料？"]);
+  const { suggestions: later } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { subject?: string; shownFaqIds?: string[] } }[] };
+  expect(later.filter((entry) => entry.request.subject === again).at(-1)!.request.shownFaqIds).toEqual(["0192f000-0000-7000-8000-000000000007"]);
+  await modal.getByRole("button", { name: text.assistant.noneOfThese }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  const [ticket] = await learnerTickets(page);
+  const agentView = await agentTicket(page.request, ticket.id);
+  expect(agentView.aiAssist.map((item) => [item.id, item.source, item.faqQuestion, item.feedback, item.rating])).toEqual([[chip.suggestion!.id, "chip", "如何访问我的课程？", "helpful", 5]]);
   await context.close();
 });
 

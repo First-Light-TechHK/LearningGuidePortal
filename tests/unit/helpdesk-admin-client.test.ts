@@ -388,3 +388,19 @@ test("suggestReply: not configured, any error or the timeout is no answer and no
   assert.deepEqual(await createAdminHelpdeskClient({ fetch: unused.fetch }).suggestReply(input), { suggestion: null, alternatives: [] });
   assert.equal(unused.calls.length, 0);
 });
+
+test("v3 shownFaqIds: the FAQs this conversation already showed go after faqId, before the run ids; only when there are some; lower-case UUIDs, at most 20", async () => {
+  const stub = stubFetch(() => json({ suggestion: null, alternatives: [] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch });
+  const base = { learnerId: "u1", locale: "en-GB" as const, source: "chat" as const, message: "still locked", runId: RUN_ID, parentRunId: ROOT_ID };
+  await client.suggestReply({ ...base, shownFaqIds: [ALT_A.faqId, ALT_B.faqId.toUpperCase()] });
+  assert.equal(stub.calls[0].body, JSON.stringify({ learnerId: "u1", locale: "en-GB", source: "chat", message: "still locked", shownFaqIds: [ALT_A.faqId, ALT_B.faqId], runId: RUN_ID, parentRunId: ROOT_ID }));
+  await client.suggestReply({ ...base, source: "chip", faqId: QUESTION.id, shownFaqIds: [ALT_A.faqId] });
+  assert.equal(stub.calls[1].body, JSON.stringify({ learnerId: "u1", locale: "en-GB", source: "chip", message: "still locked", faqId: QUESTION.id, shownFaqIds: [ALT_A.faqId], runId: RUN_ID, parentRunId: ROOT_ID }));
+  await client.suggestReply({ ...base, shownFaqIds: [] });
+  assert.equal("shownFaqIds" in JSON.parse(stub.calls[2].body || ""), false, "none: left out, as an older Portal sent it");
+  // Admin refuses a malformed id or more than 20 with 400 (which would lose the answer): drop bad ids, repeats, and keep the first 20.
+  const many = Array.from({ length: 25 }, (_, index) => `0192d4f0-7b6a-7c3e-9a10-0000000001${String(index).padStart(2, "0")}`);
+  await client.suggestReply({ ...base, shownFaqIds: ["faq-1", many[0], many[0], ...many.slice(1)] });
+  assert.deepEqual(JSON.parse(stub.calls[3].body || "").shownFaqIds, many.slice(0, 20));
+});

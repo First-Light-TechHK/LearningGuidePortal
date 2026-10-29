@@ -266,6 +266,49 @@ export function linkedAssistIds(chatIds: string[], pickedIds: string[], max = 10
   return ids.slice(0, max).reverse();
 }
 
+/**
+ * v3: the submit modal's answers the learner was shown (the suggestion, a
+ * picked alternative's answer), kept for this tab per account like the chat
+ * transcript, so the next enquiry links them even after Edit, Close or a
+ * "Yes, solved" that went back to the account (the agent then sees what the
+ * learner was already told, with its feedback and rating). Only inside the
+ * server's link window (HELPDESK_LIMITS.assistLinkWindowHours): older answers
+ * would not be linked anyway.
+ */
+export const SEEN_ANSWER_WINDOW_MS = 24 * 3_600_000;
+const SEEN_ANSWERS_MAX = 10;
+export type SeenAnswer = { id: string; at: string };
+
+export function seenStorageKey(accountId: string): string {
+  return `lg-helpdesk-seen:v1:${accountId}`;
+}
+
+/** The stored list, keeping well-formed entries inside the window (storage is the browser's), once each, newest 10. */
+export function readSeenAnswers(raw: string | null, now: Date): SeenAnswer[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  const since = now.getTime() - SEEN_ANSWER_WINDOW_MS;
+  let found: SeenAnswer[] = [];
+  for (const value of parsed) {
+    const entry = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    if (!isText(entry.id) || !UUID.test(entry.id) || !isText(entry.at)) continue;
+    const at = Date.parse(entry.at);
+    if (!Number.isFinite(at) || at <= since || at > now.getTime()) continue;
+    const id = entry.id.toLowerCase();
+    found = [...found.filter((item) => item.id !== id), { id, at: new Date(at).toISOString() }];
+  }
+  return found.slice(-SEEN_ANSWERS_MAX);
+}
+
+/** Adds (or moves to the end) one answer id the learner was shown; the newest 10 are kept. */
+export function rememberSeenAnswer(list: SeenAnswer[], id: string, now: Date): SeenAnswer[] {
+  if (!UUID.test(id)) return list;
+  const key = id.toLowerCase();
+  return [...list.filter((item) => item.id !== key), { id: key, at: now.toISOString() }].slice(-SEEN_ANSWERS_MAX);
+}
+
 export type TextSegment = { text: string; href?: string };
 
 /** http(s) URLs become links (trailing punctuation stays text); nothing else is interpreted. */

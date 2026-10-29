@@ -98,7 +98,7 @@ createServer(async (request, response) => {
     const suggestion = found ? { id: body.runId || randomUUID(), faqId: found.id, question: found.question, answer: found.answer } : null;
     const asked = `${body.subject || ""} ${body.message || ""}`.toLowerCase();
     const alternatives = !suggestion && /account|账号/.test(asked)
-      ? ACCOUNT_ALTERNATIVES.map((n) => list.find((faq) => faq.id === faqId(n))).filter((faq) => faq.id !== body.faqId).slice(0, 3).map((faq) => ({ faqId: faq.id, question: faq.question }))
+      ? ACCOUNT_ALTERNATIVES.map((n) => list.find((faq) => faq.id === faqId(n))).filter((faq) => faq.id !== body.faqId && !(body.shownFaqIds ?? []).includes(faq.id)).slice(0, 3).map((faq) => ({ faqId: faq.id, question: faq.question }))
       : [];
     suggestions.push({ request: body, suggestion, alternatives, traceparent: request.headers.traceparent ?? null });
     return send(response, 200, { suggestion, alternatives });

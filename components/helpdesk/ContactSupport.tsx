@@ -19,10 +19,10 @@
 // styles inside 1333:249 and are 待视觉验收 (pending visual sign-off).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Check, ChevronDown, ChevronRight, ChevronUp, Star, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Star, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { HelpdeskAlternative, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
-import { fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, linkedAssistIds, nextFocusIndex, problemMessageKey, RetryableSubmit, submissionSignature, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, linkedAssistIds, nextFocusIndex, problemMessageKey, readSeenAnswers, rememberSeenAnswer, RetryableSubmit, seenStorageKey, submissionSignature, SubmissionKeys, type HelpdeskUiConfig, type SeenAnswer } from "@/modules/helpdesk/learnerUi";
 import { alternativesIn, askAssistant, createTicket, newIdempotencyKey, rateAnswer, reportSuggestionOutcome, requestSuggestion, sendAssistantFeedback } from "./helpdeskApi";
 import { AssistantChat, type ChatChip } from "./AssistantChat";
 import { AttachmentZone, FileSummaryChip, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
@@ -64,9 +64,11 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
   const inFlight = useRef(false);
   /** The chat answers to link to the enquiry (newest 10), kept up to date by AssistantChat. */
   const assistIds = useRef<string[]>([]);
-  /** v3: the answers of the alternatives picked in this modal (each a logged assist row), linked with the chat's. */
-  const pickedIds = useRef<string[]>([]);
-  /** Bumped whenever the modal opens or closes, so an alternative's answer arriving late is dropped. */
+  /** v3: the modal answers the learner saw, when sessionStorage is blocked (otherwise they live there, per account: seenStorageKey). */
+  const seenFallback = useRef<SeenAnswer[]>([]);
+  /** Bumped by Skip and by each rating save, so a save that lands after Skip changes nothing. */
+  const ratingRun = useRef(0);
+  /** Bumped whenever the modal opens, closes or hands over, so an alternative's answer arriving late is dropped. */
   const modalRun = useRef(0);
   /** Set by Cancel and on unmount: a suggestion check still running must not go on to create a ticket. */
   const abandoned = useRef(false);
@@ -99,11 +101,32 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     return !first;
   }
 
+  /**
+   * v3: the submit modal's answers the learner was shown (the suggestion, a
+   * picked alternative's answer), kept for this tab so the next enquiry links
+   * them too, after Edit, Close or a "Yes, solved" that went back to the account.
+   */
+  function seenAnswers(): SeenAnswer[] {
+    const at = new Date();
+    try { return readSeenAnswers(window.sessionStorage.getItem(seenStorageKey(account.id)), at); } catch { return readSeenAnswers(JSON.stringify(seenFallback.current), at); }
+  }
+  function storeSeen(list: SeenAnswer[]) {
+    seenFallback.current = list;
+    try { window.sessionStorage.setItem(seenStorageKey(account.id), JSON.stringify(list)); } catch { /* storage blocked: kept in memory for this page */ }
+  }
+  const rememberSeen = (id: string) => storeSeen(rememberSeenAnswer(seenAnswers(), id, new Date()));
+
+  /** What an enquiry links: the chat answers and the modal answers the learner saw (newest 10); a declined suggestion goes as suggestionId instead. */
+  function linkedIds(declined: string | null): string[] {
+    const keep = (id: string) => id !== declined;
+    return linkedAssistIds(assistIds.current.filter(keep), seenAnswers().map((item) => item.id).filter(keep));
+  }
+
   function formFields(): Record<string, string> {
     return { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim() };
   }
 
-  async function submitTicket(suggestionId: string | null, linked: string[] = assistIds.current) {
+  async function submitTicket(suggestionId: string | null, linked: string[] = linkedIds(suggestionId)) {
     setBusy("submitting");
     const fields = formFields();
     const signature = submissionSignature(fields, attachments.files);
@@ -119,6 +142,7 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     if (result.ok) {
       keys.current.done();
       retry.current.clear();
+      storeSeen([]); // linked to this enquiry now
       setCreated(result.data);
       setPhase("success");
       window.scrollTo({ top: 0 });
@@ -151,11 +175,11 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
       suggestionCheck.current = null;
       if (abandoned.current) return;
       modalRun.current += 1;
-      pickedIds.current = [];
       setPicked(null);
       setPickError(false);
       setRating("idle");
       if (found.suggestion) {
+        rememberSeen(found.suggestion.id);
         setBusy("");
         setSuggestion(found.suggestion);
         setAlternatives([]);
@@ -194,11 +218,17 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     setPhase("rating");
   }
 
-  /** Hand over to a person: the ticket links the chat answers, the alternatives' answers and the declined suggestion (if any). */
+  /**
+   * Hand over to a person: the ticket links the chat answers, the modal answers
+   * the learner saw and the declined suggestion (if any). An alternative's
+   * answer still loading is dropped: the learner never saw it.
+   */
   function handOver(suggestionId: string | null) {
     if (inFlight.current) return;
     inFlight.current = true;
-    void submitTicket(suggestionId, linkedAssistIds(assistIds.current, pickedIds.current)).finally(() => { inFlight.current = false; });
+    modalRun.current += 1;
+    setPicked((current) => (current?.status === "pending" ? null : current));
+    void submitTicket(suggestionId).finally(() => { inFlight.current = false; });
   }
 
   function closeSuggestion(outcome: SuggestionOutcome, focus: "subject" | "submit" = "subject") {
@@ -217,8 +247,12 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     setPicked({ status: "pending", faqId: item.faqId });
     const result = await askAssistant({ message: item.question, locale, faqId: item.faqId }, newIdempotencyKey());
     if (run !== modalRun.current || abandoned.current) return;
-    if (result.ok && result.data?.id) pickedIds.current = [...pickedIds.current.filter((id) => id !== result.data.id), result.data.id];
-    if (result.ok && result.data?.reply) { setPicked({ status: "answer", faqId: item.faqId, id: result.data.id, reply: result.data.reply }); return; }
+    // Only an answer the learner is shown is linked to the enquiry (a row with no answer is not).
+    if (result.ok && result.data?.id && result.data.reply) {
+      rememberSeen(result.data.id);
+      setPicked({ status: "answer", faqId: item.faqId, id: result.data.id, reply: result.data.reply });
+      return;
+    }
     // No answer (the FAQ went away), 429 or a network failure: say so; the list and "None of these" stay.
     setPicked(null);
     setPickError(true);
@@ -232,14 +266,28 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     else handOver(null);
   }
 
+  /** "Back to the questions": the same list again, nothing asked or reported. */
+  function backToAlternatives() {
+    setPicked(null);
+    setPickError(false);
+  }
+
   async function rate(stars: number) {
     if (!ratingFor || rating === "saving") return;
+    const run = ++ratingRun.current;
     setRating("saving");
     const result = await rateAnswer(ratingFor, stars, newIdempotencyKey());
-    if (abandoned.current) return;
+    // Skip while saving went on to the thanks step: what this save says no longer matters.
+    if (abandoned.current || run !== ratingRun.current) return;
     // 409: this answer was rated already (the first rating is kept), so the card is done either way.
     if (result.ok || result.status === 409) { setRating("rated"); setPhase("thanks"); return; }
     setRating("error");
+  }
+
+  /** Skip is never blocked, not even by a save in flight (the card is optional). */
+  function skipRating() {
+    ratingRun.current += 1;
+    setPhase("thanks");
   }
 
   /** "We’d love to hear your ideas, too!": an Other Enquiries enquiry, starting at Subject. */
@@ -288,8 +336,8 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     </div>
     {phase === "suggestion" || phase === "alternatives" || phase === "rating" || phase === "thanks" ? <AssistantModal copy={copy} locale={locale} stage={phase} suggestion={suggestion} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}
-      alternatives={{ items: alternatives, picked, error: pickError, onPick: (item) => void pickAlternative(item), onOutcome: alternativeOutcome, onNone: () => handOver(null), onEdit: () => backToForm("subject") }}
-      rating={{ state: rating, onRate: (stars) => void rate(stars), onSkip: () => setPhase("thanks") }}
+      alternatives={{ items: alternatives, picked, error: pickError, onPick: (item) => void pickAlternative(item), onOutcome: alternativeOutcome, onNone: () => handOver(null), onEdit: () => backToForm("subject"), onBack: backToAlternatives }}
+      rating={{ state: rating, onRate: (stars) => void rate(stars), onSkip: skipRating }}
       onOutcome={closeSuggestion} onDismiss={() => (phase === "alternatives" ? backToForm("submit") : closeSuggestion("edited", "submit"))} /> : null}
   </div>;
 }
@@ -335,7 +383,7 @@ type Enquiry = { name: string; email: string; subject: string; category: TicketC
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-type AlternativesProps = { items: HelpdeskAlternative[]; picked: Picked | null; error: boolean; onPick: (item: HelpdeskAlternative) => void; onOutcome: (helpful: boolean) => void; onNone: () => void; onEdit: () => void };
+type AlternativesProps = { items: HelpdeskAlternative[]; picked: Picked | null; error: boolean; onPick: (item: HelpdeskAlternative) => void; onOutcome: (helpful: boolean) => void; onNone: () => void; onEdit: () => void; onBack: () => void };
 type RatingProps = { state: "idle" | "saving" | "error" | "rated"; onRate: (stars: number) => void; onSkip: () => void };
 
 function AssistantModal({ copy, locale, stage, suggestion, enquiry, busy, accountHome, alternatives, rating, onOutcome, onDismiss }: { copy: HelpdeskCopy; locale: Locale; stage: "suggestion" | "alternatives" | "rating" | "thanks"; suggestion: HelpdeskSuggestion | null; enquiry: Enquiry; busy: boolean; accountHome: string; alternatives: AlternativesProps; rating: RatingProps; onOutcome: (outcome: SuggestionOutcome) => void; onDismiss: () => void }) {
@@ -374,9 +422,15 @@ function AssistantModal({ copy, locale, stage, suggestion, enquiry, busy, accoun
     if (stage === "rating") ratingCard.current?.focus();
     else if (stage === "thanks" && !dialog.current?.contains(document.activeElement)) dialog.current?.focus();
   }, [stage]);
-  // A picked alternative's answer takes focus at its question, so it is read out.
+  // A picked alternative's answer takes focus at its question, so it is read out; "Back to the questions" returns focus to that question's chip.
   const answered = alternatives.picked?.status === "answer" ? alternatives.picked : null;
-  useEffect(() => { if (answered) answerHeading.current?.focus(); }, [answered]);
+  const backTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (answered) { answerHeading.current?.focus(); return; }
+    if (!backTo.current) return;
+    dialog.current?.querySelector<HTMLButtonElement>(`button[data-faq-id="${backTo.current}"]`)?.focus();
+    backTo.current = null;
+  }, [answered]);
   // The chips are disabled while an answer loads, which drops focus; after a failure it goes back to the chip that was tried.
   const lastPicked = useRef<string | null>(null);
   useEffect(() => {
@@ -413,7 +467,8 @@ function AssistantModal({ copy, locale, stage, suggestion, enquiry, busy, accoun
           <h3 id={`${ids}-rate`}>{copy.assistant.rateTitle}</h3>
           <div className="helpdesk-stars">{[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" disabled={rating.state === "saving"} aria-label={fillTemplate(copy.assistant.rateStar, { n })} onClick={() => rating.onRate(n)}><Star size={22} aria-hidden="true" /></button>)}</div>
           {rating.state === "error" ? <p role="alert" className="helpdesk-inline-error">{copy.assistant.rateError}</p> : null}
-          <button type="button" className="helpdesk-secondary-button" disabled={rating.state === "saving"} onClick={rating.onSkip}>{copy.assistant.skip}</button>
+          {/* Skip stays enabled while a star is saving: the card never traps the learner. */}
+          <button type="button" className="helpdesk-secondary-button" onClick={rating.onSkip}>{copy.assistant.skip}</button>
         </section> : <Link prefetch={false} className="helpdesk-submit-button" href={accountHome}>{copy.assistant.backToAccount}</Link>}
       </div> : <>
         <div className="helpdesk-modal-body">
@@ -433,6 +488,8 @@ function AssistantModal({ copy, locale, stage, suggestion, enquiry, busy, accoun
                 <p className="helpdesk-answer-greeting">{name ? fillTemplate(copy.assistant.greeting, { name }) : copy.assistant.greetingNoName}</p>
                 <Markdown className="helpdesk-answer-markdown" text={suggestion.answer} />
               </> : answered ? <>
+                {/* v3: the way back to the "You might be asking" list; no Figma frame, 待视觉验收 (a text button in the 1333:249 answer box). */}
+                <button type="button" className="helpdesk-answer-back" disabled={busy} onClick={() => { backTo.current = answered.faqId; alternatives.onBack(); }}><ChevronLeft size={14} aria-hidden="true" />{copy.assistant.backToQuestions}</button>
                 <h3 className="helpdesk-answer-greeting helpdesk-answer-question" tabIndex={-1} ref={answerHeading}>{answered.reply.question}</h3>
                 <Markdown className="helpdesk-answer-markdown" text={answered.reply.answer} />
               </> : <>

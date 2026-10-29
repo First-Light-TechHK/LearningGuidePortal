@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { HELPDESK_ATTACHMENT_TYPES, HELPDESK_LIMITS, HelpdeskProblem, STATUS_LABELS, TICKET_CATEGORIES, TICKET_STATUSES, parseCreateTicketInput, isContactEmail, type TicketDetail } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { helpdeskUiConfig } from "../../modules/helpdesk/learnerUiConfig";
-import { assistIdsOf, chatStorageKey, conversationItems, linkedAssistIds, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, settleTranscript, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
+import { assistIdsOf, chatStorageKey, conversationItems, linkedAssistIds, readSeenAnswers, rememberSeenAnswer, SEEN_ANSWER_WINDOW_MS, seenStorageKey, fileSignature, fillTemplate, firstName, formatBytes, initials, isValidEmail, isValidText, linkify, nextFocusIndex, pastedFiles, problemMessageKey, readTranscript, relativeTime, settleTranscript, reloadsTicket, RetryableSubmit, screenFiles, submissionSignature, SubmissionKeys } from "../../modules/helpdesk/learnerUi";
 
 const config = helpdeskUiConfig();
 
@@ -273,4 +273,34 @@ test("v3: the enquiry links the chat answers and the chosen alternatives' answer
   assert.deepEqual(linkedAssistIds(chatIds, ["01a18100-0000-7000-8000-0000000000e1"]), [...chatIds.slice(1), "01a18100-0000-7000-8000-0000000000e1"]);
   assert.deepEqual(linkedAssistIds(chatIds.slice(0, 2), [chatIds[1], "01a18100-0000-7000-8000-0000000000e1"]), [chatIds[0], chatIds[1], "01a18100-0000-7000-8000-0000000000e1"]);
   assert.deepEqual(linkedAssistIds([], []), []);
+});
+
+test("v3: the submit modal's answers the learner saw are kept per account for this tab, inside the server's 24 h link window, newest 10", () => {
+  const at = new Date("2026-10-29T12:00:00.000Z");
+  const id = (n: number) => `01a18100-0000-7000-8000-0000000000${String(n).padStart(2, "0")}`;
+  assert.equal(SEEN_ANSWER_WINDOW_MS, HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000, "the same window the server links answers in");
+  assert.equal(seenStorageKey("u-1"), "lg-helpdesk-seen:v1:u-1");
+  assert.notEqual(seenStorageKey("u-1"), chatStorageKey("u-1"));
+  // remember: once each, newest last, the newest 10
+  let seen = rememberSeenAnswer([], id(1), at);
+  seen = rememberSeenAnswer(seen, id(2), new Date(at.getTime() + 1_000));
+  seen = rememberSeenAnswer(seen, id(1), new Date(at.getTime() + 2_000));
+  assert.deepEqual(seen, [{ id: id(2), at: "2026-10-29T12:00:01.000Z" }, { id: id(1), at: "2026-10-29T12:00:02.000Z" }]);
+  assert.deepEqual(rememberSeenAnswer(seen, "not-a-uuid", at), seen, "only answer ids");
+  let many: ReturnType<typeof readSeenAnswers> = [];
+  for (let n = 0; n < 12; n += 1) many = rememberSeenAnswer(many, id(n), at);
+  assert.deepEqual(many.map((item) => item.id), Array.from({ length: 10 }, (_, n) => id(n + 2)));
+  // read back: well-formed entries only, none older than the window or from the future, ids lower-cased once each
+  const raw = JSON.stringify([
+    { id: id(1), at: "2026-10-28T11:59:59.000Z" },
+    { id: id(2), at: "2026-10-28T12:00:01.000Z" },
+    { id: id(3).toUpperCase(), at: "2026-10-29T11:00:00.000Z" },
+    { id: id(3), at: "2026-10-29T11:30:00.000Z" },
+    { id: id(4), at: "2026-10-29T13:00:00.000Z" },
+    { id: "nope", at: "2026-10-29T11:00:00.000Z" },
+    { id: id(5), at: "yesterday" },
+    null, 7
+  ]);
+  assert.deepEqual(readSeenAnswers(raw, at).map((item) => item.id), [id(2), id(3)]);
+  for (const bad of [null, "", "{", "{}", "[1]"]) assert.deepEqual(readSeenAnswers(bad, at), [], String(bad));
 });

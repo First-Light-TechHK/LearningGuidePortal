@@ -70,9 +70,18 @@ export function sendAssistantFeedback(id: string, helpful: boolean, idempotencyK
   return call<AssistantFeedbackResponse>(`/api/helpdesk/assistant/${encodeURIComponent(id)}/feedback`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ helpful }) });
 }
 
+/** A rating save still open after this is given up as a network failure, so the card offers retry or Skip instead of waiting. */
+export const RATING_TIMEOUT_MS = 5_000;
+
 /** v3 §2 rating card: 1-5 stars for an answer the learner was shown; the server keeps the first (409 answer_already_rated for another value). */
-export function rateAnswer(id: string, rating: number, idempotencyKey: string) {
-  return call<AssistantRatingResponse>(`/api/helpdesk/assistant/${encodeURIComponent(id)}/rating`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ rating }) });
+export async function rateAnswer(id: string, rating: number, idempotencyKey: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RATING_TIMEOUT_MS);
+  try {
+    return await call<AssistantRatingResponse>(`/api/helpdesk/assistant/${encodeURIComponent(id)}/rating`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ rating }), signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function createTicket(form: FormData, idempotencyKey: string) {

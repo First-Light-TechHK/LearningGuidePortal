@@ -1714,6 +1714,7 @@
       "alternativesHint": "都不是你要找的？",
       "noneOfThese": "都不是，提交给客服",
       "alternativeLoading": "正在查找解答…",
+      "backToQuestions": "返回问题列表",
       "alternativeError": "抱歉，暂时无法显示这个解答。请换一个问题，或提交给客服。",
       "rateTitle": "本次服务满意吗？",
       "rateStar": "{n} 分（满分 5 分）",

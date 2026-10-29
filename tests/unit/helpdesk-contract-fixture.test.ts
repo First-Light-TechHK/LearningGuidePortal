@@ -21,7 +21,7 @@ import { CSV, PDF } from "./helpdesk-fixtures";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Fixture = {
   enums: Record<string, string[]> & { agentProblemCode: Record<string, string[]> };
-  adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json; detailResponse: Json & { subscription: Json }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
+  adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json; detailResponse: Json & { subscription: Json; aiAssist: Json[] }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
   portalToAdmin: Record<string, Json> & {
     faqsRequest: string; faqsSearchRequest: string; faqsResponse: { faqs: Json[]; etag: string }; faqRequest: string; faqResponse: Json;
     suggestRequest: Record<string, string | null>; suggestChatRequest: Record<string, string | null>; suggestChipRequest: Record<string, string | null>; traceparentHeader: string; suggestResponse: { suggestion: Json; alternatives: Json[] }; suggestNoMatchResponse: { suggestion: Json; alternatives: Json[] }; suggestAlternativesResponse: { suggestion: Json; alternatives: Json[] };
@@ -89,7 +89,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "c62c2f56f7fcbcd1090b9c8a8da0dfe93ad2aa795994a8a031c97915884ff4e8";
+const FIXTURE_SHA256 = "aca8a9cc1e2f2cc06bf23a772d9197a4540a4cd7876a747131022d0d7bf30500";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -153,14 +153,36 @@ test("the integration list and detail Portal serves have the contract's shape", 
     return new Request(`${ORIGIN}${url}`, { method: json === undefined ? "GET" : "POST", headers, body: json === undefined ? undefined : JSON.stringify(json) });
   };
 
-  // A chat question first (Admin is not configured here, so the fallback answer), linked to the enquiry below.
+  // A chat question first, answered by a stand-in Admin, rated by the learner (v4) and linked to the enquiry below.
   const assistant = await import("../../app/api/helpdesk/assistant/route");
-  const asked = await assistant.POST(new Request(`${ORIGIN}/api/helpdesk/assistant`, {
-    method: "POST", body: JSON.stringify({ message: "Where can I find my invoice?", locale: "zh-CN" }),
-    headers: new Headers({ host: "localhost:3000", origin: ORIGIN, cookie: `${SESSION_COOKIE}=${cookie}`, "idempotency-key": randomUUID(), "content-type": "application/json" })
-  }));
+  const rating = await import("../../app/api/helpdesk/assistant/[id]/rating/route");
+  const fixtureAssist = fixture.adminToPortal.detailResponse.aiAssist[0] as unknown as { faqId: string; faqQuestion: string; answer: string; rating: number };
+  const realFetch = globalThis.fetch;
+  process.env.ADMIN_HELPDESK_BASE_URL = "http://admin.local.test";
+  process.env.ADMIN_HELPDESK_TOKEN = "local-test-admin-token";
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    const sent = JSON.parse(String(init?.body)) as { runId: string };
+    return new Response(JSON.stringify({ suggestion: { id: sent.runId, faqId: fixtureAssist.faqId, question: fixtureAssist.faqQuestion, answer: fixtureAssist.answer }, alternatives: [] }), { status: 200 });
+  }) as typeof fetch;
+  let asked: Response;
+  try {
+    asked = await assistant.POST(new Request(`${ORIGIN}/api/helpdesk/assistant`, {
+      method: "POST", body: JSON.stringify({ message: "Where can I find my invoice?", locale: "zh-CN" }),
+      headers: new Headers({ host: "localhost:3000", origin: ORIGIN, cookie: `${SESSION_COOKIE}=${cookie}`, "idempotency-key": randomUUID(), "content-type": "application/json" })
+    }));
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.ADMIN_HELPDESK_BASE_URL;
+    delete process.env.ADMIN_HELPDESK_TOKEN;
+  }
   assert.equal(asked.status, 200, await asked.clone().text());
   const assistId = (await asked.json() as { id: string }).id;
+  assert.equal(typeof fixtureAssist.rating, "number", "the contract's first aiAssist item carries a rating, so its type is compared");
+  const rated = await rating.POST(new Request(`${ORIGIN}/api/helpdesk/assistant/${assistId}/rating`, {
+    method: "POST", body: JSON.stringify({ rating: fixtureAssist.rating }),
+    headers: new Headers({ host: "localhost:3000", origin: ORIGIN, cookie: `${SESSION_COOKIE}=${cookie}`, "idempotency-key": randomUUID(), "content-type": "application/json" })
+  }), { params: Promise.resolve({ id: assistId }) });
+  assert.equal(rated.status, 200, await rated.clone().text());
   const form = new FormData();
   for (const [key, value] of Object.entries({ category: "payments_subscriptions", subject: "Invoice 中文 test", body: "See files", locale: "zh-CN", contactEmail: "other@example.test" })) form.set(key, value);
   form.append("assistIds", assistId);
@@ -185,6 +207,7 @@ test("the integration list and detail Portal serves have the contract's shape", 
   const detail = await (await agentTicket.GET(agent(`/api/integration/helpdesk/tickets/${id}`), ctx(id))).json() as Json & { aiAssist: Json[]; flagged: boolean };
   assertSameShape(detail, fixture.adminToPortal.detailResponse);
   assert.equal(detail.aiAssist.length, 1, "the chat answer is linked and compared against the contract's aiAssist item");
+  assert.equal((detail.aiAssist[0] as Record<string, Json>).rating, fixtureAssist.rating, "v4: the learner's rating reaches Admin as the number the contract shows");
   assert.equal(detail.flagged, true);
 
   // The subscription block (null for this learner) has the contract's keys when present.

@@ -119,6 +119,8 @@ export type HelpdeskRepository = {
   recordAssistDelivery(id: string, atIso: string, delivered: boolean): Promise<void>;
   /** The learner's current conversation: id of their oldest row after sinceIso not yet linked to a ticket (Admin's parentRunId), or null. */
   conversationRootAssist(learnerId: string, sinceIso: string): Promise<string | null>;
+  /** v3: the FAQs that conversation already showed: distinct faqIds of the learner's answered rows after sinceIso not yet linked to a ticket, newest first, at most limit (Admin's shownFaqIds). */
+  conversationShownFaqIds(learnerId: string, sinceIso: string, limit: number): Promise<string[]>;
   /** Rows with feedback Admin has not confirmed, created after sinceIso: never tried first, then least recently tried, then oldest. */
   listUndeliveredAssists(sinceIso: string, limit: number): Promise<AssistRecord[]>;
   /** Rows linked to a ticket, oldest first, each with the learner's rating (v3 §2) or null. */

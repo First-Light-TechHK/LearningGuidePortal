@@ -39,6 +39,8 @@ export const HELPDESK_LIMITS = {
   assistLinkWindowHours: 24,
   /** v3 §1: "You might be asking" questions shown when there is no answer (Admin sends 0-3). */
   alternativesMax: 3,
+  /** v3: Admin refuses more than 20 shownFaqIds (400). */
+  shownFaqIdsMax: 20,
   learnerIdMax: 128
 } as const;
 
@@ -263,8 +265,10 @@ export type SuggestInput = { category: TicketCategory; subject: string; message:
  * Portal -> Admin POST /api/integration/helpdesk/suggest (v2 §2).
  * runId is the assist log row id Portal records (Admin's trace run and, when it answers, its suggestion id);
  * parentRunId is the first row of the learner's current conversation (null when this run starts one).
+ * shownFaqIds (v3, additive): the FAQs that conversation already showed, newest first, at most
+ * HELPDESK_LIMITS.shownFaqIdsMax; Admin never offers them as alternatives. Left out when there are none.
  */
-export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string; runId: string; parentRunId: string | null };
+export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string; shownFaqIds?: string[]; runId: string; parentRunId: string | null };
 /** POST /api/helpdesk/assistant body (v2 §4b). */
 export type AssistantInput = { message: string; locale: HelpdeskLocale; faqId: string | null };
 /** id is the assist log row (link it with assistIds); reply null = show the fallback copy, then the alternatives (v3, additive) as chips. */

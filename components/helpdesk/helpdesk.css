@@ -218,6 +218,9 @@
 .helpdesk-modal-alternatives .helpdesk-chat-chip { width: 100%; max-width: 520px; height: auto; min-height: 40px; font-size: 14px; line-height: 20px; }
 .helpdesk-answer-question { margin: 0; font-size: 16px; }
 .helpdesk-answer-question:focus { outline: none; }
+.helpdesk-answer-back { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 8px; padding: 0; border: 0; background: none; color: #2563eb; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; }
+.helpdesk-answer-back:hover { text-decoration: underline; }
+.helpdesk-answer-back:disabled { cursor: not-allowed; opacity: .6; text-decoration: none; }
 .helpdesk-chat-alternatives { align-self: stretch; margin: 2px 0 4px; }
 .helpdesk-chat-alternatives .helpdesk-chat-chip { width: 100%; }
 
