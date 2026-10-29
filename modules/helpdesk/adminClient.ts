@@ -5,7 +5,10 @@
 // page or submit ever waits long on, or fails because of, Admin.
 // ADMIN_HELPDESK_BASE_URL and ADMIN_HELPDESK_TOKEN are read on every call so
 // a rotated token applies without a restart. The token is never logged.
+// Every call carries a W3C traceparent: a child of the learner request's
+// own (deps.traceparent) when that is valid, otherwise a new trace.
 import { FAQ_CATEGORIES, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type HelpFaq, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
+import { outgoingTraceparent } from "@/lib/traceparent";
 import { isUuid } from "@/lib/uuidv7";
 
 export const ADMIN_FAQS_TTL_MS = 60_000;
@@ -76,6 +79,8 @@ export type AdminHelpdeskClientDeps = {
   now?: () => number;
   log?: (line: Record<string, unknown>) => void;
   timeouts?: Partial<{ faqs: number; wait: number; suggest: number; outcome: number }>;
+  /** The incoming request's traceparent header, continued on every Admin call. */
+  traceparent?: string | null;
 };
 
 type Target = { baseUrl: string; token: string };
@@ -133,7 +138,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("timeout")), init.timeout);
     try {
-      const headers: Record<string, string> = { Authorization: `Bearer ${destination.token}`, Accept: "application/json", ...init.headers };
+      const headers: Record<string, string> = { Authorization: `Bearer ${destination.token}`, Accept: "application/json", traceparent: outgoingTraceparent(deps.traceparent), ...init.headers };
       if (init.body !== undefined) headers["Content-Type"] = "application/json";
       const response = await doFetch(`${destination.baseUrl}${path}`, {
         method: init.method, headers, body: init.body === undefined ? undefined : JSON.stringify(init.body), signal: controller.signal, cache: "no-store"
@@ -248,12 +253,14 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     const destination = target();
     if (!destination) return null;
     try {
-      // Fixed key order; optional fields only when set.
-      const body: Record<string, string> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
+      // Fixed key order; optional fields only when set; the run ids always, last.
+      const body: Record<string, string | null> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
       if (input.category) body.category = input.category;
       if (input.subject) body.subject = input.subject;
       body.message = input.message;
       if (input.faqId) body.faqId = input.faqId;
+      body.runId = input.runId;
+      body.parentRunId = input.parentRunId;
       const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
       const reply = JSON.parse(result.text) as { suggestion?: unknown };

@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     // The ticket's transaction recorded "declined" for the submit-time suggestion; tell Admin from
     // the server (in the background: Admin being slow never delays the learner; the sweep retries).
     if (input.suggestionId && !result.replayed) {
-      void helpdeskAssistant().deliverOutcome(input.suggestionId).catch((error: unknown) => {
+      void helpdeskAssistant(request).deliverOutcome(input.suggestionId).catch((error: unknown) => {
         console.info(JSON.stringify({ type: "helpdesk", event: "assistant_outcome_not_delivered", error: error instanceof Error ? error.name : "unknown" }));
       });
     }

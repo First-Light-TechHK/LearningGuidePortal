@@ -75,8 +75,9 @@ after(async () => {
   if (directory && path.dirname(directory) === tmpdir()) await rm(directory, { recursive: true, force: true });
 });
 
-function learnerRequest(url: string, init: { method?: string; cookie?: string; key?: string; body?: BodyInit; json?: unknown; origin?: string | null } = {}) {
+function learnerRequest(url: string, init: { method?: string; cookie?: string; key?: string; body?: BodyInit; json?: unknown; origin?: string | null; traceparent?: string } = {}) {
   const headers = new Headers({ host: "localhost:3000" });
+  if (init.traceparent) headers.set("traceparent", init.traceparent);
   if (init.origin !== null) headers.set("origin", init.origin ?? ORIGIN);
   if (init.cookie) headers.set("cookie", `${SESSION_COOKIE}=${init.cookie}`);
   if (init.key) headers.set("idempotency-key", init.key);
@@ -400,8 +401,11 @@ test("create accepts contactEmail and suggestionId; the agent API tags, marks re
   assert.deepEqual(detail.tags, ["login issue"]);
 });
 
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const TRACEPARENT = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
+
 // A local stand-in for Admin's integration API (v2 §2).
-type AdminCall = { method: string; url: string; authorization: string | undefined; body: string };
+type AdminCall = { method: string; url: string; authorization: string | undefined; traceparent: string | undefined; body: string };
 let admin: Server;
 let adminCalls: AdminCall[] = [];
 let adminMode: "ok" | "down" | "slow" = "ok";
@@ -418,7 +422,7 @@ async function readBody(request: IncomingMessage) {
 
 async function startAdmin() {
   admin = createServer(async (request, response) => {
-    const call = { method: request.method || "", url: request.url || "", authorization: request.headers.authorization, body: await readBody(request) };
+    const call = { method: request.method || "", url: request.url || "", authorization: request.headers.authorization, traceparent: request.headers.traceparent?.toString(), body: await readBody(request) };
     adminCalls.push(call);
     if (adminMode === "down") { response.writeHead(503, { "content-type": "application/problem+json" }).end("{}"); return; }
     if (adminMode === "slow") { setTimeout(() => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ suggestion: suggestionFor() })), 6_000).unref(); return; }
@@ -451,7 +455,17 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   const { suggestion } = await suggested.json() as { suggestion: { id: string; faqId: string; question: string; answer: string } };
   assert.deepEqual(Object.keys(suggestion).sort(), ["answer", "faqId", "id", "question"]);
   assert.equal(suggestion.faqId, FAQ.id);
-  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { learnerId, locale: "en-GB", source: "submit", category: "technical_support", subject: "Forgot my password", message: "I cannot sign in" });
+  const { runId, parentRunId, ...asked } = JSON.parse(adminCalls.at(-1)!.body) as Record<string, unknown>;
+  assert.deepEqual(asked, { learnerId, locale: "en-GB", source: "submit", category: "technical_support", subject: "Forgot my password", message: "I cannot sign in" });
+  assert.match(String(runId), UUID_V7, "the run id Portal stores the row under");
+  assert.ok(parentRunId === null || UUID_V7.test(String(parentRunId)));
+  assert.match(adminCalls.at(-1)!.traceparent ?? "", TRACEPARENT, "a new trace when the learner request had none");
+  // A valid incoming W3C traceparent is continued to Admin with a new span.
+  const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+  await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie, traceparent: incoming }), ctx());
+  const continued = adminCalls.at(-1)!.traceparent ?? "";
+  assert.match(continued, /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/);
+  assert.notEqual(continued, incoming);
   const none = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Refund", message: "money back" }, cookie: learnerCookie }), ctx());
   assert.deepEqual(await none.json(), { suggestion: null });
   const ticketsBefore = (await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length;
@@ -535,7 +549,11 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
 
   const chip = await (await ask({ message: FAQ.question, locale: "zh-CN", faqId: FAQ.id }, { cookie: strangerCookie })).json();
   assert.equal(chip.reply.faqId, FAQ.id);
-  assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { learnerId: strangerId, locale: "zh-CN", source: "chip", message: FAQ.question, faqId: FAQ.id });
+  const { runId: chipRun, parentRunId: chipParent, ...chipAsked } = JSON.parse(adminCalls.at(-1)!.body) as Record<string, unknown>;
+  assert.deepEqual(chipAsked, { learnerId: strangerId, locale: "zh-CN", source: "chip", message: FAQ.question, faqId: FAQ.id });
+  assert.match(String(chipRun), UUID_V7);
+  assert.match(String(chipParent), UUID_V7, "the chip belongs to the conversation the chat started");
+  assert.match(adminCalls.at(-1)!.traceparent ?? "", TRACEPARENT);
   const fallback = await (await ask({ message: "refund for order 42", locale: "en-GB" }, { cookie: strangerCookie })).json();
   assert.equal(fallback.reply, null);
   assert.match(fallback.id, /^[0-9a-f-]{36}$/);

@@ -1,10 +1,10 @@
 {
   "$comment": [
-    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call.",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
-  "version": 2,
+  "version": 3,
   "enums": {
     "ticketStatus": [
       "OPEN",
@@ -514,26 +514,33 @@
       "answer": "1. Check your spam folder\n2. Request a new link on [Forgot password](https://www.ilovelearningguide.com/en-GB/forgot-password)\n\nStill stuck? Email **support** at [support@ilovelearningguide.com](mailto:support@ilovelearningguide.com).",
       "updatedAt": "2026-10-28T08:30:00.000Z"
     },
+    "traceparentHeader": "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
     "suggestRequest": {
       "learnerId": "user_fixture_learner",
       "locale": "en-GB",
       "source": "submit",
       "category": "technical_support",
       "subject": "Cannot reset my password",
-      "message": "The reset email never arrives."
+      "message": "The reset email never arrives.",
+      "runId": "01a18100-0000-7000-8000-00000000000e",
+      "parentRunId": "01a18100-0000-7000-8000-00000000000f"
     },
     "suggestChatRequest": {
       "learnerId": "user_fixture_learner",
       "locale": "en-GB",
       "source": "chat",
-      "message": "I never get the reset email"
+      "message": "I never get the reset email",
+      "runId": "01a18100-0000-7000-8000-00000000000f",
+      "parentRunId": null
     },
     "suggestChipRequest": {
       "learnerId": "user_fixture_learner",
       "locale": "en-GB",
       "source": "chip",
       "message": "How do I reset my password?",
-      "faqId": "01a18100-0000-7000-8000-00000000000d"
+      "faqId": "01a18100-0000-7000-8000-00000000000d",
+      "runId": "01a18100-0000-7000-8000-000000000010",
+      "parentRunId": "01a18100-0000-7000-8000-00000000000f"
     },
     "suggestResponse": {
       "suggestion": {

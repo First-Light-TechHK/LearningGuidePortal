@@ -24,7 +24,7 @@ type Fixture = {
   adminToPortal: Record<string, Json> & { listRequest: string; timelineRequest: string; flaggedListRequest: string; listResponse: Json; detailResponse: Json & { subscription: Json }; messageRequest: Json; actionRequests: Json[]; staleProblem: Json };
   portalToAdmin: Record<string, Json> & {
     faqsRequest: string; faqsSearchRequest: string; faqsResponse: { faqs: Json[]; etag: string }; faqRequest: string; faqResponse: Json;
-    suggestRequest: Record<string, string>; suggestChatRequest: Record<string, string>; suggestChipRequest: Record<string, string>; suggestResponse: { suggestion: Json };
+    suggestRequest: Record<string, string | null>; suggestChatRequest: Record<string, string | null>; suggestChipRequest: Record<string, string | null>; traceparentHeader: string; suggestResponse: { suggestion: Json };
     outcomeRequest: Json; helpfulOutcomeRequest: Json; outcomeResponse: Json;
   };
 };
@@ -89,7 +89,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "9d7a003c9d01009c794587d061e4e8f35671aecb6b403b2fd29b6e05cb281839";
+const FIXTURE_SHA256 = "e0bd7971609bc6059b2c55f0e2ca54d77b0cb9cb63c88fc88ae16687784a79ad";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -207,8 +207,11 @@ test("Portal's Admin client sends the contract's requests and reads the contract
   process.env.ADMIN_HELPDESK_BASE_URL = "http://admin.local.test";
   process.env.ADMIN_HELPDESK_TOKEN = "local-test-admin-token";
   try {
-    const client = createAdminHelpdeskClient({ fetch: fakeFetch, log: () => undefined });
     const p = fixture.portalToAdmin;
+    // The learner request's W3C traceparent is continued on every Admin call (a new span each).
+    const [traceName, incoming] = p.traceparentHeader.split(": ");
+    assert.equal(traceName, "traceparent");
+    const client = createAdminHelpdeskClient({ fetch: fakeFetch, log: () => undefined, traceparent: incoming });
 
     replies.push(new Response(JSON.stringify(p.faqsResponse), { status: 200, headers: { "content-type": "application/json", etag: p.faqsResponse.etag } }));
     assert.deepEqual(await client.faqs("en-GB", { popular: true, limit: 3 }), p.faqsResponse.faqs);
@@ -230,6 +233,8 @@ test("Portal's Admin client sends the contract's requests and reads the contract
       assert.equal(sent[3 + index].url, "http://admin.local.test/api/integration/helpdesk/suggest");
       assert.deepEqual(sent[3 + index].body, body, "sent exactly as in the contract (key order included)");
       assert.equal(JSON.stringify(sent[3 + index].body), JSON.stringify(body));
+      assert.equal(sent[3 + index].headers.traceparent.split("-")[1], incoming.split("-")[1], "same trace id");
+      assert.notEqual(sent[3 + index].headers.traceparent.split("-")[2], incoming.split("-")[2], "our own span id");
     }
 
     replies.push(new Response(JSON.stringify(p.suggestNoMatchResponse), { status: 200 }));

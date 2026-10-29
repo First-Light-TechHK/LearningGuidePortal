@@ -17,6 +17,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const id = await ticketIdParam(context);
     idempotencyKey(request);
     const helpful = parseAssistantFeedback(await readJsonBody(request));
-    return jsonResponse(await helpdeskAssistant().feedback(learner, id, helpful));
+    return jsonResponse(await helpdeskAssistant(request).feedback(learner, id, helpful));
   } catch (error) { return problemResponse(error, "learner.assistant_feedback"); }
 }

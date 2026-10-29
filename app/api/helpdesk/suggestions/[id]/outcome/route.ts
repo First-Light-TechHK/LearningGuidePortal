@@ -17,7 +17,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const learner = await requireLearner(request, { write: true });
     const suggestionId = await ticketIdParam(context);
     const outcome = parseSuggestionOutcome(await readJsonBody(request));
-    await helpdeskAssistant().submitOutcome(learner, suggestionId, outcome);
+    await helpdeskAssistant(request).submitOutcome(learner, suggestionId, outcome);
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) { return problemResponse(error, "learner.suggestion_outcome"); }
 }

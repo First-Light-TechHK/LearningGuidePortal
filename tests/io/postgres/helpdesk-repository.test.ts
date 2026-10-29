@@ -414,8 +414,14 @@ test("v2 in PostgreSQL: assist log rows, first-wins feedback under a race, the h
   assert.equal(await repository.nthRecentAssistAt(learner.id, "2026-10-28T05:00:00.000Z", 3, ["chat", "chip"]), null);
   clock += 24 * 3_600_000;
   const late = await assistant.ask(learner, { message: "password later", locale: "en-GB", faqId: null }, randomUUID());
+  // The conversation root (Admin's parentRunId): the learner's oldest unlinked row after the cut-off.
+  assert.equal(await repository.conversationRootAssist(learner.id, "2026-10-28T05:00:00.000Z"), asked.response.id);
+  assert.equal(await repository.conversationRootAssist(learner.id, "2026-10-28T06:00:00.000Z"), fallback.response.id, "strictly after the cut-off");
+  assert.equal(await repository.conversationRootAssist("pg-other", "2026-10-28T05:00:00.000Z"), foreign.response.id);
   const hd = service(now);
   const ticket = (await hd.createTicket(learner, { ...input("Linked"), assistIds: [asked.response.id, fallback.response.id, foreign.response.id, late.response.id] }, randomUUID())).ticket;
+  assert.equal(await repository.conversationRootAssist(learner.id, "2026-10-28T06:00:01.000Z"), null, "a linked row closes its conversation");
+  assert.equal(await repository.conversationRootAssist(learner.id, "2026-10-28T05:00:00.000Z"), asked.response.id, "rows the ticket did not take stay open");
   // asked is now older than 24 h; fallback is exactly 24 h old (not newer than the window); foreign belongs to someone else.
   const detail = await hd.getAgentTicket(ticket.id);
   assert.deepEqual(detail.aiAssist.map((item) => item.id), [late.response.id]);

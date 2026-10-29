@@ -27,7 +27,7 @@ export type NewTicket = {
 
 /** One AI Support Assistant answer as shown to the learner (helpdesk_assist_log, v2 §4a). */
 export type AssistRecord = {
-  /** Admin's suggestion id, or a Portal UUIDv7 when Admin returned no answer. */
+  /** The run id Portal sent Admin (a UUIDv7); Admin answers with it as the suggestion id. */
   id: string;
   learnerId: string;
   source: AssistSource;
@@ -112,6 +112,8 @@ export type HelpdeskRepository = {
   nthRecentAssistAt(learnerId: string, sinceIso: string, n: number, sources: readonly AssistSource[]): Promise<string | null>;
   /** Records one attempt to forward the row's feedback to Admin; delivered sets feedbackDeliveredAt. */
   recordAssistDelivery(id: string, atIso: string, delivered: boolean): Promise<void>;
+  /** The learner's current conversation: id of their oldest row after sinceIso not yet linked to a ticket (Admin's parentRunId), or null. */
+  conversationRootAssist(learnerId: string, sinceIso: string): Promise<string | null>;
   /** Rows with feedback Admin has not confirmed, created after sinceIso: never tried first, then least recently tried, then oldest. */
   listUndeliveredAssists(sinceIso: string, limit: number): Promise<AssistRecord[]>;
   /** Rows linked to a ticket, oldest first. */

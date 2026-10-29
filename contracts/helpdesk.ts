@@ -248,8 +248,12 @@ export type SuggestionOutcome = (typeof SUGGESTION_OUTCOMES)[number];
 export const ASSIST_FEEDBACK = ["helpful", "not_helpful", "solved", "declined", "edited"] as const;
 export type AssistFeedback = (typeof ASSIST_FEEDBACK)[number];
 export type SuggestInput = { category: TicketCategory; subject: string; message: string; locale: HelpdeskLocale };
-/** Portal -> Admin POST /api/integration/helpdesk/suggest (v2 §2). */
-export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string };
+/**
+ * Portal -> Admin POST /api/integration/helpdesk/suggest (v2 §2).
+ * runId is the assist log row id Portal records (Admin's trace run and, when it answers, its suggestion id);
+ * parentRunId is the first row of the learner's current conversation (null when this run starts one).
+ */
+export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string; runId: string; parentRunId: string | null };
 /** POST /api/helpdesk/assistant body (v2 §4b). */
 export type AssistantInput = { message: string; locale: HelpdeskLocale; faqId: string | null };
 /** id is the assist log row (link it with assistIds); reply null = show the fallback copy. */

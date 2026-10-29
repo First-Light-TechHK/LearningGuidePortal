@@ -203,6 +203,12 @@ test("chat answers and the declined suggestion reach the agent as AI blocks; the
     ["submit", subject, "How do I reset my password?", "declined"]
   ]);
   expect(seen.aiAssist[0].answer).toContain("Open **My Subscription**");
+  // Admin tracing: every call names its run (the row the agent sees), chains the conversation to its first row, and carries a W3C traceparent.
+  const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { learnerId: string; runId: string; parentRunId: string | null }; traceparent: string | null }[] };
+  const runs = suggestions.filter((entry) => seen.aiAssist.some((item) => item.id === entry.request.runId));
+  expect(runs.map((entry) => entry.request.runId)).toEqual(seen.aiAssist.map((item) => item.id));
+  expect(runs.map((entry) => entry.request.parentRunId)).toEqual([null, seen.aiAssist[0].id, seen.aiAssist[0].id]);
+  for (const entry of runs) expect(entry.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/);
   expect(seen.flagged).toBe(false);
   expect((await agentAction(page.request, ticket.id, "flag")).flagged).toBe(true);
   expect((await agentList(page.request, "flagged=true")).map((item) => item.id)).toContain(ticket.id);

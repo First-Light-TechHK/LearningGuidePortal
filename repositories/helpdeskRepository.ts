@@ -283,6 +283,11 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     async nthRecentAssistAt(learnerId, sinceIso, n, sources) {
       return nthNewest((await load()).assists.filter((item) => item.learnerId === learnerId && sources.includes(item.source)).map((item) => item.createdAt), sinceIso, n);
     },
+    async conversationRootAssist(learnerId, sinceIso) {
+      const open = (await load()).assists.filter((item) => item.learnerId === learnerId && item.ticketId === null && item.createdAt > sinceIso);
+      open.sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1));
+      return open[0]?.id ?? null;
+    },
     recordAssistDelivery(id, atIso, delivered) {
       return exclusive(async () => {
         const store = await load();
@@ -600,6 +605,11 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       const row = (await select<{ created_at: Date }>(`SELECT created_at FROM helpdesk_assist_log WHERE learner_id = $1 AND created_at > $2 AND source = ANY($3::text[])
         ORDER BY created_at DESC OFFSET $4 LIMIT 1`, [learnerId, sinceIso, [...sources], n - 1]))[0];
       return row ? iso(row.created_at) : null;
+    },
+    async conversationRootAssist(learnerId, sinceIso) {
+      const row = (await select<{ id: string }>(`SELECT id FROM helpdesk_assist_log WHERE learner_id = $1 AND created_at > $2 AND ticket_id IS NULL
+        ORDER BY created_at, id LIMIT 1`, [learnerId, sinceIso]))[0];
+      return row ? row.id : null;
     },
     async recordAssistDelivery(id, atIso, delivered) {
       await select(`UPDATE helpdesk_assist_log SET feedback_attempted_at = $2,

@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const learner = await requireLearner(request, { write: true });
     const key = idempotencyKey(request);
     const input = parseAssistantInput(await readJsonBody(request));
-    const result = await helpdeskAssistant().ask(learner, input, key);
+    const result = await helpdeskAssistant(request).ask(learner, input, key);
     return jsonResponse(result.response, 200, result.replayed);
   } catch (error) { return problemResponse(error, "learner.assistant"); }
 }

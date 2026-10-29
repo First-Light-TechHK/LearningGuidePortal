@@ -39,6 +39,8 @@ const STUBS: Record<string, string> = {
   "next/link": "import React from 'react';export default function Link({prefetch,href,...props}){return <a href={href} {...props}/>}",
   // A stable router object: ContactSupport lists it in an effect's dependencies.
   "next/navigation": "const router={push:url=>window.__nav.push(['push',url]),back:()=>window.__nav.push(['back']),replace:url=>window.__nav.push(['replace',url]),refresh:()=>{}};export function useRouter(){return router}export function usePathname(){return location.pathname}export function redirect(url){throw new Error('redirect:'+url)}export function notFound(){throw new Error('notFound')}",
+  // The pages read the request's traceparent for their Admin calls; the stubbed Admin ignores it.
+  "next/headers": "export async function headers(){return new Headers()}",
   productAuth: "export async function currentProductUser(){return (window.__help||window.__list).user}",
   // Admin as the Help Centre sees it: window.__help.faqs filtered like Admin (popular, category, limit), q answered from window.__help.search.
   adminClient: "export function createAdminHelpdeskClient(){const h=()=>window.__help;return {async faqs(locale,filter={}){h().requests.push({kind:'faqs',locale,filter});if(h().fail)return null;let list=filter.q?(h().search[filter.q]||[]):h().faqs;if(filter.popular)list=list.filter(f=>f.popular);if(filter.category)list=list.filter(f=>f.category===filter.category);return list.slice(0,filter.limit||100)},async faq(id,locale){h().requests.push({kind:'faq',locale,id});return [...h().extra,...h().faqs].find(f=>f.id===id)||null}}}",
@@ -60,7 +62,7 @@ export function helpdeskBundle() {
     plugins: [{
       name: "helpdesk-stubs",
       setup(b) {
-        b.onResolve({ filter: /^next\/(link|navigation)$|services\/productAuth$|modules\/helpdesk\/(runtime|adminClient)$|lib\/uuidv7$|components\/portal\/Portal(Header|Footer)$/ }, (args) => ({ path: args.path, namespace: "stub" }));
+        b.onResolve({ filter: /^next\/(link|navigation|headers)$|services\/productAuth$|modules\/helpdesk\/(runtime|adminClient)$|lib\/uuidv7$|components\/portal\/Portal(Header|Footer)$/ }, (args) => ({ path: args.path, namespace: "stub" }));
         b.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({ loader: "tsx", resolveDir: process.cwd(), contents: STUBS[args.path] ?? STUBS[args.path.split("/").pop() as string] }));
       }
     }]

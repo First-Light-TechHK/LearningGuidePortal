@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { HelpCentre } from "@/components/helpdesk/HelpCentre";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -17,7 +18,7 @@ export default async function PublicHelpPage({ params, searchParams }: { params:
   const messages = getMessages(locale);
   const [user, view] = await Promise.all([
     currentProductUser(),
-    loadHelpCentre(createAdminHelpdeskClient(), locale, query, messages.helpPage.design.faqItems)
+    loadHelpCentre(createAdminHelpdeskClient({ traceparent: (await headers()).get("traceparent") }), locale, query, messages.helpPage.design.faqItems)
   ]);
   return <main className="portal-page help-centre-page">
     <PortalHeader locale={locale} signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />

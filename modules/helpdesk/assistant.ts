@@ -46,7 +46,7 @@ export type AssistantAdmin = {
 };
 
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists">;
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist">;
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
@@ -82,9 +82,22 @@ export function createAssistantService(deps: AssistantDeps) {
     }
   }
 
-  function record(learner: LearnerIdentity, source: AssistSource, locale: AssistRecord["locale"], question: string, reply: HelpdeskSuggestion | null, at: Date, key: string | null, hash: string | null): AssistRecord {
+  /**
+   * The run ids for Admin's trace: runId is the row this answer will be
+   * stored as (so a null, failed or timed-out answer stays traceable), and
+   * parentRunId the first row of the learner's open conversation (unlinked,
+   * inside the ticket link window), or null when this run starts one.
+   */
+  async function runIds(learnerId: string): Promise<{ runId: string; parentRunId: string | null }> {
+    const at = now();
+    const parentRunId = await repository.conversationRootAssist(learnerId, new Date(at.getTime() - HELPDESK_LIMITS.assistLinkWindowHours * 3_600_000).toISOString()).catch(() => null);
+    return { runId: uuidv7(at.getTime()), parentRunId };
+  }
+
+  function record(runId: string, learner: LearnerIdentity, source: AssistSource, locale: AssistRecord["locale"], question: string, reply: HelpdeskSuggestion | null, at: Date, key: string | null, hash: string | null): AssistRecord {
     return {
-      id: reply?.id ?? uuidv7(at.getTime()), learnerId: learner.id, source, locale, question: clip(question, HELPDESK_LIMITS.assistQuestionMax),
+      // Admin answers with the run id; an older Admin may still send its own suggestion id.
+      id: reply?.id ?? runId, learnerId: learner.id, source, locale, question: clip(question, HELPDESK_LIMITS.assistQuestionMax),
       faqId: reply?.faqId ?? null, faqQuestion: reply ? clip(reply.question, 200) : null, answer: reply ? clip(reply.answer, 4000) : null,
       feedback: null, ticketId: null, clientEventId: key, payloadHash: hash, createdAt: at.toISOString(), feedbackDeliveredAt: null, feedbackAttemptedAt: null
     };
@@ -133,9 +146,10 @@ export function createAssistantService(deps: AssistantDeps) {
     if (earlier) return { response: earlier, replayed: true };
     await enforceRateLimit(learner.id);
     const source: AssistSource = input.faqId ? "chip" : "chat";
-    const request: AdminSuggestRequest = { learnerId: learner.id, locale: input.locale, source, message: input.message, ...(input.faqId ? { faqId: input.faqId } : {}) };
+    const run = await runIds(learner.id);
+    const request: AdminSuggestRequest = { learnerId: learner.id, locale: input.locale, source, message: input.message, ...(input.faqId ? { faqId: input.faqId } : {}), ...run };
     const reply = await askAdmin(request);
-    const row = record(learner, source, input.locale, input.message, reply, now(), key, hash);
+    const row = record(run.runId, learner, source, input.locale, input.message, reply, now(), key, hash);
     if ((await repository.insertAssist(row)) === "duplicate") {
       // The same key raced in, or Admin repeated a suggestion id: answer with what is stored.
       const stored = await replay(key, hash);
@@ -198,8 +212,9 @@ export function createAssistantService(deps: AssistantDeps) {
       log({ type: "helpdesk", event: "rate_limited", limit: "submit_check" });
       return null;
     }
-    const reply = await askAdmin({ learnerId: learner.id, locale: input.locale, source: "submit", category: input.category, subject: input.subject, message: input.message });
-    const row = record(learner, "submit", input.locale, input.subject, reply, now(), null, null);
+    const run = await runIds(learner.id);
+    const reply = await askAdmin({ learnerId: learner.id, locale: input.locale, source: "submit", category: input.category, subject: input.subject, message: input.message, ...run });
+    const row = record(run.runId, learner, "submit", input.locale, input.subject, reply, now(), null, null);
     if ((await repository.insertAssist(row)) === "duplicate") log({ type: "helpdesk", event: "assistant_duplicate_suggestion" });
     return reply;
   }

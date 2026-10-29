@@ -59,7 +59,10 @@ export function helpdeskService(): HelpdeskService {
   });
 }
 
-/** The learner AI Support Assistant (v2 §4b): same storage as the tickets, Admin over the integration API. */
-export function helpdeskAssistant(): AssistantService {
-  return createAssistantService({ repository: helpdeskRepository(), admin: createAdminHelpdeskClient() });
+/**
+ * The learner AI Support Assistant (v2 §4b): same storage as the tickets, Admin over the integration API.
+ * The request's W3C traceparent, when valid, is continued on the calls to Admin.
+ */
+export function helpdeskAssistant(request?: Request): AssistantService {
+  return createAssistantService({ repository: helpdeskRepository(), admin: createAdminHelpdeskClient({ traceparent: request?.headers.get("traceparent") }) });
 }

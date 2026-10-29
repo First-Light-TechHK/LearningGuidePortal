@@ -60,8 +60,9 @@ function harness(adminOverride: Partial<AdminStub> = {}) {
   const admin: AdminStub = {
     async suggest(input) {
       suggestCalls.push(input);
-      if (input.faqId) return { id: randomUUID(), faqId: input.faqId, question: "How do I reset my password?", answer: "Open **Sign in**, then *Forgot password*." };
-      return /password/i.test(input.message) ? { id: randomUUID(), faqId: FAQ_ID, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password." } : null;
+      // As Admin does: the suggestion id is the run id Portal sent.
+      if (input.faqId) return { id: input.runId, faqId: input.faqId, question: "How do I reset my password?", answer: "Open **Sign in**, then *Forgot password*." };
+      return /password/i.test(input.message) ? { id: input.runId, faqId: FAQ_ID, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password." } : null;
     },
     async reportOutcome(id, outcome) { outcomes.push([id, outcome]); return true; },
     ...adminOverride
@@ -218,10 +219,10 @@ test("assistant: chat asks Admin with source chat, a chip with source chip + faq
   assert.equal(chat.replayed, false);
   assert.ok(chat.response.reply);
   assert.equal(chat.response.id, chat.response.reply.id, "the row id is Admin's suggestion id");
-  assert.deepEqual(h.suggestCalls[0], { learnerId: learner.id, locale: "en-GB", source: "chat", message: "I forgot my password" });
+  assert.deepEqual(h.suggestCalls[0], { learnerId: learner.id, locale: "en-GB", source: "chat", message: "I forgot my password", runId: chat.response.id, parentRunId: null });
   const chip = await h.assistant.ask(learner, { message: "How do I reset my password?", locale: "zh-CN", faqId: FAQ_ID }, randomUUID());
   assert.equal(chip.response.reply?.faqId, FAQ_ID);
-  assert.deepEqual(h.suggestCalls[1], { learnerId: learner.id, locale: "zh-CN", source: "chip", message: "How do I reset my password?", faqId: FAQ_ID });
+  assert.deepEqual(h.suggestCalls[1], { learnerId: learner.id, locale: "zh-CN", source: "chip", message: "How do I reset my password?", faqId: FAQ_ID, runId: chip.response.id, parentRunId: chat.response.id });
   const none = await h.assistant.ask(learner, { message: "Where is my refund?", locale: "en-GB", faqId: null }, randomUUID());
   assert.equal(none.response.reply, null);
   assert.match(none.response.id, /^[0-9a-f]{8}-[0-9a-f]{4}-7/, "a Portal UUIDv7 when Admin returned null");
@@ -234,6 +235,54 @@ test("assistant: chat asks Admin with source chat, a chip with source chip + faq
   assert.equal(answered?.faqQuestion, "How do I reset my password?");
   assert.equal(answered?.answer, "Open **Sign in**, then Forgot password.");
   assert.equal(answered?.learnerId, learner.id);
+});
+
+test("assistant runs (Admin tracing): runId is the row Portal stores, even for a null or failed answer; parentRunId is the conversation's first row", async () => {
+  let down = false;
+  const calls: AdminSuggestRequest[] = [];
+  const h = {
+    ...harness({
+      async suggest(input) {
+        calls.push(input);
+        if (down) throw new Error("down");
+        return /password/i.test(input.message) ? { id: input.runId, faqId: FAQ_ID, question: "How do I reset my password?", answer: "Open **Sign in**." } : null;
+      }
+    }),
+    suggestCalls: calls
+  };
+  const first = await h.assistant.ask(learner, { message: "Refund for order 42?", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(first.response.reply, null);
+  assert.equal(h.suggestCalls[0].runId, first.response.id, "the null answer's row is the run Admin traced");
+  assert.equal(h.suggestCalls[0].parentRunId, null, "the first row starts the conversation");
+  h.advance(1000);
+  const second = await h.assistant.ask(learner, { message: "I forgot my password", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(second.response.id, h.suggestCalls[1].runId);
+  assert.equal(h.suggestCalls[1].parentRunId, first.response.id);
+  const foreign = await h.assistant.ask(other, { message: "password", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(h.suggestCalls[2].parentRunId, null, "another learner's conversation is their own");
+  h.advance(1000);
+  down = true;
+  const failed = await h.assistant.ask(learner, { message: "password again", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(failed.response.reply, null);
+  assert.equal(h.suggestCalls[3].runId, failed.response.id, "a failed call is still traceable by its row id");
+  assert.equal(h.suggestCalls[3].parentRunId, first.response.id);
+  down = false;
+  const submit = await h.assistant.suggestForSubmit(learner, { category: "technical_support", subject: "Password", message: "password", locale: "en-GB" });
+  assert.ok(submit);
+  assert.equal(submit.id, h.suggestCalls[4].runId);
+  assert.equal(h.suggestCalls[4].parentRunId, first.response.id, "the submit check belongs to the same conversation");
+  assert.ok(await h.repository.findAssist(submit.id));
+  // Submitting the enquiry links the rows: the next question starts a new conversation.
+  await h.service.createTicket(learner, enquiry({ suggestionId: submit.id, assistIds: [first.response.id, second.response.id, failed.response.id] }), randomUUID());
+  const after = await h.assistant.ask(learner, { message: "Where is my invoice?", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(h.suggestCalls[5].parentRunId, null);
+  // Rows older than the 24 h link window no longer hold a conversation open.
+  h.advance(24 * HOUR + 1);
+  await h.assistant.ask(learner, { message: "Still no invoice", locale: "en-GB", faqId: null }, randomUUID());
+  assert.equal(h.suggestCalls[6].parentRunId, null);
+  assert.notEqual(h.suggestCalls[6].runId, after.response.id);
+  assert.equal(new Set(h.suggestCalls.map((call) => call.runId)).size, 7, "every call is its own run");
+  assert.ok(foreign.response.id);
 });
 
 test("assistant: the same Idempotency-Key replays the stored reply without asking Admin again; a different question conflicts", async () => {
@@ -297,7 +346,7 @@ test("submit-time suggestion is logged with source submit; its outcome is stored
   const h = harness({ async reportOutcome() { return up; } });
   const suggestion = await h.assistant.suggestForSubmit(learner, { category: "technical_support", subject: "Password", message: "reset password please", locale: "en-GB" });
   assert.ok(suggestion);
-  assert.deepEqual(h.suggestCalls[0], { learnerId: learner.id, locale: "en-GB", source: "submit", category: "technical_support", subject: "Password", message: "reset password please" });
+  assert.deepEqual(h.suggestCalls[0], { learnerId: learner.id, locale: "en-GB", source: "submit", category: "technical_support", subject: "Password", message: "reset password please", runId: suggestion.id, parentRunId: null });
   const row = await h.repository.findAssist(suggestion.id);
   assert.equal(row?.source, "submit");
   assert.equal(row?.question, "Password");

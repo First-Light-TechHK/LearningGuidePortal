@@ -16,6 +16,6 @@ export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
     const input = parseSuggestInput(await readJsonBody(request));
-    return jsonResponse({ suggestion: await helpdeskAssistant().suggestForSubmit(learner, input) });
+    return jsonResponse({ suggestion: await helpdeskAssistant(request).suggestForSubmit(learner, input) });
   } catch (error) { return problemResponse(error, "learner.suggest"); }
 }

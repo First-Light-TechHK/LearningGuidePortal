@@ -4,7 +4,8 @@
 // data (1387:2, 1216:6); it is example data, not real content.
 //   GET  /api/integration/helpdesk/faqs?locale=&popular=&category=&q=&limit=   published FAQs, popular first
 //   GET  /api/integration/helpdesk/faqs/:id?locale=                         one FAQ or 404
-//   POST /api/integration/helpdesk/suggest      chip (faqId) → that FAQ; chat / submit → a match on the words, else null
+//   POST /api/integration/helpdesk/suggest      chip (faqId) → that FAQ; chat / submit → a match on the words, else null;
+//                                               the suggestion id is the runId Portal sent; the traceparent header is recorded
 //   POST /api/integration/helpdesk/suggestions/:id/outcome   first outcome wins
 //   GET  /__health, /__suggestions, /__outcomes/:id    test inspection
 // Usage: node tests/e2e/helpdesk-admin-stub.mjs <port> <bearer-token>
@@ -87,8 +88,9 @@ createServer(async (request, response) => {
       const text = `${body.subject || ""} ${body.message || ""}`.toLowerCase();
       found = list.find((faq) => faq.words.some((word) => text.includes(word))) ?? null;
     }
-    const suggestion = found ? { id: randomUUID(), faqId: found.id, question: found.question, answer: found.answer } : null;
-    suggestions.push({ request: body, suggestion });
+    // As Admin does: the run id Portal sent is the suggestion id.
+    const suggestion = found ? { id: body.runId || randomUUID(), faqId: found.id, question: found.question, answer: found.answer } : null;
+    suggestions.push({ request: body, suggestion, traceparent: request.headers.traceparent ?? null });
     return send(response, 200, { suggestion });
   }
   const outcome = /^\/api\/integration\/helpdesk\/suggestions\/([^/]+)\/outcome$/.exec(url.pathname);

@@ -18,6 +18,8 @@ const env = { ...process.env };
 const QUESTION = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password.", updatedAt: "2026-10-28T08:30:00.000Z" };
 const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000aa", faqId: QUESTION.id, question: QUESTION.question, answer: QUESTION.answer };
 const POPULAR = { popular: true, limit: 3 };
+const RUN_ID = "0192d4f0-7b6a-7c3e-9a10-0000000000b2";
+const ROOT_ID = "0192d4f0-7b6a-7c3e-9a10-0000000000b1";
 
 type Call = { url: string; method: string; headers: Headers; body: string | null };
 
@@ -152,7 +154,7 @@ test("not configured: no request, FAQs null, no suggestion, outcome not delivere
   delete process.env.ADMIN_HELPDESK_TOKEN;
   assert.equal(await client.faqs("en-GB", POPULAR), null);
   assert.equal(await client.faq(QUESTION.id, "en-GB"), null);
-  assert.equal(await client.suggest({ learnerId: "u1", locale: "en-GB", source: "submit", category: "other", subject: "s", message: "m" }), null);
+  assert.equal(await client.suggest({ learnerId: "u1", locale: "en-GB", source: "submit", category: "other", subject: "s", message: "m", runId: RUN_ID, parentRunId: null }), null);
   assert.equal(await client.reportOutcome(SUGGESTION.id, "solved"), false);
   process.env.ADMIN_HELPDESK_TOKEN = TOKEN;
   process.env.ADMIN_HELPDESK_BASE_URL = "ftp://admin.local";
@@ -169,7 +171,7 @@ test("not configured: no request, FAQs null, no suggestion, outcome not delivere
 test("suggest (source submit): posts the learner's enquiry and returns the stored answer", async () => {
   const stub = stubFetch(() => json({ suggestion: SUGGESTION }));
   const client = createAdminHelpdeskClient({ fetch: stub.fetch });
-  const input = { learnerId: "u1", locale: "en-GB" as const, source: "submit" as const, category: "technical_support" as const, subject: "Cannot log in", message: "It says invalid password" };
+  const input = { learnerId: "u1", locale: "en-GB" as const, source: "submit" as const, category: "technical_support" as const, subject: "Cannot log in", message: "It says invalid password", runId: RUN_ID, parentRunId: ROOT_ID };
   assert.deepEqual(await client.suggest(input), SUGGESTION);
   assert.equal(stub.calls[0].method, "POST");
   assert.equal(stub.calls[0].url, `${BASE}/api/integration/helpdesk/suggest`);
@@ -179,7 +181,7 @@ test("suggest (source submit): posts the learner's enquiry and returns the store
 });
 
 test("suggest returns null on no match, any error, a malformed body, or the timeout", async () => {
-  const input = { learnerId: "u1", locale: "zh-CN" as const, source: "chat" as const, message: "m" };
+  const input = { learnerId: "u1", locale: "zh-CN" as const, source: "chat" as const, message: "m", runId: RUN_ID, parentRunId: null };
   for (const handler of [
     () => json({ suggestion: null }),
     () => json({ type: "x" }, 429),
@@ -210,13 +212,38 @@ test("outcome: posts { outcome } to the suggestion and reports whether Admin acc
   assert.equal(await createAdminHelpdeskClient({ fetch: stubFetch(() => { throw new Error("down"); }).fetch }).reportOutcome(SUGGESTION.id, "edited"), false);
 });
 
-test("suggest (chat / chip): source, and faqId only for a chip; optional fields are left out, not sent empty", async () => {
+test("suggest (chat / chip): source, and faqId only for a chip; optional fields are left out, not sent empty; runId and parentRunId always go last", async () => {
   const stub = stubFetch(() => json({ suggestion: SUGGESTION }));
   const client = createAdminHelpdeskClient({ fetch: stub.fetch });
-  await client.suggest({ learnerId: "u1", locale: "en-GB", source: "chat", message: "reset email never arrives" });
-  await client.suggest({ learnerId: "u1", locale: "zh-CN", source: "chip", message: QUESTION.question, faqId: QUESTION.id });
-  assert.deepEqual(JSON.parse(stub.calls[0].body || ""), { learnerId: "u1", locale: "en-GB", source: "chat", message: "reset email never arrives" });
-  assert.deepEqual(JSON.parse(stub.calls[1].body || ""), { learnerId: "u1", locale: "zh-CN", source: "chip", message: QUESTION.question, faqId: QUESTION.id });
+  await client.suggest({ learnerId: "u1", locale: "en-GB", source: "chat", message: "reset email never arrives", runId: ROOT_ID, parentRunId: null });
+  await client.suggest({ learnerId: "u1", locale: "zh-CN", source: "chip", message: QUESTION.question, faqId: QUESTION.id, runId: RUN_ID, parentRunId: ROOT_ID });
+  assert.equal(stub.calls[0].body, JSON.stringify({ learnerId: "u1", locale: "en-GB", source: "chat", message: "reset email never arrives", runId: ROOT_ID, parentRunId: null }));
+  assert.equal(stub.calls[1].body, JSON.stringify({ learnerId: "u1", locale: "zh-CN", source: "chip", message: QUESTION.question, faqId: QUESTION.id, runId: RUN_ID, parentRunId: ROOT_ID }));
+});
+
+test("traceparent (W3C): every Admin call carries one; the incoming request's trace is continued with a new span per call", async () => {
+  const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+  const stub = stubFetch((call) => call.url.includes("/suggest") ? json({ suggestion: SUGGESTION }) : call.url.includes("/outcome") ? new Response(null, { status: 204 }) : call.url.includes("/faqs/") ? json(QUESTION) : json({ faqs: [QUESTION] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, traceparent: incoming });
+  await client.faqs("en-GB", POPULAR);
+  await client.faq(QUESTION.id, "en-GB");
+  await client.suggest({ learnerId: "u1", locale: "en-GB", source: "chat", message: "m", runId: RUN_ID, parentRunId: null });
+  await client.reportOutcome(SUGGESTION.id, "helpful");
+  assert.equal(stub.calls.length, 4);
+  const sent = stub.calls.map((call) => call.headers.get("traceparent") ?? "");
+  for (const value of sent) assert.match(value, /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/);
+  assert.equal(new Set(sent.map((value) => value.split("-")[2])).size, 4, "a new span id per call");
+  assert.ok(!sent.some((value) => value.includes("00f067aa0ba902b7")), "never our caller's span id");
+});
+
+test("traceparent (W3C): without a valid incoming header each call starts a valid new trace", async () => {
+  for (const traceparent of [undefined, null, "garbage", "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"]) {
+    const stub = stubFetch(() => json({ suggestion: null }));
+    await createAdminHelpdeskClient({ fetch: stub.fetch, traceparent }).suggest({ learnerId: "u1", locale: "en-GB", source: "chat", message: "m", runId: RUN_ID, parentRunId: null });
+    const value = stub.calls[0].headers.get("traceparent") ?? "";
+    assert.match(value, /^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+    assert.notEqual(value.split("-")[1], "4bf92f3577b34da6a3ce929d0e0e4736");
+  }
 });
 
 test("outcome: the chat's helpful / not_helpful go to the same endpoint", async () => {

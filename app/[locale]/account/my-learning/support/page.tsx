@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ContactSupport } from "@/components/helpdesk/ContactSupport";
 import { PortalFooter } from "@/components/portal/PortalFooter";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 /** Starter chips: the top 3 popular FAQs (Admin, 60 s cache in the client); none when Admin has none or is down. */
 async function popularChips(locale: "en-GB" | "zh-CN") {
   try {
-    const faqs = (await createAdminHelpdeskClient().faqs(locale, { popular: true, limit: 3 })) ?? [];
+    const faqs = (await createAdminHelpdeskClient({ traceparent: (await headers()).get("traceparent") }).faqs(locale, { popular: true, limit: 3 })) ?? [];
     return faqs.slice(0, 3).map((faq) => ({ id: faq.id, question: faq.question }));
   } catch {
     return [];
