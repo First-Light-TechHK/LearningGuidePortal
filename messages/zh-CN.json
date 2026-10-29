@@ -1126,6 +1126,7 @@
       "connecting": "正在连接直播课…",
       "tutorAnswering": "AI Tutor 正在回答…",
       "tutorReplyTo": "回复 {name}：{question}",
+      "tutorSources": "来源：",
       "tutorRetry": "重新提问",
       "tutorQueued": "等待 AI Tutor 回答，前面还有 {count} 个",
       "tutorNext": "AI Tutor 下一个就回答这个问题",
@@ -1149,6 +1150,10 @@
       "backToGroups": "返回学习小组",
       "shareFailed": "屏幕共享没有开始。请确认浏览器允许共享屏幕后重试。",
       "sharingNotice": "你正在共享屏幕。",
+      "fullScreen": "全屏",
+      "exitFullScreen": "退出全屏",
+      "hideParticipants": "收起参会人",
+      "showParticipants": "展开参会人",
       "tutorNotSent": "未发送给 AI Tutor：{reason}",
       "tutorNotLive": "AI Tutor 只在直播课进行中回答问题。"
     },

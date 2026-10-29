@@ -118,7 +118,16 @@ export function clampGroupAbout(value: string) {
   return value.slice(0, GROUP_ABOUT_MAX);
 }
 
-export const DURATION_MINUTE_CHOICES = [30, 45, 60, 90] as const;
+export const DURATION_MINUTE_CHOICES = [10, 20, 30, 40] as const;
+
+// The duration dropdown: the four choices, plus the shown Session's own length
+// when it was scheduled with an earlier 45/60/90-minute choice (the edit form
+// shows it read-only), so the field never reads empty.
+export function durationOptions(current: string): number[] {
+  const minutes = Number(current);
+  const choices: number[] = [...DURATION_MINUTE_CHOICES];
+  return Number.isInteger(minutes) && minutes > 0 && !choices.includes(minutes) ? [...choices, minutes].sort((a, b) => a - b) : choices;
+}
 
 type ValidatableForm = { checkValidity: () => boolean; elements: ArrayLike<unknown> };
 

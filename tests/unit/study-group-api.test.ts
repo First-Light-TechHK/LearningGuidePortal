@@ -199,21 +199,21 @@ test("study group API requires a session, hides sessions until join, and does no
   const accepted = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
     title,
     startsAt: startsLater,
-    durationSeconds: 2700,
+    durationSeconds: 1200,
     maxParticipants: 4
   }, token, { groupId });
   assert.equal(accepted.status, 200);
   const acceptedBody = await accepted.json();
   assert.equal(acceptedBody.data.title, title);
-  assert.equal(acceptedBody.data.durationSeconds, 2700);
+  assert.equal(acceptedBody.data.durationSeconds, 1200);
   assert.equal(acceptedBody.data.durationMinutes, undefined);
   const storedSeconds = await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8");
   assert.equal(storedSeconds.includes("durationMinutes"), false);
-  assert.equal(storedSeconds.includes("\"durationSeconds\":2700"), true);
+  assert.equal(storedSeconds.includes("\"durationSeconds\":1200"), true);
   const tooLong = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
     title: `${title}x`,
     startsAt: startsLater,
-    durationSeconds: 2700,
+    durationSeconds: 1200,
     maxParticipants: 4
   }, token, { groupId });
   assert.equal(tooLong.status, 400);

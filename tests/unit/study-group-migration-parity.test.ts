@@ -78,3 +78,14 @@ test("012 and the ensureSchema bootstrap declare the same Study Group indexes", 
     assert.equal(bootstrap.get(name), migration.get(name), `index ${name} drifted between 012 and db.ts ensureSchema`);
   }
 });
+
+test("021 and the ensureSchema bootstrap swap in the same 10/20/30/40-minute duration constraint, and the probe checks it", () => {
+  // Owner 2026-10-29: Sessions are scheduled for 10, 20, 30 or 40 minutes; stored 45/60/90 stay valid.
+  const migration = collapse(stripComments(readFileSync(path.join(ROOT, "db", "migrations", "021_live_session_short_durations.sql"), "utf8")));
+  const bootstrap = collapse(stripComments(readFileSync(BOOTSTRAP_PATH, "utf8")));
+  const statements = migration.split(";").map((item) => item.trim()).filter(Boolean);
+  assert.equal(statements.length, 3);
+  for (const statement of statements) assert.ok(bootstrap.includes(`${statement};`), statement);
+  assert.match(migration, /CHECK \(duration_seconds IN \(600, 1200, 1800, 2400, 2700, 3600, 5400\)\)/);
+  assert.match(bootstrap, /conname = 'live_sessions_duration_seconds_v2_check'/);
+});
