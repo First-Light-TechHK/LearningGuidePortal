@@ -51,11 +51,11 @@ export type Picked = { status: "pending"; faqId: string } | { status: "answer"; 
 
 const THANKS_REDIRECT_MS = 2_000;
 
-export function ContactSupport({ locale, copy, config, account, chips, order = null }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null }) {
+export function ContactSupport({ locale, copy, config, account, chips, order = null, orderUnavailable = false }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null; /** v4: opened for an order that could not be attached (not the learner's, unknown, or the order store failed). */ orderUnavailable?: boolean }) {
   const router = useRouter();
   const ids = useId();
   // Figma 1.2 Help Page: defaults to Technical Support; v4: Payments & Subscriptions when opened from a payment record.
-  const [category, setCategory] = useState<TicketCategory | "">(order ? "payments_subscriptions" : "technical_support");
+  const [category, setCategory] = useState<TicketCategory | "">(order || orderUnavailable ? "payments_subscriptions" : "technical_support");
   /** v4 Part A: the learner's order this enquiry is about, until they remove it. */
   const [linkedOrder, setLinkedOrder] = useState<{ id: string } | null>(order);
   const [orderNotice, setOrderNotice] = useState("");
@@ -81,6 +81,9 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
   const inFlight = useRef(false);
   /** The chat answers to link to the enquiry (newest 10), kept up to date by AssistantChat. */
   const assistIds = useRef<string[]>([]);
+  /** v4 Part B: the learner's last input anywhere on this page (epoch ms), so the chat never ends idle while they fill in the form. */
+  const pageInput = useRef(0);
+  const markInput = () => { pageInput.current = Date.now(); };
   /** v3: the modal answers the learner saw, when sessionStorage is blocked (otherwise they live there, per account: seenStorageKey). */
   const seenFallback = useRef<SeenAnswer[]>([]);
   /** Bumped by Skip and by each rating save, so a save that lands after Skip changes nothing. */
@@ -361,7 +364,7 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
   const label = (field: Field, text: string) => <label className="helpdesk-label" id={`${ids}-${field}-label`} htmlFor={`${ids}-${field}`}>{text}<span aria-hidden="true">*</span></label>;
   const disabled = busy !== "";
 
-  return <div className="helpdesk-card">
+  return <div className="helpdesk-card" onInputCapture={markInput} onKeyDownCapture={markInput} onPointerDownCapture={markInput}>
     <div className="helpdesk-card-content">
       {phase === "success" && created ? <SuccessPanel copy={copy} ticket={created} ticketHref={`/${locale}/account/my-learning/support/${created.id}`} enquiriesHref={enquiriesHref} /> :
         <form className="helpdesk-form" noValidate onSubmit={onSubmit} onPaste={attachments.onPaste}>
@@ -379,6 +382,11 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
               <button type="button" className="helpdesk-text-link helpdesk-order-remove" aria-label={fillTemplate(copy.order.removeLabel, { number: linkedOrder.id })} disabled={disabled} onClick={removeOrder}>{copy.order.remove}</button></p>
           </div> : null}
           {order ? <p className="helpdesk-visually-hidden" role="status" aria-live="polite">{orderNotice}</p> : null}
+          {!order && orderUnavailable && phase === "form" ? <div className="helpdesk-field helpdesk-order-field" role="group" aria-labelledby={`${ids}-order-label`}>
+            {/* v4 review: an order that could not be attached is said, not dropped silently (never which reason). No Figma frame, 待视觉验收. */}
+            <span className="helpdesk-label" id={`${ids}-order-label`}>{copy.order.label}</span>
+            <p className="helpdesk-order-line helpdesk-order-unavailable">{copy.order.unavailable}</p>
+          </div> : null}
           <div className="helpdesk-field">{label("subject", copy.subject)}<input ref={subjectInput} {...fieldProps("subject")} className="helpdesk-input" maxLength={inputMaxLength(config.limits.subjectMax)} placeholder={copy.subjectPlaceholder} value={subject} disabled={disabled} onChange={(event) => setSubject(event.target.value)} />{fieldError("subject")}</div>
           <div className="helpdesk-field">{label("message", copy.message)}<textarea {...fieldProps("message")} className="helpdesk-input helpdesk-textarea" maxLength={inputMaxLength(config.limits.bodyMax)} placeholder={copy.messagePlaceholder} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} />{fieldError("message")}</div>
           <AttachmentZone copy={copy} config={config} attachments={attachments} disabled={disabled} inputId={`${ids}-files`} />
@@ -390,7 +398,7 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
           </div>
         </form>}
       <div className="helpdesk-divider" aria-hidden="true" />
-      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} pageInput={pageInput} />
     </div>
     {phase === "suggestion" || phase === "alternatives" || phase === "rating" || phase === "thanks" ? <AssistantModal copy={copy} locale={locale} stage={phase} suggestion={suggestion} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}

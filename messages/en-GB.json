@@ -1646,7 +1646,8 @@
       "remove": "Remove",
       "removeLabel": "Remove order {number} from this enquiry",
       "removed": "The order was removed from this enquiry.",
-      "invalid": "This order can’t be linked to your enquiry. Remove it and submit again."
+      "invalid": "This order can’t be linked to your enquiry. Remove it and submit again.",
+      "unavailable": "We couldn’t attach that order to this enquiry. Please mention the order number in your message."
     },
     "selectTopic": "Select a topic",
     "categories": {

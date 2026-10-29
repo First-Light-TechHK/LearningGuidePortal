@@ -30,13 +30,18 @@ const ALTERNATIVES = [{ faqId: "01a18100-0000-7000-8000-0000000000d1", question:
  * The chat endpoints: each question gets a new assist id; a question starting
  * with "?" gets the fallback (with alternatives), anything else an FAQ answer.
  */
-function api(extra: { ticket?: (call: ApiCall) => Reply; rating?: (call: ApiCall) => Reply } = {}): Handler {
+function api(extra: { ticket?: (call: ApiCall) => Reply; rating?: (call: ApiCall) => Reply; /** Held until it resolves (a reply still pending). */ hold?: () => Promise<void> } = {}): Handler {
   let n = 0;
-  return (call) => {
+  return async (call) => {
     if (isAssistant(call)) {
-      const assist = id(++n);
       const message = (call.json as { message: string }).message;
+      // "!" fails the call (an error bubble, no assist logged).
+      if (message.startsWith("!")) return { status: 503, json: { type: "about:blank", title: "Unavailable", status: 503, code: "admin_unavailable" } };
+      const assist = id(++n);
+      if (extra.hold) await extra.hold();
       if (message.startsWith("?")) return { json: { id: assist, reply: null, alternatives: ALTERNATIVES } };
+      // "long" gets an answer taller than the panel.
+      if (message.startsWith("long")) return { json: { id: assist, reply: { id: assist, faqId: FAQ_ID, question: `About ${message}`, answer: Array.from({ length: 40 }, (_, k) => `Paragraph ${k + 1} of the long answer.`).join("\n\n") }, alternatives: [] } };
       return { json: { id: assist, reply: { id: assist, faqId: FAQ_ID, question: `About ${message}`, answer: `Answer to ${message}.` }, alternatives: [] } };
     }
     if (isAssistantFeedback(call)) return { json: { id: call.path.split("/")[4], feedback: (call.json as { helpful: boolean }).helpful ? "helpful" : "not_helpful" } };
@@ -325,5 +330,123 @@ test("v4 Part B: after an enquiry was sent, the handover card opens a fresh form
   await c.submit.click();
   await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 2);
   assert.deepEqual(harness.calls.filter(isTicketCreate)[1].fields.assistIds, [id(1)]);
+  await page.close();
+});
+
+// ---------------------------------------------------------------- final review fixes
+
+test("v4 review: a No vote while the next reply is pending puts the handover card after the voted answer, before the pending question", async () => {
+  let release: () => void = () => {};
+  let holding = false;
+  const harness = await open("en-GB", api({ hold: () => (holding ? new Promise<void>((resolve) => { release = resolve; }) : Promise.resolve()) }));
+  const { page } = harness;
+  const c = ui(page, "en-GB");
+  await ask(harness, "en-GB", "?one");
+  await ask(harness, "en-GB", "two");
+  holding = true;
+  await c.input.fill("three");
+  await c.input.press("Enter");
+  await page.locator(".helpdesk-chat-typing").waitFor();
+  await c.answers.nth(1).getByRole("button", { name: c.copy.no, exact: true }).click();
+  await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 1);
+  await c.handovers.first().waitFor();
+  const kinds = () => c.panel.locator("[data-entry]").evaluateAll((nodes) => nodes.map((node) => node.querySelector(".helpdesk-chat-question") ? "question" : node.querySelector(".helpdesk-chat-card-handover") ? "handover" : node.querySelector(".helpdesk-chat-answer") ? "answer" : "other"));
+  assert.deepEqual(await kinds(), ["question", "answer", "question", "answer", "handover", "question"], "the card follows the answer voted No, not the question still waiting");
+  holding = false;
+  release();
+  await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 3 && !document.querySelector(".helpdesk-chat-typing"));
+  assert.deepEqual(await kinds(), ["question", "answer", "question", "answer", "handover", "question", "answer"], "the reply lands right after its question");
+  // The card restarted the count: one fallback after it is not a pair yet.
+  await ask(harness, "en-GB", "?four");
+  assert.equal(await c.handovers.count(), 1);
+  await page.close();
+});
+
+test("v4 review: an answer taller than the panel still opens at its start when a card follows it", async () => {
+  const harness = await open("en-GB");
+  const { page } = harness;
+  const c = ui(page, "en-GB");
+  for (let n = 1; n < CHAT_SESSION_RULES.checkInAfterQuestions; n += 1) await ask(harness, "en-GB", `question ${n}`);
+  await ask(harness, "en-GB", "long question 8");
+  await c.checkins.first().waitFor();
+  const offset = await page.evaluate(() => {
+    const log = document.querySelector(".helpdesk-chat-messages")!;
+    const answers = log.querySelectorAll(".helpdesk-chat-answer");
+    const answer = answers[answers.length - 1].closest("[data-entry]")!;
+    return { top: answer.getBoundingClientRect().top - log.getBoundingClientRect().top, tall: answer.getBoundingClientRect().height > log.clientHeight };
+  });
+  assert.equal(offset.tall, true, "the answer is taller than the panel");
+  assert.ok(offset.top >= 0 && offset.top <= 30, `the answer's start is in view (offset ${offset.top})`);
+  await page.close();
+});
+
+test("v4 review: asking for a person twice in a row is announced both times", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale);
+    const { page } = harness;
+    const c = ui(page, locale);
+    await page.evaluate(() => {
+      const live = document.querySelector(".helpdesk-chat-live")!;
+      const seen: string[] = [];
+      (window as unknown as { __live: string[] }).__live = seen;
+      new MutationObserver(() => seen.push(live.textContent ?? "")).observe(live, { childList: true, characterData: true, subtree: true });
+    });
+    const said = `${c.copy.handoverTitle} ${c.copy.handoverBody}`;
+    const heard = (times: number) => page.waitForFunction(([text, n]) => (window as unknown as { __live: string[] }).__live.filter((value) => value === text).length === n, [said, times] as const, { timeout: 2_000 });
+    await ask(harness, locale, locale === "zh-CN" ? "人工" : "human");
+    await heard(1);
+    await ask(harness, locale, locale === "zh-CN" ? "客服" : "real person");
+    assert.equal(await c.handovers.count(), 2);
+    await heard(2);
+    await page.close();
+  }
+});
+
+test("v4 review: two failed calls in a row (a turn with no answer each) offer the handover card", async () => {
+  for (const locale of LOCALES) {
+    const harness = await open(locale);
+    const { page } = harness;
+    const c = ui(page, locale);
+    await ask(harness, locale, "!one");
+    assert.equal(await c.handovers.count(), 0, "one failed turn is not enough");
+    await ask(harness, locale, "!two");
+    await c.handovers.first().waitFor();
+    assert.equal(await c.panel.locator("[data-entry]").last().getByRole("group", { name: c.copy.handoverTitle }).count(), 1, "the card follows the second error");
+    assert.equal(await c.input.inputValue(), "!two", "the question is given back as before");
+    assert.equal(await c.input.isDisabled(), false);
+    await page.close();
+  }
+});
+
+test("v4 review: typing in the enquiry form after the handover counts as learner input, so the chat does not end while the form is being filled", async () => {
+  const harness = await open("en-GB", api(), true);
+  const { page } = harness;
+  const c = ui(page, "en-GB");
+  await ask(harness, "en-GB", "first");
+  await ask(harness, "en-GB", "agent please");
+  await c.handovers.first().getByRole("button", { name: c.copy.handoverButton }).click();
+  await page.clock.runFor(CHAT_SESSION_RULES.idleMs - 60_000);
+  await c.subject.pressSequentially("Still working on this");
+  await page.clock.runFor(CHAT_SESSION_RULES.idleMs - 60_000);
+  await c.message.pressSequentially("A long message");
+  await page.clock.runFor(CHAT_SESSION_RULES.idleMs - 60_000);
+  assert.equal(await c.ended.count(), 0, "the learner is filling in the form");
+  await page.clock.runFor(2 * 60_000);
+  await c.ended.first().waitFor();
+  await page.close();
+});
+
+test("v4 review: a 409 from the rating endpoint (rated already: the first rating wins) shows the card as rated, with no error", async () => {
+  const harness = await open("en-GB", api({ rating: () => ({ status: 409, json: { type: "about:blank", title: "Already rated", status: 409, code: "answer_already_rated" } }) }));
+  const { page } = harness;
+  const c = ui(page, "en-GB");
+  for (let n = 1; n <= CHAT_SESSION_RULES.checkInAfterQuestions; n += 1) await ask(harness, "en-GB", `q${n}`);
+  await c.checkins.first().getByRole("button", { name: c.copy.endChat }).click();
+  await c.ratingCards.first().getByRole("button", { name: fillTemplate(c.all.assistant.rateStar, { n: 2 }), exact: true }).click();
+  await c.panel.locator(".helpdesk-chat-rated").waitFor();
+  assert.equal(count(harness.calls, isAssistantRating), 1);
+  assert.equal(await c.ratingCards.count(), 0);
+  assert.equal(await c.panel.getByRole("alert").count(), 0, "no error state");
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("helpdesk-chat-ended-card") ?? false), true, "focus on the end line");
   await page.close();
 });

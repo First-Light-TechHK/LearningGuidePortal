@@ -44,7 +44,7 @@ function cardNotice(text: HelpdeskCopy["chat"], cards: ChatEntry[]): string {
   return cards.map((card) => (card.kind === "handover" ? text.handoverTitle : card.kind === "checkin" ? text.checkinTitle : "")).filter(Boolean).join(" ");
 }
 
-export function AssistantChat({ locale, copy, questionMax, accountId, chips, onIdeas, onAssistIds, onHandover }: { locale: "en-GB" | "zh-CN"; copy: HelpdeskCopy; questionMax: number; accountId: string; chips: ChatChip[]; onIdeas: () => void; onAssistIds: (ids: string[]) => void; /** v4: open Contact Support (the form on this page) with the chat's assistIds. */ onHandover?: (assistIds: string[]) => void }) {
+export function AssistantChat({ locale, copy, questionMax, accountId, chips, onIdeas, onAssistIds, onHandover, pageInput }: { locale: "en-GB" | "zh-CN"; copy: HelpdeskCopy; questionMax: number; accountId: string; chips: ChatChip[]; onIdeas: () => void; onAssistIds: (ids: string[]) => void; /** v4: open Contact Support (the form on this page) with the chat's assistIds. */ onHandover?: (assistIds: string[]) => void; /** v4: the learner's last input elsewhere on the page (epoch ms; the enquiry form after a handover): the learner is still here, so the chat does not end idle. */ pageInput?: { readonly current: number } }) {
   const text = copy.chat;
   const ids = useId();
   const storageKey = chatStorageKey(accountId);
@@ -76,6 +76,16 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   /** v4: the end line to move focus to after the next render (End chat, a rating saved or skipped). */
   const focusEnd = useRef<number | null>(null);
   const touched = () => { lastInput.current = Date.now(); };
+  /** The newest learner input: in the panel, or on the page around it. */
+  const inputAt = useCallback(() => Math.max(lastInput.current, pageInput?.current ?? 0), [pageInput]);
+  /** A fresh announcement: cleared first, so the same words said again (asking for a person twice) are read out again. */
+  const announceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announce = useCallback((message: string) => {
+    if (announceTimer.current) clearTimeout(announceTimer.current);
+    setAnnouncement("");
+    announceTimer.current = setTimeout(() => { announceTimer.current = null; setAnnouncement(message); }, 100);
+  }, []);
+  useEffect(() => () => { if (announceTimer.current) clearTimeout(announceTimer.current); }, []);
 
   // sessionStorage is read after mount, so the server render and the first client render match.
   // A chat left without learner input for the idle time while the page was away ends as it loads.
@@ -95,7 +105,8 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     report.current(assistIdsOf(entries));
   }, [entries, loaded, storageKey]);
   // Scroll only when something new appears: a question or the typing state shows the newest line;
-  // an answer taller than the panel opens at its start. A vote (same entries, updated) never scrolls.
+  // an answer taller than the panel opens at its start, also when a v4 card came with it (what
+  // was added, from its first entry to its last, is what must fit). A vote never scrolls to an answer.
   useLayoutEffect(() => {
     const node = log.current;
     const before = shown.current;
@@ -103,10 +114,11 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     if (!node || !entries.length) return;
     const grew = entries.length > before.count;
     if (!grew && !(pending && !before.pending)) return;
-    const last = entries[entries.length - 1];
-    const element = node.querySelector<HTMLElement>(`[data-entry="${entries.length - 1}"]`);
-    if (grew && before.count > 0 && last.kind !== "question" && element && element.offsetHeight > node.clientHeight - 26) {
-      node.scrollTop += element.getBoundingClientRect().top - node.getBoundingClientRect().top - 13;
+    const added = entries.slice(before.count);
+    const first = node.querySelector<HTMLElement>(`[data-entry="${before.count}"]`);
+    const last = node.querySelector<HTMLElement>(`[data-entry="${entries.length - 1}"]`);
+    if (grew && before.count > 0 && !added.some((entry) => entry.kind === "question") && first && last && last.getBoundingClientRect().bottom - first.getBoundingClientRect().top > node.clientHeight - 26) {
+      node.scrollTop += first.getBoundingClientRect().top - node.getBoundingClientRect().top - 13;
       return;
     }
     node.scrollTop = node.scrollHeight;
@@ -129,21 +141,21 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     setEntries([...current, end]);
     // End chat moves focus to the rating card (read out with its title) or to the thanks; an idle end leaves focus alone and is announced.
     const rates = end.kind === "ended" && end.ratingFor !== null;
-    setAnnouncement(reason === "idle" ? (rates ? `${text.ended} ${copy.assistant.rateTitle}` : text.ended) : rates ? text.ended : "");
-  }, [copy.assistant.rateTitle, setEntries, text.ended]);
+    announce(reason === "idle" ? (rates ? `${text.ended} ${copy.assistant.rateTitle}` : text.ended) : rates ? text.ended : "");
+  }, [announce, copy.assistant.rateTitle, setEntries, text.ended]);
 
   // v4: the idle end. Armed while a session with an AI answer waits for the learner; input meanwhile moves the deadline.
   useEffect(() => {
     if (!loaded || pending) return;
-    const deadline = idleDeadline(entries, lastInput.current);
+    const deadline = idleDeadline(entries, inputAt());
     if (deadline === null) return;
     const timer = setTimeout(() => {
-      const due = idleDeadline(latest.current, lastInput.current);
+      const due = idleDeadline(latest.current, inputAt());
       if (due !== null && Date.now() < due) setIdleCheck((value) => value + 1);
       else if (due !== null) endChat("idle");
     }, Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
-  }, [entries, pending, loaded, idleCheck, endChat]);
+  }, [entries, pending, loaded, idleCheck, endChat, inputAt]);
 
   function handOver() {
     touched();
@@ -157,10 +169,11 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     // v4 §1: a typed request for a person is handed over at once; no AI answer is attempted. (A chip is the FAQ's own question.)
     if (!faqId && isHumanRequest(message)) {
       setEntries((current) => [...current, question, { kind: "handover", reason: "requested" }]);
-      setAnnouncement(`${text.handoverTitle} ${text.handoverBody}`);
+      announce(`${text.handoverTitle} ${text.handoverBody}`);
       return true;
     }
     setPending(true);
+    if (announceTimer.current) clearTimeout(announceTimer.current);
     setAnnouncement("");
     setEntries((current) => [...current, question]);
     const result = await askAssistant(faqId ? { message, locale, faqId } : { message, locale }, newIdempotencyKey());
@@ -174,10 +187,15 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
       const cards = cardsAfterChange(next);
       setEntries([...next, ...cards]);
       const said = reply ? plainText(reply.answer) : alternatives.length ? `${text.fallback} ${text.alternativesTitle} ${alternatives.map((item) => item.question).join("; ")}` : text.fallback;
+      if (announceTimer.current) clearTimeout(announceTimer.current);
       setAnnouncement(cards.length ? `${said} ${cardNotice(text, cards)}` : said);
       return true;
     }
-    setEntries((current) => [...current, { kind: "error", error: result.status === 429 ? "rateLimited" : "error" }]);
+    // v4 §2: a failed call is a turn with no answer too; the second unsolved turn in a row offers a person.
+    const failed = [...latest.current, { kind: "error" as const, error: result.status === 429 ? "rateLimited" as const : "error" as const }];
+    const cards = cardsAfterChange(failed);
+    setEntries([...failed, ...cards]);
+    if (cards.length) announce(cardNotice(text, cards));
     return false;
   }
 
@@ -207,10 +225,13 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     if (result.ok && result.data && (result.data.feedback === "helpful" || result.data.feedback === "not_helpful")) {
       const stored = result.data.feedback;
       const next = latest.current.map((entry) => (entry.kind === "answer" && entry.id === id ? { ...entry, feedback: stored } : entry));
-      // v4 §2: a No on the newest answer can complete an unsolved pair.
-      const cards = cardsAfterChange(next);
-      setEntries([...next, ...cards]);
-      if (cards.length) setAnnouncement(cardNotice(text, cards));
+      // v4 §2: a No on the newest answer can complete an unsolved pair. With a question still waiting
+      // for its reply, the card goes after the voted turns and before that question.
+      const waiting = next.length && next[next.length - 1].kind === "question" ? next.slice(-1) : [];
+      const settled = next.slice(0, next.length - waiting.length);
+      const cards = cardsAfterChange(settled);
+      setEntries([...settled, ...cards, ...waiting]);
+      if (cards.length) announce(cardNotice(text, cards));
     } else setVoteError(id);
   }
 

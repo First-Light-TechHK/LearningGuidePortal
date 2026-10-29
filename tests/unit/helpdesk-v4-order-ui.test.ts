@@ -137,3 +137,22 @@ test("without an order nothing changes: Technical Support preset, no order line,
   assert.equal("orderId" in harness.calls.find(isTicketCreate)!.fields, false);
   await page.close();
 });
+
+test("v4 review: opened for an order that could not be attached (not the learner's, unknown, or the order store failed): Payments & Subscriptions preset and a short notice instead of a silent plain form", async () => {
+  for (const locale of LOCALES) {
+    const harness = await openHarness(browser, locale, api());
+    const { page } = harness;
+    await mountContact(page, { locale, orderUnavailable: true });
+    const f = ui(page, locale);
+    assert.equal(await f.topic.textContent(), f.copy.categories.payments_subscriptions, "still an enquiry about a payment");
+    await f.orderGroup.waitFor();
+    assert.equal(await f.orderGroup.locator(".helpdesk-order-unavailable").textContent(), f.copy.order.unavailable);
+    assert.equal(await f.orderGroup.getByRole("button").count(), 0, "nothing to remove");
+    assert.equal(await f.orderGroup.evaluate((group, subjectId) => Boolean(group.compareDocumentPosition(document.getElementById(subjectId)!) & Node.DOCUMENT_POSITION_FOLLOWING), (await f.subject.getAttribute("id"))!), true, "above Subject, where the order line would be");
+    await fill(page, locale);
+    await f.submit.click();
+    await waitForCalls(harness, (calls) => calls.some(isTicketCreate));
+    assert.equal("orderId" in harness.calls.find(isTicketCreate)!.fields, false, "no order is sent");
+    await page.close();
+  }
+});

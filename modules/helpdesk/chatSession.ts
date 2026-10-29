@@ -19,12 +19,16 @@ export const CHAT_SESSION_RULES = deepFreeze({
    * An explicit request for a person (spec Part B §1), Simplified and
    * Traditional Chinese and English, case-insensitive; English entries match
    * whole words (an "s" plural too), Chinese ones anywhere in the message.
+   * Only Latin letters, digits and a hyphen join a word, so an English
+   * keyword typed right next to Chinese ("我要human") matches, while a
+   * hyphenated course topic ("human-computer interaction") does not.
    */
   humanKeywords: ["人工", "真人", "客服", "转人工", "轉人工", "投诉", "投訴", "human", "agent", "real person", "complaint", "speak to someone"] as string[],
   /**
    * Phrases taken out before matching, because on a learning platform they are
    * course topics, not a request for a person ("人工智能" is artificial
-   * intelligence and contains 人工; "AI agent" contains agent).
+   * intelligence and contains 人工; "AI agent" contains agent). English ones
+   * are cut as whole words like the keywords ("Thai agent" is no "AI agent").
    */
   humanKeywordExceptions: ["人工智能", "人工智慧", "ai agent"] as string[],
   /** Consecutive unsolved learner turns (no answer, or an answer marked not helpful) before the handover card. */
@@ -41,11 +45,19 @@ const normalise = (text: string) => text.normalize("NFKC").toLowerCase().replace
 const HAN = /[㐀-鿿豈-﫿]/;
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** What joins an English word: Latin letters, digits and a hyphen (never a Han character, which is a letter too). */
+const JOINER = "[\\p{Script=Latin}\\p{N}-]";
+
+/** A whole-word pattern for an English keyword or exception (an "s" plural too); null for a Chinese one, matched anywhere. */
+function wordPattern(word: string, flags: string): RegExp | null {
+  if (HAN.test(word)) return null;
+  return new RegExp(`(?<!${JOINER})${escape(word).replace(/ /g, "\\s+")}s?(?!${JOINER})`, `u${flags}`);
+}
+
 function matches(message: string, keyword: string): boolean {
   const word = normalise(keyword);
   if (!word) return false;
-  if (HAN.test(word)) return message.includes(word);
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escape(word).replace(/ /g, "\\s+")}s?(?![\\p{L}\\p{N}])`, "u").test(message);
+  return wordPattern(word, "")?.test(message) ?? message.includes(word);
 }
 
 /** True when a typed chat message asks for a person: then no AI answer is attempted and the handover card shows at once. */
@@ -53,7 +65,9 @@ export function isHumanRequest(message: string, rules: ChatSessionRules = CHAT_S
   let text = normalise(message);
   for (const phrase of rules.humanKeywordExceptions) {
     const cut = normalise(phrase);
-    if (cut) text = text.split(cut).join(" ");
+    if (!cut) continue;
+    const pattern = wordPattern(cut, "g");
+    text = pattern ? text.replace(pattern, " ") : text.split(cut).join(" ");
   }
   return rules.humanKeywords.some((keyword) => matches(text, keyword));
 }
@@ -71,10 +85,11 @@ export function sessionQuestions(entries: ChatEntry[]): number {
 }
 
 /**
- * Unsolved AI turns in a row at the end of the current session: a reply with
- * no answer (the fallback) or an answer marked not helpful. An error bubble
- * is no AI turn (neither counts nor breaks the run); a handover card shown
- * restarts the count.
+ * Unsolved learner turns in a row at the end of the current session: a reply
+ * with no answer (the fallback), an answer marked not helpful, or a call that
+ * failed or was rate limited (the error bubble: a turn with no answer too, and
+ * the learner who most needs a person then). A handover card shown restarts
+ * the count.
  */
 export function unsolvedStreak(entries: ChatEntry[]): number {
   const session = currentSession(entries);
@@ -82,6 +97,7 @@ export function unsolvedStreak(entries: ChatEntry[]): number {
   for (let index = session.length - 1; index >= 0; index -= 1) {
     const entry = session[index];
     if (entry.kind === "handover") break;
+    if (entry.kind === "error") { streak += 1; continue; }
     if (entry.kind !== "answer") continue;
     if (entry.reply !== null && entry.feedback !== "not_helpful") break;
     streak += 1;

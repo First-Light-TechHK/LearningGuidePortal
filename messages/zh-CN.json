@@ -1646,7 +1646,8 @@
       "remove": "移除",
       "removeLabel": "从本次咨询中移除订单 {number}",
       "removed": "已从本次咨询中移除订单。",
-      "invalid": "无法将此订单关联到你的咨询。请移除后重新提交。"
+      "invalid": "无法将此订单关联到你的咨询。请移除后重新提交。",
+      "unavailable": "无法将该订单关联到本次咨询。请在留言中写明订单号。"
     },
     "selectTopic": "请选择问题类型",
     "categories": {

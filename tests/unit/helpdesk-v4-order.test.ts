@@ -196,3 +196,45 @@ test("DEV local store written before v4 reads as tickets without an order", asyn
   const reread = await createLocalHelpdeskRepository(dir).findTicket(created.ticket.id);
   assert.equal(reread?.ticket.orderId, null);
 });
+
+test("v4 review: the order lookup runs after the rate limit, so a learner over the limit costs no order-store read (also with a wrong orderId)", async () => {
+  let lookups = 0;
+  const h = harness(async (userId, orderId) => { lookups += 1; return projectOrder(source(), userId, orderId); });
+  for (let n = 0; n < HELPDESK_LIMITS.ticketsPerHour; n += 1) await h.service.createTicket(learner, input({ subject: `Enquiry ${n}` }), randomUUID());
+  assert.equal(lookups, 0, "no orderId, no lookup");
+  for (const orderId of [ORDER_ID, OTHER_ORDER_ID, "order_unknown"]) {
+    await assert.rejects(h.service.createTicket(learner, input({ subject: `Over the limit ${orderId}`, orderId }), randomUUID()), (error: unknown) => error instanceof HelpdeskProblem && error.code === "rate_limited");
+  }
+  assert.equal(lookups, 0, "the limiter answers first");
+  // Under the limit the check still runs (and refuses another learner's order).
+  const fresh = harness(async (userId, orderId) => { lookups += 1; return projectOrder(source(), userId, orderId); });
+  await rejectsOrder(fresh.service.createTicket(learner, input({ orderId: OTHER_ORDER_ID }), randomUUID()));
+  assert.equal(lookups, 1);
+});
+
+test("v4 review: the Contact Support page's order from ?orderId: the learner's own order, else a notice (not theirs, unknown, malformed, or the store failed); none without the parameter", async () => {
+  const { supportOrder } = await import("../../modules/helpdesk/learnerPages");
+  const lookups: string[] = [];
+  const lookup = async (orderId: string) => { lookups.push(orderId); return projectOrder(source(), learner.id, orderId); };
+  assert.deepEqual(await supportOrder(ORDER_ID, lookup), { order: { id: ORDER_ID }, orderUnavailable: false });
+  assert.deepEqual(await supportOrder([ORDER_ID, OTHER_ORDER_ID], lookup), { order: { id: ORDER_ID }, orderUnavailable: false }, "a repeated parameter: the first");
+  assert.deepEqual(await supportOrder(OTHER_ORDER_ID, lookup), { order: null, orderUnavailable: true }, "another learner's order");
+  assert.deepEqual(await supportOrder("order_unknown", lookup), { order: null, orderUnavailable: true }, "no such order");
+  assert.deepEqual(await supportOrder("<script>", lookup), { order: null, orderUnavailable: true }, "malformed: never looked up");
+  assert.deepEqual(await supportOrder("x".repeat(65), lookup), { order: null, orderUnavailable: true });
+  assert.deepEqual(lookups, [ORDER_ID, ORDER_ID, OTHER_ORDER_ID, "order_unknown"]);
+  assert.deepEqual(await supportOrder(ORDER_ID, async () => { throw new Error("store down"); }), { order: null, orderUnavailable: true }, "an order store failure opens the form, with the notice");
+  for (const raw of [undefined, "", "   ", []]) assert.deepEqual(await supportOrder(raw as string | string[] | undefined, lookup), { order: null, orderUnavailable: false }, `no order asked for: ${JSON.stringify(raw)}`);
+});
+
+test("v4 review: signed out, Contact Support for an order sends the learner to sign in and back to the same order (safeReturnTo keeps it); the plain form's returnTo is unchanged", async () => {
+  const { supportSignInPath } = await import("../../modules/helpdesk/learnerPages");
+  const { safeReturnTo } = await import("../../services/runtimeConfig");
+  assert.equal(supportSignInPath("en-GB", undefined), "/en-GB/portal/sign-in?returnTo=/en-GB/account/my-learning/support", "as before v4");
+  assert.equal(supportSignInPath("zh-CN", "<bad>"), "/zh-CN/portal/sign-in?returnTo=/zh-CN/account/my-learning/support", "a malformed id is dropped");
+  const target = supportSignInPath("en-GB", ORDER_ID);
+  const returnTo = new URL(target, "https://portal.test").searchParams.get("returnTo");
+  assert.equal(returnTo, `/en-GB/account/my-learning/support?orderId=${ORDER_ID}`);
+  assert.equal(safeReturnTo(returnTo, "/fallback"), `/en-GB/account/my-learning/support?orderId=${ORDER_ID}`, "the sign-in page keeps the order");
+  assert.equal(new URL(supportSignInPath("zh-CN", [ORDER_ID]), "https://portal.test").searchParams.get("returnTo"), `/zh-CN/account/my-learning/support?orderId=${ORDER_ID}`);
+});

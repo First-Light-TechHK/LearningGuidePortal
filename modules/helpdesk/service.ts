@@ -540,9 +540,10 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     };
     const earlier = await replayTicket();
     if (earlier) return earlier;
-    const orderId = requestedOrderId ? await ownOrder(learner, requestedOrderId) : null;
     await enforceRateLimit("tickets", learner.id);
     await enforceRateLimit("messages", learner.id);
+    // After the limiter: a learner over the limit costs no order-store read, whatever orderId they send.
+    const orderId = requestedOrderId ? await ownOrder(learner, requestedOrderId) : null;
     const at = now();
     const ticketId = uuidv7(at.getTime());
     const messageId = uuidv7(at.getTime());

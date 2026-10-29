@@ -32,12 +32,19 @@ test("v4 Part B: an explicit request for a person matches the keyword list, case
   const yes = [
     "人工", "我要转人工", "轉人工客服", "找真人", "联系客服", "我要投诉", "我要投訴", "人工客服在吗",
     "human", "HUMAN please", "Can I talk to a Human?", "an agent please", "Agents?", "real person", "a REAL   person", "I have a complaint", "complaints",
-    "I want to speak to someone", "Speak To Someone", "ＨＵＭＡＮ", "human-agent", "我想要人工智能课程的客服"
+    "I want to speak to someone", "Speak To Someone", "ＨＵＭＡＮ", "human/agent", "我想要人工智能课程的客服",
+    // Review fix: an English keyword typed right next to Chinese text (no space, the usual way to mix scripts) still asks for a person.
+    "我要human", "我想找agent", "转agent", "请给我real person", "human吗", "我要投诉complaint", "找个real person聊聊",
+    // An exception is cut only as whole words: "Thai agent" is not "AI agent".
+    "Is a Thai agent ok", "an AI agent? no, a human"
   ];
   for (const message of yes) assert.equal(isHumanRequest(message), true, message);
   const no = [
     "How do I reset my password?", "Where is my invoice?", "humanities course", "What is on the agenda?", "reagent", "nonhuman", "personal data",
-    "人工智能课程怎么退款", "人工智慧課程", "What is an AI agent?", "Build AI agents with Python", "", "   "
+    "人工智能课程怎么退款", "人工智慧課程", "What is an AI agent?", "Build AI agents with Python", "", "   ",
+    // Review fix: a hyphen joins words, so hyphenated course topics are no request ("human-agent" was a yes before this fix).
+    "human-computer interaction", "Human-centred design course", "agent-based modelling", "multi-agent systems", "human-agent",
+    "AI agent课程"
   ];
   for (const message of no) assert.equal(isHumanRequest(message), false, message);
   // The list is the config's: a custom rule set is honoured as given.
@@ -54,7 +61,7 @@ test("v4 Part B: a session is everything after the last end; the counters count 
   assert.deepEqual(currentSession([q(), answered(1), ended]), []);
 });
 
-test("v4 Part B: two unsolved turns in a row (no answer, or an answer marked not helpful) show the handover card; errors are neutral; a card restarts the count", () => {
+test("v4 Part B: two unsolved turns in a row (no answer, or an answer marked not helpful) show the handover card; an error turn counts as unsolved; a card restarts the count", () => {
   assert.equal(unsolvedStreak([q(), fallback(1), q(), fallback(2)]), 2);
   assert.deepEqual(cardsAfterChange([q(), fallback(1), q(), fallback(2)]), [handover()], "two fallbacks");
   assert.deepEqual(cardsAfterChange([q(), answered(1, "not_helpful"), q(), fallback(2)]), [handover()], "not helpful, then no answer");
@@ -62,7 +69,13 @@ test("v4 Part B: two unsolved turns in a row (no answer, or an answer marked not
   assert.deepEqual(cardsAfterChange([q(), answered(1), q(), fallback(2)]), [], "an answer not voted down breaks the run");
   assert.deepEqual(cardsAfterChange([q(), answered(1, "helpful"), q(), fallback(2)]), []);
   assert.deepEqual(cardsAfterChange([q(), fallback(1)]), [], "one is not enough");
-  assert.deepEqual(cardsAfterChange([q(), fallback(1), q(), error, q(), fallback(2)]), [handover()], "an error bubble neither counts nor breaks the run");
+  assert.deepEqual(cardsAfterChange([q(), fallback(1), q(), error, q(), fallback(2)]), [handover()], "an error turn is an unsolved turn too");
+  // Review fix (spec Part B §2, "turns with no answer"): a failed or rate-limited call is a turn with no answer.
+  assert.deepEqual(cardsAfterChange([q(), fallback(1), q(), error]), [handover()], "no answer, then an error");
+  assert.deepEqual(cardsAfterChange([q(), error, q(), { kind: "error", error: "rateLimited" }]), [handover()], "two errors in a row");
+  assert.deepEqual(cardsAfterChange([q(), answered(1), q(), error]), [], "one error after an answer is not enough");
+  assert.deepEqual(cardsAfterChange([q(), error, q(), answered(1)]), [], "an answer breaks the run");
+  assert.equal(unsolvedStreak([q(), error, q(), error, handover(), q(), error]), 1, "the card restarts the count of errors too");
   assert.deepEqual(cardsAfterChange([q(), fallback(1), q(), fallback(2), handover(), q(), fallback(3)]), [], "the card restarts the count");
   assert.deepEqual(cardsAfterChange([q(), fallback(1), q(), fallback(2), handover(), q(), fallback(3), q(), fallback(4)]), [handover()], "and two more show it again");
   assert.deepEqual(cardsAfterChange([q(), fallback(1), q("human"), handover("requested"), q(), fallback(2)]), [], "a requested handover restarts it too");

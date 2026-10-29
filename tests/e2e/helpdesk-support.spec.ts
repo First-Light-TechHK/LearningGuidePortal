@@ -853,13 +853,16 @@ test("v4 order entry: Contact support on a payment record carries the order; the
     expect(detail.order).toMatchObject({ id: orderId, status: "paid", kind: "purchase", paymentMode: "demo", currency: "usd" });
     expect(typeof detail.order.amount).toBe("number");
 
-    // Another learner can neither see nor attach this order.
+    // Another learner can neither see nor attach this order. (Final review: the page says the order could not be
+    // attached, never why, and keeps Payments & Subscriptions; before, it opened a silent plain form on Technical Support.)
     const other = await newLearner(browser, locale, "Other Learner");
     await other.page.goto(`/${locale}/account/my-learning/support?orderId=${orderId}`);
     await expect(other.page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
-    await expect(other.page.getByRole("group", { name: text.order.label, exact: true })).toHaveCount(0);
+    const notice = other.page.getByRole("group", { name: text.order.label, exact: true });
+    await expect(notice).toHaveText(`${text.order.label}${text.order.unavailable}`);
+    await expect(notice.getByRole("button")).toHaveCount(0);
     await expect(other.page.getByText(orderId)).toHaveCount(0);
-    await expect(other.page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.technical_support);
+    await expect(other.page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.payments_subscriptions);
     const refused = await other.page.request.post("/api/helpdesk/tickets", {
       headers: { "Idempotency-Key": randomUUID(), Origin: origin(other.page) },
       multipart: { category: "payments_subscriptions", subject: "Not my order", body: "Trying someone else's order.", locale, orderId }
@@ -870,6 +873,19 @@ test("v4 order entry: Contact support on a payment record carries the order; the
     await other.context.close();
     await context.close();
   }
+});
+
+test("v4 order entry: signed out, Contact support for an order goes through sign-in and back to the same order", async ({ browser }) => {
+  const visitor = await browser.newContext({ locale: "zh-CN" });
+  const page = await visitor.newPage();
+  const orderId = "order_1761720000000_a1b2c3d4";
+  await page.goto(`/zh-CN/account/my-learning/support?orderId=${orderId}`);
+  await page.waitForURL(/\/zh-CN\/portal\/sign-in\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe(`/zh-CN/account/my-learning/support?orderId=${orderId}`);
+  await page.goto("/en-GB/account/my-learning/support?orderId=%3Cscript%3E");
+  await page.waitForURL(/\/en-GB\/portal\/sign-in\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/en-GB/account/my-learning/support");
+  await visitor.close();
 });
 
 test("v4 order entry: Remove sends the enquiry without the order", async ({ browser }) => {

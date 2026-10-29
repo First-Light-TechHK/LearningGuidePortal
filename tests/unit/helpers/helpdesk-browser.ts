@@ -28,7 +28,7 @@ import {getMessages} from './lib/i18n/messages';
 const root=createRoot(document.getElementById('root'));
 let mounts=0;
 window.__nav=[];
-window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips} order={p.order}/>);
+window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips} order={p.order} orderUnavailable={p.orderUnavailable}/>);
 window.mountDetail=p=>root.render(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
 window.mountNav=p=>root.render(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
 window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});root.render(<React.Fragment key={p.inPlace?mounts:++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
@@ -137,7 +137,7 @@ export async function openHarness(browser: Browser, locale: Locale, handler: Han
 export const config = helpdeskUiConfig();
 
 export type ChatChip = { id: string; question: string };
-export type ContactProps = { locale: Locale; account?: { id: string; name: string; email: string }; chips?: ChatChip[]; /** v4 Part A: the learner's order the page was opened for. */ order?: { id: string } | null };
+export type ContactProps = { locale: Locale; account?: { id: string; name: string; email: string }; chips?: ChatChip[]; /** v4 Part A: the learner's order the page was opened for. */ order?: { id: string } | null; /** v4: opened with an orderId that could not be attached. */ orderUnavailable?: boolean };
 export const ACCOUNT = { id: "user_emily", name: "Emily Chen", email: "emily@example.com" };
 export async function mountContact(page: Page, props: ContactProps) {
   await page.evaluate((p) => (window as unknown as { mountContact(p: unknown): void }).mountContact(p), { config, account: ACCOUNT, chips: [], ...props });
