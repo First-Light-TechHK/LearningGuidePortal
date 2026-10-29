@@ -15,7 +15,8 @@ import {
 const BASE = "http://admin.local:3100";
 const TOKEN = "local-test-admin-helpdesk-token";
 const env = { ...process.env };
-const QUESTION = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password.", updatedAt: "2026-10-28T08:30:00.000Z" };
+// v5 Part A (contract v6): Admin sends signals on every published FAQ.
+const QUESTION = { id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Open **Sign in**, then Forgot password.", signals: [], updatedAt: "2026-10-28T08:30:00.000Z" };
 const SUGGESTION = { id: "0192d4f0-7b6a-7c3e-9a10-0000000000aa", faqId: QUESTION.id, question: QUESTION.question, answer: QUESTION.answer };
 const POPULAR = { popular: true, limit: 3 };
 const RUN_ID = "0192d4f0-7b6a-7c3e-9a10-0000000000b2";
@@ -97,6 +98,16 @@ test("FAQs: stale data on error, null when nothing is cached; malformed rows (an
   assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);
   assert.ok(logs.some((line) => line.event === "admin_faqs_failed"));
   assert.ok(!JSON.stringify(logs).includes(TOKEN), "the token is never logged");
+});
+
+test("v5 Part A: FAQ signals are read in chip priority order, unknown ones (and open_ticket_waiting, not an FAQ) dropped; an older Admin's FAQ has none", async () => {
+  const { signals: _none, ...older } = QUESTION;
+  void _none;
+  const tagged = { ...QUESTION, id: "0192d4f0-7b6a-7c3e-9a10-1234567890ae", signals: ["recent_purchase", "nope", "open_ticket_waiting", "payment_failed", 7] };
+  const stub = stubFetch(() => json({ faqs: [older, tagged] }));
+  const client = createAdminHelpdeskClient({ fetch: stub.fetch, log: (line) => logs.push(line) });
+  const read = await client.faqs("en-GB", POPULAR);
+  assert.deepEqual(read?.map((faq) => faq.signals), [[], ["payment_failed", "recent_purchase"]]);
 });
 
 test("a hanging Admin never holds the page: nothing cached -> hidden within the wait budget; the late answer is cached for the next load", async () => {

@@ -43,7 +43,11 @@ export const HELPDESK_LIMITS = {
   shownFaqIdsMax: 20,
   learnerIdMax: 128,
   /** v4 Part A: an order number as the order owner writes it (order_<ms>_<hex>); letters, digits, _ and - only. */
-  orderIdMax: 64
+  orderIdMax: 64,
+  /** v5 (contract v6): suggest context.recentTurns, the learner's own earlier words only (Admin refuses more with 400). */
+  recentTurnsMax: 3,
+  /** v5 (contract v6): each recent turn, in code points (Admin refuses longer with 400; Portal clips). */
+  recentTurnMax: 500
 } as const;
 
 export const TICKET_STATUSES = ["OPEN", "ASSIGNED", "WAITING_USER", "PENDING_CONFIRM", "CLOSED", "CANCELLED"] as const;
@@ -267,8 +271,21 @@ export type AgentTicketList = { tickets: AgentTicketSummary[]; nextCursor: strin
 /** v2 §1: Help Centre topics (Admin owns the FAQs; Portal only reads published ones). */
 export const FAQ_CATEGORIES = ["account_technical", "courses_learning", "payments_subscriptions", "other"] as const;
 export type FaqCategory = (typeof FAQ_CATEGORIES)[number];
-/** A published FAQ in one locale; answer is the Markdown subset (modules/helpdesk/markdown.ts). */
-export type HelpFaq = { id: string; category: FaqCategory; popular: boolean; question: string; answer: string; updatedAt: string };
+/**
+ * v5 Part A: the learner situation signals Portal computes by code from its own stores (true / false, no values).
+ * They never leave Portal: Admin and the model never receive them; only their enum names are logged.
+ */
+export const SITUATION_SIGNALS = ["trial_ending", "payment_failed", "payment_pending", "recent_purchase", "subscription_cancelled", "subscription_expired", "email_unverified", "open_ticket_waiting", "from_order"] as const;
+export type SituationSignal = (typeof SITUATION_SIGNALS)[number];
+/**
+ * v5 Part A: the signals an Admin FAQ can be tagged with, in the order Portal picks the "you may be having" chips.
+ * open_ticket_waiting is not an FAQ (Portal shows a fixed card linking the enquiry).
+ */
+export const FAQ_SIGNALS = ["payment_failed", "payment_pending", "recent_purchase", "trial_ending", "subscription_expired", "subscription_cancelled", "email_unverified", "from_order"] as const satisfies readonly SituationSignal[];
+export type FaqSignal = (typeof FAQ_SIGNALS)[number];
+export const isFaqSignal = (value: unknown): value is FaqSignal => (FAQ_SIGNALS as readonly unknown[]).includes(value);
+/** A published FAQ in one locale; answer is the Markdown subset (modules/helpdesk/markdown.ts). signals (v5, contract v6): [] from an older Admin. */
+export type HelpFaq = { id: string; category: FaqCategory; popular: boolean; question: string; answer: string; signals: FaqSignal[]; updatedAt: string };
 export type FaqFilter = { popular?: boolean; category?: FaqCategory | null; q?: string; limit?: number };
 /** One stored answer, shown verbatim. */
 export type HelpdeskSuggestion = { id: string; faqId: string; question: string; answer: string };
@@ -280,8 +297,8 @@ export type HelpdeskSuggestion = { id: string; faqId: string; question: string; 
 export type HelpdeskAlternative = { faqId: string; question: string };
 /** POST /api/helpdesk/suggestions. alternatives (v3, additive) is [] whenever suggestion is set, and when rate limited or Admin failed. */
 export type SuggestionResponse = { suggestion: HelpdeskSuggestion | null; alternatives: HelpdeskAlternative[] };
-/** Admin's POST /api/integration/helpdesk/suggest answer as Portal reads it (contract v4). */
-export type AdminSuggestReply = SuggestionResponse;
+/** Admin's POST /api/integration/helpdesk/suggest answer as Portal reads it (contract v4); turn (v6) only when Admin sent the v5 fields. */
+export type AdminSuggestReply = SuggestionResponse & { turn?: SuggestTurn };
 /** Where an assistant answer was shown: the submit-time modal, the chat panel, or a starter chip. */
 export const ASSIST_SOURCES = ["submit", "chat", "chip"] as const;
 export type AssistSource = (typeof ASSIST_SOURCES)[number];
@@ -299,7 +316,7 @@ export type SuggestInput = { category: TicketCategory; subject: string; message:
  * shownFaqIds (v3, additive): the FAQs that conversation already showed, newest first, at most
  * HELPDESK_LIMITS.shownFaqIdsMax; Admin never offers them as alternatives. Left out when there are none.
  */
-export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string; shownFaqIds?: string[]; runId: string; parentRunId: string | null };
+export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; source: AssistSource; category?: TicketCategory; subject?: string; message: string; faqId?: string; shownFaqIds?: string[]; context?: SuggestRequestContext; runId: string; parentRunId: string | null };
 /** POST /api/helpdesk/assistant body (v2 §4b). */
 export type AssistantInput = { message: string; locale: HelpdeskLocale; faqId: string | null };
 /** id is the assist log row (link it with assistIds); reply null = show the fallback copy, then the alternatives (v3, additive) as chips. */
@@ -707,4 +724,140 @@ export function parseIdempotencyKey(header: string | null): string {
 
 export function isTicketId(value: unknown): value is string {
   return isUuid(value);
+}
+
+// ---------------------------------------------------------------- Helpdesk v5 (contract fixture v6): FAQ question trees and the suggest turn
+// Specs: lg-helpdesk/helpdesk-v5-faq-graph-design.md (§1, §2.2, §4, §6) and helpdesk-v5-context-chips-and-smalltalk.md (Parts A, B, D, H).
+// Admin owns the graph, the releases, the block split and the guard; Portal caches the published release, renders
+// blocks by id and validates clicks against the cached edges. Clicks never call the model or Admin.
+
+/** answer = an FAQ card; choice = one short question with 2-4 option buttons (it states no facts). */
+export const FAQ_NODE_TYPES = ["answer", "choice"] as const;
+export type FaqNodeType = (typeof FAQ_NODE_TYPES)[number];
+/** follow_up = a chip under an answer; option = an A/B/C/D button on a choice node. */
+export const FAQ_EDGE_KINDS = ["follow_up", "option"] as const;
+export type FaqEdgeKind = (typeof FAQ_EDGE_KINDS)[number];
+/** One block of an approved answer (b1..bn, split by Admin's code at release time); text is that block's Markdown, rendered verbatim. */
+export type FaqBlock = { id: string; text: string };
+/** A node of the published release in one locale. blocks: at least one for an answer node, [] for a choice node. */
+export type FaqNode = { id: string; key: string; type: FaqNodeType; entry: boolean; category: FaqCategory; popular: boolean; question: string; answer: string; blocks: FaqBlock[]; signals: FaqSignal[] };
+/** An edge of the published release in one locale; label is resolved (the child's question unless staff overrode it). position orders the edges of one parent. */
+export type FaqEdge = { parentId: string; childId: string; kind: FaqEdgeKind; position: number; label: string };
+/**
+ * GET /api/integration/helpdesk/faq-release/current?locale= (Admin, Bearer ADMIN_HELPDESK_TOKEN): the whole published graph.
+ * ETag "v<version>"; If-None-Match -> 304; 404 (code no_release, or an older Admin without the route) = no release yet,
+ * so Portal keeps using the per-FAQ published list.
+ */
+export type FaqRelease = { version: number; publishedAt: string; locale: HelpdeskLocale; nodes: FaqNode[]; edges: FaqEdge[] };
+
+/** What Admin's suggest answer is (v6, only when the request carried context). */
+export const SUGGEST_KINDS = ["answer", "smalltalk", "clarify", "no_match"] as const;
+export type SuggestKind = (typeof SUGGEST_KINDS)[number];
+/** pick_faq's intent: the v2 seven plus greeting (hi, are you there), farewell (thanks, bye), vague (wants help, no question yet), clarify (asks about the card shown). */
+export const SUGGEST_INTENTS = ["question", "own_account", "someone_else", "exception", "private_data", "instructions", "off_topic", "greeting", "farewell", "vague", "clarify"] as const;
+export type SuggestIntent = (typeof SUGGEST_INTENTS)[number];
+export const CONFIDENCE_LEVELS = ["sure", "unsure"] as const;
+export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
+/** passed = the model's short line is shown; fallback = Admin's fixed template (or, for clarify, no explanation). */
+export const GUARD_RESULTS = ["passed", "fallback"] as const;
+export type GuardResult = (typeof GUARD_RESULTS)[number];
+export const GUARD_REASONS = ["missing", "too_long", "link", "email", "digit", "markup", "blocked_phrase", "ai_filler", "script", "ungrounded", "not_covered", "timeout", "error"] as const;
+export type GuardReason = (typeof GUARD_REASONS)[number];
+export const GUARDED_FIELDS = ["opening", "closing", "reply", "explanation"] as const;
+export type GuardedField = (typeof GUARDED_FIELDS)[number];
+export type SuggestGuard = { result: GuardResult; reason: GuardReason | null; fallback: GuardedField[] };
+/**
+ * The v6 suggest fields as Portal reads them (enum codes and short texts that already passed Admin's guard or are
+ * its fixed template). kind answer: nodeId = the suggestion's faqId; opening and closing frame an answer node (both
+ * null for a choice node); blocks = the excerpt's block ids ([] = the whole answer). smalltalk: reply. clarify:
+ * nodeId = the card on screen; covered with explanation, or not covered (explanation null: Portal shows its fixed
+ * copy and the handover). releaseVersion null = no release yet (per-FAQ publishing).
+ */
+export type SuggestTurn = {
+  kind: SuggestKind; intent: SuggestIntent | null; confidence: ConfidenceLevel | null; nodeId: string | null; blocks: string[];
+  opening: string | null; closing: string | null; reply: string | null; explanation: string | null; covered: boolean | null;
+  guard: SuggestGuard | null; releaseVersion: number | null;
+};
+/** v6 suggest request context (only a v5 Portal sends it; an older Admin ignores it). recentTurns: the learner's own earlier words, oldest first. */
+export type SuggestRequestContext = { nodeId?: string; sessionId?: string; recentTurns?: string[] };
+
+const pick = <T extends string>(values: readonly T[], value: unknown): T | null => ((values as readonly unknown[]).includes(value) ? (value as T) : null);
+const shortText = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
+const BLOCK_ID = /^b[1-9]\d{0,3}$/;
+const positiveInt = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : null);
+
+/**
+ * The context Portal sends, in code: valid ids only (lower case), the last HELPDESK_LIMITS.recentTurnsMax non-empty
+ * learner turns, each clipped to recentTurnMax code points. Nothing about the learner's account ever goes in.
+ */
+export function buildSuggestContext(input: { nodeId?: string | null; sessionId?: string | null; recentTurns?: readonly string[] }): SuggestRequestContext {
+  const context: SuggestRequestContext = {};
+  if (isUuid(input.nodeId)) context.nodeId = input.nodeId.toLowerCase();
+  if (isUuid(input.sessionId)) context.sessionId = input.sessionId.toLowerCase();
+  const turns = (input.recentTurns ?? [])
+    .map((turn) => [...turn.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim()].slice(0, HELPDESK_LIMITS.recentTurnMax).join("").trim())
+    .filter((turn) => turn !== "")
+    .slice(-HELPDESK_LIMITS.recentTurnsMax);
+  if (turns.length) context.recentTurns = turns;
+  return context;
+}
+
+/** Admin's v6 suggest fields, read tolerantly; null when there are none (an older Admin, or a request without context). */
+export function parseSuggestTurn(value: unknown): SuggestTurn | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const kind = pick(SUGGEST_KINDS, item.kind);
+  if (!kind) return null;
+  let guard: SuggestGuard | null = null;
+  if (item.guard && typeof item.guard === "object") {
+    const raw = item.guard as Record<string, unknown>;
+    const result = pick(GUARD_RESULTS, raw.result);
+    if (result) guard = { result, reason: pick(GUARD_REASONS, raw.reason), fallback: Array.isArray(raw.fallback) ? raw.fallback.filter((field): field is GuardedField => pick(GUARDED_FIELDS, field) !== null) : [] };
+  }
+  const blocks = Array.isArray(item.blocks) ? item.blocks.filter((id): id is string => typeof id === "string" && BLOCK_ID.test(id)) : [];
+  return {
+    kind, intent: pick(SUGGEST_INTENTS, item.intent), confidence: pick(CONFIDENCE_LEVELS, item.confidence), nodeId: isUuid(item.nodeId) ? item.nodeId.toLowerCase() : null,
+    blocks: [...new Set(blocks)], opening: shortText(item.opening), closing: shortText(item.closing), reply: shortText(item.reply), explanation: shortText(item.explanation),
+    covered: typeof item.covered === "boolean" ? item.covered : null, guard, releaseVersion: positiveInt(item.releaseVersion)
+  };
+}
+
+/**
+ * The published release as Admin sends it, read tolerantly: a malformed node or edge is dropped (and so is any edge
+ * whose ends are not both in the release, so a click can never reach a node Portal does not have); a malformed
+ * version, locale or node list makes the whole release unusable (null: keep the last good one).
+ */
+export function parseFaqRelease(value: unknown): FaqRelease | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const version = positiveInt(raw.version);
+  const locale = pick(HELPDESK_LOCALES, raw.locale);
+  if (!version || !locale || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) return null;
+  const nodes: FaqNode[] = [];
+  const ids = new Set<string>();
+  for (const entry of raw.nodes) {
+    if (!entry || typeof entry !== "object") continue;
+    const node = entry as Record<string, unknown>;
+    const type = pick(FAQ_NODE_TYPES, node.type);
+    const category = pick(FAQ_CATEGORIES, node.category);
+    if (!isUuid(node.id) || !type || !category || !shortText(node.key) || !shortText(node.question) || !shortText(node.answer)) continue;
+    const id = node.id.toLowerCase();
+    if (ids.has(id)) continue;
+    const blocks = Array.isArray(node.blocks) ? node.blocks.filter((block): block is FaqBlock => Boolean(block) && typeof block === "object" && BLOCK_ID.test(String((block as FaqBlock).id)) && shortText((block as FaqBlock).text) !== null).map((block) => ({ id: block.id, text: block.text })) : [];
+    const signals = Array.isArray(node.signals) ? FAQ_SIGNALS.filter((signal) => (node.signals as unknown[]).includes(signal)) : [];
+    ids.add(id);
+    nodes.push({ id, key: String(node.key), type, entry: node.entry === true, category, popular: node.popular === true, question: String(node.question), answer: String(node.answer), blocks: type === "answer" ? blocks : [], signals });
+  }
+  const edges: FaqEdge[] = [];
+  for (const entry of raw.edges) {
+    if (!entry || typeof entry !== "object") continue;
+    const edge = entry as Record<string, unknown>;
+    const kind = pick(FAQ_EDGE_KINDS, edge.kind);
+    if (!kind || !isUuid(edge.parentId) || !isUuid(edge.childId) || !shortText(edge.label) || typeof edge.position !== "number" || !Number.isInteger(edge.position) || edge.position < 0) continue;
+    const parentId = edge.parentId.toLowerCase();
+    const childId = edge.childId.toLowerCase();
+    if (parentId === childId || !ids.has(parentId) || !ids.has(childId)) continue;
+    edges.push({ parentId, childId, kind, position: edge.position, label: String(edge.label) });
+  }
+  return { version, publishedAt: typeof raw.publishedAt === "string" ? raw.publishedAt : "", locale, nodes, edges };
 }

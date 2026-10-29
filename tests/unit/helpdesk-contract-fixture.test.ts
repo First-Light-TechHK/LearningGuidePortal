@@ -8,9 +8,10 @@ import { existsSync } from "node:fs";
 import { SESSION_COOKIE } from "../../services/productAuth";
 import {
   AGENT_ACTIONS, ASSIST_FEEDBACK, HELPDESK_LIMITS, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, ORDER_KINDS, ORDER_STATUSES, PAYMENT_MODES, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
-  SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentListQuery, parseAgentMessageInput, problemBody
+  SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentListQuery, parseAgentMessageInput, problemBody,
+  CONFIDENCE_LEVELS, FAQ_EDGE_KINDS, FAQ_NODE_TYPES, FAQ_SIGNALS, GUARDED_FIELDS, GUARD_REASONS, GUARD_RESULTS, SITUATION_SIGNALS, SUGGEST_INTENTS, SUGGEST_KINDS, parseFaqRelease, parseSuggestTurn, type AdminSuggestRequest
 } from "../../contracts/helpdesk";
-import { createAdminHelpdeskClient } from "../../modules/helpdesk/adminClient";
+import { createAdminHelpdeskClient, faqReleasePath } from "../../modules/helpdesk/adminClient";
 import { isInlineAttachment } from "../../modules/helpdesk/attachments";
 import { ORDER_PROJECTION_FIELDS } from "../../modules/helpdesk/orderDirectory";
 import { projectStudent } from "../../modules/helpdesk/studentDirectory";
@@ -28,6 +29,11 @@ type Fixture = {
     faqsRequest: string; faqsSearchRequest: string; faqsResponse: { faqs: Json[]; etag: string }; faqRequest: string; faqResponse: Json;
     suggestRequest: Record<string, string | null>; suggestChatRequest: Record<string, string | null>; suggestChipRequest: Record<string, string | null>; traceparentHeader: string; suggestResponse: { suggestion: Json; alternatives: Json[] }; suggestNoMatchResponse: { suggestion: Json; alternatives: Json[] }; suggestAlternativesResponse: { suggestion: Json; alternatives: Json[] };
     outcomeRequest: Json; helpfulOutcomeRequest: Json; outcomeResponse: Json;
+    // v6
+    suggestContextRequest: Record<string, Json>; suggestAnswerContextResponse: Record<string, Json>; suggestChoiceResponse: Record<string, Json>; suggestSmalltalkResponse: Record<string, Json>;
+    suggestSmalltalkFallbackResponse: Record<string, Json>; suggestClarifyResponse: Record<string, Json>; suggestClarifyNotCoveredResponse: Record<string, Json>; suggestNoMatchContextResponse: Record<string, Json>;
+    faqReleaseRequest: string; faqReleaseResponse: Record<string, Json> & { nodes: Array<Record<string, Json>>; edges: Array<Record<string, Json>> }; faqReleaseResponseHeaders: Record<string, string>;
+    faqReleaseNotModified: { ifNoneMatch: string; status: number }; noReleaseProblem: { status: number; code: string };
   };
 };
 
@@ -91,7 +97,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "12f7ea599e2385fe47914ece62643a0b5caa7ae8503569762d705209eecd1ca4";
+const FIXTURE_SHA256 = "77930974de3e40bbf920eab21adda57223811e55136eacd483fcb6a05be0a1cf";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -308,3 +314,118 @@ test("Portal's Admin client sends the contract's requests and reads the contract
     delete process.env.ADMIN_HELPDESK_TOKEN;
   }
 });
+
+// ---------------------------------------------------------------- v6 (helpdesk v5: situation chips, small talk, clarify, three-part answers, FAQ question trees)
+
+const TURN_FIELDS = ["kind", "intent", "confidence", "nodeId", "blocks", "opening", "closing", "reply", "explanation", "covered", "guard", "releaseVersion"] as const;
+const turnOf = (response: Record<string, Json>) => Object.fromEntries(TURN_FIELDS.map((key) => [key, response[key]]));
+
+test("v6: the situation-signal, FAQ-graph and suggest-turn enums match Portal's constants", () => {
+  assert.deepEqual(fixture.enums.situationSignal, [...SITUATION_SIGNALS]);
+  assert.deepEqual(fixture.enums.faqSignal, [...FAQ_SIGNALS], "the FAQ signals in chip priority order");
+  assert.ok(!(fixture.enums.faqSignal as string[]).includes("open_ticket_waiting"), "a waiting enquiry is a fixed card, not an FAQ");
+  assert.deepEqual(fixture.enums.faqNodeType, [...FAQ_NODE_TYPES]);
+  assert.deepEqual(fixture.enums.faqEdgeKind, [...FAQ_EDGE_KINDS]);
+  assert.deepEqual(fixture.enums.suggestKind, [...SUGGEST_KINDS]);
+  assert.deepEqual(fixture.enums.suggestIntent, [...SUGGEST_INTENTS]);
+  assert.deepEqual(fixture.enums.confidence, [...CONFIDENCE_LEVELS]);
+  assert.deepEqual(fixture.enums.guardResult, [...GUARD_RESULTS]);
+  assert.deepEqual(fixture.enums.guardReason, [...GUARD_REASONS]);
+  assert.deepEqual(fixture.enums.guardedField, [...GUARDED_FIELDS]);
+  assert.equal(fixture.version, 6);
+});
+
+test("v6: Portal sends the contract context request and reads every v6 answer; a v5 answer has no turn", async () => {
+  const sent: Array<{ url: string; body: unknown }> = [];
+  const replies: Response[] = [];
+  const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    sent.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return replies.shift()!;
+  }) as typeof fetch;
+  process.env.ADMIN_HELPDESK_BASE_URL = "http://admin.local.test";
+  process.env.ADMIN_HELPDESK_TOKEN = "local-test-admin-token";
+  try {
+    const p = fixture.portalToAdmin;
+    const client = createAdminHelpdeskClient({ fetch: fakeFetch, log: () => undefined });
+    const request = p.suggestContextRequest as unknown as AdminSuggestRequest;
+    // The context holds the card on screen, the session and the learner's own earlier words: no account data, no signals.
+    assert.deepEqual(Object.keys(request.context ?? {}).sort(), ["nodeId", "recentTurns", "sessionId"]);
+    assert.doesNotMatch(Object.keys(request).concat(Object.keys(request.context ?? {})).join(" "), /order|signal|plan|subscription|email/i);
+    const examples = [p.suggestAnswerContextResponse, p.suggestChoiceResponse, p.suggestSmalltalkResponse, p.suggestSmalltalkFallbackResponse, p.suggestClarifyResponse, p.suggestClarifyNotCoveredResponse, p.suggestNoMatchContextResponse];
+    for (const [index, response] of examples.entries()) {
+      replies.push(new Response(JSON.stringify(response), { status: 200 }));
+      const read = await client.suggestReply(request);
+      assert.equal(JSON.stringify(sent[index].body), JSON.stringify(request), "sent exactly as in the contract (key order included)");
+      assert.equal(sent[index].url, "http://admin.local.test/api/integration/helpdesk/suggest");
+      assert.deepEqual(read.turn, turnOf(response), `example ${index}: the turn fields as Admin sent them`);
+      assert.deepEqual(read.suggestion, response.suggestion);
+      assert.deepEqual(read.alternatives, response.alternatives);
+    }
+    assert.deepEqual([...new Set(examples.map((e) => e.kind))].sort(), [...SUGGEST_KINDS].sort(), "every kind has an example");
+    // An older Admin (or a request without context) answers as v5: no turn, exactly as before.
+    for (const legacy of [p.suggestResponse, p.suggestNoMatchResponse, p.suggestAlternativesResponse]) {
+      assert.equal(parseSuggestTurn(legacy), null);
+      replies.push(new Response(JSON.stringify(legacy), { status: 200 }));
+      assert.equal("turn" in await client.suggestReply(request), false);
+    }
+    // The excerpt names blocks of the picked answer in the release; a choice answer is a choice node with no frame.
+    const release = parseFaqRelease(p.faqReleaseResponse)!;
+    const picked = release.nodes.find((node) => node.id === p.suggestAnswerContextResponse.nodeId)!;
+    for (const block of p.suggestAnswerContextResponse.blocks as string[]) assert.ok(picked.blocks.some((b) => b.id === block), block);
+    assert.equal(release.nodes.find((node) => node.id === p.suggestChoiceResponse.nodeId)?.type, "choice");
+    assert.equal(p.suggestChoiceResponse.opening, null);
+    assert.equal(release.nodes.find((node) => node.id === p.suggestClarifyResponse.nodeId)?.id, (request.context ?? {}).nodeId);
+  } finally {
+    delete process.env.ADMIN_HELPDESK_BASE_URL;
+    delete process.env.ADMIN_HELPDESK_TOKEN;
+  }
+});
+
+test("v6: the FAQ release is read as the contract sends it, revalidated with If-None-Match, and 404 means no release yet", async () => {
+  const sent: Array<{ url: string; headers: Record<string, string> }> = [];
+  const replies: Response[] = [];
+  const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    sent.push({ url: String(input), headers: init?.headers as Record<string, string> });
+    return replies.shift()!;
+  }) as typeof fetch;
+  process.env.ADMIN_HELPDESK_BASE_URL = "http://admin.local.test";
+  process.env.ADMIN_HELPDESK_TOKEN = "local-test-admin-token";
+  try {
+    const p = fixture.portalToAdmin;
+    const client = createAdminHelpdeskClient({ fetch: fakeFetch, log: () => undefined });
+    assert.equal(faqReleasePath("en-GB"), p.faqReleaseRequest);
+    replies.push(new Response(JSON.stringify(p.faqReleaseResponse), { status: 200, headers: { "content-type": "application/json", ...p.faqReleaseResponseHeaders } }));
+    const read = await client.faqRelease("en-GB");
+    assert.equal(sent[0].url, `http://admin.local.test${p.faqReleaseRequest}`);
+    assert.equal(sent[0].headers.Authorization, "Bearer local-test-admin-token");
+    assert.equal(sent[0].headers["If-None-Match"], undefined);
+    assert.deepEqual(read, { status: "ok", release: p.faqReleaseResponse, etag: p.faqReleaseResponseHeaders.ETag });
+    replies.push(new Response(null, { status: p.faqReleaseNotModified.status, headers: { etag: p.faqReleaseResponseHeaders.ETag } }));
+    assert.deepEqual(await client.faqRelease("en-GB", p.faqReleaseNotModified.ifNoneMatch), { status: "not_modified" });
+    assert.equal(sent[1].headers["If-None-Match"], p.faqReleaseNotModified.ifNoneMatch);
+    replies.push(new Response(JSON.stringify({ ...p.noReleaseProblem, type: "https://www.ilovelearningguide.com/problems/no_release" }), { status: p.noReleaseProblem.status, headers: { "content-type": "application/problem+json" } }));
+    assert.deepEqual(await client.faqRelease("en-GB"), { status: "none" });
+    // An older Admin has no such route: Nest's own 404 means the same.
+    replies.push(new Response(JSON.stringify({ statusCode: 404, message: "Cannot GET" }), { status: 404 }));
+    assert.deepEqual(await client.faqRelease("en-GB"), { status: "none" });
+    replies.push(new Response("oops", { status: 502 }));
+    assert.deepEqual(await client.faqRelease("en-GB"), { status: "unavailable" });
+    replies.push(new Response(JSON.stringify(p.faqReleaseResponse), { status: 200 }));
+    assert.deepEqual(await client.faqRelease("zh-CN"), { status: "unavailable" }, "a release in another locale is not used");
+    // Shapes: every node has blocks (answer nodes at least one), every edge joins two nodes of the release.
+    const ids = new Set(p.faqReleaseResponse.nodes.map((node) => node.id));
+    for (const node of p.faqReleaseResponse.nodes) assert.equal((node.blocks as Json[]).length > 0, node.type === "answer", String(node.key));
+    for (const edge of p.faqReleaseResponse.edges) assert.ok(ids.has(String(edge.parentId)) && ids.has(String(edge.childId)));
+  } finally {
+    delete process.env.ADMIN_HELPDESK_BASE_URL;
+    delete process.env.ADMIN_HELPDESK_TOKEN;
+  }
+});
+
+test("v6: published FAQs carry signals; Portal keeps the known ones", async () => {
+  for (const faq of [...fixture.portalToAdmin.faqsResponse.faqs, fixture.portalToAdmin.faqResponse] as Array<Record<string, Json>>) {
+    assert.ok(Array.isArray(faq.signals));
+    for (const signal of faq.signals as string[]) assert.ok(fixture.enums.faqSignal.includes(signal));
+  }
+});
+

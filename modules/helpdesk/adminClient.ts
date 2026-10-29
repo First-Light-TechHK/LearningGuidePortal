@@ -7,7 +7,7 @@
 // a rotated token applies without a restart. The token is never logged.
 // Every call carries a W3C traceparent: a child of the learner request's
 // own (deps.traceparent) when that is valid, otherwise a new trace.
-import { FAQ_CATEGORIES, HELPDESK_LIMITS, type AdminSuggestReply, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
+import { FAQ_CATEGORIES, FAQ_SIGNALS, HELPDESK_LIMITS, buildSuggestContext, parseFaqRelease, parseSuggestTurn, type AdminSuggestReply, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type FaqRelease, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
 import { outgoingTraceparent } from "@/lib/traceparent";
 import { isUuid } from "@/lib/uuidv7";
 
@@ -106,7 +106,9 @@ function faqOf(value: unknown): HelpFaq | null {
   const item = value as Record<string, unknown>;
   if (!isUuid(item.id) || !isText(item.question) || !isText(item.answer)) return null;
   if (typeof item.category !== "string" || !(FAQ_CATEGORIES as readonly string[]).includes(item.category)) return null;
-  return { id: item.id.toLowerCase(), category: item.category as FaqCategory, popular: item.popular === true, question: item.question, answer: item.answer, updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : "" };
+  // v5 Part A (contract v6): only the FAQ signals Portal knows, in chip priority order; [] from an older Admin.
+  const signals = Array.isArray(item.signals) ? FAQ_SIGNALS.filter((signal) => (item.signals as unknown[]).includes(signal)) : [];
+  return { id: item.id.toLowerCase(), category: item.category as FaqCategory, popular: item.popular === true, question: item.question, answer: item.answer, signals, updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : "" };
 }
 
 function suggestion(value: unknown): HelpdeskSuggestion | null {
@@ -150,6 +152,13 @@ export function faqsPath(locale: HelpdeskLocale, filter: FaqFilter = {}) {
   if (filter.limit) query.set("limit", String(Math.min(100, Math.max(1, Math.floor(filter.limit)))));
   return `/api/integration/helpdesk/faqs?${query}`;
 }
+
+/** v6: the published FAQ release of a locale (Admin, bearer). */
+export function faqReleasePath(locale: HelpdeskLocale) {
+  return `/api/integration/helpdesk/faq-release/current?${new URLSearchParams({ locale })}`;
+}
+
+export type FaqReleaseRead = { status: "ok"; release: FaqRelease; etag: string } | { status: "not_modified" } | { status: "none" } | { status: "unavailable" };
 
 export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   const doFetch = deps.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
@@ -280,7 +289,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     if (!destination) return nothing;
     try {
       // Fixed key order; optional fields only when set; the run ids always, last.
-      const body: Record<string, string | string[] | null> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
+      const body: Record<string, string | string[] | null | Record<string, unknown>> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
       if (input.category) body.category = input.category;
       if (input.subject) body.subject = input.subject;
       body.message = input.message;
@@ -288,15 +297,20 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       // v3: Admin refuses a malformed id or more than 20 with 400, which would lose the answer too.
       const shown = [...new Set((input.shownFaqIds ?? []).filter((id) => isUuid(id)).map((id) => id.toLowerCase()))].slice(0, HELPDESK_LIMITS.shownFaqIdsMax);
       if (shown.length) body.shownFaqIds = shown;
+      // v6: the card on screen, the chat session and the learner's own earlier words (never learner data); an older Admin ignores it.
+      if (input.context) body.context = buildSuggestContext(input.context);
       body.runId = input.runId;
       body.parentRunId = input.parentRunId;
       const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
       const reply = JSON.parse(result.text) as { suggestion?: unknown; alternatives?: unknown };
-      if (reply.suggestion === null) return { suggestion: null, alternatives: alternativesOf(reply.alternatives, false) };
+      // v6: Admin's turn fields when it sent them (only for a request with context); absent otherwise.
+      const turn = parseSuggestTurn(reply);
+      const withTurn = (answer: AdminSuggestReply): AdminSuggestReply => (turn ? { ...answer, turn } : answer);
+      if (reply.suggestion === null) return withTurn({ suggestion: null, alternatives: alternativesOf(reply.alternatives, false) });
       const parsed = suggestion(reply.suggestion);
       if (!parsed) throw new Error("malformed");
-      return { suggestion: parsed, alternatives: [] };
+      return withTurn({ suggestion: parsed, alternatives: [] });
     } catch (error) {
       failure("admin_suggest_failed", error);
       return nothing;
@@ -322,7 +336,29 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     }
   }
 
-  return { faqs, faq, suggest, suggestReply, reportOutcome };
+  /**
+   * v5 FAQ question trees (contract v6): one request for the published release of a locale. The cache (keep the last
+   * good release, revalidate every 60 s with If-None-Match) belongs to the caller. "none" = Admin has no release yet
+   * (404, also an older Admin without the route): use the per-FAQ list; "unavailable" = keep what is cached.
+   */
+  async function faqRelease(locale: HelpdeskLocale, ifNoneMatch?: string | null): Promise<FaqReleaseRead> {
+    const destination = target();
+    if (!destination) return { status: "unavailable" };
+    try {
+      const result = await call(destination, faqReleasePath(locale), { method: "GET", timeout: timeouts.faqs, headers: ifNoneMatch ? { "If-None-Match": ifNoneMatch } : {} });
+      if (result.status === 304) return { status: "not_modified" };
+      if (result.status === 404) return { status: "none" };
+      if (result.status !== 200) throw new Error(`status_${result.status}`);
+      const release = parseFaqRelease(JSON.parse(result.text));
+      if (!release || release.locale !== locale) throw new Error("malformed");
+      return { status: "ok", release, etag: result.etag || `"v${release.version}"` };
+    } catch (error) {
+      failure("admin_faq_release_failed", error);
+      return { status: "unavailable" };
+    }
+  }
+
+  return { faqs, faq, suggest, suggestReply, reportOutcome, faqRelease };
 }
 
 export type AdminHelpdeskClient = ReturnType<typeof createAdminHelpdeskClient>;
