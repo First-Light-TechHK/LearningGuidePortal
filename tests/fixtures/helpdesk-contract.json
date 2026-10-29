@@ -1,10 +1,10 @@
 {
   "$comment": [
-    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number. v5 (helpdesk-v4-order-and-chat-end Part A, 2026-10-29) adds the enquiry's order: orderId (string or null) on every list and detail ticket, and detail.order, a read-only projection Portal builds by code from the learner's own order record ({ id, status, amount (minor units), currency, planName, kind, createdAt, paymentMode }, nothing else; null without an order), with the orderStatus, orderKind and paymentMode enums Admin labels. The suggest requests are unchanged: the AI agent never receives order data. v6 (helpdesk-v5-context-chips-and-smalltalk Parts A/B/D/H and helpdesk-v5-faq-graph-design, 2026-10-30, all additive) adds: the situation-signal enums (situationSignal: what Portal computes by code from its own stores, never sent to Admin or the model; faqSignal: the tags an FAQ can carry, in chip priority order) and signals on every public FAQ; the FAQ question-tree release Portal caches (GET /api/integration/helpdesk/faq-release/current?locale=, bearer, ETag \"v<version>\", If-None-Match -> 304, 404 no_release before the first release) with answer|choice nodes, follow_up|option edges (labels resolved) and answer blocks b1..bn split by code at release time; the suggest request's context { nodeId?, sessionId?, recentTurns? (learner text only, at most 3) }, sent only by a v6 Portal; and, only when the request carries context, the suggest answer's kind (answer|smalltalk|clarify|no_match), intent, confidence (sure|unsure), nodeId, blocks, opening, closing, reply, explanation, covered, guard ({ result: passed|fallback, reason, fallback }) and releaseVersion. A request without context gets exactly the v5 answer, so an old Portal is unaffected; an old Admin ignores context.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number. v5 (helpdesk-v4-order-and-chat-end Part A, 2026-10-29) adds the enquiry's order: orderId (string or null) on every list and detail ticket, and detail.order, a read-only projection Portal builds by code from the learner's own order record ({ id, status, amount (minor units), currency, planName, kind, createdAt, paymentMode }, nothing else; null without an order), with the orderStatus, orderKind and paymentMode enums Admin labels. The suggest requests are unchanged: the AI agent never receives order data. v6 (helpdesk-v5-context-chips-and-smalltalk Parts A/B/D/H and helpdesk-v5-faq-graph-design, 2026-10-30, all additive) adds: the situation-signal enums (situationSignal: what Portal computes by code from its own stores, never sent to Admin or the model; faqSignal: the tags an FAQ can carry, in chip priority order) and signals on every public FAQ; the FAQ question-tree release Portal caches (GET /api/integration/helpdesk/faq-release/current?locale=, bearer, ETag \"v<version>\", If-None-Match -> 304, 404 no_release before the first release) with answer|choice nodes, follow_up|option edges (labels resolved) and answer blocks b1..bn split by code at release time; the suggest request's context { nodeId?, sessionId?, recentTurns? (learner text only, at most 3) }, sent only by a v6 Portal; and, only when the request carries context, the suggest answer's kind (answer|smalltalk|clarify|no_match), intent, confidence (sure|unsure), nodeId, blocks, opening, closing, reply, explanation, covered, guard ({ result: passed|fallback, reason, fallback }) and releaseVersion. A request without context gets exactly the v5 answer, so an old Portal is unaffected; an old Admin ignores context. v7 (helpdesk-v5-context-chips-and-smalltalk Part G and helpdesk-v5-faq-graph-design §3/§5.5, 2026-10-30, all additive) adds the flywheel feed Admin reads (GET /api/integration/helpdesk/insights?since=&until=&cursor=&limit=, bearer, read-only; oldest first by (createdAt, id), limit 1-500 default 200; until is fixed by the first page, never later than a minute ago, and carried in the opaque nextCursor, so a cursor always answers the same page): every assist turn with the learner's text scrubbed by Portal's code-only scrubber (placeholders <kind> from piiPlaceholder) and its labels as enum names (kind turnKind, intent, guard turnGuard, via assistVia, sessionEndReason chatEndReason, vote, rating, node ids, release version, session and turn index, handover, ticketAfterChat, signals) and the enquiry outcome ({ linked, status, closeReason, resolvedByAgent, agentReplied, agentReply }, agentReply scrubbed and only when resolvedByAgent); never a learner id, name, email, order, ticket id, number, subject, answer text or trace id. It also adds Portal's raw-text retention job (after 180 days only scrubbed text and labels stay): GET /api/integration/helpdesk/jobs/assist-retention (the newest runs) and POST .../run ({ agent }, Idempotency-Key; the same key answers with the same run, another agent on that key is 422 idempotency_conflict, already_running when another instance holds the job). No new problem codes.",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
-  "version": 6,
+  "version": 7,
   "enums": {
     "ticketStatus": [
       "OPEN",
@@ -199,7 +199,78 @@
         "integration_disabled",
         "helpdesk_unavailable"
       ]
-    }
+    },
+    "closeReason": [
+      "cancelled",
+      "user_confirmed",
+      "user_closed",
+      "auto_confirmed"
+    ],
+    "turnKind": [
+      "answer",
+      "smalltalk",
+      "clarify",
+      "no_match",
+      "handover"
+    ],
+    "turnGuard": [
+      "passed",
+      "fallback",
+      "missing",
+      "too_long",
+      "link",
+      "email",
+      "digit",
+      "markup",
+      "blocked_phrase",
+      "ai_filler",
+      "script",
+      "ungrounded",
+      "not_covered",
+      "timeout",
+      "error"
+    ],
+    "assistVia": [
+      "typed",
+      "follow_up",
+      "option",
+      "starter",
+      "signal",
+      "alternative"
+    ],
+    "chatEndReason": [
+      "idle",
+      "ended_by_learner",
+      "handover",
+      "ticket"
+    ],
+    "piiPlaceholder": [
+      "url",
+      "email",
+      "token",
+      "id",
+      "order",
+      "ticket",
+      "student_id",
+      "handle",
+      "ip",
+      "phone",
+      "card",
+      "number",
+      "name"
+    ],
+    "helpdeskJob": [
+      "assist_retention"
+    ],
+    "jobTrigger": [
+      "schedule",
+      "manual"
+    ],
+    "jobStatus": [
+      "running",
+      "succeeded",
+      "failed"
+    ]
   },
   "adminToPortal": {
     "auth": {
@@ -591,6 +662,173 @@
       "application/pdf": {
         "Content-Disposition": "attachment; filename*=UTF-8''%E5%8F%91%E7%A5%A8%20Oct.pdf"
       }
+    },
+    "insightsRequest": "/api/integration/helpdesk/insights?since=2026-10-30T00:00:00.000Z&limit=2",
+    "insightsResponse": {
+      "turns": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000101",
+          "createdAt": "2026-10-30T08:10:00.000Z",
+          "source": "chat",
+          "locale": "zh-CN",
+          "text": "我是 <name>，手机 <phone>，订单 <order> 付款后还是基础版",
+          "sessionId": "01a18100-0000-7000-8000-000000000100",
+          "turnIndex": 1,
+          "lastTurn": false,
+          "sessionEndReason": "ticket",
+          "kind": "no_match",
+          "intent": "question",
+          "guard": "passed",
+          "via": "typed",
+          "faqId": null,
+          "nodeId": null,
+          "parentNodeId": null,
+          "releaseVersion": 3,
+          "answered": false,
+          "vote": null,
+          "rating": null,
+          "covered": null,
+          "expanded": null,
+          "handover": false,
+          "ticketAfterChat": true,
+          "ticket": {
+            "linked": true,
+            "status": "CLOSED",
+            "closeReason": "user_confirmed",
+            "resolvedByAgent": true,
+            "agentReplied": true,
+            "agentReply": "Hi <name>, I re-synced your payment; your plan shows Pro now."
+          },
+          "signals": [
+            "payment_failed"
+          ]
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000102",
+          "createdAt": "2026-10-30T08:10:30.000Z",
+          "source": "chip",
+          "locale": "zh-CN",
+          "text": "我付了钱但没有权限",
+          "sessionId": "01a18100-0000-7000-8000-000000000100",
+          "turnIndex": 2,
+          "lastTurn": true,
+          "sessionEndReason": "ticket",
+          "kind": "answer",
+          "intent": "question",
+          "guard": "passed",
+          "via": "option",
+          "faqId": "01a18100-0000-7000-8000-000000000022",
+          "nodeId": "01a18100-0000-7000-8000-000000000022",
+          "parentNodeId": "01a18100-0000-7000-8000-000000000020",
+          "releaseVersion": 3,
+          "answered": true,
+          "vote": "not_helpful",
+          "rating": 2,
+          "covered": null,
+          "expanded": true,
+          "handover": true,
+          "ticketAfterChat": true,
+          "ticket": {
+            "linked": true,
+            "status": "CLOSED",
+            "closeReason": "user_confirmed",
+            "resolvedByAgent": true,
+            "agentReplied": true,
+            "agentReply": "Hi <name>, I re-synced your payment; your plan shows Pro now."
+          },
+          "signals": [
+            "payment_failed"
+          ]
+        }
+      ],
+      "nextCursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTMwVDA4OjEwOjMwLjAwMFoiLCJpZCI6IjAxYTE4MTAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDEwMiIsInVudGlsIjoiMjAyNi0xMC0zMFQwODo1OTowMC4wMDBaIn0",
+      "until": "2026-10-30T08:59:00.000Z"
+    },
+    "insightsNextRequest": "/api/integration/helpdesk/insights?since=2026-10-30T00:00:00.000Z&limit=2&cursor=eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTMwVDA4OjEwOjMwLjAwMFoiLCJpZCI6IjAxYTE4MTAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDEwMiIsInVudGlsIjoiMjAyNi0xMC0zMFQwODo1OTowMC4wMDBaIn0",
+    "insightsLastResponse": {
+      "turns": [],
+      "nextCursor": null,
+      "until": "2026-10-30T08:59:00.000Z"
+    },
+    "insightsLimits": {
+      "pageDefault": 200,
+      "pageMax": 500,
+      "settleMs": 60000,
+      "agentReplyMax": 2000,
+      "ticketAfterHours": 24,
+      "textMax": 500
+    },
+    "jobRunsRequest": "/api/integration/helpdesk/jobs/assist-retention",
+    "jobRunsResponse": {
+      "job": "assist_retention",
+      "retentionDays": 180,
+      "runs": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000201",
+          "job": "assist_retention",
+          "day": "2026-10-30",
+          "trigger": "manual",
+          "status": "succeeded",
+          "attempts": 1,
+          "startedAt": "2026-10-30T09:00:00.000Z",
+          "finishedAt": "2026-10-30T09:00:01.250Z",
+          "cutoff": "2026-05-03T09:00:00.000Z",
+          "rowsScrubbed": 42,
+          "moreDue": false,
+          "requestedBy": {
+            "id": "01a18100-0000-7000-8000-000000000002",
+            "name": "Alex Support"
+          },
+          "errorCode": null
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000200",
+          "job": "assist_retention",
+          "day": "2026-10-30",
+          "trigger": "schedule",
+          "status": "succeeded",
+          "attempts": 1,
+          "startedAt": "2026-10-30T02:14:00.000Z",
+          "finishedAt": "2026-10-30T02:14:03.000Z",
+          "cutoff": "2026-05-03T02:14:00.000Z",
+          "rowsScrubbed": 10000,
+          "moreDue": true,
+          "requestedBy": null,
+          "errorCode": null
+        }
+      ]
+    },
+    "jobRunRequestPath": "/api/integration/helpdesk/jobs/assist-retention/run",
+    "jobRunRequest": {
+      "agent": {
+        "id": "01a18100-0000-7000-8000-000000000002",
+        "name": "Alex Support"
+      }
+    },
+    "jobRunResponse": {
+      "outcome": "completed",
+      "run": {
+        "id": "01a18100-0000-7000-8000-000000000201",
+        "job": "assist_retention",
+        "day": "2026-10-30",
+        "trigger": "manual",
+        "status": "succeeded",
+        "attempts": 1,
+        "startedAt": "2026-10-30T09:00:00.000Z",
+        "finishedAt": "2026-10-30T09:00:01.250Z",
+        "cutoff": "2026-05-03T09:00:00.000Z",
+        "rowsScrubbed": 42,
+        "moreDue": false,
+        "requestedBy": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "errorCode": null
+      }
+    },
+    "jobRunAlreadyRunningResponse": {
+      "outcome": "already_running",
+      "run": null
     }
   },
   "portalToAdmin": {

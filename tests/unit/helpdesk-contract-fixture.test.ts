@@ -9,8 +9,10 @@ import { SESSION_COOKIE } from "../../services/productAuth";
 import {
   AGENT_ACTIONS, ASSIST_FEEDBACK, HELPDESK_LIMITS, ASSIST_SOURCES, BILLING_CYCLES, FAQ_CATEGORIES, HELPDESK_ATTACHMENT_TYPES, HELPDESK_LOCALES, HelpdeskProblem, ORDER_KINDS, ORDER_STATUSES, PAYMENT_MODES, PROBLEM_STATUS, SUBSCRIPTION_STATUSES,
   SUGGESTION_OUTCOMES, TICKET_CATEGORIES, TICKET_STATUSES, parseAgentActionInput, parseAgentListQuery, parseAgentMessageInput, problemBody,
-  CONFIDENCE_LEVELS, FAQ_EDGE_KINDS, FAQ_NODE_TYPES, FAQ_SIGNALS, GUARDED_FIELDS, GUARD_REASONS, GUARD_RESULTS, SITUATION_SIGNALS, SUGGEST_INTENTS, SUGGEST_KINDS, parseFaqRelease, parseSuggestTurn, type AdminSuggestRequest
+  CONFIDENCE_LEVELS, FAQ_EDGE_KINDS, FAQ_NODE_TYPES, FAQ_SIGNALS, GUARDED_FIELDS, GUARD_REASONS, GUARD_RESULTS, SITUATION_SIGNALS, SUGGEST_INTENTS, SUGGEST_KINDS, parseFaqRelease, parseSuggestTurn, type AdminSuggestRequest,
+  ASSIST_RETENTION_DAYS, ASSIST_VIAS, CHAT_END_REASONS, CLOSE_REASONS, HELPDESK_JOBS, INSIGHT_LIMITS, JOB_STATUSES, JOB_TRIGGERS, PII_PLACEHOLDER_KINDS, TURN_GUARDS, TURN_KINDS, parseInsightsQuery, parseJobRunInput
 } from "../../contracts/helpdesk";
+import { PII_KINDS } from "../../modules/helpdesk/piiScrubber";
 import { createAdminHelpdeskClient, faqReleasePath } from "../../modules/helpdesk/adminClient";
 import { isInlineAttachment } from "../../modules/helpdesk/attachments";
 import { ORDER_PROJECTION_FIELDS } from "../../modules/helpdesk/orderDirectory";
@@ -97,7 +99,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "77930974de3e40bbf920eab21adda57223811e55136eacd483fcb6a05be0a1cf";
+const FIXTURE_SHA256 = "01e5ef39a411b0299b47eebc8cd5503dda319f0ba11b997a9a96c8b539cd6963";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -332,7 +334,7 @@ test("v6: the situation-signal, FAQ-graph and suggest-turn enums match Portal's 
   assert.deepEqual(fixture.enums.guardResult, [...GUARD_RESULTS]);
   assert.deepEqual(fixture.enums.guardReason, [...GUARD_REASONS]);
   assert.deepEqual(fixture.enums.guardedField, [...GUARDED_FIELDS]);
-  assert.equal(fixture.version, 6);
+  assert.ok(fixture.version >= 6, "v6 is part of every later version");
 });
 
 test("v6: Portal sends the contract context request and reads every v6 answer; a v5 answer has no turn", async () => {
@@ -429,3 +431,115 @@ test("v6: published FAQs carry signals; Portal keeps the known ones", async () =
   }
 });
 
+
+// ---------------------------------------------------------------- v7: the flywheel feed and the retention job (Part G)
+type Insights = { turns: Array<Record<string, Json>>; nextCursor: string | null; until: string };
+const v7 = () => fixture.adminToPortal as unknown as Record<string, Json> & {
+  insightsRequest: string; insightsNextRequest: string; insightsResponse: Insights; insightsLastResponse: Insights; insightsLimits: Record<string, number>;
+  jobRunsRequest: string; jobRunsResponse: Record<string, Json> & { runs: Array<Record<string, Json>> }; jobRunRequestPath: string; jobRunRequest: Json; jobRunResponse: Record<string, Json>; jobRunAlreadyRunningResponse: Record<string, Json>;
+};
+
+test("v7: the feed and job enums and limits match Portal's constants", () => {
+  assert.equal(fixture.version, 7);
+  assert.deepEqual(fixture.enums.closeReason, [...CLOSE_REASONS]);
+  assert.deepEqual(fixture.enums.turnKind, [...TURN_KINDS]);
+  assert.deepEqual(fixture.enums.turnGuard, [...TURN_GUARDS]);
+  assert.deepEqual(fixture.enums.assistVia, [...ASSIST_VIAS]);
+  assert.deepEqual(fixture.enums.chatEndReason, [...CHAT_END_REASONS]);
+  assert.deepEqual(fixture.enums.piiPlaceholder, [...PII_PLACEHOLDER_KINDS]);
+  assert.deepEqual([...PII_PLACEHOLDER_KINDS], [...PII_KINDS], "the contract lists every placeholder the scrubber writes");
+  assert.deepEqual(fixture.enums.helpdeskJob, [...HELPDESK_JOBS]);
+  assert.deepEqual(fixture.enums.jobTrigger, [...JOB_TRIGGERS]);
+  assert.deepEqual(fixture.enums.jobStatus, [...JOB_STATUSES]);
+  const limits = v7().insightsLimits;
+  assert.deepEqual(limits, { pageDefault: INSIGHT_LIMITS.pageDefault, pageMax: INSIGHT_LIMITS.pageMax, settleMs: INSIGHT_LIMITS.settleMs, agentReplyMax: INSIGHT_LIMITS.agentReplyMax, ticketAfterHours: INSIGHT_LIMITS.ticketAfterMs / 3_600_000, textMax: INSIGHT_LIMITS.textMax });
+  assert.equal(v7().jobRunsResponse.retentionDays, ASSIST_RETENTION_DAYS);
+});
+
+test("v7: the contract's feed pages are labels and scrubbed text only, and its requests parse", () => {
+  const p = v7();
+  const first = parseInsightsQuery(new URL(p.insightsRequest, ORIGIN).searchParams);
+  assert.equal(first.cursor, null);
+  const next = parseInsightsQuery(new URL(p.insightsNextRequest, ORIGIN).searchParams);
+  const last = p.insightsResponse.turns[p.insightsResponse.turns.length - 1];
+  assert.deepEqual(next.cursor, { createdAt: last.createdAt, id: last.id, until: p.insightsResponse.until }, "the cursor carries the last turn and the window end");
+  assert.equal(p.insightsLastResponse.nextCursor, null);
+  const placeholders = new Set(fixture.enums.piiPlaceholder);
+  const allowed = new Set(["id", "createdAt", "source", "locale", "text", "sessionId", "turnIndex", "lastTurn", "sessionEndReason", "kind", "intent", "guard", "via", "faqId", "nodeId", "parentNodeId", "releaseVersion", "answered", "vote", "rating", "covered", "expanded", "handover", "ticketAfterChat", "ticket", "signals"]);
+  for (const turn of p.insightsResponse.turns) {
+    assert.deepEqual(Object.keys(turn).filter((key) => !allowed.has(key)), [], "no other field (no learner, answer text or trace id)");
+    for (const [field, values] of [["source", fixture.enums.assistSource], ["locale", fixture.enums.locale], ["kind", fixture.enums.turnKind], ["intent", fixture.enums.suggestIntent], ["guard", fixture.enums.turnGuard], ["via", fixture.enums.assistVia], ["sessionEndReason", fixture.enums.chatEndReason], ["vote", fixture.enums.assistFeedback]] as const) {
+      assert.ok(turn[field] === null || values.includes(String(turn[field])), `${field}: ${turn[field]}`);
+    }
+    for (const signal of turn.signals as string[]) assert.ok(fixture.enums.situationSignal.includes(signal));
+    const ticket = turn.ticket as Record<string, Json> | null;
+    if (ticket) {
+      assert.deepEqual(Object.keys(ticket).sort(), ["agentReplied", "agentReply", "closeReason", "linked", "resolvedByAgent", "status"]);
+      assert.ok(fixture.enums.ticketStatus.includes(String(ticket.status)));
+      assert.ok(ticket.closeReason === null || fixture.enums.closeReason.includes(String(ticket.closeReason)));
+      assert.ok(ticket.agentReply === null || ticket.resolvedByAgent === true, "a reply goes along only when the agent resolved the enquiry");
+    }
+    for (const text of [turn.text, ticket?.agentReply ?? ""] as string[]) {
+      for (const [, kind] of text.matchAll(/<([a-z_]+)>/g)) assert.ok(placeholders.has(kind), kind);
+      assert.doesNotMatch(text, /@|\d{6,}|https?:/, "scrubbed");
+    }
+  }
+  const run = parseJobRunInput(p.jobRunRequest);
+  assert.deepEqual(run.agent, (p.jobRunRequest as { agent: Json }).agent);
+  for (const item of [...p.jobRunsResponse.runs, p.jobRunResponse.run as Record<string, Json>]) {
+    assert.ok(fixture.enums.helpdeskJob.includes(String(item.job)) && fixture.enums.jobTrigger.includes(String(item.trigger)) && fixture.enums.jobStatus.includes(String(item.status)));
+    assert.equal(item.requestedBy === null, item.trigger === "schedule", "a manual run names who asked");
+  }
+  assert.deepEqual(p.jobRunAlreadyRunningResponse, { outcome: "already_running", run: null });
+});
+
+test("v7: the feed and the job routes Portal serves have the contract's shape", async () => {
+  const p = v7();
+  const store = await import("../../services/productStore");
+  const user = await store.registerUser({ email: "contract.flywheel55@example.test", password: "password1", nickname: "Mei Contract" });
+  const learner = { id: user.id, email: "contract.flywheel55@example.test", name: "Mei Contract" };
+  const repository = (await import("../../repositories/helpdeskRepository")).helpdeskRepository();
+  const { helpdeskService } = await import("../../modules/helpdesk/runtime");
+  const service = helpdeskService();
+  const agentIdentity = { id: "01a18100-0000-7000-8000-000000000002", name: "Alex Support" };
+  const created = await service.createTicket(learner, { category: "payments_subscriptions", subject: "Paid, still Basic", body: "Please check.", locale: "zh-CN", files: [] }, randomUUID());
+  let detail = await service.agentAction(created.ticket.id, { action: "claim", agent: agentIdentity, expectedSequence: created.ticket.sequence }, randomUUID());
+  detail = await service.postAgentMessage(created.ticket.id, { body: "Hi Mei Contract, I re-synced your payment; your plan shows Pro now.", internal: false, agent: agentIdentity, expectedSequence: detail.ticket.sequence }, randomUUID());
+  detail = await service.agentAction(created.ticket.id, { action: "propose_resolution", agent: agentIdentity, expectedSequence: detail.ticket.sequence }, randomUUID());
+  await service.learnerAction(learner, created.ticket.id, { action: "confirm", expectedSequence: detail.ticket.sequence }, randomUUID());
+  const sample = p.insightsResponse.turns[0];
+  const at = Date.now() - 10 * 60_000;
+  assert.equal(await repository.insertAssist({
+    id: randomUUID(), learnerId: learner.id, source: "chat", locale: "zh-CN", question: "我是 Mei Contract，手机 13800138000，订单 order_abc123def456 付款后还是基础版", faqId: null, faqQuestion: null, answer: null,
+    feedback: null, ticketId: created.ticket.id, clientEventId: randomUUID(), payloadHash: null, createdAt: new Date(at).toISOString(), feedbackDeliveredAt: null, feedbackAttemptedAt: null, alternatives: [],
+    sessionId: null, turnIndex: null, nodeId: null, parentNodeId: null, via: "typed", kind: "no_match", intent: "question", guard: "passed", releaseVersion: 3, traceId: null, signals: ["payment_failed"],
+    blocks: null, expanded: null, covered: null, texts: null
+  }), "inserted");
+  const insights = await import("../../app/api/integration/helpdesk/insights/route");
+  const runs = await import("../../app/api/integration/helpdesk/jobs/assist-retention/route");
+  const runNow = await import("../../app/api/integration/helpdesk/jobs/assist-retention/run/route");
+  const request = (url: string, json?: Json) => {
+    const headers = new Headers({ host: "localhost:3000", authorization: `Bearer ${TOKEN}` });
+    if (json !== undefined) { headers.set("content-type", "application/json"); headers.set("idempotency-key", randomUUID()); }
+    return new Request(`${ORIGIN}${url}`, { method: json === undefined ? "GET" : "POST", headers, body: json === undefined ? undefined : JSON.stringify(json) });
+  };
+  const since = new Date(at - 1000).toISOString();
+  const response = await insights.GET(request(`/api/integration/helpdesk/insights?since=${encodeURIComponent(since)}&limit=1`));
+  assert.equal(response.status, 200, await response.clone().text());
+  const page = await response.json() as Insights;
+  assertSameShape(page as unknown as Json, p.insightsResponse as unknown as Json);
+  const [turn] = page.turns;
+  assertSameShape(turn as Json, sample as Json);
+  assert.equal(turn.text, "我是 <name>，手机 <phone>，订单 <order> 付款后还是基础版");
+  assert.deepEqual(turn.ticket, sample.ticket, "the contract's outcome is what Portal serves for an enquiry the agent resolved");
+  const empty = await (await insights.GET(request(`/api/integration/helpdesk/insights?since=${encodeURIComponent(new Date().toISOString())}`))).json() as Insights;
+  assertSameShape(empty as unknown as Json, p.insightsLastResponse as unknown as Json);
+
+  const ran = await runNow.POST(request(p.jobRunRequestPath, p.jobRunRequest));
+  assert.equal(ran.status, 200, await ran.clone().text());
+  const done = await ran.json() as Record<string, Json>;
+  assertSameShape(done as Json, p.jobRunResponse as Json);
+  const listed = await runs.GET(request(p.jobRunsRequest));
+  assert.equal(listed.status, 200);
+  assertSameShape(await listed.json() as Json, p.jobRunsResponse as unknown as Json);
+});
