@@ -271,7 +271,10 @@ test("submit without a suggestion creates a ticket with a pasted screenshot and 
   await openSupport(page);
   // Client validation first: nothing is sent while required fields are empty.
   await page.getByRole("button", { name: text.submit }).click();
-  await expect(page.getByText(text.validation.category)).toBeVisible();
+  await expect(page.getByText(text.validation.subject)).toBeVisible();
+  // Figma 1.2 Help Page: Enquiry Type starts on Technical Support, so it is never the missing field
+  await expect(page.getByText(text.validation.category)).toHaveCount(0);
+  await expect(page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.technical_support);
   const subject = `Video will not play ${randomUUID().slice(0, 6)}`;
   await fillEnquiry(page, "en-GB", { category: "technical_support", subject, message: "The lesson video stays black." });
   await pasteImage(page, "screenshot.png");

@@ -29,7 +29,7 @@ const THANKS_REDIRECT_MS = 2_000;
 export function ContactSupport({ locale, copy, config, account, chips }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[] }) {
   const router = useRouter();
   const ids = useId();
-  const [category, setCategory] = useState<TicketCategory | "">("");
+  const [category, setCategory] = useState<TicketCategory | "">("technical_support"); // Figma 1.2 Help Page: defaults to Technical Support
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState(account.email);

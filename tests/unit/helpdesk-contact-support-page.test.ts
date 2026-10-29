@@ -100,18 +100,19 @@ test("validation: required fields are announced, focus goes to the first invalid
     const { page } = harness;
     const f = form(page, locale);
     assert.equal(await f.email.inputValue(), "emily@example.com", "the account email is prefilled");
-    assert.equal(await f.topic.textContent(), f.copy.selectTopic);
+    // Figma 1.2 Help Page note: Enquiry Type defaults to Technical Support
+    assert.equal(await f.topic.textContent(), f.copy.categories.technical_support, "Enquiry Type starts on Technical Support");
     for (const field of [f.topic, f.subject, f.message, f.email]) assert.equal(await field.getAttribute("aria-required"), "true");
     await f.submit.click();
-    for (const text of [f.copy.validation.category, f.copy.validation.subject, f.copy.validation.message]) assert.equal(await page.getByText(text, { exact: true }).count(), 1, `${locale}: ${text}`);
+    for (const text of [f.copy.validation.subject, f.copy.validation.message]) assert.equal(await page.getByText(text, { exact: true }).count(), 1, `${locale}: ${text}`);
+    assert.equal(await page.getByText(f.copy.validation.category, { exact: true }).count(), 0, "the default Enquiry Type is valid");
     assert.equal(await page.getByText(f.copy.validation.email, { exact: true }).count(), 0, "the prefilled email is valid");
-    assert.equal(await f.topic.getAttribute("aria-invalid"), "true");
-    assert.ok(await activeIs(f.topic), "focus moves to the first invalid field (Enquiry Type)");
+    assert.notEqual(await f.topic.getAttribute("aria-invalid"), "true");
+    assert.ok(await activeIs(f.subject), "focus moves to the first invalid field (Subject)");
     const describedBy = await f.subject.getAttribute("aria-describedby");
     assert.equal(await page.locator(`[id="${describedBy}"]`).textContent(), f.copy.validation.subject, "the error is the field's description");
     await chooseTopic(page, locale, "payments_subscriptions");
-    assert.equal(await f.topic.textContent(), f.copy.categories.payments_subscriptions);
-    assert.equal(await page.getByText(f.copy.validation.category, { exact: true }).count(), 0, "choosing a topic clears its error at once");
+    assert.equal(await f.topic.textContent(), f.copy.categories.payments_subscriptions, "the learner can still pick another type");
     await f.subject.fill("Password");
     await f.message.fill("Help");
     for (const bad of ["two words@example.com", "a@b", "", "a@b.c\nBcc: x@y.z"]) {
@@ -134,7 +135,8 @@ test("validation: 120 / 5000 code-point limits, control characters and invisible
   assert.equal(await f.message.getAttribute("maxlength"), "10000");
   assert.equal(await f.email.getAttribute("maxlength"), "254");
   const emoji = "\u{1F600}";
-  // Topic left empty so a valid form still stops at validation.
+  // An invalid contact email keeps every Submit at validation (Enquiry Type now has a default).
+  await setValue(f.email, "not-an-email");
   const subjects: Array<[string, boolean]> = [[emoji.repeat(120), true], ["x".repeat(120), true], ["中".repeat(120), true], ["中".repeat(121), false], ["x".repeat(121), false],
     ["   ", false], ["​⁠", false], ["a\u0007b", false], ["del\u007f", false], ["c1\u0085", false], ["  padded  ", true]];
   await f.message.fill("ok");
