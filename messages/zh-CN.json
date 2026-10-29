@@ -1728,6 +1728,7 @@
       "openInHelpCentre": "在帮助中心打开",
       "followUpsTitle": "你可能还想问：",
       "clarifySource": "根据「{question}」解释",
+      "clarifyUnavailable": "这一点我没法在这里讲清楚，我帮你转给客服确认一下。",
       "clarifyNotCovered": "这一点答案里没有写到，我帮你转给客服确认一下。"
     },
     "assistant": {

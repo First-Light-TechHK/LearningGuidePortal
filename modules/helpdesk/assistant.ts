@@ -95,7 +95,7 @@ export type LearnerRecords = Pick<SignalSources, "user" | "orders" | "subscripti
 
 export type AssistantDeps = {
   repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
-    | "createChatSession" | "findChatSession" | "recordTurn" | "endChatSession" | "sessionLearnerTurns" | "setAssistExpanded" | "listTicketsByUser">;
+    | "createChatSession" | "findChatSession" | "recordTurn" | "endChatSession" | "sessionShowedNode" | "openEmptyChatSession" | "sessionLearnerTurns" | "setAssistExpanded" | "listTicketsByUser">;
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
@@ -320,9 +320,11 @@ export function createAssistantService(deps: AssistantDeps) {
     const texts = row.texts ?? null;
     const answered = row.kind === "answer" && row.answer !== null;
     const covered = row.kind === "clarify" ? row.covered === true : null;
+    // Part D: only "the model said the card does not say it" may claim so; a timeout, an error or a refused explanation gets the neutral line
+    const uncovered = row.kind === "clarify" && !covered ? (row.guard === "not_covered" ? "not_covered" as const : "unavailable" as const) : null;
     return {
       kind: row.kind, intent: row.intent ?? null, via: row.via, nodeId: row.nodeId ?? null, nodeType: row.kind === "answer" ? texts?.nodeType ?? node?.type ?? "answer" : null,
-      opening: texts?.opening ?? null, closing: texts?.closing ?? null, reply: texts?.reply ?? null, explanation: texts?.explanation ?? null, covered,
+      opening: texts?.opening ?? null, closing: texts?.closing ?? null, reply: texts?.reply ?? null, explanation: texts?.explanation ?? null, covered, uncovered,
       excerpt: answered && node && node.answer === row.answer ? excerptOf(node, row.blocks ?? []) : null,
       next: answered ? nextOf(graph, node) : null,
       source: row.kind === "clarify" && row.faqId && row.faqQuestion ? { faqId: row.faqId, question: row.faqQuestion } : null,
@@ -409,8 +411,12 @@ export function createAssistantService(deps: AssistantDeps) {
     const reply = await askAdmin(request);
     const base = record(run.runId, learner, source, input.locale, input.message, reply, now(), key, hash);
     if (!input.faqId) return storeTurn(await typedRow(base, reply, session, input.locale), key, hash);
-    // A chip through Admin's per-FAQ path (no release yet): no model, so the fixed click templates frame the card.
-    const texts: AssistTexts | null = reply.suggestion ? { opening: TURN_TEMPLATES[input.locale].opening, closing: TURN_TEMPLATES[input.locale].closing, reply: null, explanation: null, nodeType: "answer" } : null;
+    // A chip through Admin's per-FAQ path: no model, so the fixed click templates frame the card. When the release
+    // is cached, its node type decides: a choice has no frame (as for a click); otherwise the card is an answer.
+    const graph = reply.suggestion ? await graphFor(input.locale) : null;
+    const nodeType = (reply.suggestion && graph?.node(reply.suggestion.faqId)?.type) || "answer";
+    const framed = nodeType === "answer";
+    const texts: AssistTexts | null = reply.suggestion ? { opening: framed ? TURN_TEMPLATES[input.locale].opening : null, closing: framed ? TURN_TEMPLATES[input.locale].closing : null, reply: null, explanation: null, nodeType } : null;
     const row: AssistRecord = {
       ...base, sessionId: session.id, nodeId: reply.suggestion?.faqId ?? null, parentNodeId: session.currentNodeId, via: input.via ?? "starter", kind: reply.suggestion ? "answer" : "no_match",
       intent: null, guard: null, releaseVersion: null, traceId: deps.traceId ?? null, signals: session.signals, blocks: [], expanded: null, covered: null, texts
@@ -437,11 +443,19 @@ export function createAssistantService(deps: AssistantDeps) {
       }
       const node = graph.node(input.nodeId);
       const edge = step && input.fromNodeId ? graph.edge(input.fromNodeId, input.nodeId) : null;
-      if (!node || (step ? !edge || edge.kind !== input.via : !node.entry)) {
+      const refuse = () => {
         log({ type: "helpdesk", event: "assistant_click_refused", via: input.via, release: graph.release.version });
-        throw new HelpdeskProblem("invalid_request", "That step is not available in this chat.");
-      }
+        return new HelpdeskProblem("invalid_request", "That step is not available in this chat.");
+      };
+      if (!node || (step ? !edge || edge.kind !== input.via : !node.entry)) throw refuse();
       const session = await sessionFor(learner, input.locale, input.sessionId);
+      // A step is clicked on a card this chat showed (the session named, or the one it rolled over to): a non-entry
+      // follow-up cannot be opened on its own by naming any parent.
+      if (step && input.fromNodeId) {
+        const sessions = [...new Set([session.id, ...(input.sessionId ? [input.sessionId] : [])])];
+        const shown = session.currentNodeId === input.fromNodeId || await repository.sessionShowedNode(sessions, learner.id, input.fromNodeId);
+        if (!shown) throw refuse();
+      }
       const at = now();
       const texts: AssistTexts = { opening: node.type === "answer" ? TURN_TEMPLATES[input.locale].opening : null, closing: node.type === "answer" ? TURN_TEMPLATES[input.locale].closing : null, reply: null, explanation: null, nodeType: node.type };
       const row: AssistRecord = {
@@ -468,10 +482,20 @@ export function createAssistantService(deps: AssistantDeps) {
       : ((deps.admin.faqs ? await deps.admin.faqs(input.locale).catch(() => null) : null) ?? []);
     const chosen = chooseSituationChips(signals, candidates);
     const waitingTicket = signals.includes("open_ticket_waiting") ? waitingTicketOf(await repository.listTicketsByUser(learner.id).catch(() => [])) : null;
-    const session = await newSession(learner, input.locale, signals, graph?.release.version ?? null);
+    const releaseVersion = graph?.release.version ?? null;
+    // The panel starts a session on every load: while the learner's last one is still unused (open, no turns, not
+    // idle, same locale, release and signals), it is handed out again, so repeated calls add no rows.
+    const since = new Date(now().getTime() - CHAT_SESSION_RULES.idleMs + 1).toISOString();
+    const unused = await repository.openEmptyChatSession(learner.id, input.locale, since).catch(() => null);
+    const reused = unused !== null && unused.releaseVersion === releaseVersion && sameSignals(unused.signals, signals);
+    const session = reused ? unused : await newSession(learner, input.locale, signals, releaseVersion);
     // Enum names only: which signals were on and which produced chips.
-    log({ type: "helpdesk", event: "assistant_session_started", signals, chipSignals: chosen.matched, release: session.releaseVersion });
+    log({ type: "helpdesk", event: "assistant_session_started", signals, chipSignals: chosen.matched, release: session.releaseVersion, reused });
     return { sessionId: session.id, chips: chosen.chips, situational: chosen.situational, waitingTicket, releaseVersion: session.releaseVersion };
+  }
+
+  function sameSignals(a: readonly SituationSignal[], b: readonly SituationSignal[]): boolean {
+    return a.length === b.length && a.every((signal) => b.includes(signal));
   }
 
   /** POST /api/helpdesk/assistant/sessions/{id}/end: the first end wins (the chat's End chat, its idle end, or a handover). */

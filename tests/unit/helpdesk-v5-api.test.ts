@@ -162,6 +162,11 @@ test("v5 click: a chip, an option and a follow-up are answered verbatim from the
   await problem(await click({ locale: "en-GB", nodeId: NODE.twice, fromNodeId: NODE.failed, via: "option", sessionId }), 400, "invalid_request");
   await problem(await click({ locale: "en-GB", nodeId: NODE.twice, via: "signal", sessionId }), 400, "invalid_request");
   await problem(await click({ locale: "en-GB", nodeId: randomUUID(), via: "starter", sessionId }), 400, "invalid_request");
+  // A real edge, but from a card this chat never showed (paid-no-access was never opened): 400, so a non-entry
+  // follow-up cannot be opened without the card it belongs to.
+  await problem(await click({ locale: "en-GB", nodeId: NODE.contact, fromNodeId: NODE.noAccess, via: "follow_up", sessionId }), 400, "invalid_request");
+  const other = await (await start({ locale: "en-GB" })).json() as { sessionId: string };
+  await problem(await click({ locale: "en-GB", nodeId: NODE.twice, fromNodeId: NODE.failed, via: "follow_up", sessionId: other.sessionId }), 400, "invalid_request");
 
   // Admin goes down: the cached release keeps answering clicks.
   adminDown = true;

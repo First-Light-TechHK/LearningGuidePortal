@@ -49,37 +49,78 @@ export function replyTemplate(locale: HelpdeskLocale, intent: SuggestIntent | nu
   return copy.greeting;
 }
 
-const CONTROL = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g;
-const URL_PATTERN = /\b(?:https?:\/\/|www\.)[^\s<>"'，。！？、]+/giu;
-const EMAIL_PATTERN = /[^\s@<>"'，。]+@[^\s@<>"'，。]+\.[a-z]{2,}/giu;
+/** C0 / C1 controls: become a space. */
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
+/** Invisible format characters (zero-width spaces and joiners, soft hyphen, direction controls, BOM): dropped, so "fr­ee" reads "free". */
+const INVISIBLE = /\p{Cf}/gu;
+/** Links: with a scheme or www., or any dotted host ending in two or more letters (no list of top-level domains: .xyz and .online count). */
+const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"'，。！？、()（）]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b(?:\/[^\s<>"'，。！？、()（）]*)?/giu;
+const EMAIL_PATTERN = /[^\s@<>"'，。()（）[\]]+@[^\s@<>"'，。()（）[\]]+\.[a-z]{2,}/giu;
 const DIGITS = /\p{Nd}+/gu;
-/** Markdown, HTML and code: emphasis, headings, links, lists, code, tables, tags. */
+/**
+ * Numbers written as words count as digits (a duration or an amount the card may not say): Chinese numerals (with 两, 半,
+ * 几; simplified or traditional) before a unit of time or money, not after 第 (an ordinal); English number words (and
+ * "a few", "a couple of", "half an") before a unit. Mirrors Admin's guard (workflow/guard.ts).
+ */
+const ZH_NUMBER = /(?<!第)[零〇一二两兩三四五六七八九十百千万萬半几幾]+(?:\s*(?:到|至|或|-|–|~)\s*[零〇一二两兩三四五六七八九十百千万萬半几幾]+)?\s*(?:多|来|來)?\s*[个個]?\s*(?:半\s*)?(?:工作日|天|日|周|週|星期|礼拜|禮拜|月|年|分钟|分鐘|小时|小時|钟头|鐘頭|钟|鐘|秒|刻钟|刻鐘|元|块钱|塊錢|英镑|英鎊|镑|鎊|美元|欧元|歐元|港币|港幣|毛钱|毛錢)/gu;
+const EN_NUMBER_WORD = "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|dozen|half an?|half|a few|few|a couple of|couple of|several)";
+const EN_NUMBER = new RegExp(`\\b${EN_NUMBER_WORD}(?:[\\s-]+(?:to|or|and|-)?[\\s-]*${EN_NUMBER_WORD})*[\\s-]+(?:more\\s+)?(?:(?:working|business|calendar)\\s+)?(?:seconds?|minutes?|mins?|hours?|hrs?|days?|weeks?|fortnights?|months?|years?|pounds?|quid|dollars?|euros?|pence|cents?)\\b`, "giu");
+/** Markdown, HTML and code in a short line: emphasis, headings, links, lists, code, tables, tags (and no line breaks). */
 const MARKUP = /[*_`#|<>[\]{}\\]|^\s*(?:[-+]|\d+[.)])\s/mu;
+/** An explanation may be steps on separate lines ("1. " / "- "), and "A > B" is a breadcrumb; a quote line, a tag or other Markdown is not. */
+const EXPLANATION_MARKUP = /[*_`#|[\]{}\\<]|~~|^\s*>/mu;
+const TRAILING = /[.,;:!?。，；：！？、)）\]'"]+$/u;
+/** At most this many lines in an explanation. */
+const EXPLANATION_LINES_MAX = 8;
 
+const fold = (text: string) => text.normalize("NFKC").toLowerCase();
 const digitRuns = (text: string) => (text.normalize("NFKC").match(DIGITS) ?? []);
+const numberWords = (text: string) => [...(fold(text).match(ZH_NUMBER) ?? []), ...(fold(text).match(EN_NUMBER) ?? [])];
+const compact = (text: string) => text.replace(/\s+/g, "");
+const linkKey = (link: string) => fold(link).replace(TRAILING, "").replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+const emailKey = (email: string) => fold(email).replace(TRAILING, "").replace(/^mailto:/, "");
+
+/** The text Portal would show: invisible characters dropped, controls and runs of spaces collapsed; only an explanation keeps line breaks. */
+function tidy(field: GuardedField, raw: string): string {
+  const text = raw.replace(INVISIBLE, "").replace(/\r\n?/g, "\n").replace(CONTROL, " ");
+  if (field !== "explanation") return text.replace(/\s+/g, " ").trim();
+  return text.split("\n").map((line) => line.replace(/\s+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
 
 export type ScreenedText = { text: string | null; reason: GuardReason | null };
 
 /**
  * Portal's own check of one short string from Admin. text null = refused (reason says why); missing = there was none.
- * For an explanation, groundedIn is the card it explains: its links, emails and digit runs may be repeated, nothing else.
+ * For an explanation, groundedIn is the card it explains: its links, emails, digit runs and numbers in words may be
+ * repeated (each as a whole token), nothing else.
  */
 export function screenTurnText(field: GuardedField, raw: string | null | undefined, groundedIn: string | null = null): ScreenedText {
   if (typeof raw !== "string") return { text: null, reason: "missing" };
-  const text = raw.replace(CONTROL, " ").replace(/\s+/g, " ").trim();
+  const text = tidy(field, raw);
   if (!text) return { text: null, reason: "missing" };
   if (textLength(text) > TURN_TEXT_MAX[field]) return { text: null, reason: "too_long" };
-  const ground = field === "explanation" && groundedIn ? groundedIn.normalize("NFKC").toLowerCase() : null;
-  const inGround = (value: string) => ground !== null && ground.includes(value.normalize("NFKC").toLowerCase());
-  const links = text.match(URL_PATTERN) ?? [];
-  if (links.some((link) => !inGround(link.replace(/[.,;:!?)\]]+$/, "")))) return { text: null, reason: "link" };
+  if (field === "explanation" && text.split("\n").length > EXPLANATION_LINES_MAX) return { text: null, reason: "markup" };
+  const ground = field === "explanation" && groundedIn ? groundedIn : null;
+  const groundEmails = new Set(ground === null ? [] : (ground.match(EMAIL_PATTERN) ?? []).map(emailKey));
+  const groundLinks = new Set<string>();
+  for (const link of ground === null ? [] : ground.match(URL_PATTERN) ?? []) {
+    const key = linkKey(link);
+    groundLinks.add(key);
+    groundLinks.add(key.split("/")[0]); // the bare host of a link the card has
+  }
   const emails = text.match(EMAIL_PATTERN) ?? [];
-  if (emails.some((email) => !inGround(email))) return { text: null, reason: "email" };
+  if (emails.some((email) => !groundEmails.has(emailKey(email)))) return { text: null, reason: "email" };
+  const withoutEmails = emails.reduce((value, part) => value.split(part).join(" "), text);
+  const links = withoutEmails.match(URL_PATTERN) ?? [];
+  if (links.some((link) => !groundLinks.has(linkKey(link)))) return { text: null, reason: "link" };
   // Links and emails the card has are fine in an explanation; their characters are not markup or loose digits.
-  const rest = [...links, ...emails].reduce((value, part) => value.split(part).join(" "), text);
-  if (MARKUP.test(rest)) return { text: null, reason: "markup" };
+  const rest = links.reduce((value, part) => value.split(part).join(" "), withoutEmails);
+  if ((field === "explanation" ? EXPLANATION_MARKUP : MARKUP).test(rest)) return { text: null, reason: "markup" };
   const groundDigits = ground === null ? null : new Set(digitRuns(ground));
-  if (digitRuns(rest).some((run) => groundDigits === null || !groundDigits.has(run))) return { text: null, reason: field === "explanation" ? "ungrounded" : "digit" };
+  const groundCompact = ground === null ? null : compact(fold(ground));
+  const loose = digitRuns(rest).some((run) => groundDigits === null || !groundDigits.has(run))
+    || numberWords(rest).some((words) => groundCompact === null || !groundCompact.includes(compact(words)));
+  if (loose) return { text: null, reason: field === "explanation" ? "ungrounded" : "digit" };
   return { text, reason: null };
 }
 

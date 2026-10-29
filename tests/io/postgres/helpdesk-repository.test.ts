@@ -626,6 +626,11 @@ test("023 in PostgreSQL: re-applies; the bootstrap adds the sessions and turn co
     learnerRecords: async () => ({ user: { email: learner.email, emailVerifiedAt: null }, orders: [], subscriptions: [] })
   });
   const { sessionId } = await assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  assert.equal((await assistant.startSession(learner, { locale: "en-GB", orderId: null })).sessionId, sessionId, "an unused open session is handed out again");
+  assert.equal((await repository.openEmptyChatSession(learner.id, "en-GB", "2026-10-30T08:55:00.000Z"))?.id, sessionId);
+  assert.equal(await repository.openEmptyChatSession(learner.id, "zh-CN", "2026-10-30T08:55:00.000Z"), null);
+  assert.equal(await repository.openEmptyChatSession(learner.id, "en-GB", "2026-10-30T09:00:00.001Z"), null, "older than since");
+  assert.equal(await repository.openEmptyChatSession("pg-other", "en-GB", "2026-10-30T08:55:00.000Z"), null);
   const stored = await repository.findChatSession(sessionId);
   assert.deepEqual(stored?.signals, ["email_unverified"]);
   assert.equal(stored?.releaseVersion, 3);
@@ -637,13 +642,21 @@ test("023 in PostgreSQL: re-applies; the bootstrap adds the sessions and turn co
   // The last three learner messages, oldest first, in the order the lock gave them indexes.
   const byIndex = new Map(turns.map((item, sent) => [(item.response as { turn: { turnIndex: number } }).turn.turnIndex, `hello ${sent}`]));
   assert.deepEqual(await repository.sessionLearnerTurns(sessionId, 3), [byIndex.get(8), byIndex.get(9), byIndex.get(10)]);
+  // An option is clicked on the choice card the chat showed (graph design §4).
+  await assistant.click(learner, { locale: "en-GB", nodeId: "01a18100-0000-7000-8000-000000000020", fromNodeId: null, via: "starter", sessionId, label: null }, randomUUID());
   const option = await assistant.click(learner, { locale: "en-GB", nodeId: "01a18100-0000-7000-8000-000000000021", fromNodeId: "01a18100-0000-7000-8000-000000000020", via: "option", sessionId, label: null }, randomUUID());
   const row = (await rows<Record<string, unknown>>("SELECT session_id::text, turn_index, node_id::text, parent_node_id::text, via, kind, intent, guard, release_version, trace_id, signals, blocks, texts FROM helpdesk_assist_log WHERE id = $1", [option.response.id]))[0];
   assert.deepEqual(row, {
-    session_id: sessionId, turn_index: 11, node_id: "01a18100-0000-7000-8000-000000000021", parent_node_id: "01a18100-0000-7000-8000-000000000020", via: "option", kind: "answer", intent: null, guard: null,
+    session_id: sessionId, turn_index: 12, node_id: "01a18100-0000-7000-8000-000000000021", parent_node_id: "01a18100-0000-7000-8000-000000000020", via: "option", kind: "answer", intent: null, guard: null,
     release_version: 3, trace_id: "0af7651916cd43dd8448eb211c80319c", signals: ["email_unverified"], blocks: [], texts: { opening: "Here's how to sort this out:", closing: "If anything's unclear, just ask.", reply: null, explanation: null, nodeType: "answer" }
   });
   assert.equal((await repository.findChatSession(sessionId))?.currentNodeId, "01a18100-0000-7000-8000-000000000021");
+  assert.equal(await repository.openEmptyChatSession(learner.id, "en-GB", "2026-10-30T08:55:00.000Z"), null, "a session with turns is not empty");
+  assert.equal(await repository.sessionShowedNode([sessionId], learner.id, "01a18100-0000-7000-8000-000000000021"), true);
+  assert.equal(await repository.sessionShowedNode([sessionId], learner.id, "01a18100-0000-7000-8000-000000000020"), true, "the choice card the option was clicked on");
+  assert.equal(await repository.sessionShowedNode([sessionId], learner.id, "01a18100-0000-7000-8000-000000000022"), false, "never shown");
+  assert.equal(await repository.sessionShowedNode([sessionId], "pg-other", "01a18100-0000-7000-8000-000000000021"), false);
+  assert.equal(await repository.sessionShowedNode([], learner.id, "01a18100-0000-7000-8000-000000000021"), false);
   const replay = await repository.findAssist(option.response.id);
   assert.equal(replay?.texts?.opening, "Here's how to sort this out:");
   assert.deepEqual(await assistant.expand(learner, option.response.id), { id: option.response.id, expanded: true });

@@ -309,6 +309,8 @@ export function storedTurn(value: unknown): AssistantTurn | null {
     kind, intent: oneOf(TURN_INTENTS, turn.intent), via, nodeId: id(turn.nodeId), nodeType: oneOf(["answer", "choice"] as const, turn.nodeType),
     opening: textOrNull(turn.opening), closing: textOrNull(turn.closing), reply: textOrNull(turn.reply), explanation: textOrNull(turn.explanation),
     covered: typeof turn.covered === "boolean" ? turn.covered : null,
+    // Optional (an older Portal's stored turn has none): kept only when the turn carried it.
+    ...(turn.uncovered !== undefined ? { uncovered: oneOf(["not_covered", "unavailable"] as const, turn.uncovered) } : {}),
     excerpt: excerpt.length ? excerpt : null,
     next: nextKind && steps.length ? { kind: nextKind, steps } : null,
     source: sourceId && rawSource && isText(rawSource.question) && rawSource.question ? { faqId: sourceId, question: rawSource.question } : null,

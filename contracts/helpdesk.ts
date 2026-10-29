@@ -889,6 +889,9 @@ export type AssistantNextStep = { nodeId: string; label: string };
  *   no "show the full answer".
  * - smalltalk: reply holds the short line; no card. intent says which (greeting / vague / farewell / off_topic).
  * - clarify: explanation of the card on screen (source), or covered false (explanation null: the fixed copy and the handover card).
+ *   uncovered says which fixed copy: not_covered = the model said the card does not say it ("the answer does not cover
+ *   that point"); unavailable = the explanation could not be given (timed out, failed, or a guard refused it), so the
+ *   copy makes no claim about the card. Null when covered or not a clarify; missing (an older Portal) = not_covered.
  * - no_match: the fallback copy and the v3 alternatives.
  * unsolved: this turn counts toward v4's "2 unsolved in a row" (no answer, or clarify not covered).
  * countsAsQuestion: toward v4's 8-question check-in (smalltalk and clarify do not count).
@@ -896,6 +899,7 @@ export type AssistantNextStep = { nodeId: string; label: string };
 export type AssistantTurn = {
   kind: SuggestKind; intent: SuggestIntent | null; via: AssistVia; nodeId: string | null; nodeType: FaqNodeType | null;
   opening: string | null; closing: string | null; reply: string | null; explanation: string | null; covered: boolean | null;
+  uncovered?: "not_covered" | "unavailable" | null;
   excerpt: FaqBlock[] | null; next: { kind: FaqEdgeKind; steps: AssistantNextStep[] } | null; source: { faqId: string; question: string } | null;
   releaseVersion: number | null; sessionId: string; turnIndex: number; unsolved: boolean; countsAsQuestion: boolean;
 };

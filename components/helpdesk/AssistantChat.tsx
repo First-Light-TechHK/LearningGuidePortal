@@ -92,6 +92,8 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   /** v5: the learner's own order Contact Support was opened for (the from_order signal of a new session after an end). */ orderId?: string | null;
 }) {
   const text = copy.chat;
+  // Part D: the fixed line of an explanation not given; only "the model said the card does not say it" claims so (待视觉验收)
+  const uncoveredLine = (turn: AssistantTurn) => (turn.uncovered === "unavailable" ? text.clarifyUnavailable : text.clarifyNotCovered);
   const ids = useId();
   const storageKey = chatStorageKey(accountId);
   const [entries, setEntriesState] = useState<ChatEntry[]>([]);
@@ -255,7 +257,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     const turn = entry.turn;
     const steps = (title: string, list: Array<{ label: string }>) => (list.length ? `${title} ${list.map((item) => item.label).join("; ")}` : "");
     if (turn?.kind === "smalltalk") return [turn.reply ?? "", offersChips(turn) ? steps(situationNow.current.situational ? text.situationTitle : text.tryAsking, situationNow.current.chips.map((chip) => ({ label: chip.question }))) : ""].filter(Boolean).join(" ");
-    if (turn?.kind === "clarify") return turn.covered === true && turn.explanation ? turn.explanation : text.clarifyNotCovered;
+    if (turn?.kind === "clarify") return turn.covered === true && turn.explanation ? turn.explanation : uncoveredLine(turn);
     if (entry.reply && turn?.kind === "answer") {
       if (turn.nodeType === "choice") return [plainText(entry.reply.answer), turn.next ? turn.next.steps.map((step, index) => `${optionLetter(index)}. ${step.label}`).join("; ") : ""].filter(Boolean).join(" ");
       const body = turn.excerpt ? turn.excerpt.map((block) => plainText(block.text)).join(" ") : plainText(entry.reply.answer);
@@ -477,7 +479,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     </div>;
     // v5 Part D: the explanation of the card on screen, or (not covered) the fixed line; the handover card follows that.
     if (turn?.kind === "clarify") {
-      if (turn.covered !== true || !turn.explanation) return <div className="helpdesk-chat-answer helpdesk-chat-clarify"><p className="helpdesk-chat-reply">{text.clarifyNotCovered}</p></div>;
+      if (turn.covered !== true || !turn.explanation) return <div className="helpdesk-chat-answer helpdesk-chat-clarify"><p className="helpdesk-chat-reply">{uncoveredLine(turn)}</p></div>;
       const source = turn.source;
       const card = source ? explainedCard(index, source.faqId) : null;
       const open = reshown.has(index);

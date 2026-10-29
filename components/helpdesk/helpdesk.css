@@ -7,8 +7,9 @@
 
 /* ---- v5 Part C tokens (helpdesk-v5-context-chips-and-smalltalk.md, 2026-10-29; owner-approved Stripe-style polish,
    brand blue, layout and sizes unchanged; 待视觉验收). One place for the accent, the glow and the shadows. They sit on
-   the Contact Support page and the Help Centre page, and on the card itself so the components carry them anywhere. ---- */
-.helpdesk-page, .help-centre-page, .helpdesk-card {
+   :root, so every page that loads this sheet has them: the shared buttons and inputs also render on the enquiry list and
+   detail pages (main.helpdesk-account-page), outside the Contact Support and Help Centre pages. ---- */
+:root {
   --hd-accent: #2563eb;
   --hd-accent-strong: #1d4ed8;
   --hd-chat-accent: #2468f5;

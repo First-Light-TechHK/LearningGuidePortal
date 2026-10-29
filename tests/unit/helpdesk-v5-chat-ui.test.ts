@@ -24,7 +24,7 @@ import type { AssistantTurn } from "../../contracts/helpdesk";
 import { getMessages } from "../../lib/i18n/messages";
 import { CHAT_SESSION_RULES } from "../../modules/helpdesk/chatSession";
 import { fillTemplate } from "../../modules/helpdesk/learnerUi";
-import { LOCALES, isAssistant, isAssistantClick, isAssistantFeedback, isAssistantRating, isExpanded, isSessionEnd, isSessionStart, mountContact, mountHelp, openHarness, waitForCalls, type ApiCall, type ChatSessionProp, type Handler, type Harness, type Locale, type Reply } from "./helpers/helpdesk-browser";
+import { LOCALES, TICKET_ID, mountDetail, ticketFixture, isAssistant, isAssistantClick, isAssistantFeedback, isAssistantRating, isExpanded, isSessionEnd, isSessionStart, mountContact, mountHelp, openHarness, waitForCalls, type ApiCall, type ChatSessionProp, type Handler, type Harness, type Locale, type Reply } from "./helpers/helpdesk-browser";
 
 let browser: Browser;
 before(async () => { browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || undefined }); });
@@ -291,7 +291,8 @@ test("v5 Part D: an explanation says which card it explains and shows it again, 
     const replies: Reply[] = [
       answer(id(1), NODE.reset, question, "Open **Settings** and choose Reset."),
       { json: { id: id(2), reply: null, alternatives: [], turn: turn("clarify", { intent: "clarify", nodeId: NODE.reset, covered: true, explanation: "It's in Settings, at the top.", source: { faqId: NODE.reset, question }, countsAsQuestion: false }) } },
-      { json: { id: id(3), reply: null, alternatives: [], turn: turn("clarify", { intent: "clarify", nodeId: NODE.reset, covered: false, source: { faqId: NODE.reset, question }, unsolved: true, countsAsQuestion: false }) } }
+      { json: { id: id(3), reply: null, alternatives: [], turn: turn("clarify", { intent: "clarify", nodeId: NODE.reset, covered: false, source: { faqId: NODE.reset, question }, unsolved: true, countsAsQuestion: false }) } },
+      { json: { id: id(4), reply: null, alternatives: [], turn: turn("clarify", { intent: "clarify", nodeId: NODE.reset, covered: false, uncovered: "unavailable", source: { faqId: NODE.reset, question }, unsolved: true, countsAsQuestion: false }) } }
     ];
     const harness = await open(locale, (call) => (isAssistant(call) ? replies.shift() ?? { status: 500 } : isAssistantFeedback(call) ? { json: { id: id(2), feedback: "helpful" } } : { status: 500 }));
     const { page } = harness;
@@ -315,6 +316,11 @@ test("v5 Part D: an explanation says which card it explains and shows it again, 
     assert.equal(await c.handovers.count(), 1, "and the handover card at once");
     assert.equal(await c.panel.locator("[data-entry]").last().getByRole("group", { name: c.copy.handoverTitle }).count(), 1);
     await page.waitForFunction((line) => document.querySelector(".helpdesk-chat-live")?.textContent?.startsWith(line) ?? false, c.copy.clarifyNotCovered);
+    // the explanation could not be given (timed out, or a guard refused it): a neutral line, never "the answer does not say"
+    await say(harness, locale, "and the other way?");
+    const unavailable = c.answers.nth(3);
+    assert.equal(await unavailable.textContent(), c.copy.clarifyUnavailable);
+    assert.notEqual(c.copy.clarifyUnavailable, c.copy.clarifyNotCovered);
     await page.close();
   }
 });
@@ -405,4 +411,30 @@ test("v5 sessions: End chat ends the session on the server and starts the next o
   assert.equal(handover.path, `/api/helpdesk/assistant/sessions/${NEXT_SESSION}/end`);
   assert.deepEqual(handover.json, { reason: "handover" });
   await page.close();
+});
+
+test("v5 Part C tokens reach the enquiry pages too: the primary button keeps its blue on hover, focus shows a glow, the reply box glows", async () => {
+  // The enquiry detail and list render outside .helpdesk-page / .helpdesk-card (main.helpdesk-account-page), so the
+  // shared buttons and inputs must still find the tokens there (a missing token made the hovered Send button transparent).
+  const harness = await openHarness(browser, "en-GB", () => ({ status: 500 }), `/en-GB/account/my-learning/support/${TICKET_ID}`);
+  try {
+    // reduced motion: no transition, so the computed style is the end state at once
+    await harness.page.emulateMedia({ reducedMotion: "reduce" });
+    await mountDetail(harness.page, "en-GB", ticketFixture("WAITING_USER"));
+    const send = harness.page.locator("form.helpdesk-composer button[type=submit].helpdesk-submit-button");
+    const reply = harness.page.locator("form.helpdesk-composer textarea.helpdesk-input");
+    await reply.focus();
+    const focused = await reply.evaluate((node) => { const s = getComputedStyle(node); return { border: s.borderTopColor, glow: s.boxShadow }; });
+    assert.deepEqual(focused, { border: "rgb(37, 99, 235)", glow: "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px" });
+    await harness.page.keyboard.press("Tab");
+    let guard = 0;
+    while (!(await send.evaluate((node) => node === document.activeElement)) && guard++ < 10) await harness.page.keyboard.press("Tab");
+    assert.equal(await send.evaluate((node) => node === document.activeElement), true, "Send reached with Tab");
+    assert.equal(await send.evaluate((node) => getComputedStyle(node).boxShadow), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px", "keyboard focus glow");
+    await send.hover();
+    const hovered = await send.evaluate((node) => { const s = getComputedStyle(node); return { fill: s.backgroundColor, border: s.borderTopColor }; });
+    assert.deepEqual(hovered, { fill: "rgb(29, 78, 216)", border: "rgb(29, 78, 216)" });
+  } finally {
+    await harness.page.close();
+  }
 });

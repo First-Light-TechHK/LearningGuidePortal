@@ -1728,6 +1728,7 @@
       "openInHelpCentre": "Open in Help Centre",
       "followUpsTitle": "You might also ask:",
       "clarifySource": "Explained from “{question}”",
+      "clarifyUnavailable": "I can’t explain that point well here, so let’s check it with our support team.",
       "clarifyNotCovered": "The answer doesn’t cover that point, so let’s check it with our support team."
     },
     "assistant": {

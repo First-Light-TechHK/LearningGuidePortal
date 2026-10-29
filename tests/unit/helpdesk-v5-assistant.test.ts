@@ -143,6 +143,33 @@ test("v5 session: before a release, the chips come from the published FAQs; from
   assert.deepEqual((await notMine.repository.findChatSession(plain.sessionId))?.signals, [], "someone else's order: no from_order");
 });
 
+test("v5 session: starting again while the learner's last session is still empty and open reuses it (no new row per call); a used, ended, idle or changed one is not reused", async () => {
+  const h = harness();
+  const first = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  for (let i = 0; i < 5; i += 1) assert.equal((await h.assistant.startSession(learner, { locale: "en-GB", orderId: null })).sessionId, first.sessionId, "a reload or a repeated call");
+  const otherLocale = await h.assistant.startSession(learner, { locale: "zh-CN", orderId: null });
+  assert.notEqual(otherLocale.sessionId, first.sessionId, "another locale is its own session");
+  const someoneElse = await h.assistant.startSession(other, { locale: "en-GB", orderId: null });
+  assert.notEqual(someoneElse.sessionId, first.sessionId);
+  await h.assistant.ask(learner, typed("hi", first.sessionId), randomUUID());
+  const afterTurn = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  assert.notEqual(afterTurn.sessionId, first.sessionId, "a session with turns is not handed out again");
+  await h.assistant.endSession(learner, afterTurn.sessionId, "ended_by_learner");
+  const afterEnd = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  assert.notEqual(afterEnd.sessionId, afterTurn.sessionId, "an ended session is never reused");
+  h.advance(CHAT_SESSION_RULES.idleMs);
+  const afterIdle = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  assert.notEqual(afterIdle.sessionId, afterEnd.sessionId, "an idle one is not reused");
+  h.setRelease({ ...RELEASE, version: 4 });
+  const newRelease = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  assert.notEqual(newRelease.sessionId, afterIdle.sessionId, "a new release starts a new session");
+  assert.equal(newRelease.releaseVersion, 4);
+  const withOrder = harness({ ownsOrder: true });
+  const plain = await withOrder.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  const fromOrder = await withOrder.assistant.startSession(learner, { locale: "en-GB", orderId: "order_1_ab" });
+  assert.notEqual(fromOrder.sessionId, plain.sessionId, "other signals: a new session keeps them");
+});
+
 test("v5 session: another learner's, an ended or an idle session is never continued; End chat is first-wins and 404 for someone else", async () => {
   const h = harness();
   const { sessionId } = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
@@ -294,6 +321,8 @@ test("v5 typed clarify: an explanation of the card on screen, grounded in it; no
   assert.equal(uncovered.covered, false);
   assert.equal(uncovered.explanation, null);
   assert.equal(uncovered.unsolved, true);
+  assert.equal(uncovered.uncovered, "not_covered", "the model said the card does not say it: the 'not in the answer' line");
+  assert.equal(turn.uncovered, null, "covered: no uncovered reason");
   assert.equal((await h.repository.findChatSession(sessionId))?.unsolvedStreak, 1);
   const ungrounded = harness({ answer: (input) => {
     if (!input.context?.nodeId) return reply("suggestAnswerContextResponse", input);
@@ -304,6 +333,16 @@ test("v5 typed clarify: an explanation of the card on screen, grounded in it; no
   await ungrounded.assistant.ask(learner, typed("paid", second.sessionId), randomUUID());
   const refused = await ungrounded.assistant.ask(learner, typed("how long?", second.sessionId), randomUUID());
   assert.equal(turnOf(refused.response).covered, false, "a number the card does not have: not shown");
+  assert.equal(turnOf(refused.response).uncovered, "unavailable", "refused by a guard: never claim the card does not say it");
+  const late = harness({ answer: (input) => {
+    if (!input.context?.nodeId) return reply("suggestAnswerContextResponse", input);
+    const answer = reply("suggestClarifyNotCoveredResponse", input);
+    return { ...answer, turn: { ...answer.turn!, guard: { result: "fallback", reason: "timeout", fallback: ["explanation"] } } };
+  } });
+  const third = await late.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  await late.assistant.ask(learner, typed("paid", third.sessionId), randomUUID());
+  const timedOut = turnOf((await late.assistant.ask(learner, typed("how long?", third.sessionId), randomUUID())).response);
+  assert.deepEqual([timedOut.covered, timedOut.uncovered, timedOut.unsolved], [false, "unavailable", true], "the explain step ran out of time: a neutral line, still unsolved");
   assert.equal((await ungrounded.repository.findAssist(refused.response.id))?.guard, "ungrounded");
   const nothingOnScreen = harness({ answer: (input) => reply("suggestClarifyResponse", input) });
   const lost = await nothingOnScreen.assistant.ask(learner, typed("what does that mean?"), randomUUID());
@@ -393,6 +432,21 @@ test("v5 click without a release: a chip goes through Admin's per-FAQ path (as b
   assert.equal(row?.releaseVersion, null);
   await h.assistant.feedback(learner, chip.response.id, true);
   assert.deepEqual(h.outcomes, [chip.response.id], "Admin's own run: the feedback goes to Admin");
+});
+
+test("v5 per-FAQ ask on a choice node (an old client's alternative or chip): framed by the cached node type, not as an answer", async () => {
+  const h = harness();
+  const asked = await h.assistant.ask(learner, { message: "Payment problem", locale: "en-GB", faqId: CHOICE, sessionId: null, via: "alternative" }, randomUUID());
+  const turn = turnOf(asked.response);
+  assert.equal(turn.nodeType, "choice");
+  assert.equal(turn.opening, null, "a choice has no frame");
+  assert.equal(turn.closing, null);
+  const answer = await h.assistant.ask(learner, { message: "Failed", locale: "en-GB", faqId: FAILED, sessionId: null, via: "alternative" }, randomUUID());
+  assert.equal(turnOf(answer.response).nodeType, "answer");
+  assert.equal(turnOf(answer.response).opening, TURN_TEMPLATES["en-GB"].opening);
+  const none = harness({ release: null });
+  const unknown = await none.assistant.ask(learner, { message: "Payment", locale: "en-GB", faqId: id(42), sessionId: null, via: "alternative" }, randomUUID());
+  assert.equal(turnOf(unknown.response).nodeType, "answer", "no release: the per-FAQ card is an answer, as before");
 });
 
 test("v5 click feedback stays in Portal (Admin never saw the run) and the sweep never forwards it; expanding is logged once, own answers only", async () => {

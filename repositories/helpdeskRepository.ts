@@ -385,6 +385,14 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         return session;
       });
     },
+    async openEmptyChatSession(learnerId, locale, sinceIso) {
+      const open = (await load()).sessions.filter((item) => item.learnerId === learnerId && item.locale === locale && item.endedAt === null && item.turns === 0 && Date.parse(item.lastTurnAt) >= Date.parse(sinceIso));
+      open.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+      return open[0] ?? null;
+    },
+    async sessionShowedNode(sessionIds, learnerId, nodeId) {
+      return (await load()).assists.some((item) => item.learnerId === learnerId && item.kind === "answer" && item.nodeId === nodeId && item.sessionId !== null && item.sessionId !== undefined && sessionIds.includes(item.sessionId));
+    },
     async sessionLearnerTurns(sessionId, limit) {
       const rows = (await load()).assists.filter((item) => item.sessionId === sessionId && item.via === "typed");
       rows.sort((a, b) => (a.turnIndex ?? 0) - (b.turnIndex ?? 0));
@@ -815,6 +823,16 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       await select("UPDATE helpdesk_chat_sessions SET ended_at = $3, end_reason = $4 WHERE id = $1 AND learner_id = $2 AND ended_at IS NULL", [id, learnerId, atIso, reason]);
       const row = (await select(`SELECT ${SESSION_COLUMNS} FROM helpdesk_chat_sessions WHERE id = $1 AND learner_id = $2`, [id, learnerId]))[0];
       return row ? sessionFromRow(row) : null;
+    },
+    async openEmptyChatSession(learnerId, locale, sinceIso) {
+      const row = (await select(`SELECT ${SESSION_COLUMNS} FROM helpdesk_chat_sessions WHERE learner_id = $1 AND locale = $2 AND ended_at IS NULL AND turns = 0
+        AND last_turn_at >= $3::timestamptz ORDER BY last_turn_at DESC, started_at DESC LIMIT 1`, [learnerId, locale, sinceIso]))[0];
+      return row ? sessionFromRow(row) : null;
+    },
+    async sessionShowedNode(sessionIds, learnerId, nodeId) {
+      if (sessionIds.length === 0) return false;
+      const rows = await select("SELECT 1 FROM helpdesk_assist_log WHERE session_id = ANY ($1::uuid[]) AND learner_id = $2 AND node_id = $3 AND kind = 'answer' LIMIT 1", [[...sessionIds], learnerId, nodeId]);
+      return rows.length > 0;
     },
     async sessionLearnerTurns(sessionId, limit) {
       const rows = await select<{ question: string }>(`SELECT question FROM (SELECT question, turn_index FROM helpdesk_assist_log WHERE session_id = $1 AND via = 'typed'

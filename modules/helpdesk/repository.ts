@@ -203,6 +203,13 @@ export type HelpdeskRepository = {
   recordTurn(record: AssistRecord, update: TurnUpdate): Promise<{ status: "inserted"; turnIndex: number } | { status: "duplicate" } | { status: "no_session" }>;
   /** The first end wins; returns the session as stored afterwards (null: no such session of this learner). */
   endChatSession(id: string, learnerId: string, reason: ChatEndReason, atIso: string): Promise<ChatSessionRecord | null>;
+  /**
+   * The learner's newest session in this locale that is still open, has no turns and was started at or after sinceIso
+   * (null: none). Starting the chat again while that one is unused hands it out again instead of a new row per call.
+   */
+  openEmptyChatSession(learnerId: string, locale: HelpdeskLocale, sinceIso: string): Promise<ChatSessionRecord | null>;
+  /** Whether one of these sessions of this learner already showed this card (graph design §4: a step is clicked on a card the chat showed). */
+  sessionShowedNode(sessionIds: readonly string[], learnerId: string, nodeId: string): Promise<boolean>;
   /** What the learner typed in this session (via typed), oldest first, the newest limit. */
   sessionLearnerTurns(sessionId: string, limit: number): Promise<string[]>;
   /** Marks that the learner opened the full answer of their own row; returns the row (null: not theirs). */

@@ -138,8 +138,50 @@ test("v5 strings: an explanation may repeat the card's own digits, links and ema
   assert.equal(screenTurnText("explanation", "See https://other.example/help", card).reason, "link");
   assert.equal(screenTurnText("explanation", "Write to support@ilovelearningguide.com", card).reason, null);
   assert.equal(screenTurnText("explanation", "Write to boss@ilovelearningguide.com", card).reason, "email");
-  assert.equal(screenTurnText("explanation", "Only for a few minutes. If it is still not active after that, reload My Learning, then sign out and back in.", card).reason, null);
+  // "a few minutes" is a duration in words: grounded only when the card says it (the refund card does not)
+  assert.equal(screenTurnText("explanation", "Only for a few minutes. If it is still not active after that, reload My Learning, then sign out and back in.", card).reason, "ungrounded");
+  const waitCard = "Payments can take a few minutes to confirm. Reload **My Learning**, then sign out and in again.";
+  assert.equal(screenTurnText("explanation", "Only for a few minutes. If it is still not active after that, reload My Learning, then sign out and back in.", waitCard).reason, null);
   assert.equal(screenTurnText("opening", "It takes 5 days.", card).reason, "digit", "only an explanation is grounded");
+});
+
+test("v5 strings: numbers written as words count as digits; an explanation must take them from the card", () => {
+  for (const [field, text] of [
+    ["opening", "别担心，一般一两个工作日就会到账的"],
+    ["closing", "三天内一定会处理好"],
+    ["opening", "別著急，一般幾分鐘就能開通："],
+    ["opening", "It usually takes about five minutes:"],
+    ["reply", "Give it half an hour and check again."],
+    ["closing", "Wait a couple of days, then tell me."]
+  ] as const) assert.deepEqual(screenTurnText(field, text), { text: null, reason: "digit" }, text);
+  for (const text of ["先看第一步怎么做：", "我们一起看看这个问题：", "十分抱歉，按上面试试看。", "Here's one way to sort this out:"]) assert.equal(screenTurnText("opening", text).reason, null, text);
+  const card = "订阅开始后 14 天内可以申请退款。退款会在 5–10 个工作日内退回原支付方式。";
+  assert.equal(screenTurnText("explanation", "别担心，一般七个工作日就会退回。", card).reason, "ungrounded");
+  assert.equal(screenTurnText("explanation", "别担心，退款会在 5–10 个工作日内退回。", card).reason, null);
+});
+
+test("v5 strings: an explanation keeps its line breaks and may list steps; a short line stays one line", () => {
+  const steps = "1. 打开设置\n2. 点击保存";
+  const card = "1. 打开 **设置**\n2. 点击 **保存**";
+  assert.deepEqual(screenTurnText("explanation", steps, card), { text: steps, reason: null }, "a grounded list of steps is fine");
+  assert.deepEqual(screenTurnText("explanation", "按这两步来：\r\n1.  打开设置 \n2. 点击保存", card), { text: "按这两步来：\n1. 打开设置\n2. 点击保存", reason: null });
+  assert.deepEqual(screenTurnText("explanation", "- 打开设置\n- 点击保存", card), { text: "- 打开设置\n- 点击保存", reason: null });
+  assert.equal(screenTurnText("explanation", "打开 我的学习 > 订阅 就可以了。", "打开 **我的学习 > 订阅**。").reason, null, "a > inside a line is a breadcrumb, not a quote");
+  assert.equal(screenTurnText("explanation", "> quoted", card).reason, "markup");
+  assert.equal(screenTurnText("explanation", "a\n\n\n\nb", "a b").text, "a\n\nb", "blank lines collapse to one");
+  assert.equal(screenTurnText("opening", "1. Open settings").reason, "markup", "a short line never lists");
+  assert.equal(screenTurnText("closing", "- try this").reason, "markup");
+});
+
+test("v5 strings: hidden characters are dropped, any dotted host is a link, and links are grounded as whole tokens", () => {
+  assert.equal(screenTurnText("reply", "fr\u00adee\u200b for you").text, "free for you", "soft hyphen and zero-width space dropped");
+  assert.equal(screenTurnText("opening", "Try visiting example.xyz first").reason, "link");
+  assert.equal(screenTurnText("opening", "去 learningguide.online 看看：").reason, "link");
+  const card = "Write to support@ilovelearningguide.com or open ilovelearningguide.com/help.";
+  assert.equal(screenTurnText("explanation", "Visit ilovelearningguide.co for help.", card).reason, "link", "a prefix of the card's domain is another domain");
+  assert.equal(screenTurnText("explanation", "Email support@ilovelearningguide.co for help.", card).reason, "email");
+  assert.equal(screenTurnText("explanation", "Open ilovelearningguide.com/help.", card).reason, null);
+  assert.equal(screenTurnText("explanation", "Write to support@ilovelearningguide.com.", card).reason, null);
 });
 
 test("v5 strings: Portal's fixed templates exist in both locales and pass Portal's own check", () => {
