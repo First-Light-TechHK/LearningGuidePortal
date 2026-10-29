@@ -18,6 +18,10 @@ import { sharedFaqReleaseCache } from "./faqReleaseCache";
 import { projectOrder } from "./orderDirectory";
 import { createHelpdeskService, type HelpdeskService } from "./service";
 import { projectStudent } from "./studentDirectory";
+import { createInsightsService, type InsightsService, type LearnerAccount } from "./insights";
+import { startJobLoop, type LoopTimers } from "./jobScheduler";
+import { createRetentionJob, type RetentionJob } from "./retention";
+import { persistenceEnabled } from "@/services/persistence/config";
 
 /** The learner's ticket page on the public Portal origin (NEXT_PUBLIC_APP_URL), or null when none is configured. */
 export function helpdeskTicketLink(ticketId: string, locale: HelpdeskLocale): string | null {
@@ -90,5 +94,54 @@ export function helpdeskAssistant(request?: Request): AssistantService {
     },
     ownsOrder: async (learnerId, orderId) => (await learnerOrder(learnerId, orderId)) !== null,
     traceId: parseTraceparent(traceparent)?.traceId ?? null
+  });
+}
+
+/**
+ * v5 Part G: the learners' account names and emails (read only, from the same product aggregate), so the scrubber can
+ * remove them from their own words. They are never sent anywhere.
+ */
+export async function learnerAccounts(learnerIds: string[]): Promise<Map<string, LearnerAccount>> {
+  const wanted = new Set(learnerIds);
+  const data = await ensureProductData();
+  return new Map(data.users.filter((user) => wanted.has(user.id)).map((user) => [user.id, { name: user.nickname || "", email: user.email || null }]));
+}
+
+/** v5 Part G2: the flywheel feed (GET /api/integration/helpdesk/insights). */
+export function helpdeskInsights(): InsightsService {
+  return createInsightsService({ repository: helpdeskRepository(), accounts: learnerAccounts });
+}
+
+/** v5 Part G1: the 180-day raw-text retention job (daily in-process loop, and the staff "run now"). */
+export function helpdeskRetentionJob(): RetentionJob {
+  return createRetentionJob({ repository: helpdeskRepository(), accounts: learnerAccounts });
+}
+
+/** How often each instance looks whether today's run is done: 2-3 minutes after start, then every 30 minutes. */
+export const HELPDESK_JOB_LOOP = { firstDelayMs: 120_000, jitterMs: 60_000, intervalMs: 30 * 60_000 } as const;
+
+/**
+ * Starts the in-process daily jobs once per process (instrumentation.ts calls it when the Node server starts; it returns
+ * at once). Only where Helpdesk is stored in PostgreSQL: the DEV-only local store has no other instance to agree with,
+ * and staff can still run the job now there.
+ */
+export function startHelpdeskBackgroundJobs(deps: { log?: (line: Record<string, unknown>) => void; timers?: LoopTimers; random?: () => number } = {}): { stop(): void } | null {
+  const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
+  const flag = globalThis as typeof globalThis & { __lgHelpdeskJobsStarted?: boolean };
+  if (flag.__lgHelpdeskJobsStarted) return null;
+  flag.__lgHelpdeskJobsStarted = true;
+  if (!persistenceEnabled()) {
+    log({ type: "helpdesk", event: "jobs_not_started", reason: "no_database" });
+    return null;
+  }
+  const firstDelayMs = HELPDESK_JOB_LOOP.firstDelayMs + Math.floor((deps.random ?? Math.random)() * HELPDESK_JOB_LOOP.jitterMs);
+  log({ type: "helpdesk", event: "jobs_started", jobs: ["assist_retention"], firstDelayMs, intervalMs: HELPDESK_JOB_LOOP.intervalMs });
+  return startJobLoop({
+    name: "assist_retention",
+    firstDelayMs,
+    intervalMs: HELPDESK_JOB_LOOP.intervalMs,
+    tick: () => helpdeskRetentionJob().runScheduled(),
+    timers: deps.timers,
+    log
   });
 }
