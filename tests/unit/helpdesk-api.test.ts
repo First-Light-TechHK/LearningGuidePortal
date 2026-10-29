@@ -403,6 +403,12 @@ test("create accepts contactEmail and suggestionId; the agent API tags, marks re
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TRACEPARENT = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
+// A learner request's W3C traceparent; every Portal -> Admin call continues it with a new span.
+const INCOMING = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+function assertContinues(traceparent: string | undefined, what: string) {
+  assert.match(traceparent ?? "", /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/, what);
+  assert.notEqual(traceparent, INCOMING, `${what}: a new span`);
+}
 
 // A local stand-in for Admin's integration API (v2 §2).
 type AdminCall = { method: string; url: string; authorization: string | undefined; traceparent: string | undefined; body: string };
@@ -461,11 +467,8 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   assert.ok(parentRunId === null || UUID_V7.test(String(parentRunId)));
   assert.match(adminCalls.at(-1)!.traceparent ?? "", TRACEPARENT, "a new trace when the learner request had none");
   // A valid incoming W3C traceparent is continued to Admin with a new span.
-  const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-  await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie, traceparent: incoming }), ctx());
-  const continued = adminCalls.at(-1)!.traceparent ?? "";
-  assert.match(continued, /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/);
-  assert.notEqual(continued, incoming);
+  await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie, traceparent: INCOMING }), ctx());
+  assertContinues(adminCalls.at(-1)!.traceparent, "the suggestions route");
   const none = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: { ...enquiry, subject: "Refund", message: "money back" }, cookie: learnerCookie }), ctx());
   assert.deepEqual(await none.json(), { suggestion: null });
   const ticketsBefore = (await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length;
@@ -474,9 +477,10 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "maybe" }, cookie: learnerCookie }), ctx({ id: suggestion.id })), 400, "validation_failed");
   await problem(await routes.outcome.POST(learnerRequest("/api/helpdesk/suggestions/nope/outcome", { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: "nope" })), 404, "not_found");
   await problem(await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" }, cookie: strangerCookie }), ctx({ id: suggestion.id })), 404, "not_found");
-  const solved = await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" }, cookie: learnerCookie }), ctx({ id: suggestion.id }));
+  const solved = await routes.outcome.POST(learnerRequest(`/api/helpdesk/suggestions/${suggestion.id}/outcome`, { json: { outcome: "solved" }, cookie: learnerCookie, traceparent: INCOMING }), ctx({ id: suggestion.id }));
   assert.equal(solved.status, 204);
   assert.equal(adminCalls.at(-1)!.url, `/api/integration/helpdesk/suggestions/${suggestion.id}/outcome`);
+  assertContinues(adminCalls.at(-1)!.traceparent, "the outcome route");
   assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { outcome: "solved" });
   assert.equal((await (await routes.tickets.GET(learnerRequest("/api/helpdesk/tickets", { cookie: learnerCookie }), ctx())).json()).tickets.length, ticketsBefore, "'solved' creates no ticket");
 
@@ -492,7 +496,7 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   adminMode = "ok";
   // The declined suggestion is linked to the ticket and the BackOffice sees what the learner chose.
   process.env.PORTAL_HELPDESK_TOKEN = TOKEN;
-  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, suggestionId: second.id }), key: randomUUID(), cookie: learnerCookie }), ctx());
+  const created = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, suggestionId: second.id }), key: randomUUID(), cookie: learnerCookie, traceparent: INCOMING }), ctx());
   assert.equal(created.status, 201, await created.clone().text());
   const ticketId = (await created.json()).id as string;
   const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticketId}`), ctx({ id: ticketId }))).json();
@@ -501,6 +505,7 @@ test("submit-time suggestions and outcomes: signed-in only, logged as source sub
   const eventually = async (check: () => boolean) => { for (let attempt = 0; attempt < 50 && !check(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 20)); return check(); };
   assert.ok(await eventually(() => outcomeCalls(second.id).length === 2), "the server re-delivers the outcome Admin missed");
   assert.deepEqual(outcomeCalls(second.id), ["declined", "declined"]);
+  assertContinues(adminCalls.filter((call) => call.url === `/api/integration/helpdesk/suggestions/${second.id}/outcome`).at(-1)!.traceparent, "the ticket route's outcome re-delivery");
   // The browser's outcome call is lost: submitting alone records and forwards "declined" from the server.
   const third = (await (await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: learnerCookie }), ctx())).json()).suggestion as { id: string };
   const direct = await routes.tickets.POST(learnerRequest("/api/helpdesk/tickets", { body: ticketForm({ ...createFields, subject: "Third", suggestionId: third.id }), key: randomUUID(), cookie: learnerCookie }), ctx());
@@ -527,15 +532,16 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
   await startAdmin();
   t.after(() => new Promise<void>((resolve) => { admin.closeAllConnections(); admin.close(() => resolve()); }));
   adminCalls = [];
-  const ask = (json: unknown, init: { cookie?: string; key?: string | null; origin?: string } = {}) => routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json, cookie: init.cookie, key: init.key === null ? undefined : init.key ?? randomUUID(), origin: init.origin }), ctx());
+  const ask = (json: unknown, init: { cookie?: string; key?: string | null; origin?: string; traceparent?: string } = {}) => routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json, cookie: init.cookie, key: init.key === null ? undefined : init.key ?? randomUUID(), origin: init.origin, traceparent: init.traceparent }), ctx());
   await problem(await ask({ message: "password", locale: "en-GB" }), 401, "unauthenticated");
   await problem(await ask({ message: "password", locale: "en-GB" }, { cookie: strangerCookie, origin: "https://evil.example" }), 403, "forbidden_origin");
   await problem(await ask({ message: "password", locale: "en-GB" }, { cookie: strangerCookie, key: null }), 400, "idempotency_key_required");
   await problem(await ask({ message: "x".repeat(501), locale: "en-GB" }, { cookie: strangerCookie }), 400, "validation_failed");
 
   const key = randomUUID();
-  const chat = await ask({ message: "I never get the password email", locale: "en-GB" }, { cookie: strangerCookie, key });
+  const chat = await ask({ message: "I never get the password email", locale: "en-GB" }, { cookie: strangerCookie, key, traceparent: INCOMING });
   assert.equal(chat.status, 200, await chat.clone().text());
+  assertContinues(adminCalls.at(-1)!.traceparent, "the assistant route");
   assert.equal(chat.headers.get("cache-control"), "no-store");
   const answered = await chat.json() as { id: string; reply: { id: string; faqId: string; question: string; answer: string } };
   assert.equal(answered.reply.answer, FAQ.answer, "verbatim");
@@ -559,7 +565,7 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
   assert.match(fallback.id, /^[0-9a-f-]{36}$/);
 
   // Feedback: own answers only, first value wins, forwarded to Admin.
-  const feedback = (id: string, json: unknown, cookie = strangerCookie, withKey = true) => routes.assistantFeedback.POST(learnerRequest(`/api/helpdesk/assistant/${id}/feedback`, { json, cookie, key: withKey ? randomUUID() : undefined }), ctx({ id }));
+  const feedback = (id: string, json: unknown, cookie = strangerCookie, withKey = true) => routes.assistantFeedback.POST(learnerRequest(`/api/helpdesk/assistant/${id}/feedback`, { json, cookie, key: withKey ? randomUUID() : undefined, traceparent: INCOMING }), ctx({ id }));
   await problem(await feedback(answered.id, { helpful: true }, learnerCookie), 404, "not_found");
   await problem(await feedback(answered.id, { helpful: true }, strangerCookie, false), 400, "idempotency_key_required");
   await problem(await feedback(answered.id, { helpful: "yes" }), 400, "validation_failed");
@@ -568,6 +574,7 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
   assert.equal(yes.status, 200);
   assert.deepEqual(await yes.json(), { id: answered.id, feedback: "helpful" });
   assert.deepEqual(JSON.parse(adminCalls.at(-1)!.body), { outcome: "helpful" });
+  assertContinues(adminCalls.at(-1)!.traceparent, "the feedback route");
   assert.deepEqual(await (await feedback(answered.id, { helpful: false })).json(), { id: answered.id, feedback: "helpful" }, "first value wins");
 
   // Admin down or slow: reply null, never an error.
