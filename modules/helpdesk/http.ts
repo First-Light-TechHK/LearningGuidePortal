@@ -12,7 +12,11 @@ const NO_STORE = "no-store";
 
 export function problemResponse(error: unknown, scope: string): Response {
   const problem = error instanceof HelpdeskProblem ? error : null;
-  if (!problem) console.error(JSON.stringify({ type: "helpdesk", event: "request_failed", scope, error: error instanceof Error ? error.name : "unknown" }));
+  if (!problem) {
+    // The code (PostgreSQL SQLSTATE such as 42P01, or a Node / AWS error code) tells ops what failed; the message never goes in (it can hold learner text).
+    const code = (error as { code?: unknown } | null)?.code;
+    console.error(JSON.stringify({ type: "helpdesk", event: "request_failed", scope, error: error instanceof Error ? error.name : "unknown", ...(typeof code === "string" && code.length <= 64 ? { code } : {}) }));
+  }
   const resolved = problem ?? new HelpdeskProblem("helpdesk_unavailable");
   const headers: Record<string, string> = { "Content-Type": "application/problem+json", "Cache-Control": NO_STORE };
   if (resolved.code === "invalid_token") headers["WWW-Authenticate"] = 'Bearer realm="learning-guide-helpdesk", error="invalid_token"';
