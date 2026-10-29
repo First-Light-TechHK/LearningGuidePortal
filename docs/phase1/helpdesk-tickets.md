@@ -416,3 +416,23 @@ Fixes from the final review of v2. Each one is locked by a test that runs in CI.
   - The Help Centre has no paging. Lists stop at 10 popular articles and at 50 search or topic results, as §4d specifies with no frame for more.
   - "Popular articles" shows the newest FAQs when none is marked popular, as designed.
   - Admin's zh-CN retrieval does not match Latin words or one-character queries. That is a retrieval change for Admin.
+
+## 18. Agent run ids and W3C trace context (2026-10-29, helpdesk-agent-v2-pi-dsh)
+
+Admin now picks the suggested FAQ through a fixed workflow that runs one pi-agent-core step, and it records every run as an append-only event log that staff can open from each AI block ("View trace"). Portal's part is to send the ids and the trace header that link a learner's runs together. What learners see does not change.
+
+- **Run id:** for `POST /api/integration/helpdesk/suggest`, Portal makes the run id itself (`runId`, UUIDv7) before it calls Admin. The same id is the `helpdesk_assist_log` row id and the Admin suggestion id. Admin returns it as `suggestion.id`. If an older Admin returns a different id, Portal keeps the id Admin returned.
+- **Conversation link:** `parentRunId` is the learner's oldest assist row that is not yet linked to a ticket, inside the 24 h link window (`HELPDESK_LIMITS.assistLinkWindowHours`; `repository.conversationRootAssist`). It is null for the first question. If the lookup fails, Portal sends null and the suggestion goes ahead.
+- **Wire order:** `runId` and `parentRunId` are the last two keys of the suggest body. The body is locked by `tests/fixtures/helpdesk-contract.json` v3, which is the same file in both repos.
+- **traceparent:** every Portal → Admin helpdesk call sends a W3C `traceparent` header (`lib/traceparent.ts`):
+  - if the incoming request has a valid `traceparent`, Portal sends a child span of it;
+  - otherwise Portal starts a new trace;
+  - the version is always `00`.
+- **Where it is wired:** the route handlers pass the request into `helpdeskAssistant(request)`. The Help Centre and support pages pass `headers().get("traceparent")` into `createAdminHelpdeskClient`.
+- **No new environment variables and no Portal migration.** Tokens are never logged.
+- **Tests:**
+  - `tests/unit/traceparent.test.ts`;
+  - `tests/unit/helpdesk-admin-client.test.ts`: header, child span and key order;
+  - `tests/unit/helpdesk-v2.test.ts` and `tests/unit/helpdesk-api.test.ts`: run ids and the root lookup;
+  - `tests/io/postgres/helpdesk-repository.test.ts`: `conversationRootAssist`;
+  - `tests/e2e/helpdesk-support.spec.ts`: the stub records `runId`, `parentRunId` and `traceparent`.
