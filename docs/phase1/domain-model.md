@@ -111,7 +111,7 @@ Helpdesk tickets (migration `017_helpdesk_tickets.sql`, Portal is the single wri
 | `notifications` | `user_id`, `type`, `title`, `body`, `read_at` | 逐条读写；header unread count 使用查询结果 |
 | `study_groups` | `id`, `title`, `course_id`, `about`, `host_user_id`, `status` | one Course; Course is immutable; status `active` or `cancelled` |
 | `study_group_memberships` | `group_id`, `user_id`, `role`, `joined_at`, `left_at` | role `host` or `member`; one active membership per user and Group |
-| `live_sessions` | `id`, `group_id`, `starts_at`, `duration_seconds`, `max_participants`, `ai_tutor_enabled`, `status` | duration is 1800, 2700, 3600, or 5400 seconds; max participants 2–6 including Host; status `scheduled`, `live`, `completed`, or `removed` |
+| `live_sessions` | `id`, `group_id`, `starts_at`, `duration_seconds`, `max_participants`, `ai_tutor_enabled`, `status` | duration is scheduled as 600, 1200, 1800, or 2400 seconds (owner 2026-10-29); stored rows may also hold the earlier 2700, 3600, or 5400; max participants 2–6 including Host; status `scheduled`, `live`, `completed`, or `removed` |
 | `study_group_meetings` | `id`, `session_id`, `started_at`, `ended_at` | one row when the Host starts the Session; not a token audit |
 | `study_group_tutor_requests` | `id`, `session_id`, `user_id`, `client_event_id`, `text`, `received_at`, `in_flight` | one in flight per session; same client event id returns the original text; no system prompt and no model answer |
 | `audit_events` | actor、action、entity、payload、created_at | Refund、Resynchronise Payment、发布和权限变化必须有记录 |

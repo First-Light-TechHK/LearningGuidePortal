@@ -1126,6 +1126,7 @@
       "connecting": "正在连接直播课…",
       "tutorAnswering": "AI Tutor 正在回答…",
       "tutorReplyTo": "回复 {name}：{question}",
+      "tutorSources": "来源：",
       "tutorRetry": "重新提问",
       "tutorQueued": "等待 AI Tutor 回答，前面还有 {count} 个",
       "tutorNext": "AI Tutor 下一个就回答这个问题",

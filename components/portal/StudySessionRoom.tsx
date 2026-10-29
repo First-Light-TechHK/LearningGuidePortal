@@ -10,6 +10,7 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
+import { TutorAnswer } from "./TutorAnswer";
 import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
@@ -19,9 +20,11 @@ function tileStatus(copy: { muted: string; speaking: string; micOn: string }, ti
   return copy.micOn;
 }
 
-function ControlIcon({ kind }: { kind: "mic" | "camera" | "share" | "people" | "hand" | "leave" }) {
+function ControlIcon({ kind }: { kind: "mic" | "mic-off" | "camera" | "share" | "people" | "hand" | "leave" }) {
   const props = { viewBox: "0 0 24 24", width: 16, height: 16, "aria-hidden": true as const, fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  if (kind === "mic") return <svg {...props}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
+  if (kind === "mic") return <svg {...props} data-icon="mic"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
+  // The same crossed-out microphone the tile caption shows for a muted participant.
+  if (kind === "mic-off") return <svg {...props} data-icon="mic-off"><path d="M9 10v2a3 3 0 0 0 5 2M15 11V6a3 3 0 0 0-5.5-1.5M5 5l14 14M12 17v3M8 11a4 4 0 0 0 .5 2" /></svg>;
   if (kind === "camera") return <svg {...props}><path d="M3 8h11v9H3zM14 11l6-3v9l-6-3" /></svg>;
   if (kind === "share") return <svg {...props}><rect x="4" y="5" width="16" height="12" rx="2" /><path d="M10 11h4M12 9v4" /></svg>;
   if (kind === "people") return <svg {...props}><circle cx="9" cy="8" r="2.5" /><circle cx="16" cy="9" r="2" /><path d="M4 18c.6-2.4 2.4-3.5 5-3.5s4.4 1.1 5 3.5M14 14.5c1.6 0 3 .7 3.8 2.5" /></svg>;
@@ -1073,7 +1076,21 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         <div ref={audioRoot} hidden />
         {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
         {sharing ? <p className={styles.meta} role="status">{roomCopy.sharingNotice}</p> : null}
-        <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
+        {/* Owner 2026-10-29: while someone else's screen fills the stage, the people strip
+            under it shrinks to avatars only, so the shared screen keeps the room's space. */}
+        {shareTrack && tiles.length > 0 ? <ul className={styles.avatarStrip} aria-label={roomCopy.participants}>
+          {tiles.map((tile) => {
+            const camera = cameraTracks[tile.identity] ?? null;
+            const label = `${tile.name}${tile.host ? ` · ${roomCopy.host}` : ""} · ${tileStatus(roomCopy, tile)}`;
+            return (
+              <li className={styles.avatar} data-speaking={tile.speaking ? "true" : "false"} key={tile.identity} title={label} aria-label={label}>
+                <span className={styles.avatarFace} data-video={camera ? "on" : "off"}>{camera ? <ParticipantCamera track={camera} /> : <span aria-hidden="true">{tile.name.slice(0, 1)}</span>}</span>
+                {hands.includes(tile.identity) ? <span className={styles.avatarHand} role="img" aria-label={roomCopy.raiseHand}>✋</span> : null}
+                <TileMic status={participantStatus(tile)} label={tileStatus(roomCopy, tile)} />
+              </li>
+            );
+          })}
+        </ul> : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
           {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
             return (
@@ -1086,13 +1103,13 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               </div>
             );
           })}
-        </div>
+        </div>}
         {mediaNotice ? <p className={styles.alert} role="alert">{mediaNotice.device ? roomCopy.mediaDeviceBlocked : mediaNotice.kind === "camera" ? roomCopy.mediaBlockedCamera : roomCopy.mediaBlockedMic} <button className={styles.textButton} type="button" onClick={() => setMediaNotice(null)}>{copy.close}</button></p> : null}
         {shareFailed ? <p className={styles.alert} role="alert">{roomCopy.shareFailed} <button className={styles.textButton} type="button" onClick={() => setShareFailed(false)}>{copy.close}</button></p> : null}
         {/* BUG-0196: the focus carries the same "Session Focus" label and 12px body as the waiting dialog (599:755), so it never reads as a second title. */}
         {session.focus ? <section className={styles.roomFocus} aria-labelledby="study-session-focus"><h2 id="study-session-focus" className={styles.waitingFocus}>{copy.focus}</h2><p>{session.focus}</p></section> : null}
         <div className={styles.controls}>
-          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
+          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind={micOn ? "mic" : "mic-off"} />{roomCopy.mic}</button> : null}
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
           {controls.includes("share") && canShare ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => {
             const start = !sharing;
@@ -1149,7 +1166,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               chatPinnedRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
             }}>
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
-                <p className={`${styles.chatBody} ${styles.tutorBody}`}>
+                <div className={`${styles.chatBody} ${styles.tutorBody}`}>
                   {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participant, question: line.replyTo.question })}</span> : null}
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
@@ -1158,12 +1175,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                         const pending = tutorPendingState(session, line.id, line.queuedPosition);
                         return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
-                    : <>
-                        {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
-                          ? <span key="lead" className={styles.tutorLead}>{row}</span>
-                          : <span key={index} className={styles.tutorRow}>{row}</span>)}
-                      </>}
-                </p>
+                    : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
+                </div>
               ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>

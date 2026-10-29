@@ -1126,6 +1126,7 @@
       "connecting": "Connecting to the Live Session…",
       "tutorAnswering": "AI Tutor is answering…",
       "tutorReplyTo": "Replying to {name}: {question}",
+      "tutorSources": "Sources:",
       "tutorRetry": "Ask again",
       "tutorQueued": "Waiting for AI Tutor — {count} ahead",
       "tutorNext": "AI Tutor answers this next",

@@ -117,6 +117,16 @@ const SCHEMA_PROBE = `
         AND column_name = 'alternatives'
         AND table_schema = ANY (current_schemas(false))
     )
+    AND EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'live_sessions_duration_seconds_v2_check'
+        AND conrelid = to_regclass('live_sessions')
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'live_sessions_duration_seconds_check'
+        AND conrelid = to_regclass('live_sessions')
+    )
   ) AS ready
 `;
 
@@ -378,6 +388,14 @@ ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;
           CHECK (occupancy <= max_participants)   -- capacity backstop (hazard 1)
         );
         CREATE INDEX IF NOT EXISTS live_sessions_group_idx ON live_sessions (group_id);
+        -- 10/20/30/40-minute Sessions (owner 2026-10-29), keeping the earlier
+        -- 45/60/90 for stored rows: swap 012's column CHECK for a named wider
+        -- one. Idempotent boot self-heal mirroring
+        -- db/migrations/021_live_session_short_durations.sql.
+        ALTER TABLE live_sessions DROP CONSTRAINT IF EXISTS live_sessions_duration_seconds_check;
+        ALTER TABLE live_sessions DROP CONSTRAINT IF EXISTS live_sessions_duration_seconds_v2_check;
+        ALTER TABLE live_sessions ADD CONSTRAINT live_sessions_duration_seconds_v2_check
+          CHECK (duration_seconds IN (600, 1200, 1800, 2400, 2700, 3600, 5400));
         CREATE TABLE IF NOT EXISTS study_group_attendance_intents (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES live_sessions(id),

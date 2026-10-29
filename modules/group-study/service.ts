@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   SESSION_DURATION_SECONDS,
+  STORED_SESSION_DURATION_SECONDS,
   STARTING_SOON_MS,
   StudyGroupError,
   TOKEN_TTL_SECONDS,
@@ -1449,7 +1450,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     async editSession(input: { actorUserId: string; groupId: string; sessionId: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }) {
       if (input.title !== undefined) requireText(input.title, "Session Title", 50);
       const startsAt = input.startsAt !== undefined ? parseStartTime(input.startsAt, deps.now()) : undefined;
-      if (input.durationSeconds !== undefined && !SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
+      if (input.durationSeconds !== undefined && !STORED_SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof STORED_SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (input.maxParticipants !== undefined && (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6)) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
       let focus: string | null | undefined;
       if (input.focus !== undefined) {

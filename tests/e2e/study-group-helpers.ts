@@ -115,7 +115,8 @@ export const groupPath = (groupId: string) => `/en-GB/portal/study-groups?group=
 // A user's own chat line uses a <span> for the "@AI Tutor" mention, so an exact
 // <strong>AI Tutor</strong> identifies the tutor's line only.
 export function tutorLine(page: Page) {
-  return page.locator("article").filter({ has: page.locator('strong:text-is("AI Tutor")') }).locator("p");
+  // The answer block (2026-10-29: it renders Markdown paragraphs and KaTeX inside it).
+  return page.locator("article").filter({ has: page.locator('strong:text-is("AI Tutor")') }).locator('[class*="tutorBody"]');
 }
 
 // Asks the AI Tutor from the room's chat, the way a member does.

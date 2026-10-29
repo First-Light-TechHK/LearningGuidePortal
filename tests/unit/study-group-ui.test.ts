@@ -4,19 +4,22 @@ import { participantStatus, raisedHands, sessionControls, sessionStateLabel, stu
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
-import { clampGroupAbout, DURATION_MINUTE_CHOICES, fill, fillCount, GROUP_ABOUT_MAX, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
+import { clampGroupAbout, DURATION_MINUTE_CHOICES, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
 
-test("schedule duration is a required dropdown of 30, 45, 60, and 90 minutes", () => {
-  assert.deepEqual([...DURATION_MINUTE_CHOICES], [30, 45, 60, 90]);
+test("schedule duration is a required dropdown of 10, 20, 30, and 40 minutes (owner 2026-10-29)", () => {
+  assert.deepEqual([...DURATION_MINUTE_CHOICES], [10, 20, 30, 40]);
   assert.equal(en.studyGroupsPage.duration, "Duration");
   assert.equal(zh.studyGroupsPage.duration, "时长");
-  assert.deepEqual(DURATION_MINUTE_CHOICES.map((minutes) => fill(en.studyGroupsPage.plannedDuration, { count: minutes })), ["30 mins", "45 mins", "60 mins", "90 mins"]);
-  assert.deepEqual(DURATION_MINUTE_CHOICES.map((minutes) => fill(zh.studyGroupsPage.plannedDuration, { count: minutes })), ["30 分钟", "45 分钟", "60 分钟", "90 分钟"]);
+  assert.deepEqual(DURATION_MINUTE_CHOICES.map((minutes) => fill(en.studyGroupsPage.plannedDuration, { count: minutes })), ["10 mins", "20 mins", "30 mins", "40 mins"]);
+  assert.deepEqual(DURATION_MINUTE_CHOICES.map((minutes) => fill(zh.studyGroupsPage.plannedDuration, { count: minutes })), ["10 分钟", "20 分钟", "30 分钟", "40 分钟"]);
   const source = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(source, /select name="durationMinutes" required/);
   assert.match(source, /type="date" required min=\{todayDate\(\)\}/);
   assert.match(source, /min=\{earliestTime\(sessionDate\) \|\| undefined\}/);
-  assert.match(source, /DURATION_MINUTE_CHOICES\.map/);
+  assert.match(source, /durationOptions\(sessionDuration\)\.map/);
+  assert.deepEqual(durationOptions(""), [10, 20, 30, 40]);
+  assert.deepEqual(durationOptions("20"), [10, 20, 30, 40]);
+  assert.deepEqual(durationOptions("60"), [10, 20, 30, 40, 60]);
   assert.match(source, /\(selected\?\.lessons \|\| \[\]\)\.map/);
   assert.equal(en.studyGroupsPage.relatedLesson, "Related Lesson");
   assert.equal(zh.studyGroupsPage.relatedLesson, "相关课时");
@@ -130,7 +133,9 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.equal(zh.studyGroupsPage.room.speaking, "正在发言");
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /styles\.roster/);
-  assert.match(room, /ControlIcon kind="mic"/);
+  // Owner 2026-10-29: the Mic control shows a crossed-out microphone while it is off.
+  assert.match(room, /ControlIcon kind=\{micOn \? "mic" : "mic-off"\}/);
+  assert.match(room, /kind === "mic-off"\) return <svg \{\.\.\.props\} data-icon="mic-off">/);
   assert.match(room, /styles\.rosterStatus/);
   assert.match(room, /data-status=\{person\.status\}/);
   assert.match(room, /styles\.tabCount/);
@@ -469,10 +474,9 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   // longer renders a quiz or course/general badge (2026-10-23).
   assert.doesNotMatch(room, /line\.kind === "quiz"/);
   assert.doesNotMatch(room, /roomCopy\.tutorGeneral/);
-  assert.match(room, /index === 0\s*\?\s*<span key="lead" className=\{styles\.tutorLead\}>\{row\}<\/span>/);
+  // Owner 2026-10-29: the answer renders as Markdown with KaTeX math (TutorAnswer).
+  assert.match(room, /<TutorAnswer text=\{line\.text\} sourcesLabel=\{roomCopy\.tutorSources\} className=\{styles\.tutorAnswer\} sourcesClassName=\{styles\.tutorSources\} \/>/);
   assert.doesNotMatch(room, /<strong key="lead"/);
-  assert.match(room, /<span key=\{index\} className=\{styles\.tutorRow\}>\{row\}<\/span>/);
-  assert.match(room, /line\.text\.split\("\\n"\)\.filter\(\(row\) => row\.trim\(\)\)/);
 
   assert.equal(en.studyGroupsPage.room.tutorUnavailable, "AI Tutor is temporarily unavailable. Please try again.");
   assert.equal(zh.studyGroupsPage.room.tutorUnavailable, "AI Tutor 暂时不可用，请稍后重试。");

@@ -55,7 +55,7 @@ The schedule control lists the titles of that course's lessons. The choice is op
 
 ## Duration
 
-The Host chooses 30, 45, 60, or 90 minutes. Those choices are stored as 1800, 2700, 3600, and 5400 seconds. No other duration is accepted. The session title is at most 50 characters (owner ruling 2026-10-15, BUG-0128).
+The Host chooses 10, 20, 30, or 40 minutes (owner 2026-10-29; was 30, 45, 60, or 90). Those choices are stored as 600, 1200, 1800, and 2400 seconds. No other duration is accepted for a new Session; a Session scheduled earlier keeps its stored 2700, 3600, or 5400 (migration 021). The session title is at most 50 characters (owner ruling 2026-10-15, BUG-0128).
 
 ## Schedule dialog
 

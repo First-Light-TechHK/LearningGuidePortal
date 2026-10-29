@@ -226,6 +226,16 @@
 .shareMain { width: 100%; min-height: 360px; max-height: 62vh; background: #101828; border-radius: 12px; object-fit: contain; }
 .videos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 990px; }
 .videosSingle { grid-template-columns: minmax(0, 490px); justify-content: center; }
+/* Avatars-only people strip under a shared screen (owner 2026-10-29); no Figma frame yet, reuses the roster initial and tile mic styles (待视觉验收). */
+.avatarStrip { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.avatar { position: relative; width: 48px; height: 48px; flex: none; }
+.avatarFace { width: 48px; height: 48px; border-radius: 24px; overflow: hidden; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 18px; font-weight: 600; box-shadow: 0 0 0 2px #fff; }
+.avatarFace video { width: 100%; height: 100%; object-fit: cover; }
+.avatar[data-speaking="true"] .avatarFace { box-shadow: 0 0 0 2px #12b76a; }
+.avatar .tileMic { position: absolute; right: -4px; bottom: -4px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 10px; background: #fff; color: #12b76a; box-shadow: 0 0 0 1px #e4e7ec; }
+.avatar .tileMic svg { width: 12px; height: 12px; }
+.avatar .tileMic[data-status="muted"] { background: #f54649; color: #fff; box-shadow: none; }
+.avatarHand { position: absolute; top: -6px; right: -6px; font-size: 14px; }
 .controls button[aria-pressed="true"] { background: #1d6bff; color: #fff; border-color: #1d6bff; }
 .tile { position: relative; overflow: hidden; aspect-ratio: 7 / 4; min-height: 0; border-radius: 12px; background: #101828; color: #fff; display: grid; align-items: end; padding: 12px; }
 .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -332,6 +342,20 @@
 .chatBody { margin-top: 9px; font-size: 12px; color: rgba(0, 0, 0, .4); }
 .tutorBody { color: #1d6bff; }
 .tutorBody .tutorLead { color: #1d6bff; font-weight: 400; }
+/* Owner 2026-10-29: the answer renders Markdown and KaTeX in the chat's own 12px ink; one point per paragraph, wide formulas scroll inside the panel instead of overflowing it. */
+.tutorAnswer { line-height: 1.6; overflow-wrap: anywhere; }
+.tutorAnswer p { margin: 0 0 6px; }
+.tutorAnswer > :last-child { margin-bottom: 0; }
+.tutorAnswer ul, .tutorAnswer ol { margin: 0 0 6px; padding-left: 18px; }
+.tutorAnswer li { margin: 2px 0; }
+.tutorAnswer li > p { margin: 0; }
+.tutorAnswer strong { font-weight: 600; }
+.tutorAnswer code { font-size: 11px; background: #f2f4f7; border-radius: 4px; padding: 0 4px; color: #344054; }
+.tutorAnswer .katex { font-size: 1.1em; }
+.tutorAnswer .katex-display { margin: 6px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
+.tutorAnswer table { border-collapse: collapse; margin: 0 0 6px; display: block; overflow-x: auto; }
+.tutorAnswer th, .tutorAnswer td { border: 1px solid #e4e7ec; padding: 2px 6px; }
+.tutorSources { margin: 6px 0 0; color: #98a2b3; font-size: 11px; }
 /* 599:1392: 266x100 input 12px from the panel's sides and bottom; the @AI Tutor entry sits on its bottom-left edge. */
 .chatForm { display: flex; flex-direction: column; flex: none; margin: 0 -8px -8px; padding: 12px 36px 8px 12px; }
 /* 599:1393 placeholder sits 12px inside the box: the global field padding and focus ring do not apply here (the box draws the focus). */
