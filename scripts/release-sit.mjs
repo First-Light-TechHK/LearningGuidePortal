@@ -8,7 +8,12 @@ import { checkRequiredCI } from './release/required-ci.mjs';
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const branch = process.env.GITHUB_REF_NAME || execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
-const gh = endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8' }));
+const gh = endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }));
+// The commits endpoint returns the whole commit, including a `files` array that
+// grows with the merge. A large dev->sit merge exceeded Node's 1 MiB default and
+// the release aborted with SIGTERM before touching AWS. The branch ref answers
+// the same question ("what does this branch point at?") in a few hundred bytes.
+const branchSha = branch => gh(`repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`).object.sha;
 function aws(service, operation, input = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'lg-release-'));
   try {
@@ -19,7 +24,7 @@ function aws(service, operation, input = {}) {
 }
 if (aws('sts','get-caller-identity').Account !== '851987565851') throw new Error('Wrong AWS account');
 checkRequiredCI({ sha, branch });
-if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch moved; verify and release the new revision');
+if (branchSha(branch) !== sha) throw new Error('Branch moved; verify and release the new revision');
 const summary = aws('apprunner','list-services').ServiceSummaryList.find(x => x.ServiceName === 'learning-guide-sit');
 if (!summary) throw new Error('SIT must be provisioned first');
 const current = aws('apprunner','describe-service', { ServiceArn: summary.ServiceArn }).Service;
@@ -46,7 +51,7 @@ for (let i = 0; i < 120; i++) {
 }
 if (!complete) throw new Error('Timed out waiting for the deployment');
 await buildService(summary.ServiceArn);
-if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
+if (branchSha(branch) !== sha) throw new Error('Branch changed during build; release identity cannot be accepted');
 const response = await fetch(`https://${summary.ServiceUrl}/api/health`);
 const health = await response.json();
 if (!response.ok || !health.ready || health.environment !== 'SIT' || health.version !== sha) throw new Error('Deployed readiness or release identity mismatch');

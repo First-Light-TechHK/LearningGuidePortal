@@ -27,9 +27,12 @@ export function evaluateRequiredCI({ sha, branch, workflows }) {
 }
 
 export function checkRequiredCI({ sha, branch, repo = 'First-Light-TechHK/LearningGuidePortal' }) {
-  const gh = endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  const gh = endpoint => JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 }));
   if (!/^[a-f0-9]{40}$/.test(sha) || !branch) throw new Error('Exact release SHA and branch are required');
-  if (gh(`repos/${repo}/commits/${encodeURIComponent(branch)}`).sha !== sha) throw new Error('Release branch moved; re-test the new revision');
+  // Read the branch ref rather than the commit object: a large dev->sit merge
+  // carries a `files` array that overflows the default 1 MiB buffer.
+  const tip = gh(`repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`).object.sha;
+  if (tip !== sha) throw new Error('Release branch moved; re-test the new revision');
   const workflows = {};
   for (const workflow of Object.keys(requiredWorkflows)) {
     const runs = gh(`repos/${repo}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=100`).workflow_runs;
