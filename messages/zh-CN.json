@@ -1154,6 +1154,12 @@
       "exitFullScreen": "退出全屏",
       "hideParticipants": "收起参会人",
       "showParticipants": "展开参会人",
+      "sharingBy": "{name} 正在共享屏幕",
+      "stopSharing": "停止共享",
+      "escToExit": "按 Esc 退出",
+      "enterToSend": "Enter 发送",
+      "chatHint": "可 @AI Tutor 提问",
+      "hideChat": "收起聊天",
       "tutorNotSent": "未发送给 AI Tutor：{reason}",
       "tutorNotLive": "AI Tutor 只在直播课进行中回答问题。"
     },

@@ -180,3 +180,190 @@ test("1029-5: a shared screen goes full screen with the people, the chat (AI Tut
     await room.close();
   }
 });
+
+// Owner 2026-10-30 (screenshots from DEV): the chat input was a box inside a box
+// and stopped mid-panel, and the floating people were plain circles that vanished
+// on the shared screen's dark edge. These lock the look, not only the behaviour.
+async function chatFormLooksRight(page: Page, panel: string) {
+  const aside = page.locator(panel);
+  const form = aside.locator("form");
+  const panelBox = (await aside.boundingBox())!;
+  const formBox = (await form.boundingBox())!;
+  const gap = panelBox.y + panelBox.height - (formBox.y + formBox.height);
+  expect(gap, "599:1392: the input sits 12px above the panel's bottom edge").toBeGreaterThanOrEqual(8);
+  expect(gap).toBeLessThanOrEqual(16);
+  const input = form.getByRole("textbox");
+  expect(await input.evaluate((element) => getComputedStyle(element).borderTopWidth), "one frame only: the field draws no border of its own").toBe("0px");
+  const entry = form.getByRole("button", { name: "@AI Tutor" });
+  expect(await entry.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color]), "a light-blue chip, not a grey system button").toEqual(["rgb(238, 244, 255)", "rgb(29, 107, 255)"]);
+}
+
+test("1030-1: the chat input is one frame on the panel's bottom edge, in the room and in full screen", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "1030-chat");
+  try {
+    test.skip(!(await displayCaptureAvailable(room.pageA)), "this machine cannot start getDisplayMedia");
+    const { pageA, pageB } = room;
+    await pageB.setViewportSize({ width: 1440, height: 900 });
+    await pageB.getByRole("tab", { name: /Chat/ }).click();
+    await chatFormLooksRight(pageB, "section[data-focus] > aside");
+    await pageA.getByRole("button", { name: "Share" }).click();
+    await expect(pageB.getByTestId("share-stage")).toBeVisible();
+    await pageB.getByRole("button", { name: "Full screen" }).click();
+    await pageB.getByRole("button", { name: "Chat", exact: true }).first().click();
+    await chatFormLooksRight(pageB, 'section[data-focus="true"] > aside');
+  } finally {
+    await room.close();
+  }
+});
+
+test("1030-2: the floating people are a light card with names, and the share buttons stand out on a dark screen", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "1030-float");
+  try {
+    test.skip(!(await displayCaptureAvailable(room.pageA)), "this machine cannot start getDisplayMedia");
+    const { pageA, pageB } = room;
+    await pageB.setViewportSize({ width: 1440, height: 900 });
+    await pageA.getByRole("button", { name: "Share" }).click();
+    await expect(pageB.getByTestId("share-stage")).toBeVisible();
+    const people = pageB.getByRole("list", { name: "Participants" });
+    await expect(people.getByRole("listitem")).toHaveCount(2);
+    const card = pageB.locator('[class*="avatarFloat"]');
+    expect(await card.evaluate((element) => getComputedStyle(element).backgroundColor), "an opaque light card, not a see-through strip").toBe("rgba(255, 255, 255, 0.96)");
+    expect(await card.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+    // Every avatar carries its name; the header says what the card is and folds it.
+    await expect(people).toContainText("Study Host");
+    await expect(people).toContainText("Study Guest");
+    const toggle = pageB.getByRole("button", { name: /Hide participants/ });
+    await expect(toggle).toContainText("Participants");
+    await toggle.click();
+    await expect(people).toHaveCount(0);
+    await expect(pageB.getByRole("button", { name: /Show participants/ })).toBeVisible();
+    // Full screen and Chat are light pills over the screen.
+    const full = pageB.getByRole("button", { name: "Full screen" });
+    expect(await full.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(255, 255, 255, 0.95)");
+  } finally {
+    await room.close();
+  }
+});
+
+test("1030-3: full screen keeps people in order, previews new lines while the chat is folded, and the sharer can stop from a banner", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "1030-focus");
+  try {
+    test.skip(!(await displayCaptureAvailable(room.pageA)), "this machine cannot start getDisplayMedia");
+    const { pageA, pageB } = room;
+    await pageB.setViewportSize({ width: 1440, height: 900 });
+    await pageA.getByRole("button", { name: "Share" }).click();
+    // The sharer sees a banner with its own Stop sharing; the viewer sees who shares.
+    await expect(pageA.getByRole("status").filter({ hasText: "You are sharing your screen." }).getByRole("button", { name: "Stop sharing" })).toBeVisible();
+    const stage = pageB.getByTestId("share-stage");
+    await expect(stage).toBeVisible();
+    await expect(stage).toContainText("Study Host is sharing their screen");
+    // The Host is listed first; a raised hand moves its owner above the Host.
+    const rows = pageB.getByRole("list", { name: "Participants" }).getByRole("listitem");
+    await expect(rows.first()).toContainText("Study Host");
+    await pageB.getByRole("button", { name: "Raise Hand" }).click();
+    await expect(rows.first()).toContainText("Study Guest");
+    await pageB.getByRole("button", { name: "Raise Hand" }).click();
+    await expect(rows.first()).toContainText("Study Host");
+
+    // Double-click on the shared screen enters full screen; the top bar names the sharer and offers the way out.
+    await stage.locator("video").dblclick();
+    await expect(pageB.locator('section[data-focus="true"]')).toBeVisible();
+    await expect(pageB.getByText("Press Esc to exit")).toBeVisible();
+    await expect(pageB.locator('section[data-focus] > aside')).toBeHidden();
+    // A line arriving while the chat is folded shows as a preview and a count on Chat.
+    await pageA.getByRole("tab", { name: /Chat/ }).click();
+    await pageA.getByRole("textbox", { name: "Chat" }).fill("Look at the tangent line");
+    await pageA.getByRole("button", { name: "Send", exact: true }).click();
+    const previewBox = pageB.getByTestId("chat-preview");
+    await expect(previewBox).toContainText("Look at the tangent line");
+    await expect(previewBox).toContainText("Study Host");
+    await expect(pageB.getByRole("button", { name: /1 unread/ })).toBeVisible();
+    await previewBox.getByRole("button").click();
+    await expect(pageB.locator('section[data-focus] > aside')).toBeVisible();
+    await expect(previewBox).toHaveCount(0);
+    await expect(pageB.getByRole("button", { name: /unread/ })).toHaveCount(0);
+    // The float has its own header and folds from it; the choice survives a reload.
+    await pageB.getByRole("button", { name: "Hide chat" }).click();
+    await expect(pageB.locator('section[data-focus] > aside')).toBeHidden();
+    await pageB.getByRole("button", { name: /Hide participants/ }).click();
+    await pageB.getByRole("button", { name: "Exit full screen" }).click();
+    await expect(pageB.locator('section[data-focus="false"]')).toBeVisible();
+    await pageB.reload();
+    await expect(pageB.getByTestId("share-stage")).toBeVisible({ timeout: 60_000 });
+    await expect(pageB.getByRole("button", { name: /Show participants/ })).toBeVisible();
+    // The sharer stops from the banner and everyone's stage goes back to the cards.
+    await pageA.getByRole("button", { name: "Stop sharing" }).click();
+    await expect(pageB.getByTestId("share-stage")).toHaveCount(0);
+  } finally {
+    await room.close();
+  }
+});
+
+test("1030-4: the people card and the full-screen chat drag by their headers and stay on the screen", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "1030-drag");
+  try {
+    test.skip(!(await displayCaptureAvailable(room.pageA)), "this machine cannot start getDisplayMedia");
+    const { pageA, pageB } = room;
+    await pageB.setViewportSize({ width: 1440, height: 900 });
+    await pageA.getByRole("button", { name: "Share" }).click();
+    const stage = pageB.getByTestId("share-stage");
+    await expect(stage).toBeVisible();
+    const card = pageB.locator('[class*="avatarFloat"]');
+    const header = pageB.getByRole("button", { name: /Hide participants/ });
+    const drag = async (from: { x: number; y: number }, dx: number, dy: number) => {
+      await pageB.mouse.move(from.x, from.y);
+      await pageB.mouse.down();
+      await pageB.mouse.move(from.x + dx / 2, from.y + dy / 2, { steps: 4 });
+      await pageB.mouse.move(from.x + dx, from.y + dy, { steps: 4 });
+      await pageB.mouse.up();
+    };
+    const before = (await card.boundingBox())!;
+    const grip = (await header.boundingBox())!;
+    await drag({ x: grip.x + 30, y: grip.y + grip.height / 2 }, -300, 200);
+    const after = (await card.boundingBox())!;
+    expect(Math.round(after.x - before.x)).toBe(-300);
+    expect(Math.round(after.y - before.y)).toBe(200);
+    // The drag did not fold the card.
+    await expect(pageB.getByRole("list", { name: "Participants" })).toBeVisible();
+    // Thrown far away it stops at the shared screen's edge.
+    const moved = (await header.boundingBox())!;
+    await drag({ x: moved.x + 30, y: moved.y + moved.height / 2 }, -3000, -3000);
+    const box = (await stage.boundingBox())!;
+    const pinned = (await card.boundingBox())!;
+    expect(Math.round(pinned.x - box.x)).toBe(8);
+    expect(Math.round(pinned.y - box.y)).toBe(8);
+    // A plain click on the header still folds and opens it.
+    await header.click();
+    await expect(pageB.getByRole("list", { name: "Participants" })).toHaveCount(0);
+    await pageB.getByRole("button", { name: /Show participants/ }).click();
+
+    // Full screen starts with the card back at rest; the chat float drags by its header.
+    await pageB.getByRole("button", { name: "Full screen" }).click();
+    await expect(pageB.locator('section[data-focus="true"]')).toBeVisible();
+    const rest = (await card.boundingBox())!;
+    expect(Math.round(1440 - (rest.x + rest.width))).toBe(20);
+    await pageB.getByRole("button", { name: "Chat", exact: true }).click();
+    const chat = pageB.locator('section[data-focus] > aside');
+    await expect(chat).toBeVisible();
+    const chatBefore = (await chat.boundingBox())!;
+    const chatHead = (await pageB.getByText("Ask the AI Tutor with @AI Tutor").boundingBox())!;
+    await drag({ x: chatHead.x + 10, y: chatHead.y + chatHead.height / 2 }, -500, -150);
+    const chatAfter = (await chat.boundingBox())!;
+    expect(Math.round(chatAfter.x - chatBefore.x)).toBe(-500);
+    expect(Math.round(chatAfter.y - chatBefore.y)).toBe(-150);
+    await chatDragStillTypes(pageB);
+  } finally {
+    await room.close();
+  }
+});
+
+// A dragged chat is still the same chat: its input takes text.
+async function chatDragStillTypes(page: Page) {
+  const input = page.locator('section[data-focus] > aside').getByRole("textbox", { name: "Chat" });
+  await input.fill("still here");
+  await expect(input).toHaveValue("still here");
+}

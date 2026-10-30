@@ -1154,6 +1154,12 @@
       "exitFullScreen": "Exit full screen",
       "hideParticipants": "Hide participants",
       "showParticipants": "Show participants",
+      "sharingBy": "{name} is sharing their screen",
+      "stopSharing": "Stop sharing",
+      "escToExit": "Press Esc to exit",
+      "enterToSend": "Enter to send",
+      "chatHint": "Ask the AI Tutor with @AI Tutor",
+      "hideChat": "Hide chat",
       "tutorNotSent": "Not sent to AI Tutor: {reason}",
       "tutorNotLive": "AI Tutor answers only while the Live Session is live."
     },

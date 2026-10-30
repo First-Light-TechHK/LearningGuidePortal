@@ -231,36 +231,70 @@
    Full screen puts the whole room on the screen with the chat (and AI Tutor) and the controls floating over it. */
 .shareStage { position: relative; height: max(360px, calc(100dvh - 300px)); border-radius: 12px; overflow: hidden; background: #101828; }
 .shareStage .shareMain { width: 100%; height: 100%; min-height: 0; max-height: none; border-radius: 0; display: block; }
-.shareTools { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 8px; }
-.shareTools button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: rgba(16, 24, 40, .7); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.shareTools button[aria-pressed="true"] { background: #1d6bff; }
+.shareTools { position: absolute; right: 16px; bottom: 16px; z-index: 3; display: flex; gap: 8px; }
+/* Owner 2026-10-30: who is sharing, top-left over the screen (in full screen the top bar says it). */
+.sharerChip { position: absolute; top: 16px; left: 16px; z-index: 3; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 300px); min-height: 32px; padding: 0 12px; border-radius: 999px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sharerDot { width: 8px; height: 8px; flex: none; border-radius: 4px; background: #f04438; }
+/* Full screen: one top bar with the title, the clock, who shares, the Esc hint and Exit full screen. */
+.focusBar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 12px; height: 68px; padding: 0 20px; background: linear-gradient(rgba(11, 18, 32, .92), rgba(11, 18, 32, 0)); color: #fff; font-size: 13px; transition: opacity .3s ease; }
+.focusBar strong { font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focusClock { display: inline-flex; align-items: center; gap: 4px; color: #6ce9a6; font-weight: 600; white-space: nowrap; }
+.focusSharer { color: #d0d5dd; white-space: nowrap; }
+.focusHint { margin-left: auto; color: #98a2b3; font-size: 12px; white-space: nowrap; }
+.focusBar button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .96); color: #111827; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.focusBar button:hover { color: #1d6bff; }
+.shareTools button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid rgba(16, 24, 40, .08); border-radius: 999px; background: rgba(255, 255, 255, .95); color: #111827; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, .35); }
+.shareTools button:hover { background: #fff; color: #1d6bff; }
+.shareTools button[aria-pressed="true"] { background: #1d6bff; border-color: #1d6bff; color: #fff; }
+.shareTools button[aria-pressed="true"] .tabCount { color: #fff; }
 .shareTools .tabCount { margin-left: 2px; }
-.avatarFloat { position: absolute; top: 12px; right: 12px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-height: calc(100% - 24px); }
-.avatarToggle { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 8px; background: rgba(16, 24, 40, .7); color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
-.avatarFloat .avatarStrip { margin: 0; padding: 10px; flex-direction: column; flex-wrap: nowrap; overflow-y: auto; border-radius: 12px; background: rgba(16, 24, 40, .55); }
+/* Owner 2026-10-30: the people float is a light card (labelled header, name per avatar) so it reads on the dark share edge. */
+.avatarFloat { position: absolute; top: 16px; right: 16px; z-index: 3; display: flex; flex-direction: column; width: 216px; max-height: calc(100% - 24px); overflow: hidden; border: 1px solid rgba(16, 24, 40, .08); border-radius: 12px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 28px rgba(0, 0, 0, .4); }
+.avatarFloat[data-open="false"] { width: auto; }
+/* The float headers are drag handles (useFloatDrag); a float being dragged lifts a little. */
+.avatarToggle, .floatHead { cursor: grab; touch-action: none; user-select: none; }
+.avatarFloat[data-dragging="true"], .room[data-focus="true"] .side[data-dragging="true"] { box-shadow: 0 18px 44px rgba(0, 0, 0, .5); }
+.avatarFloat[data-dragging="true"] .avatarToggle, .side[data-dragging="true"] .floatHead { cursor: grabbing; }
+.avatarToggle { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 40px; padding: 0 12px; border: 0; background: transparent; color: #111827; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; flex: none; }
+.avatarToggle:hover { color: #1d6bff; }
+.avatarToggle .tabCount { margin-left: 0; }
+.avatarToggleLabel { white-space: nowrap; }
+.avatarChevron { margin-left: auto; padding-left: 8px; display: grid; color: #667085; }
+.avatarChevron[data-open="true"] svg { transform: rotate(180deg); }
+/* Folded: the header keeps the first three faces so the card still shows who is here. */
+.avatarStack { display: flex; margin-left: 4px; }
+.avatarStack i { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 11px; background: #e8f1ff; color: #1660d8; font-size: 11px; font-style: normal; font-weight: 600; box-shadow: 0 0 0 2px #fff; }
+.avatarStack i + i { margin-left: -6px; }
+.avatarStack i[data-speaking="true"] { box-shadow: 0 0 0 2px #12b76a; }
+.avatarFloat .avatarStrip { margin: 0; padding: 4px 6px 8px; flex-direction: column; flex-wrap: nowrap; gap: 2px; overflow-y: auto; border-top: 1px solid #eef0f3; }
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .room[data-focus="true"] { position: fixed; inset: 0; z-index: 1000; display: block; padding: 0; background: #0b1220; }
 .room[data-focus="true"] .stage { height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .room[data-focus="true"] .stageHead, .room[data-focus="true"] .roomFocus, .room[data-focus="true"] .meta { display: none; }
 .room[data-focus="true"] .shareStage { height: 100%; border-radius: 0; }
-.room[data-focus="true"] .shareTools { top: 12px; bottom: auto; }
+.room[data-focus="true"] .sharerChip { display: none; }
 .room[data-focus="true"] .controls { position: absolute; left: 50%; bottom: 16px; z-index: 4; transform: translateX(-50%); margin: 0; padding: 8px; border-radius: 12px; background: rgba(255, 255, 255, .92); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); flex-wrap: nowrap; max-width: calc(100% - 32px); overflow-x: auto; }
 .room[data-focus="true"] .side { position: absolute; right: 16px; bottom: 96px; z-index: 4; width: min(340px, calc(100% - 32px)); height: min(560px, calc(100% - 180px)); min-height: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
 .room[data-focus="true"][data-side="closed"] .side { display: none; }
-.room[data-focus="true"] .avatarFloat { top: 56px; }
-.room[data-focus="true"] .controls, .room[data-focus="true"] .shareTools { transition: opacity .3s ease; }
+.room[data-focus="true"] .avatarFloat { top: 76px; right: 20px; }
+.room[data-focus="true"] .controls { transition: opacity .3s ease; }
 /* Idle in full screen: the controls and the top buttons fade out (never while hovered or holding the keyboard focus); the people and chat windows stay as the viewer left them. */
 .room[data-idle="true"] { cursor: none; }
-.room[data-idle="true"] .controls:not(:hover):not(:focus-within), .room[data-idle="true"] .shareTools:not(:hover):not(:focus-within) { opacity: 0; pointer-events: none; }
+.room[data-idle="true"] .controls:not(:hover):not(:focus-within), .room[data-idle="true"] .focusBar:not(:hover):not(:focus-within) { opacity: 0; pointer-events: none; }
 .avatarStrip { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; }
-.avatar { position: relative; width: 48px; height: 48px; flex: none; }
-.avatarFace { width: 48px; height: 48px; border-radius: 24px; overflow: hidden; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 18px; font-weight: 600; box-shadow: 0 0 0 2px #fff; }
+.avatar { position: relative; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 6px; border-radius: 8px; flex: none; }
+.avatar[data-speaking="true"] { background: #ecfdf3; }
+.avatarFace { position: relative; width: 40px; height: 40px; flex: none; border-radius: 20px; overflow: hidden; background: #e8f1ff; color: #1660d8; display: grid; place-items: center; font-size: 16px; font-weight: 600; box-shadow: 0 0 0 2px #fff; }
+.avatarName { flex: 1 1 auto; min-width: 0; display: block; color: #111827; font-size: 13px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatarRole { display: block; color: #667085; font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.avatarRole[data-status="host"] { color: #1d6bff; }
+.avatarRole[data-status="speaking"] { color: #079455; }
 .avatarFace video { width: 100%; height: 100%; object-fit: cover; }
 .avatar[data-speaking="true"] .avatarFace { box-shadow: 0 0 0 2px #12b76a; }
-.avatar .tileMic { position: absolute; right: -4px; bottom: -4px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 10px; background: #fff; color: #12b76a; box-shadow: 0 0 0 1px #e4e7ec; }
+.avatar .tileMic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 11px; background: #ecfdf3; color: #12b76a; }
 .avatar .tileMic svg { width: 12px; height: 12px; }
 .avatar .tileMic[data-status="muted"] { background: #f54649; color: #fff; box-shadow: none; }
-.avatarHand { position: absolute; top: -6px; right: -6px; font-size: 14px; }
+.avatarHand { position: absolute; top: 0; left: 34px; font-size: 14px; }
 .controls button[aria-pressed="true"] { background: #1d6bff; color: #fff; border-color: #1d6bff; }
 .tile { position: relative; overflow: hidden; aspect-ratio: 7 / 4; min-height: 0; border-radius: 12px; background: #101828; color: #fff; display: grid; align-items: end; padding: 12px; }
 .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -276,6 +310,27 @@
 .controls button { flex-direction: column; gap: 4px; min-height: 51px; padding: 7px 14px; font-size: 12px; font-weight: 500; color: rgba(0,0,0,.4); background: #fbfbfb; }
 .controls button svg { color: #344054; }
 .controlGlyph { display: flex; align-items: center; gap: 4px; }
+.controlGlyph { position: relative; }
+/* Mic off reads as off at a glance: red icon on a light red key (owner 2026-10-30). */
+.controls button[data-mic="off"] { background: #fef3f2; color: #d92d20; border-color: #fda29b; }
+.controls button[data-mic="off"] svg { color: #d92d20; }
+.unreadBadge { position: absolute; top: -7px; right: -10px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; display: grid; place-items: center; border-radius: 8px; background: #f04438; color: #fff; font-size: 10px; font-weight: 700; }
+/* Full screen, chat folded: the newest line shows above the controls for a few seconds; a click opens the chat. */
+.chatPreview { position: absolute; right: 20px; bottom: 104px; z-index: 5; max-width: min(340px, calc(100% - 40px)); }
+.chatPreview button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid #d0d5dd; border-radius: 12px; background: #fff; color: #111827; font: inherit; text-align: left; cursor: pointer; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
+.chatPreviewText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chatPreviewText strong { font-size: 12px; font-weight: 600; }
+.chatPreviewText span { font-size: 13px; color: #344054; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+/* The sharer's own view: a clear banner with Stop sharing. */
+.sharingBanner { display: flex; align-items: center; gap: 10px; margin: 12px 0; padding: 10px 14px; border: 1px solid #fecdca; border-radius: 10px; background: #fef3f2; color: #b42318; font-size: 13px; font-weight: 600; }
+.sharingBanner button { margin-left: auto; min-height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #d92d20; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.sharingBanner button:hover { background: #b42318; }
+/* The floating chat's own header in full screen (the tabs belong to the room's side panel). */
+.floatHead { display: flex; align-items: center; gap: 8px; min-height: 36px; margin: -8px 0 0; padding-bottom: 8px; border-bottom: 1px solid #eef0f3; }
+.floatHead strong { font-size: 14px; font-weight: 600; color: #111827; }
+.floatHead span { font-size: 12px; color: #667085; }
+.floatHead button { margin-left: auto; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #475467; cursor: pointer; }
+.floatHead button:hover { background: #f2f4f7; }
 .participantBadge { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 8px; background: #e8f1ff; color: #1d6bff; font-size: 9px; font-weight: 500; }
 .controls button[aria-pressed="true"] { background: #1d6bff; color: #fff; border-color: #1d6bff; }
 .controls button[aria-pressed="true"] svg { color: #fff; }
@@ -365,8 +420,9 @@
 .chatHead strong { font-size: 12px; font-weight: 600; color: #000; }
 .chatHead time { font-size: 10px; color: rgba(107, 115, 128, .4); }
 .chatBody { margin-top: 9px; font-size: 12px; color: rgba(0, 0, 0, .4); }
-.tutorBody { color: #1d6bff; }
-.tutorBody .tutorLead { color: #1d6bff; font-weight: 400; }
+/* Owner 2026-10-30: the answer sits in its own light-blue block in dark ink, so formulas read clearly. */
+.tutorBody { color: #344054; background: #f5f8ff; padding: 10px 12px; border-radius: 10px; }
+.tutorBody .tutorLead { color: inherit; font-weight: 400; }
 /* Owner 2026-10-29: the answer renders Markdown and KaTeX in the chat's own 12px ink; one point per paragraph, wide formulas scroll inside the panel instead of overflowing it. */
 .tutorAnswer { line-height: 1.6; overflow-wrap: anywhere; }
 .tutorAnswer p { margin: 0 0 6px; }
@@ -384,10 +440,20 @@
 /* 599:1392: 266x100 input 12px from the panel's sides and bottom; the @AI Tutor entry sits on its bottom-left edge. */
 .chatForm { display: flex; flex-direction: column; flex: none; margin: 0 -8px -8px; padding: 12px 36px 8px 12px; }
 /* 599:1393 placeholder sits 12px inside the box: the global field padding and focus ring do not apply here (the box draws the focus). */
-.chatForm input { padding: 0; font-size: 13px; }
+/* 2026-10-30: the box is the only frame (8b5f17e dropped the input reset, so the global field border drew a box inside the box). */
+.chatForm input { width: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; outline: none; font-size: 13px; }
 .chatForm input:focus { box-shadow: none; }
-.chatForm input::placeholder { color: rgba(0, 0, 0, .2); }
-.chatForm .tutorEntry { align-self: flex-start; margin-top: auto; }
+.chatForm input::placeholder { color: #98a2b3; }
+.chatFormRow { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; }
+.enterHint { color: #98a2b3; font-size: 11px; }
+/* @AI Tutor entry: a light-blue chip with a spark on the box's bottom row, solid blue while it addresses the Tutor (owner 2026-10-30; the earlier style was lost in 8b5f17e, so it fell back to a grey system button). */
+.tutorEntry { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: #eef4ff; color: #1d6bff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.tutorEntry svg { width: 12px; height: 12px; }
+.tutorEntry[aria-pressed="true"] { background: #1d6bff; color: #fff; }
+.tutorEntry:disabled { background: #f2f4f7; color: #98a2b3; cursor: not-allowed; }
+/* 599:1392: the input sits 12px above the panel's bottom edge; the log takes the rest of the panel's height instead of stopping at a cap. */
+.side .chatLog { max-height: none; }
+.side .chatForm { margin-top: auto; }
 .chatForm .tutorOffline { margin: 6px 0 0; color: #344054; }
 @media (max-width: 800px) {
   .layout, .detail, .room, .pair, .sheet, .facts { grid-template-columns: 1fr; }

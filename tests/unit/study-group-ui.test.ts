@@ -1013,3 +1013,50 @@ test("a shared screen can go full screen with the people, chat and controls floa
   assert.match(room, /data-idle=\{focus && idle \? "true" : "false"\}/);
   assert.match(css, /\.room\[data-idle="true"\] \.controls:not\(:hover\):not\(:focus-within\)/);
 });
+
+test("the chat input is one frame on the panel's bottom edge and the floating people stand out (owner 2026-10-30)", () => {
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // The box is the only frame, the @AI Tutor entry is a light-blue chip, and the log fills the panel so the box sits on its bottom edge.
+  assert.match(css, /\.chatForm input \{[^}]*border: 0;[^}]*background: transparent;/);
+  assert.match(css, /\.tutorEntry \{[^}]*border-radius: 999px; background: #eef4ff; color: #1d6bff;/);
+  assert.match(css, /\.tutorEntry\[aria-pressed="true"\] \{ background: #1d6bff; color: #fff; \}/);
+  assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
+  assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
+  // The people float is an opaque light card with a labelled header and a row per person (name, role, mic).
+  assert.match(css, /\.avatarFloat \{[^}]*background: rgba\(255, 255, 255, \.96\);[^}]*box-shadow:/);
+  assert.match(room, /<span className=\{styles\.avatarToggleLabel\}>\{roomCopy\.participants\}<\/span>/);
+  assert.match(room, /<span className=\{styles\.avatarName\} aria-hidden="true">\{tile\.name\}<span className=\{styles\.avatarRole\}/);
+  // Raised hands first, then the Host; speaking never reorders the list.
+  assert.match(room, /return hand >= 0 \? hand : tile\.host \? hands\.length : hands\.length \+ 1;/);
+  // Full screen pill sits bottom-right over the screen; who shares is named top-left.
+  assert.match(css, /\.shareTools button \{[^}]*background: rgba\(255, 255, 255, \.95\);/);
+  assert.match(room, /fill\(roomCopy\.sharingBy, \{ name: sharerName \}\)/);
+  assert.match(room, /onDoubleClick=\{toggleFocus\}/);
+  for (const key of ["sharingBy", "stopSharing", "escToExit", "enterToSend", "chatHint", "hideChat"] as const) {
+    assert.ok(en.studyGroupsPage.room[key], key);
+    assert.ok(zh.studyGroupsPage.room[key], key);
+  }
+});
+
+test("full screen: a top bar to leave, chat as a float with unread and a preview, remembered floats (owner 2026-10-30)", () => {
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(room, /<div className=\{styles\.focusBar\}>/);
+  assert.match(css, /\.room\[data-idle="true"\] \.controls:not\(:hover\):not\(:focus-within\), \.room\[data-idle="true"\] \.focusBar:not\(:hover\):not\(:focus-within\)/);
+  // A line counts as read only while the chat is on screen; in full screen that means the float is open.
+  assert.match(room, /const chatVisible = sideTab === "chat" && \(!focus \|\| sideOpen\);/);
+  assert.match(room, /if \(!chatVisibleRef\.current\) \{\s*setUnread\(\(count\) => count \+ 1\);\s*setPreview\(\{ from: roomCopy\.tutorName/);
+  assert.match(room, /\{focus && !sideOpen && preview \? \(/);
+  assert.match(room, /const CHAT_PREVIEW_MS = 5000;/);
+  // Folded/open floats are remembered per browser, and storage that throws is ignored.
+  assert.match(room, /window\.localStorage\.setItem\(key, open \? "open" : "closed"\)/);
+  assert.match(room, /catch \{ \/\* storage unavailable: keep the defaults \*\/ \}/);
+  // Esc leaves the window-covering fallback too.
+  assert.match(room, /event\.key === "Escape" && !document\.fullscreenElement\) setFocus\(false\)/);
+  // The sharer gets a banner with Stop sharing; mic off is red at a glance.
+  assert.match(room, /<div className=\{styles\.sharingBanner\} role="status">/);
+  assert.match(css, /\.controls button\[data-mic="off"\] \{ background: #fef3f2; color: #d92d20;/);
+  // The Tutor's answer is a light-blue block in dark ink.
+  assert.match(css, /\.tutorBody \{ color: #344054; background: #f5f8ff;/);
+});
