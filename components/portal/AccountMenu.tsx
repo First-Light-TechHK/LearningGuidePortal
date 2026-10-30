@@ -1,8 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { Bell, ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
 import Link from "next/link";
+import { Dropdown } from "antd";
+import { PortalProvider } from "./ui/PortalProvider";
+import { getMessages } from "@/lib/i18n/messages";
 
 type AccountMenuProps = {
   locale: "en-GB" | "zh-CN";
@@ -16,29 +19,21 @@ type AccountMenuProps = {
   };
 };
 
-export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountMenuProps) {
+export function AccountMenu(props: AccountMenuProps) {
+  return <PortalProvider locale={props.locale}><AccountMenuContent {...props}/></PortalProvider>;
+}
+
+function AccountMenuContent({ locale, displayName, avatarUrl, labels }: AccountMenuProps) {
   const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [busy, setBusy] = useState(false);
+  const signingOut = useRef(false);
   const name = displayName?.trim() || "Name";
   const initial = name[0].toUpperCase();
 
-  useEffect(() => {
-    function closeOnOutside(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", closeOnOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, []);
-
   async function signOut() {
-    setOpen(false);
+    if (signingOut.current) return;
+    signingOut.current = true; setBusy(true); setOpen(false);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
@@ -46,37 +41,30 @@ export function AccountMenu({ locale, displayName, avatarUrl, labels }: AccountM
     }
   }
 
-  return (
-    <div className="account-menu" ref={menuRef}>
-      <button
-        className="account-menu-trigger"
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={`${name} account menu`}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="portal-header-avatar">
-          {avatarUrl ? <img src={avatarUrl} alt="" /> : initial}
-        </span>
-        <ChevronDown className={open ? "account-menu-chevron open" : "account-menu-chevron"} size={15} aria-hidden="true" />
+  return <div className="account-menu">
+    <Dropdown
+      trigger={["click"]} open={open} placement="bottomRight" autoFocus destroyOnHidden
+      classNames={{ root: "portal-account-dropdown" }}
+      onOpenChange={value => { if (!busy) setOpen(value); }}
+      popupRender={menu => <div className="portal-account-popup" onKeyDown={event => {
+        if (event.key === "Escape") { setOpen(false); trigger.current?.focus(); }
+      }}><div className="account-menu-identity">
+        <span className="account-menu-identity-avatar">{avatarUrl ? <img src={avatarUrl} alt=""/> : initial}</span>
+        <strong>{name}</strong>
+      </div>{menu}</div>}
+      menu={{ items: [
+        { key: "learning", icon: <UserRound size={16} aria-hidden="true"/>, label: <Link href={`/${locale}/account/my-learning`}>{labels.myLearning}</Link> },
+        { key: "settings", icon: <Settings size={16} aria-hidden="true"/>, label: <Link href={`/${locale}/account/my-learning/settings`}>{labels.settings}</Link> },
+        { key: "notifications", icon: <Bell size={16} aria-hidden="true"/>, label: <Link href={`/${locale}/account/my-learning/notifications`}>{labels.notifications}</Link> },
+        { key: "logout", icon: <LogOut size={16} aria-hidden="true"/>, label: labels.signOut, disabled: busy },
+      ], onClick: ({ key }) => { setOpen(false); if (key === "logout") void signOut(); } }}
+    >
+      <button ref={trigger} className="account-menu-trigger" type="button" disabled={busy}
+        aria-expanded={open} aria-haspopup="menu"
+        aria-label={getMessages(locale).portal.accountMenu.replace("{name}", name)}>
+        <span className="portal-header-avatar">{avatarUrl ? <img src={avatarUrl} alt=""/> : initial}</span>
+        <ChevronDown className={open ? "account-menu-chevron open" : "account-menu-chevron"} size={15} aria-hidden="true"/>
       </button>
-      {open ? (
-        <div className="account-menu-popover" role="menu">
-          <div className="account-menu-identity">
-            <span className="account-menu-identity-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : initial}</span>
-            <div>
-              <strong>{name}</strong>
-            </div>
-          </div>
-          <div className="account-menu-links">
-            <Link href={`/${locale}/account/my-learning`} role="menuitem" onClick={() => setOpen(false)}><UserRound size={16} aria-hidden="true" />{labels.myLearning}</Link>
-            <Link href={`/${locale}/account/my-learning/settings`} role="menuitem" onClick={() => setOpen(false)}><Settings size={16} aria-hidden="true" />{labels.settings}</Link>
-            <Link href={`/${locale}/account/my-learning/notifications`} role="menuitem" onClick={() => setOpen(false)}><Bell size={16} aria-hidden="true" />{labels.notifications}</Link>
-            <button type="button" role="menuitem" onClick={() => void signOut()}><LogOut size={16} aria-hidden="true" />{labels.signOut}</button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
+    </Dropdown>
+  </div>;
 }

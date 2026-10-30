@@ -1,5 +1,9 @@
 "use client";
 
+import { PortalProvider } from "./ui/PortalProvider";
+
+import { PortalButton } from "./ui/PortalButton";
+
 import { formatPlanPrice } from "@/lib/planPricing";
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -9,7 +13,11 @@ type Plan = { alreadySubscribed?: boolean; upgradeUnavailable?: boolean; availab
 
 function isSelectable(plan: Plan) { return !plan.alreadySubscribed && !plan.upgradeUnavailable && plan.available !== false; }
 
-export function PurchasePanel({ locale, courseId, plans, allowTrial = true, compact = false, copy }: { locale: "en-GB" | "zh-CN"; courseId: string; plans: Plan[]; allowTrial?: boolean; compact?: boolean; copy: { startTrial: string; buy: string; choosePlan: string } }) {
+export function PurchasePanel(props: Parameters<typeof PurchasePanelContent>[0]) {
+  return <PortalProvider locale={props.locale}><PurchasePanelContent {...props}/></PortalProvider>;
+}
+
+function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, compact = false, copy }: { locale: "en-GB" | "zh-CN"; courseId: string; plans: Plan[]; allowTrial?: boolean; compact?: boolean; copy: { startTrial: string; buy: string; choosePlan: string } }) {
   const groupId = useId();
   const [selectedPlan, setSelectedPlan] = useState(plans.find(isSelectable)?.id || "");
   const selected = plans.find(plan => plan.id === selectedPlan);
@@ -18,7 +26,17 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
   const messages = getMessages(locale);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"trial" | "purchase" | null>(null);
+  const submitting = useRef(false);
   const initialPlanRead = useRef(false);
+
+  useEffect(() => {
+    const restore = (event: PageTransitionEvent) => {
+      if (event.persisted) { submitting.current = false; setBusy(false); setPendingAction(null); }
+    };
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
 
   useEffect(() => {
     // The return URL seeds the first selection only. Refreshing server plans
@@ -35,8 +53,8 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
   }
 
   async function startTrial() {
-    if (blocked) return;
-    setBusy(true); setError("");
+    if (blocked || submitting.current) return;
+    submitting.current = true; setPendingAction("trial"); setBusy(true); setError("");
     try {
       const response = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "trial" }) });
       const data = await response.json() as { error?: string; quote?: { id: string }; code?: string };
@@ -44,19 +62,19 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
       if (!response.ok) throw new Error(data.code === "already_subscribed" || data.code === "upgrade_unavailable" ? messages.paymentErrors[data.code] : data.error || "Trial activation failed.");
       if (!data.quote) throw new Error("Trial quote was not created.");
       window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(data.quote.id)}`);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Trial activation failed."); setBusy(false); }
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Trial activation failed."); submitting.current = false; setPendingAction(null); setBusy(false); }
   }
 
   async function purchase() {
-    if (blocked) return;
-    setBusy(true); setError("");
+    if (blocked || submitting.current) return;
+    submitting.current = true; setPendingAction("purchase"); setBusy(true); setError("");
     try {
       const quoteResponse = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "purchase" }) });
       const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string; code?: string };
       if (quoteResponse.status === 401) { signInForPlan(); return; }
       if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.code === "already_subscribed" || quoteData.code === "upgrade_unavailable" ? messages.paymentErrors[quoteData.code] : quoteData.error || "Price calculation failed.");
       window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Checkout failed."); setBusy(false); }
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Checkout failed."); submitting.current = false; setPendingAction(null); setBusy(false); }
   }
 
   return (
@@ -67,7 +85,7 @@ export function PurchasePanel({ locale, courseId, plans, allowTrial = true, comp
       </div></> : null}
       {subscribed && <p role="status">{messages.pricingDesign.alreadySubscribed}</p>}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-      <div className="purchase-actions">{allowTrial ? <button className="portal-button portal-button-secondary" disabled={busy || blocked} onClick={startTrial}>{copy.startTrial}</button> : null}<button className="portal-button portal-button-primary" disabled={busy || blocked} onClick={purchase}>{copy.buy}</button></div>
+      <div className="purchase-actions">{allowTrial ? <PortalButton loading={pendingAction === "trial"} disabled={busy || blocked} onClick={startTrial}>{copy.startTrial}</PortalButton> : null}<PortalButton loading={pendingAction === "purchase"} disabled={busy || blocked} onClick={purchase} type="primary">{copy.buy}</PortalButton></div>
     </div>
   );
 }

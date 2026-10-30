@@ -4,9 +4,13 @@ import { useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw, Save, X } from "lucide-react";
 import type { CatalogueEntry, CatalogueInput } from "@/contracts/course-authoring";
 import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages";
+import { App, Alert, Button, Form, Input, Select, Space, Tag } from "antd";
+import { useBackofficePopupContainer } from "@/components/backoffice/BackofficeProvider";
 
 export function CourseCatalogueManager({ entries, locale, onSaved }: { entries: CatalogueEntry[]; locale: "en-GB" | "zh-CN"; onSaved: () => Promise<void> }) {
   const copy = getCourseManagementMessages(locale);
+  const { modal } = App.useApp();
+  const getContainer = useBackofficePopupContainer();
   const [editing, setEditing] = useState<CatalogueEntry | null>(null), [open, setOpen] = useState(false);
   const [name, setName] = useState(""), [description, setDescription] = useState(""), [parentId, setParentId] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -23,19 +27,23 @@ export function CourseCatalogueManager({ entries, locale, onSaved }: { entries: 
     } catch { setError(copy.errors.failed); } finally { setBusy(false); }
   }
   return <section className="course-catalogue">
-    <header className="authoring-heading"><h2>{copy.catalogue}</h2><button type="button" title={copy.createCategory} aria-label={copy.createCategory} disabled={busy} onClick={() => begin()}><Plus size={18}/></button></header>
-    {error && <p role="alert" className="portal-form-error">{error}</p>}
-    {open && <form className="backoffice-form" onSubmit={e => { e.preventDefault(); void save(editing, { name, description, parentId: parentId || null, expectedUpdatedAt: editing?.updatedAt }); }}>
+    <header className="authoring-heading"><h2>{copy.catalogue}</h2><Button title={copy.createCategory} aria-label={copy.createCategory} disabled={busy} icon={<Plus size={18}/>} onClick={() => begin()}/></header>
+    {error && <Alert type="error" title={error} showIcon/>}
+    {open && <Form layout="vertical" className="bo-form" disabled={busy} onFinish={() => { void save(editing, { name, description, parentId: parentId || null, expectedUpdatedAt: editing?.updatedAt }); }}>
       <h3>{editing ? copy.editCatalogue : parentId ? copy.createSubject : copy.createCategory}</h3>
-      <label>{copy.category}<select disabled={busy || Boolean(editing)} value={parentId} onChange={e => setParentId(e.target.value)}><option value="">{copy.none}</option>{entries.filter(entry => !entry.parentId && entry.status === "active").map(entry => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label>
-      <label>{copy.name}<input required maxLength={100} value={name} onChange={e => setName(e.target.value)} disabled={busy}/></label>
-      <label>{copy.description}<textarea maxLength={1000} value={description} onChange={e => setDescription(e.target.value)} disabled={busy}/></label>
-      <div className="backoffice-row-actions"><button className="portal-button portal-button-primary" disabled={busy}><Save size={16}/>{copy.save}</button><button type="button" className="portal-button portal-button-secondary" disabled={busy} onClick={() => setOpen(false)}><X size={16}/>{copy.cancel}</button></div>
-    </form>}
+      <Form.Item label={copy.category} htmlFor="catalogue-parent"><Select id="catalogue-parent" disabled={busy || Boolean(editing)} value={parentId} onChange={setParentId} options={[{value:"",label:copy.none},...entries.filter(entry=>!entry.parentId&&entry.status==="active").map(entry=>({value:entry.id,label:entry.name}))]}/></Form.Item>
+      <Form.Item label={copy.name} htmlFor="catalogue-name"><Input id="catalogue-name" required maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></Form.Item>
+      <Form.Item label={copy.description} htmlFor="catalogue-description"><Input.TextArea id="catalogue-description" maxLength={1000} value={description} onChange={e=>setDescription(e.target.value)}/></Form.Item>
+      <Space wrap><Button type="primary" htmlType="submit" loading={busy} icon={<Save size={16}/>}>{copy.save}</Button><Button disabled={busy} icon={<X size={16}/>} onClick={()=>setOpen(false)}>{copy.cancel}</Button></Space>
+    </Form>}
     {!entries.length && <p>{copy.emptyCatalogue}</p>}
     <ul className="course-catalogue-list">{[...entries].sort((a, b) => (a.parentId || a.id).localeCompare(b.parentId || b.id) || Number(Boolean(a.parentId)) - Number(Boolean(b.parentId))).map(entry => <li key={entry.id}>
-      <div><strong>{entry.name}</strong><span>{entry.parentId ? entries.find(parent => parent.id === entry.parentId)?.name : copy.category}{entry.status === "archived" ? " · " + copy.archived : ""}</span></div>
-      <div className="authoring-actions"><button type="button" title={copy.editCatalogue} aria-label={copy.editCatalogue + ": " + entry.name} disabled={busy} onClick={() => begin(entry)}><Pencil size={16}/></button><button type="button" title={entry.status === "active" ? copy.archive : copy.restore} aria-label={(entry.status === "active" ? copy.archive : copy.restore) + ": " + entry.name} disabled={busy} onClick={() => { if (entry.status === "archived" || window.confirm(copy.archiveCatalogueConfirm)) void save(entry, { ...entry, expectedUpdatedAt: entry.updatedAt, status: entry.status === "active" ? "archived" : "active" }); }}>{entry.status === "active" ? <Archive size={16}/> : <RotateCcw size={16}/>}</button></div>
+      <div><strong>{entry.name}</strong><span>{entry.parentId ? entries.find(parent => parent.id === entry.parentId)?.name : copy.category}{entry.status === "archived" && <Tag>{copy.archived}</Tag>}</span></div>
+      <Space><Button title={copy.editCatalogue} aria-label={copy.editCatalogue + ": " + entry.name} disabled={busy} icon={<Pencil size={16}/>} onClick={()=>begin(entry)}/><Button title={entry.status === "active" ? copy.archive : copy.restore} aria-label={(entry.status === "active" ? copy.archive : copy.restore) + ": " + entry.name} disabled={busy} icon={entry.status === "active" ? <Archive size={16}/> : <RotateCcw size={16}/>} onClick={() => {
+        const apply = () => save(entry,{...entry,expectedUpdatedAt:entry.updatedAt,status:entry.status === "active" ? "archived" : "active"});
+        if(entry.status === "archived") void apply();
+        else modal.confirm({title:copy.archiveCatalogueConfirm,getContainer,okText:copy.archive,cancelText:copy.cancel,onOk:apply});
+      }}/></Space>
     </li>)}</ul>
   </section>;
 }

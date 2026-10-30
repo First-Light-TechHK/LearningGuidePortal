@@ -107,8 +107,9 @@ h1 { margin: 0; font-size: 34px; line-height: 1.15; font-weight: 750; }
 .youtube-actions .btn { height: 38px; font-size: 13px; text-decoration: none; }
 .youtube-actions .icon-button { width: 38px; height: 38px; }
 .youtube-error { border: 1px solid #f3b7b7; background: #fff5f5; color: #9f1c1c; border-radius: 7px; padding: 9px 11px; font-size: 13px; }
-input, textarea { width: 100%; border: 1px solid var(--color-border); border-radius: 7px; background: #fff; color: var(--color-text-main); padding: 14px 16px; outline: none; }
-textarea:focus, input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(11, 99, 246, .12); }
+/* Ant Design owns its input geometry/focus, including hidden search/checkbox inputs. */
+input:not(:where([class*="lg-ant-"])), textarea:not(:where([class*="lg-ant-"])) { width: 100%; border: 1px solid var(--color-border); border-radius: 7px; background: #fff; color: var(--color-text-main); padding: 14px 16px; outline: none; }
+textarea:not(:where([class*="lg-ant-"])):focus, input:not(:where([class*="lg-ant-"])):focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(11, 99, 246, .12); }
 .draft-box { min-height: 190px; position: relative; padding: 14px; }
 .draft-box textarea { min-height: 160px; border: 0; padding: 0; resize: vertical; box-shadow: none; }
 .draft-requirements-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; margin-top: 14px; }

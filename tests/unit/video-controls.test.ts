@@ -31,6 +31,8 @@ test('shared video toolbar keeps controls usable without playback or picture-in-
       await page.locator('video').evaluate(video => { Object.defineProperty(video, 'duration', { value: 120 }); video.dispatchEvent(new Event('loadedmetadata')); });
       const play = page.getByRole('button', { name: locale === 'zh-CN' ? '播放' : 'Play', exact: true });
       await page.locator('video').evaluate(video => { (video as HTMLVideoElement).play = async () => { throw new DOMException('Interrupted by pause', 'AbortError'); }; });
+      await page.locator('.la-video-surface').click();
+      assert.equal(await page.locator('.la-video-action-feedback').count(),0,'rejected surface play must not flash a success icon');
       await play.click();
       assert.equal(await page.getByRole('status').count(), 0, 'interrupted playback has no operation notice');
       await page.addScriptTag({ content: `(video => {

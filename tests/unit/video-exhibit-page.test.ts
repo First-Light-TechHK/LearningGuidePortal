@@ -177,7 +177,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.mouse.move(0,0);
       assert.equal(await controls.evaluate(element=>getComputedStyle(element).opacity),"0","playing video hides controls when the pointer leaves");
       await page.screenshot({path:`test-results/video-exhibit/${locale}-playing-controls-hidden.png`,fullPage:true});
-      await page.locator("video.la-lesson-video").hover();
+      await page.locator(".la-video-surface").hover();
       assert.equal(await controls.evaluate(element=>getComputedStyle(element).opacity),"1","hovering over the player shows its controls");
       await page.screenshot({path:`test-results/video-exhibit/${locale}-playing-controls-hover.png`,fullPage:true});
       await page.screenshot({path:`test-results/video-exhibit/${locale}-silent-video-desktop.png`,fullPage:true});
@@ -195,11 +195,11 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.locator("video.la-lesson-video").waitFor();
       await page.addScriptTag({content:`(video=>{
         video.play=async()=>{throw new DOMException("Interrupted by pause","AbortError");};
-        let paused=false;
+        let paused=true;
         Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});
         video.pause=()=>{paused=true;};
       })(document.querySelector('video.la-lesson-video'));`});
-      await page.locator(".la-video-play").click();
+      await page.locator(".la-video-surface").click();
       assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"cover play interruption has no operation notice");
       await time(20);await bar.waitFor();
       await bar.getByRole("button",{name:getMessages(locale).videoExhibit.view,exact:true}).click();
@@ -223,7 +223,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       assert.equal(studyEvents.some(event=>event.body.event==="video_progress"),false,"playback time does not emit course progress writes");
       await bar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole("dialog").waitFor();await page.getByRole("dialog").getByText("Configured exhibit content.").waitFor();await page.keyboard.press("Escape");
       await time(25); await bar.waitFor();
-      await page.locator("video").evaluate(`video=>{let paused=false;Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});video.pause=()=>{paused=true;};video.play=()=>{paused=false;return Promise.resolve();};}`);
+      await page.locator("video").evaluate(`video=>{let paused=true;Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});video.pause=()=>{paused=true;};video.play=()=>{paused=false;return Promise.resolve();};}`);
       await bar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click(); await page.getByRole("dialog").waitFor(); await page.getByRole("dialog").locator('img[alt="Image exhibit"]').waitFor();
       assert.equal(await page.locator("video").evaluate(video=>(video as HTMLVideoElement).paused),true); await page.keyboard.press("Escape");
       assert.equal(await page.locator("video").evaluate(video=>{ const media = video as HTMLVideoElement; return media.paused && media.currentTime===25; }),true,"closing the exhibit leaves lesson paused at the same point");

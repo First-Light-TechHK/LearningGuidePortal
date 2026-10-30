@@ -387,6 +387,7 @@
     "benefits": "View all benefits"
   },
   "portal": {
+    "accountMenu": "{name} account menu",
     "eyebrow": "Learning Guide Portal",
     "title": "Learn through guided courses",
     "description": "Explore a course, start with the public lesson, and continue learning with a course-aligned AI Tutor.",

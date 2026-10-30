@@ -54,7 +54,7 @@
 .player :global(.la-content-player) > h3 { display:none; }
 .player :global(.la-video-stage) { position:relative; overflow:hidden; border-radius:12px; background:#0f172a; }
 .player :global(.la-lesson-video) { width:100%; max-height:none; height:auto; aspect-ratio:16 / 9; background:#0f172a; object-fit:contain; }
-.player :global(.la-video-play) { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:70px; height:70px; padding:0 0 0 4px; border:0; border-radius:50%; background:rgba(255,255,255,.94); color:#246bfd; font-size:27px; cursor:pointer; }
+.player :global(.la-video-play) { pointer-events:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:70px; height:70px; padding:0 0 0 4px; border:0; border-radius:50%; background:rgba(255,255,255,.94); color:#246bfd; font-size:27px; cursor:pointer; }
 .tools { position:absolute; top:10px; right:-184px; width:160px; display:flex; flex-direction:column; gap:10px; }
 .tools h2 { display:flex; align-items:center; height:24px; margin:0; color:#1d6bff; font-size:16px; line-height:normal; font-weight:600; }
 .toolItem { position:relative; min-width:0; width:100%; }
