@@ -28,6 +28,12 @@ export const ADMIN_FAQS_CACHE_ENTRIES = 200;
 export const ADMIN_SEARCHES_PER_MINUTE = 120;
 const SEARCH_WINDOW_MS = 60_000;
 export const ADMIN_SUGGEST_TIMEOUT_MS = 4_000;
+/**
+ * The chat panel's wait (questions and chips). Admin thinks before a v5 chat answer (DeepSeek, thinking high) with a
+ * 15 s total deadline (Admin da5ea62; p95 6.3 s, p99 12.6 s); Portal waits a little longer so Admin's own deadline
+ * answers first. The submit-time suggestion never thinks and keeps ADMIN_SUGGEST_TIMEOUT_MS.
+ */
+export const ADMIN_CHAT_SUGGEST_TIMEOUT_MS = 16_000;
 export const ADMIN_OUTCOME_TIMEOUT_MS = 4_000;
 
 type CacheEntry<T> = { etag: string | null; value: T; fetchedAt: number };
@@ -78,7 +84,7 @@ export type AdminHelpdeskClientDeps = {
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: Record<string, unknown>) => void;
-  timeouts?: Partial<{ faqs: number; wait: number; suggest: number; outcome: number }>;
+  timeouts?: Partial<{ faqs: number; wait: number; suggest: number; chat: number; outcome: number }>;
   /** The incoming request's traceparent header, continued on every Admin call. */
   traceparent?: string | null;
 };
@@ -164,7 +170,7 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   const doFetch = deps.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
-  const timeouts = { faqs: ADMIN_FAQS_TIMEOUT_MS, wait: ADMIN_FAQS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
+  const timeouts = { faqs: ADMIN_FAQS_TIMEOUT_MS, wait: ADMIN_FAQS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, chat: ADMIN_CHAT_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
 
   async function call(destination: Target, path: string, init: { method: "GET" | "POST"; body?: unknown; headers?: Record<string, string>; timeout: number }) {
     const controller = new AbortController();
@@ -344,9 +350,11 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       if (input.context) body.context = buildSuggestContext(input.context);
       body.runId = input.runId;
       body.parentRunId = input.parentRunId;
+      // The chat (Admin may think first) waits longer than the submit-time suggestion.
+      const timeout = input.source === "submit" ? timeouts.suggest : timeouts.chat;
       const result = options.onStep
-        ? await callStream(destination, "/api/integration/helpdesk/suggest", { body, timeout: timeouts.suggest, onStep: options.onStep })
-        : await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
+        ? await callStream(destination, "/api/integration/helpdesk/suggest", { body, timeout, onStep: options.onStep })
+        : await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
       const reply = JSON.parse(result.text) as { suggestion?: unknown; alternatives?: unknown };
       // v6: Admin's turn fields when it sent them (only for a request with context); absent otherwise.

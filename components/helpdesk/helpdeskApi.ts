@@ -87,8 +87,11 @@ export function reportSuggestionOutcome(suggestionId: string, outcome: Suggestio
   void call(`/api/helpdesk/suggestions/${encodeURIComponent(suggestionId)}/outcome`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outcome }), keepalive: true });
 }
 
-/** The server answers within about 4 s (its Admin timeout); a request still open after this is given up as a network failure. */
-export const ASSISTANT_TIMEOUT_MS = 15_000;
+/**
+ * The server answers within about 16 s (its Admin wait while Admin thinks, ADMIN_CHAT_SUGGEST_TIMEOUT_MS); a request
+ * still open after this is given up as a network failure, so it must stay above the server's wait.
+ */
+export const ASSISTANT_TIMEOUT_MS = 18_000;
 
 /**
  * One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback).

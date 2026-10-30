@@ -6,6 +6,7 @@ import {
   ADMIN_FAQS_TTL_MS,
   ADMIN_FAQS_WAIT_MS,
   ADMIN_SEARCHES_PER_MINUTE,
+  ADMIN_CHAT_SUGGEST_TIMEOUT_MS,
   ADMIN_SUGGEST_TIMEOUT_MS,
   clearFaqCache,
   faqCacheSizes,
@@ -52,6 +53,8 @@ afterEach(() => {
 test("timeouts and cache lifetime match the addendum", () => {
   assert.equal(ADMIN_FAQS_TTL_MS, 60_000);
   assert.equal(ADMIN_SUGGEST_TIMEOUT_MS, 4_000);
+  // Admin thinks before a chat answer with a 15 s deadline (Admin da5ea62): Portal waits a little longer for the chat.
+  assert.equal(ADMIN_CHAT_SUGGEST_TIMEOUT_MS, 16_000);
 });
 
 test("FAQs: Bearer token, locale + popular + limit query, cached for 60 s, then revalidated with If-None-Match", async () => {
@@ -208,7 +211,7 @@ test("suggest returns null on no match, any error, a malformed body, or the time
     signal?.addEventListener("abort", () => reject(signal.reason));
   }));
   const started = Date.now();
-  assert.equal(await createAdminHelpdeskClient({ fetch: hanging.fetch, timeouts: { suggest: 50 } }).suggest(input), null);
+  assert.equal(await createAdminHelpdeskClient({ fetch: hanging.fetch, timeouts: { chat: 50 } }).suggest(input), null);
   assert.ok(Date.now() - started < 2_000, "the timeout aborts the request");
 });
 
@@ -414,4 +417,19 @@ test("v3 shownFaqIds: the FAQs this conversation already showed go after faqId, 
   const many = Array.from({ length: 25 }, (_, index) => `0192d4f0-7b6a-7c3e-9a10-0000000001${String(index).padStart(2, "0")}`);
   await client.suggestReply({ ...base, shownFaqIds: ["faq-1", many[0], many[0], ...many.slice(1)] });
   assert.deepEqual(JSON.parse(stub.calls[3].body || "").shownFaqIds, many.slice(0, 20));
+});
+
+test("suggestReply waits by source: the submit-time suggestion gives up at its short timeout, the chat waits for a thinking Admin", async () => {
+  const slow = () => stubFetch((_call, signal) => new Promise<Response>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(json({ suggestion: SUGGESTION, alternatives: [] })), 80);
+    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); });
+  }));
+  const timeouts = { suggest: 20, chat: 400 };
+  const base = { learnerId: "u1", locale: "en-GB" as const, message: "m", runId: RUN_ID, parentRunId: null };
+  const submit = await createAdminHelpdeskClient({ fetch: slow().fetch, timeouts, log: (line) => logs.push(line) }).suggestReply({ ...base, source: "submit", category: "technical_support", subject: "s" });
+  assert.deepEqual(submit, { suggestion: null, alternatives: [] }, "the form never waits long");
+  for (const source of ["chat", "chip"] as const) {
+    const chat = await createAdminHelpdeskClient({ fetch: slow().fetch, timeouts, log: (line) => logs.push(line) }).suggestReply({ ...base, source });
+    assert.deepEqual(chat.suggestion, SUGGESTION, `${source}: answered after 80 ms`);
+  }
 });

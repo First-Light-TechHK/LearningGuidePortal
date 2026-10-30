@@ -58,7 +58,7 @@ import {
 } from "@/contracts/helpdesk";
 import { textLength } from "@/contracts/helpdeskText";
 import { uuidv7 } from "@/lib/uuidv7";
-import { ADMIN_SUGGEST_TIMEOUT_MS } from "./adminClient";
+import { ADMIN_CHAT_SUGGEST_TIMEOUT_MS } from "./adminClient";
 import { TURN_TEMPLATES, excerptOf, frameVariant, nextOf, replyTemplate, screenTurnText, templateVariant } from "./assistantTurn";
 import { CHAT_SESSION_RULES } from "./chatSession";
 import { releaseGraph, type ReleaseGraph } from "./faqReleaseCache";
@@ -105,7 +105,7 @@ export type AssistantDeps = {
   admin: AssistantAdmin;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
-  /** Upper bound on waiting for Admin (v2 §4b: 4 s). */
+  /** Upper bound on waiting for Admin: 16 s since Admin thinks before a chat answer (ADMIN_CHAT_SUGGEST_TIMEOUT_MS; v2 §4b had 4 s). */
   timeoutMs?: number;
   /** v5: Admin's published release (the cached copy, modules/helpdesk/faqReleaseCache.ts); without it there is never a release. */
   release?: { current(locale: HelpdeskLocale, options?: { waitMs?: number; minVersion?: number | null }): Promise<FaqRelease | null> };
@@ -154,7 +154,7 @@ export function createAssistantService(deps: AssistantDeps) {
   const repository = deps.repository;
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
-  const timeoutMs = deps.timeoutMs ?? ADMIN_SUGGEST_TIMEOUT_MS;
+  const timeoutMs = deps.timeoutMs ?? ADMIN_CHAT_SUGGEST_TIMEOUT_MS;
 
   /** Admin's answer and alternatives (and, v6, its turn); no answer and none on no match, any failure or the timeout. */
   async function askAdmin(request: AdminSuggestRequest, onStep?: (step: AssistantStep) => void): Promise<AdminSuggestReply> {
