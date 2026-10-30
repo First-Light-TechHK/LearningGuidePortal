@@ -2,21 +2,21 @@
 // server's turn (helpdesk-v5-context-chips-and-smalltalk.md Parts A, B, C, D, H and
 // helpdesk-v5-faq-graph-design.md §1, §4). The panel never asks the model and never shows model
 // text as Markdown:
-// 1. the greeting is personal and shows the session's situation chips ("You might be running into"
+// 1. the greeting keeps the Figma title and shows the session's situation chips ("You might be running into"
 //    when a signal matched, else "Try asking"), and the fixed card for an enquiry waiting for the
 //    learner; a chip of the release is a click (no model), without a release the per-FAQ ask;
-// 2. an answer is opening, the quoted excerpt (verbatim blocks, source line, "Show the full answer"
-//    in place, reported once, "Open in Help Centre"), closing, follow-up chips, vote, in that order
+// 2. an answer is opening, the quoted excerpt (verbatim blocks, the Figma "Related FAQ" link, "Show
+//    the full answer" in place, reported once), closing, follow-up chips, vote, in that order
 //    for screen readers too; a short answer is shown whole with no expand;
 // 3. a choice card shows its prompt and A/B/C/D options; options and follow-ups are clicks with the
 //    card they sit on (a 3-level chain);
 // 4. small talk is a reply line (hello: the chips follow; thanks after an answer: the rating card);
 // 5. an explanation shows "Explained from <question>", which shows the card again, and votes; one the
 //    card does not cover is the fixed line and the handover card;
-// 6. the Part C polish (accent outline pills, glow, lift, soft shadows, the send button inside the
-//    box) with sizes unchanged and no lift or transition under reduced motion;
+// 6. what Figma 1394:2 draws keeps its values (chip outline and radius, no shadows, the input and the
+//    square send button beside it), with no lift or transition;
 // 7. an end tells the server and starts the next session, whose chips replace the greeting's.
-// No Figma frame for any of these: 待视觉验收.
+// Apart from 6 (Figma 1394:2), no Figma frame for any of these: 待视觉验收.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium, type Browser, type Page } from "playwright";
@@ -103,13 +103,14 @@ async function settled(page: Page, answers: number) {
   await page.waitForFunction((n) => document.querySelectorAll(".helpdesk-chat-answer").length >= n && !document.querySelector(".helpdesk-chat-typing"), answers);
 }
 
-test("v5 greeting: personal title, the session's situation chips under their title, the waiting-enquiry card; a release chip is a click, a per-FAQ chip asks with the session", async () => {
+test("v5 greeting: the Figma title (1394:23), the session's situation chips under their title, the waiting-enquiry card; a release chip is a click, a per-FAQ chip asks with the session", async () => {
   for (const locale of LOCALES) {
     const harness = await open(locale, (call) => (isAssistantClick(call) ? answer(id(1), NODE.payment, "Q", "A.", { via: "signal", opening: null, closing: null }) : isAssistant(call) ? answer(id(2), NODE.reset, "Q", "A.", { via: "starter", releaseVersion: null }) : { status: 500 }),
       { session: session(locale, { waitingTicket: { id: TICKET, number: "LG-261030-0001" } }) });
     const { page } = harness;
     const c = ui(page, locale);
-    assert.equal(await c.panel.locator(".helpdesk-chat-greeting-title").textContent(), fillTemplate(c.copy.greetingTitleNamed, { name: "Emily" }), "the learner's first name");
+    assert.equal(await c.panel.locator(".helpdesk-chat-greeting-title").textContent(), c.copy.greetingTitle, "the Figma copy, no name");
+    assert.equal(c.copy.greetingTitle, locale === "en-GB" ? "Hi! How can I help?" : "你好！有什么可以帮你？");
     const chips = c.panel.getByRole("list", { name: c.copy.situationTitle, exact: true }).getByRole("button");
     assert.deepEqual(await chips.allTextContents(), session(locale).chips.map((chip) => chip.question), "a signal matched: “You might be running into”");
     const waiting = c.panel.getByRole("group", { name: c.copy.waitingTitle, exact: true });
@@ -137,7 +138,7 @@ test("v5 greeting: personal title, the session's situation chips under their tit
   }
 });
 
-test("v5 Part H: opening, the quoted excerpt with its source, closing, follow-ups and the vote, in that order; Show the full answer opens it in place and is reported once; a short answer is whole", async () => {
+test("v5 Part H: opening, the quoted excerpt with the Figma Related FAQ link, closing, follow-ups and the vote, in that order; Show the full answer opens it in place and is reported once; a short answer is whole", async () => {
   for (const locale of LOCALES) {
     const replies: Reply[] = [
       answer(id(1), NODE.payment, "Paid but no access?", LONG_ANSWER, { sessionId: ROLLED, excerpt: [BLOCKS[1], BLOCKS[2]], next: { kind: "follow_up", steps: [{ nodeId: NODE.wait, label: "How long does it take?" }, { nodeId: NODE.stillNot, label: "Still no access?" }] } }),
@@ -159,10 +160,13 @@ test("v5 Part H: opening, the quoted excerpt with its source, closing, follow-up
     assert.equal(await shown.locator("strong").first().textContent(), "My Learning");
     assert.ok((await shown.textContent())?.includes("Still nothing after ten minutes?"));
     assert.equal((await shown.textContent())?.includes("usually still being confirmed"), false, "only the picked blocks");
-    assert.equal(await card.locator(".helpdesk-chat-source").textContent(), fillTemplate(c.copy.excerptSource, { question: "Paid but no access?" }));
-    assert.equal(await card.getByRole("link", { name: c.copy.openInHelpCentre }).getAttribute("href"), `/${locale}/help?faq=${NODE.payment}`);
-    const style = await card.evaluate((node) => { const s = getComputedStyle(node); return { bar: s.borderLeftWidth, color: s.borderLeftColor, fill: s.backgroundColor }; });
-    assert.deepEqual(style, { bar: "3px", color: "rgb(36, 104, 245)", fill: "rgb(243, 247, 255)" }, "light fill and the 3 px brand-blue bar");
+    const related = card.getByRole("link", { name: fillTemplate(c.copy.relatedFaq, { question: "Paid but no access?" }), exact: true });
+    assert.equal(await related.getAttribute("href"), `/${locale}/help?faq=${NODE.payment}`, "the full answer in the Help Centre");
+    assert.equal(await card.locator(".helpdesk-chat-source").count(), 0, "no separate source line");
+    // Figma 1394:54-56: the answer text and the Related FAQ link straight in the bubble, 6 px apart; no bar, no fill.
+    const style = await card.evaluate((node) => { const s = getComputedStyle(node); return { bar: s.borderLeftWidth, fill: s.backgroundColor, padding: s.padding, gap: s.rowGap }; });
+    assert.deepEqual(style, { bar: "0px", fill: "rgba(0, 0, 0, 0)", padding: "0px", gap: "6px" });
+    assert.deepEqual(await related.evaluate((node) => { const s = getComputedStyle(node); return [s.color, s.fontSize, s.fontWeight]; }), ["rgb(31, 108, 244)", "11px", "500"], "1394:56");
     await page.waitForFunction((opening) => document.querySelector(".helpdesk-chat-live")?.textContent?.startsWith(opening) ?? false, "Don't worry, here's how:");
     const said = (await c.live.textContent()) ?? "";
     const order = ["Don't worry, here's how:", "Sign out and sign in again", "Still nothing after ten minutes?", "Try that and tell me how it goes.", c.copy.followUpsTitle, "Still no access?"].map((part) => said.indexOf(part));
@@ -325,7 +329,7 @@ test("v5 Part D: an explanation says which card it explains and shows it again, 
   }
 });
 
-test("v5 Part C: accent pill chips with glow and a 1 px lift, the glowing input with the round send button inside, soft shadows, the same sizes; no lift or transition under reduced motion", async () => {
+test("Figma 1394:2 values for what the design draws (owner 2026-10-30: no polish over it): 8 px chips with the light outline, no shadows, the 351 px input and the square send button beside it; hover has no lift; reduced motion has no transition", async () => {
   const locale: Locale = "en-GB";
   const harness = await open(locale, () => ({ status: 500 }));
   const { page } = harness;
@@ -333,50 +337,37 @@ test("v5 Part C: accent pill chips with glow and a 1 px lift, the glowing input 
   const c = ui(page, locale);
   const chip = c.panel.locator(".helpdesk-chat-chip").first();
   const css = (selector: string, property: string) => c.panel.locator(selector).first().evaluate((node, name) => getComputedStyle(node).getPropertyValue(name), property);
-  assert.equal(await chip.evaluate((node) => getComputedStyle(node).borderTopLeftRadius), "999px", "pill");
-  assert.deepEqual(await chip.evaluate((node) => [node.getBoundingClientRect().width, node.getBoundingClientRect().height]), [404, 36], "the chip size is unchanged");
-  assert.equal(await css(".helpdesk-chat-chip", "border-top-color"), "rgb(157, 188, 246)", "an accent outline");
+  assert.equal(await css(".helpdesk-chat-chip", "border-top-left-radius"), "8px", "1394:31 radius 8");
+  assert.deepEqual(await chip.evaluate((node) => [node.getBoundingClientRect().width, node.getBoundingClientRect().height]), [404, 36]);
+  assert.equal(await css(".helpdesk-chat-chip", "border-top-color"), "rgb(220, 231, 247)", "1394:31 #dce7f7");
+  assert.equal(await css(".helpdesk-chat-chip", "padding"), "8px 10px 7px 12px", "1394:31 padding");
   await chip.hover();
   await page.waitForTimeout(250);
-  assert.equal(await css(".helpdesk-chat-chip", "transform"), "matrix(1, 0, 0, 1, 0, -1)", "a 1 px lift on hover");
-  assert.equal(await css(".helpdesk-chat-chip", "box-shadow"), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px", "the glow");
-  assert.equal(await css(".helpdesk-chat-chip", "background-color"), "rgb(239, 245, 255)", "a light fill");
+  assert.equal(await css(".helpdesk-chat-chip", "transform"), "none", "no lift");
+  assert.equal(await css(".helpdesk-chat-chip", "box-shadow"), "none", "no glow");
   await page.mouse.move(0, 0);
-  assert.equal(await c.panel.evaluate((node) => getComputedStyle(node).boxShadow), "rgba(15, 23, 42, 0.06) 0px 8px 24px 0px", "the panel's soft shadow");
-  assert.equal(await css(".helpdesk-chat-greeting", "box-shadow"), "rgba(15, 23, 42, 0.04) 0px 1px 2px 0px", "cards: a subtle shadow");
-  await c.input.focus();
-  await page.waitForTimeout(250);
-  assert.equal(await css(".helpdesk-chat-input", "box-shadow"), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px", "the input's 3 px soft glow");
-  assert.equal(await css(".helpdesk-chat-input", "border-top-color"), "rgb(36, 104, 245)", "and its accent border");
+  assert.equal(await c.panel.evaluate((node) => getComputedStyle(node).boxShadow), "none", "1394:2 has no shadow");
+  assert.equal(await css(".helpdesk-chat-greeting", "box-shadow"), "none", "1394:22 has no shadow");
+  assert.equal(await css(".helpdesk-chat-input", "border-top-color"), "rgb(202, 216, 234)", "1394:73 #cad8ea");
   const box = (await c.input.boundingBox())!;
   const send = (await c.send.boundingBox())!;
-  assert.deepEqual([send.width, send.height, box.height], [43, 43, 70], "sizes unchanged");
-  assert.ok(send.x > box.x && send.x + send.width < box.x + box.width && send.y > box.y && send.y + send.height < box.y + box.height, "the send button sits inside the box");
-  assert.equal(await css(".helpdesk-chat-send", "border-top-left-radius"), "50%", "round");
-  assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgb(36, 104, 245)", "accent");
-  // The text never runs under the button.
-  assert.ok(Number.parseFloat(await css(".helpdesk-chat-input", "padding-right")) >= box.x + box.width - send.x, "the input keeps room for the button");
-  // Contact Support's inputs and select get the same glow.
+  assert.deepEqual([box.width, box.height, send.width, send.height], [351, 70, 43, 43], "1394:73 / 1394:75");
+  assert.equal(send.x, box.x + box.width + 8, "the send button sits 8 px right of the box (1394:72 gap 8)");
+  assert.equal(Math.round(send.y + send.height / 2), Math.round(box.y + box.height / 2), "centred on the box");
+  assert.equal(await css(".helpdesk-chat-send", "border-top-left-radius"), "8px", "1394:75 radius 8");
+  assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgb(36, 104, 245)", "#2468f5");
+  // Focus is not drawn: the input keeps the earlier soft ring, Contact Support's inputs the 1 px blue ring (待视觉验收).
+  await c.input.focus();
+  await page.waitForTimeout(250);
+  assert.equal(await css(".helpdesk-chat-input", "box-shadow"), "rgba(36, 104, 245, 0.12) 0px 0px 0px 3px");
   const subject = page.getByRole("textbox", { name: getMessages(locale).helpdesk.subject, exact: true });
   await subject.focus();
   await page.waitForTimeout(250);
-  assert.equal(await subject.evaluate((node) => getComputedStyle(node).boxShadow), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px");
-  // Reduced motion: no lift and no transition.
+  assert.equal(await subject.evaluate((node) => getComputedStyle(node).boxShadow), "rgb(59, 130, 246) 0px 0px 0px 1px");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await chip.hover();
-  assert.equal(await css(".helpdesk-chat-chip", "transform"), "none", "no lift");
   assert.equal(await css(".helpdesk-chat-chip", "transition-duration"), "0s", "no transition");
   assert.equal(await css(".helpdesk-chat-input", "transition-duration"), "0s");
   await page.close();
-
-  // The Help Centre search gets the focus ring too (white on the blue hero, where a blue glow would not show).
-  const help = await openHarness(browser, locale, () => ({ status: 500 }), `/${locale}/help`);
-  assert.equal((await mountHelp(help.page, { locale, faqs: [] })).result, "rendered");
-  const search = help.page.getByRole("searchbox", { name: getMessages(locale).helpCentre.searchLabel });
-  await search.focus();
-  await help.page.waitForTimeout(250);
-  assert.equal(await help.page.locator(".help-centre-search").evaluate((node) => getComputedStyle(node).boxShadow), "rgba(255, 255, 255, 0.45) 0px 0px 0px 3px");
-  await help.page.close();
 });
 
 test("v5 sessions: End chat ends the session on the server and starts the next one, whose chips replace the greeting's; a handover ends it as handover", async () => {
@@ -413,7 +404,7 @@ test("v5 sessions: End chat ends the session on the server and starts the next o
   await page.close();
 });
 
-test("v5 Part C tokens reach the enquiry pages too: the primary button keeps its blue on hover, focus shows a glow, the reply box glows", async () => {
+test("the shared tokens reach the enquiry pages too: the primary button keeps its blue on hover, keyboard focus shows a ring, the reply box its 1 px focus ring", async () => {
   // The enquiry detail and list render outside .helpdesk-page / .helpdesk-card (main.helpdesk-account-page), so the
   // shared buttons and inputs must still find the tokens there (a missing token made the hovered Send button transparent).
   const harness = await openHarness(browser, "en-GB", () => ({ status: 500 }), `/en-GB/account/my-learning/support/${TICKET_ID}`);
@@ -425,7 +416,7 @@ test("v5 Part C tokens reach the enquiry pages too: the primary button keeps its
     const reply = harness.page.locator("form.helpdesk-composer textarea.helpdesk-input");
     await reply.focus();
     const focused = await reply.evaluate((node) => { const s = getComputedStyle(node); return { border: s.borderTopColor, glow: s.boxShadow }; });
-    assert.deepEqual(focused, { border: "rgb(37, 99, 235)", glow: "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px" });
+    assert.deepEqual(focused, { border: "rgb(59, 130, 246)", glow: "rgb(59, 130, 246) 0px 0px 0px 1px" });
     await harness.page.keyboard.press("Tab");
     let guard = 0;
     while (!(await send.evaluate((node) => node === document.activeElement)) && guard++ < 10) await harness.page.keyboard.press("Tab");

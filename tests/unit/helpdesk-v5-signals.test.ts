@@ -95,19 +95,19 @@ test("v5 signals: the result is in the contract's order, enum names only (no val
 
 const faq = (n: number, signals: FaqSignal[] = [], popular = false): ChipCandidate => ({ id: `01a18100-0000-7000-8000-${String(n).padStart(12, "0")}`, question: `Question ${n}`, popular, signals });
 
-test("v5 chips: signal-matched FAQs first, by signal priority, then popular ones fill up to 4; each once; the same inputs give the same chips", () => {
-  assert.equal(SITUATION_CHIPS_MAX, 4);
+test("v5 chips: signal-matched FAQs first, by signal priority, then popular ones fill up to 3; each once; the same inputs give the same chips", () => {
+  assert.equal(SITUATION_CHIPS_MAX, 3, "Figma 1394:30 draws 3 chips");
   assert.deepEqual([...FAQ_SIGNALS], ["payment_failed", "payment_pending", "recent_purchase", "trial_ending", "subscription_expired", "subscription_cancelled", "email_unverified", "from_order"]);
   const list = [faq(1, [], true), faq(2, ["trial_ending"]), faq(3, ["payment_failed"]), faq(4, ["recent_purchase", "payment_failed"], true), faq(5, [], true), faq(6, [], true), faq(7, ["email_unverified"])];
   const chosen = chooseSituationChips(["trial_ending", "payment_failed", "email_unverified"], list);
-  assert.deepEqual(chosen.chips.map((chip) => [chip.question, chip.reason]), [["Question 3", "signal"], ["Question 4", "signal"], ["Question 2", "signal"], ["Question 7", "signal"]], "payment_failed (in list order), then trial_ending, then email_unverified");
+  assert.deepEqual(chosen.chips.map((chip) => [chip.question, chip.reason]), [["Question 3", "signal"], ["Question 4", "signal"], ["Question 2", "signal"]], "payment_failed (in list order), then trial_ending; email_unverified is past the cap");
   assert.equal(chosen.situational, true);
-  assert.deepEqual(chosen.matched, ["payment_failed", "trial_ending", "email_unverified"]);
+  assert.deepEqual(chosen.matched, ["payment_failed", "trial_ending"]);
   assert.deepEqual(chooseSituationChips(["trial_ending", "payment_failed", "email_unverified"], list), chosen, "stable");
   const fill = chooseSituationChips(["recent_purchase"], list);
-  assert.deepEqual(fill.chips.map((chip) => [chip.question, chip.reason]), [["Question 4", "signal"], ["Question 1", "popular"], ["Question 5", "popular"], ["Question 6", "popular"]], "popular fill skips the chip already shown");
+  assert.deepEqual(fill.chips.map((chip) => [chip.question, chip.reason]), [["Question 4", "signal"], ["Question 1", "popular"], ["Question 5", "popular"]], "popular fill skips the chip already shown");
   const none = chooseSituationChips([], list);
-  assert.deepEqual(none.chips.map((chip) => chip.reason), ["popular", "popular", "popular", "popular"]);
+  assert.deepEqual(none.chips.map((chip) => chip.reason), ["popular", "popular", "popular"]);
   assert.equal(none.situational, false, "no signal matched: the 'Try asking' title");
   assert.deepEqual(chooseSituationChips(["open_ticket_waiting"], list).matched, [], "open_ticket_waiting is a card, never an FAQ chip");
   assert.deepEqual(chooseSituationChips([], []).chips, []);

@@ -24,15 +24,15 @@
 // helpdesk-v5-faq-graph-design.md §1, §4, 2026-10-29). Locked vs flexible: the
 // panel never asks the model anything itself and never shows model text as
 // Markdown; it renders what the server's turn says.
-// - The greeting is personal ("{name}, hi! What's the problem?") and shows the
-//   situation chips the server's code picked from the learner's own records
+// - The greeting card keeps the Figma copy ("Hi! How can I help?", 1394:23)
+//   and shows up to 3 situation chips (1394:30 draws 3) the server's code picked from the learner's own records
 //   (the page starts the session; titled "You might be running into" when a
 //   signal matched, else "Try asking"), plus the fixed card for an enquiry
 //   waiting for the learner's reply.
 // - An answer is one message in three parts: the opening line, the approved
-//   FAQ text verbatim in a quoted card (only the blocks picked for this
-//   learner, with "From: <question>", "Show the full answer" expanding in
-//   place, "Open in Help Centre"), the closing line, then the follow-up chips
+//   FAQ text verbatim (only the blocks picked for this learner) with the
+//   Figma "Related FAQ: <question>" link to the Help Centre (1394:56) and
+//   "Show the full answer" expanding in place, the closing line, then the follow-up chips
 //   and the vote. Screen readers get them in that order.
 // - A choice card shows its prompt and 2-4 A/B/C/D options; a click on a
 //   chip, follow-up or option goes to the click endpoint, checked against the
@@ -83,11 +83,10 @@ function cardNotice(text: HelpdeskCopy["chat"], rateTitle: string, cards: ChatEn
 /** v5: small talk that asks what the learner needs (hello, "I have a problem"): the situation chips follow it. */
 const offersChips = (turn: AssistantTurn | undefined) => turn?.kind === "smalltalk" && (turn.intent === "greeting" || turn.intent === "vague" || turn.intent === null);
 
-export function AssistantChat({ locale, copy, questionMax, accountId, chips, onIdeas, onAssistIds, onHandover, pageInput, name = null, session = null, orderId = null }: {
+export function AssistantChat({ locale, copy, questionMax, accountId, chips, onIdeas, onAssistIds, onHandover, pageInput, session = null, orderId = null }: {
   locale: "en-GB" | "zh-CN"; copy: HelpdeskCopy; questionMax: number; accountId: string; chips: ChatChip[]; onIdeas: () => void; onAssistIds: (ids: string[]) => void;
   /** v4: open Contact Support (the form on this page) with the chat's assistIds. */ onHandover?: (assistIds: string[]) => void;
   /** v4: the learner's last input elsewhere on the page (epoch ms; the enquiry form after a handover): the learner is still here, so the chat does not end idle. */ pageInput?: { readonly current: number };
-  /** v5 Part B §4: the learner's first name for the greeting (none: the greeting without a name). */ name?: string | null;
   /** v5 Part A: the chat session the page started, with its situation chips (none: an older server, or it could not start one; the chips prop is used). */ session?: AssistantSessionResponse | null;
   /** v5: the learner's own order Contact Support was opened for (the from_order signal of a new session after an end). */ orderId?: string | null;
 }) {
@@ -405,7 +404,6 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   /** Where the current session starts: cards before it belong to an ended session. */
   const sessionStart = entries.reduce((start, entry, index) => (entry.kind === "ended" ? index + 1 : start), 0);
   const chipTitle = situation.situational ? text.situationTitle : text.tryAsking;
-  const greetingTitle = name ? fillTemplate(text.greetingTitleNamed, { name }) : text.greetingTitle;
 
   /** A list of chip buttons (situation chips, "You might be asking", follow-ups): the starter chip style. */
   const chipButtons = (items: Array<{ key: string; label: string; onClick: () => void }>, props: { className?: string; labelledBy?: string }) =>
@@ -428,16 +426,15 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
 
   const helpLink = (faqId: string, label: string) => <a className="helpdesk-chat-related" href={`/${locale}/help?faq=${encodeURIComponent(faqId)}`} target="_blank" rel="noopener noreferrer">{label}</a>;
 
-  /** v5 Part H: the quoted FAQ card: the excerpt (or the whole answer) verbatim, its source, "Show the full answer" and the Help Centre link. */
+  /** v5 Part H: the quoted FAQ card: the excerpt (or the whole answer) verbatim, the Figma "Related FAQ" link to the Help Centre and "Show the full answer". */
   const quotedCard = (entry: AnswerEntry, index: number, reply: NonNullable<AnswerEntry["reply"]>, excerpt: AssistantTurn["excerpt"]) => {
     const open = expanded.has(entry.id);
     const textId = `${ids}-card-text-${index}`;
     return <blockquote className="helpdesk-chat-excerpt">
       <Markdown className="helpdesk-chat-answer-text" id={textId} text={excerpt && !open ? excerpt.map((block) => block.text).join("\n\n") : reply.answer} />
-      <p className="helpdesk-chat-source">{fillTemplate(text.excerptSource, { question: reply.question })}</p>
       <div className="helpdesk-chat-excerpt-actions">
+        {helpLink(reply.faqId, fillTemplate(text.relatedFaq, { question: reply.question }))}
         {excerpt ? <button type="button" className="helpdesk-chat-expand" aria-expanded={open} aria-controls={textId} onClick={() => toggleFull(entry)}>{open ? text.showLess : text.showFull}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}</button> : null}
-        {helpLink(reply.faqId, text.openInHelpCentre)}
       </div>
     </blockquote>;
   };
@@ -490,7 +487,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
           : helpLink(source.faqId, fillTemplate(text.clarifySource, { question: source.question })) : null}
         {card && open ? <blockquote className="helpdesk-chat-excerpt" id={`${ids}-explained-${index}`}>
           <Markdown className="helpdesk-chat-answer-text" text={card.answer} />
-          <p className="helpdesk-chat-source">{fillTemplate(text.excerptSource, { question: card.question })}</p>
+          {helpLink(card.faqId, fillTemplate(text.relatedFaq, { question: card.question }))}
         </blockquote> : null}
         {voteRow(entry)}
       </div>;
@@ -548,7 +545,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
       <div className="helpdesk-chat-row">
         <span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>
         <div className="helpdesk-chat-greeting">
-          <p className="helpdesk-chat-greeting-title">{greetingTitle}</p>
+          <p className="helpdesk-chat-greeting-title">{text.greetingTitle}</p>
           <p className="helpdesk-chat-greeting-body">{text.greetingBody}</p>
           <p className="helpdesk-chat-greeting-limit">{text.greetingLimit}</p>
           <button type="button" className="helpdesk-chat-ideas" onClick={onIdeas}>{text.ideas}</button>

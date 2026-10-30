@@ -164,17 +164,16 @@ test("AccountNav Contact support opens the support page with the AI Support Assi
   await expect(page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
   await expect(page.getByLabel(text.email)).toHaveValue(email);
   const panel = page.getByRole("region", { name: text.chat.title });
-  // v5 Part B §4 (spec change): the greeting names the learner (nickname "Hana Learner").
-  await expect(panel.getByText(fillTemplate(text.chat.greetingTitleNamed, { name: "Hana" }))).toBeVisible();
-  // v5 Part A (spec change): the session's situation chips (up to 4; no signal matched, so the popular ones) replace the 3 starter chips.
-  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?", "Where can I find my invoice?"]);
+  // The greeting keeps the Figma title (1394:23; owner 2026-10-30).
+  await expect(panel.locator(".helpdesk-chat-greeting-title")).toHaveText(text.chat.greetingTitle);
+  // v5 Part A: the session's situation chips (up to 3 as Figma 1394:30 draws; no signal matched, so the popular ones).
+  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?"]);
   await panel.locator(".helpdesk-chat-chip").nth(1).click();
   const answer = panel.locator(".helpdesk-chat-answer").first();
   await expect(answer).toContainText("Find your enrolled courses and open the available lessons and resources.");
   await expect(answer.locator("strong")).toHaveText("My Learning");
-  // v5 Part H (spec change): the card is quoted with its source line and "Open in Help Centre".
-  await expect(answer.locator(".helpdesk-chat-source")).toHaveText(fillTemplate(text.chat.excerptSource, { question: "How can I access my course materials?" }));
-  await expect(answer.getByRole("link", { name: text.chat.openInHelpCentre })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
+  // v5 Part H: the card with the Figma "Related FAQ" link (1394:56) to the whole answer in the Help Centre.
+  await expect(answer.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "How can I access my course materials?" }), exact: true })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
   await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
   await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(answer.getByRole("button", { name: text.chat.no, exact: true })).toBeDisabled();
@@ -1043,14 +1042,14 @@ test("v5 small talk: “你好” shows a reply bubble and the situation chips, 
   const text = copy("zh-CN");
   await openSupport(page, "zh-CN");
   const panel = page.getByRole("region", { name: text.chat.title });
-  await expect(panel.locator(".helpdesk-chat-greeting-title")).toHaveText(fillTemplate(text.chat.greetingTitleNamed, { name: "Hana" }));
-  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["如何重置密码？", "如何访问我的课程资料？", "如何更改我的订阅？", "在哪里可以找到发票？"]);
+  await expect(panel.locator(".helpdesk-chat-greeting-title")).toHaveText(text.chat.greetingTitle);
+  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["如何重置密码？", "如何访问我的课程资料？", "如何更改我的订阅？"]);
   const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
   await input.fill("你好");
   await input.press("Enter");
   const hello = panel.locator(".helpdesk-chat-answer").first();
   await expect(hello.locator(".helpdesk-chat-reply")).toHaveText("你好呀！想了解哪方面的问题？");
-  await expect(hello.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveCount(4);
+  await expect(hello.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveCount(3);
   await expect(hello.locator(".helpdesk-chat-fallback")).toHaveCount(0);
   await expect(panel).not.toContainText(text.chat.fallback);
   await expect(panel).not.toContainText(text.chat.fallbackAlternatives);
@@ -1088,7 +1087,7 @@ test("v5 situation chips: a learner whose latest payment failed sees the payment
     const panel = page.getByRole("region", { name: text.chat.title });
     const chips = panel.getByRole("list", { name: text.chat.situationTitle }).locator(".helpdesk-chat-chip");
     await expect(chips.first()).toHaveText(locale === "zh-CN" ? "为什么我的付款失败了？" : "Why did my payment fail?");
-    await expect(chips).toHaveCount(4);
+    await expect(chips).toHaveCount(3);
     // The chip text is the FAQ question: no amount, order number or date of the learner's.
     await expect(panel.locator(".helpdesk-chat-chips")).not.toContainText(/\d/);
     await mkdir(SHOTS, { recursive: true });
@@ -1113,7 +1112,7 @@ test("v5 three-part answer: opening, the picked blocks quoted with their source,
   await expect(quoted.locator("li")).toHaveText(["退出登录后重新登录，让账号重新读取你的订阅状态", "打开我的学习，查看课程是否已经出现在你的课程列表里"]);
   await expect(quoted).toContainText("仍然没有开通？");
   await expect(quoted).not.toContainText("银行确认扣款");
-  await expect(quoted.locator(".helpdesk-chat-source")).toHaveText(fillTemplate(text.chat.excerptSource, { question: "付款成功但没有开通" }));
+  await expect(quoted.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "付款成功但没有开通" }), exact: true })).toBeVisible();
   await expect(answer.locator(".helpdesk-chat-closing")).toHaveText("按上面试一下，还不行就告诉我。");
   await expect(answer.getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button")).toHaveText(["还是不行，怎么联系客服？"]);
   const order = await answer.evaluate((node) => [...node.children].map((child) => child.className.split(" ")[0]));

@@ -1,5 +1,5 @@
 // Helpdesk v5 Part A §3: which chips the chat greeting shows, chosen by code.
-// At most 4: first the published FAQs (or, once Admin has a release, its entry
+// At most 3: first the published FAQs (or, once Admin has a release, its entry
 // nodes) whose signals match the learner's, by signal priority (FAQ_SIGNALS
 // order), then popular ones fill the rest; each once, and the same inputs
 // always give the same chips (within one signal, and among popular ones, in
@@ -10,7 +10,8 @@
 // Pure: no I/O.
 import { FAQ_SIGNALS, type FaqSignal, type SituationChip, type SituationSignal, type TicketStatus } from "@/contracts/helpdesk";
 
-export const SITUATION_CHIPS_MAX = 4;
+// Figma 1394:30 draws 3 chips (owner 2026-10-30: align to the design; the v5 spec said 4).
+export const SITUATION_CHIPS_MAX = 3;
 
 /** A chip candidate: a published FAQ (per-FAQ list) or a release entry node. */
 export type ChipCandidate = { id: string; question: string; popular: boolean; signals: readonly FaqSignal[] };

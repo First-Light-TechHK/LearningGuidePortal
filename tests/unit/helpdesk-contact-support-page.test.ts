@@ -570,8 +570,8 @@ test("chat panel: greeting, starter chips, a chip asks with its FAQ id; the answ
     const c = chat(page, locale);
     assert.equal(await c.panel.getByRole("heading", { level: 2 }).textContent(), c.copy.title);
     const text = await c.panel.textContent();
-    // v5 Part B §4 (spec change): the greeting is personal, with the learner's first name (ACCOUNT is Emily Chen).
-    for (const part of [c.copy.subtitle, fillTemplate(c.copy.greetingTitleNamed, { name: "Emily" }), c.copy.greetingBody, c.copy.greetingLimit, c.copy.ideas, c.copy.tryAsking, c.copy.info]) assert.ok(text?.includes(part), `${locale}: panel shows ${part}`);
+    // The greeting keeps the Figma title (1394:23; owner 2026-10-30), with no name.
+    for (const part of [c.copy.subtitle, c.copy.greetingTitle, c.copy.greetingBody, c.copy.greetingLimit, c.copy.ideas, c.copy.tryAsking, c.copy.info]) assert.ok(text?.includes(part), `${locale}: panel shows ${part}`);
     assert.equal(await c.input.getAttribute("placeholder"), c.copy.placeholder);
     assert.deepEqual(await c.chips.allTextContents(), CHIPS.map((chip) => chip.question));
     assert.equal(harness.calls.length, 0, "nothing is asked until the learner asks");
