@@ -15,7 +15,7 @@ const raw = readFileSync(FILE);
 const corpus = JSON.parse(raw.toString("utf8")) as { cases: { group: string; input: string; expected: string; context?: ScrubContext }[] };
 
 /** Change both copies together, then update this pin and Admin's. */
-const PINNED_SHA256 = "4518b4c60031110c8083b23942b0eb3e8d00cf0c5b5d4efa15f374a30ad8c643";
+const PINNED_SHA256 = "1beb8cfe0c215511f02849f0a27ccc1911e96b286f343c90b056bc3ef72be261";
 
 test("the shared corpus is the pinned version (the same bytes as Admin's copy)", () => {
   assert.equal(createHash("sha256").update(raw).digest("hex"), PINNED_SHA256);

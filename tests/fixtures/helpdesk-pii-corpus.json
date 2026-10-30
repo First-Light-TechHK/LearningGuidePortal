@@ -471,6 +471,191 @@
       "group": "mixed",
       "input": "看不到第12课，版本 5.2.1，价格是 1299.00 元",
       "expected": "看不到第12课，版本 5.2.1，价格是 1299.00 元"
+    },
+    {
+      "group": "zh-CN",
+      "input": "手机 138 - 0013 - 8000 收不到短信",
+      "expected": "手机 <phone> 收不到短信"
+    },
+    {
+      "group": "zh-CN",
+      "input": "电话 138  0013  8000",
+      "expected": "电话 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "号码\n138\n0013\n8000",
+      "expected": "号码\n<phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "138–0013–8000 是我的手机",
+      "expected": "<phone> 是我的手机"
+    },
+    {
+      "group": "zh-CN",
+      "input": "手机 138 0013 8000 和 138 0013 8000",
+      "expected": "手机 <phone> 和 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "手机138,0013,8000，或者 138_0013_8000，或者 138/0013/8000",
+      "expected": "手机<phone>，或者 <phone>，或者 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "+86 138 - 0013 - 8000",
+      "expected": "<phone>"
+    },
+    {
+      "group": "en",
+      "input": "call me tel13800138000 or ph13800138000",
+      "expected": "call me tel<phone> or ph<phone>"
+    },
+    {
+      "group": "en",
+      "input": "on lesson 3, 138 - 0013 - 8000 is my number",
+      "expected": "on lesson 3, <phone> is my number"
+    },
+    {
+      "group": "zh-CN",
+      "input": "第 3, 4, 5, 6, 7, 8 课都打不开，价格 1,299,000 元",
+      "expected": "第 3, 4, 5, 6, 7, 8 课都打不开，价格 1,299,000 元"
+    },
+    {
+      "group": "zh-CN",
+      "input": "2026 - 10 - 29 扣款两次",
+      "expected": "2026 - 10 - 29 扣款两次"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我的邮箱是 zhangsan @qq.com",
+      "expected": "我的邮箱是 <email>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "zhangsan @ qq . com 收不到",
+      "expected": "<email> 收不到"
+    },
+    {
+      "group": "en",
+      "input": "john.smith @ gmail.com and john.smith@ gmail.com",
+      "expected": "<email> and <email>"
+    },
+    {
+      "group": "en",
+      "input": "my address is john.smith@\ngmail.com",
+      "expected": "my address is <email>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "邮箱 john.smith@gmail。com，备用 abc@gmail点com",
+      "expected": "邮箱 <email>，备用 <email>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "abc 艾特 163 点 com 是我妈妈的邮箱",
+      "expected": "<email> 是我妈妈的邮箱"
+    },
+    {
+      "group": "en",
+      "input": "my email is john smith at gmail dot com",
+      "expected": "my email is <email>"
+    },
+    {
+      "group": "en",
+      "input": "hi @Tom.Smith, see you at school. Thanks",
+      "expected": "hi @Tom.Smith, see you at school. Thanks"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫Tom，订阅没开通",
+      "expected": "我叫<name>，订阅没开通"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫 Wang Xiao Ming，课程打不开",
+      "expected": "我叫 <name>，课程打不开"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我的名字是：王小明",
+      "expected": "我的名字是：<name>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫欧阳娜娜，登不上",
+      "expected": "我叫<name>，登不上"
+    },
+    {
+      "group": "en",
+      "input": "I am Zhang Wei and I cannot log in",
+      "expected": "I am <name> and I cannot log in"
+    },
+    {
+      "group": "en",
+      "input": "I am stuck on lesson 3. I am Learning Guide user, I am using Chrome",
+      "expected": "I am stuck on lesson 3. I am Learning Guide user, I am using Chrome"
+    },
+    {
+      "group": "zh-TW",
+      "input": "身分證字號 A123456789 無法驗證",
+      "expected": "身分證字號 <id> 無法驗證"
+    },
+    {
+      "group": "zh-TW",
+      "input": "我的身分證是A223456789",
+      "expected": "我的身分證是<id>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "香港身份證 A123456(7) 同 HKID: AB123456(A)",
+      "expected": "香港身份證 <id> 同 HKID: <id>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "身份证 11010519491231002X 实名认证失败",
+      "expected": "身份证 <id> 实名认证失败"
+    },
+    {
+      "group": "zh-CN",
+      "input": "护照号 E12345678 填不进去",
+      "expected": "护照号 <id> 填不进去"
+    },
+    {
+      "group": "en",
+      "input": "my id is S1234567 and passport no. K12345678",
+      "expected": "my id is <id> and passport no. <id>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "vx zhangwei123 或者加V信 abc_123 联系",
+      "expected": "vx <handle> 或者加V信 <handle> 联系"
+    },
+    {
+      "group": "zh-TW",
+      "input": "Line ID: weizhang88，telegram @weizhang88，IG wei_zhang88",
+      "expected": "Line ID: <handle>，telegram <handle>，IG <handle>"
+    },
+    {
+      "group": "en",
+      "input": "line 12 of the lesson is wrong",
+      "expected": "line 12 of the lesson is wrong"
+    },
+    {
+      "group": "zh-CN",
+      "input": "https://www.ilovelearningguide.com/zh-CN/reset-password/Xy7aQ9pLm2 打不开",
+      "expected": "<url> 打不开"
+    },
+    {
+      "group": "en",
+      "input": "the link https://www.ilovelearningguide.com/verify/ab12cd expired",
+      "expected": "the link <url> expired"
+    },
+    {
+      "group": "en",
+      "input": "https://www.ilovelearningguide.com/en-GB/reset-password does not load",
+      "expected": "https://www.ilovelearningguide.com/en-GB/reset-password does not load"
     }
   ]
 }
