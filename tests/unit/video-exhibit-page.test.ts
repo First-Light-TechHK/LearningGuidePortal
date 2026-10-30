@@ -184,7 +184,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.mouse.move(0,0);
       assert.equal(await controls.evaluate(element=>getComputedStyle(element).opacity),"0","playing video hides controls when the pointer leaves");
       await page.screenshot({path:`test-results/video-exhibit/${locale}-playing-controls-hidden.png`,fullPage:true});
-      await page.locator("video.la-lesson-video").hover();
+      await page.locator(".la-video-surface").hover();
       assert.equal(await controls.evaluate(element=>getComputedStyle(element).opacity),"1","hovering over the player shows its controls");
       await page.screenshot({path:`test-results/video-exhibit/${locale}-playing-controls-hover.png`,fullPage:true});
       await page.screenshot({path:`test-results/video-exhibit/${locale}-silent-video-desktop.png`,fullPage:true});
@@ -202,11 +202,11 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await page.locator("video.la-lesson-video").waitFor();
       await page.addScriptTag({content:`(video=>{
         video.play=async()=>{throw new DOMException("Interrupted by pause","AbortError");};
-        let paused=false;
+        let paused=true;
         Object.defineProperty(video,"paused",{configurable:true,get:()=>paused});
         video.pause=()=>{paused=true;};
       })(document.querySelector('video.la-lesson-video'));`});
-      await page.locator(".la-video-play").click();
+      await page.locator(".la-video-surface").click();
       assert.equal(await page.getByText(lessonMessages(locale).playbackBlocked,{exact:true}).count(),0,"cover play interruption has no operation notice");
       await time(20);await bar.waitFor();
       await bar.getByRole("button",{name:getMessages(locale).videoExhibit.view,exact:true}).click();
