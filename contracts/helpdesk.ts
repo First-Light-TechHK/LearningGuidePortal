@@ -778,8 +778,40 @@ export type SuggestTurn = {
   opening: string | null; closing: string | null; reply: string | null; explanation: string | null; covered: boolean | null;
   guard: SuggestGuard | null; releaseVersion: number | null;
 };
-/** v6 suggest request context (only a v5 Portal sends it; an older Admin ignores it). recentTurns: the learner's own earlier words, oldest first. */
-export type SuggestRequestContext = { nodeId?: string; sessionId?: string; recentTurns?: string[] };
+/**
+ * v7 learner state (owner 2026-10-30: the schedule, which courses were taken and for how long, which not yet, the course
+ * status, the entitlements and the registration time, as JSON for the agent, to narrow the cards). Worked out by code
+ * from Portal's own records (modules/helpdesk/learnerState.ts). Coarse numbers and enums only: never a name, email,
+ * order number, amount or date (ages and times left are whole days / hours relative to the question).
+ */
+export const LEARNER_STATE_LIMITS = { plansMax: 5, coursesMax: 10, courseTitleMax: 80, daysMax: 3650, hoursMax: 720, minutesMax: 1_000_000, countMax: 999 } as const;
+export const LEARNER_PLAN_STATES = ["active", "cancel_at_period_end", "grace", "expired", "trial_canceled"] as const;
+export const LEARNER_COURSE_STATUSES = ["not_started", "in_progress", "completed"] as const;
+export const LEARNER_ORDER_STATUSES = ["paid", "pending", "failed", "canceled", "refunded"] as const;
+/** A subscription: endsInDays = whole days of access left (0 = under a day; -1 = ended within the last day). */
+export type LearnerPlanState = { source: "trial" | "purchase"; state: (typeof LEARNER_PLAN_STATES)[number]; scope: "course" | "category" | "everything"; device: "pc" | "mobile" | null; endsInDays: number };
+/** A course the learner studied, or can open (course-scope access) and never started. */
+export type LearnerCourseState = { courseId: string; title: string; status: (typeof LEARNER_COURSE_STATUSES)[number]; progress: number; minutes: number; lastStudiedDaysAgo: number | null; hasAccess: boolean };
+export type LearnerState = {
+  accountAgeDays: number;
+  /** null: the account has no email (for example WeChat sign-in). */
+  emailVerified: boolean | null;
+  /** Live first (latest end first), then the latest ended; at most plansMax. */
+  plans: LearnerPlanState[];
+  /** Studied courses (latest first), then course-scope access never started; at most coursesMax. */
+  courses: LearnerCourseState[];
+  /** Published courses the learner can open now and never started (every access scope). */
+  notStartedWithAccess: number;
+  /** The schedule: Study Groups the learner is in, and their upcoming Live Sessions. */
+  studyGroups: { groups: number; hosting: number; upcomingSessions: number; nextSessionInHours: number | null };
+  latestOrder: { status: (typeof LEARNER_ORDER_STATUSES)[number]; daysAgo: number } | null;
+  tickets: { open: number; waitingOnUser: number };
+};
+/**
+ * Suggest request context (only a v5 Portal sends it; an older Admin ignores it). recentTurns: the learner's own earlier
+ * words, oldest first. v7: learnerState on typed questions.
+ */
+export type SuggestRequestContext = { nodeId?: string; sessionId?: string; recentTurns?: string[]; learnerState?: LearnerState };
 
 const pick = <T extends string>(values: readonly T[], value: unknown): T | null => ((values as readonly unknown[]).includes(value) ? (value as T) : null);
 const shortText = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
@@ -788,9 +820,9 @@ const positiveInt = (value: unknown): number | null => (typeof value === "number
 
 /**
  * The context Portal sends, in code: valid ids only (lower case), the last HELPDESK_LIMITS.recentTurnsMax non-empty
- * learner turns, each clipped to recentTurnMax code points. Nothing about the learner's account ever goes in.
+ * learner turns, each clipped to recentTurnMax code points, and (v7) the learner state as built by learnerState().
  */
-export function buildSuggestContext(input: { nodeId?: string | null; sessionId?: string | null; recentTurns?: readonly string[] }): SuggestRequestContext {
+export function buildSuggestContext(input: { nodeId?: string | null; sessionId?: string | null; recentTurns?: readonly string[]; learnerState?: LearnerState | null }): SuggestRequestContext {
   const context: SuggestRequestContext = {};
   if (isUuid(input.nodeId)) context.nodeId = input.nodeId.toLowerCase();
   if (isUuid(input.sessionId)) context.sessionId = input.sessionId.toLowerCase();
@@ -799,6 +831,7 @@ export function buildSuggestContext(input: { nodeId?: string | null; sessionId?:
     .filter((turn) => turn !== "")
     .slice(-HELPDESK_LIMITS.recentTurnsMax);
   if (turns.length) context.recentTurns = turns;
+  if (input.learnerState) context.learnerState = input.learnerState;
   return context;
 }
 

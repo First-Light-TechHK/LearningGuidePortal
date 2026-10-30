@@ -39,6 +39,7 @@ import {
   type HelpFaq,
   type HelpdeskLocale,
   type LearnerEndReason,
+  type LearnerState,
   type SituationSignal,
   type SuggestTurn,
   type AdminSuggestRequest,
@@ -61,6 +62,7 @@ import { TURN_TEMPLATES, excerptOf, frameVariant, nextOf, replyTemplate, screenT
 import { CHAT_SESSION_RULES } from "./chatSession";
 import { releaseGraph, type ReleaseGraph } from "./faqReleaseCache";
 import { learnerSignals, type SignalSources } from "./learnerSignals";
+import { learnerState, type LearnerStateSources } from "./learnerState";
 import { answeredByPortal, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type TurnUpdate } from "./repository";
 import type { LearnerIdentity } from "./service";
 import { chooseSituationChips, waitingTicketOf, type ChipCandidate } from "./situationChips";
@@ -93,6 +95,9 @@ export type AssistantAdmin = {
 /** v5: the learner's own product records the signals are worked out from (read only; never sent anywhere). */
 export type LearnerRecords = Pick<SignalSources, "user" | "orders" | "subscriptions">;
 
+/** v7: how long a typed question waits for the learner state's records before asking Admin without it. */
+export const LEARNER_STATE_WAIT_MS = 300;
+
 export type AssistantDeps = {
   repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
     | "createChatSession" | "findChatSession" | "recordTurn" | "endChatSession" | "sessionShowedNode" | "openEmptyChatSession" | "sessionLearnerTurns" | "setAssistExpanded" | "listTicketsByUser">;
@@ -105,6 +110,11 @@ export type AssistantDeps = {
   release?: { current(locale: HelpdeskLocale, options?: { waitMs?: number; minVersion?: number | null }): Promise<FaqRelease | null> };
   /** v5 Part A: the learner's own product records (services/productStore.ts); without it no product signal is ever on. */
   learnerRecords?: (learnerId: string) => Promise<LearnerRecords>;
+  /**
+   * v7: the records the learner state is worked out from (services/productStore.ts and the Study Group store, read
+   * only); without it a typed question carries no state.
+   */
+  learnerStateSources?: (learnerId: string) => Promise<Omit<LearnerStateSources, "now" | "tickets">>;
   /** v4 Part A: whether the order is the learner's own (the from_order signal). */
   ownsOrder?: (learnerId: string, orderId: string) => Promise<boolean>;
   /** v5 Part G1: the W3C trace id this request's Admin calls carry, logged with the turn. */
@@ -217,6 +227,24 @@ export function createAssistantService(deps: AssistantDeps) {
       repository.listTicketsByUser(learner.id).catch(() => [])
     ]);
     return learnerSignals(learner.id, { now: now(), user: records?.user ?? null, orders: records?.orders ?? [], subscriptions: records?.subscriptions ?? [], tickets, fromOrder });
+  }
+
+  /** v7: the learner state for a typed question; any failure, or records slower than LEARNER_STATE_WAIT_MS, means none. */
+  async function stateOf(learner: LearnerIdentity): Promise<LearnerState | null> {
+    const load = deps.learnerStateSources;
+    if (!load) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), LEARNER_STATE_WAIT_MS); });
+      const sources = await Promise.race([Promise.all([load(learner.id), repository.listTicketsByUser(learner.id)]), timeout]);
+      if (!sources) return null;
+      const [records, tickets] = sources;
+      return learnerState(learner.id, { ...records, now: now(), tickets });
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function newSession(learner: LearnerIdentity, locale: HelpdeskLocale, signals: SituationSignal[], releaseVersion: number | null): Promise<ChatSessionRecord> {
@@ -412,8 +440,9 @@ export function createAssistantService(deps: AssistantDeps) {
     const session = await sessionFor(learner, input.locale, input.sessionId ?? null);
     const run = await runIds(learner.id);
     // v5 Part D: the card on screen, the session, and what the learner typed earlier in it (Portal's own log; never account data).
-    const recentTurns = input.faqId ? [] : await repository.sessionLearnerTurns(session.id, HELPDESK_LIMITS.recentTurnsMax).catch(() => [] as string[]);
-    const context = buildSuggestContext({ nodeId: session.currentNodeId, sessionId: session.id, recentTurns });
+    // v7: and the learner state (typed questions only: a chip takes Admin's per-FAQ path, no model)
+    const [recentTurns, state] = input.faqId ? [[], null] : await Promise.all([repository.sessionLearnerTurns(session.id, HELPDESK_LIMITS.recentTurnsMax).catch(() => [] as string[]), stateOf(learner)]);
+    const context = buildSuggestContext({ nodeId: session.currentNodeId, sessionId: session.id, recentTurns, learnerState: state });
     const request: AdminSuggestRequest = { learnerId: learner.id, locale: input.locale, source, message: input.message, ...(input.faqId ? { faqId: input.faqId } : {}), ...run, context };
     const reply = await askAdmin(request);
     const base = record(run.runId, learner, source, input.locale, input.message, reply, now(), key, hash);
