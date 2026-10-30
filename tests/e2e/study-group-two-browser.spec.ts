@@ -74,6 +74,7 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
     await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
     await pageA.goto(roomUrl);
     await pageA.getByRole("button", { name: "Start Live Session" }).click();
+    await pageA.waitForURL(new RegExp(roomUrl), { timeout: 30_000 });
     await pageB.waitForURL(new RegExp(roomUrl), { timeout: 30_000 });
 
     // 7. Both browsers report two connected participants. The Share control is

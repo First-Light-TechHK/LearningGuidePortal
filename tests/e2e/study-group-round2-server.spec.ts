@@ -80,6 +80,7 @@ async function openFullRoom(browser: Browser, origin: string, label: string) {
   await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
   await pageA.goto(roomPath(sessionId));
   await pageA.getByRole("button", { name: "Start Live Session" }).click();
+  await pageA.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await pageB.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await expectConnected(pageA, 2);
   await expectConnected(pageB, 2);

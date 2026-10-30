@@ -132,8 +132,9 @@ export async function askTutor(page: Page, question: string) {
   await page.getByRole("button", { name: "Send", exact: true }).click();
 }
 
+// Exact names: on the list, a group card whose title holds "Share" would match too.
 export async function expectConnected(page: Page, participants: number) {
-  await expect(page.getByRole("button", { name: "Share" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
   await expect(page.locator(`[data-participants="${participants}"]`)).toBeVisible();
 }
 
@@ -165,6 +166,7 @@ export async function openLiveRoom(browser: Browser, appOrigin: string, label: s
   await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
   await pageA.goto(roomPath(sessionId));
   await pageA.getByRole("button", { name: "Start Live Session" }).click();
+  await pageA.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await pageB.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await expectConnected(pageA, 2);
   await expectConnected(pageB, 2);

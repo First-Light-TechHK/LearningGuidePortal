@@ -60,9 +60,11 @@ async function openSoloLiveRoom(host: Member, label: string) {
   const groupId = await createGroup(host, unique(`E2E ${label}`));
   const sessionId = await scheduleSession(host, groupId, { title: `E2E ${label} session`, startsInMs: 90_000 });
   const page = await host.context.newPage();
+  // The link brings the Host to the list, where they start (deep links 2026-10-30).
   await page.goto(roomPath(sessionId));
   await page.getByRole("button", { name: "Start Live Session" }).click();
-  await expect(page.getByRole("button", { name: "Mic" })).toBeEnabled();
+  await page.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Mic", exact: true })).toBeEnabled();
   return { page, sessionId };
 }
 
