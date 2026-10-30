@@ -17,11 +17,24 @@
 // (5 stars or Skip) before going back to the account. There is no Figma
 // frame for these states: they reuse the chip, button, answer box and star
 // styles inside 1333:249 and are 待视觉验收 (pending visual sign-off).
+// v4 Part A (helpdesk-v4-order-and-chat-end, 2026-10-29): opened from a
+// payment record (?orderId=), the page passes the learner's own order (the
+// server page checked it is theirs). Enquiry Type starts on Payments &
+// Subscriptions (still changeable), a read-only "Order: <number>" line sits
+// above Subject with a Remove control, and the number goes with the ticket
+// as orderId (the server checks ownership again; a 400 field orderId says
+// so and the learner can remove it and submit). The order never goes to the
+// AI suggestion check. No Figma frame: the line reuses the field, label and
+// text-link styles and is 待视觉验收.
+// v4 Part B: the chat's handover card ("Let's get you to a person", and
+// "Contact a person" on "Still need help?") opens this form: focus moves to
+// Subject, and the enquiry carries the chat's assistIds as before. After an
+// enquiry was sent, it opens a fresh form for the next one.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Star, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
-import type { HelpdeskAlternative, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
+import type { AssistantSessionResponse, HelpdeskAlternative, HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
 import { fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, linkedAssistIds, nextFocusIndex, problemMessageKey, readSeenAnswers, rememberSeenAnswer, RetryableSubmit, seenStorageKey, submissionSignature, SubmissionKeys, type HelpdeskUiConfig, type SeenAnswer } from "@/modules/helpdesk/learnerUi";
 import { alternativesIn, askAssistant, createTicket, newIdempotencyKey, rateAnswer, reportSuggestionOutcome, requestSuggestion, sendAssistantFeedback } from "./helpdeskApi";
 import { AssistantChat, type ChatChip } from "./AssistantChat";
@@ -38,10 +51,14 @@ export type Picked = { status: "pending"; faqId: string } | { status: "answer"; 
 
 const THANKS_REDIRECT_MS = 2_000;
 
-export function ContactSupport({ locale, copy, config, account, chips }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[] }) {
+export function ContactSupport({ locale, copy, config, account, chips, order = null, orderUnavailable = false, session = null }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null; /** v4: opened for an order that could not be attached (not the learner's, unknown, or the order store failed). */ orderUnavailable?: boolean; /** v5 Part A: the chat session the page started, with its situation chips (none: the starter chips). */ session?: AssistantSessionResponse | null }) {
   const router = useRouter();
   const ids = useId();
-  const [category, setCategory] = useState<TicketCategory | "">("technical_support"); // Figma 1.2 Help Page: defaults to Technical Support
+  // Figma 1.2 Help Page: defaults to Technical Support; v4: Payments & Subscriptions when opened from a payment record.
+  const [category, setCategory] = useState<TicketCategory | "">(order || orderUnavailable ? "payments_subscriptions" : "technical_support");
+  /** v4 Part A: the learner's order this enquiry is about, until they remove it. */
+  const [linkedOrder, setLinkedOrder] = useState<{ id: string } | null>(order);
+  const [orderNotice, setOrderNotice] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState(account.email);
@@ -64,6 +81,9 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
   const inFlight = useRef(false);
   /** The chat answers to link to the enquiry (newest 10), kept up to date by AssistantChat. */
   const assistIds = useRef<string[]>([]);
+  /** v4 Part B: the learner's last input anywhere on this page (epoch ms), so the chat never ends idle while they fill in the form. */
+  const pageInput = useRef(0);
+  const markInput = () => { pageInput.current = Date.now(); };
   /** v3: the modal answers the learner saw, when sessionStorage is blocked (otherwise they live there, per account: seenStorageKey). */
   const seenFallback = useRef<SeenAnswer[]>([]);
   /** Bumped by Skip and by each rating save, so a save that lands after Skip changes nothing. */
@@ -123,7 +143,15 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
   }
 
   function formFields(): Record<string, string> {
-    return { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim() };
+    return { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim(), ...(linkedOrder ? { orderId: linkedOrder.id } : {}) };
+  }
+
+  /** v4: "Remove" drops the order from this enquiry; focus goes on to Subject and the change is announced. */
+  function removeOrder() {
+    setLinkedOrder(null);
+    setOrderNotice(copy.order.removed);
+    setFormError("");
+    subjectInput.current?.focus();
   }
 
   async function submitTicket(suggestionId: string | null, linked: string[] = linkedIds(suggestionId)) {
@@ -152,7 +180,8 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     if (result.status >= 400 && result.status < 500) keys.current.done();
     retry.current.failed(signature, suggestionId, result.status, linked);
     setPhase("form");
-    setFormError(copy.errors[problemMessageKey(result.status, result.code)]);
+    // v4: the server would not link this order (not the learner's, or gone): say so; Remove is right there.
+    setFormError(result.code === "validation_failed" && result.field === "orderId" && linkedOrder ? copy.order.invalid : copy.errors[problemMessageKey(result.status, result.code)]);
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -171,6 +200,7 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
       setBusy("checking");
       const check = new AbortController();
       suggestionCheck.current = check;
+      // The AI check never gets the order (v4): only what the learner typed.
       const found = await requestSuggestion({ category, subject: subject.trim(), message: message.trim(), locale }, { signal: check.signal });
       suggestionCheck.current = null;
       if (abandoned.current) return;
@@ -290,6 +320,30 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
     setPhase("thanks");
   }
 
+  /**
+   * v4 Part B: the chat hands over to a person. The form is on this page, so
+   * focus moves to it (Subject); the chat's assistIds go with the enquiry. A
+   * sent enquiry makes way for a fresh form (same topic and email); while the
+   * assistant modal is open the form is already in use, so nothing changes.
+   */
+  function openFormFromChat(chatIds: string[]) {
+    assistIds.current = chatIds;
+    if (busy !== "") return;
+    if (phase === "success") {
+      setCreated(null);
+      setSubject("");
+      setMessage("");
+      attachments.clear();
+      setLinkedOrder(null);
+      setErrors({});
+      setFormError("");
+      setPhase("form");
+      setTimeout(() => subjectInput.current?.focus(), 0);
+      return;
+    }
+    if (phase === "form") subjectInput.current?.focus();
+  }
+
   /** "We’d love to hear your ideas, too!": an Other Enquiries enquiry, starting at Subject. */
   function shareIdeas() {
     if (busy !== "" || phase === "success") return;
@@ -310,7 +364,7 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
   const label = (field: Field, text: string) => <label className="helpdesk-label" id={`${ids}-${field}-label`} htmlFor={`${ids}-${field}`}>{text}<span aria-hidden="true">*</span></label>;
   const disabled = busy !== "";
 
-  return <div className="helpdesk-card">
+  return <div className="helpdesk-card" onInputCapture={markInput} onKeyDownCapture={markInput} onPointerDownCapture={markInput}>
     <div className="helpdesk-card-content">
       {phase === "success" && created ? <SuccessPanel copy={copy} ticket={created} ticketHref={`/${locale}/account/my-learning/support/${created.id}`} enquiriesHref={enquiriesHref} /> :
         <form className="helpdesk-form" noValidate onSubmit={onSubmit} onPaste={attachments.onPaste}>
@@ -321,6 +375,18 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
               onChange={(value) => { setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
             {fieldError("category")}
           </div>
+          {linkedOrder ? <div className="helpdesk-field helpdesk-order-field" role="group" aria-labelledby={`${ids}-order-label`}>
+            {/* v4 Part A read-only order line: no Figma frame, 待视觉验收 (reuses .helpdesk-field / .helpdesk-label / .helpdesk-text-link). */}
+            <span className="helpdesk-label" id={`${ids}-order-label`}>{copy.order.label}</span>
+            <p className="helpdesk-order-line"><span className="helpdesk-order-number">{linkedOrder.id}</span>
+              <button type="button" className="helpdesk-text-link helpdesk-order-remove" aria-label={fillTemplate(copy.order.removeLabel, { number: linkedOrder.id })} disabled={disabled} onClick={removeOrder}>{copy.order.remove}</button></p>
+          </div> : null}
+          {order ? <p className="helpdesk-visually-hidden" role="status" aria-live="polite">{orderNotice}</p> : null}
+          {!order && orderUnavailable && phase === "form" ? <div className="helpdesk-field helpdesk-order-field" role="group" aria-labelledby={`${ids}-order-label`}>
+            {/* v4 review: an order that could not be attached is said, not dropped silently (never which reason). No Figma frame, 待视觉验收. */}
+            <span className="helpdesk-label" id={`${ids}-order-label`}>{copy.order.label}</span>
+            <p className="helpdesk-order-line helpdesk-order-unavailable">{copy.order.unavailable}</p>
+          </div> : null}
           <div className="helpdesk-field">{label("subject", copy.subject)}<input ref={subjectInput} {...fieldProps("subject")} className="helpdesk-input" maxLength={inputMaxLength(config.limits.subjectMax)} placeholder={copy.subjectPlaceholder} value={subject} disabled={disabled} onChange={(event) => setSubject(event.target.value)} />{fieldError("subject")}</div>
           <div className="helpdesk-field">{label("message", copy.message)}<textarea {...fieldProps("message")} className="helpdesk-input helpdesk-textarea" maxLength={inputMaxLength(config.limits.bodyMax)} placeholder={copy.messagePlaceholder} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} />{fieldError("message")}</div>
           <AttachmentZone copy={copy} config={config} attachments={attachments} disabled={disabled} inputId={`${ids}-files`} />
@@ -332,7 +398,7 @@ export function ContactSupport({ locale, copy, config, account, chips }: { local
           </div>
         </form>}
       <div className="helpdesk-divider" aria-hidden="true" />
-      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} pageInput={pageInput} session={session} orderId={order?.id ?? null} />
     </div>
     {phase === "suggestion" || phase === "alternatives" || phase === "rating" || phase === "thanks" ? <AssistantModal copy={copy} locale={locale} stage={phase} suggestion={suggestion} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}

@@ -5,6 +5,27 @@
 
 .portal-page.helpdesk-page { background: #f9fafb; }
 
+/* ---- v5 Part C tokens (helpdesk-v5-context-chips-and-smalltalk.md, 2026-10-29; owner-approved Stripe-style polish,
+   brand blue, layout and sizes unchanged; 待视觉验收). One place for the accent, the glow and the shadows. They sit on
+   :root, so every page that loads this sheet has them: the shared buttons and inputs also render on the enquiry list and
+   detail pages (main.helpdesk-account-page), outside the Contact Support and Help Centre pages. ---- */
+:root {
+  --hd-accent: #2563eb;
+  --hd-accent-strong: #1d4ed8;
+  --hd-chat-accent: #2468f5;
+  --hd-chat-accent-strong: #1d58d6;
+  --hd-accent-line: #9dbcf6;
+  --hd-accent-fill: #eff5ff;
+  --hd-glow: 0 0 0 3px rgba(37, 99, 235, .15);
+  /* On the blue Help Centre hero a blue glow would not show: the same 3 px ring in white. */
+  --hd-glow-on-brand: 0 0 0 3px rgba(255, 255, 255, .45);
+  --hd-panel-shadow: 0 8px 24px rgba(15, 23, 42, .06);
+  --hd-card-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  --hd-quote-fill: #f3f7ff;
+  --hd-lift: translateY(-1px);
+  --hd-ease: .15s ease-out;
+}
+
 /* ---- page card (Figma "Contact Support Content") ---- */
 .helpdesk-card { width: calc(100% - 41px); max-width: 1399px; min-height: calc(100vh - 70px - 40px); margin: 20px auto 20px max(20px, calc(50% - 700px)); box-sizing: border-box; overflow: visible; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, .1), 0 1px 2px -1px rgba(0, 0, 0, .1); }
 .helpdesk-card-content { display: flex; gap: 48px; align-items: flex-start; padding: 40px 19px 40px 48px; }
@@ -22,13 +43,19 @@
 .helpdesk-composer .helpdesk-label > span[aria-hidden] { display: none; }
 .helpdesk-input { width: 100%; height: 44px; box-sizing: border-box; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #374151; font: inherit; font-size: 14px; line-height: normal; }
 .helpdesk-input::placeholder { color: #9ca3af; opacity: 1; }
-.helpdesk-input:focus, .helpdesk-select-trigger:focus-visible { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.helpdesk-input:focus, .helpdesk-select-trigger:focus-visible { outline: none; border-color: var(--hd-accent); box-shadow: var(--hd-glow); }
 .helpdesk-input[aria-invalid="true"], .helpdesk-select-trigger[aria-invalid="true"] { border-color: #ef4444; }
 .helpdesk-input:disabled { background: #f9fafb; }
 .helpdesk-textarea { height: 120px; resize: none; }
 .helpdesk-field-error { margin: 0; color: #dc2626; font-size: 12px; line-height: 16px; }
 .helpdesk-inline-error { margin: 0; padding: 10px 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; line-height: 20px; }
 .helpdesk-email-note { margin: 0; color: #6b7280; font-size: 12px; font-weight: 600; line-height: normal; }
+/* v4 Part A order line (no Figma frame, 待视觉验收): the field label above, the number as plain text, Remove as the text link. */
+.helpdesk-order-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; color: #111827; font-size: 14px; line-height: normal; }
+.helpdesk-order-number { overflow-wrap: anywhere; }
+.helpdesk-order-remove { padding: 0; border: 0; background: none; font-family: inherit; cursor: pointer; }
+.helpdesk-order-remove:disabled { color: #9ca3af; cursor: default; text-decoration: none; }
+.helpdesk-order-remove:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 2px; }
 
 /* Enquiry Type select (Figma 1262:12): opens in place, pushing the form down as in the frame. */
 .helpdesk-select { display: flex; flex-direction: column; }
@@ -68,7 +95,9 @@
 .helpdesk-cancel-button { padding: 10px 20px; border: 0; background: #fff; color: #374151; font: inherit; font-size: 14px; font-weight: 500; line-height: normal; cursor: pointer; }
 .helpdesk-cancel-button:hover { color: #111827; text-decoration: underline; }
 .helpdesk-submit-button, .helpdesk-secondary-button, .helpdesk-danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; padding: 10px 24px; border: 1px solid #2563eb; border-radius: 8px; background: #2563eb; color: #fff !important; font: inherit; font-size: 14px; font-weight: 500; line-height: normal; text-decoration: none; cursor: pointer; }
-.helpdesk-submit-button:hover { border-color: #1d4ed8; background: #1d4ed8; }
+.helpdesk-submit-button:hover { border-color: var(--hd-accent-strong); background: var(--hd-accent-strong); box-shadow: var(--hd-glow); }
+.helpdesk-submit-button:focus-visible, .helpdesk-secondary-button:focus-visible { outline: none; box-shadow: var(--hd-glow); }
+.helpdesk-submit-button, .helpdesk-secondary-button { transition: background-color var(--hd-ease), border-color var(--hd-ease), box-shadow var(--hd-ease); }
 /* Figma 1262:59 is 150 × 37 with no stroke: the 1px border comes out of the padding. */
 .helpdesk-form-actions .helpdesk-submit-button { padding: 9px 23px; line-height: 17px; }
 .helpdesk-secondary-button { border-color: #d1d5db; background: #fff; color: #374151 !important; }
@@ -77,7 +106,7 @@
 .helpdesk-submit-button:disabled, .helpdesk-secondary-button:disabled, .helpdesk-danger-button:disabled, .helpdesk-cancel-button:disabled, .helpdesk-upload-button:disabled, .helpdesk-feedback-button:disabled { cursor: not-allowed; opacity: .6; }
 
 /* ---- AI Support Assistant chat panel (Figma 1262:62 / 1394:2). Typing dots, errors, fallback and focus states are 待视觉验收 ---- */
-.helpdesk-chat { display: flex; flex: 0 0 455px; flex-direction: column; width: 455px; height: 800px; box-sizing: border-box; overflow: hidden; border: 1px solid #dce5f2; border-radius: 11px; background: #fff; }
+.helpdesk-chat { display: flex; flex: 0 0 455px; flex-direction: column; width: 455px; height: 800px; box-sizing: border-box; overflow: hidden; border: 1px solid #dce5f2; border-radius: 11px; background: #fff; box-shadow: var(--hd-panel-shadow); }
 .helpdesk-chat p { margin: 0; }
 .helpdesk-chat-header { display: flex; flex: 0 0 51px; flex-direction: column; justify-content: flex-start; gap: 2px; width: 426px; height: 51px; box-sizing: border-box; padding: 7px 12px 0 14px; }
 .helpdesk-chat-header h2 { margin: 0; color: #17283f; font-size: 15px; font-weight: 600; line-height: 18px; }
@@ -89,7 +118,7 @@
 .helpdesk-chat-chips + .helpdesk-chat-mine, .helpdesk-chat-chips + .helpdesk-chat-row { margin-top: 17px !important; }
 .helpdesk-chat-row { display: flex; align-items: flex-start; gap: 8px; }
 .helpdesk-chat-avatar { display: grid; flex: 0 0 31px; width: 31px; height: 31px; place-items: center; border-radius: 16px; background: #e0ecff; color: #2468f5; }
-.helpdesk-chat-greeting { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; width: 365px; box-sizing: border-box; padding: 12px 13px; border: 1px solid #e1e9f4; border-radius: 10px; background: #fff; }
+.helpdesk-chat-greeting { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; width: 365px; box-sizing: border-box; padding: 12px 13px; border: 1px solid #e1e9f4; border-radius: 10px; background: #fff; box-shadow: var(--hd-card-shadow); }
 .helpdesk-chat-greeting-title { color: #1c2d48; font-size: 14px; font-weight: 600; line-height: 17px; }
 .helpdesk-chat-greeting-body { color: #465a75; font-size: 12px; line-height: 15px; }
 .helpdesk-chat-greeting-limit { color: #60728d; font-size: 11px; line-height: 13px; }
@@ -98,16 +127,17 @@
 .helpdesk-chat-try { margin-top: 10px !important; color: #516784; font-size: 12px; font-weight: 600; line-height: 15px; }
 /* Figma 1394:30 is a 124px box holding 3 × 36 + 2 × 7 = 122px of chips. */
 .helpdesk-chat-chips { display: flex; flex-direction: column; gap: 7px; margin: 9px 0 2px; padding: 0; list-style: none; }
-.helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 7px 12px; border: 1px solid #dce7f7; border-radius: 8px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; }
+.helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 7px 14px; border: 1px solid var(--hd-accent-line); border-radius: 999px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; transition: background-color var(--hd-ease), border-color var(--hd-ease), box-shadow var(--hd-ease), transform var(--hd-ease); }
 .helpdesk-chat-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .helpdesk-chat-chip svg { flex: 0 0 14px; color: #7a8ba3; }
-.helpdesk-chat-chip:hover:not(:disabled) { border-color: #b8d2fb; background: #f7faff; }
+.helpdesk-chat-chip:hover:not(:disabled) { border-color: var(--hd-chat-accent); background: var(--hd-accent-fill); box-shadow: var(--hd-glow); transform: var(--hd-lift); }
+.helpdesk-chat-chip:focus-visible { outline: none; border-color: var(--hd-chat-accent); box-shadow: var(--hd-glow); }
 .helpdesk-chat-chip:disabled { cursor: default; opacity: .7; }
 /* Figma 1394:44: a 48px row with the 46px bubble centred in it. */
 .helpdesk-chat-mine { display: flex; min-height: 48px; align-items: center; justify-content: flex-end; }
 .helpdesk-chat-question { width: 281px; max-width: 100%; min-height: 46px; box-sizing: border-box; padding: 13px 12px 8px; border-radius: 10px; background: #e0ecff; color: #254772; font-size: 12px; font-weight: 500; line-height: 15px; overflow-wrap: anywhere; white-space: pre-wrap; }
 /* Figma 1394:54 is 102px tall: 1 + 11 + text + 6 + link + 6 + 28 feedback row, clipped at the bottom. */
-.helpdesk-chat-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 365px; box-sizing: border-box; padding: 11px 11px 6px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; }
+.helpdesk-chat-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 365px; box-sizing: border-box; padding: 11px 11px 6px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; box-shadow: var(--hd-card-shadow); }
 .helpdesk-chat-answer-text, .helpdesk-chat-fallback { color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
 .helpdesk-chat-answer-text { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
 .helpdesk-chat-answer-text ol, .helpdesk-chat-answer-text ul { margin: 0; padding-left: 18px; }
@@ -123,12 +153,23 @@
 .helpdesk-chat-vote:disabled { cursor: default; }
 .helpdesk-chat-vote:disabled:not([aria-pressed="true"]) { opacity: .5; }
 .helpdesk-chat-error { width: 365px; box-sizing: border-box; padding: 11px; border: 1px solid #fecaca; border-radius: 9px; background: #fef2f2; color: #b42318; font-size: 12px; line-height: 15px; }
-.helpdesk-chat-typing { display: flex; align-items: center; gap: 4px; height: 31px; box-sizing: border-box; padding: 0 12px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; }
-.helpdesk-chat-typing > span[aria-hidden] { width: 6px; height: 6px; border-radius: 3px; background: #95a3b8; animation: helpdesk-typing 1s infinite ease-in-out; }
-.helpdesk-chat-typing > span[aria-hidden]:nth-child(2) { animation-delay: .15s; }
-.helpdesk-chat-typing > span[aria-hidden]:nth-child(3) { animation-delay: .3s; }
+/* v7 Thinking card (no Figma frame, 待视觉验收): "Thinking" with the typing dots, then one line per workflow step the
+   server streamed; finished steps get a check, the current one a small spinner. Reuses the answer bubble's border. */
+.helpdesk-chat-typing { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 120px; max-width: 365px; min-height: 31px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; box-shadow: var(--hd-card-shadow); }
+.helpdesk-chat-thinking-head { display: flex; align-items: center; gap: 8px; color: #465a75; font-size: 12px; font-weight: 600; line-height: 15px; }
+.helpdesk-chat-dots { display: inline-flex; align-items: center; gap: 4px; }
+.helpdesk-chat-dots > span { width: 6px; height: 6px; border-radius: 3px; background: #95a3b8; animation: helpdesk-typing 1s infinite ease-in-out; }
+.helpdesk-chat-dots > span:nth-child(2) { animation-delay: .15s; }
+.helpdesk-chat-dots > span:nth-child(3) { animation-delay: .3s; }
+.helpdesk-chat-thinking-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.helpdesk-chat-thinking-step { display: flex; align-items: center; gap: 6px; color: #2f6ddd; font-size: 12px; line-height: 15px; animation: helpdesk-step-in .2s ease-out; }
+.helpdesk-chat-thinking-step[data-done] { color: #60728d; }
+.helpdesk-chat-thinking-step svg { flex: 0 0 12px; color: #16a34a; }
+.helpdesk-chat-thinking-spinner { flex: 0 0 12px; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid #dce7f7; border-top-color: var(--hd-chat-accent); border-radius: 50%; animation: helpdesk-spin .8s linear infinite; }
 @keyframes helpdesk-typing { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .helpdesk-chat-typing > span[aria-hidden] { animation: none; } }
+@keyframes helpdesk-spin { to { transform: rotate(360deg); } }
+@keyframes helpdesk-step-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .helpdesk-chat-dots > span, .helpdesk-chat-thinking-spinner, .helpdesk-chat-thinking-step { animation: none; } }
 .helpdesk-chat-info { display: flex; align-items: center; gap: 9px; min-height: 52px; box-sizing: border-box; margin-top: 15px; padding: 9px 11px 9px 10px; border-radius: 8px; background: #ebf3ff; }
 .helpdesk-chat-info svg { flex: 0 0 19px; color: #2468f5; }
 .helpdesk-chat-info p { color: #516985; font-size: 11px; line-height: 13px; }
@@ -137,13 +178,16 @@
 .helpdesk-chat-vote-error { margin: 2px 0 0; color: #b42318; font-size: 11px; line-height: 13px; }
 /* 11px Inter in a 13px line: Figma draws the glyphs 1px lower than Chrome does. Nudge them without moving the layout. */
 .helpdesk-chat-header p, .helpdesk-chat-greeting-limit, .helpdesk-chat-ideas, .helpdesk-chat-related, .helpdesk-chat-feedback > span, .helpdesk-chat-info p { position: relative; top: 1px; }
-.helpdesk-chat-footer { display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
-.helpdesk-chat-input { flex: 0 0 351px; width: 351px; height: 70px; box-sizing: border-box; padding: 27px 11px 10px 12px; border: 1px solid #cad8ea; border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: 15px; resize: none; }
+/* v5 Part C: the round accent send button sits inside the input box (same 70 px box, same 43 px button; 待视觉验收).
+   A thin scrollbar stays in the 13 px between the button and the box edge, so a long question's scrollbar is never under the button. */
+.helpdesk-chat-footer { position: relative; display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
+.helpdesk-chat-input { flex: 1 1 auto; width: auto; min-width: 0; height: 70px; box-sizing: border-box; padding: 27px 64px 10px 12px; border: 1px solid var(--hd-accent-line); border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: 15px; resize: none; scrollbar-width: thin; transition: border-color var(--hd-ease), box-shadow var(--hd-ease); }
 .helpdesk-chat-input::placeholder { color: #95a3b8; opacity: 1; }
-.helpdesk-chat-input:focus { border-color: #2468f5; outline: none; box-shadow: 0 0 0 3px rgba(36, 104, 245, .12); }
-.helpdesk-chat-send { display: grid; flex: 0 0 43px; width: 43px; height: 43px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: #2468f5; color: #fff; cursor: pointer; }
+.helpdesk-chat-input:focus { border-color: var(--hd-chat-accent); outline: none; box-shadow: var(--hd-glow); }
+.helpdesk-chat-send { position: absolute; top: 13.5px; right: 23px; display: grid; width: 43px; height: 43px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--hd-chat-accent); color: #fff; cursor: pointer; transition: background-color var(--hd-ease), box-shadow var(--hd-ease); }
+.helpdesk-chat-send:focus-visible { outline: none; box-shadow: var(--hd-glow); }
 .helpdesk-chat-send:disabled { cursor: default; }
-.helpdesk-chat-send:hover:not(:disabled) { background: #1d58d6; }
+.helpdesk-chat-send:hover:not(:disabled) { background: var(--hd-chat-accent-strong); box-shadow: var(--hd-glow); }
 .helpdesk-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- success state (待视觉验收) ---- */
@@ -299,8 +343,7 @@
   .helpdesk-chat-header, .helpdesk-chat-divider, .helpdesk-chat-footer { width: 100%; }
   .helpdesk-chat-messages { padding-right: 11px; }
   .helpdesk-chat-messages > * { width: 100%; }
-  .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error { width: auto; flex: 1 1 0; min-width: 0; }
-  .helpdesk-chat-input { flex: 1 1 0; width: auto; min-width: 0; }
+  .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error, .helpdesk-chat-card { width: auto; flex: 1 1 0; min-width: 0; }
   /* Stacked under the form: the info box points up, not left (no frame, 待视觉验收). */
   .helpdesk-chat-info-side { display: none; }
   .helpdesk-chat-info-stacked { display: inline; }
@@ -326,7 +369,8 @@
 .help-centre-hero h1 { width: min(1000px, 100%); margin: 0; color: #fff; font-size: 41px; font-weight: 700; line-height: 50px; }
 .help-centre-hero > p { width: min(900px, 100%); margin: 0 0 13px; color: #eff5ff; font-size: 16px; line-height: 19px; }
 .help-centre-search { display: flex; width: 830px; max-width: 100%; height: 61px; box-sizing: border-box; flex: 0 0 61px; align-items: center; gap: 14px; padding: 0 18px 0 20px; border: 1px solid #b8d2fb; border-radius: 10px; background: #fff; }
-.help-centre-search:focus-within { box-shadow: 0 0 0 3px rgba(255, 255, 255, .45); }
+.help-centre-search { transition: border-color var(--hd-ease), box-shadow var(--hd-ease); }
+.help-centre-search:focus-within { border-color: #fff; box-shadow: var(--hd-glow-on-brand); }
 .help-centre-search svg { flex: 0 0 22px; color: #6b7f9b; }
 .help-centre-search input { flex: 1 1 auto; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: transparent; color: #1d2c46; font: inherit; font-size: 17px; }
 .help-centre-search input::placeholder { color: #91a0b5; opacity: 1; }
@@ -377,4 +421,41 @@
   .help-centre-hero h1 { font-size: 30px; }
   .help-centre-content { padding: 24px 16px 32px; }
   .help-centre-article-summary { white-space: normal; }
+}
+/* v4 Part B chat cards (handover, "Still need help?", the end line with the rating card): no Figma frame, 待视觉验收.
+   They reuse the answer bubble, the greeting title, the answer text, the form buttons and the v3 stars. */
+.helpdesk-chat-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 365px; box-sizing: border-box; padding: 11px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; box-shadow: var(--hd-card-shadow); }
+.helpdesk-chat-card:focus { outline: none; }
+.helpdesk-chat-card:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.helpdesk-chat-card-title { color: #1c2d48; font-size: 14px; font-weight: 600; line-height: 17px; }
+.helpdesk-chat-card-text, .helpdesk-chat-ended { color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
+.helpdesk-chat-ended { color: #60728d; font-weight: 600; }
+.helpdesk-chat-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.helpdesk-chat-card-actions .helpdesk-submit-button, .helpdesk-chat-card-actions .helpdesk-secondary-button, .helpdesk-chat-rating .helpdesk-secondary-button { padding: 6px 14px; font-size: 12px; }
+.helpdesk-chat-rating { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; align-self: stretch; padding: 12px; }
+.helpdesk-chat-rating h3 { margin: 0; color: #15233a; font-size: 14px; font-weight: 600; }
+.helpdesk-chat-rating:focus { outline: none; }
+.helpdesk-chat-rating:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.helpdesk-chat-rating .helpdesk-stars button { width: 36px; height: 36px; }
+.helpdesk-chat-rating p.helpdesk-inline-error { color: #b91c1c; font-size: 12px; }
+.helpdesk-chat-rated { color: #027a48; }
+
+/* ---- v5 chat states (helpdesk-v5-context-chips-and-smalltalk.md Parts A, B, D, H; graph design §1). No Figma frame:
+   they reuse the answer bubble, chip and text styles and are 待视觉验收. ---- */
+.helpdesk-chat-opening, .helpdesk-chat-closing, .helpdesk-chat-reply { align-self: stretch; color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; white-space: pre-wrap; }
+/* Part H: the approved card quoted in the bubble: light fill, a 3 px brand-blue bar on the left, the "Related FAQ" link under it. */
+.helpdesk-chat-excerpt { display: flex; flex-direction: column; gap: 6px; align-self: stretch; margin: 0; padding: 8px 10px 8px 11px; border-left: 3px solid var(--hd-chat-accent); border-radius: 0 6px 6px 0; background: var(--hd-quote-fill); }
+.helpdesk-chat-excerpt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.helpdesk-chat-expand { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: none; color: #1f6cf4; font: inherit; font-size: 11px; font-weight: 500; line-height: 13px; text-align: left; cursor: pointer; }
+.helpdesk-chat-expand:hover { text-decoration: underline; }
+.helpdesk-chat-expand:focus-visible, .helpdesk-chat-related:focus-visible { outline: none; border-radius: 3px; box-shadow: var(--hd-glow); }
+.helpdesk-chat-three-part .helpdesk-chat-try, .helpdesk-chat-smalltalk .helpdesk-chat-try { margin-top: 4px !important; }
+/* Graph design §1: A/B/C/D options, the chip with a letter badge. */
+.helpdesk-chat-option { justify-content: flex-start; }
+.helpdesk-chat-option > span:nth-child(2) { flex: 1 1 auto; }
+.helpdesk-chat-option-letter { display: inline-grid; flex: 0 0 20px; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--hd-accent-fill); color: var(--hd-chat-accent); font-size: 11px; font-weight: 600; line-height: 1; }
+.helpdesk-chat-choice-prompt { font-weight: 500; }
+@media (prefers-reduced-motion: reduce) {
+  .helpdesk-chat-chip, .helpdesk-chat-input, .helpdesk-chat-send, .helpdesk-submit-button, .helpdesk-secondary-button, .help-centre-search { transition: none; }
+  .helpdesk-chat-chip:hover:not(:disabled) { transform: none; }
 }

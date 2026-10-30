@@ -1,0 +1,661 @@
+{
+  "$comment": [
+    "PII scrubber corpus (helpdesk v5 Part G2): byte-identical copies in learningguideportal/tests/fixtures/helpdesk-pii-corpus.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-pii-corpus.json.",
+    "Portal's scrubber (modules/helpdesk/piiScrubber.ts) and Admin's copy (server/src/backoffice/modules/helpdesk/flywheel/piiScrubber.ts) must both give exactly 'expected' for every 'input' (with the learner's own account 'context' when given). Change both copies together; CI runs it in both repositories with no model."
+  ],
+  "cases": [
+    {
+      "group": "zh-CN",
+      "input": "我的手机号是13800138000，收不到验证码",
+      "expected": "我的手机号是<phone>，收不到验证码"
+    },
+    {
+      "group": "zh-CN",
+      "input": "电话 138 0013 8000 打不通",
+      "expected": "电话 <phone> 打不通"
+    },
+    {
+      "group": "zh-CN",
+      "input": "+86 138-0013-8000",
+      "expected": "<phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "联系我 0086 13800138000",
+      "expected": "联系我 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "86 13800138000 是我的号码",
+      "expected": "<phone> 是我的号码"
+    },
+    {
+      "group": "zh-CN",
+      "input": "座机 010-12345678",
+      "expected": "座机 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "邮箱 zhangsan@qq.com 没收到邮件",
+      "expected": "邮箱 <email> 没收到邮件"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我的邮箱是ZhangSan_88@163.COM。",
+      "expected": "我的邮箱是<email>。"
+    },
+    {
+      "group": "zh-CN",
+      "input": "订单号 order_1761700000000_a1b2c3d4 付款失败",
+      "expected": "订单号 <order> 付款失败"
+    },
+    {
+      "group": "zh-CN",
+      "input": "订单号：202610290001234 一直显示待支付",
+      "expected": "订单号：<order> 一直显示待支付"
+    },
+    {
+      "group": "zh-CN",
+      "input": "交易号 4200001234202610291234567890 查不到",
+      "expected": "交易号 <order> 查不到"
+    },
+    {
+      "group": "zh-CN",
+      "input": "卡号 6222 0212 3456 7890 123 被扣了两次",
+      "expected": "卡号 <card> 被扣了两次"
+    },
+    {
+      "group": "zh-CN",
+      "input": "全角数字１３８００１３８０００",
+      "expected": "全角数字<phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "学号 2023123456 登录不了",
+      "expected": "学号 <student_id> 登录不了"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫张伟，账号登不上",
+      "expected": "我叫<name>，账号登不上",
+      "context": {
+        "names": [
+          "张伟"
+        ]
+      }
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫李小龙，不是本人账号",
+      "expected": "我叫<name>，不是本人账号"
+    },
+    {
+      "group": "zh-CN",
+      "input": "孩子叫王小明，他的课程打不开",
+      "expected": "孩子叫<name>，他的课程打不开"
+    },
+    {
+      "group": "zh-CN",
+      "input": "链接 https://www.ilovelearningguide.com/zh-CN/reset?token=abc123def456 打不开",
+      "expected": "链接 <url> 打不开"
+    },
+    {
+      "group": "zh-CN",
+      "input": "打开 https://www.ilovelearningguide.com/zh-CN/account 没反应",
+      "expected": "打开 https://www.ilovelearningguide.com/zh-CN/account 没反应"
+    },
+    {
+      "group": "zh-CN",
+      "input": "尾号 1234 的卡被扣款",
+      "expected": "尾号 <card> 的卡被扣款"
+    },
+    {
+      "group": "zh-CN",
+      "input": "2026-10-29 扣了 199.00 元",
+      "expected": "2026-10-29 扣了 199.00 元"
+    },
+    {
+      "group": "zh-CN",
+      "input": "10月29号扣了两次，每次 199 元",
+      "expected": "10月29号扣了两次，每次 199 元"
+    },
+    {
+      "group": "zh-CN",
+      "input": "验证码 482913 输入后没反应",
+      "expected": "验证码 <number> 输入后没反应"
+    },
+    {
+      "group": "zh-CN",
+      "input": "微信号 zhang_san88 加我",
+      "expected": "微信号 <handle> 加我"
+    },
+    {
+      "group": "zh-CN",
+      "input": "QQ 12345678 联系",
+      "expected": "QQ <handle> 联系"
+    },
+    {
+      "group": "zh-CN",
+      "input": "幺三八零零幺三八零零零 是我电话",
+      "expected": "<number> 是我电话"
+    },
+    {
+      "group": "zh-CN",
+      "input": "怎么取消订阅？",
+      "expected": "怎么取消订阅？"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我付了两次 199 元，第 3 节课打不开",
+      "expected": "我付了两次 199 元，第 3 节课打不开"
+    },
+    {
+      "group": "zh-TW",
+      "input": "我的手機是 0912-345-678，收不到簡訊",
+      "expected": "我的手機是 <phone>，收不到簡訊"
+    },
+    {
+      "group": "zh-TW",
+      "input": "香港電話 +852 9123 4567",
+      "expected": "香港電話 <phone>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "(852) 9123-4567",
+      "expected": "<phone>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "（852）9123 4567 請回電",
+      "expected": "<phone> 請回電"
+    },
+    {
+      "group": "zh-TW",
+      "input": "852-9123 4567",
+      "expected": "<phone>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "我的電話係 91234567",
+      "expected": "我的電話係 <phone>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "台灣 +886 912 345 678",
+      "expected": "台灣 <phone>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "我的工單 LG-261029-0012 沒人回覆",
+      "expected": "我的工單 <ticket> 沒人回覆"
+    },
+    {
+      "group": "zh-TW",
+      "input": "信箱 chen.mei@gmail.com 收不到信",
+      "expected": "信箱 <email> 收不到信"
+    },
+    {
+      "group": "zh-TW",
+      "input": "學號：B11002034 無法登入",
+      "expected": "學號：<student_id> 無法登入"
+    },
+    {
+      "group": "zh-TW",
+      "input": "我叫陳美玲，帳號被鎖",
+      "expected": "我叫<name>，帳號被鎖",
+      "context": {
+        "names": [
+          "陳美玲"
+        ]
+      }
+    },
+    {
+      "group": "zh-TW",
+      "input": "美玲的課程打不開",
+      "expected": "<name>的課程打不開",
+      "context": {
+        "names": [
+          "陳美玲"
+        ]
+      }
+    },
+    {
+      "group": "zh-TW",
+      "input": "卡號４１１１－１１１１－１１１１－１１１１被扣款",
+      "expected": "卡號<card>被扣款"
+    },
+    {
+      "group": "zh-TW",
+      "input": "訂單編號：２０２６１０２９０００１２３４",
+      "expected": "訂單編號：<order>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "驗證碼 004417",
+      "expected": "驗證碼 <number>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "怎麼取消訂閱？",
+      "expected": "怎麼取消訂閱？"
+    },
+    {
+      "group": "en",
+      "input": "My email is Oliver.Zhang@Example.co.uk and I can't log in",
+      "expected": "My email is <email> and I can't log in"
+    },
+    {
+      "group": "en",
+      "input": "Call me on +44 7700 900123",
+      "expected": "Call me on <phone>"
+    },
+    {
+      "group": "en",
+      "input": "my mobile is 07700 900123",
+      "expected": "my mobile is <phone>"
+    },
+    {
+      "group": "en",
+      "input": "Card 4111 1111 1111 1111 was charged twice",
+      "expected": "Card <card> was charged twice"
+    },
+    {
+      "group": "en",
+      "input": "Amex 3782 822463 10005 declined",
+      "expected": "Amex <card> declined"
+    },
+    {
+      "group": "en",
+      "input": "Order #pi_3NqX8L2eZvKYlo2C1abcdEFG failed",
+      "expected": "Order #<order> failed"
+    },
+    {
+      "group": "en",
+      "input": "receipt cs_test_a1B2c3D4e5F6g7H8 missing",
+      "expected": "receipt <order> missing"
+    },
+    {
+      "group": "en",
+      "input": "My name is Oliver Zhang and I need help",
+      "expected": "My name is <name> and I need help"
+    },
+    {
+      "group": "en",
+      "input": "hi, oliver here, still Basic",
+      "expected": "hi, <name> here, still Basic",
+      "context": {
+        "names": [
+          "Oliver Zhang"
+        ]
+      }
+    },
+    {
+      "group": "en",
+      "input": "ZHANG paid twice",
+      "expected": "<name> paid twice",
+      "context": {
+        "names": [
+          "Oliver Zhang"
+        ]
+      }
+    },
+    {
+      "group": "en",
+      "input": "Reset link https://example.com/reset/9f8e7d6c5b4a39281706f5e4d3c2b1a0 expired",
+      "expected": "Reset link <url> expired"
+    },
+    {
+      "group": "en",
+      "input": "see www.example.com/pay?session=xyz.",
+      "expected": "see <url>."
+    },
+    {
+      "group": "en",
+      "input": "https://user:secret@example.com/path is broken",
+      "expected": "<url> is broken"
+    },
+    {
+      "group": "en",
+      "input": "user id user_1761700000000_a1b2c3d4",
+      "expected": "user id <student_id>"
+    },
+    {
+      "group": "en",
+      "input": "student number: 20231234",
+      "expected": "student number: <student_id>"
+    },
+    {
+      "group": "en",
+      "input": "ip 192.168.1.20 blocked",
+      "expected": "ip <ip> blocked"
+    },
+    {
+      "group": "en",
+      "input": "Chrome 118.0.5993.88 on Windows 11",
+      "expected": "Chrome 118.0.5993.88 on Windows 11"
+    },
+    {
+      "group": "en",
+      "input": "zhangsan at qq dot com",
+      "expected": "<email>"
+    },
+    {
+      "group": "en",
+      "input": "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "expected": "token <token>"
+    },
+    {
+      "group": "en",
+      "input": "api key zz9fake0token0for0scrubber0tests0only",
+      "expected": "api key <token>"
+    },
+    {
+      "group": "en",
+      "input": "my login lin.learner42 fails",
+      "expected": "my login <email> fails",
+      "context": {
+        "emails": [
+          "lin.learner42@example.test"
+        ]
+      }
+    },
+    {
+      "group": "en",
+      "input": "LIN.LEARNER42@EXAMPLE.TEST is my account",
+      "expected": "<email> is my account",
+      "context": {
+        "emails": [
+          "lin.learner42@example.test"
+        ]
+      }
+    },
+    {
+      "group": "en",
+      "input": "ticket 3f2a1c4e-9b8d-4e7f-a6b5-c4d3e2f1a0b9 is open",
+      "expected": "ticket <id> is open"
+    },
+    {
+      "group": "en",
+      "input": "the code ending in 4242 failed",
+      "expected": "the code ending in <card> failed"
+    },
+    {
+      "group": "en",
+      "input": "How do I cancel my subscription?",
+      "expected": "How do I cancel my subscription?"
+    },
+    {
+      "group": "en",
+      "input": "I paid £19.99 on 29/10/2026 at 10:30",
+      "expected": "I paid £19.99 on 29/10/2026 at 10:30"
+    },
+    {
+      "group": "en",
+      "input": "My order is still pending since 2026-10-28 09:15",
+      "expected": "My order is still pending since 2026-10-28 09:15"
+    },
+    {
+      "group": "en",
+      "input": "In order to watch lesson 12, what do I do? Chrome on Windows 11",
+      "expected": "In order to watch lesson 12, what do I do? Chrome on Windows 11"
+    },
+    {
+      "group": "en",
+      "input": "wechat pay failed with the code not working",
+      "expected": "wechat pay failed with the code not working"
+    },
+    {
+      "group": "en",
+      "input": "visit learningguide.com/help or https://youtu.be/dQw4w9WgXcQ",
+      "expected": "visit learningguide.com/help or https://youtu.be/dQw4w9WgXcQ"
+    },
+    {
+      "group": "mixed",
+      "input": "我的email是 a.b@c.com, phone 13800138000 谢谢",
+      "expected": "我的email是 <email>, phone <phone> 谢谢"
+    },
+    {
+      "group": "mixed",
+      "input": "订单 order_1761700000000_a1b2c3d4 paid but 没开通",
+      "expected": "订单 <order> paid but 没开通"
+    },
+    {
+      "group": "mixed",
+      "input": "138​0013​8000 打不通",
+      "expected": "<phone> 打不通"
+    },
+    {
+      "group": "mixed",
+      "input": "电话　138　0013　8000",
+      "expected": "电话　<phone>"
+    },
+    {
+      "group": "mixed",
+      "input": "phone: ١٣٨٠٠١٣٨٠٠٠",
+      "expected": "phone: <phone>"
+    },
+    {
+      "group": "mixed",
+      "input": "我叫 Lin Learner, email lin@example.test",
+      "expected": "我叫 <name>, email <email>",
+      "context": {
+        "names": [
+          "Lin Learner"
+        ],
+        "emails": [
+          "lin@example.test"
+        ]
+      }
+    },
+    {
+      "group": "mixed",
+      "input": "Hi I'm 小明, 我的 student id 是 S1234567",
+      "expected": "Hi I'm <name>, 我的 student id 是 <student_id>",
+      "context": {
+        "names": [
+          "王小明"
+        ]
+      }
+    },
+    {
+      "group": "mixed",
+      "input": "链接 www.ilovelearningguide.com/zh-CN/subscription 显示 error",
+      "expected": "链接 www.ilovelearningguide.com/zh-CN/subscription 显示 error"
+    },
+    {
+      "group": "mixed",
+      "input": "2026/10/28 10:30 打了 13800138000 没人接",
+      "expected": "2026/10/28 10:30 打了 <phone> 没人接"
+    },
+    {
+      "group": "mixed",
+      "input": "看不到第12课，版本 5.2.1，价格是 1299.00 元",
+      "expected": "看不到第12课，版本 5.2.1，价格是 1299.00 元"
+    },
+    {
+      "group": "zh-CN",
+      "input": "手机 138 - 0013 - 8000 收不到短信",
+      "expected": "手机 <phone> 收不到短信"
+    },
+    {
+      "group": "zh-CN",
+      "input": "电话 138  0013  8000",
+      "expected": "电话 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "号码\n138\n0013\n8000",
+      "expected": "号码\n<phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "138–0013–8000 是我的手机",
+      "expected": "<phone> 是我的手机"
+    },
+    {
+      "group": "zh-CN",
+      "input": "手机 138 0013 8000 和 138 0013 8000",
+      "expected": "手机 <phone> 和 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "手机138,0013,8000，或者 138_0013_8000，或者 138/0013/8000",
+      "expected": "手机<phone>，或者 <phone>，或者 <phone>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "+86 138 - 0013 - 8000",
+      "expected": "<phone>"
+    },
+    {
+      "group": "en",
+      "input": "call me tel13800138000 or ph13800138000",
+      "expected": "call me tel<phone> or ph<phone>"
+    },
+    {
+      "group": "en",
+      "input": "on lesson 3, 138 - 0013 - 8000 is my number",
+      "expected": "on lesson 3, <phone> is my number"
+    },
+    {
+      "group": "zh-CN",
+      "input": "第 3, 4, 5, 6, 7, 8 课都打不开，价格 1,299,000 元",
+      "expected": "第 3, 4, 5, 6, 7, 8 课都打不开，价格 1,299,000 元"
+    },
+    {
+      "group": "zh-CN",
+      "input": "2026 - 10 - 29 扣款两次",
+      "expected": "2026 - 10 - 29 扣款两次"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我的邮箱是 zhangsan @qq.com",
+      "expected": "我的邮箱是 <email>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "zhangsan @ qq . com 收不到",
+      "expected": "<email> 收不到"
+    },
+    {
+      "group": "en",
+      "input": "john.smith @ gmail.com and john.smith@ gmail.com",
+      "expected": "<email> and <email>"
+    },
+    {
+      "group": "en",
+      "input": "my address is john.smith@\ngmail.com",
+      "expected": "my address is <email>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "邮箱 john.smith@gmail。com，备用 abc@gmail点com",
+      "expected": "邮箱 <email>，备用 <email>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "abc 艾特 163 点 com 是我妈妈的邮箱",
+      "expected": "<email> 是我妈妈的邮箱"
+    },
+    {
+      "group": "en",
+      "input": "my email is john smith at gmail dot com",
+      "expected": "my email is <email>"
+    },
+    {
+      "group": "en",
+      "input": "hi @Tom.Smith, see you at school. Thanks",
+      "expected": "hi @Tom.Smith, see you at school. Thanks"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫Tom，订阅没开通",
+      "expected": "我叫<name>，订阅没开通"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫 Wang Xiao Ming，课程打不开",
+      "expected": "我叫 <name>，课程打不开"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我的名字是：王小明",
+      "expected": "我的名字是：<name>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "我叫欧阳娜娜，登不上",
+      "expected": "我叫<name>，登不上"
+    },
+    {
+      "group": "en",
+      "input": "I am Zhang Wei and I cannot log in",
+      "expected": "I am <name> and I cannot log in"
+    },
+    {
+      "group": "en",
+      "input": "I am stuck on lesson 3. I am Learning Guide user, I am using Chrome",
+      "expected": "I am stuck on lesson 3. I am Learning Guide user, I am using Chrome"
+    },
+    {
+      "group": "zh-TW",
+      "input": "身分證字號 A123456789 無法驗證",
+      "expected": "身分證字號 <id> 無法驗證"
+    },
+    {
+      "group": "zh-TW",
+      "input": "我的身分證是A223456789",
+      "expected": "我的身分證是<id>"
+    },
+    {
+      "group": "zh-TW",
+      "input": "香港身份證 A123456(7) 同 HKID: AB123456(A)",
+      "expected": "香港身份證 <id> 同 HKID: <id>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "身份证 11010519491231002X 实名认证失败",
+      "expected": "身份证 <id> 实名认证失败"
+    },
+    {
+      "group": "zh-CN",
+      "input": "护照号 E12345678 填不进去",
+      "expected": "护照号 <id> 填不进去"
+    },
+    {
+      "group": "en",
+      "input": "my id is S1234567 and passport no. K12345678",
+      "expected": "my id is <id> and passport no. <id>"
+    },
+    {
+      "group": "zh-CN",
+      "input": "vx zhangwei123 或者加V信 abc_123 联系",
+      "expected": "vx <handle> 或者加V信 <handle> 联系"
+    },
+    {
+      "group": "zh-TW",
+      "input": "Line ID: weizhang88，telegram @weizhang88，IG wei_zhang88",
+      "expected": "Line ID: <handle>，telegram <handle>，IG <handle>"
+    },
+    {
+      "group": "en",
+      "input": "line 12 of the lesson is wrong",
+      "expected": "line 12 of the lesson is wrong"
+    },
+    {
+      "group": "zh-CN",
+      "input": "https://www.ilovelearningguide.com/zh-CN/reset-password/Xy7aQ9pLm2 打不开",
+      "expected": "<url> 打不开"
+    },
+    {
+      "group": "en",
+      "input": "the link https://www.ilovelearningguide.com/verify/ab12cd expired",
+      "expected": "the link <url> expired"
+    },
+    {
+      "group": "en",
+      "input": "https://www.ilovelearningguide.com/en-GB/reset-password does not load",
+      "expected": "https://www.ilovelearningguide.com/en-GB/reset-password does not load"
+    }
+  ]
+}

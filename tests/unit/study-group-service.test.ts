@@ -81,6 +81,24 @@ test("My Study Groups lists the newest group first", async () => {
   assert.deepEqual(mine.map((item) => item.id), [second.id, first.id]);
 });
 
+test("Helpdesk v7: a learner's schedule is their active memberships, those groups and those groups' sessions, nothing else (read only)", async () => {
+  access.add("member:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Schedule group", courseId: "course-1", about: "About the schedule." });
+  const other = await service.createGroup({ actorUserId: "host", title: "Other group", courseId: "course-1", about: "Not the member's." });
+  await service.joinGroup({ actorUserId: "member", groupId: group.id });
+  await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Next one", startsAt: "2026-09-20T02:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.scheduleSession({ actorUserId: "host", groupId: other.id, title: "Not mine", startsAt: "2026-09-20T03:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const before = JSON.stringify(await repository.read());
+  const schedule = await service.learnerSchedule("member");
+  assert.deepEqual(schedule.memberships, [{ userId: "member", groupId: group.id, role: "member", leftAt: null }]);
+  assert.deepEqual(schedule.groups, [{ id: group.id, status: "active" }]);
+  assert.deepEqual(schedule.sessions, [{ groupId: group.id, startsAt: "2026-09-20T02:00:00.000Z", status: "scheduled" }]);
+  assert.equal(JSON.stringify(await repository.read()), before, "nothing written");
+  await service.leaveGroup({ actorUserId: "member", groupId: group.id });
+  assert.deepEqual(await service.learnerSchedule("member"), { memberships: [], groups: [], sessions: [] }, "a left group is not theirs");
+  assert.equal((await service.learnerSchedule("host")).groups.length, 2);
+});
+
 test("join is immediate for course access, duplicate join does not add a member, and leave returns the group to discover", async () => {
   access.add("member:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Join group", courseId: "course-1", about: "About the group." });

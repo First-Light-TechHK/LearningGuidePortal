@@ -2,7 +2,7 @@
 // repositories/helpdeskRepository.ts (PostgreSQL, and a DEV-only local file
 // fallback). Every write is atomic: the ticket row, the optional message and
 // attachments, and exactly one event commit together or not at all.
-import type { AgentListQuery, AssistFeedback, AssistSource, HelpdeskAlternative, HelpdeskLocale, TicketCounts } from "@/contracts/helpdesk";
+import type { AgentIdentity, AgentListQuery, AssistFeedback, AssistSource, AssistVia, ChatEndReason, CloseReason, FaqNodeType, HelpdeskAlternative, HelpdeskJob, HelpdeskLocale, JobStatus, JobTrigger, SituationSignal, SuggestIntent, SuggestKind, TicketCounts, TicketStatus } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TicketAggregate, TicketRecord } from "./domain";
 
 export type IdempotencyRecord = { ticketId: string; payloadHash: string };
@@ -20,7 +20,8 @@ export type NewTicket = {
    * linked; any other id is skipped silently. declinedId (the submit-time
    * suggestion the learner declined by submitting) also gets feedback
    * 'declined' when it is one of those rows, from source submit, with no
-   * feedback yet (first wins).
+   * feedback yet (first wins). v5: the open chat sessions of the linked rows
+   * end with reason ticket.
    */
   assistLinks?: { ids: string[]; learnerId: string; sinceIso: string; declinedId?: string | null };
 };
@@ -50,7 +51,103 @@ export type AssistRecord = {
   feedbackAttemptedAt: string | null;
   /** v3 §1: the "You might be asking" questions shown with a missing answer ([] when none), so a replay shows the same. */
   alternatives: HelpdeskAlternative[];
+} & Partial<AssistTurnColumns>;
+
+/**
+ * v5 (migration 023, spec Part G1 and graph design §3): the turn's place in the chat session and what it was, enum
+ * names only. Left out (or null) on rows written before v5 and on submit-time checks.
+ */
+export type AssistTurnColumns = {
+  sessionId: string | null;
+  /** 1, 2, 3 ... within the session, assigned when the row is recorded. */
+  turnIndex: number | null;
+  /** The node shown this turn (the answer, the choice node, or the card a clarify explained). */
+  nodeId: string | null;
+  /** The node on screen before it (the card a follow-up or option was clicked on). */
+  parentNodeId: string | null;
+  via: AssistVia | null;
+  kind: SuggestKind | "handover" | null;
+  intent: SuggestIntent | null;
+  /** "passed", "fallback" or a guard reason code (Admin's, or Portal's own check when it refused a string). */
+  guard: string | null;
+  releaseVersion: number | null;
+  traceId: string | null;
+  /** The session's situation signals (enum names) when the turn was shown. */
+  signals: SituationSignal[] | null;
+  /** The excerpt's block ids shown ([] or null = the whole answer). */
+  blocks: string[] | null;
+  /** The learner opened "show the full answer". */
+  expanded: boolean | null;
+  /** clarify: whether the card covered the follow-up. */
+  covered: boolean | null;
+  /** The short strings shown with the card (so an Idempotency-Key replay shows the same) and the node type. */
+  texts: AssistTexts | null;
 };
+
+export type AssistTexts = { opening: string | null; closing: string | null; reply: string | null; explanation: string | null; nodeType: FaqNodeType | null };
+
+/**
+ * v5: a click answered from the cached release (never sent to Admin): its feedback stays in Portal, so the
+ * outcome sweep never forwards it (Admin would not know the run). Typed turns and chips asked through Admin's
+ * per-FAQ path (no release version on the row) are Admin's runs.
+ */
+export function answeredByPortal(row: Pick<AssistRecord, "via" | "releaseVersion">): boolean {
+  return Boolean(row.via && row.via !== "typed" && row.releaseVersion);
+}
+
+/** v5 (graph design §3): one chat session of the learner (helpdesk_chat_sessions); Portal is its only writer. */
+export type ChatSessionRecord = {
+  id: string;
+  learnerId: string;
+  locale: HelpdeskLocale;
+  releaseVersion: number | null;
+  startedAt: string;
+  lastTurnAt: string;
+  endedAt: string | null;
+  endReason: ChatEndReason | null;
+  turns: number;
+  unsolvedStreak: number;
+  /** The card on screen (the last node shown). */
+  currentNodeId: string | null;
+  signals: SituationSignal[];
+};
+
+/**
+ * v5 Part G1 (migration 024 helpdesk_assist_outcomes): the enquiry an assist row led to, read from the tickets (no copy):
+ * the linked ticket, otherwise the learner's next enquiry within 24 hours. agentReply is the body of the agent's last
+ * public reply (raw: the caller scrubs it before it leaves Portal).
+ */
+export type AssistOutcome = {
+  ticketId: string; linked: boolean; createdAt: string; status: TicketStatus; closeReason: CloseReason | null; closedAt: string | null;
+  resolvedByAgent: boolean; agentReplyId: string | null; agentReplyAt: string | null; agentReply: string | null;
+};
+
+/** What the scrubber must also remove for a learner: the names and emails on their own enquiries (the account's come from the product store). */
+export type LearnerContacts = { names: string[]; emails: string[] };
+
+/** v5 Part G2: one assist row with what the insights feed labels it with (never sent as is: the service scrubs and maps it). */
+export type InsightRow = AssistRecord & {
+  rating: number | null;
+  scrubbedAt: string | null;
+  sessionTurns: number | null;
+  sessionEndReason: ChatEndReason | null;
+  outcome: AssistOutcome | null;
+  contacts: LearnerContacts;
+};
+
+/** v5 Part G1 retention: a row whose raw text is due to be replaced, and what replaces it. */
+export type RetentionRow = Pick<AssistRecord, "id" | "learnerId" | "question" | "answer" | "kind" | "texts"> & { contacts: LearnerContacts };
+export type RetentionUpdate = { id: string; question: string; answer: string | null; texts: AssistTexts | null };
+
+/** v5 Part G (helpdesk_job_runs): one run of a Portal background job. */
+export type JobRunRecord = {
+  id: string; job: HelpdeskJob; day: string; trigger: JobTrigger; status: JobStatus; attempts: number;
+  startedAt: string; finishedAt: string | null; cutoff: string; rowsScrubbed: number; moreDue: boolean;
+  instance: string | null; requestedBy: AgentIdentity | null; clientEventId: string | null; errorCode: string | null;
+};
+
+/** How a recorded turn changes the session's unsolved streak (v4 rules: smalltalk keeps it, an answer resets it). */
+export type TurnUpdate = { unsolved: "reset" | "increment" | "keep"; currentNodeId?: string | null };
 
 /** v3 §2: the learner's rating of one answer they were shown (helpdesk_ai_ratings); runId is the assist log row. */
 export type AiRatingRecord = { runId: string; learnerId: string; source: AssistSource; rating: number; createdAt: string };
@@ -129,4 +226,47 @@ export type HelpdeskRepository = {
   /** Stores the rating unless that run already has one (first wins); returns the rating stored afterwards. */
   insertAiRating(record: AiRatingRecord): Promise<number>;
   findAiRating(runId: string): Promise<number | null>;
+  // ---- v5 chat sessions (migration 023)
+  createChatSession(record: ChatSessionRecord): Promise<void>;
+  findChatSession(id: string): Promise<ChatSessionRecord | null>;
+  /**
+   * Records one turn of a session (record.sessionId) atomically: the row gets the next turn index, and the session its
+   * turn count, last turn time, unsolved streak and card on screen. "duplicate" (nothing changed) when the id or the
+   * Idempotency-Key is already stored; "no_session" when the session does not exist or belongs to someone else.
+   */
+  recordTurn(record: AssistRecord, update: TurnUpdate): Promise<{ status: "inserted"; turnIndex: number } | { status: "duplicate" } | { status: "no_session" }>;
+  /** The first end wins; returns the session as stored afterwards (null: no such session of this learner). */
+  endChatSession(id: string, learnerId: string, reason: ChatEndReason, atIso: string): Promise<ChatSessionRecord | null>;
+  /**
+   * The learner's newest session in this locale that is still open, has no turns and was started at or after sinceIso
+   * (null: none). Starting the chat again while that one is unused hands it out again instead of a new row per call.
+   */
+  openEmptyChatSession(learnerId: string, locale: HelpdeskLocale, sinceIso: string): Promise<ChatSessionRecord | null>;
+  /** Whether one of these sessions of this learner already showed this card (graph design §4: a step is clicked on a card the chat showed). */
+  sessionShowedNode(sessionIds: readonly string[], learnerId: string, nodeId: string): Promise<boolean>;
+  /** What the learner typed in this session (via typed), oldest first, the newest limit. */
+  sessionLearnerTurns(sessionId: string, limit: number): Promise<string[]>;
+  /** Marks that the learner opened the full answer of their own row; returns the row (null: not theirs). */
+  setAssistExpanded(id: string, learnerId: string): Promise<AssistRecord | null>;
+  // ---- v5 Part G: the flywheel feed, retention and job runs (migration 024)
+  /**
+   * Assist rows created at or after sinceIso and before untilIso, after the (createdAt, id) position when given, oldest
+   * first, at most limit, each with its rating, session end, ticket outcome and the learner's enquiry contacts.
+   */
+  listInsightRows(query: { sinceIso: string; untilIso: string; after: { createdAt: string; id: string } | null; limit: number }): Promise<InsightRow[]>;
+  /** Rows created before cutoffIso whose raw text was not yet replaced, oldest first, at most limit. */
+  listRetentionDue(cutoffIso: string, limit: number): Promise<RetentionRow[]>;
+  /** Writes the scrubbed text of each row still not replaced and marks it (scrubbed_at = atIso); returns how many changed. */
+  applyRetention(updates: readonly RetentionUpdate[], atIso: string): Promise<number>;
+  /**
+   * Runs work while holding the job's lock (PostgreSQL: a session advisory lock, so one instance at a time across the
+   * fleet, released if the process dies); locked false, without running it, when another holder has it.
+   */
+  withJobLock<T>(job: HelpdeskJob, work: () => Promise<T>): Promise<{ locked: true; value: T } | { locked: false }>;
+  findScheduledRun(job: HelpdeskJob, day: string): Promise<JobRunRecord | null>;
+  findJobRunByKey(clientEventId: string): Promise<JobRunRecord | null>;
+  /** Inserts the run or replaces the stored one with the same id; duplicate when another run already has its day (scheduled) or key. */
+  saveJobRun(record: JobRunRecord): Promise<"saved" | "duplicate">;
+  /** The newest runs of a job first. */
+  listJobRuns(job: HelpdeskJob, limit: number): Promise<JobRunRecord[]>;
 };

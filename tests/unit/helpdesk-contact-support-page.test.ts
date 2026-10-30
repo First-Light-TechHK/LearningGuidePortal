@@ -570,6 +570,7 @@ test("chat panel: greeting, starter chips, a chip asks with its FAQ id; the answ
     const c = chat(page, locale);
     assert.equal(await c.panel.getByRole("heading", { level: 2 }).textContent(), c.copy.title);
     const text = await c.panel.textContent();
+    // The greeting keeps the Figma title (1394:23; owner 2026-10-30), with no name.
     for (const part of [c.copy.subtitle, c.copy.greetingTitle, c.copy.greetingBody, c.copy.greetingLimit, c.copy.ideas, c.copy.tryAsking, c.copy.info]) assert.ok(text?.includes(part), `${locale}: panel shows ${part}`);
     assert.equal(await c.input.getAttribute("placeholder"), c.copy.placeholder);
     assert.deepEqual(await c.chips.allTextContents(), CHIPS.map((chip) => chip.question));
@@ -1223,7 +1224,8 @@ test("chat: the fallback shows Admin's alternatives as chips under it; a chip as
     await page.keyboard.press("Enter");
     await c.answers.first().waitFor();
     const fallback = c.answers.first();
-    assert.ok((await fallback.textContent())?.startsWith(c.copy.fallback), `${locale}: the fallback text first`);
+    // v5 Part B §3 (spec change): with alternatives the softened copy points at them ("you might be asking one of these").
+    assert.ok((await fallback.textContent())?.startsWith(c.copy.fallbackAlternatives), `${locale}: the fallback text first`);
     const list = fallback.getByRole("list", { name: c.copy.alternativesTitle });
     assert.deepEqual(await list.getByRole("button").allTextContents(), ALTERNATIVES.slice(0, 2).map((item) => item.question));
     assert.equal(await list.locator(".helpdesk-chat-chip").count(), 2, "the starter chip style");

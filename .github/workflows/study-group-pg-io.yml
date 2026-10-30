@@ -59,4 +59,4 @@ jobs:
         run: bash scripts/studygroup-io-postgres.sh
 
       - name: Run the Helpdesk PostgreSQL io tests
-        run: bash scripts/pg-io-postgres.sh tests/io/postgres/helpdesk-repository.test.ts
+        run: bash scripts/pg-io-postgres.sh tests/io/postgres/helpdesk-repository.test.ts tests/io/postgres/helpdesk-insights.test.ts

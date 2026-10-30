@@ -164,13 +164,16 @@ test("AccountNav Contact support opens the support page with the AI Support Assi
   await expect(page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
   await expect(page.getByLabel(text.email)).toHaveValue(email);
   const panel = page.getByRole("region", { name: text.chat.title });
-  await expect(panel.getByText(text.chat.greetingTitle)).toBeVisible();
-  await expect(panel.locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?"]);
+  // The greeting keeps the Figma title (1394:23; owner 2026-10-30).
+  await expect(panel.locator(".helpdesk-chat-greeting-title")).toHaveText(text.chat.greetingTitle);
+  // v5 Part A: the session's situation chips (up to 3 as Figma 1394:30 draws; no signal matched, so the popular ones).
+  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["How do I reset my password?", "How can I access my course materials?", "How do I change my subscription?"]);
   await panel.locator(".helpdesk-chat-chip").nth(1).click();
   const answer = panel.locator(".helpdesk-chat-answer").first();
   await expect(answer).toContainText("Find your enrolled courses and open the available lessons and resources.");
   await expect(answer.locator("strong")).toHaveText("My Learning");
-  await expect(answer.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "How can I access my course materials?" }) })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
+  // v5 Part H: the card with the Figma "Related FAQ" link (1394:56) to the whole answer in the Help Centre.
+  await expect(answer.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "How can I access my course materials?" }), exact: true })).toHaveAttribute("href", "/en-GB/help?faq=0192f000-0000-7000-8000-000000000002");
   await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
   await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(answer.getByRole("button", { name: text.chat.no, exact: true })).toBeDisabled();
@@ -747,7 +750,8 @@ test("chat: a fallback reply shows the alternatives as chips; one asks like a st
   await input.fill("Something is wrong with my account");
   await input.press("Enter");
   const fallback = panel.locator(".helpdesk-chat-answer").first();
-  await expect(fallback.locator(".helpdesk-chat-fallback")).toHaveText(text.chat.fallback);
+  // v5 Part B §3 (spec change): the softened copy that points at the alternatives.
+  await expect(fallback.locator(".helpdesk-chat-fallback")).toHaveText(text.chat.fallbackAlternatives);
   const chips = fallback.getByRole("list", { name: text.chat.alternativesTitle }).getByRole("button");
   await expect(chips).toHaveText(["How do I reset my password?", "How do I access my courses?", "How can I access my course materials?"]);
   await chips.nth(1).click();
@@ -793,6 +797,119 @@ test("rating API: the learner's own answered runs only, RFC 9457 errors; the age
   const seen = await agentTicket(page.request, id);
   expect(seen.aiAssist.map((item) => [item.id, item.rating])).toEqual([[answered.id, 5]]);
   await other.context.close();
+  await context.close();
+});
+
+/** v4 Part A: a paid demo order of the signed-in learner (the payment module's own demo checkout; nothing about payment changes). */
+async function demoOrder(page: Page) {
+  const consents = { renewal: true, terms: true, refund: true };
+  const quote = await page.request.post("/api/purchase/quote", { data: { planId: "epicureanism-pc-6", kind: "purchase" } });
+  expect(quote.status()).toBe(200);
+  const checkout = await page.request.post("/api/purchase/checkout", { headers: { Origin: origin(page) }, data: { quoteId: (await quote.json()).quote.id, locale: "en-GB", consents } });
+  expect(checkout.status(), await checkout.text()).toBe(200);
+  const orderId = (await checkout.json()).order.id as string;
+  const completed = await page.request.post("/api/purchase/demo/confirm", { headers: { Origin: origin(page) }, data: { orderId, action: "complete" } });
+  expect(completed.status()).toBe(200);
+  return orderId;
+}
+
+test("v4 order entry: Contact support on a payment record carries the order; the agent sees the order projection; another learner's order is refused", async ({ browser }) => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const { context, page } = await newLearner(browser, locale);
+    await page.goto(`/${locale}/account/my-learning`);
+    const orderId = await demoOrder(page);
+    const records = getMessages(locale).subscriptionDesign;
+    const text = copy(locale);
+    // My Learning > Subscription: every payment record shown has "Contact support" for its order.
+    await page.goto(`/${locale}/account/my-learning/subscription`);
+    await page.getByRole("button", { name: records.paymentHistory }).first().click();
+    const link = page.getByRole("link", { name: records.contactSupportLabel.replace("{number}", orderId), exact: true });
+    await expect(link).toHaveText(records.contactSupport);
+    await expect(page.locator("a[data-contact-support]")).toHaveCount(await page.locator("table tbody tr").count());
+    await link.click();
+    await page.waitForURL(`**/${locale}/account/my-learning/support?orderId=${orderId}`);
+    // Contact Support: Payments & Subscriptions preset, the read-only order line above Subject with Remove.
+    await expect(page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.payments_subscriptions);
+    const line = page.getByRole("group", { name: text.order.label, exact: true });
+    await expect(line).toContainText(orderId);
+    await expect(line.getByRole("button", { name: fillTemplate(text.order.removeLabel, { number: orderId }), exact: true })).toBeVisible();
+    await mkdir(SHOTS, { recursive: true });
+    await page.screenshot({ path: `${SHOTS}/v4-order-line-${locale}.png`, fullPage: true });
+    const subject = `Refund please ${randomUUID().slice(0, 6)}`;
+    await page.getByLabel(text.subject).fill(subject);
+    await page.getByLabel(text.message).fill("I was charged twice for the same plan.");
+    await page.getByRole("button", { name: text.submit }).click();
+    await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+    // The AI check never saw the order.
+    const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: Record<string, unknown> }[] };
+    const asked = suggestions.filter((entry) => entry.request.subject === subject);
+    expect(asked).toHaveLength(1);
+    expect(JSON.stringify(asked[0].request)).not.toContain(orderId);
+    expect(JSON.stringify(asked[0].request)).not.toMatch(/order/i);
+    // BackOffice (integration API): orderId on the list, the projection with only the listed fields on the detail.
+    const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
+    const listed = (await (await page.request.get(`/api/integration/helpdesk/tickets?q=${encodeURIComponent(subject)}`, { headers: bearer })).json() as { tickets: { id: string; orderId: string | null }[] }).tickets;
+    expect(listed.find((item) => item.id === ticket.id)?.orderId).toBe(orderId);
+    const detail = await (await page.request.get(`/api/integration/helpdesk/tickets/${ticket.id}`, { headers: bearer })).json() as { orderId: string; order: Record<string, unknown>; category: string };
+    expect(detail.category).toBe("payments_subscriptions");
+    expect(detail.orderId).toBe(orderId);
+    expect(Object.keys(detail.order)).toEqual(["id", "status", "amount", "currency", "planName", "kind", "createdAt", "paymentMode"]);
+    expect(detail.order).toMatchObject({ id: orderId, status: "paid", kind: "purchase", paymentMode: "demo", currency: "usd" });
+    expect(typeof detail.order.amount).toBe("number");
+
+    // Another learner can neither see nor attach this order. (Final review: the page says the order could not be
+    // attached, never why, and keeps Payments & Subscriptions; before, it opened a silent plain form on Technical Support.)
+    const other = await newLearner(browser, locale, "Other Learner");
+    await other.page.goto(`/${locale}/account/my-learning/support?orderId=${orderId}`);
+    await expect(other.page.getByRole("heading", { level: 1, name: text.pageTitle })).toBeVisible();
+    const notice = other.page.getByRole("group", { name: text.order.label, exact: true });
+    await expect(notice).toHaveText(`${text.order.label}${text.order.unavailable}`);
+    await expect(notice.getByRole("button")).toHaveCount(0);
+    await expect(other.page.getByText(orderId)).toHaveCount(0);
+    await expect(other.page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.payments_subscriptions);
+    const refused = await other.page.request.post("/api/helpdesk/tickets", {
+      headers: { "Idempotency-Key": randomUUID(), Origin: origin(other.page) },
+      multipart: { category: "payments_subscriptions", subject: "Not my order", body: "Trying someone else's order.", locale, orderId }
+    });
+    expect(refused.status()).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: "validation_failed", field: "orderId" });
+    expect(await learnerTickets(other.page)).toHaveLength(0);
+    await other.context.close();
+    await context.close();
+  }
+});
+
+test("v4 order entry: signed out, Contact support for an order goes through sign-in and back to the same order", async ({ browser }) => {
+  const visitor = await browser.newContext({ locale: "zh-CN" });
+  const page = await visitor.newPage();
+  const orderId = "order_1761720000000_a1b2c3d4";
+  await page.goto(`/zh-CN/account/my-learning/support?orderId=${orderId}`);
+  await page.waitForURL(/\/zh-CN\/portal\/sign-in\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe(`/zh-CN/account/my-learning/support?orderId=${orderId}`);
+  await page.goto("/en-GB/account/my-learning/support?orderId=%3Cscript%3E");
+  await page.waitForURL(/\/en-GB\/portal\/sign-in\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/en-GB/account/my-learning/support");
+  await visitor.close();
+});
+
+test("v4 order entry: Remove sends the enquiry without the order", async ({ browser }) => {
+  const { context, page } = await newLearner(browser);
+  await page.goto("/en-GB/account/my-learning");
+  const orderId = await demoOrder(page);
+  const text = copy("en-GB");
+  await page.goto(`/en-GB/account/my-learning/support?orderId=${orderId}`);
+  await page.getByRole("button", { name: fillTemplate(text.order.removeLabel, { number: orderId }), exact: true }).click();
+  await expect(page.getByRole("group", { name: text.order.label, exact: true })).toHaveCount(0);
+  await expect(page.getByLabel(text.subject)).toBeFocused();
+  const subject = `No order after all ${randomUUID().slice(0, 6)}`;
+  await page.getByLabel(text.subject).fill(subject);
+  await page.getByLabel(text.message).fill("Something else.");
+  await page.getByRole("button", { name: text.submit }).click();
+  await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+  const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
+  const detail = await (await page.request.get(`/api/integration/helpdesk/tickets/${ticket.id}`, { headers: bearer })).json() as { orderId: string | null; order: unknown };
+  expect(detail.orderId).toBeNull();
+  expect(detail.order).toBeNull();
   await context.close();
 });
 
@@ -852,6 +969,8 @@ test("visual capture v2: Contact Support with the chat panel (1216:6) and the He
     const answer = panel.locator(".helpdesk-chat-answer").first();
     await answer.getByRole("button", { name: text.chat.yes, exact: true }).click();
     await expect(answer.getByRole("button", { name: text.chat.yes, exact: true })).toHaveAttribute("aria-pressed", "true");
+    // v5 Part C / H (待视觉验收): the panel with the three-part answer and the polish, for the visual check.
+    await panel.screenshot({ path: `${SHOTS}/v5-chat-panel-${locale}.png` });
     await page.getByRole("combobox", { name: text.enquiryType }).click();
     await page.mouse.move(0, 0);
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -861,4 +980,195 @@ test("visual capture v2: Contact Support with the chat panel (1216:6) and the He
     await page.screenshot({ path: `${SHOTS}/app-1387-2-${locale}.png` });
     await context.close();
   }
+});
+
+test("v4 chat handover: asking for a person shows the handover card at once with no AI call; its button opens the form and the enquiry links the chat", async ({ browser }) => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const { context, page } = await newLearner(browser, locale);
+    const text = copy(locale);
+    await openSupport(page, locale);
+    const learnerId = (await (await page.request.get("/api/auth/me")).json() as { user: { id: string } }).user.id;
+    const panel = page.getByRole("region", { name: text.chat.title });
+    const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+    const first = locale === "zh-CN" ? "在哪里可以找到发票？" : "Where can I find my invoice?";
+    await input.fill(first);
+    await input.press("Enter");
+    await expect(panel.locator(".helpdesk-chat-answer .helpdesk-chat-answer-text")).toHaveCount(1);
+    // The request also names the invoice, which the AI would answer: it must not be asked.
+    const request = locale === "zh-CN" ? "我要投诉，发票不对" : "I want to SPEAK TO SOMEONE about my invoice";
+    await input.fill(request);
+    await input.press("Enter");
+    const card = panel.getByRole("group", { name: text.chat.handoverTitle, exact: true });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(text.chat.handoverBody);
+    await expect(panel.locator(".helpdesk-chat-question")).toHaveText([first, request]);
+    await expect(panel.locator(".helpdesk-chat-answer")).toHaveCount(1);
+    const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { learnerId?: string; message?: string } }[] };
+    expect(suggestions.filter((entry) => entry.request.learnerId === learnerId).map((entry) => entry.request.message), "the request for a person never reached the AI").toEqual([first]);
+    await expect(input).toBeEnabled();
+    await expect(panel.locator(".helpdesk-chat-info")).toBeVisible();
+    await mkdir(SHOTS, { recursive: true });
+    await panel.screenshot({ path: `${SHOTS}/v4-chat-handover-${locale}.png` });
+    // The card opens Contact Support (the form on this page); the enquiry carries the chat's history.
+    await card.getByRole("button", { name: text.chat.handoverButton, exact: true }).click();
+    await expect(page.getByLabel(text.subject)).toBeFocused();
+    const subject = `Need a person ${randomUUID().slice(0, 6)}`;
+    await fillEnquiry(page, locale, { category: "other", subject, message: "Please call me back." });
+    await page.getByRole("button", { name: text.submit }).click();
+    await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
+    const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
+    const seen = await agentTicket(page.request, ticket.id);
+    expect(seen.aiAssist.map((item) => [item.source, item.question])).toEqual([["chat", first]]);
+    await context.close();
+  }
+});
+
+// ---- Helpdesk v5 (helpdesk-v5-context-chips-and-smalltalk.md, helpdesk-v5-faq-graph-design.md). The stub Admin has a
+// published release for zh-CN (a choice node, a 3-level follow-up chain, a shared node) and none for en-GB, so both the
+// release path (clicks answered by Portal from its cached copy) and the per-FAQ path run. New states: 待视觉验收.
+
+async function learnerIdOf(page: Page) {
+  return (await (await page.request.get("/api/auth/me")).json() as { user: { id: string } }).user.id;
+}
+
+/** What Admin's suggest was asked for this learner (the stub records every request). */
+async function suggestCalls(page: Page, learnerId: string) {
+  const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { learnerId?: string; message?: string; source?: string; context?: unknown } }[] };
+  return suggestions.filter((entry) => entry.request.learnerId === learnerId);
+}
+
+test("v5 small talk: “你好” shows a reply bubble and the situation chips, never the fallback; “谢谢” after an answer shows the rating card", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const panel = page.getByRole("region", { name: text.chat.title });
+  await expect(panel.locator(".helpdesk-chat-greeting-title")).toHaveText(text.chat.greetingTitle);
+  await expect(panel.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveText(["如何重置密码？", "如何访问我的课程资料？", "如何更改我的订阅？"]);
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("你好");
+  await input.press("Enter");
+  const hello = panel.locator(".helpdesk-chat-answer").first();
+  await expect(hello.locator(".helpdesk-chat-reply")).toHaveText("你好呀！想了解哪方面的问题？");
+  await expect(hello.getByRole("list", { name: text.chat.tryAsking }).locator(".helpdesk-chat-chip")).toHaveCount(3);
+  await expect(hello.locator(".helpdesk-chat-fallback")).toHaveCount(0);
+  await expect(panel).not.toContainText(text.chat.fallback);
+  await expect(panel).not.toContainText(text.chat.fallbackAlternatives);
+  const learnerId = await learnerIdOf(page);
+  const [greeting] = await suggestCalls(page, learnerId);
+  expect(greeting.request.context, "the context goes with every typed question").toMatchObject({ sessionId: expect.any(String) });
+  // The session's signals and order data never go to Admin; contract v7 adds only the coarse learner state (no ids, no contact data).
+  const { learnerState, ...rest } = greeting.request.context as { learnerState?: unknown } & Record<string, unknown>;
+  expect(JSON.stringify(rest)).not.toMatch(/order|signal|payment/i);
+  expect(JSON.stringify(learnerState ?? {})).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-|@|signal/i);
+  await input.fill("在哪里可以找到发票？");
+  await input.press("Enter");
+  await expect(panel.locator(".helpdesk-chat-answer").nth(1).locator(".helpdesk-chat-excerpt li")).toHaveText(["打开我的订阅", "选择记录"]);
+  await input.fill("谢谢");
+  await input.press("Enter");
+  await expect(panel.locator(".helpdesk-chat-answer").nth(2).locator(".helpdesk-chat-reply")).toHaveText("不客气！有问题随时再来问我。");
+  const card = panel.getByRole("group", { name: text.assistant.rateTitle, exact: true });
+  await expect(card).toBeVisible();
+  await expect(panel.locator(".helpdesk-chat-ended")).toHaveCount(0);
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-smalltalk-rating-zh-CN.png` });
+  await card.getByRole("button", { name: fillTemplate(text.assistant.rateStar, { n: 5 }), exact: true }).click();
+  await expect(panel.locator(".helpdesk-chat-rated")).toHaveText(text.assistant.rated);
+  await context.close();
+});
+
+test("v5 situation chips: a learner whose latest payment failed sees the payment chip first, in both locales", async ({ browser }) => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const { context, page } = await newLearner(browser, locale);
+    const text = copy(locale);
+    await page.goto(`/${locale}/account/my-learning`);
+    const quote = await page.request.post("/api/purchase/quote", { data: { planId: "epicureanism-pc-6", kind: "purchase" } });
+    const checkout = await page.request.post("/api/purchase/checkout", { headers: { Origin: origin(page) }, data: { quoteId: (await quote.json()).quote.id, locale, consents: { renewal: true, terms: true, refund: true } } });
+    expect(checkout.status()).toBe(200);
+    const failed = await page.request.post("/api/purchase/demo/confirm", { headers: { Origin: origin(page) }, data: { orderId: (await checkout.json()).order.id, action: "fail" } });
+    expect((await failed.json()).status).toBe("failed");
+    await openSupport(page, locale);
+    const panel = page.getByRole("region", { name: text.chat.title });
+    const chips = panel.getByRole("list", { name: text.chat.situationTitle }).locator(".helpdesk-chat-chip");
+    await expect(chips.first()).toHaveText(locale === "zh-CN" ? "为什么我的付款失败了？" : "Why did my payment fail?");
+    await expect(chips).toHaveCount(3);
+    // The chip text is the FAQ question: no amount, order number or date of the learner's.
+    await expect(panel.locator(".helpdesk-chat-chips")).not.toContainText(/\d/);
+    await mkdir(SHOTS, { recursive: true });
+    await panel.screenshot({ path: `${SHOTS}/v5-chat-situation-chips-${locale}.png` });
+    await chips.first().click();
+    await expect(panel.locator(".helpdesk-chat-answer").first().locator(".helpdesk-chat-excerpt")).toContainText(locale === "zh-CN" ? "查看常见的付款问题" : "Check common payment issues");
+    await context.close();
+  }
+});
+
+test("v5 three-part answer: opening, the picked blocks quoted with their source, closing and a follow-up; “查看完整答案” opens the whole card in place and is logged", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const panel = page.getByRole("region", { name: text.chat.title });
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("我付款成功了，但是课程没开通");
+  await input.press("Enter");
+  const answer = panel.locator(".helpdesk-chat-answer").first();
+  await expect(answer.locator(".helpdesk-chat-opening")).toHaveText("别着急，这个问题可以这样处理：");
+  const quoted = answer.locator("blockquote.helpdesk-chat-excerpt");
+  await expect(quoted.locator("li")).toHaveText(["退出登录后重新登录，让账号重新读取你的订阅状态", "打开我的学习，查看课程是否已经出现在你的课程列表里"]);
+  await expect(quoted).toContainText("仍然没有开通？");
+  await expect(quoted).not.toContainText("银行确认扣款");
+  await expect(quoted.getByRole("link", { name: fillTemplate(text.chat.relatedFaq, { question: "付款成功但没有开通" }), exact: true })).toBeVisible();
+  await expect(answer.locator(".helpdesk-chat-closing")).toHaveText("按上面试一下，还不行就告诉我。");
+  await expect(answer.getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button")).toHaveText(["还是不行，怎么联系客服？"]);
+  const order = await answer.evaluate((node) => [...node.children].map((child) => child.className.split(" ")[0]));
+  expect(order.slice(0, 3)).toEqual(["helpdesk-chat-opening", "helpdesk-chat-excerpt", "helpdesk-chat-closing"]);
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-three-part-zh-CN.png` });
+  const logged = page.waitForResponse((response) => /\/api\/helpdesk\/assistant\/[^/]+\/expanded$/.test(new URL(response.url()).pathname));
+  await quoted.getByRole("button", { name: text.chat.showFull }).click();
+  expect((await logged).status()).toBe(200);
+  await expect(quoted).toContainText("银行确认扣款");
+  await expect(quoted).toContainText("请联系客服并附上订单号");
+  await expect(quoted.getByRole("button", { name: text.chat.showLess })).toHaveAttribute("aria-expanded", "true");
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-three-part-expanded-zh-CN.png` });
+  await context.close();
+});
+
+test("v5 FAQ tree: a 3-level follow-up chain and an A/B/C/D choice are walked by clicks that never reach Admin's suggest", async ({ browser }) => {
+  const { context, page } = await newLearner(browser, "zh-CN");
+  const text = copy("zh-CN");
+  await openSupport(page, "zh-CN");
+  const learnerId = await learnerIdOf(page);
+  const panel = page.getByRole("region", { name: text.chat.title });
+  const answers = panel.locator(".helpdesk-chat-answer");
+  // The chain: a chip, then three follow-ups deep (the last one a shared node).
+  await panel.getByRole("list", { name: text.chat.tryAsking }).getByRole("button", { name: "如何重置密码？" }).click();
+  await expect(answers.first().locator(".helpdesk-chat-excerpt")).toContainText("检查垃圾邮件文件夹");
+  for (const [index, label, body] of [[0, "收不到重置邮件怎么办？", "请先检查垃圾邮件文件夹"], [1, "换了邮箱还能找回账号吗？", "说明注册时使用的邮箱"], [2, "如何联系客服？", "客服团队会通过邮件回复你"]] as const) {
+    const followUps = answers.nth(index).getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button");
+    await expect(followUps).toHaveText([label]);
+    await followUps.first().click();
+    await expect(answers.nth(index + 1).locator(".helpdesk-chat-excerpt")).toContainText(body);
+  }
+  await expect(panel.locator(".helpdesk-chat-question")).toHaveText(["如何重置密码？", "收不到重置邮件怎么办？", "换了邮箱还能找回账号吗？", "如何联系客服？"]);
+  // Clicks use the fixed frame (no model line).
+  await expect(answers.nth(3).locator(".helpdesk-chat-opening")).toHaveText("好的，这个问题可以这样处理：");
+  await mkdir(SHOTS, { recursive: true });
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-follow-up-chain-zh-CN.png` });
+  expect(await suggestCalls(page, learnerId), "every click was answered by Portal from the release").toHaveLength(0);
+  // The choice: typed, unsure, so Admin shows the A/B/C/D node; the learner picks B.
+  const input = panel.getByRole("textbox", { name: text.chat.inputLabel });
+  await input.fill("付款有问题");
+  await input.press("Enter");
+  const choice = answers.nth(4);
+  await expect(choice.locator(".helpdesk-chat-choice-prompt")).toHaveText("你遇到的是哪种情况？");
+  const options = choice.getByRole("list", { name: "你遇到的是哪种情况？" }).getByRole("button");
+  await expect(options).toHaveText(["A付款失败", "B扣款了但没开通", "C被重复扣款"]);
+  await expect(choice.getByRole("button", { name: text.chat.yes })).toHaveCount(0);
+  await panel.screenshot({ path: `${SHOTS}/v5-chat-choice-zh-CN.png` });
+  await options.nth(1).click();
+  const picked = answers.nth(5);
+  await expect(picked.locator(".helpdesk-chat-excerpt")).toContainText("银行确认扣款");
+  await expect(picked.getByRole("list", { name: text.chat.followUpsTitle }).getByRole("button")).toHaveText(["还是不行，怎么联系客服？"]);
+  const asked = await suggestCalls(page, learnerId);
+  expect(asked.map((entry) => entry.request.message), "only the typed question asked Admin").toEqual(["付款有问题"]);
+  await context.close();
 });

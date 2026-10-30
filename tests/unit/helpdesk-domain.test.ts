@@ -203,7 +203,7 @@ function record(overrides: Partial<TicketRecord> = {}): TicketRecord {
     id: "0192d4f0-7b6a-7c3e-9a10-1234567890ab", number: "LG-261028-0001", userId: "u1", userEmail: "u1@example.test", userName: "U One", contactEmail: "contact@example.test",
     locale: "en-GB", category: "technical_support", subject: "s", status: "ASSIGNED", assigneeId: "agent-1", assigneeName: "Amy", sequence: 3,
     confirmDueAt: null, closedAt: null, closeReason: null, rating: null, createdAt: at, updatedAt: at, lastMessageAt: at, lastMessageBy: "agent",
-    clientEventId: "8e03978e-40d5-43e8-bc93-6894a57f9324", payloadHash: "a".repeat(64), suggestionId: null, unreadByAgent: false, flaggedAt: null, flaggedBy: null, ...overrides
+    clientEventId: "8e03978e-40d5-43e8-bc93-6894a57f9324", payloadHash: "a".repeat(64), suggestionId: null, unreadByAgent: false, flaggedAt: null, flaggedBy: null, orderId: null, ...overrides
   };
 }
 
