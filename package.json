@@ -40,6 +40,8 @@
     "test:payment": "NODE_OPTIONS=\"--require ./scripts/register-tsconfig-paths.cjs\" playwright test --config=playwright.payment.config.ts"
   },
   "dependencies": {
+    "@ant-design/cssinjs": "2.1.2",
+    "@ant-design/nextjs-registry": "1.3.0",
     "@aws-sdk/client-s3": "^3.1101.0",
     "@aws-sdk/client-secrets-manager": "^3.1149.0",
     "@aws-sdk/client-sesv2": "^3.1101.0",
@@ -56,6 +58,7 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
+    "antd": "6.6.8",
     "google-auth-library": "^11.0.2",
     "katex": "^0.16.22",
     "livekit-client": "^2.15.8",

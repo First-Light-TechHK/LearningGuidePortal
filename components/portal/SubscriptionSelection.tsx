@@ -1,5 +1,9 @@
 "use client";
 
+import { PortalProvider } from "./ui/PortalProvider";
+
+import { PortalButton } from "./ui/PortalButton";
+
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SubscriptionSelectionState } from "@/contracts/subscription-selection";
@@ -16,7 +20,11 @@ function OwnedChip({ children, label }: { children: React.ReactNode; label?: str
   return <span className="pricing-owned-chip">{children}{label && <small>{label}</small>}</span>;
 }
 
-export function SubscriptionSelection(props: Props) {
+export function SubscriptionSelection(props: Parameters<typeof SubscriptionSelectionContent>[0]) {
+  return <PortalProvider locale={props.locale}><SubscriptionSelectionContent {...props}/></PortalProvider>;
+}
+
+function SubscriptionSelectionContent(props: Props) {
   if (props.selection.kind === "none") return <PricingPlans {...props}/>;
   if (props.selection.kind === "everything" || props.selection.kind === "all_categories") return <SubscriptionSummary {...props}/>;
   return <ExpandedSelection {...props}/>;
@@ -103,7 +111,7 @@ function ExpandedSelection({ locale, plans, categories, courseTitles, selection,
       window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quote.id)}`);
     } catch (failure) { setError(failure instanceof Error ? failure.message : copy.unavailable); inFlight.current = false; setBusy(false); }
   }
-  const termSwitch = <div className="pricing-term-switch" role="group" aria-label={copy.term}>{([6, 12] as const).map(value => <button type="button" key={value} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 6 ? copy.sixMonths : copy.year}</button>)}</div>;
+  const termSwitch = <div className="pricing-term-switch" role="group" aria-label={copy.term}>{([6, 12] as const).map(value => <PortalButton htmlType="button" key={value} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 6 ? copy.sixMonths : copy.year}</PortalButton>)}</div>;
   return <div className={`pricing-comparison-wrap pricing-selection--${selection.kind}`} data-subscription-state={selection.kind}>
     <div className="pricing-title-row"><h1>{one ? text.expand : text.lastHeading}</h1></div>
     <div className="pricing-owned-notice"><Image src="/portal/subscription-selection/info.svg" width={20} height={20} alt=""/><p>{text.alreadyHave}</p><div className="pricing-owned-chips">{owned.map(item => <OwnedChip key={item.id}>{item.labels[locale]}</OwnedChip>)}</div><a href={`/${locale}/account/my-learning/subscription`}>{text.details}</a></div>
@@ -115,13 +123,13 @@ function ExpandedSelection({ locale, plans, categories, courseTitles, selection,
         <div className="pricing-card-includes"><p>{text.allIncluded}</p><div className="pricing-category-switch pricing-category-switch--all">{[...owned, ...remaining].map(item => selection.ownedCategoryIds.includes(item.id) ? <OwnedChip key={item.id} label={text.owned}>{item.labels[locale]}</OwnedChip> : <span className="pricing-included-chip" key={item.id}>{item.labels[locale]}</span>)}</div>
           <div className="pricing-card-course-list"><p>{copy.courseSummary.replace("{courses}", String(courseTitles.length)).replace("{categories}", String(categories.length))} · <a href={`/${locale}/portal/courses`}>{copy.viewAll}</a></p><small>{copy.newEverything}</small></div></div>
         <ul className="pricing-card-benefits"><li><span>{copy.points}</span><strong>{points.toLocaleString(locale, { useGrouping: true })} (+{addedPoints.toLocaleString(locale, { useGrouping: true })})</strong></li></ul>
-        <div className="pricing-upgrade-action">{error && <><p role="alert" className="portal-form-error">{error}</p><button type="button" disabled={busy} onClick={() => setRefresh(value => value + 1)}>{text.quoteRetry}</button></>}{!source?.canUpgrade ? <p role="status">{text.upgradeUnavailable}</p> : (!everythingPlan || everythingPlan.available === false) && <p role="status">{copy.unavailable}</p>}<button type="button" disabled={busy || !quote || !source?.canUpgrade || !everythingPlan || everythingPlan.available === false} onClick={() => void upgrade()}>{busy ? getMessages(locale).learning.processing : text.upgradeAction.replace("{price}", estimate)}</button></div>
+        <div className="pricing-upgrade-action">{error && <><p role="alert" className="portal-form-error">{error}</p><PortalButton htmlType="button" disabled={busy} onClick={() => setRefresh(value => value + 1)}>{text.quoteRetry}</PortalButton></>}{!source?.canUpgrade ? <p role="status">{text.upgradeUnavailable}</p> : (!everythingPlan || everythingPlan.available === false) && <p role="status">{copy.unavailable}</p>}<PortalButton htmlType="button" loading={busy} disabled={busy || !quote || !source?.canUpgrade || !everythingPlan || everythingPlan.available === false} onClick={() => void upgrade()}>{busy ? getMessages(locale).learning.processing : text.upgradeAction.replace("{price}", estimate)}</PortalButton></div>
       </article>}
       <article className={`pricing-design-card pricing-design-card--category ${!one ? "pricing-last-category" : ""}`} data-selected={selectedScope === "category"} onClick={() => setSelectedScope("category")} onFocusCapture={() => setSelectedScope("category")}>
         {one && <div className="pricing-card-tags"/>}
         <header className="pricing-card-heading"><h2>{one ? text.addCategory : text.addTitle.replace("{category}", categoryName)}</h2><p>{one ? text.addDescription : text.lastDescription}</p></header>
         <div className="pricing-selection-price"><div className="pricing-selection-price-row"><div className="pricing-card-price"><strong>{categoryPrice || "—"}</strong></div>{termSwitch}</div></div>
-        <div className="pricing-card-includes"><p>{one ? copy.chooseCategory : text.lastCategory}</p><div className="pricing-category-switch" role="group" aria-label={copy.category}>{[...owned, ...remaining].map(item => selection.ownedCategoryIds.includes(item.id) ? <OwnedChip key={item.id} label={text.owned}>{item.labels[locale]}</OwnedChip> : <button type="button" key={item.id} disabled={!selectable(item.id)} aria-pressed={category === item.id} onClick={() => setCategory(item.id)}>{item.labels[locale]}</button>)}</div>
+        <div className="pricing-card-includes"><p>{one ? copy.chooseCategory : text.lastCategory}</p><div className="pricing-category-switch" role="group" aria-label={copy.category}>{[...owned, ...remaining].map(item => selection.ownedCategoryIds.includes(item.id) ? <OwnedChip key={item.id} label={text.owned}>{item.labels[locale]}</OwnedChip> : <PortalButton htmlType="button" key={item.id} disabled={!selectable(item.id)} aria-pressed={category === item.id} onClick={() => setCategory(item.id)}>{item.labels[locale]}</PortalButton>)}</div>
           <div className="pricing-card-course-list"><p>{copy.categorySummary.replace("{count}", String(categoryCourses.length)).replace("{titles}", categoryCourses.map(item => item.title).join(", "))}</p><small>{copy.newCategory}</small></div></div>
         <ul className="pricing-card-benefits"><li><span>{copy.points}</span><strong>{(categoryPlan?.aiPoints ?? 0).toLocaleString(locale)}</strong></li></ul>
         {one && <div className="pricing-upgrade-note"><Image src="/portal/subscription-selection/note.svg" width={16} height={16} alt=""/><p>{text.upgradeNote}</p></div>}

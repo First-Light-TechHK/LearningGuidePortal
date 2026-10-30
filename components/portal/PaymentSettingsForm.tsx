@@ -1,41 +1,37 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { Alert, Button, Form, Input, Switch, Tag } from "antd";
+import { useRef, useState } from "react";
 
 type Settings = { name: string; publishableKey: string; returnUrl: string; paymentNotifications: boolean; secretConfigured: boolean };
+type InputSettings = Omit<Settings, "secretConfigured">;
 
 export function PaymentSettingsForm({ initialSettings, copy }: { initialSettings: Settings; copy: { name: string; publishableKey: string; returnUrl: string; notifications: string; secret: string; configured: string; notConfigured: string; save: string; saved: string; error: string } }) {
+  const [form] = Form.useForm<InputSettings>();
   const [settings, setSettings] = useState(initialSettings);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false), submitting = useRef(false);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage("");
-    setError("");
+  async function submit(values: InputSettings) {
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true); setMessage(""); setError("");
     try {
-      const response = await fetch("/api/backoffice/payment", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: settings.name, publishableKey: settings.publishableKey, returnUrl: settings.returnUrl, paymentNotifications: settings.paymentNotifications }) });
+      const response = await fetch("/api/backoffice/payment", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
       const data = await response.json() as { ok?: boolean; settings?: Settings; error?: string };
       if (!response.ok || !data.ok || !data.settings) throw new Error(data.error || copy.error);
-      setSettings(data.settings);
-      setMessage(copy.saved);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : copy.error);
-    } finally {
-      setBusy(false);
-    }
+      setSettings(data.settings); form.setFieldsValue(data.settings); setMessage(copy.saved);
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : copy.error); }
+    finally { submitting.current = false; setBusy(false); }
   }
-
-  return <form className="portal-form settings-form" onSubmit={submit}>
-    <label>{copy.name}<input value={settings.name} onChange={(event) => setSettings((current) => ({ ...current, name: event.target.value }))} required /></label>
-    <label>{copy.publishableKey}<input value={settings.publishableKey} onChange={(event) => setSettings((current) => ({ ...current, publishableKey: event.target.value }))} placeholder="pk_test_..." /></label>
-    <label>{copy.returnUrl}<input value={settings.returnUrl} onChange={(event) => setSettings((current) => ({ ...current, returnUrl: event.target.value }))} placeholder="https://learning-guide.example" /></label>
-    <label className="backoffice-checkbox"><input type="checkbox" checked={settings.paymentNotifications} onChange={(event) => setSettings((current) => ({ ...current, paymentNotifications: event.target.checked }))} />{copy.notifications}</label>
-    <p className={settings.secretConfigured ? "portal-success" : "portal-form-error"}>{copy.secret}: {settings.secretConfigured ? copy.configured : copy.notConfigured}</p>
-    {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-    {message ? <p className="portal-success" role="status">{message}</p> : null}
-    <button className="portal-button portal-button-primary" disabled={busy} type="submit">{copy.save}</button>
-  </form>;
+  return <Form<InputSettings> form={form} layout="vertical" className="bo-form" initialValues={initialSettings} onFinish={submit} disabled={busy}>
+    <Form.Item name="name" label={copy.name} rules={[{ required:true,whitespace:true,message:copy.error }]}><Input/></Form.Item>
+    <Form.Item name="publishableKey" label={copy.publishableKey}><Input placeholder="pk_test_..."/></Form.Item>
+    <Form.Item name="returnUrl" label={copy.returnUrl}><Input/></Form.Item>
+    <Form.Item name="paymentNotifications" label={copy.notifications} valuePropName="checked"><Switch/></Form.Item>
+    <p>{copy.secret}: <Tag color={settings.secretConfigured ? "success" : "warning"}>{settings.secretConfigured ? copy.configured : copy.notConfigured}</Tag></p>
+    {error && <Alert type="error" title={error} showIcon/>}
+    {message && <Alert type="success" title={message} showIcon/>}
+    <Button type="primary" htmlType="submit" loading={busy}>{copy.save}</Button>
+  </Form>;
 }

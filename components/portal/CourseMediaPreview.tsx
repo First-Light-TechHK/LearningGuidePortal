@@ -79,7 +79,7 @@ export function SafeLessonHtml({ html, onNode, nodeTitles }: { html: string; onN
   return <div onClick={e => { if (activate(e.target)) e.preventDefault(); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && activate(e.target)) e.preventDefault(); }}>{markup}</div>;
 }
 
-export function LessonModal({ title, locale, onClose, children }: { title: string; locale: LessonLocale; onClose: () => void; children: ReactNode }) {
+export function LessonModal({ title, locale, onClose, children, portal = true }: { title: string; locale: LessonLocale; onClose: () => void; children: ReactNode; portal?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
@@ -87,10 +87,11 @@ export function LessonModal({ title, locale, onClose, children }: { title: strin
     const dialog = ref.current; dialog?.showModal();
     return () => { dialog?.close(); if (before?.isConnected) before.focus(); };
   }, []);
-  return createPortal(<dialog ref={ref} className="la-modal la" aria-label={title} onCancel={e => { e.preventDefault(); close.current(); }} onClick={e => { if (e.target === e.currentTarget) { const box = e.currentTarget.getBoundingClientRect(); if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) close.current(); } }}>
+  const content = <dialog ref={ref} className="la-modal la" aria-label={title} onCancel={e => { e.preventDefault(); close.current(); }} onClick={e => { if (e.target === e.currentTarget) { const box = e.currentTarget.getBoundingClientRect(); if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) close.current(); } }}>
     <header className="la-heading"><h3>{title}</h3><button type="button" className="la-icon" aria-label={lessonMessages(locale).close} title={lessonMessages(locale).close} onClick={onClose}><X size={20}/></button></header>
     <div className="la-modal-body">{children}</div>
-  </dialog>, document.body);
+  </dialog>;
+  return portal ? createPortal(content, document.body) : content;
 }
 
 export function MediaUpload({ courseId, value, onChange, accept, locale }: { courseId: string; value: string; onChange: (url: string) => void; accept: string; locale: LessonLocale }) {
