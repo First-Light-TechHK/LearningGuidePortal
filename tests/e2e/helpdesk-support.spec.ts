@@ -1056,7 +1056,10 @@ test("v5 small talk: “你好” shows a reply bubble and the situation chips, 
   const learnerId = await learnerIdOf(page);
   const [greeting] = await suggestCalls(page, learnerId);
   expect(greeting.request.context, "the context goes with every typed question").toMatchObject({ sessionId: expect.any(String) });
-  expect(JSON.stringify(greeting.request.context)).not.toMatch(/order|signal|payment/i);
+  // The session's signals and order data never go to Admin; contract v7 adds only the coarse learner state (no ids, no contact data).
+  const { learnerState, ...rest } = greeting.request.context as { learnerState?: unknown } & Record<string, unknown>;
+  expect(JSON.stringify(rest)).not.toMatch(/order|signal|payment/i);
+  expect(JSON.stringify(learnerState ?? {})).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-|@|signal/i);
   await input.fill("在哪里可以找到发票？");
   await input.press("Enter");
   await expect(panel.locator(".helpdesk-chat-answer").nth(1).locator(".helpdesk-chat-excerpt li")).toHaveText(["打开我的订阅", "选择记录"]);
