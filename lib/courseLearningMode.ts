@@ -9,7 +9,7 @@ export function availableCourseLearningModes(course: Pick<ProductCourse, "sectio
   return (["video", "text"] as const).filter(mode => available.has(mode));
 }
 
-/** Prefer the server's mode maximum, retaining accessible entry fallbacks. */
+/** Prefer the server's last mode cursor, retaining accessible entry fallbacks. */
 export function modeLessonDestination(outline: Array<{id:string;href:string|null;modes?:CourseLearningMode[]}>, lessonId:string, mode:CourseLearningMode, currentHasMode:boolean, contentId?:string, position?:CourseModePosition|null) {
   if (position === null) return null;
   const resumed = position ? outline.find(item => item.id === position.lessonId && item.href && (!item.modes || item.modes.includes(mode))) : undefined;

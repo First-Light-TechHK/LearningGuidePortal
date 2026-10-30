@@ -2,7 +2,7 @@ import type { CourseLearningMode, CourseModePosition } from "@/contracts/course-
 import type { ProductCourse, ProductStudyEvent, ProductStudyRecord } from "@/services/productStore";
 import { courseKnowledgePoints } from "@/lib/knowledgeProgress";
 
-/** A mode's furthest owned point is independent of its movable review cursor. */
+/** Resume the mode's latest owned cursor, including deliberate backward review. */
 export function courseModePosition({ course, mode, userId, record, events, fallbackLessonId, accessiblePoints }: {
   course: Pick<ProductCourse, "id" | "sections">;
   mode: CourseLearningMode;
@@ -15,29 +15,24 @@ export function courseModePosition({ course, mode, userId, record, events, fallb
   const allPoints = courseKnowledgePoints(course, mode);
   const points = allPoints.filter(point => accessiblePoints.some(allowed => allowed.lessonId === point.lessonId && allowed.contentId === point.contentId));
   if (!points.length) return null;
-  let furthest = -1;
-  const consider = (position?: CourseModePosition | null) => {
-    if (!position) return;
-    const index = points.findIndex(point => point.lessonId === position.lessonId && point.contentId === position.contentId);
-    if (index > furthest) furthest = index;
-  };
+  const available = (position?: CourseModePosition | null) => position
+    ? points.find(point => point.lessonId === position.lessonId && point.contentId === position.contentId)
+    : undefined;
   if (record?.userId === userId && record.courseId === course.id) {
-    consider(record.knowledgePositions?.[mode]);
-    if (record.highestProgress?.mode === mode) consider(record.highestProgress);
+    const cursor = available(record.knowledgePositions?.[mode]);
+    if (cursor) return cursor;
   }
-  const owned = events.filter(event => event.userId === userId && event.courseId === course.id);
-  for (const event of owned) {
-    if (event.learningMode === mode) consider({ lessonId: event.lessonId, contentId: event.contentId || null });
+  // Legacy records can recover from server-timed events. Equal timestamps use
+  // their append order, matching the atomic Study cursor update.
+  let latest: CourseModePosition | undefined;
+  let latestAt = Number.NEGATIVE_INFINITY;
+  for (const event of events) {
+    if (event.userId !== userId || event.courseId !== course.id || event.learningMode !== mode) continue;
+    const position = available({ lessonId: event.lessonId, contentId: event.contentId || null });
+    if (!position) continue;
+    const timestamp = Date.parse(event.createdAt);
+    const at = Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
+    if (!latest || at >= latestAt) { latest = position; latestAt = at; }
   }
-  const position = furthest >= 0 ? points[furthest] : points.find(point => point.lessonId === fallbackLessonId) || points[0];
-  const lessonEvents = owned.filter(event => event.lessonId === position.lessonId && event.event === "complete");
-  const completed = lessonEvents.some(event => !event.learningMode && !event.contentId)
-    || (["text", "video"] as const).some(completedMode => {
-      const lessonPoints = courseKnowledgePoints(course, completedMode).filter(point => point.lessonId === position.lessonId);
-      const valid = lessonEvents.filter(event => event.learningMode === completedMode
-        && lessonPoints.some(point => point.contentId === (event.contentId || null)));
-      return valid.some(event => event.completeLesson)
-        || lessonPoints.length > 0 && lessonPoints.every(point => valid.some(event => (event.contentId || null) === point.contentId));
-    });
-  return completed ? points.filter(point => point.lessonId === position.lessonId).at(-1)! : position;
+  return latest || points.find(point => point.lessonId === fallbackLessonId) || points[0];
 }

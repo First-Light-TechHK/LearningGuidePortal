@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 import { mkdir, readFile } from "node:fs/promises";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("mode switching follows server maxima across Lessons, scrolls text and seeks real video without autoplay", { timeout: 120000 }, async () => {
+test("mode switching resumes the last visited point after backward review, with text scroll and paused video seek", { timeout: 120000 }, async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>{window.currentProps=p;flushSync(()=>root.render(<PreviewLessonView key={p.lesson.id} {...p}/>))};window.navigate=href=>{window.destination=href;const url=new URL(href,location.href);window.mount({...window.currentProps,lesson:window.lessons[url.searchParams.get('lessonId')],preferredMode:url.searchParams.get('viewMode'),initialContentId:url.searchParams.get('contentId')})};` },
     bundle: true, write: false, outfile: "mode-position.js", platform: "browser", jsx: "automatic", external: ["/portal/*"], loader: { ".css": "local-css" }, define: { "process.env.NODE_ENV": '"production"' },
@@ -41,7 +41,11 @@ test("mode switching follows server maxima across Lessons, scrolls text and seek
           return route.fulfill({ status: range ? 206 : 200, body: body.subarray(start, end + 1), contentType: "video/webm", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${end}/${body.length}` } : {}) } });
         }
         if (url.pathname.startsWith("/portal/")) return route.fulfill({ body: await readFile(`public${url.pathname}`), contentType: url.pathname.endsWith(".svg") ? "image/svg+xml" : "image/png" });
-        if (url.pathname.startsWith("/api/")) return route.fulfill({ json: { record: {} } });
+        if (url.pathname.startsWith("/api/")) {
+          const body = route.request().postDataJSON();
+          if (body?.event === "open" && (body.learningMode === "text" || body.learningMode === "video")) positions[body.learningMode as "text" | "video"] = { lessonId: body.lessonId, contentId: body.contentId };
+          return route.fulfill({ json: { record: {} } });
+        }
         return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
       });
       await page.goto("http://mode-position.test");
@@ -51,7 +55,7 @@ test("mode switching follows server maxima across Lessons, scrolls text and seek
       await page.addScriptTag({ content: bundle.outputFiles.find(file => file.path.endsWith("js"))!.text });
       const lessons = Object.fromEntries(["a", "b"].map(id => [id, {
         id, title: `Lesson ${id}`, body: "", durationMinutes: 1,
-        contents: ["text", "video"].flatMap(type => [1, 2, 3].map(n => ({ id: `${id}-${type}-${n}`, title: `${type} ${n}`, type, mode: "lecture", nodes: [], exhibitMode: "authored", ...(type === "text"
+        contents: ["text", "video"].flatMap(type => [1, 2, 3, 4].map(n => ({ id: `${id}-${type}-${n}`, title: `${type} ${n}`, type, mode: "lecture", nodes: [], exhibitMode: "authored", ...(type === "text"
           ? { html: Array.from({ length: 12 }, () => `<p>${id} point ${n}: ${"Reading a course point. ".repeat(25)}</p>`).join("") }
           : { url: "/portal/text-exhibits/flowers.webm", startSeconds: (n - 1) / 2 }) }))),
       }]));
@@ -68,22 +72,33 @@ test("mode switching follows server maxima across Lessons, scrolls text and seek
       assert.equal(await page.evaluate(() => new URL((window as any).destination, location.href).searchParams.get("contentId")), "b-text-2");
       assert.ok(await page.locator("[data-text-reader]").evaluate(element => element.scrollTop > 0));
       assert.deepEqual(modeRequests[1], { mode: "text", lessonId: "a" });
-      await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-maximum.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-last-position.png`, fullPage: true });
       await select.selectOption("video");
       await page.locator('[data-lesson-id="a"] video').waitFor();
       await page.waitForFunction(() => { const media = document.querySelector<HTMLVideoElement>("video.la-lesson-video"); return media && media.readyState >= 2 && Math.abs(media.currentTime - .5) < .03; });
       assert.equal(await video.evaluate(element => (element as HTMLVideoElement).paused), true, "switching locates the chapter without autoplay");
       assert.equal(modeRequests.at(-1)?.lessonId, "b");
-      positions.text = { lessonId: "a", contentId: "a-text-3" };
+      positions.text = { lessonId: "a", contentId: "a-text-4" };
       await select.selectOption("text");
-      await page.waitForFunction(() => document.querySelector('[data-lesson-id="a"] [aria-current="step"]')?.textContent?.includes("text 3"));
-      await page.getByRole("button", { name: /^1\.1 text 1/ }).click();
-      await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 1"));
+      await page.waitForFunction(() => document.querySelector('[data-lesson-id="a"] [aria-current="step"]')?.textContent?.includes("text 4"));
+      const reviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-text-3");
+      await page.getByRole("button", { name: /^1\.3 text 3/ }).click();
+      await reviewed;
+      await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
       await select.selectOption("video"); await video.waitFor();
       await select.selectOption("text");
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
-      positions.text = { lessonId: "b", contentId: "b-text-3" };
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-reviewed-1-3.png`, fullPage: true });
       await select.selectOption("video"); await video.waitFor();
+      const videoReviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-video-1");
+      await page.getByRole("button", { name: /^1\.1 video 1/ }).click();
+      await videoReviewed; await video.evaluate(element => (element as HTMLVideoElement).pause());
+      await select.selectOption("text");
+      await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
+      await select.selectOption("video");
+      await page.waitForFunction(() => { const media = document.querySelector<HTMLVideoElement>("video.la-lesson-video"); return media && media.readyState >= 2 && media.paused && media.currentTime < .03; });
+      assert.equal(await page.locator('[aria-current="step"]').textContent(), "1.1 video 1", "video review also replaces the previous later cursor");
+      positions.text = { lessonId: "b", contentId: "b-text-3" };
       await page.setViewportSize({ width: 390, height: 844 });
       await select.selectOption("text");
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="b"] [aria-current="step"]')?.textContent?.includes("text 3"));
@@ -93,7 +108,7 @@ test("mode switching follows server maxima across Lessons, scrolls text and seek
         const offset = target.getBoundingClientRect().top - reader.getBoundingClientRect().top;
         return offset >= 0 && offset < 40;
       });
-      await page.screenshot({ path: `test-results/course-mode-position/${locale}-completed-mobile.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-position-mobile.png`, fullPage: true });
       assert.deepEqual(errors, []);
       await page.close();
     }
