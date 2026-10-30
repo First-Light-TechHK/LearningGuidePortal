@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { MarkdownAnswer } from "@/components/MarkdownAnswer";
 
 type Message = { role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -31,6 +32,9 @@ function CloseIcon() {
   return <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 5L15 15M15 5L5 15" stroke="#667085" strokeWidth="1.6" strokeLinecap="round"/></svg>;
 }
 
+/** 与 CSS `.tutor-composer textarea` 的 max-height 同步；10 行后出现滚动条。 */
+const MAX_TEXTAREA_HEIGHT = 196;
+
 export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { locale: "en-GB" | "zh-CN"; courseId: string; lessonId: string; copy: Copy; onClose?: () => void }) {
   const [mode, setMode] = useState<"lecture" | "socratic">("lecture");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -47,6 +51,15 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
   const generationRef = useRef(0);
   const requestRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** textarea 自动增高，超过 10 行（max-height 196px）受 CSS 约束出现滚动条。 */
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT) + "px";
+  }, [input]);
 
   useEffect(() => {
     generationRef.current += 1;
@@ -162,7 +175,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
         <div className="tutor-message-line">
           <div className="tutor-message-bubble-wrap">
             <span className="tutor-avatar tutor-avatar-ai" aria-hidden="true">AI</span>
-            <div className="tutor-message assistant"><p>{welcome}</p></div>
+            <div className="tutor-message assistant">{welcome ? <MarkdownAnswer content={welcome} compact /> : null}</div>
             <time className="tutor-message-time" dateTime={openedAt}>{formatTime(openedAt, locale)}</time>
           </div>
         </div>
@@ -173,7 +186,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
             <span className={`tutor-avatar ${message.role === "assistant" ? "tutor-avatar-ai" : "tutor-avatar-user"}`} aria-hidden="true">
               {message.role === "assistant" ? "AI" : Array.from(copy.you)[0]}
             </span>
-            <div className={`tutor-message ${message.role}`}><p>{message.content || (busy ? "..." : "")}</p></div>
+            <div className={`tutor-message ${message.role}`}>{message.content ? <MarkdownAnswer content={message.content} compact /> : (busy ? <p>...</p> : null)}</div>
             <time className="tutor-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, locale)}</time>
           </div>
         </div>
@@ -181,7 +194,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
       {!messages.length && !welcome ? <p className="tutor-empty">{copy.askTutor}</p> : null}
     </div>
     <form className="tutor-composer" onSubmit={send}>
-      <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder={copy.askTutorPlaceholder} maxLength={4000} rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }}/>
+      <textarea ref={textareaRef} value={input} onChange={(event) => setInput(event.target.value)} placeholder={copy.askTutorPlaceholder} maxLength={4000} rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }}/>
       <button className="portal-button portal-button-primary" disabled={busy || !input.trim()}>{copy.send}</button>
     </form>
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
