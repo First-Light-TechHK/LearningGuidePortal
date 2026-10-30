@@ -6,7 +6,7 @@ import { lessonMessages, type LessonLocale } from '@/messages/lesson-authoring';
 import { playbackDuration } from '@/lib/videoLessonCompletion';
 
 // Fullscreen the container so the browser never substitutes its native video toolbar.
-export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement> & { locale: LessonLocale; fullscreenOverlay?: ReactNode; onFullscreenChange?: (active:boolean)=>void; exitFullscreenRequested?:boolean }>(function ControlledVideo({ locale, fullscreenOverlay, onFullscreenChange, exitFullscreenRequested, onPlay, onPause, onEnded, onTimeUpdate, onLoadedMetadata, onDurationChange, onVolumeChange, onRateChange, onSeeked, onEmptied, ...props }, ref) {
+export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement> & { locale: LessonLocale; fullscreenOverlay?: ReactNode; dialogOverlay?: ReactNode; hideFullscreen?: boolean; onFullscreenChange?: (active:boolean)=>void }>(function ControlledVideo({ locale, fullscreenOverlay, dialogOverlay, hideFullscreen = false, onFullscreenChange, onPlay, onPause, onEnded, onTimeUpdate, onLoadedMetadata, onDurationChange, onVolumeChange, onRateChange, onSeeked, onEmptied, ...props }, ref) {
   const media = useRef<HTMLVideoElement>(null), container = useRef<HTMLDivElement>(null);
   const scrubbing = useRef(false);
   const surfaceAction = useRef(0);
@@ -141,7 +141,6 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     update();document.addEventListener('fullscreenchange',update);
     return () => document.removeEventListener('fullscreenchange',update);
   }, [expanded,onFullscreenChange]);
-  useLayoutEffect(() => { if(exitFullscreenRequested)setExpanded(false); }, [exitFullscreenRequested]);
   return <div ref={container} className={`la-controlled-video${expanded ? ' la-video-expanded' : ''}`} data-playing={playing}>
     <video {...props} ref={media} controls={false} playsInline onContextMenu={event => event.preventDefault()}
       onPlay={event => { setPlaying(true); onPlay?.(event); }}
@@ -160,6 +159,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       </span>}
     </button>
     {fullscreenOverlay && <div className="la-video-fullscreen-exhibit">{fullscreenOverlay}</div>}
+    {dialogOverlay}
     <div className="la-video-controls">
       <button type="button" aria-label={playing ? t.videoPause : t.videoPlay} onClick={() => void toggle()}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
       <div className="la-video-seek-container" data-dragging={dragging} style={{ '--video-progress': `${progress}%` } as CSSProperties}
@@ -215,7 +215,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
         </select>
       </span>
       <button type="button" aria-label={pipActive ? t.videoPipExit : t.videoPipEnter} title={!pipSupported ? t.videoPipUnsupported : pipActive ? t.videoPipExit : t.videoPipEnter} aria-pressed={pipActive} disabled={!pipSupported || !duration} onClick={() => void pictureInPicture()}><PictureInPicture2 size={18}/></button>
-      <button type="button" aria-label={t.videoFullscreen} onClick={() => void fullscreen()}><Maximize size={18}/></button>
+      {!hideFullscreen && <button type="button" aria-label={t.videoFullscreen} onClick={() => void fullscreen()}><Maximize size={18}/></button>}
     </div>
   </div>;
 });

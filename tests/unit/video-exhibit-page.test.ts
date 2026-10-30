@@ -276,7 +276,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await mount("timed-samples");
       const fullscreenBar=page.locator('[data-video-exhibit="fullscreen"]');
       for(const [seconds,kind] of [[20,"image"],[40,"video"],[60,"model3d"]] as const) {
-        await page.locator('.la-controlled-video .la-video-controls').getByRole('button').last().click();
+        if(!await page.evaluate(()=>Boolean(document.fullscreenElement)))await page.locator('.la-controlled-video .la-video-controls').getByRole('button').last().click();
         await page.waitForFunction(()=>document.fullscreenElement?.classList.contains('la-controlled-video'));
         await time(seconds-.01);assert.equal(await fullscreenBar.count(),0);
         await time(seconds);await fullscreenBar.waitFor();
@@ -286,13 +286,15 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
         assert.equal(await fullscreenBar.getByText(locale==="en-GB"?(kind==="model3d"?"3D Model":kind==="image"?"Image":"Video"):(kind==="model3d"?"3D 模型":kind==="image"?"图片":"视频"),{exact:true}).count(),1);
         await page.screenshot({path:`test-results/video-exhibit/${locale}-${seconds}s-${kind}.png`,fullPage:true});
         await fullscreenBar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole("dialog").waitFor();
-        assert.equal(await page.evaluate(()=>document.fullscreenElement===null),true);
+        assert.equal(await page.getByRole("dialog").evaluate(dialog=>document.fullscreenElement?.contains(dialog)),true,"viewer stays inside the native fullscreen lesson player");
         if(kind==="image")await page.getByRole("dialog").locator('img[alt]:not([alt=""])').waitFor();
         if(kind==="video")await page.getByRole("dialog").locator("video").waitFor();
         await page.keyboard.press("Escape");assert.equal(await fullscreenBar.count(),0);
+        assert.equal(await page.evaluate(()=>document.fullscreenElement?.classList.contains('la-controlled-video')),true,"closing an Exhibit retains native fullscreen");
         assert.equal(await page.locator('video.la-lesson-video').evaluate((v,seconds)=>(v as HTMLVideoElement).paused && (v as HTMLVideoElement).currentTime===seconds,seconds),true);
         await time(seconds+1);assert.equal(await fullscreenBar.count(),0,"viewed samples do not immediately repeat");
       }
+      await page.locator('.la-controlled-video .la-video-controls').getByRole('button').last().click();
       await time(19,"seeked");await time(20);await bar.waitFor();await bar.getByRole("button").first().click();
       await time(39,"seeked");
       await page.locator('.la-controlled-video').evaluate(container=>{Object.defineProperty(container,"requestFullscreen",{value:undefined,configurable:true});});
@@ -300,7 +302,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       const expandedBar=page.locator('.la-video-expanded [data-video-exhibit="fullscreen"]');
       await time(40);await expandedBar.waitFor();assert.equal(await expandedBar.evaluate(e=>!!e.closest('.la-video-expanded')),true);
       await page.setViewportSize({width:844,height:390});assert.equal(await expandedBar.locator('[data-exhibit-pointer]').count(),0);const shortBox=(await expandedBar.boundingBox())!;assert.ok(shortBox.y>=0&&shortBox.y+shortBox.height<390);await page.screenshot({path:`test-results/video-exhibit/${locale}-fullscreen-landscape.png`,fullPage:true});
-      await expandedBar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole('dialog').waitFor();assert.equal(await page.locator('.la-video-expanded').count(),0);await page.keyboard.press('Escape');
+      await expandedBar.getByRole("button",{name:getMessages(locale as "en-GB" | "zh-CN").videoExhibit.view,exact:true}).click();await page.getByRole('dialog').waitFor();assert.equal(await page.locator('.la-video-expanded').count(),1);assert.equal(await page.getByRole('dialog').evaluate(dialog=>Boolean(dialog.closest('.la-video-expanded'))),true);await page.keyboard.press('Escape');assert.equal(await page.locator('.la-video-expanded').count(),1);
       await mount("sample-trial",false);await time(60);assert.equal(await bar.count(),0,"sample model cannot bypass the trial limit");
       lesson.contents[0].nodes=configuredNodes;
       await page.close();
