@@ -11,6 +11,7 @@ import { sendHelpdeskUpdateEmail } from "@/services/emailService";
 import { readBinary, removeDir, systemRoot, writeBinary } from "@/services/fileStore";
 import { ensureProductData, recordUserNotification } from "@/services/productStore";
 import { publicAppOrigin } from "@/services/runtimeConfig";
+import { studyGroupService } from "@/modules/group-study/runtime";
 import { createAdminHelpdeskClient } from "./adminClient";
 import { outgoingTraceparent, parseTraceparent } from "@/lib/traceparent";
 import { createAssistantService, type AssistantService } from "./assistant";
@@ -91,6 +92,19 @@ export function helpdeskAssistant(request?: Request): AssistantService {
     learnerRecords: async (learnerId) => {
       const data = await ensureProductData();
       return { user: data.users.find((user) => user.id === learnerId) ?? null, orders: data.orders.filter((order) => order.userId === learnerId), subscriptions: data.subscriptions.filter((item) => item.userId === learnerId) };
+    },
+    // v7: read-only, the learner's own records and Study Group schedule; only the coarse learner state goes to Admin.
+    learnerStateSources: async (learnerId) => {
+      const [data, studyGroups] = await Promise.all([ensureProductData(), studyGroupService().learnerSchedule(learnerId)]);
+      return {
+        user: data.users.find((user) => user.id === learnerId) ?? null,
+        subscriptions: data.subscriptions.filter((item) => item.userId === learnerId),
+        entitlements: data.entitlements.filter((item) => item.userId === learnerId),
+        courses: data.courses,
+        studyRecords: data.studyRecords.filter((item) => item.userId === learnerId),
+        orders: data.orders.filter((order) => order.userId === learnerId),
+        studyGroups
+      };
     },
     ownsOrder: async (learnerId, orderId) => (await learnerOrder(learnerId, orderId)) !== null,
     traceId: parseTraceparent(traceparent)?.traceId ?? null

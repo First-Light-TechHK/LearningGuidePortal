@@ -1164,6 +1164,21 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return views;
     },
 
+    /**
+     * Helpdesk v7 learner state (modules/helpdesk/learnerState.ts): the learner's active memberships, those groups and
+     * those groups' sessions, only the fields the state uses. Read only.
+     */
+    async learnerSchedule(actorUserId: string) {
+      const store = await deps.repository.read();
+      const memberships = store.memberships.filter((item) => item.userId === actorUserId && !item.leftAt);
+      const ids = new Set(memberships.map((item) => item.groupId));
+      return {
+        memberships: memberships.map(({ userId, groupId, role, leftAt }) => ({ userId, groupId, role, leftAt })),
+        groups: store.groups.filter((item) => ids.has(item.id)).map(({ id, status }) => ({ id, status })),
+        sessions: store.sessions.filter((item) => ids.has(item.groupId)).map(({ groupId, startsAt, status }) => ({ groupId, startsAt, status }))
+      };
+    },
+
     async getGroup(input: { actorUserId: string | null; groupId: string }) {
       const store = await deps.repository.read();
       const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");

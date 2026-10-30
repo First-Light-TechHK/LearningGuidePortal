@@ -16,7 +16,7 @@ import {
   HelpdeskProblem, parseAssistantClick, parseAssistantSessionInput, parseAssistantTurnInput, parseChatEndReason, parseFaqRelease, parseSuggestTurn,
   type AdminSuggestReply, type AdminSuggestRequest, type AssistantStep, type AssistantTurnResponse, type FaqRelease, type HelpFaq
 } from "../../contracts/helpdesk";
-import { createAssistantService, type LearnerRecords } from "../../modules/helpdesk/assistant";
+import { createAssistantService, LEARNER_STATE_WAIT_MS, type AssistantDeps, type LearnerRecords } from "../../modules/helpdesk/assistant";
 import { TURN_TEMPLATES } from "../../modules/helpdesk/assistantTurn";
 import { CHAT_SESSION_RULES } from "../../modules/helpdesk/chatSession";
 import { createHelpdeskService } from "../../modules/helpdesk/service";
@@ -49,7 +49,7 @@ const PUBLISHED: HelpFaq[] = [
   { id: id(43), category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Use Forgot password.", signals: [], updatedAt: "" }
 ];
 
-function harness(options: { answer?: (input: AdminSuggestRequest, streaming?: { onStep?: (step: AssistantStep) => void }) => AdminSuggestReply | Promise<AdminSuggestReply>; release?: FaqRelease | null; records?: LearnerRecords; ownsOrder?: boolean } = {}) {
+function harness(options: { answer?: (input: AdminSuggestRequest, streaming?: { onStep?: (step: AssistantStep) => void }) => AdminSuggestReply | Promise<AdminSuggestReply>; release?: FaqRelease | null; records?: LearnerRecords; ownsOrder?: boolean; stateSources?: AssistantDeps["learnerStateSources"] } = {}) {
   let clock = Date.parse("2026-10-30T09:00:00.000Z");
   const repository = createLocalHelpdeskRepository(path.join(root, randomUUID()));
   const calls: AdminSuggestRequest[] = [];
@@ -73,7 +73,8 @@ function harness(options: { answer?: (input: AdminSuggestRequest, streaming?: { 
     repository, admin, now, log: (line) => logs.push(line), traceId: "0af7651916cd43dd8448eb211c80319c",
     release: { async current(locale) { return release && release.locale === locale ? release : null; } },
     learnerRecords: async () => options.records ?? { user: { email: learner.email, emailVerifiedAt: "2026-01-01T00:00:00.000Z" }, orders: [], subscriptions: [] },
-    ownsOrder: async () => options.ownsOrder ?? false
+    ownsOrder: async () => options.ownsOrder ?? false,
+    ...(options.stateSources ? { learnerStateSources: options.stateSources } : {})
   });
   const service = createHelpdeskService({ repository, blobs: { async put() {}, async get() { return new Uint8Array(); } }, now, log: () => undefined });
   return { assistant, service, repository, calls, outcomes, logs, advance(ms: number) { clock += ms; }, setRelease(next: FaqRelease | null) { release = next; } };
@@ -205,6 +206,45 @@ test("v5 typed: context is the card on screen, the session and the learner's own
   assert.deepEqual(h.calls[4].context, { nodeId: CONTACT, sessionId, recentTurns: ["second", "third", "fourth"] }, "clicks move the card on screen but are not learner words");
   assert.equal(h.calls.length, 5, "the click asked nobody");
   for (const call of h.calls) assert.deepEqual(Object.keys(call.context ?? {}).filter((key) => !["nodeId", "sessionId", "recentTurns"].includes(key)), []);
+});
+
+test("v7 typed: the context carries the learner state worked out from Portal's records (and the learner's enquiries); a chip never; a failing or slow source means none", async () => {
+  const records = {
+    user: { createdAt: "2026-09-30T09:00:00.000Z", email: learner.email, emailVerifiedAt: "2026-09-30T10:00:00.000Z" },
+    subscriptions: [{ userId: learner.id, state: "active" as const, source: "trial" as const, validTo: "2026-11-01T21:00:00.000Z", scope: "course" as const, device: "pc" as const }],
+    entitlements: [{ userId: learner.id, courseId: "course_1", state: "active" as const, validTo: "2026-11-01T21:00:00.000Z", scope: "course" as const, scopeId: "course_1" }],
+    courses: [{ id: "course_1", title: "Physics", status: "published" as const }],
+    studyRecords: [{ userId: learner.id, courseId: "course_1", progress: 40, totalSeconds: 1_800, updatedAt: "2026-10-29T09:00:00.000Z", completedAt: null }],
+    orders: [], studyGroups: { groups: [], memberships: [], sessions: [] }
+  };
+  const h = harness({ stateSources: async () => records });
+  const { sessionId } = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  await h.assistant.ask(learner, typed("is my trial still on?", sessionId), randomUUID());
+  assert.deepEqual(h.calls[0].context, {
+    sessionId,
+    learnerState: {
+      accountAgeDays: 30, emailVerified: true,
+      plans: [{ source: "trial", state: "active", scope: "course", device: "pc", endsInDays: 2 }],
+      courses: [{ courseId: "course_1", title: "Physics", status: "in_progress", progress: 40, minutes: 30, lastStudiedDaysAgo: 1, hasAccess: true }],
+      notStartedWithAccess: 0, studyGroups: { groups: 0, hosting: 0, upcomingSessions: 0, nextSessionInHours: null }, latestOrder: null, tickets: { open: 0, waitingOnUser: 0 }
+    }
+  });
+  assert.doesNotMatch(JSON.stringify(h.calls[0].context), /emily|example\.com|user-emily|2026-/i, "no name, email, learner id or date");
+  await h.assistant.ask(learner, { ...typed("", sessionId), message: "Chip question", faqId: PAID }, randomUUID());
+  assert.equal(h.calls[1].context?.learnerState, undefined, "a chip asks Admin's per-FAQ path: no state");
+
+  const failing = harness({ stateSources: async () => { throw new Error("store down"); } });
+  const first = await failing.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  const answered = await failing.assistant.ask(learner, typed("hello", first.sessionId), randomUUID());
+  assert.equal(failing.calls[0].context?.learnerState, undefined);
+  assert.ok(turnOf(answered.response), "the question is still answered");
+
+  const slow = harness({ stateSources: () => new Promise(() => undefined) });
+  const second = await slow.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  const started = Date.now();
+  await slow.assistant.ask(learner, typed("hello", second.sessionId), randomUUID());
+  assert.equal(slow.calls[0].context?.learnerState, undefined);
+  assert.ok(Date.now() - started < LEARNER_STATE_WAIT_MS + 1_000, "never waits long for the state");
 });
 
 test("v5 typed answer: the card verbatim, Admin's guarded opening and closing, the excerpt from the release, the follow-ups; logged with its path", async () => {
