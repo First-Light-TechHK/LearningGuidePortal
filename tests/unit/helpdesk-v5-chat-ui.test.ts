@@ -309,6 +309,8 @@ test("v5 Part D: an explanation says which card it explains and shows it again, 
     await again.click();
     assert.equal(await explained.locator("blockquote.helpdesk-chat-excerpt strong").textContent(), "Settings", "the original card again");
     assert.equal(await again.getAttribute("aria-expanded"), "true");
+    const relatedAgain = explained.getByRole("link", { name: fillTemplate(c.copy.relatedFaq, { question }), exact: true });
+    assert.equal(await relatedAgain.getAttribute("href"), `/${locale}/help?faq=${NODE.reset}`, "the card shown again links to the whole answer");
     await explained.getByRole("button", { name: c.copy.yes, exact: true }).click();
     await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 1);
     assert.equal(harness.calls.find(isAssistantFeedback)!.path, `/api/helpdesk/assistant/${id(2)}/feedback`, "the explanation is voted on like an answer");
@@ -359,6 +361,18 @@ test("v5 Part C: accent pill chips with glow and a 1 px lift, the glowing input 
   assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgb(36, 104, 245)", "accent");
   // The text never runs under the button.
   assert.ok(Number.parseFloat(await css(".helpdesk-chat-input", "padding-right")) >= box.x + box.width - send.x, "the input keeps room for the button");
+  // A long question's scrollbar never sits under the button: a thin one fits between the button and the box edge.
+  assert.equal(await css(".helpdesk-chat-input", "scrollbar-width"), "thin");
+  // (headless Chromium draws overlay scrollbars, so measure the room: Chrome's thin scrollbar is 11 px wide)
+  assert.ok(box.x + box.width - (send.x + send.width) >= 12, "room for a thin scrollbar right of the button, inside the 1 px border");
+  // Phone width: the button stays inside the box and the text still clears it.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(100);
+  const narrowBox = (await c.input.boundingBox())!;
+  const narrowSend = (await c.send.boundingBox())!;
+  assert.ok(narrowSend.x > narrowBox.x && narrowSend.x + narrowSend.width < narrowBox.x + narrowBox.width && narrowSend.y > narrowBox.y && narrowSend.y + narrowSend.height < narrowBox.y + narrowBox.height, "inside the box at 390 px");
+  assert.ok(Number.parseFloat(await css(".helpdesk-chat-input", "padding-right")) >= narrowBox.x + narrowBox.width - narrowSend.x, "and the text clears it");
+  await page.setViewportSize({ width: 1440, height: 1024 });
   // Contact Support's inputs and select get the same glow.
   const subject = page.getByRole("textbox", { name: getMessages(locale).helpdesk.subject, exact: true });
   await subject.focus();
