@@ -68,7 +68,7 @@ test('shared video toolbar adjusts 0–100 volume and keeps seek and mute in ste
       // Keyboard adjustment works without a pointer.
       await volume.focus();
       const before = await mediaVolume(page);
-      await volume.press('ArrowRight');
+      await volume.press('ArrowUp');
       assert(near(await mediaVolume(page), before + 0.01), 'arrow keys change the volume by one percent');
 
       // Seeking must not disturb the chosen volume, and the two ranges stay
