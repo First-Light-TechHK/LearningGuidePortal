@@ -14,7 +14,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   HelpdeskProblem, parseAssistantClick, parseAssistantSessionInput, parseAssistantTurnInput, parseChatEndReason, parseFaqRelease, parseSuggestTurn,
-  type AdminSuggestReply, type AdminSuggestRequest, type AssistantTurnResponse, type FaqRelease, type HelpFaq
+  type AdminSuggestReply, type AdminSuggestRequest, type AssistantStep, type AssistantTurnResponse, type FaqRelease, type HelpFaq
 } from "../../contracts/helpdesk";
 import { createAssistantService, type LearnerRecords } from "../../modules/helpdesk/assistant";
 import { TURN_TEMPLATES } from "../../modules/helpdesk/assistantTurn";
@@ -49,7 +49,7 @@ const PUBLISHED: HelpFaq[] = [
   { id: id(43), category: "account_technical", popular: true, question: "How do I reset my password?", answer: "Use Forgot password.", signals: [], updatedAt: "" }
 ];
 
-function harness(options: { answer?: (input: AdminSuggestRequest) => AdminSuggestReply | Promise<AdminSuggestReply>; release?: FaqRelease | null; records?: LearnerRecords; ownsOrder?: boolean } = {}) {
+function harness(options: { answer?: (input: AdminSuggestRequest, streaming?: { onStep?: (step: AssistantStep) => void }) => AdminSuggestReply | Promise<AdminSuggestReply>; release?: FaqRelease | null; records?: LearnerRecords; ownsOrder?: boolean } = {}) {
   let clock = Date.parse("2026-10-30T09:00:00.000Z");
   const repository = createLocalHelpdeskRepository(path.join(root, randomUUID()));
   const calls: AdminSuggestRequest[] = [];
@@ -58,9 +58,9 @@ function harness(options: { answer?: (input: AdminSuggestRequest) => AdminSugges
   let release: FaqRelease | null = options.release === undefined ? RELEASE : options.release;
   const admin = {
     async suggest(): Promise<null> { throw new Error("v5 asks with suggestReply"); },
-    async suggestReply(input: AdminSuggestRequest) {
+    async suggestReply(input: AdminSuggestRequest, streaming?: { onStep?: (step: AssistantStep) => void }) {
       calls.push(structuredClone(input));
-      if (options.answer) return options.answer(input);
+      if (options.answer) return options.answer(input, streaming);
       if (input.faqId) return { suggestion: { id: input.runId, faqId: input.faqId, question: "Chip question", answer: "Chip answer." }, alternatives: [] };
       return reply("suggestAnswerContextResponse", input);
     },
@@ -485,4 +485,20 @@ test("v5 session rules on the server: small talk keeps the unsolved streak, an a
   const ended = await h.repository.findChatSession(sessionId);
   assert.equal(ended?.endReason, "ticket");
   assert.equal(ended?.endedAt, ticket.ticket.createdAt);
+});
+
+// ---------------------------------------------------------------- v7: the Thinking card's steps
+
+test("v7 steps: ask passes Admin's workflow steps on while it works; a replay of the same key sends none", async () => {
+  const h = harness({ answer: (input, streaming) => { streaming?.onStep?.("retrieve"); streaming?.onStep?.("pick"); return reply("suggestAnswerContextResponse", input); } });
+  const started = await h.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  const key = randomUUID();
+  const seen: AssistantStep[] = [];
+  const first = await h.assistant.ask(learner, typed("reset password", started.sessionId), key, { onStep: (step) => seen.push(step) });
+  assert.deepEqual(seen, ["retrieve", "pick"]);
+  const again: AssistantStep[] = [];
+  const replayed = await h.assistant.ask(learner, typed("reset password", started.sessionId), key, { onStep: (step) => again.push(step) });
+  assert.equal(replayed.replayed, true);
+  assert.deepEqual(again, [], "the stored answer comes back without asking Admin");
+  assert.equal(replayed.response.id, first.response.id);
 });

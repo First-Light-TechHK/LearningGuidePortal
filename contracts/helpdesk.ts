@@ -321,6 +321,8 @@ export type AdminSuggestRequest = { learnerId: string; locale: HelpdeskLocale; s
 export type AssistantInput = { message: string; locale: HelpdeskLocale; faqId: string | null };
 /** id is the assist log row (link it with assistIds); reply null = show the fallback copy, then the alternatives (v3, additive) as chips. */
 export type AssistantResponse = { id: string; reply: HelpdeskSuggestion | null; alternatives: HelpdeskAlternative[] };
+
+export { ASSISTANT_STEPS, createEventStreamParser, isAssistantStep, type AssistantStep, type ServerSentEvent } from "./helpdeskStream";
 /** POST /api/helpdesk/assistant/{id}/rating answer (v3 §2): the rating stored for that answer. */
 export type AssistantRatingResponse = { id: string; rating: number };
 export type AssistantFeedbackResponse = { id: string; feedback: AssistFeedback | null };

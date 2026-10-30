@@ -42,17 +42,32 @@
 // - An explanation of the card on screen says "Explained from <question>",
 //   which shows that card again; one the card does not cover is the fixed
 //   line and the handover card.
+// - v7: while a typed question or a per-FAQ chip is with the server, the
+//   "Thinking" card shows the steps the server's workflow has started (looking
+//   through the Help Centre, picking the answer, explaining, checking), one
+//   fixed line per step name it streamed; never model text. A click on the
+//   release has no steps: the card shows "Thinking" alone.
 // None of these states has a Figma frame: they reuse the answer bubble, chip,
 // button and star styles and are 待视觉验收 (the Part C polish too).
 import { Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Send, Star } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { AssistantNextStep, AssistantSessionResponse, AssistantTurn, ClickVia, LearnerEndReason } from "@/contracts/helpdesk";
+import type { AssistantNextStep, AssistantSessionResponse, AssistantStep, AssistantTurn, ClickVia, LearnerEndReason } from "@/contracts/helpdesk";
 import { cardsAfterChange, chatSessionId, currentSession, endSession, idleDeadline, isHumanRequest, ratingAfterFarewell } from "@/modules/helpdesk/chatSession";
 import { assistIdsOf, chatStorageKey, fillTemplate, optionLetter, readTranscript, settleTranscript, storedTurn, type ChatEntry } from "@/modules/helpdesk/learnerUi";
 import { plainText } from "@/modules/helpdesk/markdown";
 import { alternativesIn, askAssistant, clickAssistant, endAssistantSession, newIdempotencyKey, rateAnswer, reportExpanded, sendAssistantFeedback, startAssistantSession } from "./helpdeskApi";
 import type { HelpdeskCopy } from "./HelpdeskParts";
 import { Markdown } from "./Markdown";
+
+/** v7: the fixed line the Thinking card shows for each step of the server's workflow. */
+const THINKING_COPY = {
+  retrieve: "thinkingRetrieve",
+  pick: "thinkingPick",
+  explain: "thinkingExplain",
+  route: "thinkingRoute",
+  smalltalk: "thinkingSmalltalk",
+  ground: "thinkingGround"
+} as const satisfies Record<AssistantStep, string>;
 
 /** A starter or (v5) situation chip: an FAQ / entry node question; reason signal = it matched the learner's situation. */
 export type ChatChip = { id: string; question: string; reason?: "signal" | "popular" };
@@ -110,6 +125,8 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
+  /** v7: the workflow steps the server has started for the pending question, in order (each once). */
+  const [thinking, setThinking] = useState<AssistantStep[]>([]);
   const [voting, setVoting] = useState<string | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
   /** v5 Part H: the answers whose full text is open under the excerpt (by assist id); each is reported once. */
@@ -279,6 +296,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
       return true;
     }
     setPending(true);
+    setThinking([]);
     if (announceTimer.current) clearTimeout(announceTimer.current);
     setAnnouncement("");
     const session = sessionId();
@@ -289,8 +307,10 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     // Before v5 (no session known) a chip is sent exactly as v3 sent it.
     const result = viaRelease
       ? await clickAssistant({ locale, nodeId: request.nodeId, fromNodeId: request.kind === "step" ? request.fromNodeId : null, via: request.via, sessionId: session, label: message }, key)
-      : await askAssistant({ message, locale, ...(request.kind === "typed" ? {} : { faqId: request.nodeId }), ...(session ? { sessionId: session, ...(request.kind === "chip" ? { via: request.via } : {}) } : {}) }, key);
+      : await askAssistant({ message, locale, ...(request.kind === "typed" ? {} : { faqId: request.nodeId }), ...(session ? { sessionId: session, ...(request.kind === "chip" ? { via: request.via } : {}) } : {}) }, key,
+        (step) => setThinking((current) => (current.includes(step) ? current : [...current, step])));
     setPending(false);
+    setThinking([]);
     if (result.ok && result.data) {
       const { id, reply } = result.data;
       const turn = storedTurn(result.data.turn);
@@ -592,11 +612,22 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
         if (entry.kind === "error") return row(index, <p className="helpdesk-chat-error" role="alert">{entry.error === "rateLimited" ? text.rateLimited : text.error}</p>);
         return row(index, answerBubble(entry, index));
       })}
-      {pending ? <div className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span><div className="helpdesk-chat-typing"><span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" /></div></div> : null}
+      {pending ? <div className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>
+        {/* Read out through the live region below, so the card itself is hidden from screen readers. */}
+        <div className="helpdesk-chat-typing helpdesk-chat-thinking" aria-hidden="true">
+          <div className="helpdesk-chat-thinking-head"><span className="helpdesk-chat-thinking-title">{text.thinking}</span><span className="helpdesk-chat-dots"><span /><span /><span /></span></div>
+          {thinking.length ? <ol className="helpdesk-chat-thinking-steps">
+            {thinking.map((step, index) => {
+              const done = index < thinking.length - 1;
+              return <li key={step} className="helpdesk-chat-thinking-step" data-done={done ? "true" : undefined}>{done ? <Check size={12} /> : <span className="helpdesk-chat-thinking-spinner" />}<span>{text[THINKING_COPY[step]]}</span></li>;
+            })}
+          </ol> : null}
+        </div>
+      </div> : null}
       <div className="helpdesk-chat-info"><CircleHelp size={19} aria-hidden="true" /><p><span className="helpdesk-chat-info-side">{text.info}</span><span className="helpdesk-chat-info-stacked">{text.infoStacked}</span></p></div>
     </div>
     {/* Always mounted, so screen readers announce what is put in it: the typing state, then the answer or the fallback. */}
-    <p className="helpdesk-visually-hidden helpdesk-chat-live" role="status" aria-live="polite">{pending ? text.typing : announcement}</p>
+    <p className="helpdesk-visually-hidden helpdesk-chat-live" role="status" aria-live="polite">{pending ? (thinking.length ? text[THINKING_COPY[thinking[thinking.length - 1]]] : text.typing) : announcement}</p>
     {/* v5 Part C: the send button sits inside the input box (待视觉验收). */}
     <div className="helpdesk-chat-footer">
       <textarea ref={input} className="helpdesk-chat-input" aria-label={text.inputLabel} placeholder={text.placeholder} maxLength={questionMax} value={draft} onChange={(event) => { touched(); setDraft(event.target.value); }} onKeyDown={onKeyDown} />

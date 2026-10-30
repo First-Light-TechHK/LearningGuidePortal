@@ -24,6 +24,36 @@ export function problemResponse(error: unknown, scope: string): Response {
   return new Response(JSON.stringify(problemBody(resolved)), { status: resolved.status, headers });
 }
 
+/**
+ * A text/event-stream answer (contract v7): run() sends steps through send() while it works; its result is the last
+ * event (result: the JSON body as jsonResponse would send it) or, when it throws, error: the problem body with its
+ * status inside (the HTTP status is already 200). Nothing is sent after the learner goes away.
+ */
+export function eventStreamResponse(run: (send: (event: string, data: unknown) => void) => Promise<unknown>, scope: string): Response {
+  const encoder = new TextEncoder();
+  let open = true;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        if (!open) return;
+        try { controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { open = false; }
+      };
+      try {
+        send("result", await run(send));
+      } catch (error) {
+        const problem = problemResponse(error, scope);
+        send("error", await problem.json());
+      }
+      if (open) { open = false; controller.close(); }
+    },
+    cancel() { open = false; }
+  });
+  return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": `${NO_STORE}, no-transform`, "X-Accel-Buffering": "no" } });
+}
+
+/** True when the client asked for the streamed answer. */
+export const wantsEventStream = (request: Request) => (request.headers.get("accept") ?? "").includes("text/event-stream");
+
 export function jsonResponse(body: unknown, status = 200, replayed = false): Response {
   const headers: Record<string, string> = { "Content-Type": "application/json", "Cache-Control": NO_STORE };
   if (replayed) headers["Idempotent-Replayed"] = "true";

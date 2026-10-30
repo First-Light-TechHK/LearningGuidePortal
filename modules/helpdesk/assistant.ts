@@ -27,6 +27,7 @@ import {
   buildSuggestContext,
   type AdminSuggestReply,
   type AssistantClickInput,
+  type AssistantStep,
   type AssistantSessionInput,
   type AssistantSessionResponse,
   type AssistantTurn,
@@ -82,7 +83,7 @@ const askInFlight = new Map<string, Promise<unknown>>();
 export type AssistantAdmin = {
   suggest(input: AdminSuggestRequest): Promise<HelpdeskSuggestion | null>;
   /** v3: the answer and, without one, Admin's alternatives. Used when present; an Admin client without it means no alternatives. */
-  suggestReply?(input: AdminSuggestRequest): Promise<AdminSuggestReply>;
+  suggestReply?(input: AdminSuggestRequest, options?: { onStep?: (step: AssistantStep) => void }): Promise<AdminSuggestReply>;
   reportOutcome(suggestionId: string, outcome: AssistFeedback): Promise<boolean>;
   /** v5: the published FAQs (cached; the chips before Admin has a release). */
   faqs?(locale: HelpdeskLocale): Promise<HelpFaq[] | null>;
@@ -146,12 +147,12 @@ export function createAssistantService(deps: AssistantDeps) {
   const timeoutMs = deps.timeoutMs ?? ADMIN_SUGGEST_TIMEOUT_MS;
 
   /** Admin's answer and alternatives (and, v6, its turn); no answer and none on no match, any failure or the timeout. */
-  async function askAdmin(request: AdminSuggestRequest): Promise<AdminSuggestReply> {
+  async function askAdmin(request: AdminSuggestRequest, onStep?: (step: AssistantStep) => void): Promise<AdminSuggestReply> {
     const nothing: AdminSuggestReply = { suggestion: null, alternatives: [] };
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<AdminSuggestReply>((resolve) => { timer = setTimeout(() => resolve(nothing), timeoutMs); });
     const asked: Promise<AdminSuggestReply> = deps.admin.suggestReply
-      ? deps.admin.suggestReply(request)
+      ? deps.admin.suggestReply(request, onStep ? { onStep } : {})
       : deps.admin.suggest(request).then((suggestion) => ({ suggestion, alternatives: [] }));
     try {
       return await Promise.race([asked.then((reply): AdminSuggestReply => ({ suggestion: reply.suggestion, alternatives: offered(reply, request), ...(reply.turn ? { turn: reply.turn } : {}) })).catch((error: unknown) => {
@@ -400,13 +401,16 @@ export function createAssistantService(deps: AssistantDeps) {
 
   type AskInput = AssistantInput & { sessionId?: string | null; via?: ClickVia | null };
 
-  /** POST /api/helpdesk/assistant: one chat question, or (with faqId) a chip asked through Admin's per-FAQ path. */
-  async function ask(learner: LearnerIdentity, input: AskInput, key: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
+  /**
+   * POST /api/helpdesk/assistant: one chat question, or (with faqId) a chip asked through Admin's per-FAQ path.
+   * onStep: Admin's workflow steps while it works (the streamed answer); a replay or a joined duplicate sends none.
+   */
+  async function ask(learner: LearnerIdentity, input: AskInput, key: string, options: { onStep?: (step: AssistantStep) => void } = {}): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const hash = hashOf({ op: "assistant", learnerId: learner.id, message: input.message, locale: input.locale, faqId: input.faqId, ...(input.sessionId ? { sessionId: input.sessionId } : {}), ...(input.via ? { via: input.via } : {}) });
-    return once(key, hash, () => askOnce(learner, input, key, hash));
+    return once(key, hash, () => askOnce(learner, input, key, hash, options.onStep));
   }
 
-  async function askOnce(learner: LearnerIdentity, input: AskInput, key: string, hash: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
+  async function askOnce(learner: LearnerIdentity, input: AskInput, key: string, hash: string, onStep?: (step: AssistantStep) => void): Promise<{ response: AssistantResponse; replayed: boolean }> {
     await enforceRateLimit(learner.id);
     const source: AssistSource = input.faqId ? "chip" : "chat";
     const session = await sessionFor(learner, input.locale, input.sessionId ?? null);
@@ -415,7 +419,7 @@ export function createAssistantService(deps: AssistantDeps) {
     const recentTurns = input.faqId ? [] : await repository.sessionLearnerTurns(session.id, HELPDESK_LIMITS.recentTurnsMax).catch(() => [] as string[]);
     const context = buildSuggestContext({ nodeId: session.currentNodeId, sessionId: session.id, recentTurns });
     const request: AdminSuggestRequest = { learnerId: learner.id, locale: input.locale, source, message: input.message, ...(input.faqId ? { faqId: input.faqId } : {}), ...run, context };
-    const reply = await askAdmin(request);
+    const reply = await askAdmin(request, onStep);
     const base = record(run.runId, learner, source, input.locale, input.message, reply, now(), key, hash);
     if (!input.faqId) return storeTurn(await typedRow(base, reply, session, input.locale), key, hash);
     // A chip through Admin's per-FAQ path: no model, so the fixed click templates frame the card. When the release

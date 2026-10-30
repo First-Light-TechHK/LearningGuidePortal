@@ -7,7 +7,7 @@
 // a rotated token applies without a restart. The token is never logged.
 // Every call carries a W3C traceparent: a child of the learner request's
 // own (deps.traceparent) when that is valid, otherwise a new trace.
-import { FAQ_CATEGORIES, FAQ_SIGNALS, HELPDESK_LIMITS, buildSuggestContext, parseFaqRelease, parseSuggestTurn, type AdminSuggestReply, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type FaqRelease, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
+import { FAQ_CATEGORIES, FAQ_SIGNALS, HELPDESK_LIMITS, buildSuggestContext, parseFaqRelease, parseSuggestTurn, createEventStreamParser, isAssistantStep, type AdminSuggestReply, type AdminSuggestRequest, type AssistantStep, type AssistFeedback, type FaqCategory, type FaqFilter, type FaqRelease, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
 import { outgoingTraceparent } from "@/lib/traceparent";
 import { isUuid } from "@/lib/uuidv7";
 
@@ -183,6 +183,48 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     }
   }
 
+  /**
+   * The suggest call as a text/event-stream (contract v7): each step goes to onStep as it arrives, and the result event
+   * is the same JSON the plain call returns. An error event is Admin's problem body (its status inside); an older Admin
+   * answers with plain JSON, which is read as before. The whole stream stays inside the timeout.
+   */
+  async function callStream(destination: Target, path: string, init: { body: unknown; timeout: number; onStep: (step: AssistantStep) => void }) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("timeout")), init.timeout);
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${destination.token}`, Accept: "text/event-stream, application/json", "Content-Type": "application/json", traceparent: outgoingTraceparent(deps.traceparent) };
+      const response = await doFetch(`${destination.baseUrl}${path}`, { method: "POST", headers, body: JSON.stringify(init.body), signal: controller.signal, cache: "no-store" });
+      if (!(response.headers.get("content-type") ?? "").includes("text/event-stream") || !response.body) {
+        return { status: response.status, text: await response.text() };
+      }
+      const parser = createEventStreamParser();
+      const decoder = new TextDecoder();
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          const events = parser.push(done ? decoder.decode() + "\n\n" : decoder.decode(value, { stream: true }));
+          for (const event of events) {
+            if (event.event === "step") {
+              const step = (() => { try { return (JSON.parse(event.data) as { step?: unknown }).step; } catch { return undefined; } })();
+              if (isAssistantStep(step)) init.onStep(step);
+            } else if (event.event === "result") {
+              return { status: 200, text: event.data };
+            } else if (event.event === "error") {
+              const status = (() => { try { return Number((JSON.parse(event.data) as { status?: unknown }).status) || 500; } catch { return 500; } })();
+              return { status: status === 200 ? 500 : status, text: event.data };
+            }
+          }
+          if (done) throw new Error("stream_ended");
+        }
+      } finally {
+        reader.cancel().catch(() => undefined);
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   function failure(event: string, error: unknown, extra: Record<string, unknown> = {}) {
     log({ type: "helpdesk", event, reason: error instanceof Error ? (error.message === "timeout" ? "timeout" : error.name) : String(error), ...extra });
   }
@@ -282,8 +324,9 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
    * malformed body or the 4 s timeout are { suggestion: null, alternatives: [] }.
    * source says where it is shown: the submit-time modal, the chat panel, or
    * a starter chip (with faqId, which Admin returns directly).
+   * onStep (contract v7): ask for the streamed answer and pass on Admin's workflow steps as they start.
    */
-  async function suggestReply(input: AdminSuggestRequest): Promise<AdminSuggestReply> {
+  async function suggestReply(input: AdminSuggestRequest, options: { onStep?: (step: AssistantStep) => void } = {}): Promise<AdminSuggestReply> {
     const nothing: AdminSuggestReply = { suggestion: null, alternatives: [] };
     const destination = target();
     if (!destination) return nothing;
@@ -301,7 +344,9 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       if (input.context) body.context = buildSuggestContext(input.context);
       body.runId = input.runId;
       body.parentRunId = input.parentRunId;
-      const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
+      const result = options.onStep
+        ? await callStream(destination, "/api/integration/helpdesk/suggest", { body, timeout: timeouts.suggest, onStep: options.onStep })
+        : await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
       const reply = JSON.parse(result.text) as { suggestion?: unknown; alternatives?: unknown };
       // v6: Admin's turn fields when it sent them (only for a request with context); absent otherwise.

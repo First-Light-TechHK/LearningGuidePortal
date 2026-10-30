@@ -1,5 +1,5 @@
 import { parseAssistantTurnInput } from "@/contracts/helpdesk";
-import { idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireLearner } from "@/modules/helpdesk/http";
+import { eventStreamResponse, idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireLearner, wantsEventStream } from "@/modules/helpdesk/http";
 import { helpdeskAssistant } from "@/modules/helpdesk/runtime";
 
 export const runtime = "nodejs";
@@ -18,13 +18,21 @@ export const dynamic = "force-dynamic";
  * chip's reason). The answer adds turn: kind answer / smalltalk / clarify /
  * no_match, the guarded short strings, the excerpt and next steps from the
  * cached release, and the session it was recorded in (contracts AssistantTurn).
+ * v7 (additive): with Accept: text/event-stream the answer streams: event step { step } as each step of Admin's
+ * workflow starts (the chat's "thinking" card; only the step name), then event result (the same JSON body) or event
+ * error (the problem body, status inside). Sign-in, the Idempotency-Key and the body are checked before the stream
+ * starts, so those failures keep their HTTP status.
  */
 export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
     const key = idempotencyKey(request);
     const input = parseAssistantTurnInput(await readJsonBody(request));
-    const result = await helpdeskAssistant(request).ask(learner, input, key);
+    const assistant = helpdeskAssistant(request);
+    if (wantsEventStream(request)) {
+      return eventStreamResponse(async (send) => (await assistant.ask(learner, input, key, { onStep: (step) => send("step", { step }) })).response, "learner.assistant");
+    }
+    const result = await assistant.ask(learner, input, key);
     return jsonResponse(result.response, 200, result.replayed);
   } catch (error) { return problemResponse(error, "learner.assistant"); }
 }
