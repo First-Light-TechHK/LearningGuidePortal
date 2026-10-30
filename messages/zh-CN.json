@@ -391,6 +391,7 @@
     "benefits": "查看所有权益"
   },
   "portal": {
+    "accountMenu": "{name} 的账户菜单",
     "eyebrow": "Learning Guide Portal",
     "title": "通过引导式课程学习",
     "description": "先浏览课程和公开首课，再在课程范围内使用 AI Tutor 持续学习。",
