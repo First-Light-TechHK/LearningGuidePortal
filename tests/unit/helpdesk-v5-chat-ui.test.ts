@@ -13,8 +13,8 @@
 // 4. small talk is a reply line (hello: the chips follow; thanks after an answer: the rating card);
 // 5. an explanation shows "Explained from <question>", which shows the card again, and votes; one the
 //    card does not cover is the fixed line and the handover card;
-// 6. what Figma 1394:2 draws keeps its values (chip outline and radius, no shadows, the input and the
-//    square send button beside it), with no lift or transition;
+// 6. what Figma 1394:2 draws keeps its values at rest (chip outline and radius, no shadows, the input
+//    and the square send button beside it); hover and focus get the polish glow; no lift or transition;
 // 7. an end tells the server and starts the next session, whose chips replace the greeting's.
 // Apart from 6 (Figma 1394:2), no Figma frame for any of these: 待视觉验收.
 import assert from "node:assert/strict";
@@ -329,7 +329,7 @@ test("v5 Part D: an explanation says which card it explains and shows it again, 
   }
 });
 
-test("Figma 1394:2 values for what the design draws (owner 2026-10-30: no polish over it): 8 px chips with the light outline, no shadows, the 351 px input and the square send button beside it; hover has no lift; reduced motion has no transition", async () => {
+test("Figma 1394:2 values at rest (8 px chips with the light outline, no shadows, the 351 px input and the square send button beside it); the polish only on hover and focus (accent, fill, 3 px glow, no lift); reduced motion has no transition", async () => {
   const locale: Locale = "en-GB";
   const harness = await open(locale, () => ({ status: 500 }));
   const { page } = harness;
@@ -343,8 +343,10 @@ test("Figma 1394:2 values for what the design draws (owner 2026-10-30: no polish
   assert.equal(await css(".helpdesk-chat-chip", "padding"), "8px 10px 7px 12px", "1394:31 padding");
   await chip.hover();
   await page.waitForTimeout(250);
-  assert.equal(await css(".helpdesk-chat-chip", "transform"), "none", "no lift");
-  assert.equal(await css(".helpdesk-chat-chip", "box-shadow"), "none", "no glow");
+  assert.equal(await css(".helpdesk-chat-chip", "transform"), "none", "no lift: the geometry stays Figma's");
+  assert.equal(await css(".helpdesk-chat-chip", "box-shadow"), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px", "hover: the glow");
+  assert.equal(await css(".helpdesk-chat-chip", "background-color"), "rgb(239, 245, 255)", "hover: a light fill");
+  assert.equal(await css(".helpdesk-chat-chip", "border-top-color"), "rgb(36, 104, 245)", "hover: the accent border");
   await page.mouse.move(0, 0);
   assert.equal(await c.panel.evaluate((node) => getComputedStyle(node).boxShadow), "none", "1394:2 has no shadow");
   assert.equal(await css(".helpdesk-chat-greeting", "box-shadow"), "none", "1394:22 has no shadow");
@@ -356,14 +358,14 @@ test("Figma 1394:2 values for what the design draws (owner 2026-10-30: no polish
   assert.equal(Math.round(send.y + send.height / 2), Math.round(box.y + box.height / 2), "centred on the box");
   assert.equal(await css(".helpdesk-chat-send", "border-top-left-radius"), "8px", "1394:75 radius 8");
   assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgb(36, 104, 245)", "#2468f5");
-  // Focus is not drawn: the input keeps the earlier soft ring, Contact Support's inputs the 1 px blue ring (待视觉验收).
+  // Focus is not drawn: the polish glow (待视觉验收), on the chat input and on Contact Support's inputs.
   await c.input.focus();
   await page.waitForTimeout(250);
-  assert.equal(await css(".helpdesk-chat-input", "box-shadow"), "rgba(36, 104, 245, 0.12) 0px 0px 0px 3px");
+  assert.equal(await css(".helpdesk-chat-input", "box-shadow"), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px");
   const subject = page.getByRole("textbox", { name: getMessages(locale).helpdesk.subject, exact: true });
   await subject.focus();
   await page.waitForTimeout(250);
-  assert.equal(await subject.evaluate((node) => getComputedStyle(node).boxShadow), "rgb(59, 130, 246) 0px 0px 0px 1px");
+  assert.equal(await subject.evaluate((node) => getComputedStyle(node).boxShadow), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px");
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await css(".helpdesk-chat-chip", "transition-duration"), "0s", "no transition");
   assert.equal(await css(".helpdesk-chat-input", "transition-duration"), "0s");
@@ -404,7 +406,7 @@ test("v5 sessions: End chat ends the session on the server and starts the next o
   await page.close();
 });
 
-test("the shared tokens reach the enquiry pages too: the primary button keeps its blue on hover, keyboard focus shows a ring, the reply box its 1 px focus ring", async () => {
+test("the shared tokens reach the enquiry pages too: the primary button keeps its blue on hover, keyboard focus shows a ring, the reply box glows", async () => {
   // The enquiry detail and list render outside .helpdesk-page / .helpdesk-card (main.helpdesk-account-page), so the
   // shared buttons and inputs must still find the tokens there (a missing token made the hovered Send button transparent).
   const harness = await openHarness(browser, "en-GB", () => ({ status: 500 }), `/en-GB/account/my-learning/support/${TICKET_ID}`);
@@ -416,7 +418,7 @@ test("the shared tokens reach the enquiry pages too: the primary button keeps it
     const reply = harness.page.locator("form.helpdesk-composer textarea.helpdesk-input");
     await reply.focus();
     const focused = await reply.evaluate((node) => { const s = getComputedStyle(node); return { border: s.borderTopColor, glow: s.boxShadow }; });
-    assert.deepEqual(focused, { border: "rgb(59, 130, 246)", glow: "rgb(59, 130, 246) 0px 0px 0px 1px" });
+    assert.deepEqual(focused, { border: "rgb(37, 99, 235)", glow: "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px" });
     await harness.page.keyboard.press("Tab");
     let guard = 0;
     while (!(await send.evaluate((node) => node === document.activeElement)) && guard++ < 10) await harness.page.keyboard.press("Tab");

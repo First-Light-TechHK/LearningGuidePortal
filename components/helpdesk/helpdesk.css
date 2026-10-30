@@ -5,15 +5,16 @@
 
 .portal-page.helpdesk-page { background: #f9fafb; }
 
-/* ---- Shared tokens. 2026-10-30 (owner: "完全对齐到我们的设计"): every element Figma draws uses the Figma values again
-   (no shadows, chip outline, square send button); the accent and the focus ring stay for the states Figma does not draw
-   (focus, hover, the v5 chat states), which are 待视觉验收. They sit on :root, so every page that loads this sheet has
+/* ---- Shared tokens. 2026-10-30 (owner: "完全对齐到我们的设计"): every element Figma draws keeps the Figma values at
+   rest (no shadows, chip outline, square send button); the Stripe-style polish (accent border, light fill, 3 px glow)
+   shows only on the states Figma does not draw: hover and focus (待视觉验收). They sit on :root, so every page that loads this sheet has
    them: the shared buttons and inputs also render on the enquiry list and detail pages (main.helpdesk-account-page). ---- */
 :root {
   --hd-accent: #2563eb;
   --hd-accent-strong: #1d4ed8;
   --hd-chat-accent: #2468f5;
   --hd-chat-accent-strong: #1d58d6;
+  --hd-accent-fill: #eff5ff;
   --hd-glow: 0 0 0 3px rgba(37, 99, 235, .15);
   /* On the blue Help Centre hero a blue glow would not show: the same 3 px ring in white. */
   --hd-glow-on-brand: 0 0 0 3px rgba(255, 255, 255, .45);
@@ -37,7 +38,7 @@
 .helpdesk-composer .helpdesk-label > span[aria-hidden] { display: none; }
 .helpdesk-input { width: 100%; height: 44px; box-sizing: border-box; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #374151; font: inherit; font-size: 14px; line-height: normal; }
 .helpdesk-input::placeholder { color: #9ca3af; opacity: 1; }
-.helpdesk-input:focus, .helpdesk-select-trigger:focus-visible { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.helpdesk-input:focus, .helpdesk-select-trigger:focus-visible { outline: none; border-color: var(--hd-accent); box-shadow: var(--hd-glow); }
 .helpdesk-input[aria-invalid="true"], .helpdesk-select-trigger[aria-invalid="true"] { border-color: #ef4444; }
 .helpdesk-input:disabled { background: #f9fafb; }
 .helpdesk-textarea { height: 120px; resize: none; }
@@ -89,7 +90,7 @@
 .helpdesk-cancel-button { padding: 10px 20px; border: 0; background: #fff; color: #374151; font: inherit; font-size: 14px; font-weight: 500; line-height: normal; cursor: pointer; }
 .helpdesk-cancel-button:hover { color: #111827; text-decoration: underline; }
 .helpdesk-submit-button, .helpdesk-secondary-button, .helpdesk-danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; padding: 10px 24px; border: 1px solid #2563eb; border-radius: 8px; background: #2563eb; color: #fff !important; font: inherit; font-size: 14px; font-weight: 500; line-height: normal; text-decoration: none; cursor: pointer; }
-.helpdesk-submit-button:hover { border-color: var(--hd-accent-strong); background: var(--hd-accent-strong); }
+.helpdesk-submit-button:hover { border-color: var(--hd-accent-strong); background: var(--hd-accent-strong); box-shadow: var(--hd-glow); }
 .helpdesk-submit-button:focus-visible, .helpdesk-secondary-button:focus-visible { outline: none; box-shadow: var(--hd-glow); }
 .helpdesk-submit-button, .helpdesk-secondary-button { transition: background-color var(--hd-ease), border-color var(--hd-ease), box-shadow var(--hd-ease); }
 /* Figma 1262:59 is 150 × 37 with no stroke: the 1px border comes out of the padding. */
@@ -121,10 +122,10 @@
 .helpdesk-chat-try { margin-top: 10px !important; color: #516784; font-size: 12px; font-weight: 600; line-height: 15px; }
 /* Figma 1394:30 is a 124px box holding 3 × 36 + 2 × 7 = 122px of chips. */
 .helpdesk-chat-chips { display: flex; flex-direction: column; gap: 7px; margin: 9px 0 2px; padding: 0; list-style: none; }
-.helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 7px 12px; border: 1px solid #dce7f7; border-radius: 8px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; transition: background-color var(--hd-ease), border-color var(--hd-ease); }
+.helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 7px 12px; border: 1px solid #dce7f7; border-radius: 8px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; transition: background-color var(--hd-ease), border-color var(--hd-ease), box-shadow var(--hd-ease); }
 .helpdesk-chat-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .helpdesk-chat-chip svg { flex: 0 0 14px; color: #7a8ba3; }
-.helpdesk-chat-chip:hover:not(:disabled) { border-color: #b8d2fb; background: #f7faff; }
+.helpdesk-chat-chip:hover:not(:disabled) { border-color: var(--hd-chat-accent); background: var(--hd-accent-fill); box-shadow: var(--hd-glow); }
 .helpdesk-chat-chip:focus-visible { outline: none; border-color: var(--hd-chat-accent); box-shadow: var(--hd-glow); }
 .helpdesk-chat-chip:disabled { cursor: default; opacity: .7; }
 /* Figma 1394:44: a 48px row with the 46px bubble centred in it. */
@@ -164,11 +165,11 @@
 .helpdesk-chat-footer { display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
 .helpdesk-chat-input { flex: 0 0 351px; width: 351px; min-width: 0; height: 70px; box-sizing: border-box; padding: 27px 11px 10px 12px; border: 1px solid #cad8ea; border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: 15px; resize: none; transition: border-color var(--hd-ease), box-shadow var(--hd-ease); }
 .helpdesk-chat-input::placeholder { color: #95a3b8; opacity: 1; }
-.helpdesk-chat-input:focus { border-color: var(--hd-chat-accent); outline: none; box-shadow: 0 0 0 3px rgba(36, 104, 245, .12); }
+.helpdesk-chat-input:focus { border-color: var(--hd-chat-accent); outline: none; box-shadow: var(--hd-glow); }
 .helpdesk-chat-send { display: grid; flex: 0 0 43px; width: 43px; height: 43px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: var(--hd-chat-accent); color: #fff; cursor: pointer; transition: background-color var(--hd-ease), box-shadow var(--hd-ease); }
 .helpdesk-chat-send:focus-visible { outline: none; box-shadow: var(--hd-glow); }
 .helpdesk-chat-send:disabled { cursor: default; }
-.helpdesk-chat-send:hover:not(:disabled) { background: var(--hd-chat-accent-strong); }
+.helpdesk-chat-send:hover:not(:disabled) { background: var(--hd-chat-accent-strong); box-shadow: var(--hd-glow); }
 .helpdesk-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- success state (待视觉验收) ---- */
