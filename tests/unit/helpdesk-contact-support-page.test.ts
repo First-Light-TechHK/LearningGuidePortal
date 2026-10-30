@@ -910,7 +910,7 @@ test("chat: a failed question goes back into the input; a failed vote says so an
   }
 });
 
-test("chat: a question with no reply after 15 s shows the error; a reload during a question does not leave it unanswered; blocked storage still works", async () => {
+test("chat: a question with no reply after 18 s shows the error; a reload during a question does not leave it unanswered; blocked storage still works", async () => {
   const harness = await open("en-GB", api({ assistant: () => new Promise<Reply>(() => undefined) }), { locale: "en-GB", chips: [] });
   const { page } = harness;
   await page.clock.install();
@@ -919,7 +919,7 @@ test("chat: a question with no reply after 15 s shows the error; a reload during
   await page.keyboard.press("Enter");
   await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
   assert.equal(await c.send.isDisabled(), true);
-  await page.clock.runFor(15_100);
+  await page.clock.runFor(18_100);
   await c.panel.locator(".helpdesk-chat-error").waitFor();
   assert.equal(await c.panel.locator(".helpdesk-chat-error").textContent(), c.copy.error);
   assert.equal(await c.input.inputValue(), "Hello?");
