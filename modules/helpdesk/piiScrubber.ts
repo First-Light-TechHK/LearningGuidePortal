@@ -157,7 +157,8 @@ function loosePhone(match: string): { kind: PiiKind; keep?: string; tail?: strin
   }
   if (current) chunks.push(current);
   if (!wide) return null; // the tight rule after this one decides
-  for (let size = chunks.length; size >= 1; size -= 1) {
+  // A phone has a few groups: at most six chunks are tried together (keeps long lists of numbers linear).
+  for (let size = Math.min(chunks.length, 6); size >= 1; size -= 1) {
     for (let first = 0; first + size <= chunks.length; first += 1) {
       const start = chunks[first].start;
       const end = chunks[first + size - 1].end;

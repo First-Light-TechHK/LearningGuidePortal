@@ -152,3 +152,12 @@ test("the scrubber is pure: same input, same output, and long input is handled i
   assert.ok(!output.includes("13800138000"));
   assert.equal(scrubPii(""), "");
 });
+
+test("a long list of short numbers split by spaces is scrubbed in bounded time", () => {
+  for (const long of ["1  ".repeat(2000), "12 34 ".repeat(1500), "第 3 课 4 题 ".repeat(800)]) {
+    const started = Date.now();
+    const output = scrubPii(long);
+    assert.ok(Date.now() - started < 1000, `bounded for ${JSON.stringify(long.slice(0, 12))}`);
+    assert.equal(output, scrubPii(long));
+  }
+});
