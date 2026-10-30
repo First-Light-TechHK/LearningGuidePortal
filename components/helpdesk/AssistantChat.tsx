@@ -10,8 +10,11 @@
 // no Figma frame, 待视觉验收); a chip asks with its FAQ id like a starter chip.
 // v4 Part B (helpdesk-v4-order-and-chat-end, 2026-10-29): code decides, never
 // the model (rules in modules/helpdesk/chatSession.ts, CHAT_SESSION_RULES):
-// a typed request for a person shows the handover card at once with no AI
-// call; two unsolved turns in a row show it after the reply; the reply to the
+// a typed request for a person gets the handover card, and (owner,
+// 2026-10-30) the card only adds: the message is still asked, an answer card
+// it finds comes first and the handover card ends the reply ("How fast does
+// support reply?" is a question about support with its own FAQ); two
+// unsolved turns in a row show it after the reply; the reply to the
 // 8th question of a session is followed by "Still need help?" (End chat, or
 // Contact a person); 10 minutes with no learner input after an AI answer end
 // the session. An end shows "This chat has ended" and the v3 rating card for
@@ -289,12 +292,9 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     if (pending || !message.trim()) return false;
     touched();
     const question: ChatEntry = { kind: "question", text: message, at: new Date().toISOString() };
-    // v4 §1: a typed request for a person is handed over at once; no AI answer is attempted. (A chip is the FAQ's own question.)
-    if (request.kind === "typed" && isHumanRequest(message)) {
-      setEntries((current) => [...current, question, { kind: "handover", reason: "requested" }]);
-      announce(`${text.handoverTitle} ${text.handoverBody}`);
-      return true;
-    }
+    // v4 §1: a typed request for a person gets the handover card. (A chip is the FAQ's own question.)
+    // Owner 2026-10-30: the card only adds, it never blocks an answer; the message is still asked and the card ends the reply.
+    const wantsPerson = request.kind === "typed" && isHumanRequest(message);
     setPending(true);
     setThinking([]);
     if (announceTimer.current) clearTimeout(announceTimer.current);
@@ -311,6 +311,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
         (step) => setThinking((current) => (current.includes(step) ? current : [...current, step])));
     setPending(false);
     setThinking([]);
+    if (wantsPerson) return askedForPerson(result);
     if (result.ok && result.data) {
       const { id, reply } = result.data;
       const turn = storedTurn(result.data.turn);
@@ -336,6 +337,27 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     setEntries([...failed, ...cards]);
     if (cards.length) announce(cardNotice(text, copy.assistant.rateTitle, cards));
     return false;
+  }
+
+  /**
+   * The reply to a typed request for a person: an answer card when the message found one (a question about support,
+   * e.g. its hours), then the handover card, which ends the reply. Small talk, an explanation, a choice card, no match
+   * or a failed call show the handover card alone, as no turn of their own: a person is offered either way, so
+   * the message is never given back. The handover card restarts the unsolved run and stands for the check-in too.
+   */
+  function askedForPerson(result: Awaited<ReturnType<typeof askAssistant>>): true {
+    const handover: ChatEntry = { kind: "handover", reason: "requested" };
+    const said = `${text.handoverTitle} ${text.handoverBody}`;
+    const turn = result.ok && result.data ? storedTurn(result.data.turn) : undefined;
+    if (!result.ok || !result.data?.reply || (turn && (turn.kind !== "answer" || turn.nodeType === "choice"))) {
+      setEntries([...latest.current, handover]);
+      announce(said);
+      return true;
+    }
+    const entry: AnswerEntry = { kind: "answer", id: result.data.id, reply: result.data.reply, feedback: null, at: new Date().toISOString(), ...(turn ? { turn } : {}) };
+    setEntries([...latest.current, entry, handover]);
+    announce(`${spoken(entry)} ${said}`);
+    return true;
   }
 
   async function sendDraft() {

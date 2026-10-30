@@ -982,7 +982,7 @@ test("visual capture v2: Contact Support with the chat panel (1216:6) and the He
   }
 });
 
-test("v4 chat handover: asking for a person shows the handover card at once with no AI call; its button opens the form and the enquiry links the chat", async ({ browser }) => {
+test("v4 chat handover: asking for a person is still asked; the answer card comes first and the handover card ends the reply; its button opens the form and the enquiry links the chat", async ({ browser }) => {
   for (const locale of ["en-GB", "zh-CN"] as const) {
     const { context, page } = await newLearner(browser, locale);
     const text = copy(locale);
@@ -994,7 +994,7 @@ test("v4 chat handover: asking for a person shows the handover card at once with
     await input.fill(first);
     await input.press("Enter");
     await expect(panel.locator(".helpdesk-chat-answer .helpdesk-chat-answer-text")).toHaveCount(1);
-    // The request also names the invoice, which the AI would answer: it must not be asked.
+    // The request also names the invoice: owner 2026-10-30, the handover card only adds, so the invoice answer shows too.
     const request = locale === "zh-CN" ? "我要投诉，发票不对" : "I want to SPEAK TO SOMEONE about my invoice";
     await input.fill(request);
     await input.press("Enter");
@@ -1002,9 +1002,10 @@ test("v4 chat handover: asking for a person shows the handover card at once with
     await expect(card).toBeVisible();
     await expect(card).toContainText(text.chat.handoverBody);
     await expect(panel.locator(".helpdesk-chat-question")).toHaveText([first, request]);
-    await expect(panel.locator(".helpdesk-chat-answer")).toHaveCount(1);
+    await expect(panel.locator(".helpdesk-chat-answer .helpdesk-chat-answer-text")).toHaveCount(2);
+    await expect(panel.locator("[data-entry]").last().locator(".helpdesk-chat-card-handover"), "the handover card ends the reply").toHaveCount(1);
     const { suggestions } = await (await page.request.get(`${helpdeskAdminStubUrl()}/__suggestions`)).json() as { suggestions: { request: { learnerId?: string; message?: string } }[] };
-    expect(suggestions.filter((entry) => entry.request.learnerId === learnerId).map((entry) => entry.request.message), "the request for a person never reached the AI").toEqual([first]);
+    expect(suggestions.filter((entry) => entry.request.learnerId === learnerId).map((entry) => entry.request.message), "the request for a person is still asked").toEqual([first, request]);
     await expect(input).toBeEnabled();
     await expect(panel.locator(".helpdesk-chat-info")).toBeVisible();
     await mkdir(SHOTS, { recursive: true });
@@ -1018,7 +1019,7 @@ test("v4 chat handover: asking for a person shows the handover card at once with
     await expect(page.getByRole("heading", { name: text.success.title })).toBeVisible();
     const ticket = (await learnerTickets(page)).find((item) => item.subject === subject)!;
     const seen = await agentTicket(page.request, ticket.id);
-    expect(seen.aiAssist.map((item) => [item.source, item.question])).toEqual([["chat", first]]);
+    expect(seen.aiAssist.map((item) => [item.source, item.question])).toEqual([["chat", first], ["chat", request]]);
     await context.close();
   }
 });

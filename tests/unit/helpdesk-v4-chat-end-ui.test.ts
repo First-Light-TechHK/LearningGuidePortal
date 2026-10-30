@@ -1,7 +1,8 @@
 // Helpdesk v4 Part B in Chromium: the chat panel (components/helpdesk/AssistantChat.tsx)
 // ends or hands over a long AI chat by code (modules/helpdesk/chatSession.ts),
 // never by asking the model:
-// 1. a message asking for a person shows the handover card at once, with no AI call;
+// 1. a message asking for a person gets the handover card at the end of the reply; it is still asked
+//    (owner 2026-10-30: the card only adds), and an answer card it finds comes first;
 // 2. two unsolved turns in a row show the same card after the reply, next to the alternatives;
 // 3. the reply to the 8th question is followed by "Still need help?" (End chat: the rating
 //    card for the last answered assist, or thanks; Contact a person: as the handover card);
@@ -26,9 +27,12 @@ const id = (n: number) => `01a18100-0000-7000-8000-${String(n).padStart(12, "0")
 const FAQ_ID = "01a18100-0000-7000-8000-0000000000f1";
 const ALTERNATIVES = [{ faqId: "01a18100-0000-7000-8000-0000000000d1", question: "How do I reset my password?" }];
 
+/** Requests for a person with nothing else to answer: like the server, no card (the fallback, with alternatives). */
+const PERSON_ONLY = new Set(["我要轉人工", "人工", "客服", "Can I SPEAK to someone please", "human", "human please", "agent", "real person"]);
+
 /**
  * The chat endpoints: each question gets a new assist id; a question starting
- * with "?" gets the fallback (with alternatives), anything else an FAQ answer.
+ * with "?" (or one of PERSON_ONLY) gets the fallback (with alternatives), anything else an FAQ answer.
  */
 function api(extra: { ticket?: (call: ApiCall) => Reply; rating?: (call: ApiCall) => Reply; /** Held until it resolves (a reply still pending). */ hold?: () => Promise<void> } = {}): Handler {
   let n = 0;
@@ -39,7 +43,7 @@ function api(extra: { ticket?: (call: ApiCall) => Reply; rating?: (call: ApiCall
       if (message.startsWith("!")) return { status: 503, json: { type: "about:blank", title: "Unavailable", status: 503, code: "admin_unavailable" } };
       const assist = id(++n);
       if (extra.hold) await extra.hold();
-      if (message.startsWith("?")) return { json: { id: assist, reply: null, alternatives: ALTERNATIVES } };
+      if (message.startsWith("?") || PERSON_ONLY.has(message)) return { json: { id: assist, reply: null, alternatives: ALTERNATIVES } };
       // "long" gets an answer taller than the panel.
       if (message.startsWith("long")) return { json: { id: assist, reply: { id: assist, faqId: FAQ_ID, question: `About ${message}`, answer: Array.from({ length: 40 }, (_, k) => `Paragraph ${k + 1} of the long answer.`).join("\n\n") }, alternatives: [] } };
       return { json: { id: assist, reply: { id: assist, faqId: FAQ_ID, question: `About ${message}`, answer: `Answer to ${message}.` }, alternatives: [] } };
@@ -83,7 +87,7 @@ async function open(locale: Locale, handler: Handler = api(), clock = false): Pr
   return harness;
 }
 
-/** Types one question and waits until its reply (or its handover card) is in. */
+/** Types one question and waits until its reply (with any card after it) is in. */
 async function ask(harness: Harness, locale: Locale, message: string) {
   const c = ui(harness.page, locale);
   const before = await c.panel.locator("[data-entry]").count();
@@ -92,19 +96,22 @@ async function ask(harness: Harness, locale: Locale, message: string) {
   await harness.page.waitForFunction((n) => document.querySelectorAll(".helpdesk-chat-messages [data-entry]").length >= n + 2 && !document.querySelector(".helpdesk-chat-typing"), before);
 }
 
-test("v4 Part B: asking for a person shows the handover card at once, with no AI call; its button opens Contact Support and the enquiry links the chat", async () => {
+const kinds = (c: ReturnType<typeof ui>) => c.panel.locator("[data-entry]").evaluateAll((nodes) => nodes.map((node) => node.querySelector(".helpdesk-chat-question") ? "question" : node.querySelector(".helpdesk-chat-card-handover") ? "handover" : node.querySelector(".helpdesk-chat-answer") ? "answer" : "other"));
+
+test("v4 Part B: asking for a person ends the reply with the handover card and is still asked; an answer card comes first; the button opens Contact Support and the enquiry links the chat", async () => {
   for (const locale of LOCALES) {
     const harness = await open(locale);
     const { page } = harness;
     const c = ui(page, locale);
     await ask(harness, locale, "first question");
     assert.equal(count(harness.calls, isAssistant), 1);
+    // A request with nothing else to answer: the handover card alone, no fallback bubble and no alternatives.
     const request = locale === "zh-CN" ? "我要轉人工" : "Can I SPEAK to someone please";
-    await c.input.fill(request);
-    await c.input.press("Enter");
-    await c.handovers.first().waitFor();
-    assert.equal(count(harness.calls, isAssistant), 1, "no AI answer is attempted for an explicit request");
+    await ask(harness, locale, request);
+    assert.equal(count(harness.calls, isAssistant), 2, "the request is still asked (owner 2026-10-30: the card only adds)");
     assert.deepEqual(await c.questions.allTextContents(), ["first question", request], "the request shows as the learner's message");
+    assert.deepEqual(await kinds(c), ["question", "answer", "question", "handover"], "the handover card alone answers it");
+    assert.equal(await c.panel.getByRole("list", { name: c.copy.alternativesTitle }).count(), 0, "no alternatives under a request for a person");
     const card = c.handovers.first();
     assert.ok((await card.textContent())?.includes(c.copy.handoverBody), "it says the chat goes with the enquiry");
     const button = card.getByRole("button", { name: c.copy.handoverButton, exact: true });
@@ -113,11 +120,21 @@ test("v4 Part B: asking for a person shows the handover card at once, with no AI
     assert.equal(await c.input.isDisabled(), false, "typing is never blocked");
     assert.equal(await c.input.evaluate((node) => node === document.activeElement), true, "focus stays in the input");
     assert.equal(await c.info.isVisible(), true, "the human entry stays visible");
-    // A starter chip is the FAQ's own question: it is asked even when it names a person.
+    // A question about support itself names a person too: its answer card shows, and the handover card ends the reply.
+    const support = locale === "zh-CN" ? "客服多久回复？" : "How fast does an agent reply?";
+    await ask(harness, locale, support);
+    assert.equal(count(harness.calls, isAssistant), 3);
+    assert.deepEqual((await kinds(c)).slice(-3), ["question", "answer", "handover"], "answer first, the handover card at the end");
+    assert.ok((await c.answers.last().textContent())?.includes(`Answer to ${support}.`));
+    assert.equal(await c.handovers.count(), 2);
+    await page.waitForFunction(({ answer, body }) => { const said = document.querySelector(".helpdesk-chat-live")?.textContent ?? ""; return said.startsWith(answer) && said.endsWith(body); }, { answer: `Answer to ${support}.`, body: c.copy.handoverBody });
+    assert.equal(await c.input.evaluate((node) => node === document.activeElement), true, "focus stays in the input");
+    // A starter chip is the FAQ's own question: it is asked as a question even when it names a person (no handover card).
     await c.panel.locator(".helpdesk-chat-chip").first().click();
-    await waitForCalls(harness, (calls) => count(calls, isAssistant) === 2);
-    assert.equal(harness.calls.filter(isAssistant)[1].json?.faqId, FAQ_ID);
-    await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 2);
+    await waitForCalls(harness, (calls) => count(calls, isAssistant) === 4);
+    assert.equal(harness.calls.filter(isAssistant)[3].json?.faqId, FAQ_ID);
+    await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 3 && !document.querySelector(".helpdesk-chat-typing"));
+    assert.equal(await c.handovers.count(), 2);
     // The card's button opens Contact Support: focus moves to the form, and the enquiry links every chat answer.
     await button.press("Enter");
     assert.equal(await c.subject.evaluate((node) => node === document.activeElement), true, "focus moves to the enquiry form");
@@ -125,7 +142,7 @@ test("v4 Part B: asking for a person shows the handover card at once, with no AI
     await c.message.fill("Please help me with my account.");
     await c.submit.click();
     await waitForCalls(harness, (calls) => count(calls, isTicketCreate) === 1);
-    assert.deepEqual(harness.calls.find(isTicketCreate)!.fields.assistIds, [id(1), id(2)], "the chat's assistIds go with the ticket");
+    assert.deepEqual(harness.calls.find(isTicketCreate)!.fields.assistIds, [id(1), id(3), id(4)], "the chat's assistIds go with the ticket (the request alone showed no answer)");
     await page.close();
   }
 });
@@ -216,7 +233,7 @@ test("v4 Part B: End chat with nothing answered thanks the learner; Skip on the 
   const c = ui(page, locale);
   // Fallbacks with requests for a person in between: 8 questions, no answer, no unsolved pair.
   for (let n = 1; n <= 4; n += 1) { await ask(harness, locale, `?q${n}`); await ask(harness, locale, "human please"); }
-  assert.equal(await c.checkins.count(), 0, "the 8th question asked for a person: no reply yet");
+  assert.equal(await c.checkins.count(), 0, "the 8th question asked for a person: its handover card stands for the check-in");
   await ask(harness, locale, "?q9");
   await c.checkins.first().waitFor();
   await c.checkins.first().getByRole("button", { name: c.copy.endChat }).click();
@@ -350,12 +367,11 @@ test("v4 review: a No vote while the next reply is pending puts the handover car
   await c.answers.nth(1).getByRole("button", { name: c.copy.no, exact: true }).click();
   await waitForCalls(harness, (calls) => count(calls, isAssistantFeedback) === 1);
   await c.handovers.first().waitFor();
-  const kinds = () => c.panel.locator("[data-entry]").evaluateAll((nodes) => nodes.map((node) => node.querySelector(".helpdesk-chat-question") ? "question" : node.querySelector(".helpdesk-chat-card-handover") ? "handover" : node.querySelector(".helpdesk-chat-answer") ? "answer" : "other"));
-  assert.deepEqual(await kinds(), ["question", "answer", "question", "answer", "handover", "question"], "the card follows the answer voted No, not the question still waiting");
+  assert.deepEqual(await kinds(c), ["question", "answer", "question", "answer", "handover", "question"], "the card follows the answer voted No, not the question still waiting");
   holding = false;
   release();
   await page.waitForFunction(() => document.querySelectorAll(".helpdesk-chat-answer").length === 3 && !document.querySelector(".helpdesk-chat-typing"));
-  assert.deepEqual(await kinds(), ["question", "answer", "question", "answer", "handover", "question", "answer"], "the reply lands right after its question");
+  assert.deepEqual(await kinds(c), ["question", "answer", "question", "answer", "handover", "question", "answer"], "the reply lands right after its question");
   // The card restarted the count: one fallback after it is not a pair yet.
   await ask(harness, "en-GB", "?four");
   assert.equal(await c.handovers.count(), 1);
@@ -400,6 +416,22 @@ test("v4 review: asking for a person twice in a row is announced both times", as
     await heard(2);
     await page.close();
   }
+});
+
+test("owner 2026-10-30: a request for a person whose call fails shows the handover card alone, no error bubble; the message is not given back and counts as no unsolved turn", async () => {
+  const locale: Locale = "en-GB";
+  const harness = await open(locale);
+  const { page } = harness;
+  const c = ui(page, locale);
+  await ask(harness, locale, "!human please");
+  assert.equal(count(harness.calls, isAssistant), 1, "it was asked");
+  assert.deepEqual(await kinds(c), ["question", "handover"]);
+  assert.equal(await c.panel.getByRole("alert").count(), 0, "no error bubble");
+  assert.equal(await c.input.inputValue(), "", "the request is not given back: a person is offered");
+  // The handover card restarted the run: one fallback after it is not a pair.
+  await ask(harness, locale, "?one");
+  assert.equal(await c.handovers.count(), 1);
+  await page.close();
 });
 
 test("v4 review: two failed calls in a row (a turn with no answer each) offer the handover card", async () => {

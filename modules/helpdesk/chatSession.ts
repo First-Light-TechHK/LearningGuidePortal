@@ -67,7 +67,7 @@ function matches(message: string, keyword: string): boolean {
   return wordPattern(word, "")?.test(message) ?? message.includes(word);
 }
 
-/** True when a typed chat message asks for a person: then no AI answer is attempted and the handover card shows at once. */
+/** True when a typed chat message asks for a person: the handover card ends the reply (owner 2026-10-30: it only adds; the message is still asked, and an answer card it finds comes first). */
 export function isHumanRequest(message: string, rules: ChatSessionRules = CHAT_SESSION_RULES): boolean {
   let text = normalise(message);
   for (const phrase of rules.humanKeywordExceptions) {
