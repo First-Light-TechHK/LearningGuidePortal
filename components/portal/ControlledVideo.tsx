@@ -93,12 +93,23 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
         onPointerUp={() => { scrubbing.current = false; }} onPointerCancel={() => { scrubbing.current = false; }} onBlur={() => { scrubbing.current = false; }}
         onChange={event => { const nextTime = Number(event.target.value); setTime(nextTime); if (media.current) media.current.currentTime = nextTime; }}/>
       <span>{clock(time)} / {clock(duration)}</span>
-      <div ref={volumeControl} className="la-video-volume" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setVolumeOpen(false); }}
+      <div ref={volumeControl} className="la-video-volume"
+        onPointerEnter={event => { if (event.pointerType === 'mouse' && window.matchMedia('(hover: hover) and (pointer: fine)').matches) setVolumeOpen(true); }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse' && !event.currentTarget.querySelector('input')?.hasPointerCapture(event.pointerId) && !event.currentTarget.querySelector(':focus-visible')) setVolumeOpen(false);
+        }}
+        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setVolumeOpen(false); }}
         onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setVolumeOpen(false); volumeButton.current?.focus(); } }}>
-        <button ref={volumeButton} type="button" aria-label={t.videoVolume} title={t.videoVolume} aria-expanded={volumeOpen} aria-controls={volumeOpen ? volumeId : undefined} onClick={() => setVolumeOpen(value => !value)}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+        <button ref={volumeButton} type="button" aria-label={t.videoVolume} title={t.videoVolume} aria-expanded={volumeOpen} aria-controls={volumeOpen ? volumeId : undefined}
+          onClick={event => setVolumeOpen(value => event.detail === 0 || !window.matchMedia('(hover: hover) and (pointer: fine)').matches ? !value : true)}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
         {volumeOpen && <div id={volumeId} className="la-video-volume-panel">
-          <input className="la-video-volume-range" type="range" aria-label={t.videoVolume} min={0} max={100} step={1} value={volume} aria-valuetext={`${volume}%`}
+          <span aria-hidden="true">{volume}</span>
+          <input className="la-video-volume-range" type="range" aria-label={t.videoVolume} aria-orientation="vertical" min={0} max={100} step={1} value={volume} aria-valuetext={`${volume}%`}
             onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)}
+            onPointerUp={event => {
+              if (event.pointerType === 'mouse' && !volumeControl.current?.contains(document.elementFromPoint(event.clientX, event.clientY))) setVolumeOpen(false);
+            }}
+            onPointerCancel={() => setVolumeOpen(false)}
             onChange={event => {
               const video = media.current;
               if (!video) return;
@@ -107,7 +118,6 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
               video.muted = nextVolume === 0;
               updateVolume(video);
             }}/>
-          <span aria-hidden="true">{volume}</span>
         </div>}
       </div>
       <span className="la-video-speed">

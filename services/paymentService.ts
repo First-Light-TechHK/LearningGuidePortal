@@ -5,15 +5,22 @@ import { validateSubscriptionPrice } from "./stripePriceService";
 import { PaymentError } from "@/contracts/payment";
 import { appEnvironment, isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
 import { startStripeUpgradePayment } from "./stripeUpgradePayment";
-import type { OrderReceipt } from "@/contracts/order-receipt";
+import type { HostedOrderReceipt } from "@/contracts/order-receipt";
 
 export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
 
 // Resolve only identities recorded on the authenticated user's paid Order.
-export async function stripeOrderReceipt(order: Pick<ProductOrder, "id" | "userId" | "status" | "kind" | "paymentMode" | "amountMinor" | "currency" | "stripeInvoiceId" | "stripePaymentIntentId" | "stripeCheckoutSessionId" | "stripeSubscriptionId"> & { plan?: { name: string } | null }): Promise<OrderReceipt | null> {
+export async function stripeOrderReceipt(order: Pick<ProductOrder, "id" | "userId" | "status" | "kind" | "paymentMode" | "amountMinor" | "currency" | "stripeInvoiceId" | "stripePaymentIntentId" | "stripeCheckoutSessionId" | "stripeSubscriptionId">): Promise<HostedOrderReceipt | null> {
   if (order.status !== "paid" || order.kind === "trial_activation" || order.paymentMode !== "stripe") return null;
   const stripe = getStripe();
-  const receipt = (paidAt?: number | null): OrderReceipt => ({ orderId: order.id, planName: order.plan?.name || "", amountMinor: order.amountMinor, currency: order.currency, paidAt: paidAt ? new Date(paidAt * 1000).toISOString() : null, paymentMode: "stripe" });
+  const hostedReceipt = (url: string | null | undefined, kind: HostedOrderReceipt["kind"]): HostedOrderReceipt | null => {
+    if (!url) return null;
+    try {
+      const target = new URL(url);
+      const origin = kind === "invoice" ? "https://invoice.stripe.com" : "https://pay.stripe.com";
+      return target.origin === origin && !target.username && !target.password ? { kind, url } : null;
+    } catch { return null; }
+  };
   const invoiceReceipt = (invoice: import("stripe").Stripe.Invoice) => {
     const subscription = invoice.parent?.subscription_details?.subscription;
     const subscriptionId = typeof subscription === "string" ? subscription : subscription?.id;
@@ -21,7 +28,7 @@ export async function stripeOrderReceipt(order: Pick<ProductOrder, "id" | "userI
       || order.stripeSubscriptionId && subscriptionId !== order.stripeSubscriptionId
       || invoice.metadata?.orderId && invoice.metadata.orderId !== order.id
       || invoice.metadata?.userId && invoice.metadata.userId !== order.userId) return null;
-    return receipt(invoice.status_transitions?.paid_at);
+    return hostedReceipt(invoice.hosted_invoice_url, "invoice");
   };
   if (order.stripeInvoiceId) {
     const invoice = await stripe.invoices.retrieve(order.stripeInvoiceId);
@@ -48,7 +55,7 @@ export async function stripeOrderReceipt(order: Pick<ProductOrder, "id" | "userI
   const payment = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] });
   if (payment.id !== paymentIntentId || payment.status !== "succeeded" || payment.amount_received !== order.amountMinor || payment.currency !== order.currency || !payment.latest_charge) return null;
   const charge = typeof payment.latest_charge === "string" ? await stripe.charges.retrieve(payment.latest_charge) : payment.latest_charge;
-  return charge.paid && !charge.refunded && charge.amount === order.amountMinor && charge.currency === order.currency ? receipt(charge.created) : null;
+  return charge.paid && !charge.refunded && charge.amount === order.amountMinor && charge.currency === order.currency ? hostedReceipt(charge.receipt_url, "charge") : null;
 }
 
 // Both HTTPS hosts serve the DEV Portal (see dev-deploy.yml). Keep this

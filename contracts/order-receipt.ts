@@ -1,4 +1,10 @@
-// Read-only receipt projection. Never contains card/account balance information.
+// Read-only provider destination, resolved from the original verified payment.
+export type HostedOrderReceipt = {
+  kind: "invoice" | "charge";
+  url: string;
+};
+
+// Local development/demo receipt only. Stripe payments use HostedOrderReceipt.
 export type OrderReceipt = {
   orderId: string;
   planName: string;

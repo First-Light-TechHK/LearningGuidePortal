@@ -1,4 +1,4 @@
-import type { CourseLearningMode } from "@/contracts/course-learning-mode";
+import type { CourseLearningMode, CourseModePosition } from "@/contracts/course-learning-mode";
 import type { LessonContent } from "@/contracts/lesson-content";
 import type { ProductCourse } from "@/services/productStore";
 import { lessonLearningModes } from "@/lib/previewLessonPresentation";
@@ -9,15 +9,18 @@ export function availableCourseLearningModes(course: Pick<ProductCourse, "sectio
   return (["video", "text"] as const).filter(mode => available.has(mode));
 }
 
-/** Stay on a matching lesson; otherwise use the first accessible lesson of that mode. */
-export function modeLessonDestination(outline: Array<{id:string;href:string|null;modes?:CourseLearningMode[]}>, lessonId:string, mode:CourseLearningMode, currentHasMode:boolean, contentId?:string) {
+/** Prefer the server's mode maximum, retaining accessible entry fallbacks. */
+export function modeLessonDestination(outline: Array<{id:string;href:string|null;modes?:CourseLearningMode[]}>, lessonId:string, mode:CourseLearningMode, currentHasMode:boolean, contentId?:string, position?:CourseModePosition|null) {
+  if (position === null) return null;
+  const resumed = position ? outline.find(item => item.id === position.lessonId && item.href && (!item.modes || item.modes.includes(mode))) : undefined;
   const current=currentHasMode ? outline.find(item=>item.id===lessonId&&item.href) : undefined;
-  const destination=current || outline.find(item=>item.href&&item.modes?.includes(mode));
+  const destination=resumed || current || outline.find(item=>item.href&&item.modes?.includes(mode));
   if(!destination?.href)return null;
   const url=new URL(destination.href,"https://learning-guide.invalid");
   url.searchParams.set("viewMode",mode);
   url.searchParams.delete("contentId");
-  if(current&&contentId)url.searchParams.set("contentId",contentId);
+  const selected = resumed ? position?.contentId : current ? contentId : undefined;
+  if(selected)url.searchParams.set("contentId",selected);
   return {lessonId:destination.id,href:url.pathname+url.search+url.hash};
 }
 

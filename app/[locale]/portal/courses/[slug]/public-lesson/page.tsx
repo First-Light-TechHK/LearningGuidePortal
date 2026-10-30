@@ -17,11 +17,11 @@ import { getTutorAvailability } from "@/services/ksTutorClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string }> }) {
+export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string }> }) {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const course = await getProductCourse(slug);
-  const { lessonId: requestedLesson, viewMode } = await searchParams;
+  const { lessonId: requestedLesson, viewMode, contentId } = await searchParams;
   const previewLesson = course ? publicFirstLesson(course) : null;
   const lesson = requestedLesson ? (requestedLesson === previewLesson?.id ? previewLesson : null) : previewLesson;
   if (!course || course.status !== "published" || !lesson) notFound();
@@ -29,6 +29,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   if (!user) {
     const query = new URLSearchParams();
     if (requestedLesson) query.set("lessonId", requestedLesson);
+    if (contentId) query.set("contentId", contentId);
     if (isCourseLearningMode(viewMode)) query.set("viewMode", viewMode);
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${query.size ? `?${query}` : ""}`)}`);
   }
@@ -57,6 +58,6 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView initialContentId={contentId} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }
