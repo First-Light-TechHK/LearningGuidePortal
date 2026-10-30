@@ -13,8 +13,9 @@
 //   by a later tick on the same row, at most three attempts a day; a row left
 //   "running" by an instance that died is taken over (the lock proves it is
 //   not running any more);
-// - bounded: batches of 200 rows, at most 50 batches a run; what is left is
-//   done by the next run (moreDue says so);
+// - bounded: batches of 200 rows, at most 50 batches a run; what is left
+//   (moreDue) is continued on the same day's row by the next tick, every 30
+//   minutes, until nothing is left (only then is the day done);
 // - observable: the run row and one structured log line per run (counts,
 //   status, error code; never text);
 // - staff "run now" (POST .../jobs/assist-retention/run): idempotent by its
@@ -123,7 +124,9 @@ export function createRetentionJob(deps: RetentionDeps) {
     const result = await repository.withJobLock(JOB, async () => {
       const at = now();
       const existing = await repository.findScheduledRun(JOB, dayOf(at));
-      if (existing?.status === "succeeded") return { outcome: "done_today" as const, run: existing };
+      if (existing?.status === "succeeded" && !existing.moreDue) return { outcome: "done_today" as const, run: existing };
+      // A run that stopped at its bound (moreDue) is continued on the same row by the next tick, so a backlog never waits a day.
+      if (existing?.status === "succeeded") return { outcome: "ran" as const, run: await execute({ ...existing, status: "running", finishedAt: null, cutoff: cutoffAt(at), instance }) };
       if (existing && existing.attempts >= rules.maxAttempts && existing.status === "failed") return { outcome: "gave_up" as const, run: existing };
       // A failed run is retried on its row; one still "running" was left by an instance that died (this one holds the lock now).
       const run = existing

@@ -143,6 +143,25 @@ test("a run is bounded (batches of the configured size, a few batches); what is 
   assert.deepEqual([manual.outcome, manual.run?.rowsScrubbed, manual.run?.moreDue], ["completed", 1, false]);
 });
 
+test("a scheduled run that stopped at its bound is continued by the next tick the same day (on the same row) until nothing is left; then the day is done", async () => {
+  const h = harness({ rules: { batchSize: 2, maxBatches: 2 } });
+  for (let index = 0; index < 9; index += 1) await h.repository.insertAssist(row(200 + index));
+  const first = await h.job.runScheduled();
+  assert.deepEqual([first.outcome, first.run?.rowsScrubbed, first.run?.moreDue], ["ran", 4, true]);
+  h.advance(30 * 60_000);
+  const second = await h.job.runScheduled();
+  assert.deepEqual([second.outcome, second.run?.id, second.run?.rowsScrubbed, second.run?.moreDue, second.run?.attempts], ["ran", first.run?.id, 8, true, 1]);
+  h.advance(30 * 60_000);
+  const third = await h.job.runScheduled();
+  assert.deepEqual([third.outcome, third.run?.id, third.run?.rowsScrubbed, third.run?.moreDue, third.run?.status], ["ran", first.run?.id, 9, false, "succeeded"]);
+  h.advance(30 * 60_000);
+  const fourth = await h.job.runScheduled();
+  assert.deepEqual([fourth.outcome, fourth.run?.rowsScrubbed], ["done_today", 9]);
+  const runs = await h.job.listRuns();
+  assert.equal(runs.runs.length, 1);
+  assert.deepEqual(h.logs.filter((line) => line.event === "job_run").map((line) => [line.rowsScrubbed, line.moreDue]), [[4, true], [8, true], [9, false]]);
+});
+
 test("run now (staff): idempotent by Idempotency-Key, recorded with who asked, allowed after today's scheduled run; a key reused by someone else is a conflict", async () => {
   const h = harness();
   await h.repository.insertAssist(row(200));
