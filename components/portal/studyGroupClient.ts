@@ -1,3 +1,4 @@
+import type { SessionEntryNext } from "@/modules/group-study/entry";
 import { deadlineSignal } from "@/modules/group-study/seatIntents";
 export type StudyGroupMember = { userId: string; displayName: string; role: "host" | "member" };
 export type StudySession = {
@@ -80,6 +81,61 @@ export function studyGroupIdFromQuery(search: string) {
   return id && STUDY_GROUP_ID.test(id) ? id : null;
 }
 
+// The Live Session to enter on arrival (`?enter=`): set only by a session
+// deep link during Starting Soon, which sends the member to the list's
+// waiting dialog (deep links, 2026-10-30).
+export function sessionToEnterFromQuery(search: string) {
+  const id = new URLSearchParams(search).get("enter");
+  return id && STUDY_GROUP_ID.test(id) ? id : null;
+}
+
+export function studySessionHref(locale: string, sessionId: string) {
+  return `/${locale}/portal/study-groups/sessions/${encodeURIComponent(sessionId)}`;
+}
+
+// The Study Groups list with one group open and, for a member, the Live
+// Session whose waiting dialog opens at once.
+export function studyGroupListHref(locale: string, groupId: string, enterSessionId?: string) {
+  const query = new URLSearchParams({ group: groupId });
+  if (enterSessionId) query.set("enter", enterSessionId);
+  return `/${locale}/portal/study-groups?${query.toString()}`;
+}
+
+// Get Course Access opens the purchase journey with the Course's category
+// preselected (PRD GS-ACCESS-004, Figma Deep Link 03).
+export function courseAccessHref(locale: string, courseId: string) {
+  return `/${locale}/subscription?courseId=${encodeURIComponent(courseId)}`;
+}
+
+// What the server answers for a session link (GET /sessions/:id/entry).
+export type SessionEntry = {
+  next: SessionEntryNext;
+  opensAt: string | null;
+  viewer: { host: boolean; planned: boolean } | null;
+  session: { id: string; title: string; focus: string | null; startsAt: string; durationSeconds: number; maxParticipants: number; occupancy: number | null; state: StudySession["state"] } | null;
+  group: { id: string; title: string } | null;
+  course: { id: string; title: string; slug: string } | null;
+};
+
+// A page that stops the viewer asks again on its own when what it waits for
+// can change without them: the room opening at T-10 (asked at that moment,
+// at least once a minute in case the time moved) and a seat freeing up.
+export function sessionEntryRecheckMs(entry: Pick<SessionEntry, "next" | "opensAt">, nowMs: number): number | null {
+  if (entry.next === "not_open") {
+    const opensAt = entry.opensAt ? Date.parse(entry.opensAt) : NaN;
+    if (!Number.isFinite(opensAt)) return 60_000;
+    return Math.min(Math.max(opensAt - nowMs + 500, 1_000), 60_000);
+  }
+  if (entry.next === "full") return 15_000;
+  return null;
+}
+
+// Coming back from the purchase tab with the Course: the page says so once
+// (deep-link PDF C8) and carries on with the next step.
+export function sessionEntryAccessGained(previous: SessionEntryNext | null, next: SessionEntryNext) {
+  return previous === "course_access" && next !== "course_access" && next !== "course_unavailable" && next !== "sign_in" && next !== "unavailable";
+}
+
 export function studyGroupPath(groupId: string) {
   return `/api/study-groups/${encodeURIComponent(groupId)}`;
 }
@@ -105,9 +161,13 @@ export function revealOnPhone(element: { scrollIntoView: (options: ScrollIntoVie
 }
 
 // Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters like the Study
-// Group Title / Session Focus (a 32 character sample like "Classical Poetry Reading
-// Session" must fit). The server enforces the same 50 in modules/group-study/service.ts.
+// Group Title (a 32 character sample like "Classical Poetry Reading Session" must
+// fit). The server enforces the same 50 in modules/group-study/service.ts.
 export const SESSION_TITLE_MAX = 50;
+
+// Owner request 2026-10-30: Session Focus allows 300 characters (it was 50). The
+// server enforces the same 300 in modules/group-study/service.ts.
+export const SESSION_FOCUS_MAX = 300;
 
 // BUG-0116 (SIT): the create form capped About at 200 but the edit dialog rendered the
 // stored value uncontrolled, so text beyond the limit could still be shown and saved.

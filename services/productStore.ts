@@ -2262,7 +2262,7 @@ export async function listStudyGroupReminders(
   isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string }) => boolean | Promise<boolean>
 ) {
   const data = await readProductAggregate();
-  const reminders: Array<{ body: string; createdAt: string }> = [];
+  const reminders: Array<{ body: string; createdAt: string; sessionId?: string }> = [];
   const seenSessionIds = new Set<string>();
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
@@ -2270,7 +2270,7 @@ export async function listStudyGroupReminders(
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
     if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);
-    reminders.push({ body: item.body, createdAt: item.createdAt });
+    reminders.push(item.sessionId ? { body: item.body, createdAt: item.createdAt, sessionId: item.sessionId } : { body: item.body, createdAt: item.createdAt });
   }
   return reminders;
 }

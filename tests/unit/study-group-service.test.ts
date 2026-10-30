@@ -340,6 +340,24 @@ test("a real-world Session Title fits the 50 character limit on schedule and edi
   );
 });
 
+test("Session Focus allows 300 characters on schedule, and 301 is refused on schedule and edit (owner request 2026-10-30)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Focus limit", courseId: "course-1", about: "About the focus limit." });
+  const focus = "1234567890".repeat(30);
+  const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Long focus", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 4, focus });
+  assert.equal(scheduled.focus, focus);
+  assert.equal(scheduled.focus?.length, 300);
+  await assert.rejects(
+    () => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Too long focus", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 4, focus: `${focus}x` }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus: `${focus}x` }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  const stored = (await repository.read()).sessions.filter((item) => item.groupId === group.id);
+  assert.deepEqual(stored.map((item) => item.focus), [focus]);
+});
+
 test("host can move only the Start Time (and the AI Tutor switch) of an upcoming Session (BUG-0157)", async () => {
   access.add("e1:course-1");
   access.add("e2:course-1");

@@ -146,7 +146,10 @@ function ParticipantCamera({ track }: { track: AttachableTrack | null }) {
   return <video ref={ref} autoPlay playsInline muted />;
 }
 
-export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessionId: string }) {
+// The live room only. Whether and where a viewer goes before that (sign in,
+// buy, join, wait in the list, the Host's Start in the list) is the entry
+// check's (StudySessionEntry); a session found not live yet goes back to it.
+export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Locale; sessionId: string; onNotLive?: () => void }) {
   const copy = getMessages(locale).studyGroupsPage;
   const roomCopy = copy.room;
   const [session, setSession] = useState<StudySession | null>(null);
@@ -253,11 +256,6 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   blockedRef.current = blocked;
   const failuresRef = useRef(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
-  // The Host's Start in the waiting view: in flight, and why it failed. Kept
-  // apart from the connection's error so it never follows the page into the
-  // live room (QA 2026-10-19 M13).
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState("");
   // Leave Session asks first; a leave the server did not take keeps the call
   // and offers the leave again (QA 2026-10-19 M15).
   const [leaveAsked, setLeaveAsked] = useState(false);
@@ -579,7 +577,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // lease could lapse while the page sleeps; coming back to the tab or back
   // online renews at once (QA 2026-10-19 final review r2-B4).
   useEffect(() => {
-    if (!seated || left || blocked || accessLost || (session?.state !== "live" && session?.state !== "starting_soon")) return;
+    if (!seated || left || blocked || accessLost || session?.state !== "live") return;
     // Each intent is bounded by the seat intents' own timeout, so a request
     // stalled by a sleeping device frees the next renewal (QA3 F3), and a page
     // that has left sends neither a renewal nor an entry (QA3 F1, F5).
@@ -681,7 +679,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     if (session?.state === "completed") void releaseRoom();
-    if (session?.state === "live") setStartError("");
+    // Nobody enters before the Host starts (PRD 6.9.1): the entry check sends
+    // a member to the list's waiting dialog and the Host to the list's Start.
+    if ((session?.state === "scheduled" || session?.state === "starting_soon") && !sessionNotStarted(session)) onNotLive?.();
   }, [session?.state]);
 
   useEffect(() => {
@@ -690,11 +690,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     if (!session || left) return;
-    if (session.state !== "starting_soon" && session.state !== "live") {
-      setEntryDone(true);
-      return;
-    }
-    if (sessionNotStarted(session)) {
+    if (session.state !== "live") {
       setEntryDone(true);
       return;
     }
@@ -945,15 +941,6 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     setLeft(false);
   }
 
-  async function startSession() {
-    setStarting(true);
-    setStartError("");
-    const started = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/start`, { method: "POST", body: "{}" });
-    if (!started.ok) setStartError(started.code);
-    else await load();
-    setStarting(false);
-  }
-
   function retryLoad() {
     setPollError("");
     setErrorCode("");
@@ -1065,10 +1052,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   if (refusalOffer) {
     return <>{path()}<section className={styles.empty} role="alert"><h1>{refusalOffer === "retry" ? copy.sessionFull : copy.errors.course_access_required}</h1><p>{session.title}</p>{refusalOffer === "course-access" && group ? <a className={styles.primary} href={`/${locale}/portal/courses/${group.courseSlug}`}>{copy.getCourseAccess}</a> : null}{refusalOffer === "retry" ? <button className={styles.primary} type="button" onClick={retryEntry}>{copy.retry}</button> : null}</section></>;
   }
-  if ((session.state === "starting_soon" || session.state === "live") && !seated && !entryDone) {
+  if (session.state === "live" && !seated && !entryDone) {
     return <p className={styles.panel} role="status">{copy.loading}</p>;
   }
-  if ((session.state === "starting_soon" || session.state === "live") && !seated && errorCode) {
+  if (session.state === "live" && !seated && errorCode) {
     // Entry finished without a seat: the request failed on its way out or was
     // refused (hunt M1). Show the failure with a retry that re-runs the entry
     // request in place instead of leaving the viewer stuck on Loading. A
@@ -1076,15 +1063,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     if (roomGateAction(errorCode) !== "retry") return <>{path()}{gate(errorCode)}</>;
     return <>{path()}<section className={styles.empty} role="alert"><h1>{copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error}</h1><p>{session.title}</p><button className={styles.primary} type="button" onClick={retryEntry}>{roomCopy.reconnect}</button></section></>;
   }
-  if (session.state === "scheduled") {
-    return <>{path()}<section className={styles.empty} role="status"><h1>{copy.errors.session_not_open}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{copy.enterWindow}</p></section></>;
-  }
   if (sessionNotStarted(session)) {
     return <>{path()}<section className={styles.empty} role="status"><h1>{copy.notStarted}</h1><p>{copy.notStartedBody}</p><p>{session.title}</p><p>{sessionScheduleLabel(locale, session)}</p></section></>;
   }
-  if (session.state !== "live") {
-    return <>{path()}<section className={styles.empty} role="status"><h1>{group?.role === "host" ? copy.hostWaiting : copy.waiting}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</p><p>{fill(copy.upToParticipants, { count: session.maxParticipants })}</p>{group?.role === "host" ? <button className={styles.primary} type="button" disabled={starting} aria-busy={starting} onClick={() => void startSession()}>{starting ? roomCopy.starting : copy.start}</button> : null}{startError ? <p className={styles.alert} role="alert">{copy.errors[startError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</section></>;
-  }
+  if (session.state !== "live") return <p className={styles.panel} role="status">{copy.loading}</p>;
 
   const controls = sessionControls({ role: group?.role || "member", state: "live", occupancy: session.occupancy, maxParticipants: session.maxParticipants });
   const present = connected && tiles.length > 0 ? tiles.length : session.occupancy;

@@ -488,3 +488,49 @@
   .side { height: 480px; min-height: 360px; }
   .chatLog { margin-right: -14px; padding-right: 14px; }
 }
+/* Session deep link (Figma 599:2 Deep Link 01-03, 1411:2 / 1411:102 / 1411:204):
+   the session card, then one panel that says what happens next. States the
+   Figma has no frame for reuse the same panel in a neutral tone
+   (待视觉验收: /mnt/project-files/lg-sg-design deep-link PDF C1-C8). */
+.deepLink { width: min(1280px, calc(100% - 32px)); margin: 42px auto 66px; box-sizing: border-box; }
+.dlCard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; min-height: 300px; padding: 28px; background: #fff; border: 1px solid #e4e7ec; border-radius: 12px; box-sizing: border-box; }
+.dlChips { display: flex; flex-wrap: wrap; gap: 10px; }
+.dlChip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+.dlChip::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
+.dlChip[data-tone="red"] { background: #fee2e2; color: #dc2626; }
+.dlChip[data-tone="redStrong"] { background: #fecaca; color: #dc2626; }
+.dlChip[data-tone="amber"] { background: #fef3c7; color: #d97706; }
+.dlChip[data-tone="green"] { background: #dcfce7; color: #15803d; }
+.dlChip[data-tone="gray"] { background: #f2f4f7; color: #475467; }
+.dlCard h1 { margin: 16px 0 0; color: #111827; font-size: 24px; font-weight: 600; line-height: 32px; overflow-wrap: anywhere; }
+.dlFocus { margin: 12px 0 0; color: #344054; font-size: 16px; line-height: 24px; overflow-wrap: anywhere; }
+.dlCourse { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; color: #155dfc; font-size: 15px; text-decoration: none; }
+.dlFacts { display: grid; align-content: start; gap: 16px; min-width: 300px; margin: 18px 0 0; padding: 0; list-style: none; color: #111827; font-size: 15px; }
+.dlFacts li { display: flex; align-items: center; gap: 12px; }
+.dlFacts svg { color: #667085; flex: none; }
+.dlNotice { display: flex; align-items: center; gap: 10px; width: min(1040px, 100%); margin: 24px auto 0; padding: 12px 16px; border-radius: 10px; background: #ecfdf3; color: #067647; font-size: 14px; box-sizing: border-box; }
+.dlGate { display: grid; justify-items: center; width: min(1040px, 100%); margin: 46px auto 0; padding: 36px 40px 38px; border-radius: 16px; text-align: center; box-sizing: border-box; background: #f2f4f7; }
+.dlGate[data-tone="red"] { background: #fef2f2; }
+.dlGate[data-tone="amber"] { background: #fff8e8; }
+.dlGate[data-tone="blue"] { background: #eef5ff; }
+.dlIcon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 28px; background: #e4e7ec; color: #475467; }
+.dlGate[data-tone="red"] .dlIcon { background: #fee2e2; color: #ef4444; }
+.dlGate[data-tone="amber"] .dlIcon { background: #fff0c7; color: #d97706; }
+.dlGate[data-tone="blue"] .dlIcon { background: #dcebff; color: #155dfc; }
+.dlGate h2 { margin: 26px 0 0; color: #111827; font-size: 24px; font-weight: 600; line-height: 32px; }
+.dlGate > p { max-width: 720px; margin: 20px 0 0; color: #667085; font-size: 14px; line-height: 17px; }
+.dlActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 26px; }
+.dlPrimary, .dlSecondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 44px; padding: 0 28px; border-radius: 8px; font: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer; box-sizing: border-box; }
+.dlPrimary { border: 0; background: #155dfc; color: #fff; }
+.dlSecondary { border: 1px solid #d0d5dd; background: #fff; color: #111827; }
+.dlPrimary:disabled, .dlSecondary:disabled { opacity: .45; cursor: not-allowed; }
+.dlGate small { margin-top: 14px; color: #98a2b3; font-size: 12px; }
+.dlGate .alert { margin: 14px 0 0; font-size: 13px; }
+.reminderLink { margin-left: 8px; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; font-weight: 600; text-decoration: underline; white-space: nowrap; cursor: pointer; }
+@media (max-width: 800px) {
+  .deepLink { margin: 16px auto 32px; }
+  .dlCard { grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 20px; }
+  .dlFacts { min-width: 0; margin-top: 0; }
+  .dlGate { margin-top: 24px; padding: 28px 20px; }
+  .dlActions > * { width: 100%; }
+}

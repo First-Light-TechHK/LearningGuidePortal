@@ -317,7 +317,10 @@ test("M13: the Host's Start shows progress, shows its failure, and the failure i
     const groupId = await createGroup(host, unique("E2E M13"));
     const sessionId = await scheduleSession(host, groupId, { title: "Start once it works", startsInMs: 90_000 });
     const page = await host.context.newPage();
+    // The Host starts from the session list (deep links 2026-10-30): the
+    // session link brings them there.
     await page.goto(roomPath(sessionId));
+    await page.waitForURL(new RegExp(`/en-GB/portal/study-groups\\?group=${groupId}$`));
     let failStart = true;
     await page.route(`**/api/study-groups/sessions/${sessionId}/start`, async (route) => {
       if (!failStart) return route.continue();
@@ -325,10 +328,12 @@ test("M13: the Host's Start shows progress, shows its failure, and the failure i
       await new Promise((resolve) => setTimeout(resolve, 1_500));
       await route.fulfill({ status: 500, contentType: "application/json", body: FAILED });
     });
-    await page.getByRole("button", { name: "Start Live Session" }).click();
-    await expect(page.getByRole("button", { name: "Starting…" })).toBeDisabled();
+    const start = page.getByRole("button", { name: "Start Live Session" });
+    await start.click();
+    await expect(start).toBeDisabled();
     await expect(appAlerts(page)).toHaveText("Something went wrong. Try again.");
-    await page.getByRole("button", { name: "Start Live Session" }).click();
+    await start.click();
+    await page.waitForURL(new RegExp(roomPath(sessionId)));
     await expect(page.getByRole("button", { name: "Mic" })).toBeEnabled();
     await expect(page.locator('[data-participants="1"]')).toBeVisible();
     await expect(appAlerts(page)).toHaveCount(0);
@@ -463,7 +468,7 @@ test("M19: a raised hand reaches late joiners and goes down with the person who 
   }
 });
 
-test("M20: the room link shows sign-in, the way back, or a retry instead of a dead end", async ({ browser, baseURL }) => {
+test("M20: the room link shows sign-in, the way on, or a retry instead of a dead end", async ({ browser, baseURL }) => {
   const origin = appOrigin(baseURL);
   const host = await newMember(browser, origin, "m20-a", "Study Host");
   const outsider = await newMember(browser, origin, "m20-b", "Outsider");
@@ -472,30 +477,31 @@ test("M20: the room link shows sign-in, the way back, or a retry instead of a de
     const groupId = await createGroup(host, unique("E2E M20"));
     const sessionId = await scheduleSession(host, groupId, { title: "Gate session", startsInMs: 3 * 60 * 60_000 });
 
-    // Signed out: sign in and come back here.
+    // Signed out: sign in and come back here, and nothing about the session shows.
     const signedOut = await visitor.newPage();
     await signedOut.goto(roomPath(sessionId));
-    await expect(signedOut.getByRole("heading", { name: "Sign in is required." })).toBeVisible();
-    await expect(appAlerts(signedOut).getByRole("link", { name: "Sign In" })).toHaveAttribute("href", `/en-GB/portal/sign-in?returnTo=${encodeURIComponent(roomPath(sessionId))}`);
+    await expect(signedOut.getByRole("heading", { name: "Sign in to continue" })).toBeVisible();
+    await expect(signedOut.getByRole("region", { name: "Sign in to continue" }).getByRole("link", { name: "Sign In" })).toHaveAttribute("href", `/en-GB/portal/sign-in?returnTo=${encodeURIComponent(roomPath(sessionId))}`);
+    await expect(signedOut.getByText("Gate session")).toHaveCount(0);
 
-    // Not a member: back to Study Groups.
+    // Not a member, with the Course: join the group and carry on.
     const notMember = await outsider.context.newPage();
     await notMember.goto(roomPath(sessionId));
-    await expect(notMember.getByRole("heading", { name: "You do not have access to this Live Session. Only members of its Study Group can join." })).toBeVisible();
-    await expect(appAlerts(notMember).getByRole("link", { name: "Back to Study Groups" })).toHaveAttribute("href", "/en-GB/portal/study-groups");
+    await expect(notMember.getByRole("heading", { name: "Join the Study Group to attend this Live Session" })).toBeVisible();
+    await expect(notMember.getByRole("button", { name: "Join Study Group & Continue" })).toBeEnabled();
 
     // Any other failure: try again.
     const page = await host.context.newPage();
     let failing = true;
-    await page.route(`**/api/study-groups/sessions/${sessionId}`, (route) => failing && route.request().method() === "GET" ? route.fulfill({ status: 500, contentType: "application/json", body: FAILED }) : route.continue());
+    await page.route(`**/api/study-groups/sessions/${sessionId}/entry`, (route) => failing ? route.fulfill({ status: 500, contentType: "application/json", body: FAILED }) : route.continue());
     await page.goto(roomPath(sessionId));
     await expect(page.getByRole("heading", { name: "Something went wrong. Try again." })).toBeVisible();
-    const retry = appAlerts(page).getByRole("button", { name: "Try again" });
+    const retry = page.getByRole("button", { name: "Try again" });
     await expect(retry).toBeVisible();
     failing = false;
-    // The 3 s poll may heal the page a moment before the click lands; either way it must heal.
-    await retry.click({ timeout: 3_000 }).catch(() => undefined);
-    await expect(page.getByRole("heading", { name: "This Live Session is not open yet." })).toBeVisible();
+    await retry.click();
+    await expect(page.getByRole("heading", { name: /^This session opens at / })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Study Group" })).toHaveAttribute("href", `/en-GB/portal/study-groups?group=${groupId}`);
   } finally {
     await visitor.close();
     await host.context.close();
@@ -772,18 +778,18 @@ test("QA3 F7: a full session offers Try again, and enters once a seat is free", 
     await joinGroup(third, room.groupId);
     const page = await third.context.newPage();
     await page.goto(roomPath(room.sessionId));
-    await expect(page.getByRole("heading", { name: "Session full" })).toBeVisible();
-    const retry = appAlerts(page).getByRole("button", { name: "Try again" });
+    await expect(page.getByRole("heading", { name: "This session is full" })).toBeVisible();
+    const retry = page.getByRole("button", { name: "Try again" });
     // Still full: the page says so again, with the same offer.
     await retry.click();
-    await expect(page.getByRole("heading", { name: "Session full" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "This session is full" })).toBeVisible();
     await expect(retry).toBeVisible();
     // A seat frees up: trying again enters the room.
     await leaveSession(room.pageB);
     await expect(room.pageB.getByRole("heading", { name: "You left the Live Session." })).toBeVisible();
     await retry.click();
     await expectConnected(page, 2);
-    await expect(page.getByRole("heading", { name: "Session full" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "This session is full" })).toHaveCount(0);
   } finally {
     await third.context.close();
     await room.close();

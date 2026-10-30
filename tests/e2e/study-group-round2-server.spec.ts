@@ -74,10 +74,13 @@ async function openFullRoom(browser: Browser, origin: string, label: string) {
   expect((await enterSession(member, sessionId)).status(), "enter b").toBe(200);
   const pageB = await member.context.newPage();
   const pageA = await host.context.newPage();
+  // The member waits in the list's waiting dialog, the Host starts from the
+  // list (deep links 2026-10-30).
   await pageB.goto(roomPath(sessionId));
-  await expect(pageB.getByText("Waiting for the host to start the session...")).toBeVisible();
+  await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
   await pageA.goto(roomPath(sessionId));
   await pageA.getByRole("button", { name: "Start Live Session" }).click();
+  await pageB.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await expectConnected(pageA, 2);
   await expectConnected(pageB, 2);
   return { host, member, pageA, pageB, groupId, sessionId };

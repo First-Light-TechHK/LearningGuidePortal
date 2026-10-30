@@ -8,7 +8,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy, paneStatusAfterGroup, sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupListFailurePlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies, waitingDialogStep, type StudyGroupNotice, type WaitingDialogStep } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
-import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 type CourseOption = { id: string; title: string; slug: string };
 
@@ -76,6 +76,14 @@ function showGroupInAddress(groupId: string | null) {
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
+// `?enter=` is acted on once: a reload after closing the waiting dialog must
+// not take the seat again.
+function dropEnterFromAddress() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("enter");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
 // The search box asks the server once the typing stops (QA M3).
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -135,7 +143,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [editTitle, setEditTitle] = useState("");
   const [createAbout, setCreateAbout] = useState("");
   const [editAbout, setEditAbout] = useState("");
-  const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string }>>([]);
+  const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string; sessionId?: string }>>([]);
   // Only the newest lists load and the newest read of the open group count
   // (QA M3, QA3 groups #5).
   const [listRequests] = useState(latestOnly);
@@ -185,7 +193,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         fetchAll ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
         studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
         fetchAll ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as CourseOption[] }),
-        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string }> })
+        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string; sessionId?: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string; sessionId?: string }> })
       ]);
       if (!listRequests.isLatest(ticket)) return;
       if (!myResult.ok || !discoverResult.ok) {
@@ -416,6 +424,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   }, [courseFilter, query]);
 
   useEffect(() => {
+    const entering = signedIn ? sessionToEnterFromQuery(window.location.search) : null;
+    if (entering) {
+      dropEnterFromAddress();
+      void followEntry(entering);
+      return;
+    }
     const id = studyGroupIdFromQuery(window.location.search);
     if (id) void openGroup(id);
   }, []);
@@ -697,6 +711,24 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     void submit(new FormData(formElement));
   }
 
+  // A Live Session link followed here (an in-site reminder) or arriving from
+  // the session page (`?enter=`): the server says where it goes (deep links,
+  // 2026-10-30). A member waits in this list's waiting dialog, the Host gets
+  // the group with its Start; anything else is the session page's to explain.
+  async function followEntry(sessionId: string) {
+    const entry = await studyGroupRequest<SessionEntry>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/entry`);
+    const group = entry.ok ? entry.data.group : null;
+    if (!entry.ok || !group || (entry.data.next !== "wait" && entry.data.next !== "host_start")) {
+      router.push(studySessionHref(locale, sessionId));
+      return;
+    }
+    await openGroup(group.id);
+    if (entry.data.next !== "wait") return;
+    const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
+    if (current.ok) await enter(current.data);
+    else setErrorCode(current.code);
+  }
+
   async function enter(session: StudySession) {
     const result = await studyGroupRequest<{ occupancy: number }>(`/api/study-groups/sessions/${session.id}/enter`, { method: "POST", body: "{}" });
     if (!result.ok) {
@@ -716,7 +748,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     <div className={styles.layout}>
       <aside className={styles.sidebar} aria-label={copy.title}>
         <h1 className={styles.title}>{copy.title}</h1>
-        {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}</li>)}</ul> : null}
+        {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}{item.sessionId ? <button className={styles.reminderLink} type="button" onClick={() => void followEntry(item.sessionId!)}>{copy.deepLink.enterNow}</button> : null}</li>)}</ul> : null}
         {/* BUG-0130: a signed-out visitor has no "My" Study Groups — the heading, Create
             button and All / Hosted by Me tabs render only for signed-in users. */}
         {signedIn ? <div className={styles.sectionHead}>
@@ -883,7 +915,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <label className={styles.field}><span>{copy.duration} <span className={styles.req}>*</span></span><select name="durationMinutes" required disabled={timeOnly} value={sessionDuration} onChange={(event) => setSessionDuration(event.target.value)}><option value="">{copy.selectDuration}</option>{durationOptions(sessionDuration).map((minutes) => <option key={minutes} value={minutes}>{fill(copy.plannedDuration, { count: minutes })}</option>)}</select></label>
                   <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required disabled={timeOnly} value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
                 </div>
-                <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={50} placeholder={copy.enterFocus} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, 50))} /><span className={styles.counter}>{sessionFocus.length}/50</span></span></label>
+                <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={SESSION_FOCUS_MAX} placeholder={copy.enterFocus} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, SESSION_FOCUS_MAX))} /><span className={styles.counter}>{sessionFocus.length}/{SESSION_FOCUS_MAX}</span></span></label>
                 <label className={`${styles.switch} ${tutorOffline ? styles.switchDisabled : ""}`}>
                   <span className={styles.switchLabel}>
                     {copy.aiTutorLabel}

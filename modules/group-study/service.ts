@@ -24,6 +24,7 @@ import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
 import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
+import { sessionEntryNext, type SessionEntryNext } from "./entry";
 
 // The room Tutor is KnowledgeSystem's (2026-10-23): Portal keeps only the
 // question queue and the room message. No prompt, model, key or provider call
@@ -44,7 +45,7 @@ export type StudyGroupDeps = {
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
   notify: (input: { userId: string; title: string; body: string; sessionId?: string }) => Promise<void>;
-  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string }>>;
+  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string; sessionId?: string }>>;
   // Withdraws the pending reminder rows a cancelling action invalidates
   // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
   // Scoped to the given Live Sessions, optionally to one user, and to rows
@@ -52,7 +53,12 @@ export type StudyGroupDeps = {
   // reminder). Optional so existing wiring keeps its shape; the runtime
   // always provides it.
   withdrawReminders?: (input: { sessionIds: string[]; userId?: string; sentBefore?: string }) => Promise<void>;
-  sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN" }) => Promise<void>;
+  // `link` is the Live Session's own page (a deep link), when one can be
+  // built; the T-10 reminder carries it so the recipient enters in one click.
+  sendMail: (input: { to: string; subject: string; text: string; locale: "en-GB" | "zh-CN"; link?: string | null }) => Promise<void>;
+  // The absolute URL of a Live Session's page in the recipient's language,
+  // or null when no public origin is configured (the mail then goes without).
+  sessionLink?: (sessionId: string, locale: "en-GB" | "zh-CN") => string | null;
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
   liveKitGateway?: LiveKitRoomGateway;
@@ -268,6 +274,9 @@ function parseStartTime(value: unknown, now: Date) {
 
 // A lesson id is an id, not free text.
 const RELATED_LESSON_ID_MAX = 200;
+// Owner request 2026-10-30: Session Focus allows 300 characters (it was 50),
+// mirrored by SESSION_FOCUS_MAX in the client.
+const SESSION_FOCUS_MAX = 300;
 
 function activeMembership(store: StudyGroupStore, groupId: string, userId: string | null) {
   return store.memberships.find((item) => item.groupId === groupId && item.userId === userId && !item.leftAt) || null;
@@ -923,7 +932,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // reminder sent again after a reschedule rarely lands at T-10.
         const copy = reminderCopy(job, profile?.locale, now);
         await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(job.sessionId, profile.locale) ?? null });
       } catch {
         // Best-effort per recipient; the reminder row is already written.
       }
@@ -1381,13 +1390,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async scheduleSession(input: { actorUserId: string; groupId: string; title: string; startsAt: string; durationSeconds: number; maxParticipants: number; relatedLessonId?: string | null; focus?: string | null; aiTutorEnabled?: boolean }) {
       // Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters (the Study
-      // Group Title / Session Focus limit), mirrored by SESSION_TITLE_MAX in the client.
+      // Group Title limit), mirrored by SESSION_TITLE_MAX in the client.
       const title = requireText(input.title, "Session Title", 50);
       const startsAt = parseStartTime(input.startsAt, deps.now());
       if (!SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
       const focus = clean(input.focus || "");
-      if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long.");
+      if (focus.length > SESSION_FOCUS_MAX) throw new StudyGroupError("validation", "Session Focus is too long.");
       const relatedLessonId = clean(input.relatedLessonId) || null;
       if (relatedLessonId && relatedLessonId.length > RELATED_LESSON_ID_MAX) throw new StudyGroupError("validation", "Related Lesson is not part of this Course.");
       // The Related Lesson is one of the group's Course lessons, the list the
@@ -1455,7 +1464,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       let focus: string | null | undefined;
       if (input.focus !== undefined) {
         focus = clean(input.focus || "");
-        if (focus.length > 50) throw new StudyGroupError("validation", "Session Focus is too long.");
+        if (focus.length > SESSION_FOCUS_MAX) throw new StudyGroupError("validation", "Session Focus is too long.");
         focus = focus || null;
       }
       if (input.aiTutorEnabled !== undefined && deps.tutorOnline) {
@@ -1552,6 +1561,61 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       if (!group || !activeMembership(store, group.id, input.actorUserId)) throw new StudyGroupError(group ? "forbidden" : "not_found", group ? "Join the Study Group first." : "Study Group was not found.");
       if (group.status !== "active" && session.status !== "completed") throw new StudyGroupError("not_found", "Study Group was not found.");
       return sessionView(store, session, input.actorUserId);
+    },
+
+    // Where a link to this session sends the viewer (SG deep links,
+    // 2026-10-30): one answer from the server, so the page only renders it.
+    // A signed-out viewer and a session that is gone learn nothing about it.
+    // Anyone else signed in sees what the deep-link page shows (title, focus,
+    // time, size, Course) so they know what they would join or buy; the
+    // current occupancy is a member's only, like the group's session list.
+    async sessionEntry(input: { actorUserId: string | null; sessionId: string }) {
+      const store = await deps.repository.read();
+      const now = deps.now();
+      const userId = input.actorUserId;
+      const session = store.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
+      const group = session ? store.groups.find((item) => item.id === session.groupId && item.status === "active") : undefined;
+      const effective = session && group ? effectiveSessionState(session, now) : "removed";
+      const state = effective === "removed" ? null : effective;
+      if (!userId || !session || !group || !state) {
+        return { next: sessionEntryNext({ signedIn: Boolean(userId), found: false, state: null, missed: false, courseAvailable: false, courseAccess: false, member: false, host: false, seatForViewer: false }), opensAt: null, viewer: null, session: null, group: null, course: null };
+      }
+      const course = await deps.courseSummary(group.courseId);
+      const member = Boolean(activeMembership(store, group.id, userId));
+      const host = group.hostUserId === userId;
+      const seated = store.presences.some((item) => item.sessionId === session.id && item.userId === userId && seatHeld(item, now));
+      const next = sessionEntryNext({
+        signedIn: true,
+        found: true,
+        state,
+        missed: state === "starting_soon" && !seatRenewable(session, now),
+        courseAvailable: Boolean(course),
+        courseAccess: await deps.hasCourseAccess(userId, group.courseId),
+        member,
+        host,
+        seatForViewer: seated || seatsOpen(store, session, state) > 0
+      });
+      return {
+        next,
+        // From when a member can enter (Starting Soon, T-10).
+        opensAt: state === "scheduled" ? new Date(Date.parse(session.startsAt) - STARTING_SOON_MS).toISOString() : null,
+        viewer: {
+          host,
+          planned: Boolean(member && !host && store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt))
+        },
+        session: {
+          id: session.id,
+          title: session.title,
+          focus: session.focus,
+          startsAt: session.startsAt,
+          durationSeconds: session.durationSeconds,
+          maxParticipants: session.maxParticipants,
+          occupancy: member ? seatCount(store, session.id, now) : null,
+          state: next === "ended" ? "completed" as const : state
+        },
+        group: { id: group.id, title: group.title },
+        course: course ? { id: course.id, title: course.title, slug: course.slug } : null
+      };
     },
 
     async planToAttend(input: { actorUserId: string; sessionId: string }) {

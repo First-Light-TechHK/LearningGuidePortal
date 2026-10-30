@@ -68,11 +68,13 @@ test("two browsers share one LiveKit room: tutor answer in both, screen share, c
     const pageA = await contextA.newPage();
     const roomUrl = `/en-GB/portal/study-groups/sessions/${sessionId}`;
 
-    // 6. Member waits; host starts the session and both auto-connect.
+    // 6. Member waits (the link opens the list's waiting dialog); the host
+    // starts from the list and both auto-connect.
     await pageB.goto(roomUrl);
-    await expect(pageB.getByText("Waiting for the host to start the session...")).toBeVisible();
+    await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
     await pageA.goto(roomUrl);
     await pageA.getByRole("button", { name: "Start Live Session" }).click();
+    await pageB.waitForURL(new RegExp(roomUrl), { timeout: 30_000 });
 
     // 7. Both browsers report two connected participants. The Share control is
     // disabled until the room connection is up, and [data-participants="2"]

@@ -59,15 +59,10 @@ test("r3-B2 / M21 / X-5: tutor questions keep their event id, say why they were 
   assert.ok(zh.studyGroupsPage.errors.seat_lapsed);
 });
 
-test("M13: the Host's Start shows progress, shows its own failure, and the failure stays out of the live room", () => {
-  assert.match(room, /disabled=\{starting\} aria-busy=\{starting\} onClick=\{\(\) => void startSession\(\)\}>\{starting \? roomCopy\.starting : copy\.start\}<\/button>/);
-  assert.match(room, /\{startError \? <p className=\{styles\.alert\} role="alert">/);
-  const start = between(room, "async function startSession() {", "function retryLoad()");
-  assert.match(start, /setStartError\(""\);/);
-  assert.match(start, /if \(!started\.ok\) setStartError\(started\.code\);/);
-  assert.doesNotMatch(start, /setErrorCode/);
-  assert.match(room, /if \(session\?\.state === "live"\) setStartError\(""\);/);
-  assert.equal(en.studyGroupsPage.room.starting, "Starting…");
+test("M13: the room page has no Host Start any more; the Host starts from the list (owner, 2026-10-30)", () => {
+  assert.equal(room.includes("startSession"), false);
+  assert.equal(room.includes("startError"), false);
+  assert.equal("starting" in en.studyGroupsPage.room, false);
 });
 
 test("M15: Leave Session asks first, says when the last person ends the session, and the left page can rejoin", () => {
@@ -77,7 +72,7 @@ test("M15: Leave Session asks first, says when the last person ends the session,
   // The leave flag is set by hand, never re-derived on render (a re-render
   // during the leave request used to clear it).
   assert.equal(room.includes("leftRef.current = left;"), false);
-  const rejoin = between(room, "function rejoin() {", "async function startSession()");
+  const rejoin = between(room, "function rejoin() {", "function retryLoad()");
   assert.match(rejoin, /leftRef\.current = false;/);
   assert.match(rejoin, /setSeated\(false\);/);
   assert.match(rejoin, /setLeft\(false\);/);

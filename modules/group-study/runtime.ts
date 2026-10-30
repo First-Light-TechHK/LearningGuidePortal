@@ -1,6 +1,6 @@
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
-import { isManagedEnvironment } from "@/services/runtimeConfig";
+import { isManagedEnvironment, publicAppOrigin } from "@/services/runtimeConfig";
 import { sendStudyGroupReminderEmail } from "@/services/emailService";
 import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification, withdrawStudyGroupReminders } from "@/services/productStore";
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
@@ -97,6 +97,15 @@ export function createReminderListReader(repository: { read(): Promise<StudyGrou
     return listStudyGroupReminders(userId, (item) =>
       (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
   };
+}
+
+/** A Live Session's page on the public Portal origin (NEXT_PUBLIC_APP_URL), or null when none is configured. */
+export function studyGroupSessionLink(sessionId: string, locale: "en-GB" | "zh-CN"): string | null {
+  try {
+    return `${publicAppOrigin()}/${locale}/portal/study-groups/sessions/${encodeURIComponent(sessionId)}`;
+  } catch {
+    return null;
+  }
 }
 
 // A learner's Study Group profile. A learner without a nickname has an empty
@@ -282,9 +291,10 @@ export function studyGroupService() {
     withdrawReminders: async (input) => {
       await withdrawStudyGroupReminders(input);
     },
+    sessionLink: studyGroupSessionLink,
     sendMail: async (input) => {
       try {
-        await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text });
+        await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text, link: input.link ?? null, locale: input.locale });
       } catch {
         reminderMailFailures += 1;
       }

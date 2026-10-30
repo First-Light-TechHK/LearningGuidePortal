@@ -33,6 +33,12 @@ export async function register(context: BrowserContext, side: string, nickname: 
 
 export async function registerAndEntitle(context: BrowserContext, side: string, nickname: string, appOrigin: string) {
   const email = await register(context, side, nickname);
+  await entitle(context, appOrigin);
+  return email;
+}
+
+// Gives a signed-in learner Course access through the demo trial checkout.
+export async function entitle(context: BrowserContext, appOrigin: string) {
   const quote = await context.request.post("/api/subscription/quote", {
     data: { planId: PLAN_ID, kind: "trial" },
   });
@@ -48,7 +54,6 @@ export async function registerAndEntitle(context: BrowserContext, side: string, 
     data: { orderId: (await trial.json()).order.id, action: "complete" },
   });
   expect(confirmed.status(), "demo confirm").toBe(200);
-  return email;
 }
 
 // A signed-in learner with Course access (entitle: false leaves them without).
@@ -153,10 +158,14 @@ export async function openLiveRoom(browser: Browser, appOrigin: string, label: s
   }
   const pageB = await member.context.newPage();
   const pageA = await host.context.newPage();
+  // Nobody enters before the Host starts (deep links 2026-10-30): the
+  // session link takes the member to the list's waiting dialog and the Host
+  // to the list, where they start; the dialog then moves the member in.
   await pageB.goto(roomPath(sessionId));
-  await expect(pageB.getByText("Waiting for the host to start the session...")).toBeVisible();
+  await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
   await pageA.goto(roomPath(sessionId));
   await pageA.getByRole("button", { name: "Start Live Session" }).click();
+  await pageB.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await expectConnected(pageA, 2);
   await expectConnected(pageB, 2);
   return {
