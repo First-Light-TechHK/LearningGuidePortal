@@ -505,7 +505,7 @@ test("M20: the room link shows sign-in, the way on, or a retry instead of a dead
     await expect(retry).toBeVisible();
     failing = false;
     await retry.click();
-    await expect(page.getByRole("heading", { name: /^This session opens at / })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^This Live Session opens at / })).toBeVisible();
     await expect(page.getByRole("link", { name: "Open Study Group" })).toHaveAttribute("href", `/en-GB/portal/study-groups?group=${groupId}`);
   } finally {
     await visitor.close();

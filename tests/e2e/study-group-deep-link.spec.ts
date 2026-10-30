@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "playwright/test";
 import {
+  appAlerts,
   createGroup,
   entitle,
   expectConnected,
@@ -408,6 +409,41 @@ test("DL-12: a Chinese link stops in Chinese", async ({ browser, baseURL }) => {
     await expect(page.getByRole("button", { name: "计划参加" })).toBeVisible();
     await expect(page.getByText("计划参加会在开始前提醒你，不保留座位。")).toBeVisible();
     await shot(page, "dl-not-open-zh");
+  } finally {
+    await host.context.close();
+    await member.context.close();
+  }
+});
+
+test("DL-13: a failed entry from a link stays on the list with its error, with no back and forth; Join now still works", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "dl13-a", "Study Host");
+  const member = await newMember(browser, origin, "dl13-b", "Study Guest");
+  try {
+    const groupId = await createGroup(host, unique("E2E DL13"));
+    await joinGroup(member, groupId);
+    const sessionId = await scheduleSession(host, groupId, { title: "Server hiccup", startsInMs: 90_000 });
+    const page = await member.context.newPage();
+    let asks = 0;
+    page.on("request", (request) => { if (request.url().endsWith(`/api/study-groups/sessions/${sessionId}/entry`)) asks += 1; });
+    let fail = true;
+    await page.route(`**/api/study-groups/sessions/${sessionId}/enter`, (route) => fail
+      ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, code: "error", message: "Study Group request failed.", data: null }) })
+      : route.continue());
+    await page.goto(roomPath(sessionId));
+    await expect(page).toHaveURL(listUrl(groupId));
+    await expect(appAlerts(page)).toHaveText("Something went wrong. Try again.");
+    // The session page asked once and the list once; nothing sends it back.
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(3_000);
+    expect(asks).toBe(2);
+    await expect(page).toHaveURL(listUrl(groupId));
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    fail = false;
+    await page.getByRole("button", { name: "Join now" }).click();
+    await expect(page.getByRole("dialog").getByText(WAITING)).toBeVisible();
+    expect((await sessionView(host, sessionId)).occupancy).toBe(1);
   } finally {
     await host.context.close();
     await member.context.close();

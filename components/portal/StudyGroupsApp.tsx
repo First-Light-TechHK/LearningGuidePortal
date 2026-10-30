@@ -8,7 +8,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy, paneStatusAfterGroup, sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupListFailurePlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies, waitingDialogStep, type StudyGroupNotice, type WaitingDialogStep } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./study-groups.module.css";
-import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionRefusal, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 type CourseOption = { id: string; title: string; slug: string };
 
@@ -717,14 +717,19 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   // the session page (`?enter=`): the server says where it goes (deep links,
   // 2026-10-30). A member waits in this list's waiting dialog, the Host gets
   // the group with its Start; anything else is the session page's to explain.
-  // The session page explains anything this list cannot do (full, gone...).
+  // The session page explains anything this list cannot do (full, gone...);
+  // a failed request stays here with its error (sessionRefusal).
   async function followEntry(sessionId: string) {
     if (following) return;
     setFollowing(sessionId);
     try {
       const entry = await studyGroupRequest<SessionEntry>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/entry`);
-      const group = entry.ok ? entry.data.group : null;
-      if (!entry.ok || !group || (entry.data.next !== "wait" && entry.data.next !== "host_start")) {
+      if (!entry.ok) {
+        setErrorCode(entry.code);
+        return;
+      }
+      const group = entry.data.group;
+      if (!group || (entry.data.next !== "wait" && entry.data.next !== "host_start")) {
         router.push(studySessionHref(locale, sessionId));
         return;
       }
@@ -732,17 +737,25 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       await openGroup(group.id, { reveal: true });
       if (entry.data.next !== "wait") return;
       const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
-      if (!current.ok || !await enter(current.data)) router.push(studySessionHref(locale, sessionId));
+      const refused = current.ok ? await enter(current.data) : current.code;
+      if (!refused) return;
+      if (!sessionRefusal(refused)) {
+        setErrorCode(refused);
+        return;
+      }
+      setErrorCode("idle");
+      router.push(studySessionHref(locale, sessionId));
     } finally {
       setFollowing(null);
     }
   }
 
-  async function enter(session: StudySession) {
+  // The refusal's code, or null once entered.
+  async function enter(session: StudySession): Promise<string | null> {
     const result = await studyGroupRequest<{ occupancy: number }>(`/api/study-groups/sessions/${session.id}/enter`, { method: "POST", body: "{}" });
     if (!result.ok) {
       setErrorCode(result.code);
-      return false;
+      return result.code;
     }
     if (session.state === "live") router.push(`/${locale}/portal/study-groups/sessions/${session.id}`);
     else {
@@ -751,7 +764,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setWaitingSession({ ...session, occupancy: result.data.occupancy });
       setDialog("waiting");
     }
-    return true;
+    return null;
   }
 
   return (

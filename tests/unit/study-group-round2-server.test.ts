@@ -502,6 +502,20 @@ test("deep links + X-4: a link lets a member whose seat lapsed in the live call 
   assert.equal((await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })).occupancy, 2);
 });
 
+test("deep links + X-4: a seat that lapsed in the waiting dialog is not a place in the call; a full room says full", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2", "m3"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Waited, then left", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  // m1 waits, then closes the tab before the start: the seat lapses unswept.
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  f.advanceSeconds(40);
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() });
+  // Live and full: m1 was never in the call, so the link stops on the full page.
+  assert.equal((await f.service.sessionEntry({ actorUserId: "m1", sessionId: session.id })).next, "full");
+  assert.deepEqual(f.providerReads, []);
+});
+
 test("M7: Discover hides a group whose Course is gone, and the group says so instead of an empty name", async () => {
   const published = { value: true };
   const f = await fixture(() => ({

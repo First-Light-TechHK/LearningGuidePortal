@@ -22,7 +22,7 @@ import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent 
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
-import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
+import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, leaseEndsAt, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { sessionEntryNext, type SessionEntryNext } from "./entry";
 
@@ -1588,10 +1588,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const host = group.hostUserId === userId;
       const own = store.presences.find((item) => item.sessionId === session.id && item.userId === userId && Boolean(item.enteredAt));
       const seated = Boolean(own && seatHeld(own, now));
-      // A member whose own seat lapsed while still in the live call (X-4) is
-      // let through: the room's entry asks the provider and gives the seat
-      // back, or says the session is full.
-      const reseat = state === "live" && Boolean(own && seatLapsed(own, now)) && providerCanList(session);
+      // A member whose own seat lapsed while in the live call (X-4) is let
+      // through: the room's entry asks the provider and gives the seat back,
+      // or says the session is full. Only someone the server saw after the
+      // start was in the call; a seat that lapsed in the waiting dialog is not.
+      const seenLive = Boolean(own && session.startedAt && leaseEndsAt(own) - SEAT_LEASE_MS >= Date.parse(session.startedAt));
+      const reseat = state === "live" && Boolean(own && seatLapsed(own, now)) && seenLive && providerCanList(session);
       const next = sessionEntryNext({
         signedIn: true,
         found: true,
@@ -1624,8 +1626,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           state
         },
         // Only the id, for the way on; nothing of a group whose Course is no
-        // longer offered (it is not listed anywhere either).
-        group: next === "course_unavailable" ? null : { id: group.id },
+        // longer offered to anyone outside it (it is not listed anywhere).
+        group: next === "course_unavailable" || (!course && !member) ? null : { id: group.id },
         course: course ? { id: course.id, title: course.title, slug: course.slug } : null
       };
     },

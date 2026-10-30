@@ -7,7 +7,7 @@ import { afterEach, beforeEach, mock, test } from "node:test";
 import nodemailer from "nodemailer";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
-import { courseAccessHref, sessionEntryAccessGained, sessionEntryRecheckMs, sessionOpensAtLabel, sessionToEnterFromQuery, studyGroupListHref, studySessionHref } from "../../components/portal/studyGroupClient";
+import { courseAccessHref, sessionEntryAccessGained, sessionEntryRecheckMs, sessionOpensAtLabel, sessionRefusal, sessionToEnterFromQuery, studyGroupListHref, studySessionHref } from "../../components/portal/studyGroupClient";
 import { sessionEntryNext, type SessionEntryFacts } from "../../modules/group-study/entry";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { createStudyGroupService, type StudyGroupService } from "../../modules/group-study/service";
@@ -190,6 +190,15 @@ test("a Course no longer offered is never sold or joined, while a member who hol
   access.add("buyer:course-1");
   assert.equal((await service.sessionEntry({ actorUserId: "buyer", sessionId: session.id })).next, "course_unavailable");
   assert.equal((await service.sessionEntry({ actorUserId: "m1", sessionId: session.id })).next, "enter");
+  // Once over, a non-member still learns nothing of the group; a member keeps the way back to it.
+  await service.leaveSession({ actorUserId: "m1", sessionId: session.id }).catch(() => undefined);
+  await service.leaveSession({ actorUserId: "host", sessionId: session.id });
+  const over = await service.sessionEntry({ actorUserId: "outsider", sessionId: session.id });
+  assert.equal(over.next, "ended");
+  assert.equal(over.group, null);
+  const member = await service.sessionEntry({ actorUserId: "m1", sessionId: session.id });
+  assert.equal(member.next, "ended");
+  assert.equal(member.group?.id, (await repository.read()).sessions.find((item) => item.id === session.id)!.groupId);
 });
 
 test("an ended session says so to members and non-members alike, including one that was never started", async () => {
@@ -258,6 +267,8 @@ test("client helpers: the list address, the one-time ?enter=, the purchase link 
   assert.equal(sessionEntryAccessGained("course_access", "wait"), true);
   assert.equal(sessionEntryAccessGained("course_access", "course_access"), false);
   assert.equal(sessionEntryAccessGained(null, "join_group"), false);
+  for (const code of ["session_full", "session_not_open", "session_unavailable", "forbidden", "not_found", "course_access_required", "course_unavailable", "unauthenticated"]) assert.equal(sessionRefusal(code), true, code);
+  for (const code of ["network", "error", "unavailable", "conflict", "livekit_temporarily_unavailable"]) assert.equal(sessionRefusal(code), false, code);
 });
 
 test("the session page asks the entry check first; the room no longer waits or starts, the list takes over", () => {
@@ -282,8 +293,11 @@ test("the session page asks the entry check first; the room no longer waits or s
   // Enter now names its reminder for a screen reader and works once at a time.
   assert.match(app, /<li role="status" key=\{item\.sessionId \?\? `\$\{item\.createdAt\}-\$\{item\.body\}`\}><span id=\{`study-group-reminder-\$\{index\}`\}>\{item\.body\}<\/span>/);
   assert.match(app, /item\.sessionId \? <button className=\{styles\.reminderLink\} type="button" aria-describedby=\{`study-group-reminder-\$\{index\}`\} disabled=\{following !== null\} aria-busy=\{following === item\.sessionId\} onClick=\{\(\) => void followEntry\(item\.sessionId!\)\}>\{copy\.deepLink\.enterNow\}<\/button>/);
-  // A Enter now that cannot open the waiting dialog falls back to the session page, which says why.
-  assert.match(app, /if \(!current\.ok \|\| !await enter\(current\.data\)\) router\.push\(studySessionHref\(locale, sessionId\)\);/);
+  // An Enter now refused (full, gone...) goes to the session page, which says
+  // why; a failed request stays on the list with its error, or the two pages
+  // would send the viewer back and forth (final review 2026-10-30).
+  assert.match(app, /const refused = current\.ok \? await enter\(current\.data\) : current\.code;\n      if \(!refused\) return;\n      if \(!sessionRefusal\(refused\)\) \{\n        setErrorCode\(refused\);\n        return;\n      \}/);
+  assert.match(app, /if \(!entry\.ok\) \{\n        setErrorCode\(entry\.code\);\n        return;\n      \}/);
 });
 
 test("the deep-link copy exists in both languages with the same keys", () => {

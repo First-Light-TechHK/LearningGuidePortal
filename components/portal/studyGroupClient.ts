@@ -136,6 +136,16 @@ export function sessionEntryRecheckMs(entry: Pick<SessionEntry, "next" | "opensA
   return Math.min(Math.max(delay, 5_000 * 2 ** (failures - 1)), 60_000);
 }
 
+// Refusals the session page explains with a stop page of its own (full, not
+// open, gone, no access...). Any other failure (offline, a server error)
+// stays where it happened, with its error: the session page would still say
+// to wait and send the viewer straight back.
+const SESSION_REFUSALS = new Set(["session_full", "session_not_open", "session_unavailable", "forbidden", "not_found", "course_access_required", "course_unavailable", "unauthenticated"]);
+
+export function sessionRefusal(code: string) {
+  return SESSION_REFUSALS.has(code);
+}
+
 // "Opens at": the time, with the day when it is not today.
 export function sessionOpensAtLabel(locale: string, opensAt: string, nowMs = Date.now()) {
   const at = new Date(opensAt);
