@@ -483,6 +483,25 @@ test("X-4: without the provider's word, or for someone not in the room, a full r
   }
 });
 
+test("deep links + X-4: a link lets a member whose seat lapsed in the live call through; the room's entry decides", async () => {
+  const f = await fixture();
+  const created = await group(f, ["m1", "m2", "m3"]);
+  const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Lapsed seat", startsAt: inMinutes(f, 5), durationSeconds: 1800, maxParticipants: 2 });
+  await f.service.startSession({ actorUserId: "host", sessionId: session.id });
+  await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() });
+  f.participants.list = ["host", "m1"];
+  await heartbeats(f, session.id, ["host"], 40);
+  await f.service.enterSession({ actorUserId: "m2", sessionId: session.id, requestedAt: f.clock() });
+  // m1's seat lapsed and m2 took it: the room is full, but m1 is still in
+  // the call, so m1's link goes on to the room, which asks the provider.
+  assert.equal((await f.service.sessionEntry({ actorUserId: "m1", sessionId: session.id })).next, "enter");
+  assert.equal((await f.service.sessionEntry({ actorUserId: "m2", sessionId: session.id })).next, "enter");
+  // Someone who never had a seat is told the session is full, with no provider read.
+  assert.equal((await f.service.sessionEntry({ actorUserId: "m3", sessionId: session.id })).next, "full");
+  assert.deepEqual(f.providerReads, [], "asking where a link goes never reads the provider");
+  assert.equal((await f.service.enterSession({ actorUserId: "m1", sessionId: session.id, requestedAt: f.clock() })).occupancy, 2);
+});
+
 test("M7: Discover hides a group whose Course is gone, and the group says so instead of an empty name", async () => {
   const published = { value: true };
   const f = await fixture(() => ({

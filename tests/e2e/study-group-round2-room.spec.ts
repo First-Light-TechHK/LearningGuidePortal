@@ -334,6 +334,9 @@ test("M13: the Host's Start shows progress, shows its failure, and the failure i
     await start.click();
     await expect(start).toBeDisabled();
     await expect(appAlerts(page)).toHaveText("Something went wrong. Try again.");
+    // The failure keeps the Host on the list with Start ready again.
+    await expect(page).toHaveURL(new RegExp(`/en-GB/portal/study-groups\\?group=${groupId}$`));
+    await expect(start).toBeEnabled();
     await start.click();
     await page.waitForURL(new RegExp(roomPath(sessionId)));
     await expect(page.getByRole("button", { name: "Mic" })).toBeEnabled();
@@ -780,18 +783,21 @@ test("QA3 F7: a full session offers Try again, and enters once a seat is free", 
     await joinGroup(third, room.groupId);
     const page = await third.context.newPage();
     await page.goto(roomPath(room.sessionId));
-    await expect(page.getByRole("heading", { name: "This session is full" })).toBeVisible();
+    const full = page.getByRole("heading", { name: "This Live Session is full" });
+    await expect(full).toBeVisible();
+    await expect(page.getByText("All places in this Live Session are taken. A place may free up when someone leaves.")).toBeVisible();
     const retry = page.getByRole("button", { name: "Try again" });
-    // Still full: the page says so again, with the same offer.
+    // Still full: the page asks again and says so again, with the same offer.
+    const asked = page.waitForResponse((response) => response.url().endsWith(`/api/study-groups/sessions/${room.sessionId}/entry`));
     await retry.click();
-    await expect(page.getByRole("heading", { name: "This session is full" })).toBeVisible();
+    expect((await (await asked).json()).data.next).toBe("full");
+    await expect(full).toBeVisible();
     await expect(retry).toBeVisible();
-    // A seat frees up: trying again enters the room.
+    // A seat frees up: the page asks again by itself (every 15 s) and enters.
     await leaveSession(room.pageB);
     await expect(room.pageB.getByRole("heading", { name: "You left the Live Session." })).toBeVisible();
-    await retry.click();
+    await expect(full).toHaveCount(0, { timeout: 30_000 });
     await expectConnected(page, 2);
-    await expect(page.getByRole("heading", { name: "This session is full" })).toHaveCount(0);
   } finally {
     await third.context.close();
     await room.close();

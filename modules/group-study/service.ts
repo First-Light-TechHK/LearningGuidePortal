@@ -1570,20 +1570,28 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     // time, size, Course) so they know what they would join or buy; the
     // current occupancy is a member's only, like the group's session list.
     async sessionEntry(input: { actorUserId: string | null; sessionId: string }) {
-      const store = await deps.repository.read();
       const now = deps.now();
       const userId = input.actorUserId;
+      // `now` is the server's clock: the page times its re-check from it, so
+      // a device clock that runs ahead does not ask again every second.
+      const nothing = (signedIn: boolean) => ({ next: sessionEntryNext({ signedIn, found: false, state: null, missed: false, courseAvailable: false, courseAccess: false, member: false, host: false, seatForViewer: false }), now: now.toISOString(), opensAt: null, viewer: null, session: null, group: null, course: null });
+      // A signed-out visitor learns nothing and costs no store read.
+      if (!userId) return nothing(false);
+      const store = await deps.repository.read();
       const session = store.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
       const group = session ? store.groups.find((item) => item.id === session.groupId && item.status === "active") : undefined;
       const effective = session && group ? effectiveSessionState(session, now) : "removed";
       const state = effective === "removed" ? null : effective;
-      if (!userId || !session || !group || !state) {
-        return { next: sessionEntryNext({ signedIn: Boolean(userId), found: false, state: null, missed: false, courseAvailable: false, courseAccess: false, member: false, host: false, seatForViewer: false }), opensAt: null, viewer: null, session: null, group: null, course: null };
-      }
+      if (!session || !group || !state) return nothing(true);
       const course = await deps.courseSummary(group.courseId);
       const member = Boolean(activeMembership(store, group.id, userId));
       const host = group.hostUserId === userId;
-      const seated = store.presences.some((item) => item.sessionId === session.id && item.userId === userId && seatHeld(item, now));
+      const own = store.presences.find((item) => item.sessionId === session.id && item.userId === userId && Boolean(item.enteredAt));
+      const seated = Boolean(own && seatHeld(own, now));
+      // A member whose own seat lapsed while still in the live call (X-4) is
+      // let through: the room's entry asks the provider and gives the seat
+      // back, or says the session is full.
+      const reseat = state === "live" && Boolean(own && seatLapsed(own, now)) && providerCanList(session);
       const next = sessionEntryNext({
         signedIn: true,
         found: true,
@@ -1593,10 +1601,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         courseAccess: await deps.hasCourseAccess(userId, group.courseId),
         member,
         host,
-        seatForViewer: seated || seatsOpen(store, session, state) > 0
+        seatForViewer: seated || reseat || seatsOpen(store, session, state) > 0
       });
       return {
         next,
+        now: now.toISOString(),
         // From when a member can enter (Starting Soon, T-10).
         opensAt: state === "scheduled" ? new Date(Date.parse(session.startsAt) - STARTING_SOON_MS).toISOString() : null,
         viewer: {
@@ -1611,9 +1620,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           durationSeconds: session.durationSeconds,
           maxParticipants: session.maxParticipants,
           occupancy: member ? seatCount(store, session.id, now) : null,
-          state: next === "ended" ? "completed" as const : state
+          // A session that was never started keeps its state; `next` says it is over.
+          state
         },
-        group: { id: group.id, title: group.title },
+        // Only the id, for the way on; nothing of a group whose Course is no
+        // longer offered (it is not listed anywhere either).
+        group: next === "course_unavailable" ? null : { id: group.id },
         course: course ? { id: course.id, title: course.title, slug: course.slug } : null
       };
     },

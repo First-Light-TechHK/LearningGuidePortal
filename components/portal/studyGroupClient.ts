@@ -110,24 +110,37 @@ export function courseAccessHref(locale: string, courseId: string) {
 // What the server answers for a session link (GET /sessions/:id/entry).
 export type SessionEntry = {
   next: SessionEntryNext;
+  /** The server's clock when it answered. */
+  now: string;
   opensAt: string | null;
   viewer: { host: boolean; planned: boolean } | null;
   session: { id: string; title: string; focus: string | null; startsAt: string; durationSeconds: number; maxParticipants: number; occupancy: number | null; state: StudySession["state"] } | null;
-  group: { id: string; title: string } | null;
+  group: { id: string } | null;
   course: { id: string; title: string; slug: string } | null;
 };
 
 // A page that stops the viewer asks again on its own when what it waits for
-// can change without them: the room opening at T-10 (asked at that moment,
-// at least once a minute in case the time moved) and a seat freeing up.
-export function sessionEntryRecheckMs(entry: Pick<SessionEntry, "next" | "opensAt">, nowMs: number): number | null {
+// can change without them: the room opening at T-10 (asked at that moment by
+// the server's clock, at least once a minute in case the time moved), a seat
+// freeing up, and Course access arriving from the purchase tab. A failed ask
+// is retried later and later, so an offline page does not hammer the server.
+export function sessionEntryRecheckMs(entry: Pick<SessionEntry, "next" | "opensAt" | "now">, failures = 0): number | null {
+  let delay: number | null = null;
   if (entry.next === "not_open") {
     const opensAt = entry.opensAt ? Date.parse(entry.opensAt) : NaN;
-    if (!Number.isFinite(opensAt)) return 60_000;
-    return Math.min(Math.max(opensAt - nowMs + 500, 1_000), 60_000);
-  }
-  if (entry.next === "full") return 15_000;
-  return null;
+    const now = Date.parse(entry.now);
+    delay = Number.isFinite(opensAt) && Number.isFinite(now) ? Math.min(Math.max(opensAt - now + 500, 2_000), 60_000) : 60_000;
+  } else if (entry.next === "full") delay = 15_000;
+  else if (entry.next === "course_access") delay = 10_000;
+  if (delay === null || failures <= 0) return delay;
+  return Math.min(Math.max(delay, 5_000 * 2 ** (failures - 1)), 60_000);
+}
+
+// "Opens at": the time, with the day when it is not today.
+export function sessionOpensAtLabel(locale: string, opensAt: string, nowMs = Date.now()) {
+  const at = new Date(opensAt);
+  const today = new Date(nowMs).toDateString() === at.toDateString();
+  return new Intl.DateTimeFormat(locale, today ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(at);
 }
 
 // Coming back from the purchase tab with the Course: the page says so once

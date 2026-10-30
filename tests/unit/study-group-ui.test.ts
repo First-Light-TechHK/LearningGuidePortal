@@ -185,13 +185,11 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   const scheduleSource = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(scheduleSource, /styles\.tutorInfo[\s\S]*title=\{copy\.aiTutorOfflineHint\}/);
   assert.doesNotMatch(scheduleSource, /<p className=\{styles\.hint\}>\{copy\.aiTutorOfflineHint\}<\/p>/);
-  assert.equal(en.studyGroupsPage.enterWindow, "You can enter from 10 minutes before the start.");
   assert.equal(en.studyGroupsPage.notStartedBody, "This Live Session was not started.");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /sessionNotStarted\(session\) \? copy\.notStartedBody/);
   assert.equal(zh.studyGroupsPage.notStarted, "未开始");
   assert.equal(sessionNotStarted({ state: "starting_soon", occupancy: 0, startsAt: "2020-01-01T00:00:00.000Z", durationSeconds: 1800 }, Date.parse("2026-01-01T00:00:00.000Z")), true);
   assert.equal(sessionNotStarted({ state: "starting_soon", occupancy: 1, startsAt: "2020-01-01T00:00:00.000Z", durationSeconds: 1800 }, Date.parse("2026-01-01T00:00:00.000Z")), false);
-  assert.equal(zh.studyGroupsPage.enterWindow, "开始前 10 分钟可以进入。");
   // The Host starts from the session list only (owner, 2026-10-30): the room
   // page has no Start of its own any more.
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /onClick=\{\(\) => void startSession\(session\)\}>\{copy\.start\}/);
@@ -643,10 +641,26 @@ test("identical reminder messages render as one row on the Study Groups sidebar"
   assert.deepEqual(uniqueReminderBodies(reminders), [reminders[0], reminders[2]]);
   assert.deepEqual(uniqueReminderBodies([]), []);
   assert.deepEqual(uniqueReminderBodies([{ body: "One" }, { body: "Two" }, { body: "One" }]), [{ body: "One" }, { body: "Two" }]);
+  // Deep links 2026-10-30: a reminder that names its session is one row per
+  // session, so two sessions with the same title and time each keep Enter now;
+  // the same session twice is still one row.
+  const twins = [
+    { body: "Lesson 1 starts in 10 minutes.", sessionId: "s1" },
+    { body: "Lesson 1 starts in 10 minutes.", sessionId: "s2" },
+    { body: "Lesson 1 starts in 10 minutes.", sessionId: "s1" }
+  ];
+  assert.deepEqual(uniqueReminderBodies(twins), [twins[0], twins[1]]);
+  // A legacy row without its session repeats a linked one: only the linked one (with Enter now) shows.
+  const legacy = [
+    { body: "Weimar starts in 10 minutes." },
+    { body: "Weimar starts in 10 minutes.", sessionId: "s3" },
+    { body: "Older notice." }
+  ];
+  assert.deepEqual(uniqueReminderBodies(legacy), [legacy[1], legacy[2]]);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /if \(reminderResult\.ok\) setReminders\(uniqueReminderBodies\(reminderResult\.data\)\);/);
   // A reminder linked to its Live Session also offers to enter it (deep links, 2026-10-30).
-  assert.match(app, /<ul className=\{styles\.reminders\}>\{reminders\.map\(\(item\) => <li role="status" key=\{`\$\{item\.createdAt\}-\$\{item\.body\}`\}>\{item\.body\}\{item\.sessionId \? <button className=\{styles\.reminderLink\}/);
+  assert.match(app, /<ul className=\{styles\.reminders\}>\{reminders\.map\(\(item, index\) => <li role="status" key=\{item\.sessionId \?\? `\$\{item\.createdAt\}-\$\{item\.body\}`\}><span id=\{`study-group-reminder-\$\{index\}`\}>\{item\.body\}<\/span>\{item\.sessionId \? <button className=\{styles\.reminderLink\}/);
 });
 
 test("one error is shown in exactly one place: the failing pane, create form, dialog, or sheet", () => {

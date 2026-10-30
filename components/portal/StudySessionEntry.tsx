@@ -7,7 +7,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import styles from "./study-groups.module.css";
 import { StudySessionRoom } from "./StudySessionRoom";
-import { courseAccessHref, fill, plannedMinutes, roomSignInHref, sessionDateLabel, sessionEntryAccessGained, sessionEntryRecheckMs, sessionTimeLabel, studyGroupListHref, studyGroupRequest, type SessionEntry } from "./studyGroupClient";
+import { courseAccessHref, fill, plannedMinutes, roomSignInHref, sessionDateLabel, sessionEntryAccessGained, sessionEntryRecheckMs, sessionOpensAtLabel, sessionTimeLabel, studyGroupListHref, studyGroupRequest, type SessionEntry } from "./studyGroupClient";
 
 type Tone = "red" | "amber" | "blue" | "gray";
 
@@ -26,23 +26,30 @@ export function StudySessionEntry({ locale, sessionId }: { locale: Locale; sessi
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
   const [accessGained, setAccessGained] = useState(false);
+  // Failed asks in a row: the re-check keeps going, later each time.
+  const [failures, setFailures] = useState(0);
   const lastNext = useRef<SessionEntry["next"] | null>(null);
   // Only the newest answer is shown: a timer's check and an action's check
   // may overlap.
   const checkSeq = useRef(0);
+  const lastCheckAt = useRef(0);
 
-  const check = useCallback(async () => {
+  const check = useCallback(async (): Promise<{ ok: boolean; code: string }> => {
     const seq = ++checkSeq.current;
+    lastCheckAt.current = Date.now();
     const result = await studyGroupRequest<SessionEntry>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/entry`);
-    if (seq !== checkSeq.current) return;
+    if (seq !== checkSeq.current) return { ok: true, code: "" };
     if (!result.ok) {
       setLoadError(result.code);
-      return;
+      setFailures((count) => count + 1);
+      return { ok: false, code: result.code };
     }
     setLoadError("");
+    setFailures(0);
     if (sessionEntryAccessGained(lastNext.current, result.data.next)) setAccessGained(true);
     lastNext.current = result.data.next;
     setEntry(result.data);
+    return { ok: true, code: "" };
   }, [sessionId]);
 
   useEffect(() => {
@@ -57,20 +64,24 @@ export function StudySessionEntry({ locale, sessionId }: { locale: Locale; sessi
     else if (entry.next === "host_start") router.replace(studyGroupListHref(locale, entry.group.id));
   }, [entry, locale, router, sessionId]);
 
+  // Only a page someone is looking at moves on by itself: a tab left open in
+  // the background must not take a waiting or live seat for someone who is
+  // not there. Coming back asks again (below).
   useEffect(() => {
     if (!entry) return;
-    const delay = sessionEntryRecheckMs(entry, Date.now());
+    const delay = sessionEntryRecheckMs(entry, failures);
     if (delay === null) return;
-    const timer = window.setTimeout(() => { void check(); }, delay);
+    const timer = window.setTimeout(() => { if (document.visibilityState === "visible") void check(); }, delay);
     return () => window.clearTimeout(timer);
-  }, [entry, check]);
+  }, [entry, failures, check]);
 
   // Back from the purchase tab (or any other): ask again, so new access or a
-  // session that opened meanwhile carries on without a reload.
+  // session that opened meanwhile carries on without a reload. Focus and
+  // visibility both fire on the way back; one ask is enough.
   const stopped = entry !== null && entry.next !== "enter" && entry.next !== "wait" && entry.next !== "host_start";
   useEffect(() => {
     if (!stopped) return;
-    const wake = () => { if (document.visibilityState === "visible") void check(); };
+    const wake = () => { if (document.visibilityState === "visible" && Date.now() - lastCheckAt.current > 2_000) void check(); };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
     return () => {
@@ -88,7 +99,8 @@ export function StudySessionEntry({ locale, sessionId }: { locale: Locale; sessi
         setActionError(result.code);
         return;
       }
-      await check();
+      const checked = await check();
+      if (!checked.ok) setActionError(checked.code);
     } finally {
       setBusy(false);
     }
@@ -127,15 +139,20 @@ export function StudySessionEntry({ locale, sessionId }: { locale: Locale; sessi
         </section>
       );
     }
-    const stateChip = session.state === "live"
+    // A session that was never started is over too; it says so the way the
+    // list does ("Not started").
+    const ended = entry?.next === "ended";
+    const stateChip = ended
+      ? <span className={styles.dlChip} data-tone="gray">{session.state === "completed" ? dl.stateCompleted : copy.notStarted}</span>
+      : session.state === "live"
       ? <span className={styles.dlChip} data-tone="redStrong">{dl.stateLive}</span>
       : session.state === "starting_soon"
       ? <span className={styles.dlChip} data-tone="amber">{dl.stateStartingSoon}</span>
       : session.state === "scheduled"
       ? <span className={styles.dlChip} data-tone="green">{dl.stateUpcoming}</span>
       : <span className={styles.dlChip} data-tone="gray">{dl.stateCompleted}</span>;
-    const sessionTone = session.state === "completed" ? "gray" : session.state === "scheduled" ? "green" : "red";
-    const people = session.occupancy !== null && session.state !== "scheduled" && session.state !== "completed"
+    const sessionTone = ended ? "gray" : session.state === "scheduled" ? "green" : "red";
+    const people = !ended && session.occupancy !== null && (session.state === "live" || session.state === "starting_soon")
       ? fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })
       : fill(copy.upToParticipants, { count: session.maxParticipants });
     return (
@@ -169,7 +186,7 @@ export function StudySessionEntry({ locale, sessionId }: { locale: Locale; sessi
       case "unavailable":
         return gate("gray", <Ban size={24} />, dl.unavailableHeading, dl.unavailableBody, <a className={styles.dlPrimary} href={listHref}>{dl.backToGroups}</a>);
       case "ended":
-        return gate("gray", <CircleCheck size={24} />, dl.endedTitle, dl.endedBody, <><a className={styles.dlPrimary} href={groupHref}>{dl.openGroup}</a>{course ? <a className={styles.dlSecondary} href={`/${locale}/portal/courses/${course.slug}`}>{dl.returnToCourse}</a> : null}</>);
+        return gate("gray", <CircleCheck size={24} />, dl.endedTitle, session && session.state !== "completed" ? `${copy.notStartedBody} ${dl.endedBody}` : dl.endedBody, <><a className={styles.dlPrimary} href={groupHref}>{dl.openGroup}</a>{course ? <a className={styles.dlSecondary} href={`/${locale}/portal/courses/${course.slug}`}>{dl.returnToCourse}</a> : null}</>);
       case "course_unavailable":
         return gate("gray", <Ban size={24} />, dl.courseGoneTitle, dl.courseGoneBody, <a className={styles.dlSecondary} href={listHref}>{dl.backToGroups}</a>);
       case "course_access":
@@ -178,13 +195,13 @@ export function StudySessionEntry({ locale, sessionId }: { locale: Locale; sessi
       case "join_group":
         return gate("amber", <Users size={24} />, dl.joinTitle, dl.joinBody, group ? <button className={styles.dlPrimary} type="button" disabled={busy} aria-busy={busy} onClick={() => void act(() => studyGroupRequest(`/api/study-groups/${encodeURIComponent(group.id)}/join`, { method: "POST", body: "{}" }))}><UserPlus size={18} aria-hidden="true" />{dl.joinAction}</button> : null);
       case "not_open": {
-        const time = entry.opensAt ? new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(entry.opensAt)) : "";
+        const time = entry.opensAt ? sessionOpensAtLabel(locale, entry.opensAt) : "";
         if (entry.viewer?.host) return gate("blue", <Clock size={24} />, fill(dl.notOpenTitle, { time }), fill(dl.hostNotOpenBody, { time }), <a className={styles.dlPrimary} href={groupHref}>{dl.openGroup}</a>);
         if (entry.viewer?.planned) return gate("blue", <Clock size={24} />, fill(dl.notOpenTitle, { time }), dl.notOpenBody, <a className={styles.dlSecondary} href={groupHref}>{dl.openGroup}</a>, dl.plannedNote);
         return gate("blue", <Clock size={24} />, fill(dl.notOpenTitle, { time }), dl.notOpenBody, <button className={styles.dlPrimary} type="button" disabled={busy} aria-busy={busy} onClick={() => void act(() => studyGroupRequest(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/plan`, { method: "POST", body: "{}" }))}>{copy.plan}</button>, dl.planNote);
       }
       case "full":
-        return gate("amber", <Users size={24} />, dl.fullTitle, fill(dl.fullBody, { count: session?.occupancy ?? session?.maxParticipants ?? 0, max: session?.maxParticipants ?? 0 }), <><button className={styles.dlPrimary} type="button" disabled={busy} aria-busy={busy} onClick={() => void act(async () => ({ ok: true, code: "" }))}><RefreshCw size={18} aria-hidden="true" />{copy.retry}</button><a className={styles.dlSecondary} href={groupHref}>{dl.backToGroup}</a></>);
+        return gate("amber", <Users size={24} />, dl.fullTitle, dl.fullBody, <><button className={styles.dlPrimary} type="button" disabled={busy} aria-busy={busy} onClick={() => void act(async () => ({ ok: true, code: "" }))}><RefreshCw size={18} aria-hidden="true" />{copy.retry}</button><a className={styles.dlSecondary} href={groupHref}>{dl.backToGroup}</a></>);
       default:
         return null;
     }

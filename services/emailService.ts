@@ -108,19 +108,16 @@ export function sendEmailBindingEmail(input: { to: string; url: string; locale: 
   return sendEmail({ to: input.to, subject: title, text: `${description}\n\n${input.url}`, html: `<p>${description}</p><p><a href="${url}">${title}</a></p>` });
 }
 
-/** Study Group mail. A Live Session reminder carries the session's page as a button plus the plain URL (for clients that drop the button). */
+/**
+ * Study Group mail. Mail goes out as plain text (sendViaSmtp), so a Live
+ * Session reminder carries its session page as a labelled link on a line of
+ * its own; the HTML part is the same text, escaped.
+ */
 export function sendStudyGroupReminderEmail(input: { to: string; subject: string; text: string; link?: string | null; locale?: "en-GB" | "zh-CN" }) {
-  const safe = input.text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  if (!input.link) return sendEmail({ to: input.to, subject: input.subject, text: input.text, html: `<p>${safe}</p>` });
-  const chinese = input.locale === "zh-CN";
-  const label = chinese ? "进入直播课" : "Enter Live Session";
-  const htmlUrl = input.link.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-  return sendEmail({
-    to: input.to,
-    subject: input.subject,
-    text: `${input.text}\n\n${label}: ${input.link}`,
-    html: `<p>${safe}</p><p><a href="${htmlUrl}">${label}</a></p><p>${chinese ? "或打开这个链接：" : "Or open this link: "}${htmlUrl}</p>`
-  });
+  const label = input.locale === "zh-CN" ? "进入直播课" : "Enter Live Session";
+  const text = input.link ? `${input.text}\n\n${label}: ${input.link}` : input.text;
+  const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+  return sendEmail({ to: input.to, subject: input.subject, text, html: `<p>${safe}</p>` });
 }
 
 /** Helpdesk updates to the ticket's contact email (agent reply, "is it solved?"). Plain text; the HTML part is escaped text. */

@@ -129,6 +129,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [mutating, setMutating] = useState<string | null>(null);
   const [editingSession, setEditingSession] = useState<StudySession | null>(null);
   const [waitingSession, setWaitingSession] = useState<StudySession | null>(null);
+  // The Live Session a reminder's Enter now is on its way to.
+  const [following, setFollowing] = useState<string | null>(null);
   const [attendees, setAttendees] = useState<StudySession["attendees"]>([]);
   const [attendeeSessionId, setAttendeeSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState("");
@@ -715,25 +717,32 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   // the session page (`?enter=`): the server says where it goes (deep links,
   // 2026-10-30). A member waits in this list's waiting dialog, the Host gets
   // the group with its Start; anything else is the session page's to explain.
+  // The session page explains anything this list cannot do (full, gone...).
   async function followEntry(sessionId: string) {
-    const entry = await studyGroupRequest<SessionEntry>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/entry`);
-    const group = entry.ok ? entry.data.group : null;
-    if (!entry.ok || !group || (entry.data.next !== "wait" && entry.data.next !== "host_start")) {
-      router.push(studySessionHref(locale, sessionId));
-      return;
+    if (following) return;
+    setFollowing(sessionId);
+    try {
+      const entry = await studyGroupRequest<SessionEntry>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/entry`);
+      const group = entry.ok ? entry.data.group : null;
+      if (!entry.ok || !group || (entry.data.next !== "wait" && entry.data.next !== "host_start")) {
+        router.push(studySessionHref(locale, sessionId));
+        return;
+      }
+      // On a phone the group opens below the lists: bring it into view.
+      await openGroup(group.id, { reveal: true });
+      if (entry.data.next !== "wait") return;
+      const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
+      if (!current.ok || !await enter(current.data)) router.push(studySessionHref(locale, sessionId));
+    } finally {
+      setFollowing(null);
     }
-    await openGroup(group.id);
-    if (entry.data.next !== "wait") return;
-    const current = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}`);
-    if (current.ok) await enter(current.data);
-    else setErrorCode(current.code);
   }
 
   async function enter(session: StudySession) {
     const result = await studyGroupRequest<{ occupancy: number }>(`/api/study-groups/sessions/${session.id}/enter`, { method: "POST", body: "{}" });
     if (!result.ok) {
       setErrorCode(result.code);
-      return;
+      return false;
     }
     if (session.state === "live") router.push(`/${locale}/portal/study-groups/sessions/${session.id}`);
     else {
@@ -742,13 +751,14 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setWaitingSession({ ...session, occupancy: result.data.occupancy });
       setDialog("waiting");
     }
+    return true;
   }
 
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar} aria-label={copy.title}>
         <h1 className={styles.title}>{copy.title}</h1>
-        {reminders.length ? <ul className={styles.reminders}>{reminders.map((item) => <li role="status" key={`${item.createdAt}-${item.body}`}>{item.body}{item.sessionId ? <button className={styles.reminderLink} type="button" onClick={() => void followEntry(item.sessionId!)}>{copy.deepLink.enterNow}</button> : null}</li>)}</ul> : null}
+        {reminders.length ? <ul className={styles.reminders}>{reminders.map((item, index) => <li role="status" key={item.sessionId ?? `${item.createdAt}-${item.body}`}><span id={`study-group-reminder-${index}`}>{item.body}</span>{item.sessionId ? <button className={styles.reminderLink} type="button" aria-describedby={`study-group-reminder-${index}`} disabled={following !== null} aria-busy={following === item.sessionId} onClick={() => void followEntry(item.sessionId!)}>{copy.deepLink.enterNow}</button> : null}</li>)}</ul> : null}
         {/* BUG-0130: a signed-out visitor has no "My" Study Groups — the heading, Create
             button and All / Hosted by Me tabs render only for signed-in users. */}
         {signedIn ? <div className={styles.sectionHead}>

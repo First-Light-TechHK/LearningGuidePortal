@@ -23,6 +23,7 @@ let postStart: Route;
 let postTutor: Route;
 let postCancelSession: Route;
 let postHeartbeat: Route;
+let getEntry: Route;
 let memberToken = "";
 let otherMemberToken = "";
 let filledTokens: string[] = [];
@@ -113,6 +114,7 @@ before(async () => {
   postStart = (await import("../../app/api/study-groups/sessions/[sessionId]/start/route")).POST as unknown as Route;
   postTutor = (await import("../../app/api/study-groups/sessions/[sessionId]/tutor/route")).POST as unknown as Route;
   postCancelSession = (await import("../../app/api/study-groups/sessions/[sessionId]/cancel/route")).POST as unknown as Route;
+  getEntry = (await import("../../app/api/study-groups/sessions/[sessionId]/entry/route")).GET as unknown as Route;
 });
 
 beforeEach(async () => {
@@ -470,6 +472,8 @@ test("the reminders view requires a session and returns only current reminders",
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.equal(body.data.some((item: { body: string }) => item.body === "Weimar 1933 starts in 10 minutes."), true);
+  // The reminder names its session, so the sidebar can offer Enter now (deep links 2026-10-30).
+  assert.match(body.data.find((item: { sessionId?: string }) => item.sessionId === sessionId)?.body ?? "", /^Weimar 1933 in the Study Group "Reminder group" starts in/);
   assert.equal(body.data.some((item: { body: string }) => item.body === "Not a reminder."), false);
   // Cancelling the Session withdraws the pending reminder from view and storage.
   const cancelled = await call(postCancelSession, `http://localhost/api/study-groups/sessions/${sessionId}/cancel`, {}, token, { sessionId });
@@ -479,4 +483,36 @@ test("the reminders view requires a session and returns only current reminders",
   assert.equal(afterBody.data.some((item: { body: string }) => item.body.includes("Weimar 1933")), false);
   const data = await store.readProductAggregate();
   assert.equal(data.notifications.some((item) => item.sessionId === sessionId), false);
+});
+
+test("the session entry check: a signed-out visitor is only told to sign in; others are told where the link goes", async () => {
+  const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Entry group", courseId: "api-course", about: "About the entry." }, token);
+  const groupId = (await created.json()).data.id as string;
+  await call(postJoin, `http://localhost/api/study-groups/${groupId}/join`, {}, memberToken, { groupId });
+  const scheduled = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, {
+    title: "Entry check",
+    startsAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    durationSeconds: 1800,
+    maxParticipants: 4
+  }, token, { groupId });
+  const sessionId = (await scheduled.json()).data.id as string;
+  const url = `http://localhost/api/study-groups/sessions/${sessionId}/entry`;
+  const anonymous = await call(getEntry, url, undefined, undefined, { sessionId });
+  assert.equal(anonymous.status, 200);
+  const signIn = (await anonymous.json()).data;
+  assert.equal(signIn.next, "sign_in");
+  assert.deepEqual([signIn.session, signIn.group, signIn.course, signIn.viewer], [null, null, null, null]);
+  const member = (await (await call(getEntry, url, undefined, memberToken, { sessionId })).json()).data;
+  assert.equal(member.next, "wait");
+  assert.deepEqual(member.group, { id: groupId });
+  assert.equal(member.session.occupancy, 0);
+  assert.equal((await (await call(getEntry, url, undefined, token, { sessionId })).json()).data.next, "host_start");
+  // Without the Course: what the session is, never who is in it.
+  const stranger = (await (await call(getEntry, url, undefined, strangerToken, { sessionId })).json()).data;
+  assert.equal(stranger.next, "course_access");
+  assert.equal(stranger.session.title, "Entry check");
+  assert.equal(stranger.session.occupancy, null);
+  // Asking never takes a seat.
+  const unknown = (await (await call(getEntry, "http://localhost/api/study-groups/sessions/nope/entry", undefined, memberToken, { sessionId: "nope" })).json()).data;
+  assert.equal(unknown.next, "unavailable");
 });

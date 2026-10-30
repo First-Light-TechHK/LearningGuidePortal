@@ -99,11 +99,22 @@ export function createReminderListReader(repository: { read(): Promise<StudyGrou
   };
 }
 
-/** A Live Session's page on the public Portal origin (NEXT_PUBLIC_APP_URL), or null when none is configured. */
+let sessionLinkWarned = false;
+
+/**
+ * A Live Session's page on the public Portal origin, for reminder mail.
+ * NEXT_PUBLIC_APP_URL when set; outside SIT/UAT/PROD without it, the local
+ * origin (publicAppOrigin). A managed environment without it gets null: the
+ * mail goes out without a link, and the log says why once.
+ */
 export function studyGroupSessionLink(sessionId: string, locale: "en-GB" | "zh-CN"): string | null {
   try {
     return `${publicAppOrigin()}/${locale}/portal/study-groups/sessions/${encodeURIComponent(sessionId)}`;
-  } catch {
+  } catch (error) {
+    if (!sessionLinkWarned) {
+      sessionLinkWarned = true;
+      console.warn(JSON.stringify({ type: "study_group", event: "session_link_unavailable", reason: error instanceof Error ? error.message : "unknown" }));
+    }
     return null;
   }
 }

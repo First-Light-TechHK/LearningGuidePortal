@@ -503,8 +503,9 @@
 .dlChip[data-tone="green"] { background: #dcfce7; color: #15803d; }
 .dlChip[data-tone="gray"] { background: #f2f4f7; color: #475467; }
 .dlCard h1 { margin: 16px 0 0; color: #111827; font-size: 24px; font-weight: 600; line-height: 32px; overflow-wrap: anywhere; }
-.dlFocus { margin: 12px 0 0; color: #344054; font-size: 16px; line-height: 24px; overflow-wrap: anywhere; }
-.dlCourse { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; color: #155dfc; font-size: 15px; text-decoration: none; }
+.dlFocus { margin: 12px 0 0; color: #344054; font-size: 16px; line-height: 24px; overflow-wrap: anywhere; white-space: pre-line; }
+.dlCourse { display: inline-flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; margin-top: 16px; color: #155dfc; font-size: 15px; text-decoration: none; overflow-wrap: anywhere; }
+.dlCourse svg { flex: none; }
 .dlFacts { display: grid; align-content: start; gap: 16px; min-width: 300px; margin: 18px 0 0; padding: 0; list-style: none; color: #111827; font-size: 15px; }
 .dlFacts li { display: flex; align-items: center; gap: 12px; }
 .dlFacts svg { color: #667085; flex: none; }
@@ -518,15 +519,16 @@
 .dlGate[data-tone="amber"] .dlIcon { background: #fff0c7; color: #d97706; }
 .dlGate[data-tone="blue"] .dlIcon { background: #dcebff; color: #155dfc; }
 .dlGate h2 { margin: 26px 0 0; color: #111827; font-size: 24px; font-weight: 600; line-height: 32px; }
-.dlGate > p { max-width: 720px; margin: 20px 0 0; color: #667085; font-size: 14px; line-height: 17px; }
+.dlGate > p { max-width: 720px; margin: 20px 0 0; color: #667085; font-size: 14px; line-height: 20px; }
 .dlActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 26px; }
-.dlPrimary, .dlSecondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 44px; padding: 0 28px; border-radius: 8px; font: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer; box-sizing: border-box; }
+.dlPrimary, .dlSecondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 10px 28px; border-radius: 8px; text-align: center; font: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer; box-sizing: border-box; }
 .dlPrimary { border: 0; background: #155dfc; color: #fff; }
 .dlSecondary { border: 1px solid #d0d5dd; background: #fff; color: #111827; }
 .dlPrimary:disabled, .dlSecondary:disabled { opacity: .45; cursor: not-allowed; }
-.dlGate small { margin-top: 14px; color: #98a2b3; font-size: 12px; }
-.dlGate .alert { margin: 14px 0 0; font-size: 13px; }
-.reminderLink { margin-left: 8px; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; font-weight: 600; text-decoration: underline; white-space: nowrap; cursor: pointer; }
+.dlGate small { margin-top: 14px; color: #667085; font-size: 12px; }
+.dlGate > p.alert { margin: 14px 0 0; color: #f54649; font-size: 13px; }
+.reminderLink { margin-left: 8px; padding: 6px 4px; border: 0; background: transparent; font: inherit; color: inherit; font-weight: 600; text-decoration: underline; white-space: nowrap; cursor: pointer; }
+.reminderLink:disabled { opacity: .6; cursor: progress; }
 @media (max-width: 800px) {
   .deepLink { margin: 16px auto 32px; }
   .dlCard { grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 20px; }

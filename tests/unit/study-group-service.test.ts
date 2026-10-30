@@ -354,6 +354,15 @@ test("Session Focus allows 300 characters on schedule, and 301 is refused on sch
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus: `${focus}x` }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
+  // The edit dialog resends the stored 300-character focus with a new time: accepted.
+  const moved = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus, startsAt: "2026-09-19T12:30:00.000Z" });
+  assert.equal(moved.startsAt, "2026-09-19T12:30:00.000Z");
+  assert.equal(moved.focus, focus);
+  // A different focus of the same length is still a content change (BUG-0157).
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus: "0987654321".repeat(30), startsAt: "2026-09-19T13:00:00.000Z" }),
+    (error: unknown) => (error as { code: string }).code === "session_time_only"
+  );
   const stored = (await repository.read()).sessions.filter((item) => item.groupId === group.id);
   assert.deepEqual(stored.map((item) => item.focus), [focus]);
 });
