@@ -1,3 +1,4 @@
+import type { SessionEntryNext } from "@/modules/group-study/entry";
 import { deadlineSignal } from "@/modules/group-study/seatIntents";
 export type StudyGroupMember = { userId: string; displayName: string; role: "host" | "member" };
 export type StudySession = {
@@ -80,6 +81,84 @@ export function studyGroupIdFromQuery(search: string) {
   return id && STUDY_GROUP_ID.test(id) ? id : null;
 }
 
+// The Live Session to enter on arrival (`?enter=`): set only by a session
+// deep link during Starting Soon, which sends the member to the list's
+// waiting dialog (deep links, 2026-10-30).
+export function sessionToEnterFromQuery(search: string) {
+  const id = new URLSearchParams(search).get("enter");
+  return id && STUDY_GROUP_ID.test(id) ? id : null;
+}
+
+export function studySessionHref(locale: string, sessionId: string) {
+  return `/${locale}/portal/study-groups/sessions/${encodeURIComponent(sessionId)}`;
+}
+
+// The Study Groups list with one group open and, for a member, the Live
+// Session whose waiting dialog opens at once.
+export function studyGroupListHref(locale: string, groupId: string, enterSessionId?: string) {
+  const query = new URLSearchParams({ group: groupId });
+  if (enterSessionId) query.set("enter", enterSessionId);
+  return `/${locale}/portal/study-groups?${query.toString()}`;
+}
+
+// Get Course Access opens the purchase journey with the Course's category
+// preselected (PRD GS-ACCESS-004, Figma Deep Link 03).
+export function courseAccessHref(locale: string, courseId: string) {
+  return `/${locale}/subscription?courseId=${encodeURIComponent(courseId)}`;
+}
+
+// What the server answers for a session link (GET /sessions/:id/entry).
+export type SessionEntry = {
+  next: SessionEntryNext;
+  /** The server's clock when it answered. */
+  now: string;
+  opensAt: string | null;
+  viewer: { host: boolean; planned: boolean } | null;
+  session: { id: string; title: string; focus: string | null; startsAt: string; durationSeconds: number; maxParticipants: number; occupancy: number | null; state: StudySession["state"] } | null;
+  group: { id: string } | null;
+  course: { id: string; title: string; slug: string } | null;
+};
+
+// A page that stops the viewer asks again on its own when what it waits for
+// can change without them: the room opening at T-10 (asked at that moment by
+// the server's clock, at least once a minute in case the time moved), a seat
+// freeing up, and Course access arriving from the purchase tab. A failed ask
+// is retried later and later, so an offline page does not hammer the server.
+export function sessionEntryRecheckMs(entry: Pick<SessionEntry, "next" | "opensAt" | "now">, failures = 0): number | null {
+  let delay: number | null = null;
+  if (entry.next === "not_open") {
+    const opensAt = entry.opensAt ? Date.parse(entry.opensAt) : NaN;
+    const now = Date.parse(entry.now);
+    delay = Number.isFinite(opensAt) && Number.isFinite(now) ? Math.min(Math.max(opensAt - now + 500, 2_000), 60_000) : 60_000;
+  } else if (entry.next === "full") delay = 15_000;
+  else if (entry.next === "course_access") delay = 10_000;
+  if (delay === null || failures <= 0) return delay;
+  return Math.min(Math.max(delay, 5_000 * 2 ** (failures - 1)), 60_000);
+}
+
+// Refusals the session page explains with a stop page of its own (full, not
+// open, gone, no access...). Any other failure (offline, a server error)
+// stays where it happened, with its error: the session page would still say
+// to wait and send the viewer straight back.
+const SESSION_REFUSALS = new Set(["session_full", "session_not_open", "session_unavailable", "forbidden", "not_found", "course_access_required", "course_unavailable", "unauthenticated"]);
+
+export function sessionRefusal(code: string) {
+  return SESSION_REFUSALS.has(code);
+}
+
+// "Opens at": the time, with the day when it is not today.
+export function sessionOpensAtLabel(locale: string, opensAt: string, nowMs = Date.now()) {
+  const at = new Date(opensAt);
+  const today = new Date(nowMs).toDateString() === at.toDateString();
+  return new Intl.DateTimeFormat(locale, today ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(at);
+}
+
+// Coming back from the purchase tab with the Course: the page says so once
+// (deep-link PDF C8) and carries on with the next step.
+export function sessionEntryAccessGained(previous: SessionEntryNext | null, next: SessionEntryNext) {
+  return previous === "course_access" && next !== "course_access" && next !== "course_unavailable" && next !== "sign_in" && next !== "unavailable";
+}
+
 export function studyGroupPath(groupId: string) {
   return `/api/study-groups/${encodeURIComponent(groupId)}`;
 }
@@ -105,9 +184,13 @@ export function revealOnPhone(element: { scrollIntoView: (options: ScrollIntoVie
 }
 
 // Owner ruling 2026-10-15 (BUG-0128): Session Title allows 50 characters like the Study
-// Group Title / Session Focus (a 32 character sample like "Classical Poetry Reading
-// Session" must fit). The server enforces the same 50 in modules/group-study/service.ts.
+// Group Title (a 32 character sample like "Classical Poetry Reading Session" must
+// fit). The server enforces the same 50 in modules/group-study/service.ts.
 export const SESSION_TITLE_MAX = 50;
+
+// Owner request 2026-10-30: Session Focus allows 300 characters (it was 50). The
+// server enforces the same 300 in modules/group-study/service.ts.
+export const SESSION_FOCUS_MAX = 300;
 
 // BUG-0116 (SIT): the create form capped About at 200 but the edit dialog rendered the
 // stored value uncontrolled, so text beyond the limit could still be shown and saved.
@@ -118,7 +201,16 @@ export function clampGroupAbout(value: string) {
   return value.slice(0, GROUP_ABOUT_MAX);
 }
 
-export const DURATION_MINUTE_CHOICES = [30, 45, 60, 90] as const;
+export const DURATION_MINUTE_CHOICES = [10, 20, 30, 40] as const;
+
+// The duration dropdown: the four choices, plus the shown Session's own length
+// when it was scheduled with an earlier 45/60/90-minute choice (the edit form
+// shows it read-only), so the field never reads empty.
+export function durationOptions(current: string): number[] {
+  const minutes = Number(current);
+  const choices: number[] = [...DURATION_MINUTE_CHOICES];
+  return Number.isInteger(minutes) && minutes > 0 && !choices.includes(minutes) ? [...choices, minutes].sort((a, b) => a - b) : choices;
+}
 
 type ValidatableForm = { checkValidity: () => boolean; elements: ArrayLike<unknown> };
 

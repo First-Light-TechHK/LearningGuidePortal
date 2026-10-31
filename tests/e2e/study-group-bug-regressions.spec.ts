@@ -344,9 +344,12 @@ test("BUG-0157: an upcoming session lets only its date and start time change", a
     const page = await openGroupPage(host, groupId);
     await page.getByRole("button", { name: "Edit Session" }).click();
     const form = page.getByRole("dialog").locator("form");
-    for (const name of ["title", "lesson", "durationMinutes", "maxParticipants", "focus", "aiTutor"]) {
+    for (const name of ["title", "lesson", "durationMinutes", "maxParticipants", "focus"]) {
       await expect(form.locator(`[name="${name}"]`), `${name} is locked`).toBeDisabled();
     }
+    // The Host may still switch the room AI Tutor until the Session starts,
+    // while the course Tutor is online (the E2E KS mock lists it online).
+    await expect(form.locator('[name="aiTutor"]')).toBeEnabled();
     await expect(form.locator('[name="date"]')).toBeEnabled();
     await expect(form.locator('[name="time"]')).toBeEnabled();
     const later = new Date(Date.now() + 5 * HOUR);

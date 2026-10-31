@@ -197,7 +197,11 @@ export type StudyGroupStore = {
   outbox: OutboxRow[];
 };
 
-export const SESSION_DURATION_SECONDS = [1800, 2700, 3600, 5400] as const;
+// What a Host can schedule (owner 2026-10-29: 10/20/30/40 minutes).
+export const SESSION_DURATION_SECONDS = [600, 1200, 1800, 2400] as const;
+// What a stored Session may carry: the schedulable set plus the earlier
+// 45/60/90-minute choices, so Sessions scheduled before 2026-10-29 stay valid.
+export const STORED_SESSION_DURATION_SECONDS = [...SESSION_DURATION_SECONDS, 2700, 3600, 5400] as const;
 export const STARTING_SOON_MS = 10 * 60 * 1000;
 export const TOKEN_TTL_SECONDS = 10 * 60;
 

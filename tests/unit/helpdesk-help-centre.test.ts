@@ -9,7 +9,7 @@ import { parseHelpCentreQuery, type FaqFilter, type HelpFaq } from "../../contra
 import { contactSupportHref, loadHelpCentre, type HelpCentreClient } from "../../modules/helpdesk/helpCentre";
 
 const id = (n: number) => `01a18100-0000-7000-8000-${String(n).padStart(12, "0")}`;
-const faq = (n: number, extra: Partial<HelpFaq> = {}): HelpFaq => ({ id: id(n), category: "payments_subscriptions", popular: n <= 2, question: `Question ${n}?`, answer: `Answer **${n}**.`, updatedAt: "2026-10-28T10:00:00.000Z", ...extra });
+const faq = (n: number, extra: Partial<HelpFaq> = {}): HelpFaq => ({ id: id(n), category: "payments_subscriptions", popular: n <= 2, question: `Question ${n}?`, answer: `Answer **${n}**.`, signals: [], updatedAt: "2026-10-28T10:00:00.000Z", ...extra });
 const STATIC = [{ question: "How do I enroll in a course?", answer: "Choose a course." }, { question: "What payment methods do you accept?", answer: "Shown in checkout." }];
 
 function fakeClient(answers: { list?: (filter: FaqFilter) => HelpFaq[] | null; one?: (faqId: string) => HelpFaq | null } = {}) {

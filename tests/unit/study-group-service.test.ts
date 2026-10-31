@@ -81,6 +81,24 @@ test("My Study Groups lists the newest group first", async () => {
   assert.deepEqual(mine.map((item) => item.id), [second.id, first.id]);
 });
 
+test("Helpdesk v7: a learner's schedule is their active memberships, those groups and those groups' sessions, nothing else (read only)", async () => {
+  access.add("member:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Schedule group", courseId: "course-1", about: "About the schedule." });
+  const other = await service.createGroup({ actorUserId: "host", title: "Other group", courseId: "course-1", about: "Not the member's." });
+  await service.joinGroup({ actorUserId: "member", groupId: group.id });
+  await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Next one", startsAt: "2026-09-20T02:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.scheduleSession({ actorUserId: "host", groupId: other.id, title: "Not mine", startsAt: "2026-09-20T03:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const before = JSON.stringify(await repository.read());
+  const schedule = await service.learnerSchedule("member");
+  assert.deepEqual(schedule.memberships, [{ userId: "member", groupId: group.id, role: "member", leftAt: null }]);
+  assert.deepEqual(schedule.groups, [{ id: group.id, status: "active" }]);
+  assert.deepEqual(schedule.sessions, [{ groupId: group.id, startsAt: "2026-09-20T02:00:00.000Z", status: "scheduled" }]);
+  assert.equal(JSON.stringify(await repository.read()), before, "nothing written");
+  await service.leaveGroup({ actorUserId: "member", groupId: group.id });
+  assert.deepEqual(await service.learnerSchedule("member"), { memberships: [], groups: [], sessions: [] }, "a left group is not theirs");
+  assert.equal((await service.learnerSchedule("host")).groups.length, 2);
+});
+
 test("join is immediate for course access, duplicate join does not add a member, and leave returns the group to discover", async () => {
   access.add("member:course-1");
   const group = await service.createGroup({ actorUserId: "host", title: "Join group", courseId: "course-1", about: "About the group." });
@@ -196,7 +214,7 @@ test("host edits title and about, cannot change the course, and cancel keeps com
     groupId: group.id,
     title: "Already finished",
     startsAt: "2026-09-19T02:05:00.000Z",
-    durationSeconds: 2700,
+    durationSeconds: 1200,
     maxParticipants: 2
   });
   await service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
@@ -283,20 +301,21 @@ test("session title stops at 50 characters and duration is one of four minute le
   // "Classical Poetry Reading Session" (32 characters) fits; 51 still rejects.
   const group = await service.createGroup({ actorUserId: "host", title: "Duration group", courseId: "course-1", about: "Duration about." });
   const title = "1234567890".repeat(5);
-  const storedSeconds = [1800, 2700, 3600, 5400];
+  // Owner 2026-10-29: 10, 20, 30 or 40 minutes; the earlier 45/60/90 are no longer offered.
+  const storedSeconds = [600, 1200, 1800, 2400];
   const scheduled = await service.scheduleSession({
     actorUserId: "host",
     groupId: group.id,
     title,
     startsAt: "2026-09-19T12:00:00.000Z",
-    durationSeconds: 2700,
+    durationSeconds: 1200,
     maxParticipants: 6
   });
   assert.equal(scheduled.title, title);
-  assert.equal(scheduled.durationSeconds, 2700);
+  assert.equal(scheduled.durationSeconds, 1200);
   assert.equal("durationMinutes" in scheduled, false);
   const stored = (await repository.read()).sessions.find((item) => item.id === scheduled.id);
-  assert.equal(stored?.durationSeconds, 2700);
+  assert.equal(stored?.durationSeconds, 1200);
   assert.equal(JSON.stringify(stored).includes("durationMinutes"), false);
   for (const durationSeconds of storedSeconds) {
     const row = await service.scheduleSession({
@@ -309,14 +328,14 @@ test("session title stops at 50 characters and duration is one of four minute le
     });
     assert.equal(row.durationSeconds, durationSeconds);
   }
-  for (const durationSeconds of [30, 45, 60, 90, 1, 25, 120, 0, -1, 1.5, Number.NaN]) {
+  for (const durationSeconds of [10, 20, 30, 40, 2700, 3600, 5400, 1, 25, 120, 0, -1, 1.5, Number.NaN]) {
     await assert.rejects(
       () => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Bad", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds, maxParticipants: 6 }),
       (error: unknown) => (error as { code: string }).code === "validation"
     );
   }
   await assert.rejects(
-    () => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: `${title}x`, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 6 }),
+    () => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: `${title}x`, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 6 }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
   await assert.rejects(
@@ -329,14 +348,41 @@ test("a real-world Session Title fits the 50 character limit on schedule and edi
   const group = await service.createGroup({ actorUserId: "host", title: "Title limit", courseId: "course-1", about: "About the title limit." });
   const sample = "Classical Poetry Reading Session";
   assert.equal(sample.length, 32);
-  const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: sample, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 4 });
+  const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: sample, startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 4 });
   assert.equal(scheduled.title, sample);
-  const fifty = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "1234567890".repeat(5), startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 4 });
+  const fifty = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "1234567890".repeat(5), startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 4 });
   assert.equal(fifty.title.length, 50);
   await assert.rejects(
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, title: `${"1234567890".repeat(5)}x` }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
+});
+
+test("Session Focus allows 300 characters on schedule, and 301 is refused on schedule and edit (owner request 2026-10-30)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Focus limit", courseId: "course-1", about: "About the focus limit." });
+  const focus = "1234567890".repeat(30);
+  const scheduled = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Long focus", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 4, focus });
+  assert.equal(scheduled.focus, focus);
+  assert.equal(scheduled.focus?.length, 300);
+  await assert.rejects(
+    () => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Too long focus", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 4, focus: `${focus}x` }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus: `${focus}x` }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
+  // The edit dialog resends the stored 300-character focus with a new time: accepted.
+  const moved = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus, startsAt: "2026-09-19T12:30:00.000Z" });
+  assert.equal(moved.startsAt, "2026-09-19T12:30:00.000Z");
+  assert.equal(moved.focus, focus);
+  // A different focus of the same length is still a content change (BUG-0157).
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: scheduled.id, focus: "0987654321".repeat(30), startsAt: "2026-09-19T13:00:00.000Z" }),
+    (error: unknown) => (error as { code: string }).code === "session_time_only"
+  );
+  const stored = (await repository.read()).sessions.filter((item) => item.groupId === group.id);
+  assert.deepEqual(stored.map((item) => item.focus), [focus]);
 });
 
 test("host can move only the Start Time (and the AI Tutor switch) of an upcoming Session (BUG-0157)", async () => {
@@ -406,7 +452,7 @@ test("session schedule, attendance, capacity, start and token follow the P0 rule
   const group = await service.createGroup({ actorUserId: "host", title: "Sessions", courseId: "course-1", about: "Sessions about." });
   for (const userId of ["m1", "m2", "m3"]) await service.joinGroup({ actorUserId: userId, groupId: group.id });
   await assert.rejects(() => service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Too big", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1800, maxParticipants: 7 }), (error: unknown) => (error as { code: string }).code === "validation");
-  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Road to 1933", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 2700, maxParticipants: 2, focus: "Weimar" });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Road to 1933", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1200, maxParticipants: 2, focus: "Weimar" });
   assert.equal(session.aiTutorEnabled, true);
   assert.equal(session.state, "scheduled");
   const hidden = await service.getGroup({ actorUserId: "outsider", groupId: group.id });
@@ -881,7 +927,7 @@ test("an AI Tutor request is queued for the live session without a model, a seat
       groupId: group.id,
       title: "Tutor on",
       startsAt: "2026-09-19T02:06:00.000Z",
-      durationSeconds: 2700,
+      durationSeconds: 1200,
       maxParticipants: 4,
       aiTutorEnabled: true
     });
@@ -1743,7 +1789,7 @@ test("a blank related lesson still schedules and a chosen lesson id is stored", 
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Lesson group", courseId: "course-1", about: "About the lesson group." });
   const blank = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "No lesson", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
-  const chosen = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "With lesson", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 2700, maxParticipants: 4, relatedLessonId: "lesson-1" });
+  const chosen = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "With lesson", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1200, maxParticipants: 4, relatedLessonId: "lesson-1" });
   assert.equal(blank.relatedLessonId, null);
   assert.equal(chosen.relatedLessonId, "lesson-1");
   const detail = await local.getGroup({ actorUserId: "host", groupId: group.id });
@@ -1918,4 +1964,24 @@ test("sessions and Discover come back in a fixed, useful order", async () => {
   const newer = await local.createGroup({ actorUserId: "host", title: "Newer group", courseId: "course-1", about: "About the newer group." });
   access.add("viewer:course-1");
   assert.deepEqual((await local.listDiscover({ actorUserId: "viewer" })).map((item) => item.id), [newer.id, group.id]);
+});
+
+test("a Session stored with a legacy 45/60/90-minute duration still edits its Start Time (owner 2026-10-29)", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Legacy duration", courseId: "course-1", about: "Legacy about." });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Legacy", startsAt: "2026-09-19T12:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await repository.update((store) => {
+    const row = store.sessions.find((item) => item.id === session.id);
+    if (row) row.durationSeconds = 3600;
+  });
+  const moved = await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T13:00:00.000Z", durationSeconds: 3600 });
+  assert.equal(moved.startsAt, "2026-09-19T13:00:00.000Z");
+  assert.equal(moved.durationSeconds, 3600);
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, durationSeconds: 1200 }),
+    (error: unknown) => (error as { code: string }).code === "session_time_only"
+  );
+  await assert.rejects(
+    () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, durationSeconds: 4000 }),
+    (error: unknown) => (error as { code: string }).code === "validation"
+  );
 });

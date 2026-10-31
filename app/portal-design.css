@@ -307,8 +307,8 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-title-row h1 { margin:0; color:#15233a; font-size:28px; font-weight:600; line-height:36px; }
 .pricing-term-year-label { position:relative; display:inline-block; white-space:nowrap; transform:translateY(6px); }
 .pricing-term-switch { display:flex; gap:4px; padding:4px; border:1px solid #e5e7eb; border-radius:22px; background:#fff; flex:none; }
-.pricing-term-switch button { padding:8px 20px; border:0; border-radius:18px; font-size:13px; line-height:18px; font-weight:600; background:transparent; color:#155dfc; cursor:pointer; }
-.pricing-term-switch button[aria-pressed=true] { background:#155dfc; color:#fff; }
+.pricing-term-switch .portal-control-button.lg-ant-btn { height:auto; padding:8px 20px; border:0; border-radius:18px; font-size:13px; line-height:18px; font-weight:600; background:transparent; color:#155dfc; box-shadow:none; }
+.pricing-term-switch .portal-control-button.lg-ant-btn[aria-pressed=true] { background:#155dfc; color:#fff; }
 .pricing-comparison { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; align-items:stretch; }
 .pricing-design-card { min-width:0; padding:32px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; color:#15233a; display:flex; flex-direction:column; gap:28px; }
 .pricing-design-card[data-selected="true"] { border:2px solid #246bfd; padding:31px; }
@@ -324,9 +324,9 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-card-includes { border-top:1px solid #e5e7eb; padding-top:28px; display:flex; flex-direction:column; gap:16px; }
 .pricing-card-includes > p { margin:0; color:#64728b; font-size:14px; line-height:20px; }
 .pricing-category-switch { display:flex; flex-wrap:wrap; gap:8px; }
-.pricing-category-switch button { padding:9px 14px; min-height:40px; border:1px solid #ccd2dc; border-radius:8px; color:#15233a; background:#fff; font-size:14px; line-height:20px; font-weight:500; cursor:pointer; }
-.pricing-category-switch button[aria-pressed=true] { border:2px solid #246bfd; padding:8px 13px; color:#155dfc; background:#eef3ff; font-weight:600; }
-.pricing-category-switch button:disabled { opacity:.5; cursor:not-allowed; }
+.pricing-category-switch .portal-control-button.lg-ant-btn { height:auto; padding:9px 14px; min-height:40px; border:1px solid #ccd2dc; border-radius:8px; color:#15233a; background:#fff; font-size:14px; line-height:20px; font-weight:500; box-shadow:none; }
+.pricing-category-switch .portal-control-button.lg-ant-btn[aria-pressed=true] { border:2px solid #246bfd; padding:8px 13px; color:#155dfc; background:#eef3ff; font-weight:600; }
+.pricing-category-switch .portal-control-button.lg-ant-btn:disabled { opacity:.5; cursor:not-allowed; }
 .pricing-card-course-list p { margin:0 0 4px; font-size:15px; line-height:22px; font-weight:500; }
 .pricing-design-card--category .pricing-card-course-list > p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; height:44px; overflow:hidden; overflow-wrap:anywhere; }
 .pricing-card-course-list a { color:#155dfc; text-decoration:none; font-weight:600; }
@@ -336,8 +336,8 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .pricing-card-benefits strong { color:#15233a; font-size:15px; font-weight:500; }
 .pricing-design-card .purchase-panel { min-width:0; display:block; margin-top:auto; border:0; padding:30px 0 0; background:transparent; box-shadow:none; }
 .pricing-design-card .purchase-actions { display:block; margin:0; }
-.pricing-design-card .purchase-actions button { width:100%; min-height:46px; padding:12px 20px; border:1.5px solid #246bfd; border-radius:8px; background:#fff; color:#155dfc !important; font-size:15px; font-weight:600; line-height:20px; }
-.pricing-design-card[data-selected="true"] .purchase-actions button { background:#246bfd; color:#fff !important; }
+.pricing-design-card .purchase-actions .portal-control-button.lg-ant-btn { width:100%; min-height:46px; padding:12px 20px; border:1.5px solid #246bfd; border-radius:8px; background:#fff; color:#155dfc; font-size:15px; font-weight:600; line-height:20px; }
+.pricing-design-card[data-selected="true"] .purchase-actions .portal-control-button.lg-ant-btn:not(:disabled) { background:#246bfd; color:#fff; }
 .pricing-design-information { background:#f8fafc; padding:56px 40px 64px; }
 .pricing-design-information > div { max-width:1184px; margin:auto; }
 .pricing-design-information h2 { margin:0 0 32px; color:#15233a; font-size:24px; font-weight:600; line-height:32px; text-align:center; }
@@ -456,7 +456,7 @@ dialog.upgrade-confirmation .subscription-consents label { color:rgba(51,71,99,.
 @media(max-width:600px) { dialog.subscription-confirmation { padding:40px 20px 24px; min-height:0; margin:16px auto; max-height:calc(100dvh - 32px); } .subscription-confirmation .confirmation-heading h1 { font-size:22px; line-height:30px; } .confirmation-plan { padding-inline:12px; } .confirmation-payment-grid,.confirmation-renewal-grid { grid-template-columns:minmax(0,1fr); gap:16px; } .subscription-confirmation .confirmation-actions { margin-top:28px; } .upgrade-summary { padding:20px 12px; } .upgrade-plan-columns { grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr); gap:8px; } .upgrade-source > span { font-size:11px; padding-inline:6px; } .upgrade-target strong { font-size:20px; line-height:28px; } .upgrade-target p { margin-inline:0; } .upgrade-price dt { font-size:12px; } .upgrade-price dd { font-size:12px; } }
 .portal-content-editor { padding:40px 0; display:grid; gap:24px; }
 .portal-content-editor label { display:grid; gap:8px; min-width:0; }
-.portal-content-editor input,.portal-content-editor textarea,.portal-content-editor select { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }
+.portal-content-editor input:not(:where([class*="lg-ant-"])),.portal-content-editor textarea:not(:where([class*="lg-ant-"])),.portal-content-editor select:not(:where([class*="lg-ant-"])) { width:100%; min-width:0; border:1px solid #dbe3f0; border-radius:6px; padding:10px; background:white; color:#15233a; }
 .portal-content-editor fieldset { min-width:0; border:1px solid #dbe3f0; padding:20px; display:grid; gap:16px; }
 .portal-content-editor > .portal-cms-fields { padding:0; margin:0; border:0; gap:24px; }
 .portal-i18n-toolbar { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
@@ -515,6 +515,20 @@ dialog.upgrade-confirmation .subscription-consents label { color:rgba(51,71,99,.
 }
 .portal-nav a { min-height:67px; }
 .portal-header-cta { min-height:36px; background:#155dfc; font-weight:500; }
+.portal-header .portal-language,.portal-header .portal-header-link,.portal-header .portal-header-cta { transition:background-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease; }
+.portal-header .portal-header-link { border-radius:4px; }
+.portal-header .portal-language:focus-visible,.portal-header .portal-header-link:focus-visible,.portal-header .portal-header-cta:focus-visible { outline:2px solid #155dfc; outline-offset:4px; }
+.portal-header .portal-language:focus-visible { background:#c7d6ff; color:#155dfc !important; }
+.portal-header .portal-header-link:focus-visible { color:#155dfc; background:#eff6ff; box-shadow:0 0 0 6px #eff6ff; }
+@media(hover:hover) and (pointer:fine) {
+ .portal-header .portal-language:hover { background:#c7d6ff; color:#155dfc !important; }
+ .portal-header .portal-header-link:hover { color:#155dfc; background:#eff6ff; box-shadow:0 0 0 6px #eff6ff; }
+ .portal-header .portal-header-cta:hover { background:#0b46d8; box-shadow:0 4px 10px #155dfc33; transform:translateY(-1px); }
+}
+@media(prefers-reduced-motion:reduce) {
+ .portal-header .portal-language,.portal-header .portal-header-link,.portal-header .portal-header-cta { transition:none; }
+ .portal-header .portal-header-cta:hover { transform:none; }
+}
 .portal-account-page { display:grid; grid-template-columns:minmax(40px,1fr) 280px minmax(0,min(1160px,calc(100% - 80px - 280px))) minmax(40px,1fr); grid-template-rows:auto 1fr auto; background:#f8fafd; }
 .portal-account-page > .portal-header,.portal-account-page > .portal-footer { grid-column:1 / -1; }
 .portal-account-page > .account-nav { grid-column:2; grid-row:2; width:280px; max-width:none; margin:0; padding:40px 28px; background:white; border:0; border-right:1px solid #dbe3f0; display:flex; flex-direction:column; flex-wrap:nowrap; gap:8px; align-items:stretch; }
@@ -596,3 +610,33 @@ dialog.upgrade-confirmation .subscription-consents label { color:rgba(51,71,99,.
 
 .pricing-category-switch button:disabled { opacity:.45; cursor:not-allowed; }
 .purchase-plan:has(input:disabled) { opacity:.55; cursor:not-allowed; }
+
+/* Portal Ant Design: separate action namespace; legacy .portal-button links remain native. */
+.portal-control-button.lg-ant-btn { max-width:100%; white-space:normal; height:auto; min-height:42px; }
+.portal-control-button.lg-ant-btn > span:not(.lg-ant-btn-icon) { min-width:0; overflow-wrap:anywhere; }
+.portal-control-button.lg-ant-btn:focus-visible { outline:2px solid #155dfc; outline-offset:3px; }
+.portal-control-spinner { animation:portal-control-spin 1s linear infinite; }
+@keyframes portal-control-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .portal-control-spinner { animation:none; } }
+/* Positional page rules preserve the supplied Figma geometry, rather than restyling all AntD buttons. */
+.portal-auth-stage .auth-input > svg,.portal-auth-entry-page .auth-input > img { z-index:1; }
+.portal-form .lg-ant-input { width:100%; }
+.portal-auth-stage .auth-input .lg-ant-input { box-sizing:border-box; }
+.portal-auth-entry-page .auth-entry-fields .portal-control-button.lg-ant-btn { width:100%; min-height:44px; padding:11px 12px; background:#1d6bff; border-radius:8px; font-size:14px; line-height:20px; font-weight:600; }
+.portal-auth-stage .auth-credential-form .auth-submit.lg-ant-btn { min-height:46px; padding:10px 18px; }
+.portal-auth-stage .auth-password-step .auth-submit.lg-ant-btn { width:100%; min-height:42px; height:auto; padding:10px 18px; background:#1d6bff; font-size:15px; line-height:20px; }
+.portal-auth-stage .auth-signup-design .auth-submit.lg-ant-btn { width:100%; min-height:48px; height:auto; background:#1d6bff; font-size:16px; }
+.portal-auth-stage .portal-control-button.lg-ant-btn-primary:disabled { background:#99a1af; color:#fff; border-color:transparent; }
+.subscription-confirmation .confirmation-actions .portal-control-button.lg-ant-btn { box-sizing:border-box; width:200px; min-height:46px; padding:10px 14px; gap:4px; border-radius:8px; font:600 14px/20px Inter,Arial,sans-serif; }
+.subscription-confirmation .confirmation-actions .portal-control-button.lg-ant-btn:disabled { background:#99a1af; color:#fff; border-color:transparent; }
+.pricing-upgrade-action .portal-control-button.lg-ant-btn { min-height:46px; height:auto; white-space:normal; }
+.pricing-design-card .purchase-actions .portal-control-button.lg-ant-btn:disabled { background:#98a2b3; border-color:#98a2b3; color:#fff; }
+.contact-form .contact-submit.portal-control-button.lg-ant-btn { min-height:36px; padding:4px 12px; border:0; border-radius:7px; background:#2161f5; color:#fff; font-size:12px; line-height:20px; font-weight:500; }
+.contact-form .contact-submit.portal-control-button.lg-ant-btn:hover:not(:disabled) { background:#174bd0; }
+.contact-form .contact-submit.portal-control-button.lg-ant-btn:disabled { background:#99a1af; color:#fff; }
+.portal-account-dropdown .portal-account-popup { width:248px; max-width:calc(100vw - 32px); padding:0; border:1px solid #e5e7eb; border-radius:12px; background:#fff; box-shadow:0 12px 30px #1018281f; overflow:hidden; }
+.portal-account-dropdown .portal-account-popup .lg-ant-dropdown-menu { box-shadow:none; background:transparent; }
+.portal-account-dropdown .lg-ant-dropdown-menu .lg-ant-dropdown-menu-item { padding:10px 9px; color:#344054; font-size:13px; font-weight:600; }
+.portal-account-dropdown .lg-ant-dropdown-menu a { color:inherit; text-decoration:none; }
+.contact-form,.contact-form label,.contact-name-fields,.contact-information-grid article,.contact-information-grid article > div { min-width:0; }
+.contact-information-grid a { overflow-wrap:anywhere; }

@@ -54,6 +54,8 @@ export type TicketRecord = {
   /** v2 §4a: "Flag follow-up" — when and by which agent; both null when not flagged. */
   flaggedAt: string | null;
   flaggedBy: string | null;
+  /** v4 Part A: the learner's own order the enquiry is about (checked at creation), or null. */
+  orderId: string | null;
 };
 
 export type TagRecord = { ticketId: string; tag: string; createdAt: string };

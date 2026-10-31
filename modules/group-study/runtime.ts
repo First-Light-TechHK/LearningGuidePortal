@@ -1,6 +1,6 @@
 import path from "node:path";
 import { systemRoot } from "@/services/fileStore";
-import { isManagedEnvironment } from "@/services/runtimeConfig";
+import { isManagedEnvironment, publicAppOrigin } from "@/services/runtimeConfig";
 import { sendStudyGroupReminderEmail } from "@/services/emailService";
 import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, listStudyGroupReminders, recordUserNotification, withdrawStudyGroupReminders } from "@/services/productStore";
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
@@ -97,6 +97,26 @@ export function createReminderListReader(repository: { read(): Promise<StudyGrou
     return listStudyGroupReminders(userId, (item) =>
       (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
   };
+}
+
+let sessionLinkWarned = false;
+
+/**
+ * A Live Session's page on the public Portal origin, for reminder mail.
+ * NEXT_PUBLIC_APP_URL when set; outside SIT/UAT/PROD without it, the local
+ * origin (publicAppOrigin). A managed environment without it gets null: the
+ * mail goes out without a link, and the log says why once.
+ */
+export function studyGroupSessionLink(sessionId: string, locale: "en-GB" | "zh-CN"): string | null {
+  try {
+    return `${publicAppOrigin()}/${locale}/portal/study-groups/sessions/${encodeURIComponent(sessionId)}`;
+  } catch (error) {
+    if (!sessionLinkWarned) {
+      sessionLinkWarned = true;
+      console.warn(JSON.stringify({ type: "study_group", event: "session_link_unavailable", reason: error instanceof Error ? error.message : "unknown" }));
+    }
+    return null;
+  }
 }
 
 // A learner's Study Group profile. A learner without a nickname has an empty
@@ -282,9 +302,10 @@ export function studyGroupService() {
     withdrawReminders: async (input) => {
       await withdrawStudyGroupReminders(input);
     },
+    sessionLink: studyGroupSessionLink,
     sendMail: async (input) => {
       try {
-        await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text });
+        await sendStudyGroupReminderEmail({ to: input.to, subject: input.subject, text: input.text, link: input.link ?? null, locale: input.locale });
       } catch {
         reminderMailFailures += 1;
       }

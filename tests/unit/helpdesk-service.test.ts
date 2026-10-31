@@ -122,6 +122,31 @@ test("idempotency: same key + same payload replays; changed payload or other use
   assert.equal(detail.sequence, 3);
 });
 
+test("idempotency: a replay that races the first call answers with the ticket that call left, not the one read before it", async () => {
+  const h = harness();
+  const { ticket } = await h.service.createTicket(learner, ticketInput(), randomUUID());
+  const key = randomUUID();
+  const input = { body: "Still on Basic after signing out.", expectedSequence: ticket.sequence, files: [] };
+  // The second send reads the ticket, then the first send commits, then the second finds the first one's key.
+  let first: Promise<unknown> | null = null;
+  const racing = createHelpdeskService({
+    repository: { ...h.repository, async findCommandByKey(value) {
+      if (value === key && !first) { first = h.service.learnerMessage(learner, ticket.id, input, key); await first; }
+      return h.repository.findCommandByKey(value);
+    } },
+    blobs: { async put() {}, async get() { throw new Error("missing blob"); } },
+    now: () => new Date(h.now()),
+    log: () => {}
+  });
+  const second = await racing.learnerMessage(learner, ticket.id, input, key);
+  // first is set inside the callback, so TypeScript still sees the null it started with
+  const applied = (await (first as Promise<unknown> | null)) as Awaited<typeof second>;
+  assert.equal(applied.replayed, false);
+  assert.equal(second.replayed, true);
+  assert.equal(second.ticket.sequence, applied.ticket.sequence, "the replay shows the message it replays");
+  assert.equal(second.ticket.messages.filter((item) => item.body === input.body).length, 1);
+});
+
 test("rate limit: 10 new tickets per learner per rolling hour, 429 rate_limited with retryAfter; replays and other learners are not limited", async () => {
   const h = harness();
   const keys: string[] = [];

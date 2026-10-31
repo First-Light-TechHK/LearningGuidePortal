@@ -71,6 +71,10 @@ const SCHEMA_PROBE = `
     AND to_regclass('helpdesk_ticket_events') IS NOT NULL
     AND to_regclass('helpdesk_ticket_tags') IS NOT NULL
     AND to_regclass('helpdesk_assist_log') IS NOT NULL
+    AND to_regclass('helpdesk_ai_ratings') IS NOT NULL
+    AND to_regclass('helpdesk_chat_sessions') IS NOT NULL
+    AND to_regclass('helpdesk_job_runs') IS NOT NULL
+    AND to_regclass('helpdesk_assist_outcomes') IS NOT NULL
     AND to_regclass('lesson_assessments') IS NOT NULL
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
@@ -108,6 +112,40 @@ const SCHEMA_PROBE = `
       SELECT 1 FROM information_schema.columns
       WHERE table_name = 'helpdesk_assist_log'
         AND column_name = 'feedback_attempted_at'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'alternatives'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'live_sessions_duration_seconds_v2_check'
+        AND conrelid = to_regclass('live_sessions')
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'live_sessions_duration_seconds_check'
+        AND conrelid = to_regclass('live_sessions')
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_tickets'
+        AND column_name = 'order_id'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'texts'
+        AND table_schema = ANY (current_schemas(false))
+    )
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'helpdesk_assist_log'
+        AND column_name = 'scrubbed_at'
         AND table_schema = ANY (current_schemas(false))
     )
   ) AS ready
@@ -294,6 +332,110 @@ ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_delivered_at T
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS feedback_attempted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS helpdesk_assist_log_undelivered_idx ON helpdesk_assist_log (feedback_attempted_at NULLS FIRST, created_at, id) WHERE feedback IS NOT NULL AND feedback_delivered_at IS NULL;
 
+-- Mirrors db/migrations/020_helpdesk_ai_ratings.sql (the AI service rating
+-- and the offered alternatives); same parity rule as 017 above.
+CREATE TABLE IF NOT EXISTS helpdesk_ai_ratings (
+  run_id UUID PRIMARY KEY REFERENCES helpdesk_assist_log(id),
+  learner_id TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('submit', 'chat', 'chip')),
+  rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  created_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS alternatives JSONB;
+
+-- Mirrors db/migrations/022_helpdesk_order_link.sql (the learner's own order an
+-- enquiry is about); same parity rule as 017 above.
+ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS order_id TEXT CHECK (order_id IS NULL OR char_length(order_id) BETWEEN 1 AND 64);
+
+-- Mirrors db/migrations/023_helpdesk_chat_sessions.sql (v5 chat sessions and the
+-- assist log's turn columns); same parity rule as 017 above.
+CREATE TABLE IF NOT EXISTS helpdesk_chat_sessions (
+  id UUID PRIMARY KEY,
+  learner_id TEXT NOT NULL,
+  locale TEXT NOT NULL CHECK (locale IN ('en-GB', 'zh-CN')),
+  release_version INTEGER CHECK (release_version IS NULL OR release_version >= 1),
+  started_at TIMESTAMPTZ NOT NULL,
+  last_turn_at TIMESTAMPTZ NOT NULL,
+  ended_at TIMESTAMPTZ,
+  end_reason TEXT CHECK (end_reason IN ('idle', 'ended_by_learner', 'handover', 'ticket')),
+  turns SMALLINT NOT NULL DEFAULT 0 CHECK (turns >= 0),
+  unsolved_streak SMALLINT NOT NULL DEFAULT 0 CHECK (unsolved_streak >= 0),
+  current_node_id UUID,
+  signals TEXT[] NOT NULL DEFAULT '{}' CHECK (signals <@ ARRAY['trial_ending', 'payment_failed', 'payment_pending', 'recent_purchase', 'subscription_cancelled', 'subscription_expired', 'email_unverified', 'open_ticket_waiting', 'from_order']::text[]),
+  CHECK ((ended_at IS NULL) = (end_reason IS NULL))
+);
+CREATE INDEX IF NOT EXISTS helpdesk_chat_sessions_learner_idx ON helpdesk_chat_sessions (learner_id, last_turn_at DESC);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES helpdesk_chat_sessions(id);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS turn_index SMALLINT CHECK (turn_index IS NULL OR turn_index >= 1);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS node_id UUID;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS parent_node_id UUID;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS via TEXT CHECK (via IN ('typed', 'follow_up', 'option', 'starter', 'signal', 'alternative'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS kind TEXT CHECK (kind IN ('answer', 'smalltalk', 'clarify', 'no_match', 'handover'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS intent TEXT CHECK (intent IN ('question', 'own_account', 'someone_else', 'exception', 'private_data', 'instructions', 'off_topic', 'greeting', 'farewell', 'vague', 'clarify'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS guard TEXT CHECK (guard IN ('passed', 'fallback', 'missing', 'too_long', 'link', 'email', 'digit', 'markup', 'blocked_phrase', 'ai_filler', 'script', 'ungrounded', 'not_covered', 'timeout', 'error'));
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS release_version INTEGER CHECK (release_version IS NULL OR release_version >= 1);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS trace_id TEXT CHECK (trace_id ~ '^[0-9a-f]{32}$');
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS signals TEXT[] CHECK (signals <@ ARRAY['trial_ending', 'payment_failed', 'payment_pending', 'recent_purchase', 'subscription_cancelled', 'subscription_expired', 'email_unverified', 'open_ticket_waiting', 'from_order']::text[]);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS blocks TEXT[] CHECK (cardinality(blocks) <= 3);
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS expanded BOOLEAN;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS covered BOOLEAN;
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS texts JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_assist_log_session_turn_idx ON helpdesk_assist_log (session_id, turn_index) WHERE session_id IS NOT NULL;
+
+-- Mirrors db/migrations/024_helpdesk_flywheel.sql (v5 Part G: the retention
+-- marker, the job runs, the paging indexes and the ticket-outcome view); same
+-- parity rule as 017 above.
+ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS scrubbed_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS helpdesk_assist_log_created_idx ON helpdesk_assist_log (created_at, id);
+CREATE INDEX IF NOT EXISTS helpdesk_assist_log_retention_idx ON helpdesk_assist_log (created_at, id) WHERE scrubbed_at IS NULL;
+CREATE INDEX IF NOT EXISTS helpdesk_tickets_user_created_idx ON helpdesk_tickets (user_id, created_at, id);
+CREATE INDEX IF NOT EXISTS helpdesk_ticket_messages_agent_reply_idx ON helpdesk_ticket_messages (ticket_id, created_at DESC, id DESC) WHERE author_kind = 'agent' AND internal = FALSE;
+CREATE TABLE IF NOT EXISTS helpdesk_job_runs (
+  id UUID PRIMARY KEY,
+  job TEXT NOT NULL CHECK (job IN ('assist_retention')),
+  run_day DATE NOT NULL,
+  trigger TEXT NOT NULL CHECK (trigger IN ('schedule', 'manual')),
+  status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+  attempts SMALLINT NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+  started_at TIMESTAMPTZ NOT NULL,
+  finished_at TIMESTAMPTZ,
+  cutoff TIMESTAMPTZ NOT NULL,
+  rows_scrubbed INTEGER NOT NULL DEFAULT 0 CHECK (rows_scrubbed >= 0),
+  more_due BOOLEAN NOT NULL DEFAULT FALSE,
+  instance TEXT CHECK (char_length(instance) <= 120),
+  requested_by_id TEXT CHECK (char_length(requested_by_id) BETWEEN 1 AND 128),
+  requested_by_name TEXT CHECK (char_length(requested_by_name) <= 120),
+  client_event_id UUID UNIQUE,
+  error_code TEXT CHECK (char_length(error_code) <= 64),
+  CHECK ((trigger = 'manual') = (requested_by_id IS NOT NULL)),
+  CHECK ((status = 'running') = (finished_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_job_runs_daily_idx ON helpdesk_job_runs (job, run_day) WHERE trigger = 'schedule';
+CREATE INDEX IF NOT EXISTS helpdesk_job_runs_recent_idx ON helpdesk_job_runs (job, started_at DESC, id DESC);
+CREATE OR REPLACE VIEW helpdesk_assist_outcomes AS SELECT a.id AS assist_id,
+    t.id AS ticket_id,
+    (a.ticket_id IS NOT NULL) AS ticket_linked,
+    t.created_at AS ticket_created_at,
+    t.status AS ticket_status,
+    t.close_reason,
+    t.closed_at,
+    COALESCE(t.close_reason IN ('user_confirmed', 'auto_confirmed'), FALSE) AS resolved_by_agent,
+    r.id AS agent_reply_id,
+    r.created_at AS agent_reply_at
+  FROM helpdesk_assist_log a
+  LEFT JOIN LATERAL (
+    (SELECT x.id, x.created_at, x.status, x.close_reason, x.closed_at FROM helpdesk_tickets x WHERE x.id = a.ticket_id)
+    UNION ALL
+    (SELECT y.id, y.created_at, y.status, y.close_reason, y.closed_at FROM helpdesk_tickets y
+      WHERE a.ticket_id IS NULL AND y.user_id = a.learner_id AND y.created_at >= a.created_at AND y.created_at < a.created_at + INTERVAL '24 hours'
+      ORDER BY y.created_at, y.id LIMIT 1)
+  ) t ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT m.id, m.created_at FROM helpdesk_ticket_messages m
+    WHERE m.ticket_id = t.id AND m.author_kind = 'agent' AND m.internal = FALSE
+    ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+  ) r ON TRUE;
+
       CREATE TABLE IF NOT EXISTS app_files (
           path TEXT PRIMARY KEY,
           storage TEXT NOT NULL CHECK (storage IN ('db', 's3')),
@@ -360,6 +502,14 @@ CREATE INDEX IF NOT EXISTS helpdesk_assist_log_undelivered_idx ON helpdesk_assis
           CHECK (occupancy <= max_participants)   -- capacity backstop (hazard 1)
         );
         CREATE INDEX IF NOT EXISTS live_sessions_group_idx ON live_sessions (group_id);
+        -- 10/20/30/40-minute Sessions (owner 2026-10-29), keeping the earlier
+        -- 45/60/90 for stored rows: swap 012's column CHECK for a named wider
+        -- one. Idempotent boot self-heal mirroring
+        -- db/migrations/021_live_session_short_durations.sql.
+        ALTER TABLE live_sessions DROP CONSTRAINT IF EXISTS live_sessions_duration_seconds_check;
+        ALTER TABLE live_sessions DROP CONSTRAINT IF EXISTS live_sessions_duration_seconds_v2_check;
+        ALTER TABLE live_sessions ADD CONSTRAINT live_sessions_duration_seconds_v2_check
+          CHECK (duration_seconds IN (600, 1200, 1800, 2400, 2700, 3600, 5400));
         CREATE TABLE IF NOT EXISTS study_group_attendance_intents (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES live_sessions(id),

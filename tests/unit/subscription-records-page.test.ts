@@ -72,6 +72,15 @@ test("Subscription products start collapsed, expand independently, preserve bill
       assert.equal(new URL(href, page.url()).searchParams.get("locale"), locale);
     }
     assert.equal(await card("science").locator("tbody tr").first().locator("td").nth(1).textContent(), "US$39.00");
+    // Helpdesk v4 Part A: every payment record shown (paid, failed, old) has "Contact support" for that order, in the existing link style.
+    const rows = card("science").locator("tbody tr");
+    assert.equal(await card("science").locator("a[data-contact-support]").count(), await rows.count());
+    for (const id of ["science-paid", "science-failed", "science-old"]) {
+      const link = card("science").getByRole("link", { name: copy.subscriptionDesign.contactSupportLabel.replace("{number}", id), exact: true });
+      assert.equal(await link.textContent(), copy.subscriptionDesign.contactSupport);
+      assert.equal(await link.getAttribute("href"), `/${locale}/account/my-learning/support?orderId=${id}`);
+      assert.equal(await link.evaluate(e => getComputedStyle(e).color), await card("science").locator('a[href*="/receipt"]').first().evaluate(e => getComputedStyle(e).color), "the receipt link's style");
+    }
     assert.equal(await card("chinese").getByRole("table").count(), 0);
     assert.equal(await card("science").locator('div[data-colour="science"]').evaluate(e => e.getBoundingClientRect().width), 120);
     assert.equal(await card("science").evaluate(e => e.getBoundingClientRect().x), 384);

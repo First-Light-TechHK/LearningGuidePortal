@@ -58,7 +58,7 @@ test("addendum: the four Figma enquiry types replace the old categories; nine at
 
 test("create-ticket input is trimmed, bounded and enum-checked", () => {
   const input = parseCreateTicketInput(valid, [png]);
-  assert.deepEqual({ ...input, files: input.files.length }, { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid but my plan is still Basic.", locale: "zh-CN", contactEmail: null, suggestionId: null, assistIds: [], files: 1 });
+  assert.deepEqual({ ...input, files: input.files.length }, { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid but my plan is still Basic.", locale: "zh-CN", contactEmail: null, suggestionId: null, assistIds: [], orderId: null, files: 1 }); // v4: orderId (none sent: null)
   assert.equal(parseCreateTicketInput({ ...valid, subject: "x".repeat(120) }, []).subject.length, 120);
   problem(() => parseCreateTicketInput({ ...valid, subject: "x".repeat(121) }, []), "validation_failed", "subject");
   problem(() => parseCreateTicketInput({ ...valid, subject: "   " }, []), "validation_failed", "subject");
@@ -218,7 +218,9 @@ test("problem+json body follows RFC 9457 with a stable type URI per code", () =>
     invalid_request: 400, validation_failed: 400, too_many_attachments: 400, attachment_too_large: 413, attachment_type_unsupported: 415,
     idempotency_key_required: 400, unauthenticated: 401, invalid_token: 401, forbidden_origin: 403, not_found: 404,
     idempotency_conflict: 422, stale_ticket: 409, invalid_transition: 409, reopen_window_passed: 409, rating_window_passed: 409, already_rated: 409,
-    tag_limit_reached: 409, rate_limited: 429, integration_disabled: 503, helpdesk_unavailable: 503, assistant_unavailable: 503
+    tag_limit_reached: 409, rate_limited: 429, integration_disabled: 503, helpdesk_unavailable: 503, assistant_unavailable: 503,
+    // v3 (helpdesk-v3-alternatives-rating.md §2): a second, different rating of one AI answer.
+    answer_already_rated: 409
   };
   assert.deepEqual(PROBLEM_STATUS, statuses);
 });

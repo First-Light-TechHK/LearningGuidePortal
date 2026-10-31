@@ -1,7 +1,7 @@
 // Pure helpers for the learner Helpdesk pages (client-safe: type-only imports,
 // no Node APIs). Business rules stay on the server; these only shape input,
 // pick copy and lay out what the server returned.
-import type { HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
+import type { AssistantTurn, HelpdeskAlternative, HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
 import { hasControlCharacters, isBlankText, textLength } from "@/contracts/helpdeskText";
 
 /** questionMax: the chat question limit (code points). */
@@ -197,10 +197,26 @@ export function fillTemplate(template: string, values: Record<string, string | n
   return template.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? String(values[key]) : match));
 }
 
+/**
+ * One line of the chat transcript. v4 Part B (helpdesk-v4-order-and-chat-end):
+ * questions and answers carry the time they were shown (at, ISO; left out by
+ * older transcripts) for the idle end, and three code-decided cards join them:
+ * the handover card ("requested": the learner asked for a person; "unsolved":
+ * two unsolved turns in a row), the "Still need help?" check-in, and the end
+ * of a session ("idle" or the learner's End chat) with the rating card state
+ * of the assist it rates (ratingFor; null: nothing was answered).
+ * v5: an answer carries the server's turn (smalltalk, clarify, the excerpt and
+ * next steps), so the v4 rules can tell small talk and clarify turns apart.
+ */
 export type ChatEntry =
-  | { kind: "question"; text: string }
-  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null }
-  | { kind: "error"; error: "rateLimited" | "error" };
+  | { kind: "question"; text: string; at?: string }
+  | { kind: "answer"; id: string; reply: HelpdeskSuggestion | null; feedback: "helpful" | "not_helpful" | null; /** v3: "You might be asking" chips under a fallback (left out when none). */ alternatives?: HelpdeskAlternative[]; at?: string; /** v5: the server's turn (kind, guarded strings, excerpt, next steps); left out by older transcripts and an older server. */ turn?: AssistantTurn }
+  | { kind: "error"; error: "rateLimited" | "error" }
+  | { kind: "handover"; reason: "requested" | "unsolved" }
+  | { kind: "checkin" }
+  | { kind: "ended"; reason: "idle" | "learner"; ratingFor: string | null; rating: "open" | "rated" | "skipped" }
+  /** v5 Part B §3: the v3 rating card after "thanks" / "bye" that followed an answered assist (the session goes on). */
+  | { kind: "rate"; ratingFor: string; rating: "open" | "rated" | "skipped" };
 
 /** sessionStorage key of the chat transcript: per account, so a shared browser never shows one learner's chat to another. */
 export function chatStorageKey(accountId: string): string {
@@ -210,18 +226,103 @@ export function chatStorageKey(accountId: string): string {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isText = (value: unknown): value is string => typeof value === "string";
 
+function storedAlternatives(value: unknown): HelpdeskAlternative[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item: unknown) => {
+    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return isText(entry.faqId) && UUID.test(entry.faqId) && isText(entry.question) && entry.question ? [{ faqId: entry.faqId, question: entry.question }] : [];
+  });
+}
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+/** v4: { at } when the stored time is a well-formed ISO time, otherwise nothing (older transcripts have none). */
+const storedAt = (value: unknown): { at?: string } => (isText(value) && ISO_TIME.test(value) && Number.isFinite(Date.parse(value)) ? { at: value } : {});
+
 function chatEntry(value: unknown): ChatEntry | null {
   if (!value || typeof value !== "object") return null;
   const entry = value as Record<string, unknown>;
-  if (entry.kind === "question") return isText(entry.text) ? { kind: "question", text: entry.text } : null;
+  if (entry.kind === "question") return isText(entry.text) ? { kind: "question", text: entry.text, ...storedAt(entry.at) } : null;
   if (entry.kind === "error") return entry.error === "rateLimited" || entry.error === "error" ? { kind: "error", error: entry.error } : null;
+  if (entry.kind === "handover") return entry.reason === "requested" || entry.reason === "unsolved" ? { kind: "handover", reason: entry.reason } : null;
+  if (entry.kind === "checkin") return { kind: "checkin" };
+  if (entry.kind === "ended") {
+    const reason = entry.reason === "idle" || entry.reason === "learner" ? entry.reason : null;
+    const rating = entry.rating === "open" || entry.rating === "rated" || entry.rating === "skipped" ? entry.rating : null;
+    const ratingFor = entry.ratingFor === null ? null : isText(entry.ratingFor) && UUID.test(entry.ratingFor) ? entry.ratingFor : undefined;
+    return reason && rating && ratingFor !== undefined ? { kind: "ended", reason, ratingFor, rating } : null;
+  }
+  if (entry.kind === "rate") {
+    const rating = entry.rating === "open" || entry.rating === "rated" || entry.rating === "skipped" ? entry.rating : null;
+    return rating && isText(entry.ratingFor) && UUID.test(entry.ratingFor) ? { kind: "rate", ratingFor: entry.ratingFor, rating } : null;
+  }
   if (entry.kind !== "answer" || !isText(entry.id) || !UUID.test(entry.id)) return null;
   const feedback = entry.feedback === "helpful" || entry.feedback === "not_helpful" ? entry.feedback : entry.feedback === null ? null : undefined;
   if (feedback === undefined) return null;
-  if (entry.reply === null) return { kind: "answer", id: entry.id, reply: null, feedback };
+  const at = storedAt(entry.at);
+  const turn = storedTurn(entry.turn);
+  const withTurn = turn ? { turn } : {};
+  if (entry.reply === null) {
+    const alternatives = storedAlternatives(entry.alternatives);
+    return alternatives.length ? { kind: "answer", id: entry.id, reply: null, feedback, alternatives, ...at, ...withTurn } : { kind: "answer", id: entry.id, reply: null, feedback, ...at, ...withTurn };
+  }
   const reply = entry.reply as Record<string, unknown> | undefined;
   if (!reply || !isText(reply.id) || !isText(reply.faqId) || !isText(reply.question) || !isText(reply.answer)) return null;
-  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback };
+  return { kind: "answer", id: entry.id, reply: { id: reply.id, faqId: reply.faqId, question: reply.question, answer: reply.answer }, feedback, ...at, ...withTurn };
+}
+
+const TURN_KINDS = ["answer", "smalltalk", "clarify", "no_match"] as const;
+const TURN_INTENTS = ["question", "own_account", "someone_else", "exception", "private_data", "instructions", "off_topic", "greeting", "farewell", "vague", "clarify"] as const;
+const TURN_VIAS = ["typed", "follow_up", "option", "starter", "signal", "alternative"] as const;
+const BLOCK_ID = /^b[1-9]\d{0,3}$/;
+const oneOf = <T extends string>(values: readonly T[], value: unknown): T | null => ((values as readonly unknown[]).includes(value) ? value as T : null);
+const textOrNull = (value: unknown): string | null => (isText(value) && value !== "" ? value : null);
+
+/**
+ * v5: the stored turn of an answer (the browser's storage, so read tolerantly). A turn without a known kind, via,
+ * session or turn index is dropped (the entry then reads as before v5); malformed parts read as absent.
+ */
+export function storedTurn(value: unknown): AssistantTurn | null {
+  if (!value || typeof value !== "object") return null;
+  const turn = value as Record<string, unknown>;
+  const kind = oneOf(TURN_KINDS, turn.kind);
+  const via = oneOf(TURN_VIAS, turn.via);
+  if (!kind || !via || !isText(turn.sessionId) || !UUID.test(turn.sessionId) || typeof turn.turnIndex !== "number" || !Number.isInteger(turn.turnIndex) || turn.turnIndex < 1) return null;
+  const id = (raw: unknown) => (isText(raw) && UUID.test(raw) ? raw : null);
+  const excerpt = Array.isArray(turn.excerpt)
+    ? turn.excerpt.flatMap((item: unknown) => {
+      const block = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return isText(block.id) && BLOCK_ID.test(block.id) && isText(block.text) && block.text ? [{ id: block.id, text: block.text }] : [];
+    })
+    : [];
+  const rawNext = turn.next && typeof turn.next === "object" ? turn.next as Record<string, unknown> : null;
+  const nextKind = rawNext ? oneOf(["follow_up", "option"] as const, rawNext.kind) : null;
+  const steps = rawNext && Array.isArray(rawNext.steps)
+    ? rawNext.steps.flatMap((item: unknown) => {
+      const step = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const nodeId = id(step.nodeId);
+      return nodeId && isText(step.label) && step.label ? [{ nodeId, label: step.label }] : [];
+    })
+    : [];
+  const rawSource = turn.source && typeof turn.source === "object" ? turn.source as Record<string, unknown> : null;
+  const sourceId = rawSource ? id(rawSource.faqId) : null;
+  return {
+    kind, intent: oneOf(TURN_INTENTS, turn.intent), via, nodeId: id(turn.nodeId), nodeType: oneOf(["answer", "choice"] as const, turn.nodeType),
+    opening: textOrNull(turn.opening), closing: textOrNull(turn.closing), reply: textOrNull(turn.reply), explanation: textOrNull(turn.explanation),
+    covered: typeof turn.covered === "boolean" ? turn.covered : null,
+    // Optional (an older Portal's stored turn has none): kept only when the turn carried it.
+    ...(turn.uncovered !== undefined ? { uncovered: oneOf(["not_covered", "unavailable"] as const, turn.uncovered) } : {}),
+    excerpt: excerpt.length ? excerpt : null,
+    next: nextKind && steps.length ? { kind: nextKind, steps } : null,
+    source: sourceId && rawSource && isText(rawSource.question) && rawSource.question ? { faqId: sourceId, question: rawSource.question } : null,
+    releaseVersion: typeof turn.releaseVersion === "number" && Number.isInteger(turn.releaseVersion) && turn.releaseVersion >= 1 ? turn.releaseVersion : null,
+    sessionId: turn.sessionId, turnIndex: turn.turnIndex,
+    unsolved: turn.unsolved === true, countsAsQuestion: turn.countsAsQuestion !== false
+  };
+}
+
+/** v5 (graph design §1): the letter of a choice card's option, A to D. */
+export function optionLetter(index: number): string {
+  return String.fromCharCode(65 + index);
 }
 
 /** The stored transcript, keeping only well-formed entries (storage is the browser's, not ours). */
@@ -242,6 +343,60 @@ export function assistIdsOf(entries: ChatEntry[], max = 10): string[] {
   const ids: string[] = [];
   for (const entry of [...entries].reverse()) if (entry.kind === "answer" && !ids.includes(entry.id)) ids.push(entry.id);
   return ids.slice(0, max).reverse();
+}
+
+/**
+ * v3: what a ticket from the submit modal links — the chat answers and the
+ * answers of the alternatives the learner picked there — the newest max, once
+ * each (the server accepts at most 10 assistIds).
+ */
+export function linkedAssistIds(chatIds: string[], pickedIds: string[], max = 10): string[] {
+  const ids: string[] = [];
+  for (const id of [...chatIds, ...pickedIds].reverse()) if (!ids.includes(id)) ids.push(id);
+  return ids.slice(0, max).reverse();
+}
+
+/**
+ * v3: the submit modal's answers the learner was shown (the suggestion, a
+ * picked alternative's answer), kept for this tab per account like the chat
+ * transcript, so the next enquiry links them even after Edit, Close or a
+ * "Yes, solved" that went back to the account (the agent then sees what the
+ * learner was already told, with its feedback and rating). Only inside the
+ * server's link window (HELPDESK_LIMITS.assistLinkWindowHours): older answers
+ * would not be linked anyway.
+ */
+export const SEEN_ANSWER_WINDOW_MS = 24 * 3_600_000;
+const SEEN_ANSWERS_MAX = 10;
+export type SeenAnswer = { id: string; at: string };
+
+export function seenStorageKey(accountId: string): string {
+  return `lg-helpdesk-seen:v1:${accountId}`;
+}
+
+/** The stored list, keeping well-formed entries inside the window (storage is the browser's), once each, newest 10. */
+export function readSeenAnswers(raw: string | null, now: Date): SeenAnswer[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  const since = now.getTime() - SEEN_ANSWER_WINDOW_MS;
+  let found: SeenAnswer[] = [];
+  for (const value of parsed) {
+    const entry = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    if (!isText(entry.id) || !UUID.test(entry.id) || !isText(entry.at)) continue;
+    const at = Date.parse(entry.at);
+    if (!Number.isFinite(at) || at <= since || at > now.getTime()) continue;
+    const id = entry.id.toLowerCase();
+    found = [...found.filter((item) => item.id !== id), { id, at: new Date(at).toISOString() }];
+  }
+  return found.slice(-SEEN_ANSWERS_MAX);
+}
+
+/** Adds (or moves to the end) one answer id the learner was shown; the newest 10 are kept. */
+export function rememberSeenAnswer(list: SeenAnswer[], id: string, now: Date): SeenAnswer[] {
+  if (!UUID.test(id)) return list;
+  const key = id.toLowerCase();
+  return [...list.filter((item) => item.id !== key), { id: key, at: now.toISOString() }].slice(-SEEN_ANSWERS_MAX);
 }
 
 export type TextSegment = { text: string; href?: string };

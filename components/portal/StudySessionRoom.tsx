@@ -10,6 +10,8 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
+import { TutorAnswer } from "./TutorAnswer";
+import { useFloatDrag } from "./useFloatDrag";
 import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
@@ -19,14 +21,34 @@ function tileStatus(copy: { muted: string; speaking: string; micOn: string }, ti
   return copy.micOn;
 }
 
-function ControlIcon({ kind }: { kind: "mic" | "camera" | "share" | "people" | "hand" | "leave" }) {
+function ControlIcon({ kind }: { kind: "mic" | "mic-off" | "camera" | "share" | "people" | "hand" | "leave" | "expand" | "collapse" | "chat" | "chevron" | "minimize" | "sparkle" }) {
   const props = { viewBox: "0 0 24 24", width: 16, height: 16, "aria-hidden": true as const, fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  if (kind === "mic") return <svg {...props}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
+  if (kind === "mic") return <svg {...props} data-icon="mic"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v3" /></svg>;
+  // The same crossed-out microphone the tile caption shows for a muted participant.
+  if (kind === "mic-off") return <svg {...props} data-icon="mic-off"><path d="M9 10v2a3 3 0 0 0 5 2M15 11V6a3 3 0 0 0-5.5-1.5M5 5l14 14M12 17v3M8 11a4 4 0 0 0 .5 2" /></svg>;
   if (kind === "camera") return <svg {...props}><path d="M3 8h11v9H3zM14 11l6-3v9l-6-3" /></svg>;
   if (kind === "share") return <svg {...props}><rect x="4" y="5" width="16" height="12" rx="2" /><path d="M10 11h4M12 9v4" /></svg>;
+  if (kind === "expand") return <svg {...props}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>;
+  if (kind === "collapse") return <svg {...props}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>;
+  if (kind === "chat") return <svg {...props}><path d="M5 5h14v10H9l-4 4z" /></svg>;
+  if (kind === "chevron") return <svg {...props}><path d="M6 9l6 6 6-6" /></svg>;
+  if (kind === "minimize") return <svg {...props}><path d="M5 12h14" /></svg>;
+  if (kind === "sparkle") return <svg {...props} fill="currentColor" stroke="none"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /></svg>;
   if (kind === "people") return <svg {...props}><circle cx="9" cy="8" r="2.5" /><circle cx="16" cy="9" r="2" /><path d="M4 18c.6-2.4 2.4-3.5 5-3.5s4.4 1.1 5 3.5M14 14.5c1.6 0 3 .7 3.8 2.5" /></svg>;
   if (kind === "hand") return <svg {...props}><path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11M11 8V5.5a1.5 1.5 0 0 1 3 0V12M14 9V7.5a1.5 1.5 0 0 1 3 0V14c0 3-2 5-5 5h-1c-2 0-3-.8-4-2l-2.5-3.5a1.5 1.5 0 0 1 2.2-2L8 13" /></svg>;
   return <svg {...props}><path d="M14 4h4v4M18 4l-7 7M10 6H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4" /></svg>;
+}
+
+const FOCUS_IDLE_MS = 3000;
+const CHAT_PREVIEW_MS = 5000;
+const ROOM_PEOPLE_KEY = "lg.studyRoom.people";
+const ROOM_CHAT_KEY = "lg.studyRoom.chat";
+
+// One line of the newest message for the full-screen preview: Markdown marks and
+// LaTeX delimiters are dropped so a Tutor answer reads as plain words.
+function chatPreviewText(text: string) {
+  const plain = text.replace(/\[Source:[^\]]*\]/gi, "").replace(/[$*_`#>]|\\[()[\]]/g, "").replace(/\s+/g, " ").trim();
+  return plain.length > 90 ? `${plain.slice(0, 89)}…` : plain;
 }
 
 function CrumbChevron() {
@@ -124,7 +146,10 @@ function ParticipantCamera({ track }: { track: AttachableTrack | null }) {
   return <video ref={ref} autoPlay playsInline muted />;
 }
 
-export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessionId: string }) {
+// The live room only. Whether and where a viewer goes before that (sign in,
+// buy, join, wait in the list, the Host's Start in the list) is the entry
+// check's (StudySessionEntry); a session found not live yet goes back to it.
+export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Locale; sessionId: string; onNotLive?: () => void }) {
   const copy = getMessages(locale).studyGroupsPage;
   const roomCopy = copy.room;
   const [session, setSession] = useState<StudySession | null>(null);
@@ -150,6 +175,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const [cameraOn, setCameraOn] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareTrack, setShareTrack] = useState<AttachableTrack | null>(null);
+  const [sharerIdentity, setSharerIdentity] = useState<string | null>(null);
   const [cameraTracks, setCameraTracks] = useState<Record<string, AttachableTrack>>({});
   const [addressTutor, setAddressTutor] = useState(false);
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
@@ -163,6 +189,24 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   const permissionWatchRef = useRef<PermissionStatus | null>(null);
   const [clock, setClock] = useState("00:00");
   const shareVideo = useRef<HTMLVideoElement>(null);
+  // Owner 2026-10-29: a shared screen can take the whole screen (Tencent
+  // Meeting style): the people, the chat with the AI Tutor and the controls
+  // float over it, each one collapsible.
+  const roomEl = useRef<HTMLElement>(null);
+  const [focus, setFocus] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(true);
+  const [sideOpen, setSideOpen] = useState(false);
+  // In full screen the controls fade out after the pointer rests a while and
+  // come back on any pointer, touch or key activity (owner 2026-10-29).
+  const [idle, setIdle] = useState(false);
+  // Owner 2026-10-30: in full screen with the chat folded, a new line (or the
+  // AI Tutor's answer) shows as a short preview above the controls instead of
+  // only a count; the folded/open state of both floats is remembered per browser.
+  const [preview, setPreview] = useState<{ from: string; text: string; tutor: boolean } | null>(null);
+  const chatVisibleRef = useRef(false);
+  // Both floats can be dragged over the screen; each goes back to rest when full screen starts or ends.
+  const peopleDrag = useFloatDrag<HTMLDivElement>(focus);
+  const chatDrag = useFloatDrag<HTMLElement>(focus);
   const audioRoot = useRef<HTMLDivElement>(null);
   const groupRef = useRef<StudyGroupDetail | null>(null);
   const repaintRef = useRef<(() => void) | null>(null);
@@ -212,11 +256,6 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   blockedRef.current = blocked;
   const failuresRef = useRef(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
-  // The Host's Start in the waiting view: in flight, and why it failed. Kept
-  // apart from the connection's error so it never follows the page into the
-  // live room (QA 2026-10-19 M13).
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState("");
   // Leave Session asks first; a leave the server did not take keeps the call
   // and offers the leave again (QA 2026-10-19 M15).
   const [leaveAsked, setLeaveAsked] = useState(false);
@@ -273,9 +312,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     const showShare = () => {
       // Only someone else's share fills the main view: the sharer's own screen
       // shown back to them nests itself into a hall of mirrors (QA M18).
-      const remote = Array.from(room.remoteParticipants.values()).flatMap((person) => [...person.trackPublications.values()]);
-      const shared = remote.find((item) => item.source === "screen_share" && item.track && item.track.mediaStreamTrack?.readyState !== "ended" && item.isMuted !== true);
-      setShareTrack(shared?.track ?? null);
+      const remote = Array.from(room.remoteParticipants.values()).flatMap((person) => [...person.trackPublications.values()].map((item) => ({ item, identity: person.identity })));
+      const shared = remote.find(({ item }) => item.source === "screen_share" && item.track && item.track.mediaStreamTrack?.readyState !== "ended" && item.isMuted !== true);
+      setShareTrack(shared?.item.track ?? null);
+      setSharerIdentity(shared?.identity ?? null);
       setSharing([...room.localParticipant.trackPublications.values()].some((item) => item.source === "screen_share" && item.track));
       setMicOn(room.localParticipant.isMicrophoneEnabled);
       setCameraOn(room.localParticipant.isCameraEnabled);
@@ -342,12 +382,19 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           mode: message.mode,
           ...(message.replyTo ? { replyTo: message.replyTo } : {})
         }));
+        if (!chatVisibleRef.current) {
+          setUnread((count) => count + 1);
+          setPreview({ from: roomCopy.tutorName, text: message.text, tutor: true });
+        }
         setSideTab("chat");
         return;
       }
       if (message.type === "chat") {
         setChat((items) => [...items, { id: `${from}-${items.length}`, from, text: message.text, at: chatStamp(), host: hostIds.has(data.senderIdentity) }]);
-        if (sideTabRef.current !== "chat") setUnread((count) => count + 1);
+        if (!chatVisibleRef.current) {
+          setUnread((count) => count + 1);
+          setPreview({ from, text: message.text, tutor: false });
+        }
       }
       if (message.type === "raise-hand") setHands((items) => raisedHands(items, data.senderIdentity, message.raised));
       if (message.type === "hands-query") sendRaisedHand(data.senderIdentity);
@@ -530,7 +577,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   // lease could lapse while the page sleeps; coming back to the tab or back
   // online renews at once (QA 2026-10-19 final review r2-B4).
   useEffect(() => {
-    if (!seated || left || blocked || accessLost || (session?.state !== "live" && session?.state !== "starting_soon")) return;
+    if (!seated || left || blocked || accessLost || session?.state !== "live") return;
     // Each intent is bounded by the seat intents' own timeout, so a request
     // stalled by a sleeping device frees the next renewal (QA3 F3), and a page
     // that has left sends neither a renewal nor an entry (QA3 F1, F5).
@@ -575,10 +622,46 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     return () => window.removeEventListener("online", retry);
   }, []);
 
+  // The chat counts as read only while its lines are on screen: the Chat tab,
+  // and in full screen only while the floating chat is open.
+  const chatVisible = sideTab === "chat" && (!focus || sideOpen);
+  chatVisibleRef.current = chatVisible;
   useEffect(() => {
     sideTabRef.current = sideTab;
-    if (sideTab === "chat") { setUnread(0); chatPinnedRef.current = true; }
   }, [sideTab]);
+  useEffect(() => {
+    if (!chatVisible) return;
+    setUnread(0);
+    setPreview(null);
+    chatPinnedRef.current = true;
+  }, [chatVisible]);
+  useEffect(() => {
+    if (!preview) return;
+    const timer = window.setTimeout(() => setPreview(null), CHAT_PREVIEW_MS);
+    return () => window.clearTimeout(timer);
+  }, [preview]);
+  // Per-browser convenience only: storage may be missing or throw (private mode).
+  useEffect(() => {
+    try {
+      const people = window.localStorage.getItem(ROOM_PEOPLE_KEY);
+      const chatOpen = window.localStorage.getItem(ROOM_CHAT_KEY);
+      if (people) setPeopleOpen(people === "open");
+      if (chatOpen) setSideOpen(chatOpen === "open");
+    } catch { /* storage unavailable: keep the defaults */ }
+  }, []);
+  function rememberFloat(key: string, open: boolean) {
+    try { window.localStorage.setItem(key, open ? "open" : "closed"); } catch { /* storage unavailable */ }
+  }
+  function togglePeople() {
+    const open = !peopleOpen;
+    setPeopleOpen(open);
+    rememberFloat(ROOM_PEOPLE_KEY, open);
+  }
+  function setChatFloat(open: boolean) {
+    setSideOpen(open);
+    rememberFloat(ROOM_CHAT_KEY, open);
+    if (open) setSideTab("chat");
+  }
 
   // BUG-0198: the chat scrolls inside the fixed-height panel (599:1276) instead
   // of stretching the page, and follows the newest line while the reader is at
@@ -586,7 +669,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   useEffect(() => {
     const log = chatLogRef.current;
     if (log && chatPinnedRef.current) log.scrollTop = log.scrollHeight;
-  }, [chat, sideTab]);
+  }, [chat, sideTab, chatVisible]);
 
   useEffect(() => {
     void load();
@@ -596,7 +679,9 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     if (session?.state === "completed") void releaseRoom();
-    if (session?.state === "live") setStartError("");
+    // Nobody enters before the Host starts (PRD 6.9.1): the entry check sends
+    // a member to the list's waiting dialog and the Host to the list's Start.
+    if ((session?.state === "scheduled" || session?.state === "starting_soon") && !sessionNotStarted(session)) onNotLive?.();
   }, [session?.state]);
 
   useEffect(() => {
@@ -605,11 +690,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
 
   useEffect(() => {
     if (!session || left) return;
-    if (session.state !== "starting_soon" && session.state !== "live") {
-      setEntryDone(true);
-      return;
-    }
-    if (sessionNotStarted(session)) {
+    if (session.state !== "live") {
       setEntryDone(true);
       return;
     }
@@ -694,6 +775,43 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     repaintRef.current?.();
   }, [group]);
 
+  // Leaving full screen with Esc (or the browser's own control) leaves focus
+  // mode too; a share that ends takes focus mode with it.
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFocus(false); };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  useEffect(() => {
+    const element = roomEl.current;
+    setIdle(false);
+    if (!focus || !element) return;
+    let timer = window.setTimeout(() => setIdle(true), FOCUS_IDLE_MS);
+    const wake = () => {
+      setIdle(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setIdle(true), FOCUS_IDLE_MS);
+    };
+    const events = ["pointermove", "pointerdown", "keydown", "touchstart"] as const;
+    for (const name of events) element.addEventListener(name, wake, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      for (const name of events) element.removeEventListener(name, wake);
+    };
+  }, [focus]);
+  // Without the Fullscreen API the room only covers the window, so Esc leaves it here.
+  useEffect(() => {
+    if (!focus) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !document.fullscreenElement) setFocus(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [focus]);
+  useEffect(() => {
+    if (shareTrack || !focus) return;
+    setFocus(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, [shareTrack, focus]);
+
   useEffect(() => {
     const element = shareVideo.current;
     if (!shareTrack || !element) return;
@@ -713,6 +831,29 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   useEffect(() => () => {
     if (permissionWatchRef.current) permissionWatchRef.current.onchange = null;
   }, []);
+
+  function switchShare(start: boolean) {
+    setShareFailed(false);
+    void setMedia("share", start).catch((error: unknown) => {
+      setSharing(false);
+      if (start && !screenShareCancelled(error)) setShareFailed(true);
+    });
+  }
+
+  function stopSharing() {
+    switchShare(false);
+  }
+
+  function toggleFocus() {
+    if (focus) {
+      setFocus(false);
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    setFocus(true);
+    // Without the Fullscreen API (iPhone Safari) the room still covers the window.
+    void roomEl.current?.requestFullscreen?.().catch(() => undefined);
+  }
 
   async function setMedia(kind: "mic" | "camera" | "share", enabled: boolean) {
     const local = roomApi?.localParticipant;
@@ -798,15 +939,6 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     setEntryDone(false);
     failuresRef.current = 0;
     setLeft(false);
-  }
-
-  async function startSession() {
-    setStarting(true);
-    setStartError("");
-    const started = await studyGroupRequest(`/api/study-groups/sessions/${sessionId}/start`, { method: "POST", body: "{}" });
-    if (!started.ok) setStartError(started.code);
-    else await load();
-    setStarting(false);
   }
 
   function retryLoad() {
@@ -920,10 +1052,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   if (refusalOffer) {
     return <>{path()}<section className={styles.empty} role="alert"><h1>{refusalOffer === "retry" ? copy.sessionFull : copy.errors.course_access_required}</h1><p>{session.title}</p>{refusalOffer === "course-access" && group ? <a className={styles.primary} href={`/${locale}/portal/courses/${group.courseSlug}`}>{copy.getCourseAccess}</a> : null}{refusalOffer === "retry" ? <button className={styles.primary} type="button" onClick={retryEntry}>{copy.retry}</button> : null}</section></>;
   }
-  if ((session.state === "starting_soon" || session.state === "live") && !seated && !entryDone) {
+  if (session.state === "live" && !seated && !entryDone) {
     return <p className={styles.panel} role="status">{copy.loading}</p>;
   }
-  if ((session.state === "starting_soon" || session.state === "live") && !seated && errorCode) {
+  if (session.state === "live" && !seated && errorCode) {
     // Entry finished without a seat: the request failed on its way out or was
     // refused (hunt M1). Show the failure with a retry that re-runs the entry
     // request in place instead of leaving the viewer stuck on Loading. A
@@ -931,18 +1063,20 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
     if (roomGateAction(errorCode) !== "retry") return <>{path()}{gate(errorCode)}</>;
     return <>{path()}<section className={styles.empty} role="alert"><h1>{copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error}</h1><p>{session.title}</p><button className={styles.primary} type="button" onClick={retryEntry}>{roomCopy.reconnect}</button></section></>;
   }
-  if (session.state === "scheduled") {
-    return <>{path()}<section className={styles.empty} role="status"><h1>{copy.errors.session_not_open}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{copy.enterWindow}</p></section></>;
-  }
   if (sessionNotStarted(session)) {
     return <>{path()}<section className={styles.empty} role="status"><h1>{copy.notStarted}</h1><p>{copy.notStartedBody}</p><p>{session.title}</p><p>{sessionScheduleLabel(locale, session)}</p></section></>;
   }
-  if (session.state !== "live") {
-    return <>{path()}<section className={styles.empty} role="status"><h1>{group?.role === "host" ? copy.hostWaiting : copy.waiting}</h1><p>{session.title}</p>{session.focus ? <><h2>{copy.focus}</h2><p>{session.focus}</p></> : null}<p>{sessionScheduleLabel(locale, session)}</p><p>{fill(copy.plannedDuration, { count: plannedMinutes(session) })}</p><p>{fill(copy.currentlyInSession, { count: session.occupancy, max: session.maxParticipants })}</p><p>{fill(copy.upToParticipants, { count: session.maxParticipants })}</p>{group?.role === "host" ? <button className={styles.primary} type="button" disabled={starting} aria-busy={starting} onClick={() => void startSession()}>{starting ? roomCopy.starting : copy.start}</button> : null}{startError ? <p className={styles.alert} role="alert">{copy.errors[startError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</section></>;
-  }
+  if (session.state !== "live") return <p className={styles.panel} role="status">{copy.loading}</p>;
 
   const controls = sessionControls({ role: group?.role || "member", state: "live", occupancy: session.occupancy, maxParticipants: session.maxParticipants });
   const present = connected && tiles.length > 0 ? tiles.length : session.occupancy;
+  const sharerName = sharerIdentity ? tiles.find((tile) => tile.identity === sharerIdentity)?.name ?? null : null;
+  // Raised hands first (in the order they went up), then the Host, then everyone else as they joined.
+  const floatRank = (tile: Tile) => {
+    const hand = hands.indexOf(tile.identity);
+    return hand >= 0 ? hand : tile.host ? hands.length : hands.length + 1;
+  };
+  const floatPeople = [...tiles].sort((a, b) => floatRank(a) - floatRank(b));
   const roster = tiles.length
     ? tiles.map((tile) => ({
         key: tile.identity,
@@ -1060,7 +1194,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
   return (
     <>
     {path()}
-    <section className={styles.room}>
+    <section ref={roomEl} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
       <div className={styles.stage}>
         <div className={styles.stageHead}>
           <h1>{session.title}</h1>
@@ -1071,9 +1205,51 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
         {!reconnecting && errorText ? <p className={styles.alert} role="alert">{errorText} <button className={styles.textButton} type="button" onClick={() => { setErrorCode(""); setBlocked(false); failuresRef.current = 0; setRecoveryRequired(true); setConnected(false); setConnectAttempt((attempt) => attempt + 1); }}>{roomCopy.reconnect}</button></p> : null}
         {audioBlocked ? <p className={styles.alert} role="alert"><button className={styles.textButton} type="button" onClick={() => { const room = roomRef.current; void room?.startAudio().catch(() => undefined).finally(() => { if (roomRef.current === room) setAudioBlocked(Boolean(room && !room.canPlaybackAudio)); }); }}>{roomCopy.enableAudio}</button></p> : null}
         <div ref={audioRoot} hidden />
-        {shareTrack ? <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted /> : null}
-        {sharing ? <p className={styles.meta} role="status">{roomCopy.sharingNotice}</p> : null}
-        <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
+        {shareTrack ? <div className={styles.shareStage} data-testid="share-stage">
+          {/* Owner 2026-10-30: a double-click on the shared screen enters or leaves full screen (Tencent Meeting / Zoom habit). */}
+          <video ref={shareVideo} className={styles.shareMain} autoPlay playsInline muted onDoubleClick={toggleFocus} />
+          {sharerName ? <span className={styles.sharerChip}><span className={styles.sharerDot} aria-hidden="true" />{fill(roomCopy.sharingBy, { name: sharerName })}</span> : null}
+          {focus ? (
+            <div className={styles.focusBar}>
+              <strong>{session.title}</strong>
+              <span className={styles.focusClock}><span className={styles.liveDot} aria-hidden="true">●</span> {fill(roomCopy.liveClock, { time: clock }).replace(/^●\s*/, "")}</span>
+              {sharerName ? <span className={styles.focusSharer}>{fill(roomCopy.sharingBy, { name: sharerName })}</span> : null}
+              <span className={styles.focusHint}>{roomCopy.escToExit}</span>
+              <button type="button" aria-pressed="true" onClick={toggleFocus}><ControlIcon kind="collapse" />{roomCopy.exitFullScreen}</button>
+            </div>
+          ) : (
+            <div className={styles.shareTools}>
+              <button type="button" aria-pressed="false" onClick={toggleFocus}><ControlIcon kind="expand" />{roomCopy.fullScreen}</button>
+            </div>
+          )}
+        {/* Owner 2026-10-29: while someone else's screen fills the stage, the people float
+            over it (collapsible), so the shared screen keeps the room's space. Owner 2026-10-30:
+            the float is a light card with a labelled header and a row per person (name, role,
+            mic), so it stands out on the dark share edge (Tencent Meeting style). Raised hands
+            come first, then the Host; speaking only lights a row up, so the list never jumps. */}
+        {tiles.length > 0 ? <div ref={peopleDrag.ref} style={peopleDrag.style} className={styles.avatarFloat} data-open={peopleOpen ? "true" : "false"} data-dragging={peopleDrag.dragging ? "true" : "false"}>
+          <button type="button" className={styles.avatarToggle} aria-expanded={peopleOpen} onClick={togglePeople} {...peopleDrag.handle}><ControlIcon kind="people" /><span className={styles.avatarToggleLabel}>{roomCopy.participants}</span><span className={styles.tabCount}>{tiles.length}</span>{peopleOpen ? null : <span className={styles.avatarStack} aria-hidden="true">{floatPeople.slice(0, 3).map((tile) => <i key={tile.identity} data-speaking={tile.speaking ? "true" : "false"}>{tile.name.slice(0, 1)}</i>)}</span>}<span className={styles.avatarChevron} data-open={peopleOpen ? "true" : "false"} aria-hidden="true"><ControlIcon kind="chevron" /></span><span className={styles.srOnly}>{peopleOpen ? roomCopy.hideParticipants : roomCopy.showParticipants}</span></button>
+          {peopleOpen ? <ul className={styles.avatarStrip} aria-label={roomCopy.participants}>
+          {floatPeople.map((tile) => {
+            const camera = cameraTracks[tile.identity] ?? null;
+            const raised = hands.includes(tile.identity);
+            const status = [tile.host ? roomCopy.host : "", tileStatus(roomCopy, tile)].filter(Boolean).join(" · ");
+            const label = `${tile.name} · ${raised ? `${roomCopy.raiseHand} · ` : ""}${status}`;
+            return (
+              <li className={styles.avatar} data-speaking={tile.speaking ? "true" : "false"} key={tile.identity} title={label} aria-label={label}>
+                <span className={styles.avatarFace} data-video={camera ? "on" : "off"}>{camera ? <ParticipantCamera track={camera} /> : <span aria-hidden="true">{tile.name.slice(0, 1)}</span>}</span>
+                <span className={styles.avatarName} aria-hidden="true">{tile.name}<span className={styles.avatarRole} data-status={tile.speaking ? "speaking" : tile.host ? "host" : "plain"}>{status}</span></span>
+                {raised ? <span className={styles.avatarHand} role="img" aria-label={roomCopy.raiseHand}>✋</span> : null}
+                <TileMic status={participantStatus(tile)} label={tileStatus(roomCopy, tile)} />
+              </li>
+            );
+          })}
+        </ul> : null}
+        </div> : null}
+        </div> : null}
+        {/* Owner 2026-10-30: the sharer sees a clear banner with its own Stop sharing, not a line of small print. */}
+        {sharing ? <div className={styles.sharingBanner} role="status"><span className={styles.sharerDot} aria-hidden="true" /><span>{roomCopy.sharingNotice}</span><button type="button" onClick={stopSharing}>{roomCopy.stopSharing}</button></div> : null}
+        {shareTrack ? null : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
           {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
             return (
@@ -1086,23 +1262,18 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               </div>
             );
           })}
-        </div>
+        </div>}
         {mediaNotice ? <p className={styles.alert} role="alert">{mediaNotice.device ? roomCopy.mediaDeviceBlocked : mediaNotice.kind === "camera" ? roomCopy.mediaBlockedCamera : roomCopy.mediaBlockedMic} <button className={styles.textButton} type="button" onClick={() => setMediaNotice(null)}>{copy.close}</button></p> : null}
         {shareFailed ? <p className={styles.alert} role="alert">{roomCopy.shareFailed} <button className={styles.textButton} type="button" onClick={() => setShareFailed(false)}>{copy.close}</button></p> : null}
         {/* BUG-0196: the focus carries the same "Session Focus" label and 12px body as the waiting dialog (599:755), so it never reads as a second title. */}
         {session.focus ? <section className={styles.roomFocus} aria-labelledby="study-session-focus"><h2 id="study-session-focus" className={styles.waitingFocus}>{copy.focus}</h2><p>{session.focus}</p></section> : null}
         <div className={styles.controls}>
-          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind="mic" />{roomCopy.mic}</button> : null}
+          {controls.includes("mic") ? <button type="button" aria-pressed={micOn} data-mic={micOn ? "on" : "off"} disabled={!connected} onClick={() => void toggleMedia("mic", !micOn)}><ControlIcon kind={micOn ? "mic" : "mic-off"} />{roomCopy.mic}</button> : null}
           {controls.includes("camera") ? <button type="button" aria-pressed={cameraOn} disabled={!connected} onClick={() => void toggleMedia("camera", !cameraOn)}><ControlIcon kind="camera" />{roomCopy.camera}</button> : null}
-          {controls.includes("share") && canShare ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => {
-            const start = !sharing;
-            setShareFailed(false);
-            void setMedia("share", start).catch((error: unknown) => {
-              setSharing(false);
-              if (start && !screenShareCancelled(error)) setShareFailed(true);
-            });
-          }}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
-          {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={sideTab === "participants"} onClick={() => setSideTab("participants")}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
+          {controls.includes("share") && canShare ? <button className={styles.shareControl} type="button" aria-pressed={sharing} disabled={!connected} onClick={() => switchShare(!sharing)}><ControlIcon kind="share" />{roomCopy.share}</button> : null}
+          {controls.includes("participants") ? <button type="button" className={styles.participantCount} data-participants={present} aria-pressed={focus ? peopleOpen : sideTab === "participants"} onClick={() => (focus ? togglePeople() : setSideTab("participants"))}><span className={styles.controlGlyph}><ControlIcon kind="people" /><span className={styles.participantBadge}>{present}</span></span>{roomCopy.participants}</button> : null}
+          {/* In full screen the chat (and the AI Tutor in it) is a float this control opens and folds; its badge counts the lines not yet seen. */}
+          {focus ? <button type="button" className={styles.chatControl} aria-pressed={sideOpen} onClick={() => setChatFloat(!sideOpen)}><span className={styles.controlGlyph}><ControlIcon kind="chat" />{unread > 0 ? <span className={styles.unreadBadge} aria-label={fill(roomCopy.unread, { count: unread })}>{unread}</span> : null}</span>{roomCopy.chat}</button> : null}
           {controls.includes("raise-hand") ? <button type="button" aria-pressed={Boolean(roomApi?.localParticipant.identity && hands.includes(roomApi.localParticipant.identity))} disabled={!connected} onClick={() => {
             const identity = roomApi?.localParticipant.identity || "";
             if (!identity) return;
@@ -1117,6 +1288,14 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           }}><ControlIcon kind="hand" />{roomCopy.raiseHand}</button> : null}
           {controls.includes("leave") ? <button className={styles.leaveControl} type="button" onClick={() => { setLeaveError(""); setLeaveAsked(true); }}><ControlIcon kind="leave" />{roomCopy.leave}</button> : null}
         </div>
+        {focus && !sideOpen && preview ? (
+          <div className={styles.chatPreview} role="status" data-testid="chat-preview">
+            <button type="button" onClick={() => setChatFloat(true)}>
+              <span className={preview.tutor ? styles.tutorAvatar : styles.rosterInitial} aria-hidden="true">{preview.tutor ? "✦" : preview.from.slice(0, 1)}</span>
+              <span className={styles.chatPreviewText}><strong>{preview.from}</strong><span>{chatPreviewText(preview.text)}</span></span>
+            </button>
+          </div>
+        ) : null}
         {leaveAsked ? (
           <PortalDialog className={styles.modal} labelledBy="study-session-leave-title" onClose={() => setLeaveAsked(false)} busy={leaving}>
             <form method="dialog" onSubmit={(event) => { event.preventDefault(); void leaveSession(); }}>
@@ -1131,11 +1310,17 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
           </PortalDialog>
         ) : null}
       </div>
-      <aside className={styles.side} aria-label={sideTab === "participants" ? roomCopy.participants : roomCopy.chat}>
-        <div className={styles.sideTabs} role="tablist">
+      <aside ref={chatDrag.ref} style={focus ? chatDrag.style : undefined} data-dragging={chatDrag.dragging ? "true" : "false"} className={styles.side} aria-label={sideTab === "participants" ? roomCopy.participants : roomCopy.chat}>
+        {focus ? (
+          <div className={styles.floatHead} {...chatDrag.handle}>
+            <strong>{roomCopy.chat}</strong>
+            <span>{roomCopy.chatHint}</span>
+            <button type="button" aria-label={roomCopy.hideChat} onClick={() => setChatFloat(false)}><ControlIcon kind="minimize" /></button>
+          </div>
+        ) : <div className={styles.sideTabs} role="tablist">
           <button type="button" role="tab" aria-selected={sideTab === "participants"} onClick={() => setSideTab("participants")}>{roomCopy.participants} <span className={styles.tabCount}>{present}/{session.maxParticipants}</span></button>
           <button type="button" role="tab" aria-selected={sideTab === "chat"} onClick={() => setSideTab("chat")}>{roomCopy.chat}{unread > 0 ? <span className={styles.tabCount} aria-label={fill(roomCopy.unread, { count: unread })}>{unread}</span> : null}</button>
-        </div>
+        </div>}
         {sideTab === "participants" ? (
           <div className={styles.sidePanel} role="tabpanel">
             <ul className={styles.roster}>
@@ -1149,7 +1334,7 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               chatPinnedRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
             }}>
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
-                <p className={`${styles.chatBody} ${styles.tutorBody}`}>
+                <div className={`${styles.chatBody} ${styles.tutorBody}`}>
                   {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participant, question: line.replyTo.question })}</span> : null}
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
@@ -1158,12 +1343,8 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
                         const pending = tutorPendingState(session, line.id, line.queuedPosition);
                         return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
                       })()
-                    : <>
-                        {line.text.split("\n").filter((row) => row.trim()).map((row, index) => index === 0
-                          ? <span key="lead" className={styles.tutorLead}>{row}</span>
-                          : <span key={index} className={styles.tutorRow}>{row}</span>)}
-                      </>}
-                </p>
+                    : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
+                </div>
               ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
@@ -1209,7 +1390,10 @@ export function StudySessionRoom({ locale, sessionId }: { locale: Locale; sessio
               }} placeholder={roomCopy.chatPlaceholder} disabled={!connected} />
               {/* 599:1392: the box holds only the placeholder and the send control; the @AI Tutor entry sits on the box's bottom-left edge instead of a label above the text (BUG-0197). */}
               {tutorOffline ? <p className={`${styles.chatBody} ${styles.tutorOffline}`} role="status" data-testid="tutor-offline">{roomCopy[`tutorOff_${tutorOffline}`]}</p> : null}
-              {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} disabled={Boolean(tutorOffline)} title={tutorOffline ? roomCopy[`tutorOff_${tutorOffline}`] : undefined} onClick={() => setAddressTutor((on) => !on)}>{roomCopy.aiTutor}</button> : null}
+              <div className={styles.chatFormRow}>
+                {session.aiTutorEnabled ? <button className={styles.tutorEntry} type="button" aria-pressed={addressTutor} disabled={Boolean(tutorOffline)} title={tutorOffline ? roomCopy[`tutorOff_${tutorOffline}`] : undefined} onClick={() => setAddressTutor((on) => !on)}><ControlIcon kind="sparkle" />{roomCopy.aiTutor}</button> : null}
+                <span className={styles.enterHint} aria-hidden="true">{roomCopy.enterToSend}</span>
+              </div>
               <button className={styles.sendButton} type="submit" disabled={!connected} aria-label={roomCopy.send}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 8.5 14 2 9 14l-1.5-4.5L2 8.5Z" fill="currentColor" /></svg></button>
             </form>
           </>

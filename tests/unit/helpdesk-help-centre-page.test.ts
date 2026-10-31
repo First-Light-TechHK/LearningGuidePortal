@@ -157,17 +157,22 @@ test("the search box follows ?q= when the page changes in place: a topic link, A
     const v = view(page, locale);
     const searchFaqs = { invoice: [FAQS[3]], inv: [FAQS[3], FAQS[4]] };
     const go = (searchParams: Record<string, string>) => mountHelp(page, { locale, faqs: FAQS, search: searchFaqs, searchParams, inPlace: true });
+    // root.render commits asynchronously, so the box is read once React has applied the new page (bounded).
+    const box = async (want: string, message?: string) => {
+      for (let i = 0; i < 100 && (await v.search.inputValue()) !== want; i++) await page.waitForTimeout(20);
+      assert.equal(await v.search.inputValue(), want, message);
+    };
     await v.search.pressSequentially("invoice", { delay: 20 });
     await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 0, null, { timeout: 3_000 });
     await go({ q: "invoice" });
-    assert.equal(await v.search.inputValue(), "invoice");
+    await box("invoice");
     await go({ category: "courses_learning" });
     assert.equal(await page.getByRole("heading", { level: 2 }).first().textContent(), v.copy.categories.courses_learning);
-    assert.equal(await v.search.inputValue(), "", "a topic link clears the box");
+    await box("", "a topic link clears the box");
     await go({ q: "inv" });
-    assert.equal(await v.search.inputValue(), "inv", "Back to an older search shows its words");
+    await box("inv", "Back to an older search shows its words");
     await go({});
-    assert.equal(await v.search.inputValue(), "", "All articles clears the box");
+    await box("", "All articles clears the box");
     await page.waitForTimeout(400);
     assert.deepEqual(await harness.nav(), [["replace", `/${locale}/help?q=invoice`]], "following the URL does not start a search of its own");
     await v.search.pressSequentially("invoice", { delay: 20 });

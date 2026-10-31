@@ -5,6 +5,7 @@ import { buildSubscriptionSelection, subscriptionCoverage } from "./subscription
 import { withPlanAiPoints } from "./planAiPoints";
 import { highestProgressLesson } from "./courseProgressAction";
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
+import { courseModePosition } from "@/lib/courseModePosition";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
@@ -551,21 +552,37 @@ export async function getCourseLearningMode(userId: string, courseId: string): P
   return isCourseLearningMode(mode) ? mode : null;
 }
 
-export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown): Promise<CourseLearningModeResult> {
+export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string): Promise<CourseLearningModeResult> {
   if (!isCourseLearningMode(mode)) throw new CourseLearningModeError("invalid");
+  if (lessonId !== undefined && (typeof lessonId !== "string" || !lessonId.trim() || lessonId.length > 200)) throw new CourseLearningModeError("invalid");
   return editData(data => {
     const user = data.users.find(item => item.id === userId && item.status === "active");
     if (!user) throw new CourseLearningModeError("unauthorised");
     const course = data.courses.find(item => item.id === courseId && item.status === "published");
     if (!course) throw new CourseLearningModeError("notFound");
-    user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
     const record = data.studyRecords.find(record => record.userId === userId && record.courseId === course.id);
+    let position: CourseLearningModeResult["position"];
+    if (lessonId !== undefined) {
+      const lessons = course.sections.flatMap(section => section.lessons);
+      const entitled = Boolean(activeEntitlement(data, userId, course.id));
+      const preview = publicFirstLesson(course);
+      if (!lessons.some(lesson => lesson.id === lessonId) || !entitled && preview?.id !== lessonId) throw new CourseLearningModeError("notFound");
+      const accessiblePoints = courseKnowledgePoints(course, mode).filter(point => {
+        if (entitled) return true;
+        if (!preview || point.lessonId !== preview.id) return false;
+        if (mode === "text") return !point.contentId || textLessonPreviewPolicy(preview.contents || [], preview.preview).points[point.contentId] !== "locked";
+        const content = preview.contents?.find(content => content.id === point.contentId);
+        return Boolean(content && (content.startSeconds || 0) < (preview.preview?.videoLimitSeconds ?? 60));
+      });
+      position = courseModePosition({ course, mode, userId, record, events: data.studyEvents, fallbackLessonId: lessonId, accessiblePoints });
+    }
+    user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
     if (record) {
       record.selectedMode = mode;
       record.currentMode = mode;
       record.updatedAt = now();
     }
-    return { courseId: course.id, mode };
+    return { courseId: course.id, mode, ...(lessonId !== undefined ? { position } : {}) };
   });
 }
 
@@ -2262,7 +2279,7 @@ export async function listStudyGroupReminders(
   isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string }) => boolean | Promise<boolean>
 ) {
   const data = await readProductAggregate();
-  const reminders: Array<{ body: string; createdAt: string }> = [];
+  const reminders: Array<{ body: string; createdAt: string; sessionId?: string }> = [];
   const seenSessionIds = new Set<string>();
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
@@ -2270,7 +2287,7 @@ export async function listStudyGroupReminders(
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
     if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);
-    reminders.push({ body: item.body, createdAt: item.createdAt });
+    reminders.push(item.sessionId ? { body: item.body, createdAt: item.createdAt, sessionId: item.sessionId } : { body: item.body, createdAt: item.createdAt });
   }
   return reminders;
 }

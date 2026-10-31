@@ -33,6 +33,12 @@ export async function register(context: BrowserContext, side: string, nickname: 
 
 export async function registerAndEntitle(context: BrowserContext, side: string, nickname: string, appOrigin: string) {
   const email = await register(context, side, nickname);
+  await entitle(context, appOrigin);
+  return email;
+}
+
+// Gives a signed-in learner Course access through the demo trial checkout.
+export async function entitle(context: BrowserContext, appOrigin: string) {
   const quote = await context.request.post("/api/subscription/quote", {
     data: { planId: PLAN_ID, kind: "trial" },
   });
@@ -48,7 +54,6 @@ export async function registerAndEntitle(context: BrowserContext, side: string, 
     data: { orderId: (await trial.json()).order.id, action: "complete" },
   });
   expect(confirmed.status(), "demo confirm").toBe(200);
-  return email;
 }
 
 // A signed-in learner with Course access (entitle: false leaves them without).
@@ -115,7 +120,8 @@ export const groupPath = (groupId: string) => `/en-GB/portal/study-groups?group=
 // A user's own chat line uses a <span> for the "@AI Tutor" mention, so an exact
 // <strong>AI Tutor</strong> identifies the tutor's line only.
 export function tutorLine(page: Page) {
-  return page.locator("article").filter({ has: page.locator('strong:text-is("AI Tutor")') }).locator("p");
+  // The answer block (2026-10-29: it renders Markdown paragraphs and KaTeX inside it).
+  return page.locator("article").filter({ has: page.locator('strong:text-is("AI Tutor")') }).locator('[class*="tutorBody"]');
 }
 
 // Asks the AI Tutor from the room's chat, the way a member does.
@@ -126,8 +132,9 @@ export async function askTutor(page: Page, question: string) {
   await page.getByRole("button", { name: "Send", exact: true }).click();
 }
 
+// Exact names: on the list, a group card whose title holds "Share" would match too.
 export async function expectConnected(page: Page, participants: number) {
-  await expect(page.getByRole("button", { name: "Share" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
   await expect(page.locator(`[data-participants="${participants}"]`)).toBeVisible();
 }
 
@@ -152,10 +159,15 @@ export async function openLiveRoom(browser: Browser, appOrigin: string, label: s
   }
   const pageB = await member.context.newPage();
   const pageA = await host.context.newPage();
+  // Nobody enters before the Host starts (deep links 2026-10-30): the
+  // session link takes the member to the list's waiting dialog and the Host
+  // to the list, where they start; the dialog then moves the member in.
   await pageB.goto(roomPath(sessionId));
-  await expect(pageB.getByText("Waiting for the host to start the session...")).toBeVisible();
+  await expect(pageB.getByRole("dialog").getByText("Waiting for the host to start the session...")).toBeVisible();
   await pageA.goto(roomPath(sessionId));
   await pageA.getByRole("button", { name: "Start Live Session" }).click();
+  await pageA.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
+  await pageB.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 30_000 });
   await expectConnected(pageA, 2);
   await expectConnected(pageB, 2);
   return {

@@ -5,7 +5,7 @@ import { isolate, setCookie, clearCookies, SESSION_COOKIE } from "./harness";
 import { readProductData, writeProductData, verifiedUser } from "../unit/helpers/my-learning";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("receipt follows the explicit page locale over the saved account locale, including errors", async () => {
+test("receipt errors/demo follow page locale while Stripe destinations retain the provider URL", async () => {
   const { restore } = await isolate("lg-receipt-locale-");
   const previousSecret = process.env.STRIPE_SECRET_KEY;
   process.env.STRIPE_SECRET_KEY = "sk_test_receipt_locale_fixture";
@@ -15,9 +15,13 @@ test("receipt follows the explicit page locale over the saved account locale, in
     const token = (await store.createSession(user.id)).token;
     setCookie(SESSION_COOKIE, token);
     const order = { id: "locale-receipt", userId: user.id, planId: "everything-pc-6", quoteId: "locale-quote", kind: "purchase" as const, paymentMode: "demo" as const, status: "paid" as const, amountMinor: 9900, currency: "usd" as const, createdAt: "2026-10-21T00:00:00Z" };
-    const data = await readProductData(); data.orders.push(order, { ...order, id: "provider-error", paymentMode: "stripe", stripeInvoiceId: "in_locale_error" }); await writeProductData(data);
+    const data = await readProductData(); data.orders.push(order, { ...order, id: "provider-error", paymentMode: "stripe", stripeInvoiceId: "in_locale_error" }, { ...order, id: "stripe-success", paymentMode: "stripe", stripeInvoiceId: "in_locale_success" }); await writeProductData(data);
     const stripe = (await import("../../services/stripeClient")).getStripe();
-    stripe.invoices.retrieve = (async () => { throw new Error("provider unavailable"); }) as typeof stripe.invoices.retrieve;
+    stripe.invoices.retrieve = (async (id:string) => {
+      if(id==="in_locale_error") throw new Error("provider unavailable");
+      assert.equal(id,"in_locale_success");
+      return {id,status:"paid",amount_paid:9900,currency:"usd",hosted_invoice_url:"https://invoice.stripe.com/i/original?token=provider"};
+    }) as unknown as typeof stripe.invoices.retrieve;
     const { GET } = await import("../../app/api/my-learning/orders/[orderId]/receipt/route");
     const request = (locale?: string, orderId = order.id) => GET(new Request(`http://localhost/api/my-learning/orders/${orderId}/receipt${locale === undefined ? "" : `?locale=${encodeURIComponent(locale)}`}`), { params: Promise.resolve({ orderId }) });
     for (const accountLocale of ["en-GB", "zh-CN"] as const) {
@@ -31,6 +35,9 @@ test("receipt follows the explicit page locale over the saved account locale, in
         assert.ok(html.includes(`<h1>${copy.title}</h1>`));
         assert.ok(html.includes(`<dt>${copy.amount}</dt><dd>US$99.00</dd>`));
         assert.equal(response.headers.get("cache-control"), "private, no-store");
+        const hosted=await request(pageLocale,"stripe-success");
+        assert.equal(hosted.status,302);
+        assert.equal(hosted.headers.get("location"),"https://invoice.stripe.com/i/original?token=provider");
         const missing = await request(pageLocale, "missing-order");
         assert.equal(missing.status, 404); assert.equal(await missing.text(), copy.unavailable);
         const providerError = await request(pageLocale, "provider-error");
