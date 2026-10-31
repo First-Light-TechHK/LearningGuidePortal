@@ -13,8 +13,8 @@
 // 4. small talk is a reply line (hello: the chips follow; thanks after an answer: the rating card);
 // 5. an explanation shows "Explained from <question>", which shows the card again, and votes; one the
 //    card does not cover is the fixed line and the handover card;
-// 6. the Part C polish (accent outline pills, glow, lift, soft shadows, the send button inside the
-//    box) with sizes unchanged and no lift or transition under reduced motion (owner 2026-10-30: keep it);
+// 6. the Gemini-style look (owner 2026-10-31, replacing the Part C polish): filled pill chips, the pill composer
+//    with the send button inside that grows with the text, the spectrum ring; nothing moves under reduced motion;
 // 7. an end tells the server and starts the next session, whose chips replace the greeting's.
 // No Figma frame for any of these: 待视觉验收.
 import assert from "node:assert/strict";
@@ -163,9 +163,10 @@ test("v5 Part H: opening, the quoted excerpt with the Figma Related FAQ link, cl
     const related = card.getByRole("link", { name: fillTemplate(c.copy.relatedFaq, { question: "Paid but no access?" }), exact: true });
     assert.equal(await related.getAttribute("href"), `/${locale}/help?faq=${NODE.payment}`, "the full answer in the Help Centre");
     assert.equal(await card.locator(".helpdesk-chat-source").count(), 0, "no separate source line");
-    const style = await card.evaluate((node) => { const s = getComputedStyle(node); return { bar: s.borderLeftWidth, color: s.borderLeftColor, fill: s.backgroundColor }; });
-    assert.deepEqual(style, { bar: "3px", color: "rgb(36, 104, 245)", fill: "rgb(243, 247, 255)" }, "light fill and the 3 px brand-blue bar");
-    assert.deepEqual(await related.evaluate((node) => { const s = getComputedStyle(node); return [s.color, s.fontSize, s.fontWeight]; }), ["rgb(31, 108, 244)", "11px", "500"], "1394:56");
+    // Gemini-style look (owner 2026-10-31): a soft card with a 3 px spectrum edge; the source as a pill.
+    const style = await card.evaluate((node) => { const s = getComputedStyle(node); const edge = getComputedStyle(node, "::before"); return { fill: s.backgroundColor, radius: s.borderTopLeftRadius, edge: edge.width, spectrum: edge.backgroundImage.startsWith("linear-gradient") }; });
+    assert.deepEqual(style, { fill: "rgb(248, 250, 253)", radius: "16px", edge: "3px", spectrum: true }, "light card with the spectrum edge");
+    assert.deepEqual(await related.evaluate((node) => { const s = getComputedStyle(node); return [s.fontSize, s.fontWeight, s.borderTopLeftRadius]; }), ["12px", "500", "999px"], "the source pill");
     await page.waitForFunction((opening) => document.querySelector(".helpdesk-chat-live")?.textContent?.startsWith(opening) ?? false, "Don't worry, here's how:");
     const said = (await c.live.textContent()) ?? "";
     const order = ["Don't worry, here's how:", "Sign out and sign in again", "Still nothing after ten minutes?", "Try that and tell me how it goes.", c.copy.followUpsTitle, "Still no access?"].map((part) => said.indexOf(part));
@@ -330,63 +331,77 @@ test("v5 Part D: an explanation says which card it explains and shows it again, 
   }
 });
 
-test("v5 Part C: accent pill chips with glow and a 1 px lift, the glowing input with the round send button inside, soft shadows, the same sizes; no lift or transition under reduced motion", async () => {
+test("Gemini look (owner 2026-10-31): filled pill chips whose arrow nudges, the pill composer with the round send button inside that fills once there is text and grows with it, the spectrum ring on focus; nothing moves under reduced motion", async () => {
   const locale: Locale = "en-GB";
   const harness = await open(locale, () => ({ status: 500 }));
   const { page } = harness;
   await page.setViewportSize({ width: 1440, height: 1024 });
   const c = ui(page, locale);
   const chip = c.panel.locator(".helpdesk-chat-chip").first();
-  const css = (selector: string, property: string) => c.panel.locator(selector).first().evaluate((node, name) => getComputedStyle(node).getPropertyValue(name), property);
-  assert.equal(await chip.evaluate((node) => getComputedStyle(node).borderTopLeftRadius), "999px", "pill");
-  assert.deepEqual(await chip.evaluate((node) => [node.getBoundingClientRect().width, node.getBoundingClientRect().height]), [404, 36], "the chip size is unchanged");
-  assert.equal(await css(".helpdesk-chat-chip", "border-top-color"), "rgb(157, 188, 246)", "an accent outline");
+  const css = (selector: string, property: string, pseudo?: string) => c.panel.locator(selector).first().evaluate((node, [name, after]) => getComputedStyle(node, after || undefined).getPropertyValue(name!), [property, pseudo ?? ""] as const);
+  await page.waitForTimeout(900);
+  assert.equal(await css(".helpdesk-chat-chip", "border-top-left-radius"), "20px", "pill");
+  assert.equal(await css(".helpdesk-chat-chip", "background-color"), "rgb(240, 244, 249)", "filled, no outline");
+  assert.equal(await css(".helpdesk-chat-chip", "font-size"), "13px");
   await chip.hover();
-  await page.waitForTimeout(250);
-  assert.equal(await css(".helpdesk-chat-chip", "transform"), "matrix(1, 0, 0, 1, 0, -1)", "a 1 px lift on hover");
-  assert.equal(await css(".helpdesk-chat-chip", "box-shadow"), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px", "the glow");
-  assert.equal(await css(".helpdesk-chat-chip", "background-color"), "rgb(239, 245, 255)", "a light fill");
+  await page.waitForTimeout(400);
+  assert.equal(await css(".helpdesk-chat-chip", "background-color"), "rgb(231, 237, 246)", "a darker fill on hover");
+  assert.equal(await css(".helpdesk-chat-chip svg", "transform"), "matrix(1, 0, 0, 1, 3, 0)", "the arrow nudges 3 px");
   await page.mouse.move(0, 0);
-  assert.equal(await c.panel.evaluate((node) => getComputedStyle(node).boxShadow), "rgba(15, 23, 42, 0.06) 0px 8px 24px 0px", "the panel's soft shadow");
-  assert.equal(await css(".helpdesk-chat-greeting", "box-shadow"), "rgba(15, 23, 42, 0.04) 0px 1px 2px 0px", "cards: a subtle shadow");
-  await c.input.focus();
-  await page.waitForTimeout(250);
-  assert.equal(await css(".helpdesk-chat-input", "box-shadow"), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px", "the input's 3 px soft glow");
-  assert.equal(await css(".helpdesk-chat-input", "border-top-color"), "rgb(36, 104, 245)", "and its accent border");
-  const box = (await c.input.boundingBox())!;
+  // The composer: a 56 px pill, the 40 px round send button inside it, ghost until there is text.
+  assert.equal(await css(".helpdesk-chat-composer", "border-top-left-radius"), "28px");
+  const box = (await c.panel.locator(".helpdesk-chat-composer").boundingBox())!;
   const send = (await c.send.boundingBox())!;
-  assert.deepEqual([send.width, send.height, box.height], [43, 43, 70], "sizes unchanged");
-  assert.ok(send.x > box.x && send.x + send.width < box.x + box.width && send.y > box.y && send.y + send.height < box.y + box.height, "the send button sits inside the box");
+  assert.deepEqual([send.width, send.height, (await c.input.boundingBox())!.height], [40, 40, 56]);
+  assert.ok(send.x > box.x && send.x + send.width < box.x + box.width && send.y > box.y && send.y + send.height < box.y + box.height, "the send button sits inside the pill");
   assert.equal(await css(".helpdesk-chat-send", "border-top-left-radius"), "50%", "round");
-  assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgb(36, 104, 245)", "accent");
-  // The text never runs under the button.
-  assert.ok(Number.parseFloat(await css(".helpdesk-chat-input", "padding-right")) >= box.x + box.width - send.x, "the input keeps room for the button");
-  // A long question's scrollbar never sits under the button: a thin one fits between the button and the box edge.
-  assert.equal(await css(".helpdesk-chat-input", "scrollbar-width"), "thin");
-  // (headless Chromium draws overlay scrollbars, so measure the room: Chrome's thin scrollbar is 11 px wide)
-  assert.ok(box.x + box.width - (send.x + send.width) >= 12, "room for a thin scrollbar right of the button, inside the 1 px border");
-  // Phone width: the button stays inside the box and the text still clears it.
+  assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgba(0, 0, 0, 0)", "ghost while there is nothing to send");
+  assert.equal(await css(".helpdesk-chat-composer", "opacity", "::before"), "0", "no ring before focus");
+  await c.input.focus();
+  await page.waitForTimeout(400);
+  assert.equal(await css(".helpdesk-chat-composer", "background-color"), "rgb(255, 255, 255)", "focus lifts the pill to white");
+  assert.equal(await css(".helpdesk-chat-composer", "opacity", "::before"), "1", "and shows the spectrum ring");
+  assert.match(await css(".helpdesk-chat-composer", "background-image", "::before"), /^conic-gradient/);
+  await c.input.fill("How do I reset my password?");
+  await page.waitForTimeout(400);
+  assert.equal(await css(".helpdesk-chat-send", "background-color"), "rgb(37, 99, 235)", "filled brand blue once there is text");
+  // The text never runs under the button: the textarea ends where the button starts.
+  assert.ok((await c.input.boundingBox())!.x + (await c.input.boundingBox())!.width <= send.x, "the text clears the button");
+  // It grows with the text, up to 168 px, then scrolls; sending shrinks it back.
+  await c.input.fill("one\ntwo\nthree");
+  await page.waitForTimeout(50);
+  assert.equal((await c.input.boundingBox())!.height, 100, "three lines: 3 × 22 + 34");
+  await c.input.fill(Array.from({ length: 12 }, (_, n) => `line ${n}`).join("\n"));
+  await page.waitForTimeout(50);
+  assert.equal((await c.input.boundingBox())!.height, 168, "capped");
+  assert.equal(await c.input.evaluate((node) => node.scrollHeight > node.clientHeight), true, "and scrolls inside");
+  await c.input.fill("");
+  await page.waitForTimeout(50);
+  assert.equal((await c.input.boundingBox())!.height, 56, "back to one line");
+  // Phone width: the button stays inside the pill.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(100);
-  const narrowBox = (await c.input.boundingBox())!;
+  const narrowBox = (await c.panel.locator(".helpdesk-chat-composer").boundingBox())!;
   const narrowSend = (await c.send.boundingBox())!;
-  assert.ok(narrowSend.x > narrowBox.x && narrowSend.x + narrowSend.width < narrowBox.x + narrowBox.width && narrowSend.y > narrowBox.y && narrowSend.y + narrowSend.height < narrowBox.y + narrowBox.height, "inside the box at 390 px");
-  assert.ok(Number.parseFloat(await css(".helpdesk-chat-input", "padding-right")) >= narrowBox.x + narrowBox.width - narrowSend.x, "and the text clears it");
+  assert.ok(narrowSend.x > narrowBox.x && narrowSend.x + narrowSend.width < narrowBox.x + narrowBox.width, "inside the pill at 390 px");
+  assert.ok(narrowBox.x + narrowBox.width <= 390, "no overflow at 390 px");
   await page.setViewportSize({ width: 1440, height: 1024 });
-  // Contact Support's inputs and select get the same glow.
+  // Contact Support's inputs keep their own glow (outside the panel).
   const subject = page.getByRole("textbox", { name: getMessages(locale).helpdesk.subject, exact: true });
   await subject.focus();
   await page.waitForTimeout(250);
   assert.equal(await subject.evaluate((node) => getComputedStyle(node).boxShadow), "rgba(37, 99, 235, 0.15) 0px 0px 0px 3px");
-  // Reduced motion: no lift and no transition.
+  // Reduced motion: no transition, no nudge, no flowing ring.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await chip.hover();
-  assert.equal(await css(".helpdesk-chat-chip", "transform"), "none", "no lift");
+  assert.equal(await css(".helpdesk-chat-chip svg", "transform"), "none", "no nudge");
   assert.equal(await css(".helpdesk-chat-chip", "transition-duration"), "0s", "no transition");
-  assert.equal(await css(".helpdesk-chat-input", "transition-duration"), "0s");
+  await c.input.focus();
+  assert.equal(await css(".helpdesk-chat-composer", "animation-name", "::before"), "none", "the ring holds still");
+  assert.equal(await css(".helpdesk-chat-greeting-title", "animation-name"), "none");
   await page.close();
 
-  // The Help Centre search gets the focus ring too (white on the blue hero, where a blue glow would not show).
+  // The Help Centre search keeps its focus ring (white on the blue hero, where a blue glow would not show).
   const help = await openHarness(browser, locale, () => ({ status: 500 }), `/${locale}/help`);
   assert.equal((await mountHelp(help.page, { locale, faqs: [] })).result, "rendered");
   const search = help.page.getByRole("searchbox", { name: getMessages(locale).helpCentre.searchLabel });

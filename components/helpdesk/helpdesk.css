@@ -105,89 +105,14 @@
 .helpdesk-danger-button { border-color: #dc2626; background: #dc2626; }
 .helpdesk-submit-button:disabled, .helpdesk-secondary-button:disabled, .helpdesk-danger-button:disabled, .helpdesk-cancel-button:disabled, .helpdesk-upload-button:disabled, .helpdesk-feedback-button:disabled { cursor: not-allowed; opacity: .6; }
 
-/* ---- AI Support Assistant chat panel (Figma 1262:62 / 1394:2). Typing dots, errors, fallback and focus states are 待视觉验收 ---- */
-.helpdesk-chat { display: flex; flex: 0 0 455px; flex-direction: column; width: 455px; height: 800px; box-sizing: border-box; overflow: hidden; border: 1px solid #dce5f2; border-radius: 11px; background: #fff; box-shadow: var(--hd-panel-shadow); }
-.helpdesk-chat p { margin: 0; }
-.helpdesk-chat-header { display: flex; flex: 0 0 51px; flex-direction: column; justify-content: flex-start; gap: 2px; width: 426px; height: 51px; box-sizing: border-box; padding: 7px 12px 0 14px; }
-.helpdesk-chat-header h2 { margin: 0; color: #17283f; font-size: 15px; font-weight: 600; line-height: 18px; }
-.helpdesk-chat-header p { color: #7a8ba1; font-size: 11px; line-height: 13px; }
-.helpdesk-chat-divider { flex: 0 0 1px; width: 426px; height: 1px; background: #e4ebf3; }
-.helpdesk-chat-messages { display: flex; flex: 0 0 664px; flex-direction: column; align-items: flex-start; height: 664px; box-sizing: border-box; padding: 13px 38px 13px 11px; overflow-y: auto; background: #f7faff; line-height: normal; overscroll-behavior: contain; }
-.helpdesk-chat-messages > * { flex: 0 0 auto; width: 404px; max-width: 100%; }
-.helpdesk-chat-messages > * + .helpdesk-chat-mine, .helpdesk-chat-messages > * + .helpdesk-chat-row { margin-top: 9px; }
-.helpdesk-chat-chips + .helpdesk-chat-mine, .helpdesk-chat-chips + .helpdesk-chat-row { margin-top: 17px !important; }
-.helpdesk-chat-row { display: flex; align-items: flex-start; gap: 8px; }
-.helpdesk-chat-avatar { display: grid; flex: 0 0 31px; width: 31px; height: 31px; place-items: center; border-radius: 16px; background: #e0ecff; color: #2468f5; }
-.helpdesk-chat-greeting { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; width: 365px; box-sizing: border-box; padding: 12px 13px; border: 1px solid #e1e9f4; border-radius: 10px; background: #fff; box-shadow: var(--hd-card-shadow); }
-.helpdesk-chat-greeting-title { color: #1c2d48; font-size: 14px; font-weight: 600; line-height: 17px; }
-.helpdesk-chat-greeting-body { color: #465a75; font-size: 12px; line-height: 15px; }
-.helpdesk-chat-greeting-limit { color: #60728d; font-size: 11px; line-height: 13px; }
-.helpdesk-chat-ideas { padding: 0; border: 0; background: none; color: #2370e9; font: inherit; font-size: 11px; font-weight: 500; line-height: 13px; text-align: left; cursor: pointer; }
-.helpdesk-chat-ideas:hover { text-decoration: underline; }
-.helpdesk-chat-try { margin-top: 10px !important; color: #516784; font-size: 12px; font-weight: 600; line-height: 15px; }
-/* Figma 1394:30 is a 124px box holding 3 × 36 + 2 × 7 = 122px of chips. */
-.helpdesk-chat-chips { display: flex; flex-direction: column; gap: 7px; margin: 9px 0 2px; padding: 0; list-style: none; }
-.helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 7px 14px; border: 1px solid var(--hd-accent-line); border-radius: 999px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; transition: background-color var(--hd-ease), border-color var(--hd-ease), box-shadow var(--hd-ease), transform var(--hd-ease); }
-.helpdesk-chat-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.helpdesk-chat-chip svg { flex: 0 0 14px; color: #7a8ba3; }
-.helpdesk-chat-chip:hover:not(:disabled) { border-color: var(--hd-chat-accent); background: var(--hd-accent-fill); box-shadow: var(--hd-glow); transform: var(--hd-lift); }
-.helpdesk-chat-chip:focus-visible { outline: none; border-color: var(--hd-chat-accent); box-shadow: var(--hd-glow); }
-.helpdesk-chat-chip:disabled { cursor: default; opacity: .7; }
-/* Figma 1394:44: a 48px row with the 46px bubble centred in it. */
-.helpdesk-chat-mine { display: flex; min-height: 48px; align-items: center; justify-content: flex-end; }
-.helpdesk-chat-question { width: 281px; max-width: 100%; min-height: 46px; box-sizing: border-box; padding: 13px 12px 8px; border-radius: 10px; background: #e0ecff; color: #254772; font-size: 12px; font-weight: 500; line-height: 15px; overflow-wrap: anywhere; white-space: pre-wrap; }
-/* Figma 1394:54 is 102px tall: 1 + 11 + text + 6 + link + 6 + 28 feedback row, clipped at the bottom. */
-.helpdesk-chat-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 365px; box-sizing: border-box; padding: 11px 11px 6px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; box-shadow: var(--hd-card-shadow); }
-.helpdesk-chat-answer-text, .helpdesk-chat-fallback { color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
-.helpdesk-chat-answer-text { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
-.helpdesk-chat-answer-text ol, .helpdesk-chat-answer-text ul { margin: 0; padding-left: 18px; }
-.helpdesk-chat-answer-text a { color: #1f6cf4; }
-.helpdesk-chat-related { color: #1f6cf4; font-size: 11px; font-weight: 500; line-height: 13px; text-decoration: none; }
-.helpdesk-chat-related:hover { text-decoration: underline; }
-.helpdesk-chat-feedback { display: flex; align-items: center; gap: 10px; height: 28px; }
-.helpdesk-chat-feedback > span { width: 69px; color: #7a8ba3; font-size: 11px; line-height: 13px; }
-.helpdesk-chat-vote { display: flex; height: 25px; box-sizing: border-box; align-items: center; gap: 5px; padding: 4px 6px 4px 7px; border: 1px solid #dce8f6; border-radius: 6px; background: #f2f8ff; font: inherit; font-size: 11px; font-weight: 500; line-height: 13px; cursor: pointer; }
-.helpdesk-chat-vote-yes { min-width: 64px; color: #2c649e; }
-.helpdesk-chat-vote-no { min-width: 47px; padding: 4px 7px 4px 8px; color: #5e7089; }
-.helpdesk-chat-vote[aria-pressed="true"] { border-color: #2468f5; background: #e0ecff; color: #1f4fa8; }
-.helpdesk-chat-vote:disabled { cursor: default; }
-.helpdesk-chat-vote:disabled:not([aria-pressed="true"]) { opacity: .5; }
-.helpdesk-chat-error { width: 365px; box-sizing: border-box; padding: 11px; border: 1px solid #fecaca; border-radius: 9px; background: #fef2f2; color: #b42318; font-size: 12px; line-height: 15px; }
-/* v7 Thinking card (no Figma frame, 待视觉验收): "Thinking" with the typing dots, then one line per workflow step the
-   server streamed; finished steps get a check, the current one a small spinner. Reuses the answer bubble's border. */
-.helpdesk-chat-typing { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 120px; max-width: 365px; min-height: 31px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; box-shadow: var(--hd-card-shadow); }
-.helpdesk-chat-thinking-head { display: flex; align-items: center; gap: 8px; color: #465a75; font-size: 12px; font-weight: 600; line-height: 15px; }
-.helpdesk-chat-dots { display: inline-flex; align-items: center; gap: 4px; }
-.helpdesk-chat-dots > span { width: 6px; height: 6px; border-radius: 3px; background: #95a3b8; animation: helpdesk-typing 1s infinite ease-in-out; }
-.helpdesk-chat-dots > span:nth-child(2) { animation-delay: .15s; }
-.helpdesk-chat-dots > span:nth-child(3) { animation-delay: .3s; }
-.helpdesk-chat-thinking-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.helpdesk-chat-thinking-step { display: flex; align-items: center; gap: 6px; color: #2f6ddd; font-size: 12px; line-height: 15px; animation: helpdesk-step-in .2s ease-out; }
-.helpdesk-chat-thinking-step[data-done] { color: #60728d; }
-.helpdesk-chat-thinking-step svg { flex: 0 0 12px; color: #16a34a; }
-.helpdesk-chat-thinking-spinner { flex: 0 0 12px; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid #dce7f7; border-top-color: var(--hd-chat-accent); border-radius: 50%; animation: helpdesk-spin .8s linear infinite; }
-@keyframes helpdesk-typing { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
-@keyframes helpdesk-spin { to { transform: rotate(360deg); } }
-@keyframes helpdesk-step-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .helpdesk-chat-dots > span, .helpdesk-chat-thinking-spinner, .helpdesk-chat-thinking-step { animation: none; } }
-.helpdesk-chat-info { display: flex; align-items: center; gap: 9px; min-height: 52px; box-sizing: border-box; margin-top: 15px; padding: 9px 11px 9px 10px; border-radius: 8px; background: #ebf3ff; }
-.helpdesk-chat-info svg { flex: 0 0 19px; color: #2468f5; }
-.helpdesk-chat-info p { color: #516985; font-size: 11px; line-height: 13px; }
-.helpdesk-chat-info-stacked { display: none; }
-/* No frame (待视觉验收): a vote that was not saved, in the inline error colour. */
-.helpdesk-chat-vote-error { margin: 2px 0 0; color: #b42318; font-size: 11px; line-height: 13px; }
-/* 11px Inter in a 13px line: Figma draws the glyphs 1px lower than Chrome does. Nudge them without moving the layout. */
-.helpdesk-chat-header p, .helpdesk-chat-greeting-limit, .helpdesk-chat-ideas, .helpdesk-chat-related, .helpdesk-chat-feedback > span, .helpdesk-chat-info p { position: relative; top: 1px; }
-/* v5 Part C: the round accent send button sits inside the input box (same 70 px box, same 43 px button; 待视觉验收).
-   A thin scrollbar stays in the 13 px between the button and the box edge, so a long question's scrollbar is never under the button. */
-.helpdesk-chat-footer { position: relative; display: flex; flex: 0 0 70px; align-items: center; gap: 8px; width: 426px; height: 70px; box-sizing: border-box; padding: 0 10px 0 11px; background: #fff; }
-.helpdesk-chat-input { flex: 1 1 auto; width: auto; min-width: 0; height: 70px; box-sizing: border-box; padding: 27px 64px 10px 12px; border: 1px solid var(--hd-accent-line); border-radius: 8px; background: #fff; color: #384e69; font: inherit; font-size: 12px; line-height: 15px; resize: none; scrollbar-width: thin; transition: border-color var(--hd-ease), box-shadow var(--hd-ease); }
-.helpdesk-chat-input::placeholder { color: #95a3b8; opacity: 1; }
-.helpdesk-chat-input:focus { border-color: var(--hd-chat-accent); outline: none; box-shadow: var(--hd-glow); }
-.helpdesk-chat-send { position: absolute; top: 13.5px; right: 23px; display: grid; width: 43px; height: 43px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--hd-chat-accent); color: #fff; cursor: pointer; transition: background-color var(--hd-ease), box-shadow var(--hd-ease); }
-.helpdesk-chat-send:focus-visible { outline: none; box-shadow: var(--hd-glow); }
-.helpdesk-chat-send:disabled { cursor: default; }
-.helpdesk-chat-send:hover:not(:disabled) { background: var(--hd-chat-accent-strong); box-shadow: var(--hd-glow); }
+/* The submit-time modal's "You might be asking" chips (Figma 1333:249 context). The chat panel has its own chips below. */
+.helpdesk-modal .helpdesk-chat-chips { display: flex; flex-direction: column; gap: 7px; margin: 9px 0 2px; padding: 0; list-style: none; }
+.helpdesk-modal .helpdesk-chat-chip { display: flex; width: 404px; max-width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 7px 14px; border: 1px solid var(--hd-accent-line); border-radius: 999px; background: #fff; color: #2f6ddd; font: inherit; font-size: 12px; font-weight: 500; line-height: 15px; text-align: left; cursor: pointer; transition: background-color var(--hd-ease), border-color var(--hd-ease), box-shadow var(--hd-ease), transform var(--hd-ease); }
+.helpdesk-modal .helpdesk-chat-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.helpdesk-modal .helpdesk-chat-chip svg { flex: 0 0 14px; color: #7a8ba3; }
+.helpdesk-modal .helpdesk-chat-chip:hover:not(:disabled) { border-color: var(--hd-chat-accent); background: var(--hd-accent-fill); box-shadow: var(--hd-glow); transform: var(--hd-lift); }
+.helpdesk-modal .helpdesk-chat-chip:focus-visible { outline: none; border-color: var(--hd-chat-accent); box-shadow: var(--hd-glow); }
+.helpdesk-modal .helpdesk-chat-chip:disabled { cursor: default; opacity: .7; }
 .helpdesk-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- success state (待视觉验收) ---- */
@@ -265,8 +190,6 @@
 .helpdesk-answer-back { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 8px; padding: 0; border: 0; background: none; color: #2563eb; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; }
 .helpdesk-answer-back:hover { text-decoration: underline; }
 .helpdesk-answer-back:disabled { cursor: not-allowed; opacity: .6; text-decoration: none; }
-.helpdesk-chat-alternatives { align-self: stretch; margin: 2px 0 4px; }
-.helpdesk-chat-alternatives .helpdesk-chat-chip { width: 100%; }
 
 /* ---- My enquiries + enquiry page (待视觉验收; account page look) ---- */
 .portal-account-page.helpdesk-account-page > .helpdesk-account-section { min-width: 0; padding-top: 50px; padding-bottom: 64px; }
@@ -339,14 +262,6 @@
   .helpdesk-form, .helpdesk-success { flex-basis: auto; width: 100%; }
   .helpdesk-divider { width: 100%; height: 1px; flex-basis: auto; }
   .helpdesk-card-content { padding-right: 48px; }
-  .helpdesk-chat { width: 100%; max-width: 455px; flex-basis: auto; }
-  .helpdesk-chat-header, .helpdesk-chat-divider, .helpdesk-chat-footer { width: 100%; }
-  .helpdesk-chat-messages { padding-right: 11px; }
-  .helpdesk-chat-messages > * { width: 100%; }
-  .helpdesk-chat-greeting, .helpdesk-chat-answer, .helpdesk-chat-error, .helpdesk-chat-card { width: auto; flex: 1 1 0; min-width: 0; }
-  /* Stacked under the form: the info box points up, not left (no frame, 待视觉验收). */
-  .helpdesk-chat-info-side { display: none; }
-  .helpdesk-chat-info-stacked { display: inline; }
 }
 @media (max-width: 720px) {
   .helpdesk-card { width: calc(100% - 24px); margin: 12px auto; }
@@ -422,40 +337,327 @@
   .help-centre-content { padding: 24px 16px 32px; }
   .help-centre-article-summary { white-space: normal; }
 }
-/* v4 Part B chat cards (handover, "Still need help?", the end line with the rating card): no Figma frame, 待视觉验收.
-   They reuse the answer bubble, the greeting title, the answer text, the form buttons and the v3 stars. */
-.helpdesk-chat-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 365px; box-sizing: border-box; padding: 11px; border: 1px solid #e1e9f4; border-radius: 9px; background: #fff; box-shadow: var(--hd-card-shadow); }
-.helpdesk-chat-card:focus { outline: none; }
-.helpdesk-chat-card:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-.helpdesk-chat-card-title { color: #1c2d48; font-size: 14px; font-weight: 600; line-height: 17px; }
-.helpdesk-chat-card-text, .helpdesk-chat-ended { color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
-.helpdesk-chat-ended { color: #60728d; font-weight: 600; }
-.helpdesk-chat-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.helpdesk-chat-card-actions .helpdesk-submit-button, .helpdesk-chat-card-actions .helpdesk-secondary-button, .helpdesk-chat-rating .helpdesk-secondary-button { padding: 6px 14px; font-size: 12px; }
-.helpdesk-chat-rating { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; align-self: stretch; padding: 12px; }
-.helpdesk-chat-rating h3 { margin: 0; color: #15233a; font-size: 14px; font-weight: 600; }
-.helpdesk-chat-rating:focus { outline: none; }
-.helpdesk-chat-rating:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-.helpdesk-chat-rating .helpdesk-stars button { width: 36px; height: 36px; }
-.helpdesk-chat-rating p.helpdesk-inline-error { color: #b91c1c; font-size: 12px; }
-.helpdesk-chat-rated { color: #027a48; }
-
-/* ---- v5 chat states (helpdesk-v5-context-chips-and-smalltalk.md Parts A, B, D, H; graph design §1). No Figma frame:
-   they reuse the answer bubble, chip and text styles and are 待视觉验收. ---- */
-.helpdesk-chat-opening, .helpdesk-chat-closing, .helpdesk-chat-reply { align-self: stretch; color: #384e69; font-size: 12px; line-height: 15px; overflow-wrap: anywhere; white-space: pre-wrap; }
-/* Part H: the approved card quoted in the bubble: light fill, a 3 px brand-blue bar on the left, the "Related FAQ" link under it. */
-.helpdesk-chat-excerpt { display: flex; flex-direction: column; gap: 6px; align-self: stretch; margin: 0; padding: 8px 10px 8px 11px; border-left: 3px solid var(--hd-chat-accent); border-radius: 0 6px 6px 0; background: var(--hd-quote-fill); }
-.helpdesk-chat-excerpt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
-.helpdesk-chat-expand { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: none; color: #1f6cf4; font: inherit; font-size: 11px; font-weight: 500; line-height: 13px; text-align: left; cursor: pointer; }
-.helpdesk-chat-expand:hover { text-decoration: underline; }
-.helpdesk-chat-expand:focus-visible, .helpdesk-chat-related:focus-visible { outline: none; border-radius: 3px; box-shadow: var(--hd-glow); }
-.helpdesk-chat-three-part .helpdesk-chat-try, .helpdesk-chat-smalltalk .helpdesk-chat-try { margin-top: 4px !important; }
-/* Graph design §1: A/B/C/D options, the chip with a letter badge. */
-.helpdesk-chat-option { justify-content: flex-start; }
-.helpdesk-chat-option > span:nth-child(2) { flex: 1 1 auto; }
-.helpdesk-chat-option-letter { display: inline-grid; flex: 0 0 20px; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--hd-accent-fill); color: var(--hd-chat-accent); font-size: 11px; font-weight: 600; line-height: 1; }
-.helpdesk-chat-choice-prompt { font-weight: 500; }
 @media (prefers-reduced-motion: reduce) {
-  .helpdesk-chat-chip, .helpdesk-chat-input, .helpdesk-chat-send, .helpdesk-submit-button, .helpdesk-secondary-button, .help-centre-search { transition: none; }
-  .helpdesk-chat-chip:hover:not(:disabled) { transform: none; }
+  .helpdesk-submit-button, .helpdesk-secondary-button, .help-centre-search { transition: none; }
+}
+
+/* ============================================================================================================
+   AI Support Assistant chat panel, Gemini-inspired (owner 2026-10-31: "像 Gemini 的设计和动效", colour and motion in
+   depth). Replaces the Figma 1262:62 / 1394:2 look of this panel only; the panel keeps its 455 × 800 slot on the
+   Contact Support page, its copy, its DOM order for screen readers and every behaviour. Original work: our own spark
+   mark and palette (brand blue into violet and rose), no Gemini assets.
+   Motion map (all of it off under prefers-reduced-motion):
+   - greeting: the spark lands, the gradient title sweeps once, text and chips rise in a stagger;
+   - a sent question rises from the composer; the composer grows with the text, gets a flowing gradient ring while
+     focused and a faster one while the assistant works;
+   - thinking: the spark turns with a breathing halo, "Thinking" and the current step shimmer, gradient skeleton
+     lines flow; the answer then reveals top-down like streamed text and its parts follow in a stagger;
+   - chips nudge their arrow, a vote pops, the header hairline fades in once the log scrolls;
+   - the panel itself: a fluorescent spectrum edge on all four sides with a soft scatter around it (owner
+     2026-10-31) that turns and breathes; it spreads and pulses while the assistant works and flares once when
+     a reply lands.
+   ============================================================================================================ */
+@property --hc-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --hc-comet { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.helpdesk-chat {
+  /* Surfaces: white canvas, then tinted greys that carry a little of the brand blue. */
+  --hc-canvas: #ffffff;
+  --hc-surface-1: #f8fafd;
+  --hc-surface-2: #f0f4f9;
+  --hc-surface-3: #e7edf6;
+  --hc-surface-4: #dce4ef;
+  --hc-outline: #c5ccd6;
+  --hc-outline-soft: #e3e8ef;
+  /* Text: near black for reading, two greys for secondary lines (all ≥ 4.5:1 on the surfaces above). */
+  --hc-ink: #1b1c1e;
+  --hc-ink-2: #444a52;
+  --hc-ink-3: #5c6470;
+  /* Brand blue as primary, a tonal container for selected states. */
+  --hc-primary: #2563eb;
+  --hc-primary-strong: #1d4ed8;
+  --hc-primary-tonal: #dce7fd;
+  --hc-on-tonal: #0d2c6e;
+  --hc-violet: #8b5cf6;
+  --hc-orchid: #c25fd0;
+  --hc-rose: #ea6a8a;
+  --hc-error-fill: #fdecea;
+  --hc-error-ink: #8c1d18;
+  --hc-success: #137333;
+  /* The spectrum: brand blue → violet → rose. */
+  --hc-spectrum: linear-gradient(90deg, var(--hc-primary) 0%, var(--hc-violet) 42%, var(--hc-orchid) 68%, var(--hc-rose) 100%);
+  --hc-spectrum-ring: conic-gradient(from var(--hc-angle), var(--hc-primary), var(--hc-violet), var(--hc-rose), #f2a65a, var(--hc-primary));
+  /* Motion: Material-style emphasised curves. */
+  --hc-ease-out: cubic-bezier(.05, .7, .1, 1);
+  --hc-ease-std: cubic-bezier(.2, 0, 0, 1);
+  --hc-fast: .15s;
+  --hc-med: .3s;
+  --hc-slow: .6s;
+  /* The glow around the panel (owner 2026-10-31: "四边都有的荧光，有散射"): fluorescent spectrum with a cyan note. */
+  /* Mixed in OKLCH where supported (below), so no stop turns grey on the way to the next; the sRGB fallback adds a rose stop for that. */
+  --hc-glow-ring: conic-gradient(from var(--hc-angle), #3b82f6, #22d3ee, #8b5cf6, #ec4899, #f59e0b, #f43f5e, #3b82f6);
+  /* The panel is its own stacking context, so the glow (z-index below its content) paints above the page card. */
+  position: relative; isolation: isolate;
+  display: flex; flex: 0 0 455px; flex-direction: column; width: 455px; height: 800px; box-sizing: border-box; overflow: visible;
+  border: 1px solid transparent; border-radius: 24px; background: transparent; color: var(--hc-ink);
+}
+@supports (background: conic-gradient(in oklch, red, blue)) {
+  .helpdesk-chat { --hc-glow-ring: conic-gradient(from var(--hc-angle) in oklch, #3b82f6, #22d3ee, #8b5cf6, #ec4899, #f59e0b, #3b82f6); }
+}
+/* Scatter: the same spectrum, blurred, all four sides; it breathes, turns slowly, and wakes up while the assistant works. */
+.helpdesk-chat::before {
+  position: absolute; z-index: -2; inset: -4px; border-radius: 28px; background: var(--hc-glow-ring); content: ""; filter: blur(16px); opacity: .5; pointer-events: none;
+  animation: hc-angle 6s linear infinite, hc-breathe 5s ease-in-out infinite;
+  transition: inset var(--hc-slow) var(--hc-ease-out), filter var(--hc-slow) var(--hc-ease-out);
+}
+/* The crisp fluorescent edge on all four sides, with the white panel surface inside it. */
+.helpdesk-chat::after {
+  position: absolute; z-index: -1; inset: -1px; box-sizing: border-box; border: 2px solid transparent; border-radius: 24px; content: ""; pointer-events: none;
+  background: linear-gradient(var(--hc-canvas), var(--hc-canvas)) padding-box, var(--hc-glow-ring) border-box;
+  animation: hc-angle 6s linear infinite;
+}
+.helpdesk-chat:focus-within::before { inset: -6px; }
+/* Thinking: a bright comet runs round the edge, faster than the colours turn (our own touch). */
+.helpdesk-chat[data-state="thinking"]::after {
+  background: linear-gradient(var(--hc-canvas), var(--hc-canvas)) padding-box, conic-gradient(from var(--hc-comet), transparent 0 70%, rgba(255, 255, 255, .95) 90%, transparent 100%) border-box, var(--hc-glow-ring) border-box;
+  animation: hc-angle 6s linear infinite, hc-comet 1.6s linear infinite;
+}
+/* Thinking: the scatter spreads and pulses faster; the turn keeps its pace, so the colours never jump. */
+.helpdesk-chat[data-state="thinking"]::before { inset: -8px; filter: blur(18px); animation: hc-angle 6s linear infinite, hc-breathe-fast 1.4s ease-in-out infinite; }
+/* A reply landed: one flare, then back to breathing. */
+.helpdesk-chat[data-flare="true"]::before { animation: hc-angle 6s linear infinite, hc-flare 1s var(--hc-ease-out) 1; }
+.helpdesk-chat p { margin: 0; }
+
+/* ---- header: the spark, the title and the subtitle; the hairline appears only once the log scrolls ---- */
+.helpdesk-chat-header { position: relative; z-index: 1; display: flex; flex: 0 0 auto; align-items: center; gap: 12px; box-sizing: border-box; padding: 16px 20px 14px; border-radius: 23px 23px 0 0; background: var(--hc-canvas); }
+.helpdesk-chat-header-text { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.helpdesk-chat-header h2 { margin: 0; color: var(--hc-ink); font-size: 16px; font-weight: 600; line-height: 20px; letter-spacing: -.005em; }
+.helpdesk-chat-header p { color: var(--hc-ink-3); font-size: 12px; line-height: 16px; }
+.helpdesk-chat-header .helpdesk-chat-spark { flex: 0 0 26px; width: 26px; height: 26px; }
+.helpdesk-chat-divider { position: relative; z-index: 1; flex: 0 0 1px; height: 1px; background: var(--hc-outline-soft); box-shadow: 0 6px 12px -6px rgba(15, 23, 42, .18); opacity: 0; transition: opacity var(--hc-med) var(--hc-ease-std); }
+.helpdesk-chat[data-scrolled="true"] .helpdesk-chat-divider { opacity: 1; }
+
+/* ---- the spark mark (ours: a four-point spark with a satellite dot, filled with the spectrum) ---- */
+.helpdesk-chat-spark { display: block; overflow: visible; }
+.helpdesk-chat-avatar { position: relative; display: grid; flex: 0 0 28px; width: 28px; height: 28px; place-items: center; margin-top: 1px; }
+.helpdesk-chat-avatar .helpdesk-chat-spark { width: 24px; height: 24px; }
+/* Thinking: the spark turns and a soft spectrum halo breathes behind it. */
+.helpdesk-chat-avatar::before { position: absolute; inset: -3px; border-radius: 50%; background: var(--hc-spectrum-ring); content: ""; filter: blur(7px); opacity: 0; transform: scale(.6); transition: opacity var(--hc-med), transform var(--hc-med) var(--hc-ease-out); }
+.helpdesk-chat-avatar[data-state="thinking"]::before { opacity: .45; transform: scale(1); animation: hc-halo 2.4s var(--hc-ease-std) infinite, hc-angle 3s linear infinite; }
+.helpdesk-chat-avatar[data-state="thinking"] .helpdesk-chat-spark { animation: hc-spin 1.6s var(--hc-ease-std) infinite; }
+/* A new answer: the spark lands with one turn. */
+.helpdesk-chat-row.is-new > .helpdesk-chat-avatar .helpdesk-chat-spark, .helpdesk-chat-greeting-row .helpdesk-chat-avatar .helpdesk-chat-spark { animation: hc-land .7s var(--hc-ease-out) both; }
+
+/* ---- the log ---- */
+.helpdesk-chat-messages {
+  display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; align-items: stretch; box-sizing: border-box; padding: 8px 20px 20px; overflow-y: auto; line-height: normal; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--hc-surface-4) transparent;
+  /* A faint aurora behind the greeting that scrolls away with it. */
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(37, 99, 235, .07), transparent 60%),
+    radial-gradient(90% 55% at 100% 0%, rgba(234, 106, 138, .06), transparent 60%),
+    radial-gradient(80% 45% at 55% 0%, rgba(139, 92, 246, .06), transparent 65%),
+    var(--hc-canvas);
+  background-attachment: local;
+}
+.helpdesk-chat-messages > * { flex: 0 0 auto; }
+.helpdesk-chat-messages > * + .helpdesk-chat-mine, .helpdesk-chat-messages > * + .helpdesk-chat-row { margin-top: 20px; }
+.helpdesk-chat-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.helpdesk-chat-row > :not(.helpdesk-chat-avatar) { flex: 1 1 0; min-width: 0; }
+
+/* ---- greeting: the spectrum title, the body, the limit line ---- */
+.helpdesk-chat-greeting { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 2px 0 0; }
+.helpdesk-chat-greeting-title { padding-bottom: 2px; background: var(--hc-spectrum); background-size: 200% 100%; background-position: 0 0; -webkit-background-clip: text; background-clip: text; color: transparent; font-size: 24px; font-weight: 600; line-height: 30px; letter-spacing: -.01em; animation: hc-sweep 1.6s var(--hc-ease-std) both, hc-rise var(--hc-slow) var(--hc-ease-out) both; }
+.helpdesk-chat-greeting-body { color: var(--hc-ink-2); font-size: 14px; line-height: 21px; animation: hc-rise var(--hc-slow) var(--hc-ease-out) .08s both; }
+.helpdesk-chat-greeting-limit { color: var(--hc-ink-3); font-size: 12px; line-height: 17px; animation: hc-rise var(--hc-slow) var(--hc-ease-out) .14s both; }
+.helpdesk-chat-ideas { padding: 0; border: 0; background: none; color: var(--hc-primary); font: inherit; font-size: 12px; font-weight: 500; line-height: 17px; text-align: left; cursor: pointer; animation: hc-rise var(--hc-slow) var(--hc-ease-out) .2s both; }
+.helpdesk-chat-ideas:hover { text-decoration: underline; }
+.helpdesk-chat-ideas:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 2px; border-radius: 4px; }
+.helpdesk-chat .helpdesk-chat-try { margin-top: 20px; color: var(--hc-ink-3); font-size: 12px; font-weight: 500; line-height: 16px; letter-spacing: .01em; }
+.helpdesk-chat .helpdesk-chat-answer .helpdesk-chat-try { margin-top: 4px; }
+/* The greeting's chips line up with the text column (the 28 px spark + 12 px gap), as the replies do. */
+.helpdesk-chat-messages > .helpdesk-chat-try, .helpdesk-chat-messages > .helpdesk-chat-chips { margin-left: 40px !important; }
+.helpdesk-chat-messages > .helpdesk-chat-try { animation: hc-rise var(--hc-slow) var(--hc-ease-out) .2s both; }
+
+/* ---- suggestion chips: filled pills, arrow nudges on hover, a stagger as they appear ---- */
+.helpdesk-chat .helpdesk-chat-chips { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.helpdesk-chat-messages > .helpdesk-chat-chips > li, .helpdesk-chat-row.is-new .helpdesk-chat-chips > li { animation: hc-rise .45s var(--hc-ease-out) both; animation-delay: calc(var(--i, 0) * 60ms + .22s); }
+.helpdesk-chat .helpdesk-chat-chip { display: flex; width: 100%; min-height: 40px; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 14px 9px 16px; border: 1px solid transparent; border-radius: 20px; background: var(--hc-surface-2); color: var(--hc-ink); font: inherit; font-size: 13px; font-weight: 500; line-height: 18px; text-align: left; cursor: pointer; transition: background-color var(--hc-fast) var(--hc-ease-std), border-color var(--hc-fast), transform var(--hc-fast) var(--hc-ease-std), box-shadow var(--hc-fast); }
+.helpdesk-chat .helpdesk-chat-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.helpdesk-chat .helpdesk-chat-chip svg { flex: 0 0 16px; color: var(--hc-ink-3); transition: transform var(--hc-med) var(--hc-ease-out), color var(--hc-fast); }
+.helpdesk-chat .helpdesk-chat-chip:hover:not(:disabled) { background: var(--hc-surface-3); }
+.helpdesk-chat .helpdesk-chat-chip:hover:not(:disabled) svg { color: var(--hc-primary); transform: translateX(3px); }
+.helpdesk-chat .helpdesk-chat-chip:active:not(:disabled) { background: var(--hc-surface-4); transform: scale(.985); }
+.helpdesk-chat .helpdesk-chat-chip:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 2px; }
+.helpdesk-chat .helpdesk-chat-chip:disabled { cursor: default; opacity: .55; }
+.helpdesk-chat-alternatives { align-self: stretch; margin: 2px 0 4px; }
+/* Graph design §1: A/B/C/D options, the chip with a tonal letter badge. */
+.helpdesk-chat .helpdesk-chat-option { justify-content: flex-start; }
+.helpdesk-chat-option > span:nth-child(2) { flex: 1 1 auto; }
+.helpdesk-chat-option-letter { display: inline-grid; flex: 0 0 22px; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--hc-canvas); color: var(--hc-primary); box-shadow: inset 0 0 0 1px var(--hc-outline-soft); font-size: 11px; font-weight: 600; line-height: 1; transition: background-color var(--hc-fast), color var(--hc-fast); }
+.helpdesk-chat-option:hover:not(:disabled) .helpdesk-chat-option-letter { background: var(--hc-primary); color: #fff; box-shadow: none; }
+
+/* ---- the learner's question: a tinted bubble on the right, rising from the composer ---- */
+.helpdesk-chat-mine { display: flex; justify-content: flex-end; }
+.helpdesk-chat-question { max-width: 82%; box-sizing: border-box; padding: 11px 16px; border-radius: 22px 6px 22px 22px; background: linear-gradient(135deg, #e6eefd 0%, #ece8fc 100%); color: var(--hc-ink); font-size: 14px; line-height: 21px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.helpdesk-chat-mine.is-new .helpdesk-chat-question { transform-origin: 100% 100%; animation: hc-send .42s var(--hc-ease-out) both; }
+
+/* ---- the assistant's turn: no bubble, the text sits on the canvas next to the spark ---- */
+.helpdesk-chat-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; box-sizing: border-box; padding: 3px 0 0; color: var(--hc-ink); }
+.helpdesk-chat-answer-text, .helpdesk-chat-fallback { color: var(--hc-ink); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.helpdesk-chat-answer-text { display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+.helpdesk-chat-answer-text ol, .helpdesk-chat-answer-text ul { display: flex; flex-direction: column; gap: 4px; margin: 0; padding-left: 20px; }
+.helpdesk-chat-answer-text strong { font-weight: 600; }
+.helpdesk-chat-answer-text a { color: var(--hc-primary); text-underline-offset: 2px; }
+.helpdesk-chat-opening, .helpdesk-chat-closing, .helpdesk-chat-reply { align-self: stretch; color: var(--hc-ink); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.helpdesk-chat-choice-prompt { font-weight: 500; }
+/* A new reply reveals top-down like streamed text, and its parts follow one after another. The mask lives only in
+   the keyframes, so once the reveal ends nothing clips the focus rings. */
+.helpdesk-chat-row.is-new > .helpdesk-chat-answer { animation: hc-reveal 1.1s var(--hc-ease-std) backwards; }
+.helpdesk-chat-row.is-new > .helpdesk-chat-answer > * { animation: hc-rise .5s var(--hc-ease-out) both; }
+.helpdesk-chat-row.is-new > .helpdesk-chat-answer > :nth-child(2) { animation-delay: .12s; }
+.helpdesk-chat-row.is-new > .helpdesk-chat-answer > :nth-child(3) { animation-delay: .24s; }
+.helpdesk-chat-row.is-new > .helpdesk-chat-answer > :nth-child(4) { animation-delay: .36s; }
+.helpdesk-chat-row.is-new > .helpdesk-chat-answer > :nth-child(n+5) { animation-delay: .46s; }
+
+/* Part H: the approved card quoted in the reply: a soft card with a spectrum edge, the source as a pill under it. */
+.helpdesk-chat-excerpt { position: relative; display: flex; flex-direction: column; gap: 10px; align-self: stretch; margin: 0; padding: 14px 16px 12px 18px; border: 1px solid var(--hc-outline-soft); border-radius: 16px; background: var(--hc-surface-1); }
+.helpdesk-chat-excerpt::before { position: absolute; top: 12px; bottom: 12px; left: 0; width: 3px; border-radius: 0 3px 3px 0; background: linear-gradient(180deg, var(--hc-primary), var(--hc-violet) 60%, var(--hc-rose)); content: ""; }
+.helpdesk-chat-excerpt .helpdesk-chat-answer-text { font-size: 13.5px; line-height: 21px; }
+.helpdesk-chat-excerpt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.helpdesk-chat-related { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; box-sizing: border-box; padding: 4px 11px 4px 9px; border: 1px solid var(--hc-outline-soft); border-radius: 999px; background: var(--hc-canvas); color: var(--hc-ink-2); font-size: 12px; font-weight: 500; line-height: 16px; text-decoration: none; transition: background-color var(--hc-fast), border-color var(--hc-fast), color var(--hc-fast); }
+.helpdesk-chat-related::before { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--hc-spectrum); content: ""; }
+.helpdesk-chat-related:hover { border-color: var(--hc-outline); background: var(--hc-surface-2); color: var(--hc-ink); }
+.helpdesk-chat-expand { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 0; border-radius: 8px; background: none; color: var(--hc-primary); font: inherit; font-size: 12px; font-weight: 500; line-height: 16px; text-align: left; cursor: pointer; transition: background-color var(--hc-fast); }
+.helpdesk-chat-expand:hover { background: var(--hc-surface-2); }
+.helpdesk-chat-expand svg { transition: transform var(--hc-med) var(--hc-ease-out); }
+.helpdesk-chat-expand:focus-visible, .helpdesk-chat-related:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 2px; }
+.helpdesk-chat-explained { align-self: flex-start; margin-left: -6px; }
+
+/* ---- the vote: ghost pills with thumbs; the chosen one pops into the tonal fill ---- */
+.helpdesk-chat-feedback { display: flex; align-items: center; gap: 4px; margin-top: -2px; }
+.helpdesk-chat-feedback > span { margin-right: 4px; color: var(--hc-ink-3); font-size: 12px; line-height: 16px; }
+.helpdesk-chat-vote { display: inline-flex; height: 32px; box-sizing: border-box; align-items: center; gap: 6px; padding: 0 12px 0 10px; border: 0; border-radius: 16px; background: transparent; color: var(--hc-ink-2); font: inherit; font-size: 12px; font-weight: 500; line-height: 16px; cursor: pointer; transition: background-color var(--hc-fast), color var(--hc-fast); }
+.helpdesk-chat-vote:hover:not(:disabled) { background: var(--hc-surface-2); color: var(--hc-ink); }
+.helpdesk-chat-vote:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 1px; }
+.helpdesk-chat-vote[aria-pressed="true"] { background: var(--hc-primary-tonal); color: var(--hc-on-tonal); }
+.helpdesk-chat-vote[aria-pressed="true"] svg { fill: currentColor; animation: hc-pop .45s var(--hc-ease-out); }
+.helpdesk-chat-vote:disabled { cursor: default; }
+.helpdesk-chat-vote:disabled:not([aria-pressed="true"]) { opacity: .45; }
+.helpdesk-chat-vote-error { margin: 0; color: var(--hc-error-ink); font-size: 12px; line-height: 16px; }
+
+.helpdesk-chat-error { padding: 12px 16px; border-radius: 16px; background: var(--hc-error-fill); color: var(--hc-error-ink); font-size: 13.5px; line-height: 20px; }
+.helpdesk-chat-row.is-new > .helpdesk-chat-error { animation: hc-rise .4s var(--hc-ease-out) both; }
+
+/* ---- v7 Thinking: shimmering title and current step, the step list, flowing spectrum skeleton lines ---- */
+.helpdesk-chat-thinking { display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 4px 0 0; animation: hc-fade var(--hc-med) var(--hc-ease-std) both; }
+.helpdesk-chat-thinking-head { display: flex; align-items: center; gap: 8px; }
+.helpdesk-chat-thinking-title, .helpdesk-chat-thinking-step:not([data-done]) > span:last-child {
+  background: linear-gradient(90deg, var(--hc-ink-3) 0%, var(--hc-ink-3) 35%, var(--hc-primary) 50%, var(--hc-ink-3) 65%, var(--hc-ink-3) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: hc-shimmer 1.8s linear infinite;
+}
+.helpdesk-chat-thinking-title { font-size: 14px; font-weight: 500; line-height: 20px; }
+.helpdesk-chat-thinking-steps { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.helpdesk-chat-thinking-step { display: flex; align-items: center; gap: 8px; color: var(--hc-ink-3); font-size: 13px; line-height: 18px; animation: hc-rise .35s var(--hc-ease-out) both; }
+.helpdesk-chat-thinking-step[data-done] { color: var(--hc-ink-3); }
+.helpdesk-chat-thinking-step svg { flex: 0 0 14px; color: var(--hc-success); animation: hc-pop .35s var(--hc-ease-out); }
+.helpdesk-chat-thinking-spinner { flex: 0 0 14px; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; background: var(--hc-spectrum-ring); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px)); animation: hc-angle .9s linear infinite; }
+.helpdesk-chat-skeleton { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+.helpdesk-chat-skeleton > span { display: block; height: 10px; border-radius: 5px; background: linear-gradient(90deg, #e3ebfb 0%, #cfdcfb 20%, #e2d7fb 40%, #f6dbe4 60%, #e3ebfb 80%, #cfdcfb 100%); background-size: 300% 100%; animation: hc-flow 2.2s linear infinite; }
+.helpdesk-chat-skeleton > span:nth-child(1) { width: 100%; }
+.helpdesk-chat-skeleton > span:nth-child(2) { width: 88%; animation-delay: -.25s; }
+.helpdesk-chat-skeleton > span:nth-child(3) { width: 56%; animation-delay: -.5s; }
+
+/* ---- the info line under the log: a quiet note ---- */
+.helpdesk-chat-info { display: flex; align-items: flex-start; gap: 10px; box-sizing: border-box; margin-top: 24px; padding: 12px 14px; border-radius: 16px; background: var(--hc-surface-1); }
+.helpdesk-chat-info svg { flex: 0 0 18px; margin-top: 1px; color: var(--hc-primary); }
+.helpdesk-chat-info p { color: var(--hc-ink-3); font-size: 12px; line-height: 17px; }
+.helpdesk-chat-info-stacked { display: none; }
+
+/* ---- v4 / v5 cards (handover, "Still need help?", the end with its rating, the waiting enquiry): tonal surfaces with pill buttons ---- */
+.helpdesk-chat-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; box-sizing: border-box; padding: 16px 18px; border-radius: 20px; background: var(--hc-surface-2); }
+.helpdesk-chat-card-handover { background: linear-gradient(135deg, #eaf0fe 0%, #f1ebfd 100%); }
+.helpdesk-chat-row.is-new > .helpdesk-chat-card { animation: hc-rise .5s var(--hc-ease-out) .1s both; }
+.helpdesk-chat-card:focus { outline: none; }
+.helpdesk-chat-card:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 2px; }
+.helpdesk-chat-card-title { color: var(--hc-ink); font-size: 15px; font-weight: 600; line-height: 20px; }
+.helpdesk-chat-card-text { color: var(--hc-ink-2); font-size: 13.5px; line-height: 20px; overflow-wrap: anywhere; }
+.helpdesk-chat-ended { color: var(--hc-ink-3); font-size: 12px; font-weight: 500; line-height: 16px; letter-spacing: .02em; }
+.helpdesk-chat-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.helpdesk-chat .helpdesk-submit-button, .helpdesk-chat .helpdesk-secondary-button { min-height: 36px; padding: 8px 18px; border: 0; border-radius: 18px; font-size: 13px; font-weight: 500; line-height: 20px; transition: background-color var(--hc-fast), box-shadow var(--hc-fast), transform var(--hc-fast) var(--hc-ease-std); }
+.helpdesk-chat .helpdesk-submit-button { background: var(--hc-primary); }
+.helpdesk-chat .helpdesk-submit-button:hover { background: var(--hc-primary-strong); box-shadow: 0 1px 3px rgba(37, 99, 235, .3), 0 4px 10px -2px rgba(37, 99, 235, .3); }
+.helpdesk-chat .helpdesk-secondary-button { background: var(--hc-canvas); box-shadow: inset 0 0 0 1px var(--hc-outline); color: var(--hc-primary) !important; }
+.helpdesk-chat .helpdesk-secondary-button:hover { background: var(--hc-surface-1); }
+.helpdesk-chat .helpdesk-submit-button:active, .helpdesk-chat .helpdesk-secondary-button:active { transform: scale(.97); }
+.helpdesk-chat .helpdesk-submit-button:focus-visible, .helpdesk-chat .helpdesk-secondary-button:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 2px; box-shadow: none; }
+.helpdesk-chat-rating { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; align-self: stretch; padding: 4px 0 0; border: 0; background: none; }
+.helpdesk-chat-rating h3 { margin: 0; color: var(--hc-ink); font-size: 14px; font-weight: 600; }
+.helpdesk-chat-rating:focus { outline: none; }
+.helpdesk-chat-rating:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 4px; border-radius: 8px; }
+.helpdesk-chat-rating .helpdesk-stars { gap: 4px; }
+.helpdesk-chat-rating .helpdesk-stars button { width: 38px; height: 38px; border: 0; border-radius: 50%; background: transparent; color: #e0a10b; transition: background-color var(--hc-fast), transform var(--hc-fast) var(--hc-ease-out); }
+.helpdesk-chat-rating .helpdesk-stars button:hover, .helpdesk-chat-rating .helpdesk-stars button:focus-visible { background: #fdf3d8; transform: scale(1.12); }
+.helpdesk-chat-rating .helpdesk-stars button:focus-visible { outline: 2px solid #e0a10b; outline-offset: 1px; }
+.helpdesk-chat-rating p.helpdesk-inline-error { border-radius: 12px; font-size: 12px; }
+.helpdesk-chat-rated { color: var(--hc-success); }
+
+/* ---- the composer: a filled pill that grows with the text; a flowing spectrum ring while focused, faster while the assistant works ---- */
+.helpdesk-chat-footer { position: relative; display: flex; flex: 0 0 auto; flex-direction: column; box-sizing: border-box; padding: 6px 16px 16px; border-radius: 0 0 23px 23px; background: var(--hc-canvas); }
+.helpdesk-chat-composer { position: relative; display: flex; align-items: flex-end; border-radius: 28px; background: var(--hc-surface-2); transition: background-color var(--hc-med) var(--hc-ease-std), box-shadow var(--hc-med) var(--hc-ease-std); }
+.helpdesk-chat-composer::before { position: absolute; inset: -1.5px; box-sizing: border-box; padding: 1.5px; border-radius: inherit; background: var(--hc-spectrum-ring); content: ""; opacity: 0; pointer-events: none; transition: opacity var(--hc-med) var(--hc-ease-std); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.helpdesk-chat-composer:hover { background: var(--hc-surface-3); }
+.helpdesk-chat-composer:focus-within { background: var(--hc-canvas); box-shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 8px 24px -8px rgba(37, 52, 99, .22); }
+.helpdesk-chat-composer:focus-within::before { opacity: 1; animation: hc-angle 6s linear infinite; }
+.helpdesk-chat-composer[data-busy="true"]::before { opacity: 1; animation: hc-angle 1.6s linear infinite; }
+.helpdesk-chat-input { display: block; flex: 1 1 auto; width: auto; min-width: 0; height: 56px; min-height: 56px; max-height: 168px; box-sizing: border-box; padding: 17px 8px 17px 22px; overflow-y: auto; border: 0; border-radius: 28px; background: transparent; color: var(--hc-ink); font: inherit; font-size: 14px; line-height: 22px; resize: none; scrollbar-width: thin; }
+.helpdesk-chat-input::placeholder { color: var(--hc-ink-3); opacity: 1; }
+.helpdesk-chat-input:focus { outline: none; box-shadow: none; }
+.helpdesk-chat-send { position: relative; display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; margin: 8px 8px 8px 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--hc-ink-3); cursor: pointer; transition: background-color var(--hc-med) var(--hc-ease-std), color var(--hc-med), transform var(--hc-med) var(--hc-ease-out), box-shadow var(--hc-fast); }
+.helpdesk-chat-send svg { transition: transform var(--hc-med) var(--hc-ease-out); }
+.helpdesk-chat-send:not(:disabled) { background: var(--hc-primary); color: #fff; animation: hc-pop .35s var(--hc-ease-out); }
+.helpdesk-chat-send:hover:not(:disabled) { background: var(--hc-primary-strong); box-shadow: 0 2px 8px -1px rgba(37, 99, 235, .45); }
+.helpdesk-chat-send:hover:not(:disabled) svg { transform: translateX(1px) rotate(-8deg); }
+.helpdesk-chat-send:active:not(:disabled) { transform: scale(.92); }
+.helpdesk-chat-send:focus-visible { outline: 2px solid var(--hc-primary); outline-offset: 2px; }
+.helpdesk-chat-send:disabled { cursor: default; }
+
+/* ---- keyframes ---- */
+@keyframes hc-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes hc-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hc-send { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes hc-reveal {
+  from { -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 33.3%, transparent 50%, transparent 100%); mask-image: linear-gradient(180deg, #000 0%, #000 33.3%, transparent 50%, transparent 100%); -webkit-mask-size: 100% 300%; mask-size: 100% 300%; -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+  to { -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 33.3%, transparent 50%, transparent 100%); mask-image: linear-gradient(180deg, #000 0%, #000 33.3%, transparent 50%, transparent 100%); -webkit-mask-size: 100% 300%; mask-size: 100% 300%; -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@keyframes hc-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@keyframes hc-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@keyframes hc-flow { from { background-position: 0 0; } to { background-position: -150% 0; } }
+@keyframes hc-spin { 0% { transform: rotate(0); } 60%, 100% { transform: rotate(360deg); } }
+@keyframes hc-land { from { opacity: 0; transform: rotate(-120deg) scale(.4); } to { opacity: 1; transform: none; } }
+@keyframes hc-halo { 0%, 100% { opacity: .3; transform: scale(.85); } 50% { opacity: .6; transform: scale(1.1); } }
+@keyframes hc-angle { to { --hc-angle: 360deg; } }
+@keyframes hc-breathe { 0%, 100% { opacity: .42; } 50% { opacity: .68; } }
+@keyframes hc-comet { to { --hc-comet: 360deg; } }
+@keyframes hc-breathe-fast { 0%, 100% { opacity: .55; } 50% { opacity: .9; } }
+@keyframes hc-flare { 0% { opacity: .9; } 30% { opacity: 1; } 100% { opacity: .5; } }
+@keyframes hc-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+
+/* ---- smaller screens: the panel stacks under the form at full width (up to 455 px) ---- */
+@media (max-width: 1100px) {
+  .helpdesk-chat { width: 100%; max-width: 455px; flex-basis: auto; }
+  .helpdesk-chat-info-side { display: none; }
+  .helpdesk-chat-info-stacked { display: inline; }
+}
+@media (max-width: 720px) {
+  .helpdesk-chat { height: min(800px, calc(100vh - 32px)); min-height: 560px; border-radius: 20px; }
+  .helpdesk-chat-messages { padding: 8px 16px 16px; }
+  .helpdesk-chat-footer { padding: 6px 12px 12px; }
+}
+
+/* ---- reduced motion: no movement at all; shimmer and flow hold still, the ring stays (static) on focus ---- */
+@media (prefers-reduced-motion: reduce) {
+  .helpdesk-chat *, .helpdesk-chat *::before, .helpdesk-chat *::after, .helpdesk-chat::before, .helpdesk-chat::after { animation: none !important; transition: none !important; }
+  .helpdesk-chat .helpdesk-chat-chip:hover:not(:disabled) svg, .helpdesk-chat-send:hover:not(:disabled) svg { transform: none; }
+  .helpdesk-chat .helpdesk-chat-chip:active:not(:disabled), .helpdesk-chat-send:active:not(:disabled), .helpdesk-chat .helpdesk-submit-button:active, .helpdesk-chat .helpdesk-secondary-button:active, .helpdesk-chat-rating .helpdesk-stars button:hover, .helpdesk-chat-rating .helpdesk-stars button:focus-visible { transform: none; }
+  .helpdesk-chat-greeting-title { background-position: 0 0; }
+  .helpdesk-chat-thinking-title, .helpdesk-chat-thinking-step:not([data-done]) > span:last-child { background: none; color: var(--hc-ink-2); }
 }

@@ -97,7 +97,7 @@ test("v7 Thinking card: an error event shows the same message as the plain error
   await page.close();
 });
 
-test("v7 Thinking card: no spinner, dot or slide-in animation under reduced motion", async () => {
+test("v7 Thinking card: no spinner, shimmer, skeleton flow, turning spark or slide-in animation under reduced motion", async () => {
   const { page, card, input } = await open("en-GB");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await input.fill("reset password");
@@ -105,7 +105,9 @@ test("v7 Thinking card: no spinner, dot or slide-in animation under reduced moti
   await card.waitFor();
   await push(page, "step", { step: "retrieve" });
   await card.locator(".helpdesk-chat-thinking-spinner").waitFor();
-  const names = await card.evaluate((node) => [".helpdesk-chat-dots > span", ".helpdesk-chat-thinking-spinner", ".helpdesk-chat-thinking-step"].map((selector) => getComputedStyle(node.querySelector(selector)!).animationName));
-  assert.deepEqual(names, ["none", "none", "none"]);
+  const names = await card.evaluate((node) => [".helpdesk-chat-thinking-title", ".helpdesk-chat-thinking-spinner", ".helpdesk-chat-thinking-step", ".helpdesk-chat-skeleton > span"].map((selector) => getComputedStyle(node.querySelector(selector)!).animationName));
+  assert.deepEqual(names, ["none", "none", "none", "none"]);
+  const spark = await page.locator(".helpdesk-chat-avatar[data-state=thinking]").evaluate((node) => [getComputedStyle(node.querySelector(".helpdesk-chat-spark")!).animationName, getComputedStyle(node, "::before").animationName]);
+  assert.deepEqual(spark, ["none", "none"], "the spark and its halo hold still");
   await page.close();
 });

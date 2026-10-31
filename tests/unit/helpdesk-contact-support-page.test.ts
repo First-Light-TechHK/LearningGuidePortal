@@ -704,7 +704,7 @@ test("chat transcript is kept in sessionStorage per account; the enquiry sends t
   await page.close();
 });
 
-test("chat: “We’d love to hear your ideas” picks Other Enquiries and focuses Subject; the panel matches 1216:6 at 1440 × 1024", async () => {
+test("chat: “We’d love to hear your ideas” picks Other Enquiries and focuses Subject; the panel keeps its 1216:6 slot at 1440 × 1024 with the Gemini-style insides", async () => {
   for (const locale of LOCALES) {
     const harness = await open(locale, api({}), { locale, chips: CHIPS });
     const { page } = harness;
@@ -723,17 +723,18 @@ test("chat: “We’d love to hear your ideas” picks Other Enquiries and focus
     assert.equal(panel.x - card.x, 925, "the panel starts 925 px into the card");
     assert.equal(card.width, 1399);
     assert.equal(card.x, 20, "the card starts at x = 20 as in Figma (not 20.5 from centring)");
-    assert.equal((await box(".helpdesk-chat-header h2")).y - panel.y, 8, "the title sits 7 px under the header top (1394:9)");
-    const chips = c.panel.locator(".helpdesk-chat-chips");
-    assert.equal((await box(".helpdesk-chat-chips")).height + Number.parseFloat(await chips.evaluate((node) => getComputedStyle(node).marginBottom)), 124, "the chips block takes 124 px (1394:30)");
-    assert.equal((await box(".helpdesk-chat-header")).height, 51);
-    assert.equal((await box(".helpdesk-chat-messages")).height, 664);
-    assert.equal((await box(".helpdesk-chat-chip")).width, 404);
-    assert.equal((await box(".helpdesk-chat-chip")).height, 36);
-    assert.equal((await box(".helpdesk-chat-greeting")).width, 365);
-    assert.equal((await box(".helpdesk-chat-input")).height, 70);
-    assert.deepEqual([(await box(".helpdesk-chat-send")).width, (await box(".helpdesk-chat-send")).height], [43, 43]);
-    assert.equal((await box(".helpdesk-chat-info")).width, 404);
+    // Inside the 455 × 800 slot the panel has the Gemini-style look (owner 2026-10-31; no Figma frame): a 68 px header,
+    // the log, and the 56 px pill composer with the 40 px send button inside it; the chips and replies line up with
+    // the text column right of the 28 px spark.
+    assert.equal((await box(".helpdesk-chat-header")).height, 68);
+    assert.equal((await box(".helpdesk-chat-messages")).height, 651, "the log takes what the header and composer leave");
+    assert.deepEqual([(await box(".helpdesk-chat-chip")).width, (await box(".helpdesk-chat-chip")).height], [373, 40]);
+    assert.equal((await box(".helpdesk-chat-chip")).x - (await box(".helpdesk-chat-greeting")).x, 0, "the chips line up with the greeting text");
+    assert.equal((await box(".helpdesk-chat-greeting")).x - (await box(".helpdesk-chat-avatar")).x, 40, "right of the 28 px spark and a 12 px gap");
+    assert.equal((await box(".helpdesk-chat-input")).height, 56);
+    assert.deepEqual([(await box(".helpdesk-chat-send")).width, (await box(".helpdesk-chat-send")).height], [40, 40]);
+    assert.equal((await box(".helpdesk-chat-info")).width, 413);
+    assert.equal(panel.y + panel.height - ((await box(".helpdesk-chat-composer")).y + (await box(".helpdesk-chat-composer")).height), 17, "the composer sits 16 px above the panel's bottom border");
     await page.setViewportSize({ width: 800, height: 1024 });
     const narrowForm = (await page.locator("form.helpdesk-form").boundingBox())!;
     const narrowPanel = (await c.panel.boundingBox())!;

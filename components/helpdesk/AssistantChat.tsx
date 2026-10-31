@@ -52,8 +52,15 @@
 //   release has no steps: the card shows "Thinking" alone.
 // None of these states has a Figma frame: they reuse the answer bubble, chip,
 // button and star styles and are 待视觉验收 (the Part C polish too).
-import { Bot, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Send, Star } from "lucide-react";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+// Look (owner 2026-10-31, "像 Gemini 的设计和动效", colour and motion in depth): the panel is restyled after
+// Gemini in an original way (our spark mark, brand blue into violet and rose; helpdesk.css has the motion map).
+// UI only: the DOM order screen readers follow, the copy and every behaviour above are unchanged. What the look
+// adds here: the spark avatar (turning while the assistant thinks), entries that arrived in this view carry
+// is-new so only they animate (a transcript restored from the tab never replays), the header hairline once the
+// log scrolls, gradient skeleton lines in the Thinking card, the composer that grows with the text (up to 168 px)
+// and thumbs on the vote. All motion stops under prefers-reduced-motion.
+import { Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, SendHorizontal, Star, ThumbsDown, ThumbsUp } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { AssistantNextStep, AssistantSessionResponse, AssistantStep, AssistantTurn, ClickVia, LearnerEndReason } from "@/contracts/helpdesk";
 import { cardsAfterChange, chatSessionId, currentSession, endSession, idleDeadline, isHumanRequest, ratingAfterFarewell } from "@/modules/helpdesk/chatSession";
 import { assistIdsOf, chatStorageKey, fillTemplate, optionLetter, readTranscript, settleTranscript, storedTurn, type ChatEntry } from "@/modules/helpdesk/learnerUi";
@@ -71,6 +78,19 @@ const THINKING_COPY = {
   smalltalk: "thinkingSmalltalk",
   ground: "thinkingGround"
 } as const satisfies Record<AssistantStep, string>;
+
+/** The assistant's mark (ours, not Gemini's): a four-point spark with a satellite dot, filled with the brand spectrum. */
+function Spark() {
+  const gradient = `hc-spark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  return <svg className="helpdesk-chat-spark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <defs><linearGradient id={gradient} x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop offset="0" stopColor="#2563eb" /><stop offset=".55" stopColor="#8b5cf6" /><stop offset="1" stopColor="#ea6a8a" /></linearGradient></defs>
+    <path d="M12 3C12.8 7.6 16.4 11.2 21 12C16.4 12.8 12.8 16.4 12 21C11.2 16.4 7.6 12.8 3 12C7.6 11.2 11.2 7.6 12 3Z" fill={`url(#${gradient})`} />
+    <circle cx="20" cy="4.3" r="1.6" fill={`url(#${gradient})`} />
+  </svg>;
+}
+
+/** The composer's tallest height (px); a longer question scrolls inside it. */
+const COMPOSER_MAX = 168;
 
 /** A starter or (v5) situation chip: an FAQ / entry node question; reason signal = it matched the learner's situation. */
 export type ChatChip = { id: string; question: string; reason?: "signal" | "popular" };
@@ -142,6 +162,22 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const shown = useRef({ count: 0, pending: false });
+  /** Entries restored from the tab when the panel loaded: they never animate in (only what arrives in this view does). */
+  const restored = useRef(Number.POSITIVE_INFINITY);
+  /** The log has scrolled: the header hairline shows. */
+  const [scrolled, setScrolled] = useState(false);
+  /** A reply just landed: the panel's glow flares once (1 s). */
+  const [flare, setFlare] = useState(false);
+  const wasPending = useRef(false);
+  useEffect(() => {
+    const ended = wasPending.current && !pending;
+    wasPending.current = pending;
+    // A new question while the flare runs: the thinking glow takes over.
+    if (!ended) { if (pending) setFlare(false); return; }
+    setFlare(true);
+    const timer = setTimeout(() => setFlare(false), 1000);
+    return () => clearTimeout(timer);
+  }, [pending]);
   const report = useRef(onAssistIds);
   report.current = onAssistIds;
   /** v4: the learner's last input in the panel (epoch ms: typing, a question, a vote, a card button); 0 while the shown times say enough. */
@@ -174,6 +210,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     if (deadline !== null && deadline <= now) stored = [...stored, endSession(stored, "idle")];
     // An older transcript has no times: count from now.
     lastInput.current = deadline === null ? now : 0;
+    restored.current = stored.length;
     setEntries(stored);
     setLoaded(true);
   }, [storageKey, setEntries]);
@@ -201,6 +238,13 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     }
     node.scrollTop = node.scrollHeight;
   }, [entries, pending]);
+  // The composer grows with the text, up to COMPOSER_MAX, then scrolls.
+  useLayoutEffect(() => {
+    const node = input.current;
+    if (!node) return;
+    node.style.height = "";
+    node.style.height = `${Math.min(node.scrollHeight, COMPOSER_MAX)}px`;
+  }, [draft]);
   // v4: after End chat the rating card (or the thanks) takes focus so it is read out; after a rating is saved or skipped, the end line keeps it.
   // v5: a rating card after thanks that was skipped is gone, so focus goes back to the input.
   useEffect(() => {
@@ -450,18 +494,19 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   /** A list of chip buttons (situation chips, "You might be asking", follow-ups): the starter chip style. */
   const chipButtons = (items: Array<{ key: string; label: string; onClick: () => void }>, props: { className?: string; labelledBy?: string }) =>
     <ul className={`helpdesk-chat-chips${props.className ? ` ${props.className}` : ""}`} aria-labelledby={props.labelledBy}>
-      {items.map((item) => <li key={item.key}><button type="button" className="helpdesk-chat-chip" title={item.label} disabled={pending} onClick={item.onClick}><span>{item.label}</span><ChevronRight size={14} aria-hidden="true" /></button></li>)}
+      {items.map((item, position) => <li key={item.key} style={{ "--i": position } as CSSProperties}><button type="button" className="helpdesk-chat-chip" title={item.label} disabled={pending} onClick={item.onClick}><span>{item.label}</span><ChevronRight size={14} aria-hidden="true" /></button></li>)}
     </ul>;
   const situationChips = (list: ChatChip[], className: string | undefined, labelledBy: string) =>
     chipButtons(list.map((chip) => ({ key: chip.id, label: chip.question, onClick: () => void ask({ kind: "chip", message: chip.question, nodeId: chip.id, via: chip.reason === "signal" ? "signal" : "starter" }) })), { className, labelledBy });
 
-  const row = (index: number, body: ReactNode) => <div key={index} data-entry={index} className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>{body}</div>;
+  const fresh = (index: number) => (index >= restored.current ? " is-new" : "");
+  const row = (index: number, body: ReactNode) => <div key={index} data-entry={index} className={`helpdesk-chat-row${fresh(index)}`}><span className="helpdesk-chat-avatar" aria-hidden="true"><Spark /></span>{body}</div>;
 
   const voteRow = (entry: AnswerEntry) => <>
     <div className="helpdesk-chat-feedback">
       <span>{text.helpful}</span>
-      <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-yes" aria-pressed={entry.feedback === "helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, true)}><Check size={13} aria-hidden="true" />{text.yes}</button>
-      <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-no" aria-pressed={entry.feedback === "not_helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, false)}>{text.no}</button>
+      <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-yes" aria-pressed={entry.feedback === "helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, true)}><ThumbsUp size={15} aria-hidden="true" />{text.yes}</button>
+      <button type="button" className="helpdesk-chat-vote helpdesk-chat-vote-no" aria-pressed={entry.feedback === "not_helpful"} disabled={entry.feedback !== null || voting !== null} onClick={() => void vote(entry.id, false)}><ThumbsDown size={15} aria-hidden="true" />{text.no}</button>
     </div>
     {voteError === entry.id && entry.feedback === null ? <p className="helpdesk-chat-vote-error" role="alert">{text.voteError}</p> : null}
   </>;
@@ -577,15 +622,18 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     </section>;
   };
 
-  return <section className="helpdesk-chat" aria-labelledby={`${ids}-title`}>
+  return <section className="helpdesk-chat" aria-labelledby={`${ids}-title`} data-scrolled={scrolled ? "true" : undefined} data-state={pending ? "thinking" : undefined} data-flare={flare ? "true" : undefined}>
     <header className="helpdesk-chat-header">
-      <h2 id={`${ids}-title`}>{text.title}</h2>
-      <p>{text.subtitle}</p>
+      <Spark />
+      <div className="helpdesk-chat-header-text">
+        <h2 id={`${ids}-title`}>{text.title}</h2>
+        <p>{text.subtitle}</p>
+      </div>
     </header>
     <div className="helpdesk-chat-divider" aria-hidden="true" />
-    <div className="helpdesk-chat-messages" ref={log} aria-busy={!loaded}>
-      <div className="helpdesk-chat-row">
-        <span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>
+    <div className="helpdesk-chat-messages" ref={log} aria-busy={!loaded} onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 2)}>
+      <div className="helpdesk-chat-row helpdesk-chat-greeting-row">
+        <span className="helpdesk-chat-avatar" aria-hidden="true"><Spark /></span>
         <div className="helpdesk-chat-greeting">
           <p className="helpdesk-chat-greeting-title">{text.greetingTitle}</p>
           <p className="helpdesk-chat-greeting-body">{text.greetingBody}</p>
@@ -595,7 +643,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
       </div>
       {/* v5 Part A: the fixed card for an enquiry waiting for the learner's reply (no Figma frame, 待视觉验收). */}
       {situation.waitingTicket ? <div className="helpdesk-chat-row helpdesk-chat-waiting-row">
-        <span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>
+        <span className="helpdesk-chat-avatar" aria-hidden="true"><Spark /></span>
         <section className="helpdesk-chat-card helpdesk-chat-waiting" role="group" aria-labelledby={`${ids}-waiting`}>
           <p className="helpdesk-chat-card-title" id={`${ids}-waiting`}>{text.waitingTitle}</p>
           <a className="helpdesk-chat-related" href={`/${locale}/account/my-learning/support/${encodeURIComponent(situation.waitingTicket.id)}`}>{text.waitingLink}</a>
@@ -606,7 +654,7 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
         {situationChips(situation.chips, undefined, `${ids}-chips`)}
       </> : null}
       {entries.map((entry, index) => {
-        if (entry.kind === "question") return <div key={index} data-entry={index} className="helpdesk-chat-mine"><p className="helpdesk-chat-question">{entry.text}</p></div>;
+        if (entry.kind === "question") return <div key={index} data-entry={index} className={`helpdesk-chat-mine${fresh(index)}`}><p className="helpdesk-chat-question">{entry.text}</p></div>;
         // v4 Part B cards: no Figma frame, 待视觉验收 (the answer bubble, .helpdesk-submit-button / .helpdesk-secondary-button, the v3 stars).
         if (entry.kind === "handover") return row(index, <section className="helpdesk-chat-card helpdesk-chat-card-handover" role="group" aria-labelledby={`${ids}-card-${index}`}>
           <p className="helpdesk-chat-card-title" id={`${ids}-card-${index}`}>{text.handoverTitle}</p>
@@ -634,26 +682,29 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
         if (entry.kind === "error") return row(index, <p className="helpdesk-chat-error" role="alert">{entry.error === "rateLimited" ? text.rateLimited : text.error}</p>);
         return row(index, answerBubble(entry, index));
       })}
-      {pending ? <div className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true"><Bot size={18} /></span>
+      {pending ? <div className="helpdesk-chat-row"><span className="helpdesk-chat-avatar" aria-hidden="true" data-state="thinking"><Spark /></span>
         {/* Read out through the live region below, so the card itself is hidden from screen readers. */}
         <div className="helpdesk-chat-typing helpdesk-chat-thinking" aria-hidden="true">
-          <div className="helpdesk-chat-thinking-head"><span className="helpdesk-chat-thinking-title">{text.thinking}</span><span className="helpdesk-chat-dots"><span /><span /><span /></span></div>
+          <div className="helpdesk-chat-thinking-head"><span className="helpdesk-chat-thinking-title">{text.thinking}</span></div>
           {thinking.length ? <ol className="helpdesk-chat-thinking-steps">
             {thinking.map((step, index) => {
               const done = index < thinking.length - 1;
-              return <li key={step} className="helpdesk-chat-thinking-step" data-done={done ? "true" : undefined}>{done ? <Check size={12} /> : <span className="helpdesk-chat-thinking-spinner" />}<span>{text[THINKING_COPY[step]]}</span></li>;
+              return <li key={step} className="helpdesk-chat-thinking-step" data-done={done ? "true" : undefined}>{done ? <Check size={14} /> : <span className="helpdesk-chat-thinking-spinner" />}<span>{text[THINKING_COPY[step]]}</span></li>;
             })}
           </ol> : null}
+          <div className="helpdesk-chat-skeleton"><span /><span /><span /></div>
         </div>
       </div> : null}
       <div className="helpdesk-chat-info"><CircleHelp size={19} aria-hidden="true" /><p><span className="helpdesk-chat-info-side">{text.info}</span><span className="helpdesk-chat-info-stacked">{text.infoStacked}</span></p></div>
     </div>
     {/* Always mounted, so screen readers announce what is put in it: the typing state, then the answer or the fallback. */}
     <p className="helpdesk-visually-hidden helpdesk-chat-live" role="status" aria-live="polite">{pending ? (thinking.length ? text[THINKING_COPY[thinking[thinking.length - 1]]] : text.typing) : announcement}</p>
-    {/* v5 Part C: the send button sits inside the input box (待视觉验收). */}
+    {/* The composer: the send button sits inside the pill; the ring flows faster while the assistant works. */}
     <div className="helpdesk-chat-footer">
-      <textarea ref={input} className="helpdesk-chat-input" aria-label={text.inputLabel} placeholder={text.placeholder} maxLength={questionMax} value={draft} onChange={(event) => { touched(); setDraft(event.target.value); }} onKeyDown={onKeyDown} />
-      <button type="button" className="helpdesk-chat-send" aria-label={text.send} disabled={pending || !draft.trim()} onClick={() => void sendDraft()}><Send size={19} aria-hidden="true" /></button>
+      <div className="helpdesk-chat-composer" data-busy={pending ? "true" : undefined}>
+        <textarea ref={input} className="helpdesk-chat-input" rows={1} aria-label={text.inputLabel} placeholder={text.placeholder} maxLength={questionMax} value={draft} onChange={(event) => { touched(); setDraft(event.target.value); }} onKeyDown={onKeyDown} />
+        <button type="button" className="helpdesk-chat-send" aria-label={text.send} disabled={pending || !draft.trim()} onClick={() => void sendDraft()}><SendHorizontal size={20} aria-hidden="true" /></button>
+      </div>
     </div>
   </section>;
 }
