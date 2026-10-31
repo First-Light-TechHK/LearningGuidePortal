@@ -20,6 +20,7 @@ import { createHelpdeskService } from "../../../modules/helpdesk/service";
 import { createAssistantService } from "../../../modules/helpdesk/assistant";
 import { createInsightsService } from "../../../modules/helpdesk/insights";
 import { createRetentionJob } from "../../../modules/helpdesk/retention";
+import { createTicketStatsService } from "../../../modules/helpdesk/ticketStats";
 import type { AssistRecord, JobRunRecord } from "../../../modules/helpdesk/repository";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
 
@@ -241,4 +242,24 @@ test("job run rows: one scheduled run per day and one run per Idempotency-Key", 
   assert.equal((await repository.findJobRunByKey(key))?.id, manual.id);
   assert.equal((await repository.listJobRuns("assist_retention", 10)).length, 3);
   await assert.rejects(getPool().query("INSERT INTO helpdesk_job_runs (id, job, run_day, trigger, status, started_at, cutoff) VALUES ($1, 'assist_retention', '2026-10-31', 'manual', 'running', now(), now())", [randomUUID()]), /check/i, "a manual run names who asked");
+});
+
+test("ticket daily numbers: PostgreSQL hands over the same timings as the file store (first public staff reply, internal notes left out)", async () => {
+  const h = harness();
+  const input = { category: "payments_subscriptions" as const, subject: "Paid, still Basic", body: "Please check.", locale: "en-GB" as const, files: [] };
+  const replied = await h.service.createTicket(learner, input, randomUUID());
+  h.advance(5 * 60_000);
+  let detail = await h.service.agentAction(replied.ticket.id, { action: "claim", agent, expectedSequence: replied.ticket.sequence }, randomUUID());
+  detail = await h.service.postAgentMessage(replied.ticket.id, { body: "Looking now (note)", internal: true, agent, expectedSequence: detail.ticket.sequence }, randomUUID());
+  h.advance(10 * 60_000);
+  await h.service.postAgentMessage(replied.ticket.id, { body: "Fixed, please check.", internal: false, agent, expectedSequence: detail.ticket.sequence }, randomUUID());
+  const cancelled = await h.service.createTicket(learner, { ...input, subject: "Never mind" }, randomUUID());
+  h.advance(60_000);
+  await h.service.learnerAction(learner, cancelled.ticket.id, { action: "cancel", expectedSequence: cancelled.ticket.sequence }, randomUUID());
+  const day = new Date(NOW).toISOString().slice(0, 10);
+  const stats = await createTicketStatsService({ repository: h.repository }).stats({ from: day, to: day });
+  assert.deepEqual(stats.days, [{ day, created: 2, resolved: 0, cancelled: 1, openAtEnd: 1, firstReplies: 1, firstReplyMedianMinutes: 15, firstReplyP90Minutes: 15 }]);
+  // a window that ends before the enquiries were opened sees none of them
+  const before = new Date(NOW - DAY).toISOString().slice(0, 10);
+  assert.deepEqual((await h.repository.listTicketTimings({ createdBeforeIso: `${day}T00:00:00.000Z`, openAtOrAfterIso: `${before}T00:00:00.000Z` })), []);
 });

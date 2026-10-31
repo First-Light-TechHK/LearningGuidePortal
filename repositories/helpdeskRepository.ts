@@ -9,7 +9,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { HelpdeskProblem, INSIGHT_LIMITS, TICKET_STATUSES, type AgentListQuery, type HelpdeskJob, type TicketCounts } from "@/contracts/helpdesk";
 import type { AttachmentRecord, EventRecord, MessageRecord, TagRecord, TicketAggregate, TicketRecord } from "@/modules/helpdesk/domain";
 import { formatTicketNumber, needsReply, ticketDayKey } from "@/modules/helpdesk/domain";
-import { answeredByPortal, type AiRatingRecord, type AssistOutcome, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type IdempotencyRecord, type InsightRow, type JobRunRecord, type LearnerContacts, type NewTicket, type RetentionRow, type TicketChange, type TicketListItem, type TurnUpdate } from "@/modules/helpdesk/repository";
+import { answeredByPortal, type AiRatingRecord, type AssistOutcome, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type IdempotencyRecord, type InsightRow, type JobRunRecord, type LearnerContacts, type NewTicket, type RetentionRow, type TicketChange, type TicketListItem, type TicketTiming, type TurnUpdate } from "@/modules/helpdesk/repository";
 import { ensureSchema, getPool } from "@/services/persistence/db";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isProductionEnvironment } from "@/services/runtimeConfig";
@@ -455,6 +455,15 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
             ...row, scrubbedAt: row.scrubbedAt ?? null, rating: store.aiRatings.find((item) => item.runId === row.id)?.rating ?? null,
             sessionTurns: session?.turns ?? null, sessionEndReason: session?.endReason ?? null, outcome: localOutcome(store, row), contacts: contactsOf(store.tickets, row.learnerId)
           };
+        });
+    },
+    async listTicketTimings({ createdBeforeIso, openAtOrAfterIso }) {
+      const store = await load();
+      return store.tickets
+        .filter((ticket) => ticket.createdAt < createdBeforeIso && (ticket.closedAt === null || ticket.closedAt >= openAtOrAfterIso))
+        .map((ticket): TicketTiming => {
+          const replies = store.messages.filter((item) => item.ticketId === ticket.id && item.authorKind === "agent" && !item.internal).map((item) => item.createdAt).sort();
+          return { createdAt: ticket.createdAt, closedAt: ticket.closedAt, closeReason: ticket.closeReason, firstReplyAt: replies[0] ?? null };
         });
     },
     async listRetentionDue(cutoffIso, limit) {
@@ -966,6 +975,13 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       await select("UPDATE helpdesk_assist_log SET expanded = TRUE WHERE id = $1 AND learner_id = $2 AND expanded IS NOT TRUE", [id, learnerId]);
       const row = (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE id = $1 AND learner_id = $2`, [id, learnerId]))[0];
       return row ? assistFromRow(row) : null;
+    },
+    async listTicketTimings({ createdBeforeIso, openAtOrAfterIso }) {
+      const found = await select(`SELECT t.created_at, t.closed_at, t.close_reason,
+          (SELECT min(m.created_at) FROM helpdesk_ticket_messages m WHERE m.ticket_id = t.id AND m.author_kind = 'agent' AND NOT m.internal) AS first_reply_at
+        FROM helpdesk_tickets t
+        WHERE t.created_at < $1 AND (t.closed_at IS NULL OR t.closed_at >= $2)`, [createdBeforeIso, openAtOrAfterIso]);
+      return found.map((row): TicketTiming => ({ createdAt: iso(row.created_at), closedAt: isoOrNull(row.closed_at), closeReason: row.close_reason ?? null, firstReplyAt: isoOrNull(row.first_reply_at) }));
     },
     async listInsightRows({ sinceIso, untilIso, after, limit }) {
       const columns = ASSIST_COLUMNS.split(", ").map((column) => `l.${column}`).join(", ");

@@ -126,6 +126,9 @@ export type AssistOutcome = {
 export type LearnerContacts = { names: string[]; emails: string[] };
 
 /** v5 Part G2: one assist row with what the insights feed labels it with (never sent as is: the service scrubs and maps it). */
+/** The daily ticket numbers' input: times and the close reason only. */
+export type TicketTiming = { createdAt: string; closedAt: string | null; closeReason: CloseReason | null; firstReplyAt: string | null };
+
 export type InsightRow = AssistRecord & {
   rating: number | null;
   scrubbedAt: string | null;
@@ -256,6 +259,11 @@ export type HelpdeskRepository = {
   listInsightRows(query: { sinceIso: string; untilIso: string; after: { createdAt: string; id: string } | null; limit: number }): Promise<InsightRow[]>;
   /** Rows created before cutoffIso whose raw text was not yet replaced, oldest first, at most limit. */
   listRetentionDue(cutoffIso: string, limit: number): Promise<RetentionRow[]>;
+  /**
+   * Enquiries opened before createdBeforeIso and not closed before openAtOrAfterIso (everything the daily numbers of that
+   * window can count), each with its first public staff message time; no learner data.
+   */
+  listTicketTimings(window: { createdBeforeIso: string; openAtOrAfterIso: string }): Promise<TicketTiming[]>;
   /** Writes the scrubbed text of each row still not replaced and marks it (scrubbed_at = atIso); returns how many changed. */
   applyRetention(updates: readonly RetentionUpdate[], atIso: string): Promise<number>;
   /**

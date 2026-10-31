@@ -1115,3 +1115,40 @@ export type JobRunResponse = { outcome: "completed" | "already_running"; run: He
 export function parseJobRunInput(value: unknown): { agent: AgentIdentity } {
   return { agent: agentIdentity(record(value)) };
 }
+
+// ---------------------------------------------------------------- ticket daily numbers (BackOffice HelpDesk data tab)
+
+/** GET /api/integration/helpdesk/ticket-stats?from=YYYY-MM-DD&to=YYYY-MM-DD: UTC days, both ends included, at most daysMax. */
+export const TICKET_STATS_LIMITS = { daysMax: 92 } as const;
+export type TicketStatsQuery = { from: string; to: string };
+/**
+ * One UTC day. created: enquiries opened that day; resolved / cancelled: closed that day (cancelled = close reason cancelled,
+ * every other close counts as resolved); openAtEnd: still open when the day ended. First reply: the first public message by a
+ * staff member on the enquiries opened that day (internal notes and system messages do not count), in minutes; the median and
+ * the 90th percentile are over the enquiries that have one (firstReplies), null when none has.
+ */
+export type TicketDay = {
+  day: string; created: number; resolved: number; cancelled: number; openAtEnd: number;
+  firstReplies: number; firstReplyMedianMinutes: number | null; firstReplyP90Minutes: number | null;
+};
+export type TicketStatsResponse = {
+  from: string; to: string; timeZone: "UTC"; days: TicketDay[];
+  totals: { created: number; resolved: number; cancelled: number; firstReplies: number; firstReplyMedianMinutes: number | null; firstReplyP90Minutes: number | null };
+};
+
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+function dayParam(params: URLSearchParams, field: string): string {
+  const raw = (params.get(field) || "").trim();
+  if (!raw) invalid(field, `${field} is required (YYYY-MM-DD, UTC).`);
+  if (!DAY_PATTERN.test(raw) || new Date(`${raw}T00:00:00.000Z`).toISOString().slice(0, 10) !== raw) invalid(field, `${field} must be a date (YYYY-MM-DD).`);
+  return raw;
+}
+
+export function parseTicketStatsQuery(params: URLSearchParams): TicketStatsQuery {
+  const from = dayParam(params, "from");
+  const to = dayParam(params, "to");
+  if (to < from) invalid("to", "to must not be before from.");
+  const days = (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86_400_000 + 1;
+  if (days > TICKET_STATS_LIMITS.daysMax) invalid("to", `At most ${TICKET_STATS_LIMITS.daysMax} days at a time.`);
+  return { from, to };
+}

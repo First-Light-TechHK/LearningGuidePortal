@@ -20,6 +20,7 @@ import { projectOrder } from "./orderDirectory";
 import { createHelpdeskService, type HelpdeskService } from "./service";
 import { projectStudent } from "./studentDirectory";
 import { createInsightsService, type InsightsService, type LearnerAccount } from "./insights";
+import { createTicketStatsService, type TicketStatsService } from "./ticketStats";
 import { startJobLoop, type LoopTimers } from "./jobScheduler";
 import { createRetentionJob, type RetentionJob } from "./retention";
 import { persistenceEnabled } from "@/services/persistence/config";
@@ -124,6 +125,11 @@ export async function learnerAccounts(learnerIds: string[]): Promise<Map<string,
 /** v5 Part G2: the flywheel feed (GET /api/integration/helpdesk/insights). */
 export function helpdeskInsights(): InsightsService {
   return createInsightsService({ repository: helpdeskRepository(), accounts: learnerAccounts });
+}
+
+/** BackOffice HelpDesk data tab: daily ticket numbers (counts and times only). */
+export function helpdeskTicketStats(): TicketStatsService {
+  return createTicketStatsService({ repository: helpdeskRepository() });
 }
 
 /** v5 Part G1: the 180-day raw-text retention job (daily in-process loop, and the staff "run now"). */
