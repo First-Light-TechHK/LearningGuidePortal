@@ -17,6 +17,8 @@
 .portal-auth-stage .auth-options input[type=checkbox] { height:16px; width:16px; min-height:16px; margin:0; }
 .auth-credential-form .auth-submit { margin-top:24px; font-weight:500; border-radius:10px; background:#155dfc; box-shadow:0 1px 2px -1px rgb(0 0 0 / 10%),0 1px 3px rgb(0 0 0 / 10%); }
 .auth-credential-form .auth-submit:not(:disabled) { cursor:pointer; }
+/* antd 的点击波纹是绝对定位的瞬时节点，动画期间会超出按钮宽度，在窄屏上把整个文档撑出横向滚动；裁剪到按钮内即可（波纹本来也不该画到按钮外）。 */
+.auth-credential-form .auth-submit { overflow:hidden; }
 .auth-credential-form .auth-options label,.auth-credential-form .auth-options a { font-weight:500; }
 .auth-credential-form .auth-provider-options { margin-top:24px; }
 .auth-provider-options.auth-provider-icons { display:block; padding-top:0; border-top:0; }
