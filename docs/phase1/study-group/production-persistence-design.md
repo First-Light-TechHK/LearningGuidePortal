@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   title TEXT NOT NULL,
   related_lesson_id TEXT,
   starts_at TIMESTAMPTZ NOT NULL,
-  duration_seconds INTEGER NOT NULL CHECK (duration_seconds IN (1800, 2700, 3600, 5400)),
+  duration_seconds INTEGER NOT NULL CHECK (duration_seconds IN (1800, 2700, 3600, 5400)),  -- widened by 021 to (600, 1200, 1800, 2400, 2700, 3600, 5400)
   max_participants INTEGER NOT NULL CHECK (max_participants BETWEEN 2 AND 6),
   focus TEXT,
   ai_tutor_enabled BOOLEAN NOT NULL,

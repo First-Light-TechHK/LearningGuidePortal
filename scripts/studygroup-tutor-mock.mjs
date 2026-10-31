@@ -15,12 +15,21 @@
 // "[followup]" answers from the room_context block the server sends; "[tool]"
 // asks for get_room_history when tools are offered and answers from the tool
 // result on the next call.
+// KnowledgeSystem surface (the room Tutor goes through KS since 2026-10-23,
+// services/ksTutorClient.ts): GET /api/user/ai-tutors lists the E2E course as
+// online, and POST /api/user/ai/chat-stream answers as SSE {delta} frames.
+// KS replies carry no mode tag. "[latex]" answers with inline and display
+// LaTeX, a list and a source citation (owner 2026-10-29: the room renders the
+// model's LaTeX); "[fail]" answers HTTP 500; anything else gets KS_REPLY.
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.STUDYGROUP_TUTOR_MOCK_PORT || 8788);
 const HOST = "127.0.0.1";
 const REPLY = "COURSE\nMock tutor reply: the course text explains this topic.";
 const MARKDOWN_REPLY = "COURSE\nUse x_1 and snake_case_name; 2*3*4 = 24 is the **key** point.";
+const KS_COURSES = (process.env.STUDYGROUP_TUTOR_MOCK_KS_COURSES || "epicureanism").split(",");
+const KS_REPLY = "Mock tutor reply: the course text explains this topic.";
+const LATEX_REPLY = "The basic derivatives are \\(\\frac{d}{dx}x^n = nx^{n-1}\\) and $(e^x)' = e^x$.\n$$\n\\lim_{\\Delta t \\to 0} \\frac{X(t+\\Delta t)-X(t)}{\\Delta t}\n$$\n- Chain rule: $f(g(t))' = f'(g(t))\\,g'(t)$\n- Product rule [Source: Modeling Life - 2.2]";
 const SLOW_MS = Number(process.env.STUDYGROUP_TUTOR_MOCK_SLOW_MS || 8000);
 const GONE_MODEL = process.env.STUDYGROUP_TUTOR_MOCK_GONE_MODEL || "anthropic/claude-haiku-5.5";
 
@@ -36,6 +45,37 @@ const server = createServer((request, response) => {
   if (request.method === "GET" && url.pathname === "/health") {
     response.writeHead(200, { "content-type": "text/plain" });
     response.end("ok");
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/user/ai-tutors") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ data: KS_COURSES.map((externalId) => ({ externalId, available: true, online: true })) }));
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/user/ai/chat-stream") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      let message = "";
+      try {
+        message = String(JSON.parse(body).message || "");
+      } catch {
+        message = "";
+      }
+      console.log(`studygroup-tutor-mock: POST /api/user/ai/chat-stream question=${JSON.stringify(message.slice(0, 160))}`);
+      if (message.includes("[fail]")) {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ code: "MOCK_FAILURE", message: "mock model failure" }));
+        return;
+      }
+      const reply = message.includes("[latex]") ? LATEX_REPLY : message.includes("[markdown]") ? MARKDOWN_REPLY.replace(/^COURSE\n/, "") : KS_REPLY;
+      const send = () => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        for (let index = 0; index < reply.length; index += 40) response.write(`data: ${JSON.stringify({ delta: reply.slice(index, index + 40) })}\n\n`);
+        response.end(`data: ${JSON.stringify({ done: true })}\n\n`);
+      };
+      setTimeout(send, message.includes("[slow]") ? SLOW_MS : 0);
+    });
     return;
   }
   if (request.method === "POST" && url.pathname === "/v1/chat/completions") {

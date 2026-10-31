@@ -110,7 +110,7 @@ test("a session title of 50 characters is kept and a longer title is rejected", 
   assert.deepEqual(problems, []);
 });
 
-test("planned duration is 30, 45, 60, or 90 minutes stored as seconds", async () => {
+test("planned duration is 10, 20, 30, or 40 minutes stored as seconds (owner 2026-10-29)", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Duration", courseId: "course-1", about: "About the group." });
   const base = {
     actorUserId: "host",
@@ -119,10 +119,10 @@ test("planned duration is 30, 45, 60, or 90 minutes stored as seconds", async ()
     maxParticipants: 4
   };
   const choices = [
+    [10, 600],
+    [20, 1200],
     [30, 1800],
-    [45, 2700],
-    [60, 3600],
-    [90, 5400]
+    [40, 2400]
   ] as const;
   for (const [minutes, seconds] of choices) {
     const scheduled = await service.scheduleSession({ ...base, title: `${minutes} minutes`, durationSeconds: seconds });
@@ -135,7 +135,7 @@ test("planned duration is 30, 45, 60, or 90 minutes stored as seconds", async ()
     () => service.scheduleSession({ ...base, title: "Missing" } as Parameters<StudyGroupService["scheduleSession"]>[0]),
     (error: unknown) => codeOf(error) === "validation"
   );
-  for (const durationSeconds of [1, 25 * 60, 25, 15, 0, -1, 1.5, Number.NaN]) {
+  for (const durationSeconds of [1, 25 * 60, 2700, 3600, 5400, 25, 15, 0, -1, 1.5, Number.NaN]) {
     await assert.rejects(
       () => service.scheduleSession({ ...base, title: "Rejected", durationSeconds }),
       (error: unknown) => codeOf(error) === "validation"

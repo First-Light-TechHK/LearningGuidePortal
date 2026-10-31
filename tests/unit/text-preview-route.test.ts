@@ -23,12 +23,15 @@ test("public Lesson server props exclude hidden text and media before signing, a
   await mkdir("test-results/text-preview", { recursive: true });
   const filename = path.resolve("test-results/text-preview/route.cjs"); await writeFile(filename, bundle.outputFiles[0].text);
   const route = createRequire(import.meta.url)(filename).default;
-  const invoke = (locale = "en-GB", lessonId = "public") => route({ params: Promise.resolve({ locale, slug: "course" }), searchParams: Promise.resolve({ lessonId, viewMode: "text" }) });
+  const invoke = (locale = "en-GB", lessonId = "public", contentId?: string) => route({ params: Promise.resolve({ locale, slug: "course" }), searchParams: Promise.resolve({ lessonId, viewMode: "text", contentId }) });
   for (const locale of ["en-GB", "zh-CN"]) {
     const props = (await invoke(locale)).props.children[1].props;
     assert.equal(props.entitled, false); assert.equal(props.textPreview.rule, "third-point"); assert.equal(props.nextHref, null);
     assert.ok(!JSON.stringify(props).includes("POINT-3-SECRET")); assert.ok(!JSON.stringify(props).includes("LEGACY-SECRET")); assert.ok(!JSON.stringify(props).includes("hidden-image"));
     assert.ok(!JSON.stringify(state.signed).includes("hidden-image"), "locked media must be removed before issuing signatures");
+    const positioned = (await invoke(locale, "public", "text-2")).props.children[1].props;
+    assert.equal(positioned.initialContentId, "text-2", "the preview route retains the server-selected mode position");
+    assert.ok(!JSON.stringify(positioned.lesson).includes("POINT-3-SECRET"));
     state.allowed = true;
     const entitled = (await invoke(locale)).props.children[1].props;
     assert.equal(entitled.textPreview, undefined); assert.equal(entitled.trialGate, undefined); assert.match(JSON.stringify(entitled.lesson), /POINT-3-SECRET/);

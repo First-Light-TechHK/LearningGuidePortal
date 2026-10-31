@@ -17,7 +17,7 @@ import type { VideoPlaybackProgress } from "@/contracts/video-progress";
 import { canPromptVideoCompletion, videoCompletionPercent } from "@/lib/videoLessonCompletion";
 import { PreviewProgress } from "./PreviewProgress";
 import styles from "./preview-lesson.module.css";
-import type { CourseLearningMode } from "@/contracts/course-learning-mode";
+import type { CourseLearningMode, CourseLearningModeResult } from "@/contracts/course-learning-mode";
 import { resolveLessonPresentation, modeLessonDestination } from "@/lib/courseLearningMode";
 import { TextLessonReader } from "./TextLessonReader";
 import { TextLessonCompletion } from "./TextLessonCompletion";
@@ -86,19 +86,24 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     if (modeSaveLock.current) return;
     const content = mode === "video" ? videoContent : textContent;
     const currentHasMode=Boolean(content) || (mode==="text" && !contents.length && Boolean(lesson.body?.trim()));
-    const destination=modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id);
-    if(!destination)return;
+    if(!modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id))return;
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
-      const result = await response.json();
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, lessonId: lesson.id }) });
+      const result = await response.json() as { ok: boolean; data?: CourseLearningModeResult };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       if (!modeMounted.current) return;
+      const destination = modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id,result.data?.position);
+      if (!destination) throw new Error("mode-destination");
       setNodeRequest(undefined);
       setVideoProgress(null);
       setEnded(null);
-      if(destination.lessonId===lesson.id)setContentId(content?.id || "");
+      if(destination.lessonId===lesson.id) {
+        const targetId = result.data?.position?.lessonId === lesson.id ? result.data.position.contentId || "" : content?.id || "";
+        setContentId(targetId);
+        setTextNavigation(mode === "text" && targetId ? { id: targetId, request: Date.now() } : undefined);
+      }
       setVideoNavigation(undefined);
       setPlayingId(null);
       router.push(destination.href);

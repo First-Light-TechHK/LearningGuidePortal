@@ -1,5 +1,9 @@
 "use client";
 
+import { PortalProvider } from "./ui/PortalProvider";
+
+import { PortalButton } from "./ui/PortalButton";
+
 import Image from "next/image";
 import { useId, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -9,7 +13,11 @@ import { getMessages } from "@/lib/i18n/messages";
 import { PortalDialog } from "./PortalDialog";
 import styles from "./course-learning-mode.module.css";
 
-export function CourseLearningModeDialog({ courseId, locale, signedIn, pendingMode = null, destinationHref }: {
+export function CourseLearningModeDialog(props: Parameters<typeof CourseLearningModeDialogContent>[0]) {
+  return <PortalProvider locale={props.locale}><CourseLearningModeDialogContent {...props}/></PortalProvider>;
+}
+
+function CourseLearningModeDialogContent({ courseId, locale, signedIn, pendingMode = null, destinationHref }: {
   courseId: string; locale: Locale; signedIn: boolean; pendingMode?: CourseLearningMode | null; destinationHref?: string;
 }) {
   const copy = getMessages(locale).courseLearningMode;
@@ -63,6 +71,6 @@ export function CourseLearningModeDialog({ courseId, locale, signedIn, pendingMo
     </fieldset>
     <p className={styles.note}>{copy.savedNote}</p>
     {error && <p className={styles.error} role="alert">{error}</p>}
-    <button type="button" className={`portal-button portal-button-primary ${styles.continue}`} disabled={!mode || busy} onClick={() => void proceed()}>{busy ? copy.saving : mode === "video" ? copy.continueVideo : mode === "text" ? copy.continueText : copy.continue}</button>
+    <PortalButton type="primary" className={styles.continue} loading={busy} disabled={!mode || busy} onClick={() => void proceed()}>{busy ? copy.saving : mode === "video" ? copy.continueVideo : mode === "text" ? copy.continueText : copy.continue}</PortalButton>
   </PortalDialog>;
 }

@@ -83,11 +83,17 @@ export function studyGroupMutation(input: { action: StudyGroupMutationAction; re
  * server list carried two identical entries. Collapse repeated bodies to one row
  * (keeping the first/newest); distinct bodies are untouched.
  */
-export function uniqueReminderBodies<T extends { body: string }>(reminders: T[]): T[] {
+export function uniqueReminderBodies<T extends { body: string; sessionId?: string }>(reminders: T[]): T[] {
+  // Two sessions with the same title, group and time are two reminders, each
+  // with its own Enter now (deep links 2026-10-30). A row written before
+  // reminders named their session repeats a linked one: the linked one shows.
+  const linked = new Set(reminders.filter((item) => item.sessionId).map((item) => item.body));
   const seen = new Set<string>();
   return reminders.filter((item) => {
-    if (seen.has(item.body)) return false;
-    seen.add(item.body);
+    if (!item.sessionId && linked.has(item.body)) return false;
+    const key = item.sessionId ? `session:${item.sessionId}` : `body:${item.body}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }

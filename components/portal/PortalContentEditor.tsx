@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { LoaderCircle, RotateCcw, Upload, X } from "lucide-react";
+import { LoaderCircle, RotateCcw, Upload } from "lucide-react";
 import type { Banner, PortalContent } from "@/lib/portalContent";
 import { otherLocale, translationIsCurrent } from "@/lib/portalContent";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import type { PortalLibraryItem } from "@/lib/portalLibrary";
 import { lessonMessages } from "@/messages/lesson-authoring";
+import { Button, Input, Modal, Select } from "antd";
+import { useBackofficePopupContainer } from "@/components/backoffice/BackofficeProvider";
 
 const COPY_FIELDS = ["eyebrow", "title", "text", "cta", "href"] as const;
 type Operation = { kind: "save" | "translate" | "upload"; controller: AbortController };
@@ -25,7 +27,7 @@ export function PortalContentEditor({ initial, locale }: { initial: PortalConten
   const libraryRequest = useRef<AbortController | null>(null);
   const pickerIndex = useRef<number | null>(null);
   const pickerOpener = useRef<HTMLElement | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const getContainer = useBackofficePopupContainer();
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState("");
   const [uploadError, setUploadError] = useState("");
@@ -36,14 +38,6 @@ export function PortalContentEditor({ initial, locale }: { initial: PortalConten
   const synced = translationIsCurrent(content, source);
 
   useEffect(() => () => { operation.current?.controller.abort(); operation.current = null; libraryRequest.current?.abort(); libraryRequest.current = null; }, []);
-
-  useEffect(() => {
-    if (picker === null) return;
-    const element = dialog.current, opener = pickerOpener.current;
-    const overflow = document.body.style.overflow;
-    element?.showModal(); document.body.style.overflow = "hidden";
-    return () => { element?.close(); document.body.style.overflow = overflow; if (opener?.isConnected) opener.focus(); };
-  }, [picker]);
 
   function begin(kind: Operation["kind"]) {
     if (operation.current) return null;
@@ -177,23 +171,20 @@ export function PortalContentEditor({ initial, locale }: { initial: PortalConten
     const value = banner[key];
     const label = copy[key];
     if (key === "text") {
-      return <label key={key}>{label}<textarea required rows={3} value={value} onChange={(event) => editBanner(language, index, key, event.target.value)} /></label>;
+      return <label key={key}>{label}<Input.TextArea required disabled={busy || picker !== null} rows={3} value={value} onChange={(event) => editBanner(language, index, key, event.target.value)} /></label>;
     }
-    return <label key={key}>{label}<input required value={value} onChange={(event) => editBanner(language, index, key, event.target.value)} /></label>;
+    return <label key={key}>{label}<Input required disabled={busy || picker !== null} value={value} onChange={(event) => editBanner(language, index, key, event.target.value)} /></label>;
   }
 
-  return <form onSubmit={save} onChange={() => setMessage("")} className="portal-content-editor" aria-busy={pending === "save" || pending === "translate"}>
+  return <form onSubmit={save} onChange={() => setMessage("")} className="portal-content-editor bo-cms" aria-busy={pending === "save" || pending === "translate"}>
     <h1>{copy.heading}</h1>
     <p className="portal-lead">{copy.intro}</p>
     <fieldset className="portal-cms-fields" disabled={busy || picker !== null}>
     <div className="portal-i18n-toolbar">
-      <label>{copy.sourceLanguage}
-        <select value={source} onChange={(event) => setSource(event.target.value as Locale)}>
-          <option value="en-GB">{copy.english}</option>
-          <option value="zh-CN">{copy.chinese}</option>
-        </select>
+      <label htmlFor="portal-source-language">{copy.sourceLanguage}
+        <Select<Locale> id="portal-source-language" value={source} disabled={busy || picker !== null} onChange={value => { setSource(value); setMessage(""); }} options={[{value:"en-GB",label:copy.english},{value:"zh-CN",label:copy.chinese}]}/>
       </label>
-      <button className="portal-button" type="button" disabled={busy || synced} onClick={() => void translate()}>{pending === "translate" ? copy.translating : copy.translateOnce}</button>
+      <Button disabled={busy || synced} loading={pending === "translate"} onClick={() => void translate()}>{pending === "translate" ? copy.translating : copy.translateOnce}</Button>
     </div>
     {content.banners[source].map((banner, index) => {
       const other = content.banners[target][index];
@@ -205,8 +196,8 @@ export function PortalContentEditor({ initial, locale }: { initial: PortalConten
         </div>
         <label>{copy.sharedImage}
           <div className="portal-image-picker-row">
-            <input required value={banner.image} onChange={(event) => setBannerImage(index, event.target.value)} />
-            <button className="portal-button" type="button" onClick={() => openPicker(index)}>{copy.chooseImage}</button>
+            <Input required disabled={busy || picker !== null} value={banner.image} onChange={(event) => setBannerImage(index, event.target.value)} />
+            <Button disabled={busy || picker !== null} onClick={() => openPicker(index)}>{copy.chooseImage}</Button>
           </div>
         </label>
         <div className="portal-i18n-grid">
@@ -224,29 +215,25 @@ export function PortalContentEditor({ initial, locale }: { initial: PortalConten
     <fieldset>
       <legend>{copy.categories}</legend>
       {content.categories.map((category, index) => <div key={category.id} className="portal-i18n-grid">
-        <label>{category.id} · {copy.english}<input required value={category.labels["en-GB"]} onChange={(event) => editCategory("en-GB", index, event.target.value)} /></label>
-        <label>{category.id} · {copy.chinese}<input required value={category.labels["zh-CN"]} onChange={(event) => editCategory("zh-CN", index, event.target.value)} /></label>
+        <label>{category.id} · {copy.english}<Input required disabled={busy || picker !== null} value={category.labels["en-GB"]} onChange={(event) => editCategory("en-GB", index, event.target.value)} /></label>
+        <label>{category.id} · {copy.chinese}<Input required disabled={busy || picker !== null} value={category.labels["zh-CN"]} onChange={(event) => editCategory("zh-CN", index, event.target.value)} /></label>
       </div>)}
     </fieldset>
-    <label>{copy.countries}<textarea value={content.countries.join("\n")} rows={8} onChange={(event) => setContent({ ...content, countries: event.target.value.split("\n") })} /></label>
-    <label>{copy.support}<input value={content.supportUrl} onChange={(event) => setContent({ ...content, supportUrl: event.target.value })} /></label>
+    <label>{copy.countries}<Input.TextArea disabled={busy || picker !== null} value={content.countries.join("\n")} rows={8} onChange={(event) => setContent({ ...content, countries: event.target.value.split("\n") })} /></label>
+    <label>{copy.support}<Input disabled={busy || picker !== null} value={content.supportUrl} onChange={(event) => setContent({ ...content, supportUrl: event.target.value })} /></label>
     {error ? <p role="alert" className="portal-form-error">{error}</p> : null}
     {message ? <p role="status">{message}</p> : null}
-    <button className="portal-button portal-button-primary" type="submit" disabled={busy}>{pending === "save" ? copy.saving : copy.save}</button>
+    <Button type="primary" htmlType="submit" disabled={busy} loading={pending === "save"}>{pending === "save" ? copy.saving : copy.save}</Button>
     </fieldset>
-    {picker !== null ? <dialog ref={dialog} className="portal-image-library-dialog" aria-label={copy.library} onCancel={event => { event.preventDefault(); closePicker(); }}>
-      <div className="portal-image-library-panel">
-        <header>
-          <h2>{copy.library}</h2>
-          <button className="portal-button portal-cms-icon" type="button" title={copy.closeLibrary} aria-label={copy.closeLibrary} autoFocus onClick={closePicker}><X size={20}/></button>
-        </header>
+    <Modal title={copy.library} open={picker !== null} onCancel={closePicker} footer={null} getContainer={getContainer} width="min(720px, calc(100vw - 32px))" styles={{body:{maxHeight:"70dvh",overflowY:"auto"}}} afterClose={() => pickerOpener.current?.isConnected && pickerOpener.current.focus()} destroyOnHidden closable={{"aria-label":copy.closeLibrary}}>
+      <div className="bo-cms-library">
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
-        <button className="portal-button portal-button-primary" type="button" disabled={busy} onClick={() => fileInput.current?.click()}>{pending === "upload" ? <LoaderCircle size={18} className="portal-cms-spinner"/> : <Upload size={18}/>} {pending === "upload" ? feedback.uploading : copy.uploadImage}</button>
+        <Button type="primary" disabled={busy} loading={pending === "upload"} icon={<Upload size={18}/>} onClick={() => fileInput.current?.click()}>{pending === "upload" ? feedback.uploading : copy.uploadImage}</Button>
         {uploadError && <p role="alert" className="portal-form-error">{uploadError}</p>}
         {libraryLoading && <p role="status"><LoaderCircle size={18} className="portal-cms-spinner"/> {feedback.loading}</p>}
-        {libraryError && <div className="portal-cms-library-error"><p role="alert" className="portal-form-error">{libraryError}</p><button className="portal-button" type="button" disabled={busy} onClick={() => void loadLibrary()}><RotateCcw size={18}/>{feedback.pdfRetry}</button></div>}
+        {libraryError && <div className="portal-cms-library-error"><p role="alert" className="portal-form-error">{libraryError}</p><Button disabled={busy} icon={<RotateCcw size={18}/>} onClick={() => void loadLibrary()}>{feedback.pdfRetry}</Button></div>}
         <div className="portal-image-library-grid">
-          {library.map((item) => <button
+          {picker !== null && library.map((item) => <button
             key={item.id}
             type="button"
             disabled={busy}
@@ -258,6 +245,6 @@ export function PortalContentEditor({ initial, locale }: { initial: PortalConten
           ><span>{item.fileName}</span></button>)}
         </div>
       </div>
-    </dialog> : null}
+    </Modal>
   </form>;
 }

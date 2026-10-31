@@ -1,0 +1,15 @@
+-- Helpdesk v4 Part A (helpdesk-v4-order-and-chat-end.md, 2026-10-29): an
+-- enquiry may name the learner's own order ("Contact support" on a payment
+-- record). order_id is the order number as the order owner writes it
+-- (services/productStore.ts, order_<ms>_<hex>); Portal code checks it belongs
+-- to the learner before it is stored, and builds the BackOffice projection
+-- from the order record when an agent reads the ticket (the order stays
+-- owned by the payment module, so there is no foreign key and nothing is
+-- copied). Nullable: every existing ticket reads as "no order".
+-- Additive and repeatable; 017-020 are never edited.
+-- services/persistence/db.ts mirrors the statement in the startup bootstrap
+-- and the freshness probe (parity pinned by tests/unit/helpdesk-migration.test.ts),
+-- so it runs on deploy like the earlier helpdesk migrations.
+-- Rollback: roll the application back first, then (only after an approved
+-- export/retention decision) ALTER TABLE helpdesk_tickets DROP COLUMN order_id.
+ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS order_id TEXT CHECK (order_id IS NULL OR char_length(order_id) BETWEEN 1 AND 64);

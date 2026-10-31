@@ -25,6 +25,11 @@
 .item:hover { background: #f3f4f6; }
 .itemActive { background: #eff6ff; color: #155dfc; }
 .itemActive svg { color: #155dfc; }
+:global(.backoffice-ui) .nav .item { color: #364153; }
+:global(.backoffice-ui) .nav .itemActive { color: #155dfc; }
+:global(.backoffice-ui) .shell .toggle { width: 42px; height: 42px; display: inline-flex; justify-content: center; padding: 0; }
+:global(.backoffice-ui) .shell .brand { color: #101828; }
+:global(.backoffice-ui) .shell .iconBtn { color: #364153; }
 .item svg { width: 20px; height: 20px; flex-shrink: 0; color: #364153; }
 .footer { padding: 16px; }
 .footerItem { background: #f3f4f6; width: 100%; border: 0; cursor: pointer; font: inherit; }
@@ -39,7 +44,6 @@
 .label { white-space: nowrap; overflow: hidden; }
 @media (max-width: 800px) {
   .brandName, .userDetail { display: none; }
-  .sidebar { width: 64px; }
-  .label { display: none; }
+  .sidebar { display: none; }
   .content { padding: 20px 16px; }
 }
