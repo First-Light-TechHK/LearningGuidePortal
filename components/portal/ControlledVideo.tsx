@@ -44,6 +44,24 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   }
   useLayoutEffect(() => { if (media.current) updateVolume(media.current); }, [props.muted]);
   useEffect(() => {
+    const control = volumeControl.current;
+    if (!control) return;
+    const adjustVolume = (event: WheelEvent) => {
+      const video = media.current;
+      if (!video || event.ctrlKey || !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+      // Read native media state so rapid wheel events and external mute changes stay in sync.
+      event.preventDefault();
+      const current = video.muted ? 0 : Math.round(video.volume * 100);
+      const next = Math.min(100, Math.max(0, current + (event.deltaY < 0 ? 5 : -5)));
+      video.volume = next / 100;
+      video.muted = next === 0;
+      updateVolume(video);
+    };
+    // React's wheel listener is passive; this local listener also prevents page scrolling.
+    control.addEventListener('wheel', adjustVolume, { passive: false });
+    return () => control.removeEventListener('wheel', adjustVolume);
+  }, []);
+  useEffect(() => {
     const video = media.current;
     if (!video) return;
     setPipSupported(!!document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function' && !video.disablePictureInPicture);
