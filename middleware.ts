@@ -12,5 +12,10 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
+  // The two Helpdesk multipart upload endpoints (create ticket, learner message)
+  // carry up to five 10 MB files. They skip middleware so Next neither clones
+  // nor truncates their bodies at its 10 MB default, which stays in force for
+  // every other path; their Route Handlers bound the body themselves and apply
+  // the same admin-host rule (modules/helpdesk/http.ts adminHostResponse).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/helpdesk/tickets(?:/[^/]+/messages)?$).*)"]
 };

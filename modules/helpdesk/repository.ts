@@ -1,0 +1,121 @@
+// Storage port for Helpdesk tickets. Implementations live in
+// repositories/helpdeskRepository.ts (PostgreSQL, and a DEV-only local file
+// fallback). Every write is atomic: the ticket row, the optional message and
+// attachments, and exactly one event commit together or not at all.
+import type { AgentListQuery, AssistFeedback, AssistSource, HelpdeskLocale, TicketCounts } from "@/contracts/helpdesk";
+import type { AttachmentRecord, EventRecord, MessageRecord, TicketAggregate, TicketRecord } from "./domain";
+
+export type IdempotencyRecord = { ticketId: string; payloadHash: string };
+
+export type NewTicket = {
+  /** number is assigned by the repository from the per-day counter. */
+  ticket: Omit<TicketRecord, "number">;
+  message: MessageRecord;
+  attachments: AttachmentRecord[];
+  /** created (sequence 1), then suggestion_declined (sequence 2) when the learner declined an AI suggestion. */
+  events: EventRecord[];
+  /**
+   * v2 §4a: link these helpdesk_assist_log rows to the new ticket in the same
+   * transaction — only rows of learnerId, created after sinceIso and not yet
+   * linked; any other id is skipped silently. declinedId (the submit-time
+   * suggestion the learner declined by submitting) also gets feedback
+   * 'declined' when it is one of those rows, from source submit, with no
+   * feedback yet (first wins).
+   */
+  assistLinks?: { ids: string[]; learnerId: string; sinceIso: string; declinedId?: string | null };
+};
+
+/** One AI Support Assistant answer as shown to the learner (helpdesk_assist_log, v2 §4a). */
+export type AssistRecord = {
+  /** The run id Portal sent Admin (a UUIDv7); Admin answers with it as the suggestion id. */
+  id: string;
+  learnerId: string;
+  source: AssistSource;
+  locale: HelpdeskLocale;
+  /** What the learner typed (chat), the chip question, or the enquiry subject (submit); at most 500 code points. */
+  question: string;
+  faqId: string | null;
+  faqQuestion: string | null;
+  /** The verbatim answer shown, or null for the fallback. */
+  answer: string | null;
+  feedback: AssistFeedback | null;
+  ticketId: string | null;
+  /** Idempotency-Key of the chat request (null for submit checks). */
+  clientEventId: string | null;
+  payloadHash: string | null;
+  createdAt: string;
+  /** When Admin confirmed the feedback (null: not yet told; the sweep retries). */
+  feedbackDeliveredAt: string | null;
+  /** The last attempt to tell Admin (the sweep tries the least recently tried first). */
+  feedbackAttemptedAt: string | null;
+};
+
+export type TicketChange = {
+  /** The full row after the change; its sequence must equal expectedSequence + 1. */
+  ticket: TicketRecord;
+  expectedSequence: number;
+  message?: MessageRecord;
+  attachments: AttachmentRecord[];
+  event: EventRecord;
+  /** A tag change that commits with the event (add_tag / remove_tag). */
+  tag?: { op: "add" | "remove"; tag: string; at: string };
+  /**
+   * The learner posted a public message or said "Not yet": set unread_by_agent. The stored flag
+   * is only ever raised here and only cleared by markRead (which, given the
+   * agent's seen sequence, skips a ticket that moved on), so a stale snapshot
+   * can never undo an agent's mark_read or a learner's new message.
+   */
+  markUnread?: boolean;
+};
+
+/** A list row: the ticket plus its one-line preview source and tags. */
+export type TicketListItem = TicketRecord & { firstMessage: string; tags: string[] };
+
+export type HelpdeskRepository = {
+  findTicket(id: string): Promise<TicketAggregate | null>;
+  /** Idempotency lookup for ticket creation (helpdesk_tickets.client_event_id). */
+  findTicketByKey(clientEventId: string): Promise<IdempotencyRecord | null>;
+  /** Idempotency lookup for commands on an existing ticket (helpdesk_ticket_events.client_event_id). */
+  findCommandByKey(clientEventId: string): Promise<IdempotencyRecord | null>;
+  insertTicket(input: NewTicket): Promise<{ status: "created"; number: string } | { status: "duplicate" }>;
+  /** Optimistic concurrency: "stale" when the stored sequence is no longer expectedSequence. */
+  appendChange(input: TicketChange): Promise<"applied" | "stale" | "duplicate">;
+  listTicketsByUser(userId: string): Promise<TicketRecord[]>;
+  /** Newest activity first (updated_at DESC, id DESC); returns at most limit + 1 rows so the caller can tell whether more exist. */
+  listTickets(query: AgentListQuery): Promise<{ tickets: TicketListItem[]; counts: TicketCounts }>;
+  countTicketsByUser(userId: string): Promise<number>;
+  /**
+   * Clears unread_by_agent; not an event, never changes the sequence. With
+   * seenSequence (the sequence the agent's snapshot showed) it clears only
+   * while the ticket is still at or below it, so a learner message that
+   * arrived after that snapshot keeps its unread dot.
+   */
+  markRead(ticketId: string, seenSequence: number | null): Promise<void>;
+  listAutoConfirmDue(nowIso: string, userId?: string): Promise<TicketRecord[]>;
+  /**
+   * Rate limiting: createdAt of the n-th newest ticket this learner created
+   * after sinceIso, or null when there are fewer than n. Once that ticket is
+   * an hour old the learner is under the limit again.
+   */
+  nthRecentTicketAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
+  /** Rate limiting: the same for public messages this learner wrote on their own tickets (a ticket's first message included). */
+  nthRecentLearnerMessageAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
+  findAttachment(id: string): Promise<AttachmentRecord | null>;
+  // ---- v2 §4a AI assist log
+  /** "duplicate" when the id or the Idempotency-Key is already stored. */
+  insertAssist(record: AssistRecord): Promise<"inserted" | "duplicate">;
+  findAssist(id: string): Promise<AssistRecord | null>;
+  findAssistByKey(clientEventId: string): Promise<AssistRecord | null>;
+  /** Sets feedback only while it is null and the row belongs to learnerId; returns the row as stored afterwards (null: no such row for this learner). */
+  setAssistFeedback(id: string, learnerId: string, feedback: AssistFeedback): Promise<AssistRecord | null>;
+  /** Rate limiting: createdAt of the n-th newest row of this learner from these sources after sinceIso, or null. */
+  nthRecentAssistAt(learnerId: string, sinceIso: string, n: number, sources: readonly AssistSource[]): Promise<string | null>;
+  /** Records one attempt to forward the row's feedback to Admin; delivered sets feedbackDeliveredAt. */
+  recordAssistDelivery(id: string, atIso: string, delivered: boolean): Promise<void>;
+  /** The learner's current conversation: id of their oldest row after sinceIso not yet linked to a ticket (Admin's parentRunId), or null. */
+  conversationRootAssist(learnerId: string, sinceIso: string): Promise<string | null>;
+  /** Rows with feedback Admin has not confirmed, created after sinceIso: never tried first, then least recently tried, then oldest. */
+  listUndeliveredAssists(sinceIso: string, limit: number): Promise<AssistRecord[]>;
+  /** Rows linked to a ticket, oldest first. */
+  listAssistsByTicket(ticketId: string): Promise<AssistRecord[]>;
+};

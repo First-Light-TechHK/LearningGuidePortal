@@ -1,0 +1,330 @@
+"use client";
+// Learner Contact Support (Figma 1216:6): the enquiry form, the AI Support
+// Assistant chat panel on the right (AssistantChat), and the submit-time AI
+// Support Assistant modal (Figma 1333:249). Submit validates in the page, asks for a suggestion (never
+// blocking: no answer, an error or a slow answer submits directly), and then
+// creates the ticket with one Idempotency-Key per logical submit. Cancel or
+// leaving the page during the check never creates a ticket, and a submit
+// whose response was lost is resent as it was (same key, same declined
+// suggestion, same chat assistIds) so the server replays it. The ticket links
+// the chat answers the learner saw (assistIds) and the declined suggestion.
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Bot, Check, ChevronDown, ChevronUp, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
+import type { HelpdeskSuggestion, SuggestionOutcome, TicketCategory, TicketDetail } from "@/contracts/helpdesk";
+import { fillTemplate, firstName, initials, inputMaxLength, isValidEmail, isValidText, nextFocusIndex, problemMessageKey, RetryableSubmit, submissionSignature, SubmissionKeys, type HelpdeskUiConfig } from "@/modules/helpdesk/learnerUi";
+import { createTicket, newIdempotencyKey, reportSuggestionOutcome, requestSuggestion } from "./helpdeskApi";
+import { AssistantChat, type ChatChip } from "./AssistantChat";
+import { AttachmentZone, FileSummaryChip, useAttachments, type HelpdeskCopy } from "./HelpdeskParts";
+import { Markdown } from "./Markdown";
+import "./helpdesk.css";
+
+type Locale = "en-GB" | "zh-CN";
+type Field = "category" | "subject" | "message" | "email";
+type Phase = "form" | "suggestion" | "thanks" | "success";
+
+const THANKS_REDIRECT_MS = 2_000;
+
+export function ContactSupport({ locale, copy, config, account, chips }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[] }) {
+  const router = useRouter();
+  const ids = useId();
+  const [category, setCategory] = useState<TicketCategory | "">("technical_support"); // Figma 1.2 Help Page: defaults to Technical Support
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [email, setEmail] = useState(account.email);
+  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const [formError, setFormError] = useState("");
+  const [busy, setBusy] = useState<"" | "checking" | "submitting">("");
+  const [phase, setPhase] = useState<Phase>("form");
+  const [suggestion, setSuggestion] = useState<HelpdeskSuggestion | null>(null);
+  const [askedAt, setAskedAt] = useState<Date | null>(null);
+  const [created, setCreated] = useState<TicketDetail | null>(null);
+  const attachments = useAttachments(config, copy, busy !== "");
+  const keys = useRef(new SubmissionKeys(newIdempotencyKey));
+  const retry = useRef(new RetryableSubmit());
+  const inFlight = useRef(false);
+  /** The chat answers to link to the enquiry (newest 10), kept up to date by AssistantChat. */
+  const assistIds = useRef<string[]>([]);
+  /** Set by Cancel and on unmount: a suggestion check still running must not go on to create a ticket. */
+  const abandoned = useRef(false);
+  const suggestionCheck = useRef<AbortController | null>(null);
+  const subjectInput = useRef<HTMLInputElement>(null);
+  const submitButton = useRef<HTMLButtonElement>(null);
+  const accountHome = `/${locale}/account/my-learning`;
+  const enquiriesHref = `/${locale}/account/my-learning/support/enquiries`;
+
+  useEffect(() => {
+    abandoned.current = false;
+    return () => { abandoned.current = true; suggestionCheck.current?.abort(); };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "thanks") return;
+    const timer = setTimeout(() => router.push(accountHome), THANKS_REDIRECT_MS);
+    return () => clearTimeout(timer);
+  }, [phase, router, accountHome]);
+
+  function validate() {
+    const found: Partial<Record<Field, string>> = {};
+    if (!category) found.category = copy.validation.category;
+    if (!isValidText(subject, config.limits.subjectMax)) found.subject = copy.validation.subject;
+    if (!isValidText(message, config.limits.bodyMax)) found.message = copy.validation.message;
+    if (!isValidEmail(email, config.limits.emailMax)) found.email = copy.validation.email;
+    setErrors(found);
+    const first = (["category", "subject", "message", "email"] as const).find((field) => found[field]);
+    if (first) document.getElementById(`${ids}-${first}`)?.focus();
+    return !first;
+  }
+
+  function formFields(): Record<string, string> {
+    return { category, subject: subject.trim(), body: message.trim(), locale, contactEmail: email.trim() };
+  }
+
+  async function submitTicket(suggestionId: string | null, linked: string[] = assistIds.current) {
+    setBusy("submitting");
+    const fields = formFields();
+    const signature = submissionSignature(fields, attachments.files);
+    if (suggestionId) fields.suggestionId = suggestionId;
+    const form = new FormData();
+    for (const [name, value] of Object.entries(fields)) form.append(name, value);
+    for (const id of linked) form.append("assistIds", id);
+    for (const file of attachments.files) form.append("files[]", file, file.name);
+    const key = keys.current.keyFor(signature);
+    const result = await createTicket(form, key);
+    if (abandoned.current) return;
+    setBusy("");
+    if (result.ok) {
+      keys.current.done();
+      retry.current.clear();
+      setCreated(result.data);
+      setPhase("success");
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    // A 4xx is final for this payload; a network error or 5xx keeps the key (and the declined suggestion) so a retry replays.
+    if (result.status >= 400 && result.status < 500) keys.current.done();
+    retry.current.failed(signature, suggestionId, result.status, linked);
+    setPhase("form");
+    setFormError(copy.errors[problemMessageKey(result.status, result.code)]);
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (inFlight.current) return;
+    setFormError("");
+    attachments.setError("");
+    if (!validate()) return;
+    inFlight.current = true;
+    // A new Submit is never abandoned (Cancel may have left a page the browser later restored from the back-forward cache).
+    abandoned.current = false;
+    try {
+      // Same form as a submit that may have reached the server: resend it as it was, without a new suggestion check.
+      const again = retry.current.retryFor(submissionSignature(formFields(), attachments.files));
+      if (again) { await submitTicket(again.suggestionId, again.assistIds); return; }
+      setBusy("checking");
+      const check = new AbortController();
+      suggestionCheck.current = check;
+      const found = await requestSuggestion({ category, subject: subject.trim(), message: message.trim(), locale }, { signal: check.signal });
+      suggestionCheck.current = null;
+      if (abandoned.current) return;
+      if (found) {
+        setBusy("");
+        setSuggestion(found);
+        setAskedAt(new Date());
+        setPhase("suggestion");
+        return;
+      }
+      await submitTicket(null);
+    } finally {
+      inFlight.current = false;
+      setBusy((value) => (value === "checking" ? "" : value));
+    }
+  }
+
+  /** focus: where focus goes when the modal closes back to the form ("Edit" goes to Subject; X / Escape back to Submit, which opened it). */
+  function closeSuggestion(outcome: SuggestionOutcome, focus: "subject" | "submit" = "subject") {
+    if (suggestion) reportSuggestionOutcome(suggestion.id, outcome);
+    if (outcome === "solved") { setPhase("thanks"); return; }
+    if (outcome === "edited") { setPhase("form"); setTimeout(() => (focus === "submit" ? submitButton.current : subjectInput.current)?.focus(), 0); return; }
+    if (inFlight.current || !suggestion) return;
+    inFlight.current = true;
+    void submitTicket(suggestion.id).finally(() => { inFlight.current = false; });
+  }
+
+  /** "We’d love to hear your ideas, too!": an Other Enquiries enquiry, starting at Subject. */
+  function shareIdeas() {
+    if (busy !== "" || phase === "success") return;
+    setCategory("other");
+    setErrors((current) => ({ ...current, category: undefined }));
+    subjectInput.current?.focus();
+  }
+
+  function cancel() {
+    abandoned.current = true;
+    suggestionCheck.current?.abort();
+    if (window.history.length > 1) router.back();
+    else router.push(accountHome);
+  }
+
+  const fieldProps = (field: Field) => ({ id: `${ids}-${field}`, "aria-required": true, "aria-invalid": errors[field] ? true : undefined, "aria-describedby": errors[field] ? `${ids}-${field}-error` : undefined });
+  const fieldError = (field: Field) => errors[field] ? <p id={`${ids}-${field}-error`} className="helpdesk-field-error">{errors[field]}</p> : null;
+  const label = (field: Field, text: string) => <label className="helpdesk-label" id={`${ids}-${field}-label`} htmlFor={`${ids}-${field}`}>{text}<span aria-hidden="true">*</span></label>;
+  const disabled = busy !== "";
+
+  return <div className="helpdesk-card">
+    <div className="helpdesk-card-content">
+      {phase === "success" && created ? <SuccessPanel copy={copy} ticket={created} ticketHref={`/${locale}/account/my-learning/support/${created.id}`} enquiriesHref={enquiriesHref} /> :
+        <form className="helpdesk-form" noValidate onSubmit={onSubmit} onPaste={attachments.onPaste}>
+          <div className="helpdesk-form-title"><h1>{copy.pageTitle}</h1><Link prefetch={false} className="helpdesk-text-link" href={enquiriesHref}>{copy.myEnquiries}</Link></div>
+          <div className="helpdesk-field">
+            <span className="helpdesk-label" id={`${ids}-category-label`}>{copy.enquiryType}<span aria-hidden="true">*</span></span>
+            <TopicSelect copy={copy} options={config.categories as TicketCategory[]} value={category} disabled={disabled} buttonProps={fieldProps("category")} labelledBy={`${ids}-category-label`}
+              onChange={(value) => { setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
+            {fieldError("category")}
+          </div>
+          <div className="helpdesk-field">{label("subject", copy.subject)}<input ref={subjectInput} {...fieldProps("subject")} className="helpdesk-input" maxLength={inputMaxLength(config.limits.subjectMax)} placeholder={copy.subjectPlaceholder} value={subject} disabled={disabled} onChange={(event) => setSubject(event.target.value)} />{fieldError("subject")}</div>
+          <div className="helpdesk-field">{label("message", copy.message)}<textarea {...fieldProps("message")} className="helpdesk-input helpdesk-textarea" maxLength={inputMaxLength(config.limits.bodyMax)} placeholder={copy.messagePlaceholder} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} />{fieldError("message")}</div>
+          <AttachmentZone copy={copy} config={config} attachments={attachments} disabled={disabled} inputId={`${ids}-files`} />
+          <div className="helpdesk-field">{label("email", copy.email)}<input {...fieldProps("email")} className="helpdesk-input" type="email" autoComplete="email" maxLength={config.limits.emailMax} value={email} disabled={disabled} onChange={(event) => setEmail(event.target.value)} />{fieldError("email")}<p className="helpdesk-email-note">{copy.emailNote}</p></div>
+          {formError ? <p role="alert" className="helpdesk-inline-error">{formError}</p> : null}
+          <div className="helpdesk-form-actions">
+            <button type="button" className="helpdesk-cancel-button" onClick={cancel} disabled={busy === "submitting"}>{copy.cancel}</button>
+            <button ref={submitButton} type="submit" className="helpdesk-submit-button" disabled={disabled}>{busy === "checking" ? copy.assistant.checking : busy === "submitting" ? copy.submitting : copy.submit}</button>
+          </div>
+        </form>}
+      <div className="helpdesk-divider" aria-hidden="true" />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} />
+    </div>
+    {(phase === "suggestion" || phase === "thanks") && suggestion ? <AssistantModal copy={copy} locale={locale} suggestion={suggestion} thanks={phase === "thanks"} busy={busy === "submitting"} accountHome={accountHome}
+      enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}
+      onOutcome={closeSuggestion} onDismiss={() => closeSuggestion("edited", "submit")} /> : null}
+  </div>;
+}
+
+function TopicSelect({ copy, options, value, onChange, disabled, buttonProps, labelledBy }: { copy: HelpdeskCopy; options: TicketCategory[]; value: TicketCategory | ""; onChange: (value: TicketCategory) => void; disabled: boolean; buttonProps: Record<string, unknown> & { id: string }; labelledBy: string }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
+  const listId = `${buttonProps.id}-options`;
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  function choose(index: number) {
+    onChange(options[index]);
+    setOpen(false);
+    document.getElementById(buttonProps.id)?.focus();
+  }
+  function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) { setOpen(true); setActive(Math.max(0, options.indexOf(value as TicketCategory))); return; }
+      setActive((index) => (index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
+    } else if ((event.key === "Enter" || event.key === " ") && open) { event.preventDefault(); choose(active); }
+    else if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); }
+  }
+  // Tabbing (or otherwise moving focus) out of the control closes the list.
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); };
+  return <div className={`helpdesk-select${open ? " is-open" : ""}`} ref={root} onBlur={onBlur}>
+    <button type="button" role="combobox" {...buttonProps} aria-labelledby={labelledBy} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-activedescendant={open ? `${listId}-${active}` : undefined} disabled={disabled}
+      className={`helpdesk-select-trigger${value ? " has-value" : ""}`} onClick={() => { setActive(Math.max(0, options.indexOf(value as TicketCategory))); setOpen((current) => !current); }} onKeyDown={onKeyDown}>
+      <span>{value ? copy.categories[value] : copy.selectTopic}</span>{open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+    </button>
+    {open ? <ul className="helpdesk-select-options" role="listbox" id={listId} aria-labelledby={labelledBy}>
+      {options.map((option, index) => <li key={option} id={`${listId}-${index}`} role="option" aria-selected={value === option} className={index === active ? "is-active" : undefined} onMouseEnter={() => setActive(index)} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(index)}>{copy.categories[option]}</li>)}
+    </ul> : null}
+  </div>;
+}
+
+type Enquiry = { name: string; email: string; subject: string; category: TicketCategory; message: string; askedAt: Date; files: File[] };
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function AssistantModal({ copy, locale, suggestion, enquiry, thanks, busy, accountHome, onOutcome, onDismiss }: { copy: HelpdeskCopy; locale: Locale; suggestion: HelpdeskSuggestion; enquiry: Enquiry; thanks: boolean; busy: boolean; accountHome: string; onOutcome: (outcome: SuggestionOutcome) => void; onDismiss: () => void }) {
+  const ids = useId();
+  const dialog = useRef<HTMLDivElement>(null);
+  const latest = useRef({ thanks, busy, onDismiss });
+  latest.current = { thanks, busy, onDismiss };
+  useEffect(() => {
+    dialog.current?.focus();
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Modal: Escape closes it wherever focus is, and Tab / Shift+Tab stay inside it.
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const node = dialog.current;
+      if (!node) return;
+      if (event.key === "Escape") {
+        if (!latest.current.thanks && !latest.current.busy) { event.preventDefault(); latest.current.onDismiss(); }
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const target = nextFocusIndex({ count: items.length, active: items.indexOf(document.activeElement as HTMLElement), shift: event.shiftKey });
+      if (target === null) return;
+      event.preventDefault();
+      (target < 0 ? node : items[target]).focus();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => { document.removeEventListener("keydown", onKeyDown, true); document.body.style.overflow = previous; };
+  }, []);
+  const name = firstName(enquiry.name);
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false }).format(enquiry.askedAt);
+  const paragraphs = enquiry.message.split(/\n/);
+  // A press on the backdrop must not move focus to the page behind.
+  return <div className="helpdesk-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}>
+    <div className="helpdesk-modal" role="dialog" aria-modal="true" aria-labelledby={`${ids}-title`} tabIndex={-1} ref={dialog}>
+      <header className="helpdesk-modal-header">
+        <div className="helpdesk-modal-heading"><span className="helpdesk-modal-icon"><Bot size={20} aria-hidden="true" /></span><div><h2 id={`${ids}-title`}>{copy.assistant.title}</h2><p>{copy.assistant.subtitle}</p></div></div>
+        {thanks ? null : <button type="button" className="helpdesk-modal-close" aria-label={copy.assistant.close} disabled={busy} onClick={onDismiss}><X size={14} aria-hidden="true" /></button>}
+      </header>
+      {thanks ? <div className="helpdesk-modal-thanks" role="status"><span className="helpdesk-success-icon"><Check size={22} aria-hidden="true" /></span><h3>{copy.assistant.thanksTitle}</h3><p>{copy.assistant.thanksBody}</p><Link prefetch={false} className="helpdesk-submit-button" href={accountHome}>{copy.assistant.backToAccount}</Link></div> : <>
+        <div className="helpdesk-modal-body">
+          <section className="helpdesk-modal-query">
+            <span className="helpdesk-avatar" aria-hidden="true">{initials(enquiry.name, enquiry.email)}</span>
+            <div className="helpdesk-modal-query-content">
+              <div className="helpdesk-modal-query-title"><h3>{enquiry.subject}</h3><span className="helpdesk-type-tag">{copy.categories[enquiry.category]}</span></div>
+              <p className="helpdesk-modal-meta">{enquiry.email} · {time}</p>
+              <div className="helpdesk-modal-text">{paragraphs.map((line, index) => line ? <p key={index}>{line}</p> : <p key={index} className="is-blank">​</p>)}</div>
+              {enquiry.files.length ? <div className="helpdesk-modal-files">{enquiry.files.map((file, index) => <FileSummaryChip key={index} name={file.name} size={file.size} image={file.type.startsWith("image/")} />)}</div> : null}
+            </div>
+          </section>
+          <section className="helpdesk-modal-answer">
+            <span className="helpdesk-bot-avatar" aria-hidden="true"><Bot size={18} /></span>
+            <div className="helpdesk-modal-answer-content">
+              <p className="helpdesk-answer-greeting">{name ? fillTemplate(copy.assistant.greeting, { name }) : copy.assistant.greetingNoName}</p>
+              <Markdown className="helpdesk-answer-markdown" text={suggestion.answer} />
+            </div>
+          </section>
+        </div>
+        <footer className="helpdesk-modal-footer">
+          <div className="helpdesk-modal-helpful">
+            <p>{copy.assistant.helpful}</p>
+            <div>
+              <button type="button" className="helpdesk-feedback-button helpdesk-feedback-yes" disabled={busy} onClick={() => onOutcome("solved")}><ThumbsUp size={14} aria-hidden="true" />{copy.assistant.yes}</button>
+              <button type="button" className="helpdesk-feedback-button helpdesk-feedback-no" disabled={busy} onClick={() => onOutcome("declined")}><ThumbsDown size={14} aria-hidden="true" />{busy ? copy.submitting : copy.assistant.no}</button>
+            </div>
+            <button type="button" className="helpdesk-feedback-button" disabled={busy} onClick={() => onOutcome("edited")}>{copy.assistant.edit}</button>
+          </div>
+          <div className="helpdesk-modal-footer-spacer" />
+        </footer>
+      </>}
+    </div>
+  </div>;
+}
+
+function SuccessPanel({ copy, ticket, ticketHref, enquiriesHref }: { copy: HelpdeskCopy; ticket: TicketDetail; ticketHref: string; enquiriesHref: string }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
+  const [before, after] = copy.success.reference.split("{number}");
+  return <section className="helpdesk-success" aria-live="polite">
+    <span className="helpdesk-success-icon"><Check size={22} aria-hidden="true" /></span>
+    <h1 ref={heading} tabIndex={-1}>{copy.success.title}</h1>
+    <p>{before}<strong className="helpdesk-success-number">{ticket.number}</strong>{after}</p>
+    <p>{fillTemplate(copy.success.reply, { email: ticket.contactEmail })}</p>
+    <div className="helpdesk-success-actions"><Link prefetch={false} className="helpdesk-submit-button" href={ticketHref}>{copy.success.view}</Link><Link prefetch={false} className="helpdesk-secondary-button" href={enquiriesHref}>{copy.success.list}</Link></div>
+  </section>;
+}
+
