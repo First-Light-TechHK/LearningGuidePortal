@@ -211,7 +211,11 @@ test("a search marks the list busy until its results land, and announces how man
     await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 0, null, { timeout: 3_000 });
     assert.equal(await list.getAttribute("aria-busy"), "true", "busy while the server answers");
     await mountHelp(page, { locale, faqs: FAQS, search: { invoice: [FAQS[3]] }, searchParams: { q: "invoice" }, inPlace: true });
-    assert.equal(await list.getAttribute("aria-busy"), "false");
+    // The results land and busy clears in an effect, which React commits after the
+    // mount promise resolves. Waiting keeps the guarantee while tolerating a slower
+    // runner: a bare read here raced the commit and failed only on CI.
+    await page.waitForFunction(() => document.querySelector(".help-centre-list")?.getAttribute("aria-busy") === "false", null, { timeout: 3_000 });
+    assert.equal(await list.getAttribute("aria-busy"), "false", "busy clears once the results land");
     assert.equal(await status.textContent(), fillTemplate(v.copy.searchCount, { count: "1" }));
     await mountHelp(page, { locale, faqs: FAQS, searchParams: { q: "zzz" }, inPlace: true });
     assert.equal(await status.textContent(), fillTemplate(v.copy.searchCount, { count: "0" }));
