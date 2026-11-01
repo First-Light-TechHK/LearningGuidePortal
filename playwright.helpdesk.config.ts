@@ -41,6 +41,13 @@ export default defineConfig({
   globalTeardown: "./tests/e2e/helpdesk-global-teardown.ts",
   workers: 1,
   timeout: 60_000,
+  // One retry, for runner capacity rather than for known defects. This suite drives a
+  // next dev server that compiles each route on first use; on a starved CI runner a
+  // single submit can outlast its 20s expect timeout even though the behaviour is
+  // right (observed on the handover test, which passes locally and on rerun). A real
+  // regression still fails both attempts, and Playwright reports a retried pass as
+  // "flaky" in the output, so a repeat offender stays visible instead of silent.
+  retries: 1,
   // next dev compiles a route (server and client chunks) on its first visit; a cold compile
   // can outlast the 5 s default, so the first test on a page flaked in a fresh checkout or CI.
   expect: { timeout: 20_000 },
