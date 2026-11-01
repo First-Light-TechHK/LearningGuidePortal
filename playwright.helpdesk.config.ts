@@ -22,6 +22,12 @@ const env = {
   EMAIL_VERIFICATION_REQUIRED: "0",
   SESSION_SECRET: "e2e-session-secret-at-least-32-chars!!",
   APP_VERSION: "e2e",
+  // Pin the public origin for this run. Without it the app falls back to a
+  // developer's .env.local (gitignored, e.g. NEXT_PUBLIC_APP_URL=http://127.0.0.1:3011),
+  // and the checkout/purchase origin check then rejects the browser's real origin
+  // with 403 origin_mismatch — locally every time, on CI depending on which host
+  // next dev reports. The e2e server should never inherit an ambient app URL.
+  NEXT_PUBLIC_APP_URL: baseURL,
   // In DEV, localhost / 127.0.0.1 count as BackOffice hosts unless ADMIN_HOSTS
   // says otherwise; learner pages need the learner site (as playwright.studygroup.config.ts).
   ADMIN_HOSTS: "admin.ilovelearningguide.com,admin.sit.ilovelearningguide.com",
