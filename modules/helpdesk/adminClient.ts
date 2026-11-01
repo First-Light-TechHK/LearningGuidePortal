@@ -7,7 +7,7 @@
 // a rotated token applies without a restart. The token is never logged.
 // Every call carries a W3C traceparent: a child of the learner request's
 // own (deps.traceparent) when that is valid, otherwise a new trace.
-import { FAQ_CATEGORIES, HELPDESK_LIMITS, type AdminSuggestReply, type AdminSuggestRequest, type AssistFeedback, type FaqCategory, type FaqFilter, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
+import { FAQ_CATEGORIES, FAQ_SIGNALS, HELPDESK_LIMITS, buildSuggestContext, parseFaqRelease, parseSuggestTurn, createEventStreamParser, isAssistantStep, type AdminSuggestReply, type AdminSuggestRequest, type AssistantStep, type AssistFeedback, type FaqCategory, type FaqFilter, type FaqRelease, type HelpFaq, type HelpdeskAlternative, type HelpdeskLocale, type HelpdeskSuggestion } from "@/contracts/helpdesk";
 import { outgoingTraceparent } from "@/lib/traceparent";
 import { isUuid } from "@/lib/uuidv7";
 
@@ -28,6 +28,12 @@ export const ADMIN_FAQS_CACHE_ENTRIES = 200;
 export const ADMIN_SEARCHES_PER_MINUTE = 120;
 const SEARCH_WINDOW_MS = 60_000;
 export const ADMIN_SUGGEST_TIMEOUT_MS = 4_000;
+/**
+ * The chat panel's wait (questions and chips). Admin thinks before a v5 chat answer (DeepSeek, thinking high) with a
+ * 15 s total deadline (Admin da5ea62; p95 6.3 s, p99 12.6 s); Portal waits a little longer so Admin's own deadline
+ * answers first. The submit-time suggestion never thinks and keeps ADMIN_SUGGEST_TIMEOUT_MS.
+ */
+export const ADMIN_CHAT_SUGGEST_TIMEOUT_MS = 16_000;
 export const ADMIN_OUTCOME_TIMEOUT_MS = 4_000;
 
 type CacheEntry<T> = { etag: string | null; value: T; fetchedAt: number };
@@ -78,7 +84,7 @@ export type AdminHelpdeskClientDeps = {
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: Record<string, unknown>) => void;
-  timeouts?: Partial<{ faqs: number; wait: number; suggest: number; outcome: number }>;
+  timeouts?: Partial<{ faqs: number; wait: number; suggest: number; chat: number; outcome: number }>;
   /** The incoming request's traceparent header, continued on every Admin call. */
   traceparent?: string | null;
 };
@@ -106,7 +112,9 @@ function faqOf(value: unknown): HelpFaq | null {
   const item = value as Record<string, unknown>;
   if (!isUuid(item.id) || !isText(item.question) || !isText(item.answer)) return null;
   if (typeof item.category !== "string" || !(FAQ_CATEGORIES as readonly string[]).includes(item.category)) return null;
-  return { id: item.id.toLowerCase(), category: item.category as FaqCategory, popular: item.popular === true, question: item.question, answer: item.answer, updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : "" };
+  // v5 Part A (contract v6): only the FAQ signals Portal knows, in chip priority order; [] from an older Admin.
+  const signals = Array.isArray(item.signals) ? FAQ_SIGNALS.filter((signal) => (item.signals as unknown[]).includes(signal)) : [];
+  return { id: item.id.toLowerCase(), category: item.category as FaqCategory, popular: item.popular === true, question: item.question, answer: item.answer, signals, updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : "" };
 }
 
 function suggestion(value: unknown): HelpdeskSuggestion | null {
@@ -151,11 +159,18 @@ export function faqsPath(locale: HelpdeskLocale, filter: FaqFilter = {}) {
   return `/api/integration/helpdesk/faqs?${query}`;
 }
 
+/** v6: the published FAQ release of a locale (Admin, bearer). */
+export function faqReleasePath(locale: HelpdeskLocale) {
+  return `/api/integration/helpdesk/faq-release/current?${new URLSearchParams({ locale })}`;
+}
+
+export type FaqReleaseRead = { status: "ok"; release: FaqRelease; etag: string } | { status: "not_modified" } | { status: "none" } | { status: "unavailable" };
+
 export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
   const doFetch = deps.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? ((line: Record<string, unknown>) => console.info(JSON.stringify(line)));
-  const timeouts = { faqs: ADMIN_FAQS_TIMEOUT_MS, wait: ADMIN_FAQS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
+  const timeouts = { faqs: ADMIN_FAQS_TIMEOUT_MS, wait: ADMIN_FAQS_WAIT_MS, suggest: ADMIN_SUGGEST_TIMEOUT_MS, chat: ADMIN_CHAT_SUGGEST_TIMEOUT_MS, outcome: ADMIN_OUTCOME_TIMEOUT_MS, ...deps.timeouts };
 
   async function call(destination: Target, path: string, init: { method: "GET" | "POST"; body?: unknown; headers?: Record<string, string>; timeout: number }) {
     const controller = new AbortController();
@@ -169,6 +184,48 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       // Read the body inside the timeout as well.
       const text = response.status === 204 || response.status === 304 ? "" : await response.text();
       return { status: response.status, etag: response.headers.get("etag"), text };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The suggest call as a text/event-stream (contract v7): each step goes to onStep as it arrives, and the result event
+   * is the same JSON the plain call returns. An error event is Admin's problem body (its status inside); an older Admin
+   * answers with plain JSON, which is read as before. The whole stream stays inside the timeout.
+   */
+  async function callStream(destination: Target, path: string, init: { body: unknown; timeout: number; onStep: (step: AssistantStep) => void }) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("timeout")), init.timeout);
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${destination.token}`, Accept: "text/event-stream, application/json", "Content-Type": "application/json", traceparent: outgoingTraceparent(deps.traceparent) };
+      const response = await doFetch(`${destination.baseUrl}${path}`, { method: "POST", headers, body: JSON.stringify(init.body), signal: controller.signal, cache: "no-store" });
+      if (!(response.headers.get("content-type") ?? "").includes("text/event-stream") || !response.body) {
+        return { status: response.status, text: await response.text() };
+      }
+      const parser = createEventStreamParser();
+      const decoder = new TextDecoder();
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          const events = parser.push(done ? decoder.decode() + "\n\n" : decoder.decode(value, { stream: true }));
+          for (const event of events) {
+            if (event.event === "step") {
+              const step = (() => { try { return (JSON.parse(event.data) as { step?: unknown }).step; } catch { return undefined; } })();
+              if (isAssistantStep(step)) init.onStep(step);
+            } else if (event.event === "result") {
+              return { status: 200, text: event.data };
+            } else if (event.event === "error") {
+              const status = (() => { try { return Number((JSON.parse(event.data) as { status?: unknown }).status) || 500; } catch { return 500; } })();
+              return { status: status === 200 ? 500 : status, text: event.data };
+            }
+          }
+          if (done) throw new Error("stream_ended");
+        }
+      } finally {
+        reader.cancel().catch(() => undefined);
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -273,14 +330,15 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
    * malformed body or the 4 s timeout are { suggestion: null, alternatives: [] }.
    * source says where it is shown: the submit-time modal, the chat panel, or
    * a starter chip (with faqId, which Admin returns directly).
+   * onStep (contract v7): ask for the streamed answer and pass on Admin's workflow steps as they start.
    */
-  async function suggestReply(input: AdminSuggestRequest): Promise<AdminSuggestReply> {
+  async function suggestReply(input: AdminSuggestRequest, options: { onStep?: (step: AssistantStep) => void } = {}): Promise<AdminSuggestReply> {
     const nothing: AdminSuggestReply = { suggestion: null, alternatives: [] };
     const destination = target();
     if (!destination) return nothing;
     try {
       // Fixed key order; optional fields only when set; the run ids always, last.
-      const body: Record<string, string | string[] | null> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
+      const body: Record<string, string | string[] | null | Record<string, unknown>> = { learnerId: input.learnerId, locale: input.locale, source: input.source };
       if (input.category) body.category = input.category;
       if (input.subject) body.subject = input.subject;
       body.message = input.message;
@@ -288,15 +346,24 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       // v3: Admin refuses a malformed id or more than 20 with 400, which would lose the answer too.
       const shown = [...new Set((input.shownFaqIds ?? []).filter((id) => isUuid(id)).map((id) => id.toLowerCase()))].slice(0, HELPDESK_LIMITS.shownFaqIdsMax);
       if (shown.length) body.shownFaqIds = shown;
+      // v6: the card on screen, the chat session and the learner's own earlier words (never learner data); an older Admin ignores it.
+      if (input.context) body.context = buildSuggestContext(input.context);
       body.runId = input.runId;
       body.parentRunId = input.parentRunId;
-      const result = await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout: timeouts.suggest, body });
+      // The chat (Admin may think first) waits longer than the submit-time suggestion.
+      const timeout = input.source === "submit" ? timeouts.suggest : timeouts.chat;
+      const result = options.onStep
+        ? await callStream(destination, "/api/integration/helpdesk/suggest", { body, timeout, onStep: options.onStep })
+        : await call(destination, "/api/integration/helpdesk/suggest", { method: "POST", timeout, body });
       if (result.status !== 200) throw new Error(`status_${result.status}`);
       const reply = JSON.parse(result.text) as { suggestion?: unknown; alternatives?: unknown };
-      if (reply.suggestion === null) return { suggestion: null, alternatives: alternativesOf(reply.alternatives, false) };
+      // v6: Admin's turn fields when it sent them (only for a request with context); absent otherwise.
+      const turn = parseSuggestTurn(reply);
+      const withTurn = (answer: AdminSuggestReply): AdminSuggestReply => (turn ? { ...answer, turn } : answer);
+      if (reply.suggestion === null) return withTurn({ suggestion: null, alternatives: alternativesOf(reply.alternatives, false) });
       const parsed = suggestion(reply.suggestion);
       if (!parsed) throw new Error("malformed");
-      return { suggestion: parsed, alternatives: [] };
+      return withTurn({ suggestion: parsed, alternatives: [] });
     } catch (error) {
       failure("admin_suggest_failed", error);
       return nothing;
@@ -322,7 +389,29 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
     }
   }
 
-  return { faqs, faq, suggest, suggestReply, reportOutcome };
+  /**
+   * v5 FAQ question trees (contract v6): one request for the published release of a locale. The cache (keep the last
+   * good release, revalidate every 60 s with If-None-Match) belongs to the caller. "none" = Admin has no release yet
+   * (404, also an older Admin without the route): use the per-FAQ list; "unavailable" = keep what is cached.
+   */
+  async function faqRelease(locale: HelpdeskLocale, ifNoneMatch?: string | null): Promise<FaqReleaseRead> {
+    const destination = target();
+    if (!destination) return { status: "unavailable" };
+    try {
+      const result = await call(destination, faqReleasePath(locale), { method: "GET", timeout: timeouts.faqs, headers: ifNoneMatch ? { "If-None-Match": ifNoneMatch } : {} });
+      if (result.status === 304) return { status: "not_modified" };
+      if (result.status === 404) return { status: "none" };
+      if (result.status !== 200) throw new Error(`status_${result.status}`);
+      const release = parseFaqRelease(JSON.parse(result.text));
+      if (!release || release.locale !== locale) throw new Error("malformed");
+      return { status: "ok", release, etag: result.etag || `"v${release.version}"` };
+    } catch (error) {
+      failure("admin_faq_release_failed", error);
+      return { status: "unavailable" };
+    }
+  }
+
+  return { faqs, faq, suggest, suggestReply, reportOutcome, faqRelease };
 }
 
 export type AdminHelpdeskClient = ReturnType<typeof createAdminHelpdeskClient>;

@@ -27,6 +27,8 @@ test("Subscription Figma layout and shared full-width footer in both locales", a
     await page.route("http://design.test/**",async route=>{const pathname=new URL(route.request().url()).pathname;if(pathname.startsWith("/portal/"))return route.fulfill({body:await readFile(path.join("public",pathname)),contentType:"image/svg+xml"});return route.fulfill({body:'<div id="root"></div>',contentType:"text/html"});});
     await page.goto("http://design.test/");
     for(const file of ["app/styles.css","app/portal-design.css"])await page.addStyleTag({content:await readFile(file,"utf8")});
+    // 颜色断言取的是元素最终色。带过渡的属性在动画中途读出来会是中间值（CI 上出现过 rgb(22, 94, 252) 对 rgb(21, 93, 252)），所以先关掉过渡与动画，只让断言看最终状态，而不是改变它断言什么。
+    await page.addStyleTag({content:"*{transition:none!important;animation:none!important}"});
     await page.addStyleTag({content:bundle.outputFiles.find(f=>f.path.endsWith("css"))!.text+".footer-slot{grid-column:1/-1}"});
     for(const weight of [400,500,600,700])await page.addStyleTag({content:`@font-face{font-family:Inter;src:url(data:font/woff2;base64,${(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64")});font-weight:${weight}}`});
     await page.addScriptTag({content:bundle.outputFiles.find(f=>f.path.endsWith("js"))!.text});

@@ -1,5 +1,9 @@
 "use client";
 
+import { PortalProvider } from "./ui/PortalProvider";
+
+import { PortalButton } from "./ui/PortalButton";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -19,7 +23,11 @@ type Copy = {
   cancel: string; close: string; selectedPlan: string; paymentRenewal: string; confirmations: string; months: string;
 };
 
-export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeading, planSubtitle, scopeDescription, upgradeSource, display }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy; planHeading: string; planSubtitle?: string; scopeDescription: string; upgradeSource?: { name: string; validTo: string }; display?: SubscriptionConfirmationDisplay }) {
+export function SubscriptionConfirmation(props: Parameters<typeof SubscriptionConfirmationContent>[0]) {
+  return <PortalProvider locale={props.locale}><SubscriptionConfirmationContent {...props}/></PortalProvider>;
+}
+
+function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeading, planSubtitle, scopeDescription, upgradeSource, display }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy; planHeading: string; planSubtitle?: string; scopeDescription: string; upgradeSource?: { name: string; validTo: string }; display?: SubscriptionConfirmationDisplay }) {
   const details = getMessages(locale).confirmationDetails;
   const upgrade = getMessages(locale).upgradeConfirmation;
   const dialog = useRef<HTMLDialogElement>(null);
@@ -123,6 +131,6 @@ export function SubscriptionConfirmation({ locale, quote, plan, copy, planHeadin
     </fieldset>
     {isUpgrade && <p className="upgrade-renewal-note">{upgrade.renewalNote.replace("{category}", sourceCategory).replace("{date}", renewalDate).replace("{price}", money(plan.amountMinor)).replace("{months}", String(plan.termMonths))}</p>}
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-    <footer className="confirmation-actions"><button className="portal-button portal-button-primary" type="button" disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}</button></footer>
+    <footer className="confirmation-actions"><PortalButton type="primary" loading={busy} disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}</PortalButton></footer>
   </dialog>;
 }

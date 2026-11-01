@@ -58,7 +58,7 @@ test("addendum: the four Figma enquiry types replace the old categories; nine at
 
 test("create-ticket input is trimmed, bounded and enum-checked", () => {
   const input = parseCreateTicketInput(valid, [png]);
-  assert.deepEqual({ ...input, files: input.files.length }, { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid but my plan is still Basic.", locale: "zh-CN", contactEmail: null, suggestionId: null, assistIds: [], files: 1 });
+  assert.deepEqual({ ...input, files: input.files.length }, { category: "payments_subscriptions", subject: "Upgrade did not apply", body: "I paid but my plan is still Basic.", locale: "zh-CN", contactEmail: null, suggestionId: null, assistIds: [], orderId: null, files: 1 }); // v4: orderId (none sent: null)
   assert.equal(parseCreateTicketInput({ ...valid, subject: "x".repeat(120) }, []).subject.length, 120);
   problem(() => parseCreateTicketInput({ ...valid, subject: "x".repeat(121) }, []), "validation_failed", "subject");
   problem(() => parseCreateTicketInput({ ...valid, subject: "   " }, []), "validation_failed", "subject");

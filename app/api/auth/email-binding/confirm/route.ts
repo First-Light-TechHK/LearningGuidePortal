@@ -1,21 +1,19 @@
 import { NextResponse } from "next/server";
-import { confirmEmailBinding } from "@/services/productStore";
-import { currentProductUserFromRequest } from "@/services/productAuth";
-import { safeReturnTo } from "@/services/runtimeConfig";
+import { completeEmailBinding } from "@/services/emailBindingService";
+import { SESSION_COOKIE, SESSION_MAX_AGE } from "@/services/productAuth";
+import { secureAuthCookie } from "@/services/runtimeConfig";
 import type { EmailBindingConfirmation } from "@/contracts/emailBinding";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json() as EmailBindingConfirmation;
-    if (typeof body.token !== "string" || !body.token || (body.returnTo !== undefined && typeof body.returnTo !== "string")) throw new Error("invalid_link");
-    const result = await confirmEmailBinding(body.token);
-    const user = await currentProductUserFromRequest(request, true);
-    const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
-    const returnTo = safeReturnTo(body.returnTo, `/${locale}/account/my-learning`);
-    const sameUser = user?.id === result.userId;
-    return NextResponse.json({ ok: true, alreadyBound: result.alreadyBound, sameUser, continueUrl: sameUser ? returnTo : `/api/auth/wechat?${new URLSearchParams({ locale, returnTo })}` });
+    const result = await completeEmailBinding(body, request);
+    const response = NextResponse.json({ ok: true, alreadyBound: result.alreadyBound, merged: result.merged, sameUser: result.sameUser, continueUrl: result.continueUrl }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
+    if (result.sessionToken) response.cookies.set(SESSION_COOKIE, result.sessionToken, { httpOnly: true, sameSite: "lax", secure: secureAuthCookie(request), path: "/", maxAge: SESSION_MAX_AGE });
+    return response;
   } catch (error) {
-    const code = error instanceof Error && error.message === "email_in_use" ? "email_in_use" : "invalid_link";
-    return NextResponse.json({ ok: false, code }, { status: 400 });
+    const message = error instanceof Error ? error.message : "invalid_link";
+    const code = ["email_in_use", "account_unavailable", "account_conflict", "source_has_history", "confirmation_required"].includes(message) ? message : "invalid_link";
+    return NextResponse.json({ ok: false, code }, { status: 400, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   }
 }

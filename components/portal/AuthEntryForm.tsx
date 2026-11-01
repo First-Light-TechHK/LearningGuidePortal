@@ -1,5 +1,10 @@
 "use client";
 
+import { PortalProvider } from "./ui/PortalProvider";
+
+import { Input } from "antd";
+import { PortalButton } from "./ui/PortalButton";
+
 import { FormEvent, useRef, useState } from "react";
 import { AuthProviders } from "@/components/portal/AuthProviders";
 import Image from "next/image";
@@ -8,7 +13,11 @@ import { isBusinessEmail, isEmailTooLong, normaliseEmail } from "@/lib/emailVali
 
 type Copy = { email: string; emailInvalid: string; emailTooLong: string; emailContinue: string; emailEntryDescription: string; emailCheckFailed: string; or: string; google: string; wechat: string; backToPortal: string };
 
-export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEnabled }: { locale: "en-GB" | "zh-CN"; copy: Copy; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean }) {
+export function AuthEntryForm(props: Parameters<typeof AuthEntryFormContent>[0]) {
+  return <PortalProvider locale={props.locale}><AuthEntryFormContent {...props}/></PortalProvider>;
+}
+
+function AuthEntryFormContent({ locale, copy, returnTo, googleEnabled, wechatEnabled }: { locale: "en-GB" | "zh-CN"; copy: Copy; returnTo: string; googleEnabled?: boolean; wechatEnabled?: boolean }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,5 +46,5 @@ export function AuthEntryForm({ locale, copy, returnTo, googleEnabled, wechatEna
     }
   }
 
-  return <form className="portal-form auth-entry-form" onSubmit={submit}><div className="auth-entry-fields"><label>{copy.email}<span className="auth-input"><Image src="/portal/figma-signin-mail.svg" width={16} height={16} alt="" /><input type="email" value={email} onChange={(event) => { event.currentTarget.setCustomValidity(""); const value = event.target.value; setEmail(value); if (isEmailTooLong(value)) setError(copy.emailTooLong); else if (error === copy.emailTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(isEmailTooLong(event.currentTarget.value) ? copy.emailTooLong : copy.emailInvalid)} required autoComplete="email" placeholder="you@example.com" /></span></label>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}<button className="portal-button portal-button-primary" disabled={busy}>{copy.emailContinue}<Image src="/portal/figma-signin-arrow.svg" width={16} height={16} alt="" /></button></div><AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} variant="signin" /><Link className="auth-entry-back" href={`/${locale}/portal`}>{copy.backToPortal}</Link></form>;
+  return <form className="portal-form auth-entry-form" onSubmit={submit}><div className="auth-entry-fields"><label>{copy.email}<span className="auth-input"><Image src="/portal/figma-signin-mail.svg" width={16} height={16} alt="" /><Input onInput={event => event.currentTarget.setCustomValidity("")} type="email" value={email} onChange={(event) => { const value = event.target.value; setEmail(value); if (isEmailTooLong(value)) setError(copy.emailTooLong); else if (error === copy.emailTooLong) setError(""); }} onInvalid={(event) => event.currentTarget.setCustomValidity(isEmailTooLong(event.currentTarget.value) ? copy.emailTooLong : copy.emailInvalid)} required autoComplete="email" placeholder="you@example.com" /></span></label>{error ? <p className="portal-form-error" role="alert">{error}</p> : null}<PortalButton disabled={busy} type="primary" htmlType="submit" loading={busy}>{copy.emailContinue}<Image src="/portal/figma-signin-arrow.svg" width={16} height={16} alt="" /></PortalButton></div><AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} variant="signin" /><Link className="auth-entry-back" href={`/${locale}/portal`}>{copy.backToPortal}</Link></form>;
 }

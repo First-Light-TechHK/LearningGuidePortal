@@ -14,7 +14,7 @@ import styles from "./exhibit-dialog.module.css";
 
 const CourseModelPreview = dynamic(() => import("./CourseModelPreview").then(module => module.CourseModelPreview), { ssr:false });
 
-export function ExhibitDialog({ node, locale, onClose }: { node: LessonNode; locale: Locale; onClose: () => void }) {
+export function ExhibitDialog({ node, locale, onClose, containedFullscreen = false }: { node: LessonNode; locale: Locale; onClose: () => void; containedFullscreen?: boolean }) {
   const messages = getMessages(locale), copy = messages.exhibitDialog, src = safeMediaUrl(node.url);
   const stage = useRef<HTMLDivElement>(null), video = useRef<HTMLVideoElement>(null), model = useRef<ExhibitViewerControls>(null);
   const [zoom, setZoom] = useState(1), [position, setPosition] = useState({x:0,y:0}), [ready, setReady] = useState(false), [failed, setFailed] = useState(!src);
@@ -41,7 +41,7 @@ export function ExhibitDialog({ node, locale, onClose }: { node: LessonNode; loc
       onPointerUp={event=>{if(drag.current?.id===event.pointerId){drag.current=null;event.currentTarget.releasePointerCapture(event.pointerId);}}} onPointerCancel={()=>{drag.current=null;}}
       onKeyDown={event=>{if(!isImage || event.target!==event.currentTarget || !ready)return;const steps:Record<string,{x:number;y:number}>={ArrowLeft:{x:-20,y:0},ArrowRight:{x:20,y:0},ArrowUp:{x:0,y:-20},ArrowDown:{x:0,y:20}};const step=steps[event.key];if(step){event.preventDefault();setPosition(value=>({x:value.x+step.x,y:value.y+step.y}));}}}>
       {!failed && isImage && <Image className={styles.resourceImage} src={src} alt={node.title} unoptimized fill draggable={false} style={{transform:`translate(${position.x}px,${position.y}px) scale(${zoom})`}} onLoad={()=>setReady(true)} onError={()=>setFailed(true)}/>}
-      {!failed && node.type === "video" && <div className={`${styles.video} la`}><ControlledVideo ref={video} locale={locale} src={src} preload="metadata" style={{transform:`scale(${zoom})`}} onLoadedMetadata={()=>setReady(true)} onError={()=>setFailed(true)}/></div>}
+      {!failed && node.type === "video" && <div className={`${styles.video} la`}><ControlledVideo ref={video} locale={locale} hideFullscreen={containedFullscreen} src={src} preload="metadata" style={{transform:`scale(${zoom})`}} onLoadedMetadata={()=>setReady(true)} onError={()=>setFailed(true)}/></div>}
       {!failed && isModel && <CourseModelPreview url={src} title={node.title} locale={locale} exhibit controlsRef={model} onZoomChange={setZoom} onReadyChange={setReady}/>}
       {failed && <p className={styles.status} role="alert">{copy.failed}</p>}
       {!failed && !ready && !isModel && <p className={styles.status} role="status">{copy.loading}</p>}

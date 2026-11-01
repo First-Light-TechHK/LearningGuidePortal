@@ -23,7 +23,7 @@ test("contact submits in-page, suppresses duplicate submits and retains data/key
     await page.screenshot({path:`test-results/contact/${locale}-failure.png`,fullPage:true});
     success=true;await submit();while(requests.length<2)await page.waitForTimeout(10);assert.equal(requests[0].clientEventId,requests[1].clientEventId);release();await page.getByRole("status").waitFor();
     assert.equal(await page.getByRole("status").textContent(),getMessages(locale).contactPage.success);assert.equal(await page.locator('[name="message"]').inputValue(),"");assert.equal(page.url(),"http://localhost:43123/");
-    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:`test-results/contact/${locale}-success-mobile.png`,fullPage:true});
+    await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:`test-results/contact/${locale}-success-mobile.png`,fullPage:true});
     await page.close();
   }}finally{await browser.close();}
 });

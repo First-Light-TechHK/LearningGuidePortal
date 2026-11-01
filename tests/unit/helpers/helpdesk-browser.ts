@@ -28,7 +28,7 @@ import {getMessages} from './lib/i18n/messages';
 const root=createRoot(document.getElementById('root'));
 let mounts=0;
 window.__nav=[];
-window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips}/>);
+window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips} order={p.order} orderUnavailable={p.orderUnavailable} session={p.session}/>);
 window.mountDetail=p=>root.render(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
 window.mountNav=p=>root.render(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
 window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});root.render(<React.Fragment key={p.inPlace?mounts:++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
@@ -137,7 +137,8 @@ export async function openHarness(browser: Browser, locale: Locale, handler: Han
 export const config = helpdeskUiConfig();
 
 export type ChatChip = { id: string; question: string };
-export type ContactProps = { locale: Locale; account?: { id: string; name: string; email: string }; chips?: ChatChip[] };
+export type ChatSessionProp = { sessionId: string; chips: Array<ChatChip & { reason: "signal" | "popular" }>; situational: boolean; waitingTicket: { id: string; number: string } | null; releaseVersion: number | null };
+export type ContactProps = { locale: Locale; account?: { id: string; name: string; email: string }; chips?: ChatChip[]; /** v4 Part A: the learner's order the page was opened for. */ order?: { id: string } | null; /** v4: opened with an orderId that could not be attached. */ orderUnavailable?: boolean; /** v5 Part A: the chat session the page started. */ session?: ChatSessionProp | null };
 export const ACCOUNT = { id: "user_emily", name: "Emily Chen", email: "emily@example.com" };
 export async function mountContact(page: Page, props: ContactProps) {
   await page.evaluate((p) => (window as unknown as { mountContact(p: unknown): void }).mountContact(p), { config, account: ACCOUNT, chips: [], ...props });
@@ -181,6 +182,11 @@ export const isOutcome = (call: ApiCall) => call.method === "POST" && /^\/api\/h
 export const isAssistant = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/assistant";
 export const isAssistantFeedback = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/[^/]+\/feedback$/.test(call.path);
 export const isAssistantRating = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/[^/]+\/rating$/.test(call.path);
+/** v5: a chip, follow-up or option click checked against the release (never the model). */
+export const isAssistantClick = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/assistant/click";
+export const isSessionStart = (call: ApiCall) => call.method === "POST" && call.path === "/api/helpdesk/assistant/sessions";
+export const isSessionEnd = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/sessions\/[^/]+\/end$/.test(call.path);
+export const isExpanded = (call: ApiCall) => call.method === "POST" && /^\/api\/helpdesk\/assistant\/[^/]+\/expanded$/.test(call.path);
 
 const LEARNER_COMMANDS: Array<[LearnerAllowedAction, Command]> = [["reply", "learner_reply"], ["cancel", "cancel"], ["confirm", "confirm"], ["reject", "reject"], ["close", "close"], ["rate", "rate"]];
 const HOUR = 3_600_000;

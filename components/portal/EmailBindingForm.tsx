@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 
@@ -11,21 +11,25 @@ export function EmailBindingForm({ locale, returnTo, pendingBinding }: { locale:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [seconds, setSeconds] = useState(pendingBinding?.retryAfter || 0);
+  const submitting = useRef(false);
   useEffect(() => { if (!seconds) return; const timer = setTimeout(() => setSeconds(value => value - 1), 1000); return () => clearTimeout(timer); }, [seconds]);
   useEffect(() => { if (!sent) return; const timer = setInterval(() => router.refresh(), 5000); return () => clearInterval(timer); }, [sent, router]);
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true); setError("");
     try {
       const response = await fetch("/api/auth/email-binding/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, locale, returnTo }) });
       const data = await response.json();
       if (!response.ok || !data.ok) {
         if (data.code === "already_bound") { router.refresh(); return; }
         if (data.code === "cooldown") setSeconds(60);
-        throw new Error(data.code === "email_in_use" ? copy.bindingEmailInUse : data.code === "cooldown" ? copy.bindingCooldown : response.status === 401 ? copy.bindingSignIn : copy.bindingError);
+        throw new Error(data.code === "email_in_use" ? copy.bindingEmailInUse : data.code === "account_unavailable" || data.code === "account_conflict" ? copy.bindingAccountUnavailable : data.code === "cooldown" ? copy.bindingCooldown : response.status === 401 ? copy.bindingSignIn : copy.bindingError);
       }
       setSent(true); setSeconds(60);
     } catch (error) { setError(error instanceof Error ? error.message : copy.bindingError); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
   async function exit() { await fetch("/api/auth/logout", { method: "POST" }); window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(returnTo)}`); }
   return <form className="portal-form" onSubmit={submit}><h1>{sent ? copy.checkEmailTitle : copy.bindingTitle}</h1><p>{sent ? copy.bindingSent : copy.bindingDescription}</p>

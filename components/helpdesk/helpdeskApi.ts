@@ -2,22 +2,58 @@
 // Success bodies are plain JSON; failures are RFC 9457 problems, reduced here
 // to { status, code } so the page can pick one message. A network failure is
 // status 0. Nothing here decides business rules.
-import type { AssistantFeedbackResponse, AssistantRatingResponse, AssistantResponse, HelpdeskAlternative, SuggestionOutcome, SuggestionResponse, TicketDetail } from "@/contracts/helpdesk";
+import { createEventStreamParser, isAssistantStep, type AssistantStep } from "@/contracts/helpdeskStream";
+import type { AssistantFeedbackResponse, AssistantRatingResponse, AssistantResponse, AssistantSessionResponse, ClickVia, HelpdeskAlternative, LearnerEndReason, SuggestionOutcome, SuggestionResponse, TicketDetail } from "@/contracts/helpdesk";
 
-export type ApiFailure = { ok: false; status: number; code?: string };
+/** field (v4, additive): the problem's field, when the server names one (for example orderId). */
+export type ApiFailure = { ok: false; status: number; code?: string; field?: string };
 export type ApiResult<T> = { ok: true; status: number; data: T } | ApiFailure;
 
-async function call<T>(input: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+async function call<T>(input: string, init: RequestInit = {}, onStep?: (step: AssistantStep) => void): Promise<ApiResult<T>> {
   try {
     const response = await fetch(input, { cache: "no-store", credentials: "same-origin", ...init });
+    if (onStep && response.ok && response.body && (response.headers.get("content-type") ?? "").includes("text/event-stream")) return await streamed<T>(response.body, onStep);
     const text = response.status === 204 ? "" : await response.text();
     let body: unknown = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = null; }
-    if (response.ok) return { ok: true, status: response.status, data: body as T };
-    const code = body && typeof body === "object" && typeof (body as { code?: unknown }).code === "string" ? (body as { code: string }).code : undefined;
-    return { ok: false, status: response.status, code };
+    return resultOf<T>(response.ok, response.status, body);
   } catch {
     return { ok: false, status: 0 };
+  }
+}
+
+function resultOf<T>(ok: boolean, status: number, body: unknown): ApiResult<T> {
+  if (ok) return { ok: true, status, data: body as T };
+  const code = body && typeof body === "object" && typeof (body as { code?: unknown }).code === "string" ? (body as { code: string }).code : undefined;
+  const field = body && typeof body === "object" && typeof (body as { field?: unknown }).field === "string" ? (body as { field: string }).field : undefined;
+  return { ok: false, status, code, ...(field ? { field } : {}) };
+}
+
+/** v7: a streamed answer: steps go to onStep; result is the body, error the problem (its status inside); a cut stream is status 0. */
+async function streamed<T>(body: ReadableStream<Uint8Array>, onStep: (step: AssistantStep) => void): Promise<ApiResult<T>> {
+  const parser = createEventStreamParser();
+  const decoder = new TextDecoder();
+  const reader = body.getReader();
+  const parse = (data: string): unknown => { try { return JSON.parse(data); } catch { return null; } };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      for (const event of parser.push(done ? `${decoder.decode()}\n\n` : decoder.decode(value, { stream: true }))) {
+        if (event.event === "step") {
+          const step = (parse(event.data) as { step?: unknown } | null)?.step;
+          if (isAssistantStep(step)) onStep(step);
+        } else if (event.event === "result") {
+          return { ok: true, status: 200, data: parse(event.data) as T };
+        } else if (event.event === "error") {
+          const problem = parse(event.data);
+          const status = Number((problem as { status?: unknown } | null)?.status);
+          return resultOf<T>(false, Number.isInteger(status) && status >= 400 ? status : 500, problem);
+        }
+      }
+      if (done) return { ok: false, status: 0 };
+    }
+  } finally {
+    reader.cancel().catch(() => undefined);
   }
 }
 
@@ -51,18 +87,55 @@ export function reportSuggestionOutcome(suggestionId: string, outcome: Suggestio
   void call(`/api/helpdesk/suggestions/${encodeURIComponent(suggestionId)}/outcome`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outcome }), keepalive: true });
 }
 
-/** The server answers within about 4 s (its Admin timeout); a request still open after this is given up as a network failure. */
-export const ASSISTANT_TIMEOUT_MS = 15_000;
+/**
+ * The server answers within about 16 s (its Admin wait while Admin thinks, ADMIN_CHAT_SUGGEST_TIMEOUT_MS); a request
+ * still open after this is given up as a network failure, so it must stay above the server's wait.
+ */
+export const ASSISTANT_TIMEOUT_MS = 18_000;
 
-/** One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback). */
-export async function askAssistant(body: { message: string; locale: string; faqId?: string }, idempotencyKey: string) {
+/**
+ * One chat question or starter chip (faqId). The reply is Admin's FAQ answer verbatim, or null (show the fallback).
+ * v5: sessionId (the chat session) and via (a chip's reason, only with faqId) are sent when the chat has a session;
+ * the response then carries the server's turn (read with storedTurn).
+ */
+export async function askAssistant(body: { message: string; locale: string; faqId?: string; sessionId?: string; via?: ClickVia }, idempotencyKey: string, onStep?: (step: AssistantStep) => void) {
+  return post<AssistantResponse & { turn?: unknown }>("/api/helpdesk/assistant", body, idempotencyKey, onStep);
+}
+
+/** onStep (v7): ask for the streamed answer; the steps of the server's workflow arrive while it works. */
+async function post<T>(path: string, body: unknown, idempotencyKey: string, onStep?: (step: AssistantStep) => void) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
   try {
-    return await call<AssistantResponse>("/api/helpdesk/assistant", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body), signal: controller.signal });
+    const headers: Record<string, string> = { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey };
+    if (onStep) headers.Accept = "text/event-stream, application/json";
+    return await call<T>(path, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal }, onStep);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * v5 (graph design §4): a chip, follow-up or A/B/C/D option of Admin's published release. The server checks the click
+ * against its cached release (fromNodeId: the card it was clicked on) and shows the node verbatim; no model is asked.
+ */
+export function clickAssistant(body: { locale: string; nodeId: string; fromNodeId: string | null; via: ClickVia; sessionId: string | null; label: string }, idempotencyKey: string) {
+  return post<AssistantResponse & { turn?: unknown }>("/api/helpdesk/assistant/click", body, idempotencyKey);
+}
+
+/** v5 Part A: a new chat session and its situation chips (after an end; the page starts the first one). */
+export function startAssistantSession(body: { locale: string; orderId?: string }) {
+  return call<AssistantSessionResponse>("/api/helpdesk/assistant/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+/** v5: fire and forget; the server keeps the first end of a session. */
+export function endAssistantSession(sessionId: string, reason: LearnerEndReason): void {
+  void call(`/api/helpdesk/assistant/sessions/${encodeURIComponent(sessionId)}/end`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }), keepalive: true });
+}
+
+/** v5 Part H: fire and forget; the learner opened the full answer under an excerpt (logged once by the server). */
+export function reportExpanded(assistId: string): void {
+  void call(`/api/helpdesk/assistant/${encodeURIComponent(assistId)}/expanded`, { method: "POST", keepalive: true });
 }
 
 /** "Helpful?" Yes / No on a chat answer; the server keeps the first value and returns it. */

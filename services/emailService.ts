@@ -103,14 +103,21 @@ export function sendVerificationEmail(input: { to: string; url: string; locale?:
 export function sendEmailBindingEmail(input: { to: string; url: string; locale: "en-GB" | "zh-CN" }) {
   const chinese = input.locale === "zh-CN";
   const title = chinese ? "验证并绑定您的邮箱" : "Verify and bind your email";
-  const description = chinese ? "请确认将此邮箱绑定到您的 Learning Guide 微信账号。链接 24 小时内有效。" : "Confirm this email for your Learning Guide WeChat account. This link expires in 24 hours.";
+  const description = chinese ? "请打开链接并确认绑定。如果此邮箱已有 Learning Guide 账号，确认后会将申请本次绑定的微信关联到已有账号，保留原有订阅和学习记录。仅在您本人刚刚使用微信申请绑定时确认；否则请忽略此邮件。链接 24 小时内有效。" : "Open the link and confirm binding. If this email already has a Learning Guide account, confirmation connects the requesting WeChat identity to that account and keeps its subscriptions and learning records. Confirm only if you just requested this through WeChat; otherwise ignore this email. This link expires in 24 hours.";
   const url = input.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   return sendEmail({ to: input.to, subject: title, text: `${description}\n\n${input.url}`, html: `<p>${description}</p><p><a href="${url}">${title}</a></p>` });
 }
 
-export function sendStudyGroupReminderEmail(input: { to: string; subject: string; text: string }) {
-  const safe = input.text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  return sendEmail({ to: input.to, subject: input.subject, text: input.text, html: `<p>${safe}</p>` });
+/**
+ * Study Group mail. Mail goes out as plain text (sendViaSmtp), so a Live
+ * Session reminder carries its session page as a labelled link on a line of
+ * its own; the HTML part is the same text, escaped.
+ */
+export function sendStudyGroupReminderEmail(input: { to: string; subject: string; text: string; link?: string | null; locale?: "en-GB" | "zh-CN" }) {
+  const label = input.locale === "zh-CN" ? "进入直播课" : "Enter Live Session";
+  const text = input.link ? `${input.text}\n\n${label}: ${input.link}` : input.text;
+  const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+  return sendEmail({ to: input.to, subject: input.subject, text, html: `<p>${safe}</p>` });
 }
 
 /** Helpdesk updates to the ticket's contact email (agent reply, "is it solved?"). Plain text; the HTML part is escaped text. */

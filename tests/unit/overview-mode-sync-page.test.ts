@@ -31,12 +31,20 @@ test("cached My Learning refreshes changed course modes once and retains cards o
       await response;await page.waitForLoadState("networkidle");
     };
     const count = () => page.evaluate(() => (window as unknown as { refreshCount: number }).refreshCount);
+    // refreshCount only moves forward (0 -> 1 -> 2), and the refresh runs in an effect
+    // that React commits after the API response settles. A single read right after
+    // `check()` therefore raced that commit and failed only on the slower CI runner.
+    // Waiting keeps "it must reach N, and not exceed N" without depending on scheduling.
+    const waitForCount = async (expected: number) => {
+      await page.waitForFunction(n => (window as unknown as { refreshCount: number }).refreshCount >= n, expected, { timeout: 5_000 });
+      assert.equal(await count(), expected);
+    };
     await mount("text");assert.equal(await count(), 0);
-    current = "video";await check();assert.equal(await count(), 1);
-    await check();assert.equal(await count(), 1);
-    await mount("video");await check();assert.equal(await count(), 1);
-    for (const error of ["http", "network", "invalid"] as const) { failure = error;await check();assert.equal(await count(), 1); }
-    failure = null;userId = "other";await check();assert.equal(await count(), 2);
+    current = "video";await check();await waitForCount(1);
+    await check();await waitForCount(1);
+    await mount("video");await check();await waitForCount(1);
+    for (const error of ["http", "network", "invalid"] as const) { failure = error;await check();await waitForCount(1); }
+    failure = null;userId = "other";await check();await waitForCount(2);
     assert.equal(await page.locator("#root").innerHTML(), "");
   } finally { await browser.close(); }
 });

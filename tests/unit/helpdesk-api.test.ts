@@ -559,8 +559,11 @@ test("assistant: signed in, same origin, Idempotency-Key; chat and chip answers,
 
   const chip = await (await ask({ message: FAQ.question, locale: "zh-CN", faqId: FAQ.id }, { cookie: strangerCookie })).json();
   assert.equal(chip.reply.faqId, FAQ.id);
-  const { runId: chipRun, parentRunId: chipParent, ...chipAsked } = JSON.parse(adminCalls.at(-1)!.body) as Record<string, unknown>;
+  const { runId: chipRun, parentRunId: chipParent, context: chipContext, ...chipAsked } = JSON.parse(adminCalls.at(-1)!.body) as Record<string, unknown>;
   assert.deepEqual(chipAsked, { learnerId: strangerId, locale: "zh-CN", source: "chip", message: FAQ.question, faqId: FAQ.id, shownFaqIds: [FAQ.id] }, "v3: the FAQ the chat already showed is named, so Admin does not offer it again");
+  // v5 (spec change): every chat request carries context; without a sessionId from the chat a new session starts, with no card on screen.
+  assert.deepEqual(Object.keys(chipContext as Record<string, unknown>), ["sessionId"]);
+  assert.match(String((chipContext as Record<string, unknown>).sessionId), UUID_V7);
   assert.match(String(chipRun), UUID_V7);
   assert.match(String(chipParent), UUID_V7, "the chip belongs to the conversation the chat started");
   assert.match(adminCalls.at(-1)!.traceparent ?? "", TRACEPARENT);

@@ -190,7 +190,8 @@ test("M24: the attendees dialog says Nobody yet when empty and its button closes
 test("M25: Edit Group uses the create form's fields with a title counter; Session Focus has its own placeholder", () => {
   assert.match(app, /<label className=\{styles\.field\}><span>\{copy\.groupTitle\} <span className=\{styles\.req\}>\*<\/span><\/span><span className=\{styles\.fieldBox\}><input name="title" required maxLength=\{50\} placeholder=\{copy\.enterTitle\} value=\{editTitle\}[^\n]*<span className=\{styles\.counter\}>\{editTitle\.length\}\/50<\/span>/);
   assert.match(app, /<label className=\{styles\.field\}><span>\{copy\.about\} <span className=\{styles\.req\}>\*<\/span><\/span><span className=\{styles\.fieldBox\}><textarea name="about"/);
-  assert.match(app, /<textarea name="focus" disabled=\{timeOnly\} maxLength=\{50\} placeholder=\{copy\.enterFocus\}/);
+  // Owner request 2026-10-30: Session Focus allows 300 characters (was 50).
+  assert.match(app, /<textarea name="focus" disabled=\{timeOnly\} maxLength=\{SESSION_FOCUS_MAX\} placeholder=\{copy\.enterFocus\}[^\n]*\.slice\(0, SESSION_FOCUS_MAX\)[^\n]*\{sessionFocus\.length\}\/\{SESSION_FOCUS_MAX\}/);
   assert.equal(en.studyGroupsPage.enterFocus, "Enter the session focus...");
   assert.equal(zh.studyGroupsPage.enterFocus, "输入本节重点…");
 });

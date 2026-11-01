@@ -3,6 +3,7 @@ import { BackofficeShell } from "@/components/portal/BackofficeShell";
 import { localeFrom } from "@/lib/i18n/config";
 import { getCourseManagementMessages } from "@/lib/i18n/courseManagementMessages";
 import { currentBackofficeAuthor, currentOperatorUser, isCurrentAdminHost } from "@/services/productAuth";
+import { BackofficeProvider } from "@/components/backoffice/BackofficeProvider";
 
 export async function KnowledgeAdminBoundary({ children }: { children: React.ReactNode }) {
   if (!(await isCurrentAdminHost())) return <>{children}</>;
@@ -14,12 +15,12 @@ export async function KnowledgeAdminBoundary({ children }: { children: React.Rea
   const locale = localeFrom(operator.locale);
   const copy = getCourseManagementMessages(locale);
   return (
-    <BackofficeShell
+    <BackofficeProvider locale={locale}><BackofficeShell
       locale={locale}
       operator
       user={{ nickname: operator.nickname, email: operator.email, role: copy.operator }}
     >
       {children}
-    </BackofficeShell>
+    </BackofficeShell></BackofficeProvider>
   );
 }

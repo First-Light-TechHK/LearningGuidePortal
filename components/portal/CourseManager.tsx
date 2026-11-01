@@ -1,7 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Archive, ChevronLeft, ChevronRight, Eye, Pencil, Plus, RotateCcw, UserRoundCog, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Archive, Eye, Pencil, Plus, RotateCcw, UserRoundCog, X } from "lucide-react";
+import { App, Alert, Button, Card, Drawer, Empty, Form, Input, Pagination, Select, Space, Table, Tag } from "antd";
+import type { TableProps } from "antd";
+import { useBackofficePopupContainer } from "@/components/backoffice/BackofficeProvider";
 import { CourseOutlineEditor } from "./CourseOutlineEditor";
 import { CourseCatalogueManager } from "./CourseCatalogueManager";
 import { LessonContentPlayer } from "./LessonContentPlayer";
@@ -17,6 +20,9 @@ const empty: ListResult = { courses: [], total: 0, page: 1, pages: 1, counts: { 
 
 export function CourseManager({ copy, locale, operator = false }: { copy: ReturnType<typeof getMessages>["backoffice"]; locale: "en-GB" | "zh-CN"; operator?: boolean }) {
   const messages = getCourseManagementMessages(locale);
+  const { modal } = App.useApp();
+  const getContainer = useBackofficePopupContainer();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [result, setResult] = useState<ListResult>(empty), [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
   const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [status, setStatus] = useState("all"), [categoryId, setCategoryId] = useState(""), [subjectId, setSubjectId] = useState(""), [level, setLevel] = useState("");
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10);
@@ -56,15 +62,18 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
     if (!response.ok) throw new Error(failure(data.code));
     return data;
   }
-  async function create(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+  async function create() {
+    setBusy(true); setError("");
     try {
       const data = await mutate("/api/backoffice/courses", "POST", { title, description, category });
       setTitle(""); setDescription(""); setCreating(false); setEditing(data.course); await load();
     } catch (e) { setError(e instanceof Error ? e.message : messages.errors.failed); } finally { setBusy(false); }
   }
+  function confirm(title: string) {
+    return new Promise<boolean>(resolve => { modal.confirm({ title, getContainer, okText: messages.save, cancelText: messages.cancel, onOk: () => resolve(true), onCancel: () => resolve(false) }); });
+  }
   async function updateStatus(course: ProductCourse, nextStatus: ProductCourse["status"]) {
-    if (nextStatus === "archived" && !window.confirm(messages.archiveConfirm)) return;
+    if (nextStatus === "archived" && !await confirm(messages.archiveConfirm)) return;
     setBusy(true); setError(""); setNotice("");
     try {
       await mutate("/api/backoffice/courses/" + encodeURIComponent(course.id), nextStatus === "archived" ? "DELETE" : "PATCH", { status: nextStatus, expectedUpdatedAt: course.updatedAt });
@@ -73,8 +82,8 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
   }
   async function startEdit(course: ProductCourse) {
     const gate = courseEditorGate(course.status);
-    if (gate === "unpublish" && !window.confirm(messages.publishedRequired)) return;
-    if (gate === "restore" && !window.confirm(messages.errors.archived)) return;
+    if (gate === "unpublish" && !await confirm(messages.publishedRequired)) return;
+    if (gate === "restore" && !await confirm(messages.errors.archived)) return;
     let current = course;
     if (gate !== "open") {
       setBusy(true); setError("");
@@ -87,9 +96,8 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
     }
     setEditing(current);
   }
-  async function assign(event: FormEvent) {
-    event.preventDefault();
-    if (!assigning || !window.confirm(messages.assignConfirm)) return;
+  async function assign() {
+    if (!assigning || !await confirm(messages.assignConfirm)) return;
     setBusy(true); setError("");
     try {
       await mutate("/api/backoffice/courses/" + encodeURIComponent(assigning.id) + "/ownership", "PUT", { email: ownerEmail, expectedUpdatedAt: assigning.updatedAt });
@@ -98,69 +106,67 @@ export function CourseManager({ copy, locale, operator = false }: { copy: Return
   }
   const entryName = (id?: string | null) => catalogue.find(entry => entry.id === id)?.name;
   const formatTime = (value: string) => new Date(value).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
+  const courseCell = (course: ProductCourse) => <div className={styles.courseCell}>
+    {course.cover || course.thumbnailPath ? <img src={course.cover || course.thumbnailPath || ""} alt="" width={64} height={40}/> : <span className={styles.coverPlaceholder}/>}
+    <div><strong>{course.title}</strong>{course.subtitle && <span>{course.subtitle}</span>}</div>
+  </div>;
+  const courseStatus = (course: ProductCourse) => <Tag color={course.status === "published" ? "success" : course.status === "archived" ? "warning" : "default"}>{messages[course.status]}</Tag>;
+  const actions = (course: ProductCourse) => <Space wrap>
+    <Button size="small" disabled={busy} icon={<Pencil size={16}/>} onClick={() => void startEdit(course)}>{messages.edit}</Button>
+    <Button size="small" icon={<Eye size={16}/>} onClick={() => setPreview(course)}>{messages.preview}</Button>
+    {operator && <Button size="small" disabled={busy} icon={<UserRoundCog size={16}/>} onClick={() => { setAssigning(course); setOwnerEmail(""); }}>{messages.ownership}</Button>}
+    {course.status !== "archived" && <Button size="small" disabled={busy} icon={<Archive size={16}/>} onClick={() => void updateStatus(course,"archived")}>{messages.archive}</Button>}
+    <Button size="small" disabled={busy} icon={course.status === "archived" ? <RotateCcw size={14}/> : undefined} onClick={() => void updateStatus(course,course.status === "published" || course.status === "archived" ? "draft" : "published")}>{course.status === "published" ? copy.unpublish : course.status === "archived" ? messages.restore : copy.publish}</Button>
+  </Space>;
+  const columns: TableProps<ProductCourse>["columns"] = [
+    {title:messages.columnCourse,key:"course",width:340,render:(_,course)=>courseCell(course)},
+    {title:messages.category,key:"category",width:150,render:(_,course)=>entryName(course.categoryId)||course.category||messages.none},
+    {title:messages.status,key:"status",width:100,render:(_,course)=>courseStatus(course)},
+    {title:messages.lessons,key:"lessons",width:80,render:(_,course)=>course.sections.reduce((sum,section)=>sum+section.lessons.length,0)},
+    {title:messages.updated,key:"updated",width:150,render:(_,course)=>formatTime(course.updatedAt)},
+    {title:messages.columnActions,key:"actions",width:260,render:(_,course)=>actions(course)},
+  ];
+  const filters = (suffix: string) => <Form layout="vertical" className={styles.filters}>
+    <Form.Item label={messages.search} htmlFor={`course-search-${suffix}`}><Input id={`course-search-${suffix}`} type="search" value={search} maxLength={200} placeholder={messages.searchPlaceholder} onChange={e=>setSearch(e.target.value)}/></Form.Item>
+    <Form.Item label={messages.status} htmlFor={`course-status-${suffix}`}><Select id={`course-status-${suffix}`} value={status} onChange={value=>{setStatus(value);setPage(1);}} options={[{value:"all",label:messages.all},...(["draft","published","archived"] as const).map(value=>({value,label:messages[value]}))]}/></Form.Item>
+    <Form.Item label={messages.category} htmlFor={`course-category-${suffix}`}><Select id={`course-category-${suffix}`} value={categoryId} onChange={value=>{setCategoryId(value);setSubjectId("");setPage(1);}} options={[{value:"",label:messages.all},...catalogue.filter(e=>!e.parentId).map(entry=>({value:entry.id,label:entry.name}))]}/></Form.Item>
+    <Form.Item label={messages.subject} htmlFor={`course-subject-${suffix}`}><Select id={`course-subject-${suffix}`} disabled={!categoryId} value={subjectId} onChange={value=>{setSubjectId(value);setPage(1);}} options={[{value:"",label:messages.all},...catalogue.filter(e=>e.parentId===categoryId).map(entry=>({value:entry.id,label:entry.name}))]}/></Form.Item>
+    <Form.Item label={messages.level} htmlFor={`course-level-${suffix}`}><Select id={`course-level-${suffix}`} value={level} onChange={value=>{setLevel(value);setPage(1);}} options={[{value:"",label:messages.all},...(["beginner","intermediate","advanced"] as const).map(value=>({value,label:messages[value]}))]}/></Form.Item>
+  </Form>;
   return <section className={styles.manager}>
-    {editing ? <CourseOutlineEditor key={editing.id} course={editing} locale={locale} catalogue={catalogue} copy={getMessages(locale).authoring} onSaved={load} onClose={() => setEditing(null)}/> : <>
-    <header className={styles.pageHeader}>
-      <div>
-        <h1>{copy.courses}</h1>
-        <p>{messages.pageLead}</p>
-      </div>
-      {!preview && <button className={styles.primaryBtn} type="button" disabled={busy} onClick={() => { setCreating(!creating); setShowCatalogue(false); }}><Plus size={18}/>{copy.create}</button>}
-    </header>
-    {error && <p className="portal-form-error" role="alert">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
-    {preview ? <section className={styles.preview}>
-      <header className={styles.previewHeader}><h2>{preview.title}</h2><button type="button" aria-label={messages.close} title={messages.close} onClick={() => setPreview(null)}><X size={18}/></button></header>
-      {preview.cover && <img className={styles.previewCover} src={preview.cover} alt="" width={480} height={270}/>}<p>{preview.subtitle}</p><p>{preview.description}</p>
-      {preview.sections.map(section => <section key={section.id}><h3>{section.title}</h3>{section.lessons.map(lesson => <article key={lesson.id}><h4>{lesson.title}</h4>{lesson.contents?.length ? <LessonContentPlayer contents={lesson.contents} locale={locale}/> : <p style={{ whiteSpace: "pre-wrap" }}>{lesson.body}</p>}</article>)}</section>)}
-    </section> : <>
-      <dl className={styles.stats}>{(["total", "draft", "published", "archived", "lessons"] as const).map(key => <div key={key}><dt>{messages[key]}</dt><dd>{result.counts[key]}</dd></div>)}</dl>
-      {operator && <nav className={styles.tabs}><button type="button" aria-pressed={!showCatalogue} onClick={() => setShowCatalogue(false)}>{copy.courses}</button><button type="button" aria-pressed={showCatalogue} onClick={() => { setShowCatalogue(true); setCreating(false); }}>{messages.catalogue}</button></nav>}
-      {showCatalogue && operator ? <CourseCatalogueManager entries={catalogue} locale={locale} onSaved={loadCatalogue}/> : <>
-        {creating && <form className={styles.cardForm} onSubmit={create}>
-          <label>{copy.courseTitle}<input value={title} maxLength={255} onChange={e => setTitle(e.target.value)} required disabled={busy}/></label>
-          <label>{copy.description}<textarea value={description} maxLength={5000} onChange={e => setDescription(e.target.value)} rows={3} disabled={busy}/></label>
-          <label>{copy.category}<select value={category} onChange={e => setCategory(e.target.value as typeof category)} disabled={busy}>{(["Chinese Humanities", "European Humanities", "Science"] as const).map((value, index) => <option key={value} value={value}>{getMessages(locale).portal.courseCategories[index + 1]}</option>)}</select></label>
-          <div className={styles.rowActions}><button className={styles.primaryBtn} disabled={busy}>{copy.create}</button><button type="button" className={styles.secondaryBtn} disabled={busy} onClick={() => setCreating(false)}>{messages.cancel}</button></div>
-        </form>}
-        <div className={styles.filters}>
-          <label>{messages.search}<input type="search" value={search} maxLength={200} placeholder={messages.searchPlaceholder} onChange={e => setSearch(e.target.value)}/></label>
-          <label>{messages.status}<select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="all">{messages.all}</option>{(["draft", "published", "archived"] as const).map(value => <option key={value} value={value}>{messages[value]}</option>)}</select></label>
-          <label>{messages.category}<select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubjectId(""); setPage(1); }}><option value="">{messages.all}</option>{catalogue.filter(e => !e.parentId).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
-          <label>{messages.subject}<select value={subjectId} disabled={!categoryId} onChange={e => { setSubjectId(e.target.value); setPage(1); }}><option value="">{messages.all}</option>{catalogue.filter(e => e.parentId === categoryId).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
-          <label>{messages.level}<select value={level} onChange={e => { setLevel(e.target.value); setPage(1); }}><option value="">{messages.all}</option>{(["beginner", "intermediate", "advanced"] as const).map(value => <option key={value} value={value}>{messages[value]}</option>)}</select></label>
-        </div>
-        {loading && <p role="status">{messages.loading}</p>}
-        {!loading && !result.courses.length && <p className={styles.empty}>{messages.empty}</p>}
-        {result.courses.length > 0 && <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead><tr><th>{messages.columnCourse}</th><th>{messages.category}</th><th>{messages.status}</th><th>{messages.lessons}</th><th>{messages.updated}</th><th>{messages.columnActions}</th></tr></thead>
-            <tbody>{result.courses.map(course => {
-              const cover = course.cover || course.thumbnailPath;
-              const categoryLabel = entryName(course.categoryId) || course.category || messages.none;
-              return <tr key={course.id}>
-                <td><div className={styles.courseCell}>{cover ? <img src={cover} alt="" width={64} height={40}/> : <span className={styles.coverPlaceholder} />}<div><strong>{course.title}</strong>{course.subtitle ? <span>{course.subtitle}</span> : null}</div></div></td>
-                <td><span className={styles.badge}>{categoryLabel}</span></td>
-                <td><span className={`${styles.status} ${styles[course.status]}`}>{messages[course.status]}</span></td>
-                <td>{course.sections.reduce((sum, section) => sum + section.lessons.length, 0)}</td>
-                <td>{formatTime(course.updatedAt)}</td>
-                <td>
-                  <div className={styles.actions}>
-                    <button className={styles.textBtn} type="button" disabled={busy} onClick={() => void startEdit(course)}><Pencil size={16}/>{messages.edit}</button>
-                    <button className={styles.textBtn} type="button" onClick={() => setPreview(course)}><Eye size={16}/>{messages.preview}</button>
-                    {operator && <button className={styles.textBtn} type="button" disabled={busy} onClick={() => { setAssigning(course); setOwnerEmail(""); }}><UserRoundCog size={16}/>{messages.ownership}</button>}
-                    {course.status !== "archived" && <button className={styles.textBtn} type="button" disabled={busy} onClick={() => void updateStatus(course, "archived")}><Archive size={16}/>{messages.archive}</button>}
-                    <button className={styles.secondaryBtn} type="button" disabled={busy} onClick={() => void updateStatus(course, course.status === "published" || course.status === "archived" ? "draft" : "published")}>{course.status === "archived" && <RotateCcw size={14}/>} {course.status === "published" ? copy.unpublish : course.status === "archived" ? messages.restore : copy.publish}</button>
-                  </div>
-                </td>
-              </tr>;
-            })}</tbody>
-          </table>
-        </div>}
-        <footer className={styles.pagination}><label>{messages.pageSize}<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}>{[10, 25, 50].map(size => <option key={size}>{size}</option>)}</select></label><span>{messages.page} {result.page} {messages.of} {result.pages} · {result.total}</span><span className={styles.actions}><button type="button" title={messages.previous} aria-label={messages.previous} disabled={loading || result.page <= 1} onClick={() => setPage(result.page - 1)}><ChevronLeft size={18}/></button><button type="button" title={messages.next} aria-label={messages.next} disabled={loading || result.page >= result.pages} onClick={() => setPage(result.page + 1)}><ChevronRight size={18}/></button></span></footer>
-        {assigning && <form className={styles.cardForm} onSubmit={assign}><h2>{messages.ownership}: {assigning.title}</h2><label>{messages.ownerEmail}<input type="email" maxLength={254} required value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} disabled={busy}/></label><div className={styles.rowActions}><button className={styles.primaryBtn} disabled={busy}>{messages.assignOwner}</button><button type="button" className={styles.secondaryBtn} disabled={busy} onClick={() => setAssigning(null)}>{messages.cancel}</button></div></form>}
+    {editing ? <CourseOutlineEditor key={editing.id} course={editing} locale={locale} catalogue={catalogue} copy={getMessages(locale).authoring} onSaved={load} onClose={()=>setEditing(null)}/> : <>
+      <header className={styles.pageHeader}><div><h1>{copy.courses}</h1><p>{messages.pageLead}</p></div>
+        {!preview && <Button type="primary" disabled={busy} icon={<Plus size={18}/>} onClick={()=>{setCreating(!creating);setShowCatalogue(false);}}>{copy.create}</Button>}
+      </header>
+      {error && <Alert type="error" title={error} showIcon/>}
+      {notice && <Alert type="success" title={notice} showIcon/>}
+      {preview ? <section className={styles.preview}>
+        <header className={styles.previewHeader}><h2>{preview.title}</h2><Button aria-label={messages.close} title={messages.close} icon={<X size={18}/>} onClick={()=>setPreview(null)}/></header>
+        {preview.cover && <img className={styles.previewCover} src={preview.cover} alt="" width={480} height={270}/>}<p>{preview.subtitle}</p><p>{preview.description}</p>
+        {preview.sections.map(section=><section key={section.id}><h3>{section.title}</h3>{section.lessons.map(lesson=><article key={lesson.id}><h4>{lesson.title}</h4>{lesson.contents?.length ? <LessonContentPlayer contents={lesson.contents} locale={locale}/> : <p style={{whiteSpace:"pre-wrap"}}>{lesson.body}</p>}</article>)}</section>)}
+      </section> : <>
+        <dl className={styles.stats}>{(["total","draft","published","archived","lessons"] as const).map(key=><div key={key}><dt>{messages[key]}</dt><dd>{result.counts[key]}</dd></div>)}</dl>
+        {operator && <Space><Button type={!showCatalogue ? "primary" : "default"} aria-pressed={!showCatalogue} onClick={()=>setShowCatalogue(false)}>{copy.courses}</Button><Button type={showCatalogue ? "primary" : "default"} aria-pressed={showCatalogue} onClick={()=>{setShowCatalogue(true);setCreating(false);}}>{messages.catalogue}</Button></Space>}
+        {showCatalogue && operator ? <CourseCatalogueManager entries={catalogue} locale={locale} onSaved={loadCatalogue}/> : <>
+          {creating && <Form layout="vertical" className={styles.cardForm} onFinish={()=>void create()} disabled={busy}>
+            <Form.Item label={copy.courseTitle} htmlFor="new-course-title"><Input id="new-course-title" value={title} maxLength={255} onChange={e=>setTitle(e.target.value)} required/></Form.Item>
+            <Form.Item label={copy.description} htmlFor="new-course-description"><Input.TextArea id="new-course-description" value={description} maxLength={5000} onChange={e=>setDescription(e.target.value)} rows={3}/></Form.Item>
+            <Form.Item label={copy.category} htmlFor="new-course-category"><Select id="new-course-category" value={category} onChange={setCategory} options={(["Chinese Humanities","European Humanities","Science"] as const).map((value,index)=>({value,label:getMessages(locale).portal.courseCategories[index+1]}))}/></Form.Item>
+            <Space wrap><Button type="primary" htmlType="submit" loading={busy}>{copy.create}</Button><Button onClick={()=>setCreating(false)}>{messages.cancel}</Button></Space>
+          </Form>}
+          <div className="bo-desktop">{filters("desktop")}</div>
+          <Button className="bo-mobile" onClick={()=>setFiltersOpen(true)}>{messages.search}</Button>
+          <Drawer title={messages.search} open={filtersOpen} onClose={()=>setFiltersOpen(false)} getContainer={getContainer} size="default" styles={{wrapper:{maxWidth:"100vw"}}} destroyOnHidden>{filters("mobile")}</Drawer>
+          <div className="bo-desktop"><Table<ProductCourse> rowKey="id" columns={columns} dataSource={result.courses} loading={loading} pagination={false} locale={{emptyText:messages.empty}} scroll={{x:1050}}/></div>
+          <div className="bo-mobile"><div className="bo-mobile-cards">
+            {loading && <p role="status">{messages.loading}</p>}
+            {!loading && !result.courses.length && <Empty description={messages.empty}/>}
+            {result.courses.map(course=><Card key={course.id} size="small"><div className="bo-card-heading">{courseCell(course)}{courseStatus(course)}</div><p>{entryName(course.categoryId)||course.category||messages.none}</p>{actions(course)}</Card>)}
+          </div></div>
+          <div className="bo-pagination"><Pagination current={result.page} total={result.total} pageSize={pageSize} showSizeChanger pageSizeOptions={[10,25,50]} responsive disabled={loading} onChange={(value,size)=>{setPageSize(size);setPage(size!==pageSize?1:value);}}/></div>
+          {assigning && <Form layout="vertical" className={styles.cardForm} onFinish={()=>void assign()} disabled={busy}><h2>{messages.ownership}: {assigning.title}</h2><Form.Item label={messages.ownerEmail} htmlFor="course-owner-email"><Input id="course-owner-email" type="email" maxLength={254} required value={ownerEmail} onChange={e=>setOwnerEmail(e.target.value)}/></Form.Item><Space wrap><Button type="primary" htmlType="submit" loading={busy}>{messages.assignOwner}</Button><Button onClick={()=>setAssigning(null)}>{messages.cancel}</Button></Space></Form>}
+        </>}
       </>}
-    </>}
     </>}
   </section>;
 }

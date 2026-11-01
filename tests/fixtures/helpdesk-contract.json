@@ -1,10 +1,10 @@
 {
   "$comment": [
-    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number. v5 (helpdesk-v4-order-and-chat-end Part A, 2026-10-29) adds the enquiry's order: orderId (string or null) on every list and detail ticket, and detail.order, a read-only projection Portal builds by code from the learner's own order record ({ id, status, amount (minor units), currency, planName, kind, createdAt, paymentMode }, nothing else; null without an order), with the orderStatus, orderKind and paymentMode enums Admin labels. The suggest requests are unchanged: the AI agent never receives order data. v6 (helpdesk-v5-context-chips-and-smalltalk Parts A/B/D/H and helpdesk-v5-faq-graph-design, 2026-10-30, all additive) adds: the situation-signal enums (situationSignal: what Portal computes by code from its own stores, never sent to Admin or the model; faqSignal: the tags an FAQ can carry, in chip priority order) and signals on every public FAQ; the FAQ question-tree release Portal caches (GET /api/integration/helpdesk/faq-release/current?locale=, bearer, ETag \"v<version>\", If-None-Match -> 304, 404 no_release before the first release) with answer|choice nodes, follow_up|option edges (labels resolved) and answer blocks b1..bn split by code at release time; the suggest request's context { nodeId?, sessionId?, recentTurns? (learner text only, at most 3) }, sent only by a v6 Portal; and, only when the request carries context, the suggest answer's kind (answer|smalltalk|clarify|no_match), intent, confidence (sure|unsure), nodeId, blocks, opening, closing, reply, explanation, covered, guard ({ result: passed|fallback, reason, fallback }) and releaseVersion. A request without context gets exactly the v5 answer, so an old Portal is unaffected; an old Admin ignores context. v7 (helpdesk-v5-context-chips-and-smalltalk Part G and helpdesk-v5-faq-graph-design §3/§5.5, 2026-10-30, all additive) adds the flywheel feed Admin reads (GET /api/integration/helpdesk/insights?since=&until=&cursor=&limit=, bearer, read-only; oldest first by (createdAt, id), limit 1-500 default 200; until is fixed by the first page, never later than a minute ago, and carried in the opaque nextCursor, so a cursor always answers the same page): every assist turn with the learner's text scrubbed by Portal's code-only scrubber (placeholders <kind> from piiPlaceholder) and its labels as enum names (kind turnKind, intent, guard turnGuard, via assistVia, sessionEndReason chatEndReason, vote, rating, node ids, release version, session and turn index, handover, ticketAfterChat, signals) and the enquiry outcome ({ linked, status, closeReason, resolvedByAgent, agentReplied, agentReply }, agentReply scrubbed and only when resolvedByAgent); never a learner id, name, email, order, ticket id, number, subject, answer text or trace id. It also adds Portal's raw-text retention job (after 180 days only scrubbed text and labels stay): GET /api/integration/helpdesk/jobs/assist-retention (the newest runs) and POST .../run ({ agent }, Idempotency-Key; the same key answers with the same run, another agent on that key is 422 idempotency_conflict, already_running when another instance holds the job). No new problem codes.",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
-  "version": 4,
+  "version": 7,
   "enums": {
     "ticketStatus": [
       "OPEN",
@@ -59,6 +59,22 @@
       "annual",
       "semiannual"
     ],
+    "orderStatus": [
+      "paid",
+      "pending",
+      "failed",
+      "canceled",
+      "refunded"
+    ],
+    "orderKind": [
+      "purchase",
+      "trial_activation",
+      "upgrade"
+    ],
+    "paymentMode": [
+      "demo",
+      "stripe"
+    ],
     "suggestionOutcome": [
       "solved",
       "declined",
@@ -81,6 +97,83 @@
       "courses_learning",
       "payments_subscriptions",
       "other"
+    ],
+    "situationSignal": [
+      "trial_ending",
+      "payment_failed",
+      "payment_pending",
+      "recent_purchase",
+      "subscription_cancelled",
+      "subscription_expired",
+      "email_unverified",
+      "open_ticket_waiting",
+      "from_order"
+    ],
+    "faqSignal": [
+      "payment_failed",
+      "payment_pending",
+      "recent_purchase",
+      "trial_ending",
+      "subscription_expired",
+      "subscription_cancelled",
+      "email_unverified",
+      "from_order"
+    ],
+    "faqNodeType": [
+      "answer",
+      "choice"
+    ],
+    "faqEdgeKind": [
+      "follow_up",
+      "option"
+    ],
+    "suggestKind": [
+      "answer",
+      "smalltalk",
+      "clarify",
+      "no_match"
+    ],
+    "suggestIntent": [
+      "question",
+      "own_account",
+      "someone_else",
+      "exception",
+      "private_data",
+      "instructions",
+      "off_topic",
+      "greeting",
+      "farewell",
+      "vague",
+      "clarify"
+    ],
+    "confidence": [
+      "sure",
+      "unsure"
+    ],
+    "guardResult": [
+      "passed",
+      "fallback"
+    ],
+    "guardReason": [
+      "missing",
+      "too_long",
+      "link",
+      "email",
+      "digit",
+      "markup",
+      "blocked_phrase",
+      "ai_filler",
+      "script",
+      "ungrounded",
+      "not_covered",
+      "timeout",
+      "error"
+    ],
+    "guardedField": [
+      "opening",
+      "closing",
+      "reply",
+      "explanation"
     ],
     "agentProblemCode": {
       "400": [
@@ -106,7 +199,78 @@
         "integration_disabled",
         "helpdesk_unavailable"
       ]
-    }
+    },
+    "closeReason": [
+      "cancelled",
+      "user_confirmed",
+      "user_closed",
+      "auto_confirmed"
+    ],
+    "turnKind": [
+      "answer",
+      "smalltalk",
+      "clarify",
+      "no_match",
+      "handover"
+    ],
+    "turnGuard": [
+      "passed",
+      "fallback",
+      "missing",
+      "too_long",
+      "link",
+      "email",
+      "digit",
+      "markup",
+      "blocked_phrase",
+      "ai_filler",
+      "script",
+      "ungrounded",
+      "not_covered",
+      "timeout",
+      "error"
+    ],
+    "assistVia": [
+      "typed",
+      "follow_up",
+      "option",
+      "starter",
+      "signal",
+      "alternative"
+    ],
+    "chatEndReason": [
+      "idle",
+      "ended_by_learner",
+      "handover",
+      "ticket"
+    ],
+    "piiPlaceholder": [
+      "url",
+      "email",
+      "token",
+      "id",
+      "order",
+      "ticket",
+      "student_id",
+      "handle",
+      "ip",
+      "phone",
+      "card",
+      "number",
+      "name"
+    ],
+    "helpdeskJob": [
+      "assist_retention"
+    ],
+    "jobTrigger": [
+      "schedule",
+      "manual"
+    ],
+    "jobStatus": [
+      "running",
+      "succeeded",
+      "failed"
+    ]
   },
   "adminToPortal": {
     "auth": {
@@ -148,7 +312,8 @@
           "tags": [
             "refund"
           ],
-          "flagged": false
+          "flagged": false,
+          "orderId": "order_1761640741859_9f3a2c1d"
         }
       ],
       "nextCursor": "opaque-cursor-from-portal",
@@ -195,6 +360,7 @@
         "refund"
       ],
       "flagged": true,
+      "orderId": "order_1761640741859_9f3a2c1d",
       "suggestionId": null,
       "student": {
         "id": "user_fixture_learner",
@@ -392,7 +558,17 @@
           "createdAt": "2026-10-28T08:38:01.002Z",
           "rating": null
         }
-      ]
+      ],
+      "order": {
+        "id": "order_1761640741859_9f3a2c1d",
+        "status": "paid",
+        "amount": 3900,
+        "currency": "usd",
+        "planName": "Epicureanism · PC · 6 months",
+        "kind": "purchase",
+        "createdAt": "2026-10-28T08:39:01.859Z",
+        "paymentMode": "stripe"
+      }
     },
     "messageRequest": {
       "body": "Your invoice is attached to your account now.",
@@ -486,6 +662,173 @@
       "application/pdf": {
         "Content-Disposition": "attachment; filename*=UTF-8''%E5%8F%91%E7%A5%A8%20Oct.pdf"
       }
+    },
+    "insightsRequest": "/api/integration/helpdesk/insights?since=2026-10-30T00:00:00.000Z&limit=2",
+    "insightsResponse": {
+      "turns": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000101",
+          "createdAt": "2026-10-30T08:10:00.000Z",
+          "source": "chat",
+          "locale": "zh-CN",
+          "text": "我是 <name>，手机 <phone>，订单 <order> 付款后还是基础版",
+          "sessionId": "01a18100-0000-7000-8000-000000000100",
+          "turnIndex": 1,
+          "lastTurn": false,
+          "sessionEndReason": "ticket",
+          "kind": "no_match",
+          "intent": "question",
+          "guard": "passed",
+          "via": "typed",
+          "faqId": null,
+          "nodeId": null,
+          "parentNodeId": null,
+          "releaseVersion": 3,
+          "answered": false,
+          "vote": null,
+          "rating": null,
+          "covered": null,
+          "expanded": null,
+          "handover": false,
+          "ticketAfterChat": true,
+          "ticket": {
+            "linked": true,
+            "status": "CLOSED",
+            "closeReason": "user_confirmed",
+            "resolvedByAgent": true,
+            "agentReplied": true,
+            "agentReply": "Hi <name>, I re-synced your payment; your plan shows Pro now."
+          },
+          "signals": [
+            "payment_failed"
+          ]
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000102",
+          "createdAt": "2026-10-30T08:10:30.000Z",
+          "source": "chip",
+          "locale": "zh-CN",
+          "text": "我付了钱但没有权限",
+          "sessionId": "01a18100-0000-7000-8000-000000000100",
+          "turnIndex": 2,
+          "lastTurn": true,
+          "sessionEndReason": "ticket",
+          "kind": "answer",
+          "intent": "question",
+          "guard": "passed",
+          "via": "option",
+          "faqId": "01a18100-0000-7000-8000-000000000022",
+          "nodeId": "01a18100-0000-7000-8000-000000000022",
+          "parentNodeId": "01a18100-0000-7000-8000-000000000020",
+          "releaseVersion": 3,
+          "answered": true,
+          "vote": "not_helpful",
+          "rating": 2,
+          "covered": null,
+          "expanded": true,
+          "handover": true,
+          "ticketAfterChat": true,
+          "ticket": {
+            "linked": true,
+            "status": "CLOSED",
+            "closeReason": "user_confirmed",
+            "resolvedByAgent": true,
+            "agentReplied": true,
+            "agentReply": "Hi <name>, I re-synced your payment; your plan shows Pro now."
+          },
+          "signals": [
+            "payment_failed"
+          ]
+        }
+      ],
+      "nextCursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTMwVDA4OjEwOjMwLjAwMFoiLCJpZCI6IjAxYTE4MTAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDEwMiIsInVudGlsIjoiMjAyNi0xMC0zMFQwODo1OTowMC4wMDBaIn0",
+      "until": "2026-10-30T08:59:00.000Z"
+    },
+    "insightsNextRequest": "/api/integration/helpdesk/insights?since=2026-10-30T00:00:00.000Z&limit=2&cursor=eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTMwVDA4OjEwOjMwLjAwMFoiLCJpZCI6IjAxYTE4MTAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDEwMiIsInVudGlsIjoiMjAyNi0xMC0zMFQwODo1OTowMC4wMDBaIn0",
+    "insightsLastResponse": {
+      "turns": [],
+      "nextCursor": null,
+      "until": "2026-10-30T08:59:00.000Z"
+    },
+    "insightsLimits": {
+      "pageDefault": 200,
+      "pageMax": 500,
+      "settleMs": 60000,
+      "agentReplyMax": 2000,
+      "ticketAfterHours": 24,
+      "textMax": 500
+    },
+    "jobRunsRequest": "/api/integration/helpdesk/jobs/assist-retention",
+    "jobRunsResponse": {
+      "job": "assist_retention",
+      "retentionDays": 180,
+      "runs": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000201",
+          "job": "assist_retention",
+          "day": "2026-10-30",
+          "trigger": "manual",
+          "status": "succeeded",
+          "attempts": 1,
+          "startedAt": "2026-10-30T09:00:00.000Z",
+          "finishedAt": "2026-10-30T09:00:01.250Z",
+          "cutoff": "2026-05-03T09:00:00.000Z",
+          "rowsScrubbed": 42,
+          "moreDue": false,
+          "requestedBy": {
+            "id": "01a18100-0000-7000-8000-000000000002",
+            "name": "Alex Support"
+          },
+          "errorCode": null
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000200",
+          "job": "assist_retention",
+          "day": "2026-10-30",
+          "trigger": "schedule",
+          "status": "succeeded",
+          "attempts": 1,
+          "startedAt": "2026-10-30T02:14:00.000Z",
+          "finishedAt": "2026-10-30T02:14:03.000Z",
+          "cutoff": "2026-05-03T02:14:00.000Z",
+          "rowsScrubbed": 10000,
+          "moreDue": true,
+          "requestedBy": null,
+          "errorCode": null
+        }
+      ]
+    },
+    "jobRunRequestPath": "/api/integration/helpdesk/jobs/assist-retention/run",
+    "jobRunRequest": {
+      "agent": {
+        "id": "01a18100-0000-7000-8000-000000000002",
+        "name": "Alex Support"
+      }
+    },
+    "jobRunResponse": {
+      "outcome": "completed",
+      "run": {
+        "id": "01a18100-0000-7000-8000-000000000201",
+        "job": "assist_retention",
+        "day": "2026-10-30",
+        "trigger": "manual",
+        "status": "succeeded",
+        "attempts": 1,
+        "startedAt": "2026-10-30T09:00:00.000Z",
+        "finishedAt": "2026-10-30T09:00:01.250Z",
+        "cutoff": "2026-05-03T09:00:00.000Z",
+        "rowsScrubbed": 42,
+        "moreDue": false,
+        "requestedBy": {
+          "id": "01a18100-0000-7000-8000-000000000002",
+          "name": "Alex Support"
+        },
+        "errorCode": null
+      }
+    },
+    "jobRunAlreadyRunningResponse": {
+      "outcome": "already_running",
+      "run": null
     }
   },
   "portalToAdmin": {
@@ -502,6 +845,7 @@
           "popular": true,
           "question": "How do I reset my password?",
           "answer": "1. Check your spam folder\n2. Request a new link on [Forgot password](https://www.ilovelearningguide.com/en-GB/forgot-password)\n\nStill stuck? Email **support** at [support@ilovelearningguide.com](mailto:support@ilovelearningguide.com).",
+          "signals": [],
           "updatedAt": "2026-10-28T08:30:00.000Z"
         }
       ],
@@ -514,6 +858,7 @@
       "popular": true,
       "question": "How do I reset my password?",
       "answer": "1. Check your spam folder\n2. Request a new link on [Forgot password](https://www.ilovelearningguide.com/en-GB/forgot-password)\n\nStill stuck? Email **support** at [support@ilovelearningguide.com](mailto:support@ilovelearningguide.com).",
+      "signals": [],
       "updatedAt": "2026-10-28T08:30:00.000Z"
     },
     "traceparentHeader": "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
@@ -589,6 +934,336 @@
     "disabledProblem": {
       "status": 503,
       "code": "integration_disabled"
+    },
+    "faqReleaseRequest": "/api/integration/helpdesk/faq-release/current?locale=en-GB",
+    "faqReleaseResponse": {
+      "version": 3,
+      "publishedAt": "2026-10-30T09:00:00.000Z",
+      "locale": "en-GB",
+      "nodes": [
+        {
+          "id": "01a18100-0000-7000-8000-000000000020",
+          "key": "payment-problem",
+          "type": "choice",
+          "entry": true,
+          "category": "payments_subscriptions",
+          "popular": true,
+          "question": "Having trouble with a payment?",
+          "answer": "Which of these is it?",
+          "blocks": [],
+          "signals": []
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000021",
+          "key": "payment-failed",
+          "type": "answer",
+          "entry": true,
+          "category": "payments_subscriptions",
+          "popular": false,
+          "question": "My payment failed. What should I do?",
+          "answer": "1. Check your card details and balance\n2. Try another card on **My Subscription**\n\nIf it still fails, contact support from **Contact Support**.",
+          "blocks": [
+            {
+              "id": "b1",
+              "text": "1. Check your card details and balance\n2. Try another card on **My Subscription**"
+            },
+            {
+              "id": "b2",
+              "text": "If it still fails, contact support from **Contact Support**."
+            }
+          ],
+          "signals": [
+            "payment_failed"
+          ]
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000022",
+          "key": "paid-no-access",
+          "type": "answer",
+          "entry": true,
+          "category": "payments_subscriptions",
+          "popular": false,
+          "question": "I paid but my plan is not active",
+          "answer": "Payments can take a few minutes to confirm.\n\n1. Reload **My Learning**\n2. Sign out and sign in again\n\n- Check that you are signed in with the email you paid with\n- Look for the receipt email in your spam folder\n\nStill not active? Contact support with the order number from your receipt.",
+          "blocks": [
+            {
+              "id": "b1",
+              "text": "Payments can take a few minutes to confirm."
+            },
+            {
+              "id": "b2",
+              "text": "1. Reload **My Learning**\n2. Sign out and sign in again"
+            },
+            {
+              "id": "b3",
+              "text": "- Check that you are signed in with the email you paid with\n- Look for the receipt email in your spam folder"
+            },
+            {
+              "id": "b4",
+              "text": "Still not active? Contact support with the order number from your receipt."
+            }
+          ],
+          "signals": [
+            "payment_pending",
+            "recent_purchase"
+          ]
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000023",
+          "key": "charged-twice",
+          "type": "answer",
+          "entry": false,
+          "category": "payments_subscriptions",
+          "popular": false,
+          "question": "Will I be charged twice if I pay again?",
+          "answer": "No. A failed payment is not taken from your account. If you see two charges, contact support and we will check them.",
+          "blocks": [
+            {
+              "id": "b1",
+              "text": "No. A failed payment is not taken from your account. If you see two charges, contact support and we will check them."
+            }
+          ],
+          "signals": []
+        },
+        {
+          "id": "01a18100-0000-7000-8000-000000000024",
+          "key": "contact-support",
+          "type": "answer",
+          "entry": true,
+          "category": "other",
+          "popular": false,
+          "question": "How do I contact support?",
+          "answer": "Open **Contact Support**, choose an enquiry type and send your message. Our team replies by email.",
+          "blocks": [
+            {
+              "id": "b1",
+              "text": "Open **Contact Support**, choose an enquiry type and send your message. Our team replies by email."
+            }
+          ],
+          "signals": []
+        }
+      ],
+      "edges": [
+        {
+          "parentId": "01a18100-0000-7000-8000-000000000020",
+          "childId": "01a18100-0000-7000-8000-000000000021",
+          "kind": "option",
+          "position": 0,
+          "label": "My payment failed"
+        },
+        {
+          "parentId": "01a18100-0000-7000-8000-000000000020",
+          "childId": "01a18100-0000-7000-8000-000000000022",
+          "kind": "option",
+          "position": 1,
+          "label": "I paid but have no access"
+        },
+        {
+          "parentId": "01a18100-0000-7000-8000-000000000021",
+          "childId": "01a18100-0000-7000-8000-000000000023",
+          "kind": "follow_up",
+          "position": 0,
+          "label": "Will I be charged twice if I pay again?"
+        },
+        {
+          "parentId": "01a18100-0000-7000-8000-000000000021",
+          "childId": "01a18100-0000-7000-8000-000000000024",
+          "kind": "follow_up",
+          "position": 1,
+          "label": "How do I contact support?"
+        },
+        {
+          "parentId": "01a18100-0000-7000-8000-000000000022",
+          "childId": "01a18100-0000-7000-8000-000000000024",
+          "kind": "follow_up",
+          "position": 0,
+          "label": "How do I contact support?"
+        }
+      ]
+    },
+    "faqReleaseResponseHeaders": {
+      "ETag": "\"v3\"",
+      "Cache-Control": "no-cache"
+    },
+    "faqReleaseNotModified": {
+      "ifNoneMatch": "\"v3\"",
+      "status": 304
+    },
+    "noReleaseProblem": {
+      "status": 404,
+      "code": "no_release"
+    },
+    "suggestContextRequest": {
+      "learnerId": "user_fixture_learner",
+      "locale": "en-GB",
+      "source": "chat",
+      "message": "So do I just have to wait?",
+      "shownFaqIds": [
+        "01a18100-0000-7000-8000-000000000022"
+      ],
+      "context": {
+        "nodeId": "01a18100-0000-7000-8000-000000000022",
+        "sessionId": "01a18100-0000-7000-8000-000000000030",
+        "recentTurns": [
+          "I paid but my plan is not active"
+        ]
+      },
+      "runId": "01a18100-0000-7000-8000-000000000031",
+      "parentRunId": "01a18100-0000-7000-8000-00000000000f"
+    },
+    "suggestAnswerContextResponse": {
+      "suggestion": {
+        "id": "01a18100-0000-7000-8000-000000000031",
+        "faqId": "01a18100-0000-7000-8000-000000000022",
+        "question": "I paid but my plan is not active",
+        "answer": "Payments can take a few minutes to confirm.\n\n1. Reload **My Learning**\n2. Sign out and sign in again\n\n- Check that you are signed in with the email you paid with\n- Look for the receipt email in your spam folder\n\nStill not active? Contact support with the order number from your receipt."
+      },
+      "alternatives": [],
+      "kind": "answer",
+      "intent": "question",
+      "confidence": "sure",
+      "nodeId": "01a18100-0000-7000-8000-000000000022",
+      "blocks": [
+        "b2",
+        "b3"
+      ],
+      "opening": "Don't worry, this is usually quick to sort out:",
+      "closing": "Try these first, and tell me if it is still not active.",
+      "reply": null,
+      "explanation": null,
+      "covered": null,
+      "guard": {
+        "result": "passed",
+        "reason": null,
+        "fallback": []
+      },
+      "releaseVersion": 3
+    },
+    "suggestChoiceResponse": {
+      "suggestion": {
+        "id": "01a18100-0000-7000-8000-000000000031",
+        "faqId": "01a18100-0000-7000-8000-000000000020",
+        "question": "Having trouble with a payment?",
+        "answer": "Which of these is it?"
+      },
+      "alternatives": [],
+      "kind": "answer",
+      "intent": "question",
+      "confidence": "unsure",
+      "nodeId": "01a18100-0000-7000-8000-000000000020",
+      "blocks": [],
+      "opening": null,
+      "closing": null,
+      "reply": null,
+      "explanation": null,
+      "covered": null,
+      "guard": null,
+      "releaseVersion": 3
+    },
+    "suggestSmalltalkResponse": {
+      "suggestion": null,
+      "alternatives": [],
+      "kind": "smalltalk",
+      "intent": "greeting",
+      "confidence": null,
+      "nodeId": null,
+      "blocks": [],
+      "opening": null,
+      "closing": null,
+      "reply": "Hi! What can I help you with today?",
+      "explanation": null,
+      "covered": null,
+      "guard": {
+        "result": "passed",
+        "reason": null,
+        "fallback": []
+      },
+      "releaseVersion": 3
+    },
+    "suggestSmalltalkFallbackResponse": {
+      "suggestion": null,
+      "alternatives": [],
+      "kind": "smalltalk",
+      "intent": "farewell",
+      "confidence": null,
+      "nodeId": null,
+      "blocks": [],
+      "opening": null,
+      "closing": null,
+      "reply": "不客气！之后有问题随时来问我。",
+      "explanation": null,
+      "covered": null,
+      "guard": {
+        "result": "fallback",
+        "reason": "digit",
+        "fallback": [
+          "reply"
+        ]
+      },
+      "releaseVersion": null
+    },
+    "suggestClarifyResponse": {
+      "suggestion": null,
+      "alternatives": [],
+      "kind": "clarify",
+      "intent": "clarify",
+      "confidence": "sure",
+      "nodeId": "01a18100-0000-7000-8000-000000000022",
+      "blocks": [],
+      "opening": null,
+      "closing": null,
+      "reply": null,
+      "explanation": "Only for a few minutes. If it is still not active after that, reload My Learning, then sign out and back in.",
+      "covered": true,
+      "guard": {
+        "result": "passed",
+        "reason": null,
+        "fallback": []
+      },
+      "releaseVersion": 3
+    },
+    "suggestClarifyNotCoveredResponse": {
+      "suggestion": null,
+      "alternatives": [],
+      "kind": "clarify",
+      "intent": "clarify",
+      "confidence": "sure",
+      "nodeId": "01a18100-0000-7000-8000-000000000022",
+      "blocks": [],
+      "opening": null,
+      "closing": null,
+      "reply": null,
+      "explanation": null,
+      "covered": false,
+      "guard": {
+        "result": "fallback",
+        "reason": "not_covered",
+        "fallback": [
+          "explanation"
+        ]
+      },
+      "releaseVersion": 3
+    },
+    "suggestNoMatchContextResponse": {
+      "suggestion": null,
+      "alternatives": [
+        {
+          "faqId": "01a18100-0000-7000-8000-000000000024",
+          "question": "How do I contact support?"
+        }
+      ],
+      "kind": "no_match",
+      "intent": "question",
+      "confidence": "unsure",
+      "nodeId": null,
+      "blocks": [],
+      "opening": null,
+      "closing": null,
+      "reply": null,
+      "explanation": null,
+      "covered": null,
+      "guard": null,
+      "releaseVersion": 3
     }
   }
 }

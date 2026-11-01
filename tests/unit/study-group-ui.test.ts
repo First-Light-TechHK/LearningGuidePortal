@@ -162,9 +162,11 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.match(room, /releaseRoom\(\)/);
   assert.match(room, /session\?\.state === "completed"\) void releaseRoom\(\)/);
   assert.match(room, /seatIntent\("enter"\)/);
-  assert.match(room, /session\.state === "scheduled"/);
-  assert.match(room, /copy\.errors\.session_not_open/);
-  assert.match(room, /copy\.enterWindow/);
+  assert.match(room, /session\?\.state === "scheduled"/);
+  // Before T-10 the session link's own page says when the room opens (deep
+  // links 2026-10-30); the room itself only ever shows a live session.
+  const entryPage = readFileSync(new URL("../../components/portal/StudySessionEntry.tsx", import.meta.url), "utf8");
+  assert.match(entryPage, /fill\(dl\.notOpenTitle, \{ time \}\)/);
   assert.equal(en.studyGroupsPage.errors.start_in_past, "Start Time must be in the future.");
   assert.equal(zh.studyGroupsPage.errors.start_in_past, "开始时间必须还在将来。");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/); // BUG-0100: one slot-gated alert per dialog
@@ -183,15 +185,15 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   const scheduleSource = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(scheduleSource, /styles\.tutorInfo[\s\S]*title=\{copy\.aiTutorOfflineHint\}/);
   assert.doesNotMatch(scheduleSource, /<p className=\{styles\.hint\}>\{copy\.aiTutorOfflineHint\}<\/p>/);
-  assert.equal(en.studyGroupsPage.enterWindow, "You can enter from 10 minutes before the start.");
   assert.equal(en.studyGroupsPage.notStartedBody, "This Live Session was not started.");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /sessionNotStarted\(session\) \? copy\.notStartedBody/);
   assert.equal(zh.studyGroupsPage.notStarted, "未开始");
   assert.equal(sessionNotStarted({ state: "starting_soon", occupancy: 0, startsAt: "2020-01-01T00:00:00.000Z", durationSeconds: 1800 }, Date.parse("2026-01-01T00:00:00.000Z")), true);
   assert.equal(sessionNotStarted({ state: "starting_soon", occupancy: 1, startsAt: "2020-01-01T00:00:00.000Z", durationSeconds: 1800 }, Date.parse("2026-01-01T00:00:00.000Z")), false);
-  assert.equal(zh.studyGroupsPage.enterWindow, "开始前 10 分钟可以进入。");
-  assert.match(room, /group\?\.role === "host" \? <button className=\{styles\.primary\} type="button"/);
-  assert.match(room, /sessions\/\$\{sessionId\}\/start/);
+  // The Host starts from the session list only (owner, 2026-10-30): the room
+  // page has no Start of its own any more.
+  assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /onClick=\{\(\) => void startSession\(session\)\}>\{copy\.start\}/);
+  assert.equal(room.includes("/start`"), false);
   // A refused entry: a full session offers to try again, missing Course access points to it (QA3 F7).
   assert.match(room, /const refusalOffer = seated \? null : seatRefusalOffer\(errorCode\);/);
   assert.match(room, /refusalOffer === "retry" \? <button className=\{styles\.primary\} type="button" onClick=\{retryEntry\}>\{copy\.retry\}<\/button> : null/);
@@ -227,12 +229,17 @@ test("a starting-soon Live Session shows its title, time, duration, and occupanc
   assert.match(app, /waitingSession\.focus/);
   assert.match(app, /sessionDateLabel\(locale, waitingSession\.startsAt\)/);
   assert.match(app, /sessionTimeLabel\(locale, waitingSession\)/);
+  // A session link's own page shows the same facts (deep links, 2026-10-30):
+  // the occupancy to a member once the session opens, the size otherwise.
+  const entryPage = readFileSync(new URL("../../components/portal/StudySessionEntry.tsx", import.meta.url), "utf8");
+  assert.match(entryPage, /sessionDateLabel\(locale, session\.startsAt\)/);
+  assert.match(entryPage, /sessionTimeLabel\(locale, session\)/);
+  assert.match(entryPage, /copy\.currentlyInSession/);
+  assert.match(entryPage, /copy\.upToParticipants/);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /sessionScheduleLabel\(locale, session\)/);
-  assert.match(room, /copy\.currentlyInSession/);
-  assert.match(room, /copy\.upToParticipants/);
-  // The seat is held by the heartbeat while the room page is open (QA 2026-10-19 seat lease).
-  assert.match(room, /session\?\.state !== "live" && session\?\.state !== "starting_soon"\)\) return;/);
+  // The seat is held by the heartbeat while the room page is open (QA 2026-10-19
+  // seat lease); the room page only ever holds a live session's seat.
+  assert.match(room, /session\?\.state !== "live"\) return;/);
   assert.match(room, /await seatIntent<\{ seated: boolean \}>\("heartbeat"\);/);
   assert.match(app, /waitingHoldRef/);
   assert.match(app, /waitingHandedOffRef\.current = true/);
@@ -336,10 +343,15 @@ test("the ended screen and live clock follow the Live Session frames", () => {
 test("the Host starts from the session controls instead of waiting in the member flow", () => {
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /session\.state === "live" \|\| \(session\.state === "starting_soon" && selected\.role !== "host"\)/);
+  // Owner, 2026-10-30: nobody enters before the Host starts, and the Host
+  // starts from the list. The room page's waiting card and its Start are gone;
+  // a session that is not live yet goes back to the entry check.
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
-  assert.match(room, /group\?\.role === "host" \? copy\.hostWaiting : copy\.waiting/);
-  assert.equal(en.studyGroupsPage.hostWaiting, "You are the Host. Start the session when you are ready.");
-  assert.equal(zh.studyGroupsPage.hostWaiting, "你是本节主持人，准备好后点击开始。");
+  assert.equal(room.includes("copy.hostWaiting"), false);
+  assert.equal(room.includes("copy.waiting"), false);
+  assert.match(room, /\(session\?\.state === "scheduled" \|\| session\?\.state === "starting_soon"\) && !sessionNotStarted\(session\)\) onNotLive\?\.\(\);/);
+  assert.equal("hostWaiting" in en.studyGroupsPage, false);
+  assert.equal("hostWaiting" in zh.studyGroupsPage, false);
 });
 
 test("BUG-0217: the Study Group pages use the site header, Study Groups active", () => {
@@ -629,9 +641,26 @@ test("identical reminder messages render as one row on the Study Groups sidebar"
   assert.deepEqual(uniqueReminderBodies(reminders), [reminders[0], reminders[2]]);
   assert.deepEqual(uniqueReminderBodies([]), []);
   assert.deepEqual(uniqueReminderBodies([{ body: "One" }, { body: "Two" }, { body: "One" }]), [{ body: "One" }, { body: "Two" }]);
+  // Deep links 2026-10-30: a reminder that names its session is one row per
+  // session, so two sessions with the same title and time each keep Enter now;
+  // the same session twice is still one row.
+  const twins = [
+    { body: "Lesson 1 starts in 10 minutes.", sessionId: "s1" },
+    { body: "Lesson 1 starts in 10 minutes.", sessionId: "s2" },
+    { body: "Lesson 1 starts in 10 minutes.", sessionId: "s1" }
+  ];
+  assert.deepEqual(uniqueReminderBodies(twins), [twins[0], twins[1]]);
+  // A legacy row without its session repeats a linked one: only the linked one (with Enter now) shows.
+  const legacy = [
+    { body: "Weimar starts in 10 minutes." },
+    { body: "Weimar starts in 10 minutes.", sessionId: "s3" },
+    { body: "Older notice." }
+  ];
+  assert.deepEqual(uniqueReminderBodies(legacy), [legacy[1], legacy[2]]);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /if \(reminderResult\.ok\) setReminders\(uniqueReminderBodies\(reminderResult\.data\)\);/);
-  assert.match(app, /<ul className=\{styles\.reminders\}>\{reminders\.map\(\(item\) => <li role="status" key=\{`\$\{item\.createdAt\}-\$\{item\.body\}`\}>\{item\.body\}<\/li>\)\}<\/ul>/);
+  // A reminder linked to its Live Session also offers to enter it (deep links, 2026-10-30).
+  assert.match(app, /<ul className=\{styles\.reminders\}>\{reminders\.map\(\(item, index\) => <li role="status" key=\{item\.sessionId \?\? `\$\{item\.createdAt\}-\$\{item\.body\}`\}><span id=\{`study-group-reminder-\$\{index\}`\}>\{item\.body\}<\/span>\{item\.sessionId \? <button className=\{styles\.reminderLink\}/);
 });
 
 test("one error is shown in exactly one place: the failing pane, create form, dialog, or sheet", () => {
@@ -1012,4 +1041,51 @@ test("a shared screen can go full screen with the people, chat and controls floa
   assert.match(room, /const FOCUS_IDLE_MS = 3000;/);
   assert.match(room, /data-idle=\{focus && idle \? "true" : "false"\}/);
   assert.match(css, /\.room\[data-idle="true"\] \.controls:not\(:hover\):not\(:focus-within\)/);
+});
+
+test("the chat input is one frame on the panel's bottom edge and the floating people stand out (owner 2026-10-30)", () => {
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  // The box is the only frame, the @AI Tutor entry is a light-blue chip, and the log fills the panel so the box sits on its bottom edge.
+  assert.match(css, /\.chatForm input \{[^}]*border: 0;[^}]*background: transparent;/);
+  assert.match(css, /\.tutorEntry \{[^}]*border-radius: 999px; background: #eef4ff; color: #1d6bff;/);
+  assert.match(css, /\.tutorEntry\[aria-pressed="true"\] \{ background: #1d6bff; color: #fff; \}/);
+  assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
+  assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
+  // The people float is an opaque light card with a labelled header and a row per person (name, role, mic).
+  assert.match(css, /\.avatarFloat \{[^}]*background: rgba\(255, 255, 255, \.96\);[^}]*box-shadow:/);
+  assert.match(room, /<span className=\{styles\.avatarToggleLabel\}>\{roomCopy\.participants\}<\/span>/);
+  assert.match(room, /<span className=\{styles\.avatarName\} aria-hidden="true">\{tile\.name\}<span className=\{styles\.avatarRole\}/);
+  // Raised hands first, then the Host; speaking never reorders the list.
+  assert.match(room, /return hand >= 0 \? hand : tile\.host \? hands\.length : hands\.length \+ 1;/);
+  // Full screen pill sits bottom-right over the screen; who shares is named top-left.
+  assert.match(css, /\.shareTools button \{[^}]*background: rgba\(255, 255, 255, \.95\);/);
+  assert.match(room, /fill\(roomCopy\.sharingBy, \{ name: sharerName \}\)/);
+  assert.match(room, /onDoubleClick=\{toggleFocus\}/);
+  for (const key of ["sharingBy", "stopSharing", "escToExit", "enterToSend", "chatHint", "hideChat"] as const) {
+    assert.ok(en.studyGroupsPage.room[key], key);
+    assert.ok(zh.studyGroupsPage.room[key], key);
+  }
+});
+
+test("full screen: a top bar to leave, chat as a float with unread and a preview, remembered floats (owner 2026-10-30)", () => {
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
+  assert.match(room, /<div className=\{styles\.focusBar\}>/);
+  assert.match(css, /\.room\[data-idle="true"\] \.controls:not\(:hover\):not\(:focus-within\), \.room\[data-idle="true"\] \.focusBar:not\(:hover\):not\(:focus-within\)/);
+  // A line counts as read only while the chat is on screen; in full screen that means the float is open.
+  assert.match(room, /const chatVisible = sideTab === "chat" && \(!focus \|\| sideOpen\);/);
+  assert.match(room, /if \(!chatVisibleRef\.current\) \{\s*setUnread\(\(count\) => count \+ 1\);\s*setPreview\(\{ from: roomCopy\.tutorName/);
+  assert.match(room, /\{focus && !sideOpen && preview \? \(/);
+  assert.match(room, /const CHAT_PREVIEW_MS = 5000;/);
+  // Folded/open floats are remembered per browser, and storage that throws is ignored.
+  assert.match(room, /window\.localStorage\.setItem\(key, open \? "open" : "closed"\)/);
+  assert.match(room, /catch \{ \/\* storage unavailable: keep the defaults \*\/ \}/);
+  // Esc leaves the window-covering fallback too.
+  assert.match(room, /event\.key === "Escape" && !document\.fullscreenElement\) setFocus\(false\)/);
+  // The sharer gets a banner with Stop sharing; mic off is red at a glance.
+  assert.match(room, /<div className=\{styles\.sharingBanner\} role="status">/);
+  assert.match(css, /\.controls button\[data-mic="off"\] \{ background: #fef3f2; color: #d92d20;/);
+  // The Tutor's answer is a light-blue block in dark ink.
+  assert.match(css, /\.tutorBody \{ color: #344054; background: #f5f8ff;/);
 });

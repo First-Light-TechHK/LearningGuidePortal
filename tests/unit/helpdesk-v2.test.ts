@@ -219,10 +219,12 @@ test("assistant: chat asks Admin with source chat, a chip with source chip + faq
   assert.equal(chat.replayed, false);
   assert.ok(chat.response.reply);
   assert.equal(chat.response.id, chat.response.reply.id, "the row id is Admin's suggestion id");
-  assert.deepEqual(h.suggestCalls[0], { learnerId: learner.id, locale: "en-GB", source: "chat", message: "I forgot my password", runId: chat.response.id, parentRunId: null });
+  // v5 (spec change): every chat request carries context; the first turn of a new session has only the session id.
+  const sessionOf = (response: unknown) => (response as { turn: { sessionId: string } }).turn.sessionId;
+  assert.deepEqual(h.suggestCalls[0], { learnerId: learner.id, locale: "en-GB", source: "chat", message: "I forgot my password", runId: chat.response.id, parentRunId: null, context: { sessionId: sessionOf(chat.response) } });
   const chip = await h.assistant.ask(learner, { message: "How do I reset my password?", locale: "zh-CN", faqId: FAQ_ID }, randomUUID());
   assert.equal(chip.response.reply?.faqId, FAQ_ID);
-  assert.deepEqual(h.suggestCalls[1], { learnerId: learner.id, locale: "zh-CN", source: "chip", message: "How do I reset my password?", faqId: FAQ_ID, shownFaqIds: [FAQ_ID], runId: chip.response.id, parentRunId: chat.response.id }, "v3: the FAQ the chat already showed goes as shownFaqIds");
+  assert.deepEqual(h.suggestCalls[1], { learnerId: learner.id, locale: "zh-CN", source: "chip", message: "How do I reset my password?", faqId: FAQ_ID, shownFaqIds: [FAQ_ID], runId: chip.response.id, parentRunId: chat.response.id, context: { sessionId: sessionOf(chip.response) } }, "v3: the FAQ the chat already showed goes as shownFaqIds");
   const none = await h.assistant.ask(learner, { message: "Where is my refund?", locale: "en-GB", faqId: null }, randomUUID());
   assert.equal(none.response.reply, null);
   assert.match(none.response.id, /^[0-9a-f]{8}-[0-9a-f]{4}-7/, "a Portal UUIDv7 when Admin returned null");
