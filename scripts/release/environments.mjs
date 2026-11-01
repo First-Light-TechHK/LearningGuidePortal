@@ -30,7 +30,11 @@ export const releaseEnvironments = {
   UAT: {
     appEnv: "UAT",
     origin: "https://uat.ilovelearningguide.com",
-    adminOrigin: "https://admin.uat.ilovelearningguide.com",
+    // UAT's Admin host is not provisioned behind a hostname: admin.uat currently
+    // resolves to the Portal distribution. Until that record exists, allow the
+    // real Admin UAT App Runner URL (or an empty value to skip the Admin probes,
+    // which liveSmoke treats as "no Admin in this environment").
+    adminOrigin: process.env.UAT_ADMIN_ORIGIN ?? "https://admin.uat.ilovelearningguide.com",
     branch: "uat",
     serviceName: "learning-guide-uat",
     serviceArn: process.env.UAT_APP_RUNNER_SERVICE_ARN || "arn:aws:apprunner:ap-southeast-1:851987565851:service/learning-guide-uat/ad3b8483fecc45d9a3b0bb3d2aad7783",
