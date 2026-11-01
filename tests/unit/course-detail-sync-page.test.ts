@@ -43,24 +43,31 @@ test("course restoration refreshes changed Study/access once and keeps the curre
       await finished;await page.waitForLoadState("networkidle");
     };
     const refreshes = () => page.evaluate(() => (window as unknown as { refreshCount: number }).refreshCount);
+    // router.refresh() runs after the response body is parsed, so refreshCount can
+    // move *after* networkidle resolves. Reading it on the next line therefore raced
+    // the refresh and failed only on the slower CI runner (0 !== 1). Waiting for the
+    // expected count and then asserting equality keeps both guarantees -- it must
+    // refresh, and must not refresh twice -- without assuming the runner's timing.
+    const waitRefreshes = async (expected: number, message?: string) => {
+      await page.waitForFunction(n => (window as unknown as { refreshCount: number }).refreshCount >= n, expected, { timeout: 5_000 });
+      assert.equal(await refreshes(), expected, message);
+    };
     await mount();await page.waitForLoadState("networkidle");assert.equal(await refreshes(), 0);
     current = { ...initial, actionLessonId: "two", progress: 86, openedLearningPointCount: 6 };
-    await check();assert.equal(await refreshes(), 1);
-    await check();assert.equal(await refreshes(), 1, "a stale snapshot requests only one server refresh");
-    await mount(current);await page.waitForLoadState("networkidle");await check();assert.equal(await refreshes(), 1, "the updated snapshot does not loop");
+    await check();await waitRefreshes(1);
+    await check();await waitRefreshes(1, "a stale snapshot requests only one server refresh");
+    await mount(current);await page.waitForLoadState("networkidle");await check();await waitRefreshes(1, "the updated snapshot does not loop");
     for (const error of ["http", "network", "malformed"] as const) {
-      failure = error;await check();assert.equal(await refreshes(), 1, "transient/invalid responses retain the current render");
+      failure = error;await check();await waitRefreshes(1, "transient/invalid responses retain the current render");
     }
     failure = null;delay = true;
     const pending = page.waitForRequest(request => request.url().includes("/api/portal/courses/"));
     await page.evaluate(() => dispatchEvent(new Event("focus")));await pending;
     await page.evaluate(() => (window as unknown as { mount: (p: null) => void }).mount(null));
     assert.ok(release);current = { ...initial, cta: "continue_preview" };await release!();await page.waitForLoadState("networkidle");
-    assert.equal(await refreshes(), 1, "a response after unmount cannot refresh another page");
+    await waitRefreshes(1, "a response after unmount cannot refresh another page");
     delay = false;await mount(initial);await page.waitForLoadState("networkidle");
-    // router.refresh() runs after the response body is parsed, which can land after networkidle under load.
-    await page.waitForFunction(() => (window as unknown as { refreshCount: number }).refreshCount >= 2, undefined, { timeout: 5_000 }).catch(() => undefined);
-    assert.equal(await refreshes(), 2, "changed access is refreshed through the same server-owned snapshot");
+    await waitRefreshes(2, "changed access is refreshed through the same server-owned snapshot");
     assert.equal(await page.locator("#root").innerHTML(), "", "reconciliation adds no UI or progress notices");
   } finally { await browser.close(); }
 });
