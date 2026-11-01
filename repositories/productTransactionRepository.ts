@@ -3,6 +3,9 @@ import { persistenceEnabled } from "@/services/persistence/config";
 import { persistProductSnapshot } from "@/services/ormRuntime";
 
 type PaymentData = {
+  users?: Array<{ email: string | null }>;
+  accounts?: Array<{ provider: string; providerSubject: string }>;
+  emailBindingTokens?: Array<{ tokenHash: string }>;
   orders: Array<{ id: string; paymentMode: string; quoteId: string; stripeCheckoutSessionId?: string | null; stripeInvoiceId?: string | null }>;
   stripeEvents: Array<{ id: string }>;
 };
@@ -12,6 +15,7 @@ type PaymentData = {
 export async function productTransaction<T, D extends PaymentData>(operation: () => Promise<{ data: D; result: T }>, localSave: (data: D) => Promise<void>) {
   if (!persistenceEnabled()) {
     const { data, result } = await operation();
+    assertIdentityKeys(data);
     const keys = paymentKeys(data);
     if (new Set(keys.map(item => item[0] + ":" + item[1])).size !== keys.length) throw new Error("Duplicate payment identity.");
     await localSave(data);
@@ -23,6 +27,7 @@ export async function productTransaction<T, D extends PaymentData>(operation: ()
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(719301, 1)");
     const { data, result } = await operation();
+    assertIdentityKeys(data);
     for (const [kind, externalId, ownerId] of paymentKeys(data)) {
       const saved = await client.query(`INSERT INTO product_payment_keys(kind, external_id, owner_id) VALUES ($1, $2, $3)
         ON CONFLICT (kind, external_id) DO UPDATE SET owner_id = product_payment_keys.owner_id
@@ -40,6 +45,15 @@ export async function productTransaction<T, D extends PaymentData>(operation: ()
     await client.query("ROLLBACK");
     throw error;
   } finally { client.release(); }
+}
+
+function assertIdentityKeys(data: PaymentData) {
+  const groups = [
+    (data.users || []).flatMap(user => user.email?.trim() ? [user.email.trim().toLowerCase()] : []),
+    (data.accounts || []).map(account => JSON.stringify([account.provider, account.providerSubject])),
+    (data.emailBindingTokens || []).map(token => token.tokenHash),
+  ];
+  if (groups.some(keys => new Set(keys).size !== keys.length)) throw new Error("Duplicate authentication identity.");
 }
 
 function paymentKeys(data: PaymentData) {
