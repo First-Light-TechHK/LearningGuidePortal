@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ...await requestEmailBinding(user.id, body, request) });
   } catch (error) {
     const code = error instanceof Error ? error.message : "invalid_email";
-    const known = ["unauthorised", "invalid_email", "already_bound", "email_in_use", "cooldown", "email_unavailable"].includes(code) ? code : "email_unavailable";
+    const known = ["unauthorised", "invalid_email", "already_bound", "email_in_use", "account_unavailable", "account_conflict", "cooldown", "email_unavailable"].includes(code) ? code : "email_unavailable";
     return NextResponse.json({ ok: false, code: known }, { status: known === "cooldown" ? 429 : known === "email_unavailable" ? 503 : 400 });
   }
 }

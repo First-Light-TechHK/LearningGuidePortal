@@ -79,6 +79,9 @@ const SCHEMA_PROBE = `
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
     AND to_regclass('orm_rows') IS NOT NULL
+    AND to_regclass('orm_users_email_key') IS NOT NULL
+    AND to_regclass('orm_accounts_provider_subject_key') IS NOT NULL
+    AND to_regclass('orm_email_binding_token_hash_key') IS NOT NULL
     AND to_regclass('study_groups') IS NOT NULL
     AND to_regclass('study_group_memberships') IS NOT NULL
     AND to_regclass('live_sessions') IS NOT NULL
@@ -457,6 +460,13 @@ CREATE OR REPLACE VIEW helpdesk_assist_outcomes AS SELECT a.id AS assist_id,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (table_name, id)
         );
+        -- Mirrors db/migrations/025_auth_identity_keys.sql.
+CREATE UNIQUE INDEX IF NOT EXISTS orm_users_email_key ON orm_rows ((lower(btrim(payload->>'email'))))
+WHERE table_name = 'users' AND nullif(btrim(payload->>'email'), '') IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS orm_accounts_provider_subject_key ON orm_rows ((payload->>'provider'), (payload->>'providerSubject'))
+WHERE table_name = 'accounts';
+CREATE UNIQUE INDEX IF NOT EXISTS orm_email_binding_token_hash_key ON orm_rows ((payload->>'tokenHash'))
+WHERE table_name = 'emailBindingTokens';
         -- Mirrors db/migrations/012_study_group_persistence.sql so a boot with
         -- no schema job self-heals (010 precedent); the two copies must
         -- declare the same tables and constraints
