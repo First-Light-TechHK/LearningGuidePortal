@@ -377,6 +377,77 @@ test("BUG-0157: an upcoming session lets only its date and start time change", a
   }
 });
 
+// Product check 2026-11-02 (owner picked "fix 8"): after the start time passes
+// and before the Host starts, Edit Session still saves the unchanged time, so a
+// late Host can turn the AI Tutor off; the time itself cannot move into the past.
+test("2026-11-02: a late Host can still turn the AI Tutor off after the start time passes", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const host = await newMember(browser, appOrigin(baseURL), "late-host", "Study Host");
+  try {
+    const groupId = await createGroup(host, unique("E2E late Host"));
+    const sessionId = await scheduleSession(host, groupId, { title: "Late Host", startsInMs: 70_000, aiTutorEnabled: true });
+    const startsAt = Date.parse((await sessionView(host, sessionId)).startsAt);
+    await expect.poll(() => Date.now() > startsAt + 2_000, { timeout: 120_000, intervals: [5_000] }).toBe(true);
+
+    const page = await openGroupPage(host, groupId);
+    await page.getByRole("button", { name: "Edit Session" }).click();
+    const form = page.getByRole("dialog").locator("form");
+    // The unchanged start carries no min, so the browser does not block Save.
+    await expect(form.locator('[name="date"]')).not.toHaveAttribute("min", /.+/);
+    await expect(form.locator('[name="time"]')).not.toHaveAttribute("min", /.+/);
+    const tutor = form.locator('[name="aiTutor"]');
+    await expect(tutor).toBeChecked();
+    await tutor.uncheck();
+    await form.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const saved = (await sessionView(host, sessionId)) as Awaited<ReturnType<typeof sessionView>> & { aiTutorEnabled: boolean };
+    expect(saved.aiTutorEnabled).toBe(false);
+    expect(Date.parse(saved.startsAt), "the start time is unchanged").toBe(startsAt);
+
+    const patch = (data: Record<string, unknown>) => host.context.request.patch(`/api/study-groups/sessions/${sessionId}`, { data: { groupId, ...data } });
+    const past = await patch({ startsAt: new Date(Date.now() - 60_000).toISOString() });
+    expect(past.status()).toBe(400);
+    expect((await past.json()).code).toBe("start_in_past");
+    expect((await patch({ startsAt: new Date(Date.now() + HOUR).toISOString() })).status(), "a future time still works").toBe(200);
+  } finally {
+    await host.context.close();
+  }
+});
+
+// Product check 2026-11-02: starting with the AI Tutor on while the course's
+// Tutor went offline names the way out; saved with the Tutor off, it starts.
+test("2026-11-02: an offline course Tutor at start tells the Host how to start without it", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const host = await newMember(browser, appOrigin(baseURL), "offline-start", "Study Host");
+  const setKsOnline = (online: boolean) => host.context.request.post("http://127.0.0.1:8788/__control/ks-online", { data: { online } });
+  try {
+    const groupId = await createGroup(host, unique("E2E offline start"));
+    const sessionId = await scheduleSession(host, groupId, { title: "Offline Tutor", startsInMs: 5 * 60_000, aiTutorEnabled: true });
+    expect((await setKsOnline(false)).status()).toBe(200);
+
+    const page = await openGroupPage(host, groupId);
+    await page.getByRole("button", { name: "Start Live Session" }).click();
+    await expect(appAlerts(page).filter({ hasText: "AI Tutor is offline for this course" })).toHaveText(
+      "AI Tutor is offline for this course, so the Live Session can’t start with it on. Open Edit Session, save it with AI Tutor off, then start again."
+    );
+    expect((await sessionView(host, sessionId)).state).not.toBe("live");
+
+    await page.reload();
+    await page.getByRole("button", { name: "Edit Session" }).click();
+    const form = page.getByRole("dialog").locator("form");
+    const tutor = form.locator('[name="aiTutor"]');
+    if ((await tutor.isEnabled()) && (await tutor.isChecked())) await tutor.uncheck();
+    await expect(tutor).not.toBeChecked();
+    await form.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "Start Live Session" }).click();
+    await page.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 20_000 });
+  } finally {
+    await setKsOnline(true);
+    await host.context.close();
+  }
+});
+
 test("BUG-0107: Close and Escape leave the waiting dialog and free the seat; the Host's start brings the member in", async ({ browser, baseURL }) => {
   test.setTimeout(180_000);
   const origin = appOrigin(baseURL);

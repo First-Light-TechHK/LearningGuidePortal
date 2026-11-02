@@ -263,10 +263,13 @@ function requiredValue(value: unknown, label: string) {
 const START_TIME_MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
 const START_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
-function parseStartTime(value: unknown, now: Date) {
+function parseStartTime(value: unknown, now: Date, stored?: string) {
   const text = clean(value);
   const startsAt = new Date(text);
   if (!START_TIME_PATTERN.test(text) || Number.isNaN(startsAt.getTime())) throw new StudyGroupError("validation", "Start Time is required.");
+  // Edit Session may resend the Start Time it showed: an unchanged time stays
+  // valid after it has passed, so a late Host can still turn the AI Tutor off.
+  if (stored !== undefined && startsAt.getTime() === new Date(stored).getTime()) return startsAt;
   if (startsAt.getTime() <= now.getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
   if (startsAt.getTime() > now.getTime() + START_TIME_MAX_AHEAD_MS) throw new StudyGroupError("validation", "Start Time must be within a year.");
   return startsAt;
@@ -1473,7 +1476,6 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async editSession(input: { actorUserId: string; groupId: string; sessionId: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }) {
       if (input.title !== undefined) requireText(input.title, "Session Title", 50);
-      const startsAt = input.startsAt !== undefined ? parseStartTime(input.startsAt, deps.now()) : undefined;
       if (input.durationSeconds !== undefined && !STORED_SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof STORED_SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (input.maxParticipants !== undefined && (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6)) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
       let focus: string | null | undefined;
@@ -1496,6 +1498,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (!current || current.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can edit a Live Session.");
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Edit Session is available only before the Session starts.");
+        // Checked against the stored time: only a moved Start Time must be in the future.
+        const startsAt = input.startsAt !== undefined ? parseStartTime(input.startsAt, deps.now(), current.startsAt) : undefined;
         // An upcoming Session keeps everything people planned around; only its
         // Start Time can move (BUG-0157). Resending an unchanged value is fine.
         const changesOtherThanTime =
@@ -1508,7 +1512,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // The Host may turn the room AI Tutor on or off until the Session starts.
         if (input.aiTutorEnabled !== undefined) current.aiTutorEnabled = input.aiTutorEnabled;
         const previousStartsAt = current.startsAt;
-        if (startsAt) current.startsAt = startsAt.toISOString();
+        // Same instant written another way is not a move (no reschedule notice).
+        if (startsAt && startsAt.getTime() !== new Date(current.startsAt).getTime()) current.startsAt = startsAt.toISOString();
         current.updatedAt = now;
         const moved = current.startsAt !== previousStartsAt;
         if (moved) {
@@ -1719,7 +1724,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const membership = activeMembership(pending, pendingSession.groupId, input.actorUserId);
         const group = pending.groups.find((item) => item.id === pendingSession.groupId);
         if (membership?.role === "host" && group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
-          throw new StudyGroupError("tutor_unavailable", "AI Tutor is offline for this course. Turn it off before starting the Live Session.");
+          // Its own code, so the Host is told the way out: turn the switch off in Edit Session.
+          throw new StudyGroupError("tutor_offline_at_start", "AI Tutor is offline for this course. Save the session with AI Tutor off in Edit Session, then start the Live Session.");
         }
       }
       let assignedProjectId: string | null = null;

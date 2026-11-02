@@ -15,8 +15,8 @@ test("schedule duration is a required dropdown of 10, 20, 30, and 40 minutes (ow
   assert.deepEqual(DURATION_MINUTE_CHOICES.map((minutes) => fill(zh.studyGroupsPage.plannedDuration, { count: minutes })), ["10 分钟", "20 分钟", "30 分钟", "40 分钟"]);
   const source = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(source, /select name="durationMinutes" required/);
-  assert.match(source, /type="date" required min=\{todayDate\(\)\}/);
-  assert.match(source, /min=\{earliestTime\(sessionDate\) \|\| undefined\}/);
+  assert.match(source, /type="date" required min=\{keptStart \? undefined : todayDate\(\)\}/);
+  assert.match(source, /min=\{keptStart \? undefined : earliestTime\(sessionDate\) \|\| undefined\}/);
   assert.match(source, /durationOptions\(sessionDuration\)\.map/);
   assert.deepEqual(durationOptions(""), [10, 20, 30, 40]);
   assert.deepEqual(durationOptions("20"), [10, 20, 30, 40]);
@@ -1089,4 +1089,24 @@ test("full screen: a top bar to leave, chat as a float with unread and a preview
   assert.match(css, /\.controls button\[data-mic="off"\] \{ background: #fef3f2; color: #d92d20;/);
   // The Tutor's answer is a light-blue block in dark ink.
   assert.match(css, /\.tutorBody \{ color: #344054; background: #f5f8ff;/);
+});
+
+test("Edit Session says the AI Tutor switch can change, keeps a passed Start Time valid, and an offline Tutor at start names the way out (FAQ grounding check 2026-11-02)", () => {
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  // The lead and the server's refusal list the same editable fields.
+  assert.equal(en.studyGroupsPage.editSessionLead, "Only the date, start time and AI Tutor switch can be changed. Everything else stays as members planned for.");
+  assert.equal(zh.studyGroupsPage.editSessionLead, "只能修改日期、开始时间和 AI Tutor 开关，其他信息保持成员计划参加时的样子。");
+  assert.equal(en.studyGroupsPage.errors.session_time_only, "Only the date, start time and AI Tutor switch of an upcoming Live Session can be changed.");
+  assert.equal(zh.studyGroupsPage.errors.session_time_only, "即将开始的直播课只能修改日期、开始时间和 AI Tutor 开关。");
+  // A late Host: the unchanged Start Time drops the "not in the past" minimum and is not sent.
+  assert.match(app, /const keptStart = timeOnly && editingSession !== null && startUnchanged\(editingSession, sessionDate, sessionTime\);/);
+  assert.match(app, /\.\.\.\(kept \? \{\} : \{ startsAt \}\)/);
+  // Starting with the Tutor on while it is offline: its own message, pointing at Edit Session.
+  assert.match(en.studyGroupsPage.errors.tutor_offline_at_start, /Open Edit Session, save it with AI Tutor off, then start again\./);
+  assert.match(zh.studyGroupsPage.errors.tutor_offline_at_start, /请打开“编辑本节”，在 AI Tutor 关闭的状态下保存，再开始。/);
+  assert.equal(en.studyGroupsPage.editSession, "Edit Session");
+  assert.equal(zh.studyGroupsPage.editSession, "编辑本节");
+  // One name for Plan to Attend in Chinese.
+  assert.equal(zh.studyGroupsPage.confirmLeaveGroup, "你计划参加的未开始直播课会一并取消。");
+  assert.doesNotMatch(JSON.stringify(zh.studyGroupsPage), /报名参加|成员报名/);
 });

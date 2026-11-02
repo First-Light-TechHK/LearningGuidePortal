@@ -885,7 +885,7 @@
         },
         {
           "question": "Can I download course materials?",
-          "answer": "Downloads are available only when a course provides them."
+          "answer": "No. Lessons open on the website only, and there is no download option. You can open them any time from My Learning while you have access to the course."
         }
       ]
     },
@@ -991,7 +991,7 @@
     "openGroup": "Open Group",
     "openStudyGroup": "Open Study Group",
     "arrangeLead": "Arrange a live study session for this Study Group",
-    "editSessionLead": "Only the date and start time can be changed. Everything else stays as members planned for.",
+    "editSessionLead": "Only the date, start time and AI Tutor switch can be changed. Everything else stays as members planned for.",
     "selectLesson": "Select Lesson",
     "relatedLesson": "Related Lesson",
     "selectStartTime": "Select start time",
@@ -1181,7 +1181,7 @@
       "course_access_required": "Valid Course access is required.",
       "course_unavailable": "This Course is no longer available, so this Study Group cannot be joined.",
       "forbidden": "You cannot do that.",
-      "session_time_only": "Only the date and start time of an upcoming Live Session can be changed.",
+      "session_time_only": "Only the date, start time and AI Tutor switch of an upcoming Live Session can be changed.",
       "not_found": "That Study Group or Live Session was not found.",
       "conflict": "The Related Course cannot be changed.",
       "session_full": "Session full.",
@@ -1199,6 +1199,7 @@
       "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
       "tutor_answering": "The AI Tutor is already answering that question.",
       "tutor_unavailable": "AI Tutor is not available right now. Try again in a minute.",
+      "tutor_offline_at_start": "AI Tutor is offline for this course, so the Live Session can’t start with it on. Open Edit Session, save it with AI Tutor off, then start again.",
       "seat_lapsed": "Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.",
       "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."
@@ -1776,7 +1777,7 @@
       "handoverButton": "Contact Support",
       "checkinTitle": "Still need help?",
       "endChat": "End chat",
-      "contactPerson": "Contact a person",
+      "contactPerson": "Contact Support",
       "ended": "This chat has ended.",
       "endThanks": "Thanks for chatting. Ask again any time.",
       "situationTitle": "You might be running into:",

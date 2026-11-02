@@ -20,6 +20,12 @@ function todayDate() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+// The Edit Session form still shows the Session's own Start Time.
+function startUnchanged(session: StudySession, date: string, time: string) {
+  const local = localDateTime(session.startsAt);
+  return local.date === date && local.time === time;
+}
+
 function earliestTime(date: string) {
   if (date !== todayDate()) return "";
   const now = new Date();
@@ -464,6 +470,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const visibleMine = mine.filter((group) => mineFilter === "all" || group.role === "host");
   const errorText = copy.errors[errorCode as keyof typeof copy.errors] || copy.errors.error;
   const timeOnly = dialog === "edit-session";
+  // Edit Session keeps the shown Start Time valid after it passes (the server
+  // accepts an unchanged time), so a late Host can still turn the AI Tutor off.
+  const keptStart = timeOnly && editingSession !== null && startUnchanged(editingSession, sessionDate, sessionTime);
   const tutorOffline = selected?.tutorOnline === false;
   const signInHref = studyGroupSignInHref(locale, studyGroupsPageHref(locale, selectedId));
   const mineEmpty = mineEmptyCopy({ signedIn, listsLoaded, filter: mineFilter, count: visibleMine.length });
@@ -647,12 +656,14 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     if (!selected || !editingSession) return;
     await guarded(async () => {
       const startsAt = new Date(`${form.get("date")}T${form.get("time")}`).toISOString();
+      const kept = startUnchanged(editingSession, String(form.get("date")), String(form.get("time")));
       const result = await studyGroupRequest<StudySession>(`/api/study-groups/sessions/${editingSession.id}`, {
         method: "PATCH",
-        // Start Time and the room AI Tutor switch can change before the Session starts.
+        // Start Time and the room AI Tutor switch can change before the Session starts;
+        // an unchanged Start Time is not sent.
         body: JSON.stringify({
           groupId: selected.id,
-          startsAt,
+          ...(kept ? {} : { startsAt }),
           aiTutorEnabled: form.get("aiTutor") === "on" && selected.tutorOnline !== false
         })
       });
@@ -930,8 +941,8 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 <label className={styles.field}><span>{copy.sessionTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required disabled={timeOnly} maxLength={SESSION_TITLE_MAX} value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value.slice(0, SESSION_TITLE_MAX))} /><span className={styles.counter}>{sessionTitleCount(sessionTitle)}</span></span></label>
                 <label className={styles.field}><span>{copy.relatedLesson}</span><select name="lesson" disabled={timeOnly} value={sessionLesson} onChange={(event) => setSessionLesson(event.target.value)}><option value="">{copy.selectLesson}</option>{(selected?.lessons || []).map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title}</option>)}</select></label>
                 <div className={styles.pair}>
-                  <label className={styles.field}><span>{copy.date} <span className={styles.req}>*</span></span><input name="date" type="date" required min={todayDate()} value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} /></label>
-                  <label className={styles.field}><span>{copy.startTime} <span className={styles.req}>*</span></span><input name="time" type="time" required min={earliestTime(sessionDate) || undefined} value={sessionTime} onChange={(event) => setSessionTime(event.target.value)} /></label>
+                  <label className={styles.field}><span>{copy.date} <span className={styles.req}>*</span></span><input name="date" type="date" required min={keptStart ? undefined : todayDate()} value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} /></label>
+                  <label className={styles.field}><span>{copy.startTime} <span className={styles.req}>*</span></span><input name="time" type="time" required min={keptStart ? undefined : earliestTime(sessionDate) || undefined} value={sessionTime} onChange={(event) => setSessionTime(event.target.value)} /></label>
                   <label className={styles.field}><span>{copy.duration} <span className={styles.req}>*</span></span><select name="durationMinutes" required disabled={timeOnly} value={sessionDuration} onChange={(event) => setSessionDuration(event.target.value)}><option value="">{copy.selectDuration}</option>{durationOptions(sessionDuration).map((minutes) => <option key={minutes} value={minutes}>{fill(copy.plannedDuration, { count: minutes })}</option>)}</select></label>
                   <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required disabled={timeOnly} value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
                 </div>
