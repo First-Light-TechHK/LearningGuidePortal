@@ -2,7 +2,11 @@ export type CourseLearningMode = "video" | "text";
 export type CourseLearningModeInput = { mode: CourseLearningMode; lessonId?: string };
 export type CourseModePosition = { lessonId: string; contentId: string | null };
 export type CourseLearningModeResult = { courseId: string; mode: CourseLearningMode; position?: CourseModePosition | null };
-export type CourseModeSnapshot = { courseId: string; mode: CourseLearningMode };
+export type CourseModeSnapshot = {
+  courseId: string; mode: CourseLearningMode;
+  currentLessonId?: string | null; currentContentId?: string | null;
+  progress?: number | null; updatedAt?: string | null;
+};
 
 export function isCourseLearningMode(value: unknown): value is CourseLearningMode {
   return value === "video" || value === "text";

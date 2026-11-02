@@ -1,4 +1,4 @@
-import type { CourseLearningMode } from "./course-learning-mode";
+import type { CourseLearningMode, CourseModeSnapshot } from "./course-learning-mode";
 
 /** Server-derived cards. Progress is explicit completion, independent of the resume cursor. */
 export type OverviewDisplayCourse = {
@@ -8,4 +8,4 @@ export type OverviewDisplayCourse = {
   action: "resume" | "review" | "plans" | "preview" | "detail";
   href: string;
 };
-export type OverviewDisplay = { name: string; courses: OverviewDisplayCourse[] };
+export type OverviewDisplay = { name: string; courses: OverviewDisplayCourse[]; syncCourses?: CourseModeSnapshot[] };

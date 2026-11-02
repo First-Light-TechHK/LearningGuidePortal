@@ -3,6 +3,15 @@ import { test } from "node:test";
 import { preferredLessonContentId, availableCourseLearningModes, modeLessonDestination, resolveLessonPresentation } from "../../lib/courseLearningMode";
 import type { LessonContent } from "../../contracts/lesson-content";
 import type { ProductCourse } from "../../services/productStore";
+import { lessonOutlineDestination } from "../../lib/previewLessonPresentation";
+
+test("explicit lesson links retain every lesson and choose its available mode without a foreign content cursor", () => {
+  const lesson = { href: "/zh-CN/account/learn/course?lessonId=earlier&contentId=other-lesson#outline", modes: ["text"] as ("text" | "video")[] };
+  assert.deepEqual(lessonOutlineDestination(lesson, "video"), { href: "/zh-CN/account/learn/course?lessonId=earlier&viewMode=text#outline", mode: "text" });
+  assert.equal(lessonOutlineDestination({ ...lesson, href: null }, "video"), null);
+  assert.equal(lessonOutlineDestination({ ...lesson, modes: [] }, "video"), null);
+  assert.equal(lessonOutlineDestination({ ...lesson, modes: ["video", "text"] }, "video")?.mode, "video");
+});
 
 test("mode switching navigates to matching accessible lessons and preserves locale/query",()=>{
   const outline=[{id:"video",href:"/zh-CN/account/learn/course?lessonId=video",modes:["video"] as const},{id:"locked",href:null,modes:["text"] as const},{id:"text",href:"/zh-CN/account/learn/course?lessonId=text",modes:["text"] as const}].map(item=>({...item,modes:[...item.modes]}));
