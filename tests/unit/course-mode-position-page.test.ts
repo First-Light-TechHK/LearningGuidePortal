@@ -107,10 +107,13 @@ test("mode switching resumes the last visited point after backward review, with 
       await page.waitForFunction(() => {
         const reader = document.querySelector('[data-text-reader]'), target = document.querySelector('[data-text-point-id="b-text-3"]');
         if (!reader || !target) return false;
-        const offset = target.getBoundingClientRect().top - reader.getBoundingClientRect().top;
+        const offset = target.getBoundingClientRect().top;
         return offset >= 0 && offset < 40;
       });
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-position-mobile.png`, fullPage: true });
+      await page.locator('[data-text-point-id="b-text-2"]').evaluate(element => window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - 12));
+      await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 2"));
+      assert.equal(await page.locator('[data-text-reader]').evaluate(element => element.scrollTop), 0, "mobile point tracking uses page scrolling");
       assert.deepEqual(errors, []);
       await page.close();
     }

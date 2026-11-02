@@ -1,12 +1,14 @@
+import { safeReturnTo } from "@/services/runtimeConfig";
 import { CheckEmail } from "@/components/portal/CheckEmail";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 
-export default async function CheckEmailPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ email?: string; resend?: string }> }) {
+export default async function CheckEmailPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ email?: string; resend?: string; returnTo?: string }> }) {
   const locale = localeFrom((await params).locale);
   const messages = getMessages(locale);
   const query = await searchParams;
+  const destination = safeReturnTo(query.returnTo, `/${locale}/portal`);
   const email = query.email || "";
-  return <main className="portal-page portal-auth-page"><PortalHeader locale={locale} /><div className="portal-auth-stage"><div className="portal-auth-card"><CheckEmail locale={locale} copy={messages.auth} initialEmail={email} /></div></div></main>;
+  return <main className="portal-page portal-auth-page"><PortalHeader locale={locale} /><div className="portal-auth-stage"><div className="portal-auth-card"><CheckEmail returnTo={destination} locale={locale} copy={messages.auth} initialEmail={email} /></div></div></main>;
 }

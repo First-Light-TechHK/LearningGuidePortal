@@ -93,7 +93,8 @@ test("BUG-0096: the Create dialog is centred in the viewport at every width and 
     // Escape while the create request is in flight does not close it.
     await page.setViewportSize({ width: 1440, height: 900 });
     await form.locator('input[name="title"]').fill(unique("E2E 0096"));
-    await form.locator('select[name="courseId"]').selectOption({ index: 1 });
+    await form.getByRole("combobox").click();
+    await form.locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("Escape during the request.");
     await page.route("**/api/study-groups", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
@@ -117,7 +118,8 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
     await page.getByRole("button", { name: "+ Create Study Group" }).click();
     const form = page.getByRole("dialog").locator("form");
     await form.locator('input[name="title"]').fill(title);
-    await form.locator('select[name="courseId"]').selectOption({ index: 1 });
+    await form.getByRole("combobox").click();
+    await form.locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("Created from the E2E.");
     await form.getByRole("button", { name: "Create Study Group" }).dblclick();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -135,7 +137,8 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
 
     // A network failure keeps the form open with the network message.
     await form.locator('input[name="title"]').fill(unique("E2E 0097 offline"));
-    await form.locator('select[name="courseId"]').selectOption({ index: 1 });
+    await form.getByRole("combobox").click();
+    await form.locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("This one fails.");
     await page.route("**/api/study-groups", (route) => route.request().method() === "POST" ? route.abort() : route.continue());
     await form.getByRole("button", { name: "Create Study Group" }).click();

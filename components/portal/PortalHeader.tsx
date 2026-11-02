@@ -11,6 +11,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { PortalLanguageLink } from "@/components/portal/PortalLanguageLink";
 import { AccountMenu } from "@/components/portal/AccountMenu";
+import styles from "./portal-header.module.css";
 
 type HeaderSection = "courses" | "study-groups" | "my-learning" | "subscription";
 
@@ -48,7 +49,7 @@ export function PortalHeader({ locale, active, signedIn: initialSignedIn = false
   const { signedIn, displayName, avatarUrl } = identity;
 
   return (
-    <header className={`portal-header ${signedIn ? "portal-header--signed-in" : "portal-header--visitor"}`}>
+    <header className={`${styles.header} portal-header ${signedIn ? "portal-header--signed-in" : "portal-header--visitor"}`}>
       <div className="portal-header-inner">
         <Link prefetch={false} className="portal-brand" href={`/${locale}/portal`}>
           <span className="portal-brand-mark" aria-hidden="true"><Image src="/portal/figma-logo.svg" width={24} height={24} alt="" /></span>

@@ -92,7 +92,7 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     submitting.current = true;
     setBusy(true);
     try {
-      const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe, ...(!signIn ? { termsAccepted } : {}) }) });
+      const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe, ...(!signIn ? { termsAccepted, returnTo } : {}) }) });
       const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
       if (!response.ok || !data.ok) {
         const message = data.code === "REGISTRATION_CONSENT_REQUIRED" ? labels.registrationConsentRequired
@@ -110,8 +110,8 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
         setBusy(false);
         return;
       }
-      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
-      window.location.assign(returnTo || `/${locale}/account/my-learning`);
+      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}&returnTo=${encodeURIComponent(returnTo)}`);
+      window.location.replace(returnTo || `/${locale}/portal`);
     } catch (requestError) {
       submitting.current = false;
       setError(requestError instanceof Error ? requestError.message : labels.requestFailed);
@@ -121,10 +121,10 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
 
   useEffect(() => {
     if (!existingNotice) return;
-    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?step=password&email=${encodeURIComponent(email.trim().toLowerCase())}`); return; }
+    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?step=password&email=${encodeURIComponent(email.trim().toLowerCase())}&returnTo=${encodeURIComponent(returnTo)}`); return; }
     const timer = window.setTimeout(() => setExistingSeconds(value => value - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [email, existingNotice, existingSeconds, locale]);
+  }, [email, existingNotice, existingSeconds, locale, returnTo]);
 
   const switchPath = `${signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`}?returnTo=${encodeURIComponent(returnTo)}`;
   return (
