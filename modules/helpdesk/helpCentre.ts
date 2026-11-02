@@ -9,6 +9,7 @@
 // ?category= falls back to the popular heading). The 60 s cache and
 // stale-on-error live in the Admin client.
 import type { FaqCategory, FaqFilter, HelpCentreQuery, HelpFaq, HelpdeskLocale } from "@/contracts/helpdesk";
+import { HELP_POPULAR_SHOWN } from "./learnerUi";
 import { supportPaths } from "./learnerPages";
 
 export type HelpCentreClient = {
@@ -33,8 +34,8 @@ export type HelpCentreView = {
 
 /** Popular FAQs asked for: every one product marked (owner 2026-11-02 picked 25), in Admin's order. */
 export const HELP_POPULAR_LIMIT = 50;
-/** Shown before "Show more" (owner 2026-11-02: the first 10, the rest folded); also the newest-FAQs fallback size. */
-export const HELP_POPULAR_SHOWN = 10;
+// Shown before "Show more"; lives in the client-safe learnerUi so the Help Centre component never imports this module's values.
+export { HELP_POPULAR_SHOWN } from "./learnerUi";
 export const HELP_LIST_LIMIT = 50;
 
 const article = (faq: HelpFaq): HelpArticle => ({ id: faq.id, category: faq.category, question: faq.question, answer: faq.answer });
