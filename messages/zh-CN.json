@@ -260,6 +260,7 @@
     "videoMode": "视频模式",
     "textMode": "文本模式",
     "noLessonsInMode": "该模式下暂无课时。",
+    "lessonUnavailable": "该课时内容暂不可用。",
     "back": "返回课程详情",
     "outline": "课程目录",
     "deepLearning": "深度学习",

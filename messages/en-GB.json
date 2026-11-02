@@ -260,6 +260,7 @@
     "videoMode": "Video mode",
     "textMode": "Text mode",
     "noLessonsInMode": "No lessons available in this mode.",
+    "lessonUnavailable": "Lesson content is currently unavailable.",
     "back": "Back to course details",
     "outline": "COURSE OUTLINE",
     "deepLearning": "Deep Learning",
