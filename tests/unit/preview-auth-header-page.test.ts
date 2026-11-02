@@ -24,7 +24,7 @@ test("one Preview login refreshes server course access on return and session res
         query.get('step')==='password'?<AuthForm locale={locale} mode="sign-in" initialEmail={query.get('email')} copy={copy.auth} returnTo={query.get('returnTo')}/>:<AuthEntryForm locale={locale} copy={copy.auth} returnTo={query.get('returnTo')}/>:
         <><h1>Course detail</h1><CourseCurriculumAction lesson={lesson} href={state.user?lesson.access==='entitled'?'/'+locale+'/account/learn/epicureanism':'/'+locale+'/portal/courses/epicureanism/public-lesson':'/'+locale+'/portal/sign-in?returnTo='+encodeURIComponent(target)} className="course-action" copy={copy.courseDetailDesign} cta={state.page.cta} actionLessonId={state.page.actionLessonId}/></>}</>);}
       window.applyCourse=next=>{state=next;render()};render();` },
-    bundle: true, write: false, platform: "browser", jsx: "automatic",
+    bundle: true, write: false, outfile: "preview-header.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" },
     plugins: [{ name: "next", setup(b) {
       b.onResolve({ filter: /^next\// }, args => ({ path: args.path, namespace: "next" }));
       b.onResolve({ filter: /AuthProviders$/ }, () => ({ path: "providers", namespace: "next" }));

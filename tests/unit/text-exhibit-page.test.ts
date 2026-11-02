@@ -6,7 +6,7 @@ import {build} from "esbuild";
 import {chromium} from "playwright";
 
 test("text lesson keeps inline exhibit references inert while explicit exhibit dialogs work",async()=>{
-  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {LessonContentPlayer} from './components/portal/LessonContentPlayer';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.view ? <PreviewLessonView key={p.key} {...p}/> : <main className="fixture"><LessonContentPlayer key={p.key} {...p}/></main>));`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"exhibit.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(builder){builder.onResolve({filter:/^next\/(image|dynamic|link|navigation)$/},args=>({path:args.path,namespace:"next"}));builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path==="next/navigation"?"export function useRouter(){return {refresh(){},push(href){window.destination=href}}}":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}":args.path==="next/dynamic"?"import React from 'react';export default function dynamic(factory){const Component=React.lazy(()=>factory().then(defaultExport=>({default:defaultExport})));return props=><React.Suspense fallback={null}><Component {...props}/></React.Suspense>}":"import React from 'react';export default function Image({fill,unoptimized,...props}){return <img {...props} style={{...(fill?{position:'absolute',inset:0,width:'100%',height:'100%'}:{}),...props.style}}/>}"}));builder.onResolve({filter:/CoursePdfPreview$/},args=>({path:args.path,namespace:"pdf"}));builder.onLoad({filter:/.*/,namespace:"pdf"},()=>({contents:"export const CoursePdfPreview=()=>null"}));}}]});
+  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {LessonContentPlayer} from './components/portal/LessonContentPlayer';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.view ? (p.shell ? <main className="portal-page portal-public-lesson-page"><header data-page-header style={{height:p.headerHeight||70,background:"white"}}>Learning Guide</header><PreviewLessonView key={p.key} {...p}/></main> : <PreviewLessonView key={p.key} {...p}/>) : <main className="fixture"><LessonContentPlayer key={p.key} {...p}/></main>));`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"exhibit.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(builder){builder.onResolve({filter:/^next\/(image|dynamic|link|navigation)$/},args=>({path:args.path,namespace:"next"}));builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path==="next/navigation"?"export function useRouter(){return {refresh(){},push(href){window.destination=href}}}":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}":args.path==="next/dynamic"?"import React from 'react';export default function dynamic(factory){const Component=React.lazy(()=>factory().then(defaultExport=>({default:defaultExport})));return props=><React.Suspense fallback={null}><Component {...props}/></React.Suspense>}":"import React from 'react';export default function Image({fill,unoptimized,...props}){return <img {...props} style={{...(fill?{position:'absolute',inset:0,width:'100%',height:'100%'}:{}),...props.style}}/>}"}));builder.onResolve({filter:/CoursePdfPreview$/},args=>({path:args.path,namespace:"pdf"}));builder.onLoad({filter:/.*/,namespace:"pdf"},()=>({contents:"export const CoursePdfPreview=()=>null"}));}}]});
   const browser=await chromium.launch({args:["--use-angle=swiftshader","--enable-unsafe-swiftshader"]});await mkdir("test-results/text-exhibit",{recursive:true});
   try{for(const locale of ["en-GB","zh-CN"]){
     const page=await browser.newPage({viewport:{width:1440,height:1100}});
@@ -62,17 +62,48 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     const next=page.getByRole('button',{name:locale==='en-GB'?'Next lesson':'\u4e0b\u4e00\u8bfe\u65f6',exact:true});
     assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);
     const geometry=await scroller.evaluate(element=>({height:element.getBoundingClientRect().height,client:element.clientHeight,scroll:element.scrollHeight,overflow:getComputedStyle(element).overflowY,bottom:element.getBoundingClientRect().bottom}));
-    assert.equal(geometry.height,674);assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
+    assert.ok(geometry.height>=674);assert.ok(geometry.height>674,'desktop reading area uses the remaining viewport height');assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
     assert.ok((await next.boundingBox())!.y>=geometry.bottom,'next lesson remains outside the scroll area');
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-desktop.png`,fullPage:true});
     await scroller.focus();await page.keyboard.press('PageDown');await page.waitForFunction(()=>Array.from(document.querySelectorAll('[tabindex="0"]')).some(element=>element.scrollTop>0));
     assert.equal(await next.isVisible(),true);
-    await page.setViewportSize({width:390,height:844});await assertFullWidthBreadcrumb(390);assert.equal(await scroller.evaluate(element=>element.getBoundingClientRect().height),674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.setViewportSize({width:390,height:844});await assertFullWidthBreadcrumb(390);assert.ok(await scroller.evaluate(element=>element.getBoundingClientRect().height)>=674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-mobile.png`,fullPage:true});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:'legacy',nextHref:null,lesson:{...viewProps.lesson,contents:[],body:'<Exh 1>\n\n'+'Legacy reading paragraph.\n\n'.repeat(60)}});
     await page.getByText('Legacy reading paragraph.',{exact:true}).first().waitFor();assert.equal(await next.count(),1,'final legacy Lesson retains its completion action');
     await page.getByText('<Exh 1>',{exact:true}).click();assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('.la-exhibit-float').count(),0);
-    assert.equal(await page.locator('[tabindex="0"]').evaluate(element=>element.scrollHeight>element.clientHeight),true);
+    assert.equal(await page.locator('[tabindex="0"]').evaluate(element=>getComputedStyle(element).overflowY),'visible');
+    // Real route structure: the shared header is outside PreviewLessonView.
+    for(const [width,height,headerHeight] of [[1440,1000,70],[1920,1080,70],[2560,1440,70],[2560,1600,110],[1440,700,70],[390,844,70],[320,700,70]]) {
+      await page.setViewportSize({width,height});
+      await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:`viewport-${width}-${height}`,shell:true,headerHeight});
+      const reader=page.locator('[data-text-reader]');
+      await page.waitForFunction(()=>Boolean(document.querySelector('[data-course-id="course"]')?.getAttribute('style')?.includes('--text-reader-reserved')));
+      const bounds=await reader.evaluate(element=>{const rect=element.getBoundingClientRect();return {height:rect.height,bottom:rect.bottom,scroll:element.scrollHeight,client:element.clientHeight,reserved:parseFloat(getComputedStyle(element).getPropertyValue("--text-reader-reserved"))}});
+      if(width>700) {
+        assert.ok(bounds.height>=674,`reader minimum at ${width}x${height}`);
+        assert.ok(bounds.scroll>bounds.client,`reader retains its own scroll: ${locale} ${width}x${height}`);
+      } else {
+        assert.equal(await reader.evaluate(element=>getComputedStyle(element).overflowY),'visible');
+        assert.ok(Math.abs(bounds.scroll-bounds.client)<=1,'mobile content expands to its full height');
+        await reader.evaluate(element=>element.scrollTop=100);
+        assert.equal(await reader.evaluate(element=>element.scrollTop),0,'mobile reader cannot trap scrolling');
+        await page.evaluate(()=>window.scrollTo(0,200));
+        assert.ok(await page.evaluate(()=>window.scrollY)>0,'mobile page owns scrolling');
+        await page.evaluate(()=>window.scrollTo(0,0));
+      }
+      const completion=page.locator('[data-text-completion] button');
+      const buttonBox=(await completion.boundingBox())!;
+      assert.ok(buttonBox.y>=bounds.bottom,'completion is below the reading surface and never overlays text');
+      if(width>=1440 && height>=1000) assert.ok(buttonBox.y+buttonBox.height<=height,`completion fits with expanded reading surface at ${width}x${height}`);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      assert.ok(await page.locator('main').evaluate(element=>element.getBoundingClientRect().bottom)>=height,'learning background reaches viewport bottom');
+      if(width>=1440 && height-bounds.reserved>674) {
+        assert.ok(bounds.height>674,'tall viewports expand the reading surface');
+        assert.ok(Math.abs(await page.locator('main').evaluate(element=>element.getBoundingClientRect().height)-height)<=2,'tall desktop page fits its available height');
+      }
+      await page.screenshot({path:`test-results/text-exhibit/${locale}-viewport-${width}-${height}.png`,fullPage:true});
+    }
     await page.close();
   }}finally{await browser.close();}
 });

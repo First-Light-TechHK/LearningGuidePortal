@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { TutorChat } from "./TutorChat";
 import { TutorDrawer } from "./TutorDrawer";
 import { ExplorationDialog } from "./ExplorationDialog";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import type { LessonContent } from "@/contracts/lesson-content";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
@@ -64,6 +64,45 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const selected = contents.find(content => content.id === contentId);
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
+  useLayoutEffect(() => {
+    if (mode !== "text") return;
+    const page = pageRef.current;
+    const reader = page?.querySelector<HTMLElement>("[data-text-reader]");
+    const row = reader?.parentElement;
+    const main = reader?.closest("article");
+    if (!page || !reader || !row || !main) return;
+    let frame = 0;
+    const flowHeight = (element: Element) => {
+      const style = getComputedStyle(element);
+      if (style.position === "absolute" || style.position === "fixed") return 0;
+      return element.getBoundingClientRect().height + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
+    };
+    const update = () => {
+      frame = 0;
+      // Reserve the real header/title, normal-flow actions and bottom spacing.
+      // The 674px CSS minimum intentionally allows page scrolling on short screens.
+      const top = reader.getBoundingClientRect().top + window.scrollY;
+      const afterReader = Array.from(row.children).filter(element => element !== reader).reduce((height, element) => height + flowHeight(element), 0);
+      const siblings = Array.from(main.children);
+      const afterRow = siblings.slice(siblings.indexOf(row) + 1).reduce((height, element) => height + flowHeight(element), 0);
+      const reserved = Math.ceil(top + afterReader + afterRow + (parseFloat(getComputedStyle(main).paddingBottom) || 0));
+      const offset = Math.ceil(page.getBoundingClientRect().top + window.scrollY);
+      if (page.style.getPropertyValue("--text-reader-reserved") !== `${reserved}px`) page.style.setProperty("--text-reader-reserved", `${reserved}px`);
+      if (page.style.getPropertyValue("--learning-top-offset") !== `${offset}px`) page.style.setProperty("--learning-top-offset", `${offset}px`);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
+    const observer = new ResizeObserver(schedule);
+    for (const element of [page, page.parentElement, main, row, ...main.children, ...row.children]) if (element) observer.observe(element);
+    window.addEventListener("resize", schedule);
+    window.visualViewport?.addEventListener("resize", schedule);
+    return () => {
+      observer.disconnect(); cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+      page.style.removeProperty("--text-reader-reserved"); page.style.removeProperty("--learning-top-offset");
+    };
+  }, [mode, lesson.id, entitled, tutorOnline]);
   const textPolicy = !entitled && mode === "text" ? textPreview || textLessonPreviewPolicy(contents, lesson.preview) : undefined;
   const textLocked = Boolean(selected && textPolicy?.points[selected.id] === "locked");
   const textEnd = Boolean(textPolicy);
@@ -124,7 +163,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     { icon: "understanding", title: copy.understanding, href: entitled ? `/${locale}/portal/courses/${encodeURIComponent(courseId)}/understanding?lessonId=${encodeURIComponent(lesson.id)}${studyEndpoint === "/api/study/preview" ? "&from=preview" : ""}` : undefined },
     { icon: "explore", title: copy.explore, action: "explore" },
   ];
-  return <div ref={pageRef} className={styles.page} data-course-id={courseId} data-lesson-id={lesson.id}>
+  return <div ref={pageRef} className={`${styles.page} ${mode === "text" ? styles.textPage : ""}`} data-course-id={courseId} data-lesson-id={lesson.id}>
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}

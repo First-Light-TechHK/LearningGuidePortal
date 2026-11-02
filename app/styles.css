@@ -2385,15 +2385,6 @@ body { background: #fff; color: var(--lg-ink); }
 
 @media (max-width: 640px) {
   .portal-banner { height: 520px; min-height: 520px; }
-  .portal-header { min-height: 62px; }
-  .portal-header-inner { min-height: 62px; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0; }
-  .portal-brand { font-size: 18px; }
-  .portal-nav { order: 3; width: 100%; gap: 18px; overflow-x: auto; }
-  .portal-nav a { min-height: 28px; white-space: nowrap; }
-  .portal-nav a.active::after { bottom: -10px; }
-  .portal-header-actions { margin-left: auto; }
-  .portal-header-link, .portal-header-cta { display: none; }
-  .portal-header-avatar { width: 32px; height: 32px; }
   .account-menu-popover { top: calc(100% + 8px); right: -2px; }
   .portal-home-hero { min-height: 540px; }
   .portal-home-hero-content { width: min(100% - 40px, 1344px); padding: 50px 0; }

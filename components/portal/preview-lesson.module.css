@@ -24,7 +24,8 @@
 .contentLinks { display:flex; flex-direction:column; gap:5px; padding:9px 0 0 21px; }
 .contentLinks button { border:0; padding:0; background:transparent; color:#475569; font:inherit; font-size:12px; line-height:16px; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
 .contentLinks button[aria-current] { color:#246bfd; }
-.main { min-width:0; padding:20px 196px 40px 0; }
+/* .main { min-width:0; padding:20px 196px 40px 0; } */
+.main { min-width:0; padding:20px 196px 20px 0; }
 .heading { position:relative; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; column-gap:8px; row-gap:4px; min-height:96px; margin:0; padding:20px 20px 14px; border-radius:12px 12px 0 0; background:#fff; }
 .heading > p { margin:0; padding:4px 12px; border-radius:8px; background:#e8f1ff; color:#155dfc; font-size:14px; line-height:19px; font-weight:600; }
 .heading h1 { margin:0; font-size:28px; line-height:38px; font-weight:600; overflow-wrap:anywhere; }
@@ -36,7 +37,7 @@
 .heading { overflow:hidden; }
 .mediaRow { position:relative; display:block; }
 .player { min-width:0; padding:20px; border-radius:0 0 12px 12px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1); }
-.textPlayer { box-sizing:border-box; height:674px; padding:30px 28px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#e8edf5 transparent; }
+.textPlayer { box-sizing:border-box; min-height:674px; height:max(674px,calc(100dvh - var(--text-reader-reserved,344px))); padding:30px 28px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#e8edf5 transparent; }
 .textPlayer:focus-visible { outline:2px solid #246bfd; outline-offset:2px; }
 .previewEnd { position:relative; min-height:199px; margin:12px -28px -30px; overflow:hidden; border-radius:0 0 12px 12px; }
 .lockedText { display:flex; flex-direction:column; gap:15px; padding:12px 28px; filter:blur(3px); user-select:none; pointer-events:none; }
@@ -51,6 +52,8 @@
 .textPlayer > .previewEnd:only-child .previewNotice { margin-top:49px; }
 @media(max-width:700px) { .previewEnd { margin-inline:-16px; margin-bottom:-20px; }.lockedText { padding-inline:16px; }.previewNotice { padding:20px 16px; }.previewNotice h2 { font-size:16px; }.textPlayer > .previewEnd:only-child { min-height:calc(100% + 20px); } }
 .textLayout { min-height:0; }
+.textPage { min-height:max(0px,calc(100dvh - var(--learning-top-offset,0px))); }
+@media(min-width:701px) { .textLayout .outline { max-height:max(200px,calc(100dvh - 260px)); overflow:auto; scrollbar-width:thin; } }
 .textPlayer :global(.la-player) { margin:0; }
 .player :global(.la-content-player) { padding:0; border:0; }
 .player :global(.la-content-player) > h3 { display:none; }
@@ -84,7 +87,7 @@
 .progress { display:flex; flex-wrap:wrap; align-items:center; gap:20px; margin-top:24px; }
 .progress > a { color:#1660d8; font-size:14px; }
 .page a:focus-visible,.page button:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
-@media(max-width:700px) { .player.textPlayer { padding:20px 16px; } }
+@media(max-width:700px) { .player.textPlayer { padding:20px 16px; height:auto; min-height:0; overflow:visible; overscroll-behavior:auto; } }
 @media(max-width:1200px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.tools { position:relative; top:auto; right:auto; width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; margin-top:20px; }.tools h2 { flex-basis:100%; }.toolItem { width:160px; }.banner { padding-right:20px; flex-wrap:wrap; } }
 @media(max-width:700px) { .breadcrumb { padding:16px 20px; }.layout { display:flex; flex-direction:column; min-height:0; }.sidebar { padding:20px; }.outline { max-height:260px; overflow:auto; }.main { padding:24px 20px 40px; }.heading { padding:16px; }.heading h1 { font-size:24px; line-height:32px; }.player { padding:12px; }.tools { gap:10px; }.toolItem { flex:1 1 150px; }.banner h2 { font-size:22px; }.unlock { width:100%; }.player :global(.la-video-play) { width:54px; height:54px; font-size:22px; } }
 .heading { grid-template-columns:auto minmax(0,1fr) auto; }
