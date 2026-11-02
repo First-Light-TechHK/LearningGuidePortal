@@ -10,7 +10,7 @@ import { PortalDialog } from "./PortalDialog";
 import { CreateStudyGroupForm } from "./CreateStudyGroupForm";
 import { ScheduleStudySessionForm } from "./ScheduleStudySessionForm";
 import styles from "./study-groups.module.css";
-import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionRefusal, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, roomSignInHref, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionRefusal, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 type CourseOption = { id: string; title: string; slug: string };
 
@@ -139,6 +139,10 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [waitingSession, setWaitingSession] = useState<StudySession | null>(null);
   // The Live Session a reminder's Enter now is on its way to.
   const [following, setFollowing] = useState<string | null>(null);
+  // An Enter now (or an ?enter= arrival) whose entry check failed before any
+  // group opened: it has its own place with a retry, since no group sheet or
+  // dialog is there to show it (group.reminders.enter-now-does-nothing).
+  const [entryError, setEntryError] = useState<{ sessionId: string; code: string } | null>(null);
   const [attendees, setAttendees] = useState<StudySession["attendees"]>([]);
   const [attendeeSessionId, setAttendeeSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState("");
@@ -253,6 +257,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     setCreatedGroup(null);
     setGroupError(null);
     setNotice(null);
+    setEntryError(null);
     // A mutation error belongs to the group it came from: opening another
     // group starts clean (QA N10).
     if (switching) setErrorCode("idle");
@@ -685,13 +690,13 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         setErrorCode(started.code);
         return;
       }
-      const entered = await studyGroupRequest<{ occupancy: number }>(`/api/study-groups/sessions/${session.id}/enter`, { method: "POST", body: "{}" });
-      if (!hostMayOpenRoom(started.ok, entered.ok)) {
-        setErrorCode(entered.code);
-        if (selected) await openGroup(selected.id);
-        return;
-      }
-      if (selected) await openGroup(selected.id);
+      // Start holds the Host's seat in the same write (service startSession),
+      // and the room takes and renews that seat itself, with its own retry
+      // (StudySessionRoom). A started session therefore always opens the
+      // room: a separate entry from here could fail after the session went
+      // Live and leave the Host on the list with an error
+      // (group.start.started-but-not-in-room).
+      if (!hostMayOpenRoom(started.ok)) return;
       waitingHandedOffRef.current = true;
       waitingHoldRef.current = null;
       router.push(`/${locale}/portal/study-groups/sessions/${session.id}`);
@@ -730,10 +735,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   async function followEntry(sessionId: string) {
     if (following) return;
     setFollowing(sessionId);
+    setEntryError(null);
     try {
       const entry = await studyGroupRequest<SessionEntry>(`/api/study-groups/sessions/${encodeURIComponent(sessionId)}/entry`);
       if (!entry.ok) {
-        setErrorCode(entry.code);
+        setEntryError({ sessionId, code: entry.code });
+        revealOnPhone(mainRef.current, window.matchMedia);
         return;
       }
       const group = entry.data.group;
@@ -827,6 +834,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         ))}
       </aside>
       <section className={styles.main} aria-live="polite" ref={mainRef}>
+        {entryError ? <div className={styles.panel} role="alert"><p className={styles.alert}>{copy.errors[entryError.code as keyof typeof copy.errors] || copy.errors.error}</p>{entryError.code === "unauthenticated" ? <a className={styles.primary} href={roomSignInHref(locale, entryError.sessionId)}>{copy.signIn}</a> : <button className={styles.primary} type="button" disabled={following !== null} aria-busy={following === entryError.sessionId} onClick={() => void followEntry(entryError.sessionId)}>{copy.retry}</button>}</div> : null}
         {notice ? <p className={styles.notice} role="status"><span>{copy.notices[notice]}</span><button type="button" onClick={() => setNotice(null)}>{copy.dismiss}</button></p> : null}
         {pane.kind === "loading" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
         {pane.kind === "error" ? <div className={styles.panel} role="alert"><p className={styles.alert}>{errorText}</p>{errorCode === "unauthenticated" ? <a className={styles.primary} href={signInHref}>{copy.signIn}</a> : <button className={styles.primary} type="button" onClick={() => { setErrorCode("idle"); void loadLists(); }}>{copy.retry}</button>}</div> : null}

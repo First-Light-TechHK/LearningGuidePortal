@@ -297,7 +297,13 @@ test("the session page asks the entry check first; the room no longer waits or s
   // why; a failed request stays on the list with its error, or the two pages
   // would send the viewer back and forth (final review 2026-10-30).
   assert.match(app, /const refused = current\.ok \? await enter\(current\.data\) : current\.code;\n      if \(!refused\) return;\n      if \(!sessionRefusal\(refused\)\) \{\n        setErrorCode\(refused\);\n        return;\n      \}/);
-  assert.match(app, /if \(!entry\.ok\) \{\n        setErrorCode\(entry\.code\);\n        return;\n      \}/);
+  // A failed entry check, before any group is open, has a place of its own
+  // with Try again, instead of the page's error slot that only a group sheet
+  // or dialog shows (group.reminders.enter-now-does-nothing).
+  assert.match(app, /if \(!entry\.ok\) \{\n        setEntryError\(\{ sessionId, code: entry\.code \}\);\n        revealOnPhone\(mainRef\.current, window\.matchMedia\);\n        return;\n      \}/);
+  assert.match(app, /\{entryError \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{copy\.errors\[entryError\.code as keyof typeof copy\.errors\] \|\| copy\.errors\.error\}<\/p>/);
+  assert.match(app, /onClick=\{\(\) => void followEntry\(entryError\.sessionId\)\}>\{copy\.retry\}<\/button>/);
+  assert.match(app, /href=\{roomSignInHref\(locale, entryError\.sessionId\)\}/);
 });
 
 test("the deep-link copy exists in both languages with the same keys", () => {

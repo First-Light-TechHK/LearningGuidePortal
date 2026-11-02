@@ -12,7 +12,7 @@ import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
 import { TutorAnswer } from "./TutorAnswer";
 import { useFloatDrag } from "./useFloatDrag";
-import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, tutorWithdrawState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -107,6 +107,9 @@ type ChatLine = {
   tutorAnswerId?: string;
   // A question line its asker withdrew before the Tutor started on it.
   tutorWithdrawn?: boolean;
+  // The asker's waiting line: why the last Withdraw was refused (the Tutor
+  // had already started on it: tutor_answering), shown under the line.
+  withdrawError?: string;
 };
 
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
@@ -1185,11 +1188,18 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
 
   // Takes back a question the AI Tutor has not started on: its waiting line
   // goes, and the question line says it was withdrawn. A question the Tutor
-  // has meanwhile started keeps waiting for its answer.
+  // has meanwhile started keeps waiting for its answer, and its line says so
+  // instead of the Withdraw doing nothing (group.tutor.tutor-withdraw-too-late);
+  // any other failure is said there too, with Withdraw still offered.
   async function withdrawTutor(answerId: string) {
     const requestId = answerId.replace(/^tutor-/, "");
+    setChat((items) => items.map((item) => item.id === answerId ? { ...item, withdrawError: undefined } : item));
     const withdrawn = await studyGroupRequest<{ id: string; withdrawn: boolean }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "DELETE", body: JSON.stringify({ requestId }) });
-    if (!withdrawn.ok || !withdrawn.data.withdrawn) return;
+    if (!withdrawn.ok) {
+      setChat((items) => items.map((item) => item.id === answerId ? { ...item, withdrawError: withdrawn.code } : item));
+      return;
+    }
+    if (!withdrawn.data.withdrawn) return;
     setChat((items) => items.filter((item) => item.id !== answerId).map((item) => item.tutorAnswerId === answerId ? { ...item, tutorWithdrawn: true, tutorAnswerId: undefined } : item));
   }
 
@@ -1368,8 +1378,8 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
                     ? roomCopy.tutorUnavailable
                     : line.pending
                     ? (() => {
-                        const pending = tutorPendingState(session, line.id, line.queuedPosition);
-                        return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
+                        const pending = tutorWithdrawState(tutorPendingState(session, line.id, line.queuedPosition), line.withdrawError);
+                        return <><span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>{line.withdrawError ? <p className={styles.alert} role="alert">{copy.errors[line.withdrawError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</>;
                       })()
                     : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
                 </div>

@@ -50,11 +50,16 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.equal(room.replace(/queued\.data\.(?:id|position)/g, "").includes("queued.data"), false);
 });
 
-test("host start opens the room only after entry succeeds", () => {
-  assert.equal(hostMayOpenRoom(true, true), true);
-  assert.equal(hostMayOpenRoom(true, false), false);
-  assert.equal(hostMayOpenRoom(false, false), false);
+test("host start opens the room once the start succeeds; the room takes the seat itself", () => {
+  // group.start.started-but-not-in-room: Start holds the Host's seat in the
+  // same write, so no second entry request from the list may keep the Host
+  // out of a session that is already Live.
+  assert.equal(hostMayOpenRoom(true), true);
+  assert.equal(hostMayOpenRoom(false), false);
   const page = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  const start = page.slice(page.indexOf("async function startSession"), page.indexOf("async function joinGroup"));
+  assert.equal(start.includes("/enter"), false);
+  assert.match(start, /if \(!hostMayOpenRoom\(started\.ok\)\) return;\s*waitingHandedOffRef\.current = true;\s*waitingHoldRef\.current = null;\s*router\.push\(`\/\$\{locale\}\/portal\/study-groups\/sessions\/\$\{session\.id\}`\);/);
   assert.match(page, /copy\.createdTitle/);
   assert.match(page, /copy\.openGroup/);
   assert.match(page, /copy\.editSession/);
@@ -1109,4 +1114,22 @@ test("Edit Session says the AI Tutor switch can change, keeps a passed Start Tim
   // One name for Plan to Attend in Chinese.
   assert.equal(zh.studyGroupsPage.confirmLeaveGroup, "你计划参加的未开始直播课会一并取消。");
   assert.doesNotMatch(JSON.stringify(zh.studyGroupsPage), /报名参加|成员报名/);
+});
+
+test("a Withdraw refused because the AI Tutor already started says so on the asker's line (group.tutor.tutor-withdraw-too-late)", async () => {
+  const { tutorPendingState, tutorWithdrawState } = await import("../../components/portal/studyGroupClient");
+  const queued = tutorPendingState({ viewerTutorQuestions: [{ id: "q1", position: 1, answering: false }] } as never, "tutor-q1");
+  assert.deepEqual(queued, { state: "queued", ahead: 1, withdrawable: true });
+  // tutor_answering: the line moves on to "answering" at once, with no Withdraw.
+  assert.deepEqual(tutorWithdrawState(queued, "tutor_answering"), { state: "answering", ahead: 0, withdrawable: false });
+  // Any other failure (offline, a server error) keeps the Withdraw to try again.
+  assert.deepEqual(tutorWithdrawState(queued, "network"), queued);
+  assert.deepEqual(tutorWithdrawState(queued, undefined), queued);
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  // The refusal is kept on the waiting line and shown there, never ignored.
+  assert.match(room, /if \(!withdrawn\.ok\) \{\s*setChat\(\(items\) => items\.map\(\(item\) => item\.id === answerId \? \{ \.\.\.item, withdrawError: withdrawn\.code \} : item\)\);\s*return;\s*\}/);
+  assert.match(room, /tutorWithdrawState\(tutorPendingState\(session, line\.id, line\.queuedPosition\), line\.withdrawError\)/);
+  assert.match(room, /\{line\.withdrawError \? <p className=\{styles\.alert\} role="alert">\{copy\.errors\[line\.withdrawError as keyof typeof copy\.errors\] \|\| copy\.errors\.error\}<\/p> : null\}/);
+  assert.equal(en.studyGroupsPage.errors.tutor_answering, "The AI Tutor is already answering that question.");
+  assert.equal(zh.studyGroupsPage.errors.tutor_answering, "AI Tutor 已经在回答这个问题了。");
 });
