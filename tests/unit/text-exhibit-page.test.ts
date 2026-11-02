@@ -8,7 +8,7 @@ import {chromium} from "playwright";
 test("text lesson keeps inline exhibit references inert while explicit exhibit dialogs work",async()=>{
   const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {LessonContentPlayer} from './components/portal/LessonContentPlayer';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.view ? (p.shell ? <main className="portal-page portal-public-lesson-page"><header data-page-header style={{height:p.headerHeight||70,background:"white"}}>Learning Guide</header><PreviewLessonView key={p.key} {...p}/></main> : <PreviewLessonView key={p.key} {...p}/>) : <main className="fixture"><LessonContentPlayer key={p.key} {...p}/></main>));`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"exhibit.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(builder){builder.onResolve({filter:/^next\/(image|dynamic|link|navigation)$/},args=>({path:args.path,namespace:"next"}));builder.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path==="next/navigation"?"export function useRouter(){return {refresh(){},push(href){window.destination=href}}}":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}":args.path==="next/dynamic"?"import React from 'react';export default function dynamic(factory){const Component=React.lazy(()=>factory().then(defaultExport=>({default:defaultExport})));return props=><React.Suspense fallback={null}><Component {...props}/></React.Suspense>}":"import React from 'react';export default function Image({fill,unoptimized,...props}){return <img {...props} style={{...(fill?{position:'absolute',inset:0,width:'100%',height:'100%'}:{}),...props.style}}/>}"}));builder.onResolve({filter:/CoursePdfPreview$/},args=>({path:args.path,namespace:"pdf"}));builder.onLoad({filter:/.*/,namespace:"pdf"},()=>({contents:"export const CoursePdfPreview=()=>null"}));}}]});
   const browser=await chromium.launch({args:["--use-angle=swiftshader","--enable-unsafe-swiftshader"]});await mkdir("test-results/text-exhibit",{recursive:true});
-  try{for(const locale of ["en-GB","zh-CN"]){
+  try{for(const locale of ["en-GB","zh-CN"] as const){
     const page=await browser.newPage({viewport:{width:1440,height:1100}});
     await page.route("http://text.test/**",async route=>{const pathname=new URL(route.request().url()).pathname;if(pathname.startsWith("/portal/"))return route.fulfill({body:await readFile(path.join("public",pathname)),contentType:pathname.endsWith("svg")?"image/svg+xml":pathname.endsWith("webm")?"video/webm":pathname.endsWith("obj")?"text/plain":"image/jpeg"});return route.fulfill({contentType:"text/html",body:'<div id="root"></div>'});});
     await page.goto("http://text.test");for(const file of ["app/styles.css","app/portal-design.css","components/portal/lesson-authoring.css"])await page.addStyleTag({content:await readFile(file,"utf8")});await page.addStyleTag({content:bundle.outputFiles.find(file=>file.path.endsWith("css"))!.text});await page.addStyleTag({content:'.fixture{width:940px;max-width:calc(100vw - 40px);margin:40px auto;padding:20px;background:white;border:1px solid #e2e8f0;border-radius:12px;}'});
@@ -38,7 +38,7 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     const dialog=page.getByRole("dialog");for(let index=0;index<3;index++){await bars.nth(index).getByRole("button").click();await dialog.waitFor();await page.waitForFunction(()=>!document.querySelector('dialog [role="group"] button')?.hasAttribute("disabled"));if(index===0)await dialog.locator('img[alt]:not([alt=""])').waitFor();if(index===1){await dialog.getByRole("button",{name:locale==="en-GB"?"Play":"\u64ad\u653e",exact:true}).click();await page.waitForFunction(()=>{const video=document.querySelector("video");return video && !video.paused && video.currentTime>.1;});}if(index===2)await dialog.locator("canvas").waitFor();await dialog.getByRole("group").getByRole("button").nth(1).click();await page.waitForFunction(()=>document.querySelector("output")?.textContent==="125%");await page.keyboard.press("Escape");assert.equal(await dialog.count(),0);}
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/text-exhibit/${locale}-mobile.png`,fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.equal(await bars.count(),3);await assertInertReferences();
     const longHtml=html+'<p>Additional reading content.</p>'.repeat(50);
-    const viewProps={view:true,locale,key:'scroll-view',courseId:'course',courseTitle:'The Art of Seeing',category:'Art',description:'Observe with attention.',lesson:{id:'lesson',title:'Looking closely',body:'',durationMinutes:5,contents:[{id:'text',title:'Read visual cues',type:'text',mode:'lecture',html:longHtml,nodes:[]}]},outline:[{id:'lesson',number:'01',title:'Looking closely',href:'/lesson',modes:['text']}],poster:'/portal/course-study.jpg',nextHref:`/${locale}/account/learn/course?lessonId=next`,initialCompleted:false,entitled:true};
+    const viewProps={view:true,locale,key:'scroll-view',courseId:'course',courseTitle:'The Art of Seeing',category:'Art',description:'Observe with attention.',lesson:{id:'lesson',title:'Looking closely',body:'',durationMinutes:5,contents:[{id:'text',title:'Read visual cues',type:'text',mode:'lecture',html:longHtml,nodes:[]}]},outline:[{id:'lesson',number:'01',title:'Looking closely',href:'/lesson',modes:['text']},{id:'next',number:'02',title:'Learning to observe',href:'/next',modes:['text']}],poster:'/portal/course-study.jpg',nextHref:`/${locale}/account/learn/course?lessonId=next`,initialCompleted:false,entitled:true};
     await page.setViewportSize({width:1440,height:1024});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),viewProps);
     await bars.nth(2).waitFor();await assertInertReferences();
@@ -59,14 +59,15 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     }
     await page.setViewportSize({width:1440,height:1024});await assertFullWidthBreadcrumb(1440);
     const scroller=page.locator('[tabindex="0"]').filter({has:bars});
-    const next=page.getByRole('button',{name:locale==='en-GB'?'Next lesson':'\u4e0b\u4e00\u8bfe\u65f6',exact:true});
+    const next=page.locator('[data-text-completion] button');
     assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);
+    assert.equal(await page.locator('[data-text-completion] p').count(),0,'completion keeps only its short heading');
     const geometry=await scroller.evaluate(element=>({height:element.getBoundingClientRect().height,client:element.clientHeight,scroll:element.scrollHeight,overflow:getComputedStyle(element).overflowY,bottom:element.getBoundingClientRect().bottom}));
     assert.ok(geometry.height>=674);assert.ok(geometry.height>674,'desktop reading area uses the remaining viewport height');assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
-    assert.ok((await next.boundingBox())!.y>=geometry.bottom,'next lesson remains outside the scroll area');
+    assert.equal(await scroller.locator('[data-text-completion-trigger]').count(),1,'reading content reserves a completion trigger');
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-desktop.png`,fullPage:true});
     await scroller.focus();await page.keyboard.press('PageDown');await page.waitForFunction(()=>Array.from(document.querySelectorAll('[tabindex="0"]')).some(element=>element.scrollTop>0));
-    assert.equal(await next.isVisible(),true);
+    assert.equal(await next.isVisible(),false);
     await page.setViewportSize({width:390,height:844});await assertFullWidthBreadcrumb(390);assert.ok(await scroller.evaluate(element=>element.getBoundingClientRect().height)>=674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-mobile.png`,fullPage:true});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:'legacy',nextHref:null,lesson:{...viewProps.lesson,contents:[],body:'<Exh 1>\n\n'+'Legacy reading paragraph.\n\n'.repeat(60)}});
@@ -93,15 +94,20 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
         await page.evaluate(()=>window.scrollTo(0,0));
       }
       const completion=page.locator('[data-text-completion] button');
+      await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
+      await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='true');
       const buttonBox=(await completion.boundingBox())!;
-      assert.ok(buttonBox.y>=bounds.bottom,'completion is below the reading surface and never overlays text');
-      if(width>=1440 && height>=1000) assert.ok(buttonBox.y+buttonBox.height<=height,`completion fits with expanded reading surface at ${width}x${height}`);
+      assert.equal(await completion.evaluate(element=>getComputedStyle(element.parentElement!).position),'absolute','completion floats over its reserved bottom space');
+      const contentBottom=await reader.locator('[data-text-point-id]').last().evaluate(element=>element.getBoundingClientRect().bottom);
+      assert.ok(buttonBox.y>=contentBottom,'completion follows every reading point without overlaying text');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-      assert.ok(await page.locator('main').evaluate(element=>element.getBoundingClientRect().bottom)>=height,'learning background reaches viewport bottom');
+      assert.ok(await page.locator('main').evaluate(element=>element.getBoundingClientRect().bottom+window.scrollY)>=height,'learning background reaches viewport bottom');
       if(width>=1440 && height-bounds.reserved>674) {
         assert.ok(bounds.height>674,'tall viewports expand the reading surface');
         assert.ok(Math.abs(await page.locator('main').evaluate(element=>element.getBoundingClientRect().height)-height)<=2,'tall desktop page fits its available height');
       }
+
+      await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-revealed')==='true');
       await page.screenshot({path:`test-results/text-exhibit/${locale}-viewport-${width}-${height}.png`,fullPage:true});
     }
     await page.close();

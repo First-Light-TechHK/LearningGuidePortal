@@ -36,6 +36,9 @@
 .headingDivider { position:absolute; left:0; bottom:0; max-width:none; }
 .heading { overflow:hidden; }
 .mediaRow { position:relative; display:block; }
+.textSurface { position:relative; min-width:0; }
+.endingSpace { padding-top:var(--text-completion-height,84px); }
+.endingSpace > span { display:block; height:1px; }
 .player { min-width:0; padding:20px; border-radius:0 0 12px 12px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1); }
 .textPlayer { box-sizing:border-box; min-height:674px; height:max(674px,calc(100dvh - var(--text-reader-reserved,344px))); padding:30px 28px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#e8edf5 transparent; }
 .textPlayer:focus-visible { outline:2px solid #246bfd; outline-offset:2px; }

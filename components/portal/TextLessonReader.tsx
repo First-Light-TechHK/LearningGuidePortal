@@ -14,10 +14,10 @@ function startsWithPointTitle(point: LessonContent, number: string) {
 }
 
 /** One persistent reading surface; selection follows its scroll position. */
-export function TextLessonReader({ contents, body, locale, lessonNumber, initialContentId, navigationRequest, onContentChange, preview, previewEnd, className, label }: {
+export function TextLessonReader({ contents, body, locale, lessonNumber, initialContentId, navigationRequest, onContentChange, preview, previewEnd, ending, className, label }: {
   contents: LessonContent[]; body: string; locale: Locale; lessonNumber: string;
   initialContentId: string; navigationRequest?: { id: string; request: number };
-  onContentChange: (id: string) => void; preview?: TextLessonPreview; previewEnd?: ReactNode;
+  onContentChange: (id: string) => void; preview?: TextLessonPreview; previewEnd?: ReactNode; ending?: ReactNode;
   className: string; label: string;
 }) {
   const root = useRef<HTMLDivElement>(null), contentRoot = useRef<HTMLDivElement>(null), boundary = useRef<HTMLDivElement>(null);
@@ -96,6 +96,7 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
       </section>)}
       {!points.length && body.trim() && <LegacyLessonBody body={body} locale={locale}/>}
       {previewEnd && <div ref={boundary} data-text-point-id={firstLocked?.id}>{previewEnd}</div>}
+      {ending}
     </div>
   </div>;
 }
