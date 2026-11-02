@@ -246,7 +246,7 @@ dialog.cancellation-dialog::backdrop { background:rgb(15 23 42 / 45%); }
 .settings-design-form .settings-hint { margin-top:7px; line-height:20px; }
 .settings-profile-fields { display:grid; gap:34px; }
 .settings-design-form label,.settings-interest-field { display:grid; gap:4px; font-size:13px; line-height:20px; font-weight:400; color:#15233a; min-width:0; }
-.settings-design-form input:not([type=checkbox]):not([type=file]),.settings-design-form select { width:100%; box-sizing:border-box; min-height:38px; padding:8px 15px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; line-height:20px; }
+.settings-design-form input:not([type=checkbox]):not([type=file]):not([role=combobox]),.settings-design-form select { width:100%; box-sizing:border-box; min-height:38px; padding:8px 15px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; line-height:20px; }
 .settings-design-form .settings-profile-fields input { height:45px; }
 .settings-details-section { min-height:337px; }
 .settings-details-grid { display:grid; grid-template-columns:minmax(0,405px) minmax(0,405px); justify-content:space-between; gap:32px 30px; margin-top:22px; }

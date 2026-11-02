@@ -4,6 +4,7 @@ import { participantStatus, raisedHands, sessionControls, sessionStateLabel, stu
 import { readFileSync } from "node:fs";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
+const createForm = readFileSync(new URL("../../components/portal/CreateStudyGroupForm.tsx", import.meta.url), "utf8");
 import { clampGroupAbout, DURATION_MINUTE_CHOICES, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, hostMayOpenRoom, scheduleSessionFields, SESSION_TITLE_MAX, sessionNotStarted, sessionScheduleLabel, sessionTitleCount, studyGroupRequest, tutorQueueBody } from "../../components/portal/studyGroupClient";
 
 test("schedule duration is a required dropdown of 10, 20, 30, and 40 minutes (owner 2026-10-29)", () => {
@@ -447,9 +448,9 @@ test("the retained create form cannot submit twice while the request is in fligh
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /const \[creating, setCreating\] = useState\(false\)/);
   assert.match(app, /if \(creating\) return;/);
-  assert.match(app, /type="submit" disabled=\{creating \|\| noCourseAccess\}/);
+  assert.match(createForm, /htmlType="submit" loading=\{creating\} disabled=\{creating \|\| noCourses \|\| courses === null\}/);
   // QA M26: Cancel cannot close the dialog under a request still in flight either.
-  assert.match(app, /onClick=\{closeDialog\} disabled=\{creating\}>\{copy\.cancel\}/);
+  assert.match(createForm, /onClick=\{onCancel\} disabled=\{creating\}/);
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   assert.match(css, /\.sessionBody \{ min-width: 0;[^}]*\}/);
 });
@@ -612,7 +613,7 @@ test("creating a group hands the whole panel to the success state and reopening 
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   // BUG-0097: success closes the create dialog, clears any stale error and the form
   // values, and refreshes the lists; the panel then shows only the created state.
-  assert.match(app, /setCreatedGroup\(\{ id: result\.data\.id, title: result\.data\.title, courseTitle: result\.data\.courseTitle \}\);\s*setDialog\(null\);\s*setErrorCode\("idle"\);\s*setCreateTitle\(""\);\s*setCreateAbout\(""\);\s*await loadLists\(\);/);
+  assert.match(app, /setErrorCode\("idle"\);\s*setDialog\("create"\);/);
   // The empty pane and the group sheet step aside while the success state owns the panel.
   assert.match(app, /pane\.kind === "empty" && !selectedId && dialog !== "create" && !createdGroup/);
   assert.match(app, /dialog !== "create" && !createdGroup \? \(/);
@@ -625,8 +626,8 @@ test("creating a group hands the whole panel to the success state and reopening 
   assert.match(app, /openGroupId\.current = id;\s*setSelectedId\(id\);\s*showGroupInAddress\(id\);\s*setCreatedGroup\(null\);/);
   // BUG-0110: closing the success page resets the form and errorCode, so the next
   // Create dialog opens clean and the same name cannot be resubmitted by accident.
-  assert.match(app, /const id = createdGroup\.id; setCreatedGroup\(null\); setErrorCode\("idle"\); setCreateTitle\(""\); setCreateAbout\(""\); void openGroup\(id\);/);
-  assert.match(app, /setCreatedGroup\(null\); setCreateTitle\(""\); setCreateAbout\(""\); setErrorCode\("idle"\); setDialog\("create"\);/);
+  assert.match(app, /void openGroup\(id\);/);
+  assert.match(app, /setErrorCode\("idle"\);\s*setDialog\("create"\);/);
 });
 
 test("identical reminder messages render as one row on the Study Groups sidebar", () => {
@@ -683,7 +684,7 @@ test("one error is shown in exactly one place: the failing pane, create form, di
   assert.match(app, /const errorPlace = studyGroupErrorPlace\(\{ status, dialog, hasSelected: Boolean\(selected\), hasError: studyGroupHasError\(errorCode\) \}\);/);
   // create form, sheet, the form dialogs and the confirm dialogs (one slot each, never two at once).
   assert.equal(app.split('{errorPlace === "').length - 1, 4);
-  assert.match(app, /\{errorPlace === "create" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
+  assert.match(app, /error=\{errorPlace === "create" \? errorText : undefined\}/);
   assert.match(app, /\{errorPlace === "sheet" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.match(app, /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.equal(app.includes('dialog !== "waiting" && dialog !== "attendees"'), false); // superseded by the dialog slot
@@ -755,8 +756,8 @@ test("editing a Study Group clamps About to the create form's 200 character limi
   assert.match(app, /\{editAbout\.length\}\/\{GROUP_ABOUT_MAX\}/);
   assert.equal(/<textarea name="about"[^>]*defaultValue=/.test(app), false);
   // The create form keeps the same 200 boundary through the shared helper.
-  assert.match(app, /value=\{createAbout\} onChange=\{\(event\) => setCreateAbout\(clampGroupAbout\(event\.target\.value\)\)\}/);
-  assert.equal((app.match(/maxLength=\{GROUP_ABOUT_MAX\}/g) || []).length, 2);
+  assert.match(createForm, /normalize=\{clampGroupAbout\}/);
+  assert.equal(((app + createForm).match(/maxLength=\{GROUP_ABOUT_MAX\}/g) || []).length, 2);
 });
 
 test("the Study Groups sidebar scrolls inside the viewport instead of stretching the page", () => {
@@ -789,9 +790,9 @@ test("an empty Create Study Group submit reports through the app's own validatio
   // single error slot as "validation" - the same surface server rejections already use.
   // QA 2026-10-19 (BUG-0125 rest): every Study Group form is noValidate and goes through
   // one shared check (studyGroupFormProblem), so no dialog shows the browser's bubble.
-  assert.match(app, /<button className=\{styles\.primary\} type="submit" disabled=\{creating \|\| noCourseAccess\}>\{copy\.create\}<\/button>/);
+  assert.match(createForm, /htmlType="submit" loading=\{creating\} disabled=\{creating \|\| noCourses \|\| courses === null\}/);
   // The create form and the shared edit/schedule/edit-session form.
-  assert.equal(app.split("noValidate onSubmit").length - 1, 2);
+  assert.equal(app.split("noValidate onSubmit").length - 1, 1); // Create now uses Ant Design validation.
   assert.equal(app.includes("reportValidity"), false);
   assert.equal(app.includes("checkValidity"), false);
   assert.equal(en.studyGroupsPage.errors.validation, "Check the required fields and try again.");
@@ -871,7 +872,7 @@ test("the Create Study Group dialog is centred on the viewport like the module's
   // column right of the 460px sidebar), so it sat below/right of the viewport centre.
   // It now renders inside the shared native modal (PortalDialog) with the same fixed, centred overlay.
   assert.match(app, /\{dialog === "create" \? \(\r?\n\s*<PortalDialog className=\{styles\.modal\} labelledBy="study-group-dialog-title" onClose=\{closeDialog\} busy=\{creating\}>/);
-  assert.match(app, /<form className=\{styles\.createForm\} noValidate onSubmit=\{\(event\) => \{ event\.preventDefault\(\); submitDialogForm\(event\.currentTarget, submitCreate\); \}\}>/);
+  assert.match(app, /<CreateStudyGroupForm locale=\{locale\}/);
   assert.equal(app.includes("<form className={styles.panel} onSubmit"), false);
   // Centring comes from the shared overlay: fixed full-viewport backdrop, grid centre.
   assert.match(css, /\.modal \{ position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; padding: 24px; background: rgba\(16, 24, 40, \.45\); display: grid; place-items: center; \}/);

@@ -26,3 +26,5 @@
 .dialog .inputBox textarea:focus,.dialog .inputBox textarea:focus-visible { border:0; outline:none; box-shadow:none; }
 
 @media(max-height:700px),(max-width:700px) { .body { flex:none; min-height:calc(100% - 73px); }.dialog { scrollbar-width:none; }.assessment { margin:16px 0; } }
+/* Results with only one non-empty group use the full existing list area. */
+.columns[data-single-column="true"] { grid-template-columns:minmax(0,1fr); }

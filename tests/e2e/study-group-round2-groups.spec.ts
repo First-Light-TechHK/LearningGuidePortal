@@ -471,10 +471,12 @@ test("M26: the created card names the group and Course; Cancel waits while the c
     const form = page.getByRole("dialog").locator("form");
     const title = unique("E2E M26");
     await form.locator('input[name="title"]').fill(title);
-    const course = form.locator('select[name="courseId"]');
-    await expect(course.locator("option")).not.toHaveCount(1);
-    await course.selectOption({ index: 1 });
-    const courseTitle = ((await course.locator("option").nth(1).textContent()) || "").trim();
+    const course = form.getByRole("combobox");
+    await expect(course).toBeEnabled();
+    await course.click();
+    const option = page.locator(".lg-ant-select-item-option").first();
+    const courseTitle = ((await option.textContent()) || "").trim();
+    await option.click();
     await form.locator('textarea[name="about"]').fill("Created from the dialog.");
     await form.getByRole("button", { name: "Create Study Group" }).click();
     await expect(form.getByRole("button", { name: "Cancel" })).toBeDisabled();

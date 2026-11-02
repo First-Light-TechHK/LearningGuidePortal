@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { liveKitDisconnectReasonName, liveKitDisconnectStep, transitionLiveKitClient, whileCurrentRoom } from "@/modules/group-study/liveKitClientRecovery";
@@ -193,7 +193,35 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   // Meeting style): the people, the chat with the AI Tutor and the controls
   // float over it, each one collapsible.
   const roomEl = useRef<HTMLElement>(null);
+  const [roomNode, setRoomNode] = useState<HTMLElement | null>(null);
+  const attachRoom = useCallback((element: HTMLElement | null) => {
+    roomEl.current = element;
+    setRoomNode(element);
+  }, []);
   const [focus, setFocus] = useState(false);
+  useLayoutEffect(() => {
+    if (!roomNode || focus) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const style = getComputedStyle(roomNode);
+      const top = roomNode.getBoundingClientRect().top + window.scrollY + (parseFloat(style.paddingTop) || 0);
+      const space = `${Math.ceil(top + (parseFloat(style.paddingBottom) || 0))}px`;
+      if (roomNode.style.getPropertyValue("--room-stage-space") !== space) roomNode.style.setProperty("--room-stage-space", space);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
+    const observer = new ResizeObserver(schedule);
+    for (const element of [roomNode, roomNode.parentElement, roomNode.previousElementSibling, document.querySelector(".portal-header")]) if (element) observer.observe(element);
+    window.addEventListener("resize", schedule);
+    window.visualViewport?.addEventListener("resize", schedule);
+    return () => {
+      observer.disconnect(); cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+      roomNode.style.removeProperty("--room-stage-space");
+    };
+  }, [roomNode, focus]);
   const [peopleOpen, setPeopleOpen] = useState(true);
   const [sideOpen, setSideOpen] = useState(false);
   // In full screen the controls fade out after the pointer rests a while and
@@ -1194,7 +1222,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   return (
     <>
     {path()}
-    <section ref={roomEl} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
+    <section ref={attachRoom} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
       <div className={styles.stage}>
         <div className={styles.stageHead}>
           <h1>{session.title}</h1>
@@ -1249,11 +1277,11 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
         </div> : null}
         {/* Owner 2026-10-30: the sharer sees a clear banner with its own Stop sharing, not a line of small print. */}
         {sharing ? <div className={styles.sharingBanner} role="status"><span className={styles.sharerDot} aria-hidden="true" /><span>{roomCopy.sharingNotice}</span><button type="button" onClick={stopSharing}>{roomCopy.stopSharing}</button></div> : null}
-        {shareTrack ? null : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
-          {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
+        {shareTrack ? null : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`} data-count={tiles.length}>
+          {tiles.length === 0 ? <div className={`${styles.tile} ${styles.tileEmpty}`}><span role="status">{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
             return (
-              <div className={styles.tile} data-video={camera ? "on" : "off"} key={tile.identity}>
+              <div className={styles.tile} data-video={camera ? "on" : "off"} data-speaking={tile.speaking ? "true" : "false"} key={tile.identity}>
                 <ParticipantCamera track={camera} />
                 {camera ? null : <span className={styles.tilePlaceholder} aria-hidden="true"><i><PersonGlyph /></i></span>}
                 {tile.speaking ? <span className={styles.speakingPill}>{roomCopy.speaking}</span> : null}

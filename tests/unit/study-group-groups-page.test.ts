@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
+const createForm = readFileSync(new URL("../../components/portal/CreateStudyGroupForm.tsx", import.meta.url), "utf8");
 import { fillCount, groupCourseLabel, PHONE_LAYOUT_QUERY, revealOnPhone, sessionFullForViewer, STUDY_GROUP_REQUEST_TIMEOUT_MS, studyGroupFormProblem, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref } from "../../components/portal/studyGroupClient";
 import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy, paneStatusAfterGroup, studyGroupListFailurePlace, waitingDialogStep } from "../../modules/group-study/uiState";
 
@@ -111,9 +112,9 @@ test("M3: Discover says when nothing matches, and the search waits 300 ms and as
 });
 
 test("M4: without Course access the Create dialog explains it, links to Courses and disables Create", () => {
-  assert.match(app, /const noCourseAccess = courses !== null && courses\.length === 0;/);
-  assert.match(app, /\{noCourseAccess \? <p className=\{styles\.noCourses\}>\{copy\.noCourseAccess\} <a href=\{`\/\$\{locale\}\/portal\/courses`\}>\{copy\.viewCourses\}<\/a><\/p> : null\}/);
-  assert.match(app, /type="submit" disabled=\{creating \|\| noCourseAccess\}/);
+  assert.match(createForm, /const noCourses = courses !== null && courses\.length === 0;/);
+  assert.match(createForm, /copy\.noCourseAccess/);
+  assert.match(createForm, /htmlType="submit" loading=\{creating\} disabled=\{creating \|\| noCourses \|\| courses === null\}/);
   assert.equal(en.studyGroupsPage.noCourseAccess, "You need access to a Course before you can create a Study Group for it.");
   assert.equal(zh.studyGroupsPage.viewCourses, "查看课程");
 });
@@ -198,7 +199,7 @@ test("M25: Edit Group uses the create form's fields with a title counter; Sessio
 
 test("M26: the created card names the group and Course, and Cancel waits for the create request", () => {
   assert.match(app, /<span className=\{styles\.createdName\}>\{createdGroup\.title\}<\/span><span className=\{styles\.createdBody\}>\{createdGroup\.courseTitle\}<\/span>/);
-  assert.match(app, /<button className=\{styles\.ghost\} type="button" onClick=\{closeDialog\} disabled=\{creating\}>\{copy\.cancel\}<\/button>/);
+  assert.match(createForm, /onClick=\{onCancel\} disabled=\{creating\}/);
 });
 
 test("M27: the chat box shows focus", () => {
