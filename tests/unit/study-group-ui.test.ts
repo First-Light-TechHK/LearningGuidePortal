@@ -464,9 +464,12 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   // 599:1117: equal 7:4 tiles, ~10px gaps, left-aligned 2x2 grid; a single
   // participant keeps one standard 490px tile instead of a stretched strip.
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.videos \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 10px; max-width: 990px; \}/);
+  // 08f0fef (front end, 2026-11-02) centres the grid in the stage and centres
+  // a lone last tile of 3 or 5; the 2-column, 10px, 990px grid is unchanged.
+  assert.match(css, /\.videos \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 10px; width:100%; max-width:990px; margin-inline:auto; \}/);
+  assert.match(css, /\.videos\[data-count="3"\] > \.tile:last-child, \.videos\[data-count="5"\] > \.tile:last-child \{ grid-column:1 \/ -1; justify-self:center;/);
   assert.match(css, /\.videosSingle \{ grid-template-columns: minmax\(0, 490px\); justify-content: center; \}/);
-  assert.match(css, /\.tile \{ position: relative; overflow: hidden; aspect-ratio: 7 \/ 4; min-height: 0;/);
+  assert.match(css, /\.tile \{ position: relative; overflow: hidden; aspect-ratio: 7 \/ 4; min-width:0; min-height: 0;/);
   assert.match(css, /\.room \{[^}]*align-items: start;[^}]*\}/);
   // 599:1276: chat body is flush-left across the whole column at 13px, the
   // tutor avatar is 20px, and the tutor name is #111827 instead of blue.
@@ -687,8 +690,13 @@ test("one error is shown in exactly one place: the failing pane, create form, di
 
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(app, /const errorPlace = studyGroupErrorPlace\(\{ status, dialog, hasSelected: Boolean\(selected\), hasError: studyGroupHasError\(errorCode\) \}\);/);
-  // create form, sheet, the form dialogs and the confirm dialogs (one slot each, never two at once).
-  assert.equal(app.split('{errorPlace === "').length - 1, 4);
+  // create form, sheet, the schedule form, the other form dialogs and the
+  // confirm dialogs (one slot each, never two at once). 08f0fef moved Schedule
+  // into its own dialog with its own slot; the shared form dialog no longer
+  // renders for it, so the "dialog" error still shows once.
+  assert.equal(app.split('{errorPlace === "').length - 1, 5);
+  assert.match(app, /<ScheduleStudySessionForm [^>]*\s+error=\{errorPlace === "dialog" \? errorText : undefined\}/);
+  assert.match(app, /\{dialog === "edit" \|\| dialog === "edit-session" \|\| dialog === "waiting" \|\| dialog === "attendees" \? \(/);
   assert.match(app, /error=\{errorPlace === "create" \? errorText : undefined\}/);
   assert.match(app, /\{errorPlace === "sheet" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
   assert.match(app, /\{errorPlace === "dialog" \? <p className=\{styles\.alert\} role="alert">\{errorText\}<\/p> : null\}/);
@@ -987,8 +995,13 @@ test("a rejected fetch or a non-JSON body resolves as a network failure instead 
   // the one error slot, no new display point is added, and "network" renders the generic
   // copy (there is deliberately no copy.errors.network key; the lookup falls back).
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  // create form, sheet, the form dialogs and the confirm dialogs (one slot each, never two at once).
-  assert.equal(app.split('{errorPlace === "').length - 1, 4);
+  // create form, sheet, the schedule form, the other form dialogs and the
+  // confirm dialogs (one slot each, never two at once). 08f0fef moved Schedule
+  // into its own dialog with its own slot; the shared form dialog no longer
+  // renders for it, so the "dialog" error still shows once.
+  assert.equal(app.split('{errorPlace === "').length - 1, 5);
+  assert.match(app, /<ScheduleStudySessionForm [^>]*\s+error=\{errorPlace === "dialog" \? errorText : undefined\}/);
+  assert.match(app, /\{dialog === "edit" \|\| dialog === "edit-session" \|\| dialog === "waiting" \|\| dialog === "attendees" \? \(/);
   assert.match(app, /if \(!outcome\.ok\) \{\s*setErrorCode\(outcome\.errorCode\);\s*return;\s*\}/);
   assert.match(app, /if \(!result\.ok\) \{\s*setErrorCode\(result\.code\);\s*return;\s*\}\s*await loadLists\(\);\s*await openGroup\(group\.id\);/);
   assert.equal(en.studyGroupsPage.errors.error, "Something went wrong. Try again.");
