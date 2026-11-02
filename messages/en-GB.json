@@ -180,6 +180,9 @@
     "tryApplication": "Try Application Test"
   },
   "lessonCompleted": {
+    "nextActionTitle": "What would you like to do next?",
+    "lessonLabel": "Lesson {number}",
+    "returnToLearning": "Return to My Learning",
     "completeCourse": "Complete Course",
     "courseDescription": "Check your understanding, or return to My Learning.",
     "cards": "20 cards",
