@@ -961,6 +961,8 @@
     "categoryEmpty": "There are no articles about this topic yet.",
     "popularEmpty": "There are no help articles yet.",
     "allArticles": "Back to popular articles",
+    "showMore": "Show {count} more",
+    "showLess": "Show fewer",
     "unavailable": "Help articles are temporarily unavailable. Here are some common answers.",
     "faqMissing": "This article is no longer available. Here are some other answers that may help.",
     "searchCount": "Articles found: {count}",

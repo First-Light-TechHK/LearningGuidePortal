@@ -54,7 +54,7 @@ test("popular articles: question, summary line and category link per row; answer
     const harness = await open(locale);
     const { page } = harness;
     const v = view(page, locale);
-    assert.deepEqual(harness.requests, [{ kind: "faqs", locale, filter: { popular: true, limit: 10 } }]);
+    assert.deepEqual(harness.requests, [{ kind: "faqs", locale, filter: { popular: true, limit: 50 } }]);
     assert.equal(await page.getByRole("heading", { level: 1 }).textContent(), v.copy.title);
     assert.ok((await page.locator(".help-centre-hero").textContent())?.includes(v.copy.subtitle));
     assert.equal(await v.search.getAttribute("placeholder"), v.copy.searchPlaceholder);
@@ -146,6 +146,45 @@ test("?faq= opens and scrolls to the article, loading it by id when it is not li
     assert.equal(await answer.locator("script").count(), 0);
     assert.ok((await answer.textContent())?.includes("<script>alert(1)</script> Yes, tell us."), "raw HTML stays text and a javascript: link keeps its label");
     assert.equal(await answer.locator("a").count(), 0);
+    await page.close();
+  }
+});
+
+test("more than 10 popular FAQs: the first 10 show and the rest fold behind Show more; a ?faq= link to a folded one unfolds the list", async () => {
+  const many = Array.from({ length: 25 }, (_, index) => ({ id: id(100 + index), category: "account_technical", popular: true, question: `Popular question ${index + 1}?`, answer: `Answer ${index + 1}.`, updatedAt: "2026-11-02T10:00:00.000Z" }));
+  for (const locale of LOCALES) {
+    const harness = await open(locale, { faqs: many });
+    const { page } = harness;
+    const v = view(page, locale);
+    const more = page.locator(".help-centre-more");
+    assert.deepEqual(harness.requests, [{ kind: "faqs", locale, filter: { popular: true, limit: 50 } }], "every popular FAQ is asked for");
+    assert.deepEqual(await v.questions.allTextContents(), many.slice(0, 10).map((faq) => faq.question), "the first 10, in Admin's order");
+    assert.equal(await more.textContent(), fillTemplate(v.copy.showMore, { count: "15" }));
+    assert.equal(await more.getAttribute("aria-expanded"), "false");
+    await more.click();
+    assert.deepEqual(await v.questions.allTextContents(), many.map((faq) => faq.question), "all 25 after Show more");
+    assert.equal(await more.textContent(), v.copy.showLess);
+    assert.equal(await more.getAttribute("aria-expanded"), "true");
+    await more.click();
+    assert.equal(await v.questions.count(), 10, "Show fewer folds them again");
+
+    await mountHelp(page, { locale, faqs: many, searchParams: { faq: id(111) } });
+    assert.equal(await v.questions.count(), 25, "a link to the 12th opens the list unfolded");
+    assert.equal(await page.getByRole("button", { name: many[11].question }).getAttribute("aria-expanded"), "true");
+    assert.equal(await more.textContent(), v.copy.showLess);
+
+    await mountHelp(page, { locale, faqs: many });
+    assert.equal(await v.questions.count(), 10);
+    await mountHelp(page, { locale, faqs: many, searchParams: { faq: id(120) }, inPlace: true });
+    assert.equal(await v.questions.count(), 25, "also when the page changes in place");
+    assert.equal(await page.getByRole("button", { name: many[20].question }).getAttribute("aria-expanded"), "true");
+
+    await mountHelp(page, { locale, faqs: many.slice(0, 10) });
+    assert.equal(await v.questions.count(), 10);
+    assert.equal(await more.count(), 0, "10 or fewer: nothing to fold");
+    await mountHelp(page, { locale, faqs: many, searchParams: { category: "account_technical" } });
+    assert.equal(await v.questions.count(), 25, "a topic lists everything, unfolded");
+    assert.equal(await more.count(), 0);
     await page.close();
   }
 });

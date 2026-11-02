@@ -961,6 +961,8 @@
     "categoryEmpty": "这个主题下暂时还没有文章。",
     "popularEmpty": "暂时还没有帮助文章。",
     "allArticles": "返回热门文章",
+    "showMore": "查看更多（{count}）",
+    "showLess": "收起",
     "unavailable": "帮助文章暂时无法加载，以下是一些常见解答。",
     "faqMissing": "这篇文章已不再提供。以下是其他可能有帮助的解答。",
     "searchCount": "找到的文章：{count} 篇",

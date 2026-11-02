@@ -31,7 +31,10 @@ export type HelpCentreView = {
   missingFaq: boolean;
 };
 
-export const HELP_POPULAR_LIMIT = 10;
+/** Popular FAQs asked for: every one product marked (owner 2026-11-02 picked 25), in Admin's order. */
+export const HELP_POPULAR_LIMIT = 50;
+/** Shown before "Show more" (owner 2026-11-02: the first 10, the rest folded); also the newest-FAQs fallback size. */
+export const HELP_POPULAR_SHOWN = 10;
 export const HELP_LIST_LIMIT = 50;
 
 const article = (faq: HelpFaq): HelpArticle => ({ id: faq.id, category: faq.category, question: faq.question, answer: faq.answer });
@@ -48,7 +51,7 @@ export async function loadHelpCentre(client: HelpCentreClient, locale: HelpdeskL
   else if (mode === "category") listed = await safely(() => client.faqs(locale, { category: query.category, limit: HELP_LIST_LIMIT }));
   else {
     listed = await safely(() => client.faqs(locale, { popular: true, limit: HELP_POPULAR_LIMIT }));
-    if (listed && listed.length === 0) listed = await safely(() => client.faqs(locale, { limit: HELP_POPULAR_LIMIT }));
+    if (listed && listed.length === 0) listed = await safely(() => client.faqs(locale, { limit: HELP_POPULAR_SHOWN }));
   }
   if (!listed) {
     const words = query.q.toLocaleLowerCase(locale);
