@@ -75,7 +75,16 @@ export type ProductUser = {
   education?: string | null;
   areasOfInterest?: string[];
   createdAt: string;
+  /** Student Management (PRD 4.2): set while a Backoffice employee has made the account Inactive; blocks every sign-in and session. */
+  deactivatedAt?: string | null;
+  deactivation?: StaffRecord & { reason: string } | null;
+  /** PRD 5.2: ownership of the current email attested by staff (Admin-exempt); cleared when the learner verifies by link. */
+  emailExemption?: StaffRecord & { reference: string } | null;
+  /** PRD 5.2: the last staff correction of the primary email; a later Google profile email never overwrites it. */
+  emailChange?: StaffRecord & { reference: string; previousEmail: string | null } | null;
 };
+/** Who changed a learner record from the Backoffice, and when (the full trail is in studentAdminEvents). */
+export type StaffRecord = { at: string; byId: string; byName: string };
 
 export type ProductLesson = LessonResources & {
   contents?: LessonContent[];
@@ -297,6 +306,28 @@ export type ProductData = {
   paymentSettings: ProductPaymentSettings;
   orderActivities: ProductOrderActivity[];
   accounts: ProductAccount[];
+  /** Student Management feature access (PRD 6/7): global defaults, emergency off and per-learner overrides. */
+  featureAccess?: FeatureAccessState;
+  /** Append-only record of Backoffice changes to learner accounts and feature access (PRD 8 audit trail). */
+  studentAdminEvents?: StudentAdminEvent[];
+};
+export type FeatureAccessState = {
+  globals: Array<{ feature: string; enabled: boolean; emergencyOff: (StaffRecord & { reason: string }) | null; updated: StaffRecord | null }>;
+  overrides: Array<{ userId: string; feature: string; value: "allow" | "deny"; reason: string; updated: StaffRecord }>;
+  /** Bumped on every global change (optimistic concurrency for the settings page). */
+  version: number;
+};
+export type StudentAdminEvent = {
+  id: string;
+  /** null for a global feature change. */
+  userId: string | null;
+  action: string;
+  actor: { id: string; name: string; role: string };
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+  reference: string | null;
+  createdAt: string;
 };
 
 function id(prefix: string) {
@@ -612,6 +643,15 @@ async function withProductFileLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Student Management reads the whole aggregate (list, counts, access) and writes through the same queue and lock. */
+export async function readProductData() {
+  return ensureProductData();
+}
+
+export async function editProductData<T>(mutator: (data: ProductData) => Promise<T> | T) {
+  return editData(mutator);
+}
+
 async function editData<T>(mutator: (data: ProductData) => Promise<T> | T) {
   const operation = editQueue.then(() => withProductFileLock(() => productTransaction(async () => {
     const data = await ensureProductData();
@@ -776,17 +816,19 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
     if (account) {
       const user = data.users.find((item) => item.id === account.userId);
       if (!user) throw new ProductAuthError("account_unavailable", "This account is not available.");
-      if (user.status === "disabled") throw new ProductAuthError("account_disabled", "This account has been disabled.");
+      if (user.status === "disabled" || user.deactivatedAt) throw new ProductAuthError("account_disabled", "This account has been disabled.");
       if (user.status !== "active") throw new ProductAuthError("account_unavailable", "This account is not available.");
       if (input.provider === "wechat" && user.email?.startsWith("wechat-") && user.email.endsWith("@local.invalid")) {
         user.email = null;
         user.emailVerifiedAt = null;
       }
-      if (email && user.email !== email && !data.users.some((item) => item.id !== user.id && item.email === email)) user.email = email;
+      // PRD 5.2: a primary email corrected by staff is never replaced by a later Google profile email.
+      if (email && user.email !== email && !user.emailChange && !data.users.some((item) => item.id !== user.id && item.email === email)) user.email = email;
       return user;
     }
     const emailUser = email ? data.users.find((item) => item.email === email) : null;
     if (emailUser) {
+      if (emailUser.deactivatedAt) throw new ProductAuthError("account_disabled", "This account has been disabled.");
       // The Google profile has already passed verified-email validation. It can
       // therefore be attached to an existing active or pending email account,
       // including an account that was originally created through Google
@@ -868,6 +910,11 @@ function verificationDailyCount(data: ProductData, userId: string) {
   return data.verificationTokens.filter((item) => item.userId === userId && new Date(item.createdAt).getTime() >= since).length;
 }
 
+/** A single-use password reset (or first-password) token for one learner, minted for a Backoffice request (PRD 5.3). */
+export async function issuePasswordResetToken(userId: string) {
+  return issueToken("passwordResetTokens", userId, true);
+}
+
 export async function issueEmailVerificationToken(userId: string, enforceCooldown = false) {
   const rawToken = randomBytes(32).toString("base64url");
   await editData((data) => {
@@ -907,6 +954,7 @@ export async function verifyEmailToken(rawToken: string) {
     if (!user) throw new Error("User not found.");
     token.usedAt = now();
     user.emailVerifiedAt = now();
+    user.emailExemption = null;
     user.status = "active";
     for (const item of data.verificationTokens) {
       if (item.userId === user.id && !item.usedAt) item.usedAt = token.usedAt;
@@ -926,7 +974,7 @@ export async function requestPasswordReset(emailValue: string, enforceCooldown =
   // A pending account is included too: the reset link only goes to the mailbox
   // itself, so completing it proves ownership and activates the account. Without
   // this, a learner who never opened the activation mail gets a 200 and no email.
-  const user = data.users.find((item) => item.email === email && (item.status === "active" || item.status === "pending"));
+  const user = data.users.find((item) => item.email === email && (item.status === "active" || item.status === "pending") && !item.deactivatedAt);
   if (!user?.email) return { accepted: true, token: null };
   try {
     return { accepted: true, token: await issueToken("passwordResetTokens", user.id, enforceCooldown) };
@@ -1014,6 +1062,7 @@ export async function authenticateUser(emailValue: string, password: string) {
   const data = await ensureProductData();
   const user = data.users.find((item) => item.email === normaliseEmail(emailValue));
   if (!user || !(await passwordMatches(password, user.passwordHash))) throw new Error("Email or password is incorrect.");
+  if (user.deactivatedAt) throw new Error("This account is not available.");
   if (user.status === "pending" || !user.emailVerifiedAt) throw new Error("Verify your email address before signing in.");
   if (user.status !== "active") throw new Error("This account is not available.");
   return user;
@@ -1038,7 +1087,7 @@ export async function getUserBySessionToken(token: string | undefined, allowEmai
   const data = await ensureProductData();
   const session = data.sessions.find((item) => item.tokenHash === hashToken(token) && new Date(item.expiresAt) > new Date());
   if (!session) return null;
-  return data.users.find((user) => user.id === session.userId && user.status === "active" && ((Boolean(user.email) && Boolean(user.emailVerifiedAt)) || (allowEmailBinding && data.accounts.some((account) => account.userId === user.id && account.provider === "wechat")))) || null;
+  return data.users.find((user) => user.id === session.userId && user.status === "active" && !user.deactivatedAt && ((Boolean(user.email) && Boolean(user.emailVerifiedAt)) || (allowEmailBinding && data.accounts.some((account) => account.userId === user.id && account.provider === "wechat")))) || null;
 }
 
 export async function issueEmailBinding(userId: string, emailValue: string) {

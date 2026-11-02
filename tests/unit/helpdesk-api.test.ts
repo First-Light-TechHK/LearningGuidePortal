@@ -693,3 +693,18 @@ test("v3: the submit check and the chat pass on Admin's alternatives; rating an 
   const detail = await (await routes.agentTicket.GET(agentRequest(`/api/integration/helpdesk/tickets/${ticketId}`), ctx({ id: ticketId }))).json();
   assert.deepEqual(detail.aiAssist.map((item: { id: string; rating: number | null }) => [item.id, item.rating]), [[fallback.id, null], [chip.id, 3]]);
 });
+
+test("AI Support Assistant switched off for a learner (Student Management Deny): chat refuses with 403, the enquiry check skips AI", async (t) => {
+  const deny = (on: boolean) => store.editProductData((data) => {
+    const state = (data.featureAccess ||= { globals: [], overrides: [], version: 0 });
+    state.overrides = state.overrides.filter((row) => !(row.userId === strangerId && row.feature === "ai_support_assistant"));
+    if (on) state.overrides.push({ userId: strangerId, feature: "ai_support_assistant", value: "deny", reason: "test", updated: { at: new Date().toISOString(), byId: "emp", byName: "Ops" } });
+  });
+  await deny(true);
+  t.after(() => deny(false));
+  await problem(await routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json: { message: "hello", locale: "en-GB" }, cookie: strangerCookie, key: randomUUID() }), ctx()), 403, "feature_unavailable");
+  const enquiry = { category: "technical_support", subject: "Cannot sign in", message: "It fails", locale: "en-GB" };
+  const checked = await routes.suggestions.POST(learnerRequest("/api/helpdesk/suggestions", { json: enquiry, cookie: strangerCookie }), ctx());
+  assert.equal(checked.status, 200);
+  assert.deepEqual(await checked.json(), { suggestion: null, alternatives: [] });
+});

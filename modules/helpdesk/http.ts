@@ -7,6 +7,7 @@ import { isInlineAttachment, textEncoding } from "./attachments";
 import { adminHostDecision, requestOriginMatches } from "@/services/adminHost";
 import { currentProductUserFromRequest } from "@/services/productAuth";
 import type { LearnerIdentity } from "./service";
+import { isFeatureEnabled } from "@/modules/student-management/service";
 
 const NO_STORE = "no-store";
 
@@ -101,6 +102,11 @@ export async function requireLearner(request: Request, options: { write?: boolea
   if (!user) throw new HelpdeskProblem("unauthenticated", "Sign in to contact support.");
   if (options.write && !requestOriginMatches(request)) throw new HelpdeskProblem("forbidden_origin");
   return { id: user.id, email: user.email || "", name: user.nickname || "" };
+}
+
+/** Student Management (PRD 6.2 step 5): the AI Support Assistant answers only learners it is switched on for. */
+export async function requireAssistantFeature(learner: LearnerIdentity): Promise<void> {
+  if (!(await isFeatureEnabled(learner.id, "ai_support_assistant"))) throw new HelpdeskProblem("feature_unavailable");
 }
 
 function digest(value: string) {

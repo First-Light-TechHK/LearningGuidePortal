@@ -1,5 +1,5 @@
 import { parseAssistantTurnInput } from "@/contracts/helpdesk";
-import { eventStreamResponse, idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireLearner, wantsEventStream } from "@/modules/helpdesk/http";
+import { eventStreamResponse, idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireAssistantFeature, requireLearner, wantsEventStream } from "@/modules/helpdesk/http";
 import { helpdeskAssistant } from "@/modules/helpdesk/runtime";
 
 export const runtime = "nodejs";
@@ -26,6 +26,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
+    await requireAssistantFeature(learner);
     const key = idempotencyKey(request);
     const input = parseAssistantTurnInput(await readJsonBody(request));
     const assistant = helpdeskAssistant(request);
