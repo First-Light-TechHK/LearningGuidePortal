@@ -67,40 +67,30 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   useLayoutEffect(() => {
     if (mode !== "text") return;
     const page = pageRef.current;
-    const reader = page?.querySelector<HTMLElement>("[data-text-reader]");
-    const row = reader?.closest("[data-text-row]");
-    const main = reader?.closest("article");
-    if (!page || !reader || !row || !main) return;
+    if (!page) return;
+    const outline = page.querySelector<HTMLElement>("[data-reading-outline]");
+    const tools = page.querySelector<HTMLElement>("[data-reading-tools]");
     let frame = 0;
-    const flowHeight = (element: Element) => {
-      const style = getComputedStyle(element);
-      if (style.position === "absolute" || style.position === "fixed") return 0;
-      return element.getBoundingClientRect().height + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
-    };
     const update = () => {
       frame = 0;
-      // Reserve the real header/title, normal-flow actions and bottom spacing.
-      // The 674px CSS minimum intentionally allows page scrolling on short screens.
-      const top = reader.getBoundingClientRect().top + window.scrollY;
-      const afterReader = Array.from(row.children).filter(element => !element.contains(reader)).reduce((height, element) => height + flowHeight(element), 0);
-      const siblings = Array.from(main.children);
-      const afterRow = siblings.slice(siblings.indexOf(row) + 1).reduce((height, element) => height + flowHeight(element), 0);
-      const reserved = Math.ceil(top + afterReader + afterRow + (parseFloat(getComputedStyle(main).paddingBottom) || 0));
-      const offset = Math.ceil(page.getBoundingClientRect().top + window.scrollY);
-      if (page.style.getPropertyValue("--text-reader-reserved") !== `${reserved}px`) page.style.setProperty("--text-reader-reserved", `${reserved}px`);
-      if (page.style.getPropertyValue("--learning-top-offset") !== `${offset}px`) page.style.setProperty("--learning-top-offset", `${offset}px`);
+      const offset = `${Math.ceil(page.getBoundingClientRect().top + window.scrollY)}px`;
+      if (page.style.getPropertyValue("--learning-top-offset") !== offset) page.style.setProperty("--learning-top-offset", offset);
+      for (const element of [outline, tools]) if (element) {
+        element.dataset.readingSticky = String(element.getBoundingClientRect().height <= window.innerHeight - 32);
+      }
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     update();
     const observer = new ResizeObserver(schedule);
-    for (const element of [page, page.parentElement, main, row, ...main.children, ...row.children]) if (element) observer.observe(element);
+    for (const element of [page, page.parentElement, outline, tools, document.querySelector(".portal-header")]) if (element) observer.observe(element);
     window.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
     return () => {
       observer.disconnect(); cancelAnimationFrame(frame);
       window.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("resize", schedule);
-      page.style.removeProperty("--text-reader-reserved"); page.style.removeProperty("--learning-top-offset");
+      page.style.removeProperty("--learning-top-offset");
+      for (const element of [outline, tools]) if (element) delete element.dataset.readingSticky;
     };
   }, [mode, lesson.id, entitled, tutorOnline]);
   const textPolicy = !entitled && mode === "text" ? textPreview || textLessonPreviewPolicy(contents, lesson.preview) : undefined;
@@ -162,6 +152,8 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
   }
   const current = outline.find(item => item.id === lesson.id);
+  const nextLessonId = nextHref ? new URLSearchParams(nextHref.split("?")[1] || "").get("lessonId") : null;
+  const nextLesson = outline.find(item => item.id === nextLessonId);
   const courseHref = `/${locale}/portal/courses/${courseId}`;
   const pricingHref = trialGate?.pricingHref || `/${locale}/subscription?courseId=${encodeURIComponent(courseId)}`;
   async function chooseAccessPlan() {
@@ -183,7 +175,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
       <span aria-hidden="true">/</span><span aria-current="page">{messages.courseDetailDesign.lesson}</span>
     </nav>
     <div className={`${styles.layout} ${mode === "text" ? styles.textLayout : ""}`}>
-      <aside className={styles.sidebar}>
+      <aside className={styles.sidebar} data-reading-outline>
         <h2>{courseTitle}</h2>
         <div className={styles.modeControl}>{hasMultipleModes ? <><select className={styles.modeSwitch} aria-label={copy.learningMode} value={mode} disabled={modeSaving} onChange={event => void switchMode(event.target.value as CourseLearningMode)}>
           <option value="video" disabled={!modeLessonDestination(outline, lesson.id, "video", Boolean(videoContent))}>{copy.videoMode}</option>
@@ -203,12 +195,12 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </nav>
       </aside>
       <article className={styles.main}>
-        <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} visible={canPromptVideoCompletion(entitled, selected.id, videoProgress)} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(videoProgress) || 0} seconds={Math.floor(videoProgress?.currentTime || 0)} initialCompleted={completedContentIds ? completedContentIds.includes(selected.id) : initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>
+        <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar nextLesson={nextLesson} assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} visible={canPromptVideoCompletion(entitled, selected.id, videoProgress)} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(videoProgress) || 0} seconds={Math.floor(videoProgress?.currentTime || 0)} initialCompleted={completedContentIds ? completedContentIds.includes(selected.id) : initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>
         <div className={styles.mediaRow} data-text-row>
-          {mode === "text" ? <div className={styles.textSurface}><TextLessonReader key={`${lesson.id}:text`} className={`${styles.player} ${styles.textPlayer}`} label={copy.textMode} contents={contents} body={lesson.body} locale={locale} lessonNumber={current?.number || "01"} initialContentId={presentation.mode === "text" ? presentation.contentId : textContent?.id || ""} navigationRequest={textNavigation} onContentChange={setContentId} preview={textPolicy} ending={entitled ? <div className={styles.endingSpace}><span data-text-completion-trigger/></div> : undefined} previewEnd={textEnd ? <div className={styles.previewEnd} data-text-preview-end><div className={styles.lockedText} aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index}/>)}</div><div className={styles.previewFade}/><section className={styles.previewNotice} aria-label={messages.previewAccess.previewEnds}><h2><Image src="/portal/text-preview/lock.svg" alt="" width={16} height={16}/>{messages.previewAccess.previewEnds}</h2><button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button></section></div> : undefined}/>{entitled && <TextLessonCompletion variant="card" assessmentAvailability={assessmentAvailability} key={lesson.id} visible={mode === "text"} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextHref={nextHref} endpoint={studyEndpoint}/>}</div> : <div className={styles.player} key={`${lesson.id}:video`}>
+          {mode === "text" ? <div className={styles.textSurface}><TextLessonReader key={`${lesson.id}:text`} className={`${styles.player} ${styles.textPlayer}`} label={copy.textMode} contents={contents} body={lesson.body} locale={locale} lessonNumber={current?.number || "01"} initialContentId={presentation.mode === "text" ? presentation.contentId : textContent?.id || ""} navigationRequest={textNavigation} onContentChange={setContentId} preview={textPolicy} ending={entitled ? <div className={styles.endingSpace}><span data-text-completion-trigger/></div> : undefined} previewEnd={textEnd ? <div className={styles.previewEnd} data-text-preview-end><div className={styles.lockedText} aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index}/>)}</div><div className={styles.previewFade}/><section className={styles.previewNotice} aria-label={messages.previewAccess.previewEnds}><h2><Image src="/portal/text-preview/lock.svg" alt="" width={16} height={16}/>{messages.previewAccess.previewEnds}</h2><button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button></section></div> : undefined}/>{entitled && <TextLessonCompletion nextLesson={nextLesson} variant="card" assessmentAvailability={assessmentAvailability} key={lesson.id} visible={mode === "text"} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextHref={nextHref} endpoint={studyEndpoint}/>}</div> : <div className={styles.player} key={`${lesson.id}:video`}>
             <LessonContentPlayer videoNavigationRequest={videoNavigation} exhibitContainer={exhibitContainer} contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={entitled ? undefined : trialGate} onPreviewAccess={!entitled ? () => void chooseAccessPlan() : undefined} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} onVideoStart={setPlayingId} onVideoProgress={setVideoProgress} onVideoEnded={progress => setEnded(previous => ({ contentId: progress.contentId, request: (previous?.request || 0) + 1 }))} videoPresentation={{ poster, playLabel: copy.play }} />
           </div>}
-          <aside className={styles.tools} aria-label={copy.deepLearning} tabIndex={!entitled ? 0 : undefined} aria-describedby={!entitled ? toolId : undefined}><h2>{copy.deepLearning}</h2>
+          <aside className={styles.tools} data-reading-tools aria-label={copy.deepLearning} tabIndex={!entitled ? 0 : undefined} aria-describedby={!entitled ? toolId : undefined}><h2>{copy.deepLearning}</h2>
             {tools.map(tool => {
               const body = <><span className={styles.toolIcon} aria-hidden="true"><Image src={`/portal/study/${tool.icon}.svg`} alt="" width={16} height={16}/></span><span className={styles.toolLabel}>{tool.title}</span></>;
               return <div key={tool.icon} className={styles.toolItem}>
