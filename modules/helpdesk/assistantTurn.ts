@@ -71,13 +71,22 @@ export function templateVariant(text: string, locale: HelpdeskLocale): TemplateV
 }
 
 /**
- * The frame of a click (no text of its own): in the zh-CN chat, the script of the learner's newest Chinese words
- * in the session (oldest first in learnerTexts); the English chat's cards are English, so its frame is too.
+ * The frame of a click (no text of its own): the language and script of the learner's newest words in the session
+ * that have letters (oldest first in learnerTexts), so a click answers in the language the learner writes in, whatever
+ * the page's language; no such words yet -> the page's language.
  */
 export function frameVariant(locale: HelpdeskLocale, learnerTexts: readonly string[]): TemplateVariant {
-  if (locale !== "zh-CN") return locale;
-  for (const text of [...learnerTexts].reverse()) if (HAN_SCRIPT.test(text)) return hasTraditionalOnly(text) ? "zh-TW" : "zh-CN";
+  for (const text of [...learnerTexts].reverse()) if (HAN_SCRIPT.test(text) || LATIN_SCRIPT.test(text)) return templateVariant(text, locale);
   return locale;
+}
+
+/**
+ * The language of the FAQ card a turn shows (owner 2026-10-31: a question in Chinese gets the Chinese card, also on the
+ * English page): cards exist in zh-CN and en-GB only, so a Traditional (zh-TW) learner gets the zh-CN card in the
+ * zh-TW frame. The page's language stays the chat's (session, buttons, labels).
+ */
+export function cardLocale(variant: TemplateVariant): HelpdeskLocale {
+  return variant === "en-GB" ? "en-GB" : "zh-CN";
 }
 
 export function replyTemplate(locale: TemplateVariant, intent: SuggestIntent | null): string {
