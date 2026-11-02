@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   const state = readOAuthState((await cookies()).get(OAUTH_STATE_COOKIE)?.value, url.searchParams.get("state"), "google");
   const origin = publicAppOrigin(request);
   if (!state) return clearOAuthCookie(NextResponse.redirect(new URL("/en-GB/portal/sign-in?oauthError=state", origin), 303), request);
-  const returnTo = safeReturnTo(state.returnTo, `/${state.locale}/account/my-learning`);
+  const returnTo = safeReturnTo(state.returnTo, `/${state.locale}/portal`);
   let profile: { subject: string; email: string; nickname?: string } | null = null;
   try {
     if (url.searchParams.get("error")) throw new GoogleOAuthError("exchange");

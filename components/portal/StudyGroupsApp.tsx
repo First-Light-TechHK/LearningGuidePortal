@@ -7,6 +7,8 @@ import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy, paneStatusAfterGroup, sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupListFailurePlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies, waitingDialogStep, type StudyGroupNotice, type WaitingDialogStep } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
+import { CreateStudyGroupForm } from "./CreateStudyGroupForm";
+import { ScheduleStudySessionForm } from "./ScheduleStudySessionForm";
 import styles from "./study-groups.module.css";
 import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionRefusal, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
@@ -141,9 +143,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [sessionMax, setSessionMax] = useState("");
   const [sessionTutor, setSessionTutor] = useState(true);
   const [sessionLesson, setSessionLesson] = useState("");
-  const [createTitle, setCreateTitle] = useState("");
   const [editTitle, setEditTitle] = useState("");
-  const [createAbout, setCreateAbout] = useState("");
   const [editAbout, setEditAbout] = useState("");
   const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string; sessionId?: string }>>([]);
   // Only the newest lists load and the newest read of the open group count
@@ -469,7 +469,6 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const mineEmpty = mineEmptyCopy({ signedIn, listsLoaded, filter: mineFilter, count: visibleMine.length });
   const discoverEmpty = discoverEmptyCopy({ listsLoaded, count: discover.length, filtered: Boolean(query || courseFilter) });
   // QA M4: no Course to create a group for; the Create dialog says why.
-  const noCourseAccess = courses !== null && courses.length === 0;
   const gate = selected ? joinGate({ signedIn, canJoin: selected.canJoin, courseAvailable: selected.courseAvailable }) : null;
   const errorPlace = studyGroupErrorPlace({ status, dialog, hasSelected: Boolean(selected), hasError: studyGroupHasError(errorCode) });
 
@@ -488,8 +487,6 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
       setCreatedGroup({ id: result.data.id, title: result.data.title, courseTitle: result.data.courseTitle });
       setDialog(null);
       setErrorCode("idle");
-      setCreateTitle("");
-      setCreateAbout("");
       await loadLists();
     } finally {
       setCreating(false);
@@ -776,7 +773,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
             button and All / Hosted by Me tabs render only for signed-in users. */}
         {signedIn ? <div className={styles.sectionHead}>
           <h2>{copy.myGroups}</h2>
-          <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setCreateTitle(""); setCreateAbout(""); setErrorCode("idle"); setDialog("create"); }}>+ {copy.create}</button>
+          <button className={styles.create} type="button" onClick={() => { setCreatedGroup(null); setErrorCode("idle"); setDialog("create"); }}>+ {copy.create}</button>
         </div> : null}
         {signedIn ? <div className={styles.tabs} role="group" aria-label={copy.myGroups}>
           <button type="button" aria-pressed={mineFilter === "all"} onClick={() => setMineFilter("all")}>{copy.all}</button>
@@ -825,19 +822,12 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         {pane.kind !== "error" && pane.kind !== "loading" && groupError && selectedId ? <div className={styles.panel} role="alert"><p className={styles.alert}>{copy.errors[groupError as keyof typeof copy.errors] || copy.errors.error}</p>{groupError === "unauthenticated" ? <a className={styles.primary} href={signInHref}>{copy.signIn}</a> : <button className={styles.primary} type="button" onClick={() => void openGroup(selectedId)}>{copy.retry}</button>}</div> : null}
         {pane.kind === "empty" && selectedId && !groupError && !createdGroup && dialog !== "create" ? <p className={styles.panel} role="status">{copy.loading}</p> : null}
         {pane.kind === "empty" && !selectedId && dialog !== "create" && !createdGroup ? <div className={styles.empty}><p>{copy.emptyTitle}</p><Image src="/portal/study-groups/empty-illustration.png" width={250} height={150} alt="" /><h2>{copy.emptyLead}</h2><p className={styles.body}>{copy.emptyBody}</p>{signedIn ? null : <p><a href={signInHref}>{copy.signIn}</a> {copy.signInRequired}</p>}</div> : null}
-        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdName}>{createdGroup.title}</span><span className={styles.createdBody}>{createdGroup.courseTitle}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("idle"); setCreateTitle(""); setCreateAbout(""); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
+        {createdGroup ? <div className={`${styles.panel} ${styles.createdPanel}`} role="status"><span className={styles.createdIcon} aria-hidden="true"><Image src="/portal/study-groups/success.svg" width={32} height={32} alt="" /><i>✓</i></span><div><strong>{copy.createdTitle}</strong><span className={styles.createdName}>{createdGroup.title}</span><span className={styles.createdBody}>{createdGroup.courseTitle}</span></div><button className={styles.primary} type="button" onClick={() => { const id = createdGroup.id; setCreatedGroup(null); setErrorCode("idle"); void openGroup(id); }}>{copy.openGroup}</button></div> : null}
         {dialog === "create" ? (
           <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={creating}>
-            <form className={styles.createForm} noValidate onSubmit={(event) => { event.preventDefault(); submitDialogForm(event.currentTarget, submitCreate); }}>
-              <h2 id="study-group-dialog-title">{copy.create}</h2>
-              <p className={styles.lead}>{copy.createLead}</p>
-              <label className={styles.field}><span>{copy.groupTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required maxLength={50} placeholder={copy.enterTitle} value={createTitle} onChange={(event) => setCreateTitle(event.target.value.slice(0, 50))} /><span className={styles.counter}>{createTitle.length}/50</span></span></label>
-              <label className={styles.field}><span>{copy.relatedCourse} <span className={styles.req}>*</span></span><select name="courseId" required defaultValue=""><option value="">{copy.selectCourse}</option>{(courses || []).map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
-              {noCourseAccess ? <p className={styles.noCourses}>{copy.noCourseAccess} <a href={`/${locale}/portal/courses`}>{copy.viewCourses}</a></p> : null}
-              <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} placeholder={copy.enterDescription} value={createAbout} onChange={(event) => setCreateAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{createAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
-              <div className={styles.actions}><button className={styles.ghost} type="button" onClick={closeDialog} disabled={creating}>{copy.cancel}</button><button className={styles.primary} type="submit" disabled={creating || noCourseAccess}>{copy.create}</button></div>
-              {errorPlace === "create" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
-            </form>
+            <CreateStudyGroupForm locale={locale} courses={courses} creating={creating} className={styles.createForm}
+              error={errorPlace === "create" ? errorText : undefined} onCancel={closeDialog}
+              onInvalid={() => setErrorCode("validation")} onSubmit={submitCreate}/>
           </PortalDialog>
         ) : null}
         {selected && pane.kind !== "loading" && pane.kind !== "error" && dialog !== "create" && !createdGroup ? (
@@ -903,10 +893,17 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
           </div>
         ) : null}
       </section>
-      {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" || dialog === "waiting" || dialog === "attendees" ? (
+      {dialog === "schedule" && selected ? (
+        <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={closeDialog} busy={submitting}>
+          <ScheduleStudySessionForm locale={locale} group={selected} busy={submitting}
+            error={errorPlace === "dialog" ? errorText : undefined} onCancel={closeDialog}
+            onInvalid={setErrorCode} onSubmit={submitSchedule}/>
+        </PortalDialog>
+      ) : null}
+      {dialog === "edit" || dialog === "edit-session" || dialog === "waiting" || dialog === "attendees" ? (
         <PortalDialog className={styles.modal} labelledBy="study-group-dialog-title" onClose={dialog === "waiting" ? closeWaiting : closeDialog} busy={submitting}>
-          <form method="dialog" noValidate onSubmit={(event) => { event.preventDefault(); if (dialog === "edit") submitDialogForm(event.currentTarget, submitEdit); if (dialog === "edit-session") submitDialogForm(event.currentTarget, submitEditSession); if (dialog === "schedule") submitDialogForm(event.currentTarget, submitSchedule); }}>
-            {dialog !== "waiting" ? <h2 id="study-group-dialog-title">{dialog === "schedule" ? copy.schedule : dialog === "attendees" ? copy.viewAttendees : dialog === "edit-session" ? copy.editSession : dialog === "edit" ? copy.editGroup : copy.create}</h2> : null}
+          <form method="dialog" noValidate onSubmit={(event) => { event.preventDefault(); if (dialog === "edit") submitDialogForm(event.currentTarget, submitEdit); if (dialog === "edit-session") submitDialogForm(event.currentTarget, submitEditSession); }}>
+            {dialog !== "waiting" ? <h2 id="study-group-dialog-title">{dialog === "attendees" ? copy.viewAttendees : dialog === "edit-session" ? copy.editSession : dialog === "edit" ? copy.editGroup : copy.create}</h2> : null}
             {dialog === "waiting" && waitingSession ? (
               <div role="status">
                 <h2 id="study-group-dialog-title" className={styles.waitingBanner}><HourglassIcon /><span>{copy.waiting}</span></h2>
@@ -926,9 +923,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                 <label className={styles.field}><span>{copy.about} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><textarea name="about" required maxLength={GROUP_ABOUT_MAX} placeholder={copy.enterDescription} value={editAbout} onChange={(event) => setEditAbout(clampGroupAbout(event.target.value))} /><span className={styles.counter}>{editAbout.length}/{GROUP_ABOUT_MAX}</span></span></label>
               </>
             ) : null}
-            {dialog === "schedule" || dialog === "edit-session" ? (
+            {dialog === "edit-session" ? (
               <>
-                <p className={styles.lead}>{dialog === "edit-session" ? copy.editSessionLead : copy.arrangeLead}</p>
+                <p className={styles.lead}>{copy.editSessionLead}</p>
                 <div className={styles.contextCard}><strong>{selected?.title}</strong><span>{selected?.about}</span></div>
                 <label className={styles.field}><span>{copy.sessionTitle} <span className={styles.req}>*</span></span><span className={styles.fieldBox}><input name="title" required disabled={timeOnly} maxLength={SESSION_TITLE_MAX} value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value.slice(0, SESSION_TITLE_MAX))} /><span className={styles.counter}>{sessionTitleCount(sessionTitle)}</span></span></label>
                 <label className={styles.field}><span>{copy.relatedLesson}</span><select name="lesson" disabled={timeOnly} value={sessionLesson} onChange={(event) => setSessionLesson(event.target.value)}><option value="">{copy.selectLesson}</option>{(selected?.lessons || []).map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title}</option>)}</select></label>
@@ -959,7 +956,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
             {dialog !== "waiting" ? (
               <div className={styles.dialogActions}>
                 <button className={styles.ghost} type="button" onClick={closeDialog} disabled={submitting}>{dialog === "attendees" ? copy.close : copy.cancel}</button>
-                {dialog === "edit" || dialog === "edit-session" || dialog === "schedule" ? <button className={styles.primary} type="submit" disabled={submitting}>{dialog === "schedule" ? copy.scheduleAction : copy.save}</button> : null}
+                {dialog === "edit" || dialog === "edit-session" ? <button className={styles.primary} type="submit" disabled={submitting}>{copy.save}</button> : null}
               </div>
             ) : (
               <div className={styles.dialogActions}>

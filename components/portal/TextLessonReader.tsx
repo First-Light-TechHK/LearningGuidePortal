@@ -14,10 +14,10 @@ function startsWithPointTitle(point: LessonContent, number: string) {
 }
 
 /** One persistent reading surface; selection follows its scroll position. */
-export function TextLessonReader({ contents, body, locale, lessonNumber, initialContentId, navigationRequest, onContentChange, preview, previewEnd, className, label }: {
+export function TextLessonReader({ contents, body, locale, lessonNumber, initialContentId, navigationRequest, onContentChange, preview, previewEnd, ending, className, label }: {
   contents: LessonContent[]; body: string; locale: Locale; lessonNumber: string;
   initialContentId: string; navigationRequest?: { id: string; request: number };
-  onContentChange: (id: string) => void; preview?: TextLessonPreview; previewEnd?: ReactNode;
+  onContentChange: (id: string) => void; preview?: TextLessonPreview; previewEnd?: ReactNode; ending?: ReactNode;
   className: string; label: string;
 }) {
   const root = useRef<HTMLDivElement>(null), contentRoot = useRef<HTMLDivElement>(null), boundary = useRef<HTMLDivElement>(null);
@@ -35,7 +35,8 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
     const element = root.current;
     if (!element || !initialized.current) return;
     const sections = Array.from(element.querySelectorAll<HTMLElement>("[data-text-point-id]"));
-    const top = element.getBoundingClientRect().top + element.clientTop + 32;
+    const pageScroll = getComputedStyle(element).overflowY === "visible";
+    const top = (pageScroll ? Math.max(0, element.getBoundingClientRect().top) : element.getBoundingClientRect().top) + element.clientTop + 32;
     let current: HTMLElement | undefined = sections[0];
     for (const section of sections) {
       if (section.getBoundingClientRect().top <= top) current = section;
@@ -54,7 +55,8 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
     const observer = new ResizeObserver(schedule);
     observer.observe(element);
     if (contentRoot.current) observer.observe(contentRoot.current);
-    return () => { observer.disconnect(); if (frame.current !== null) cancelAnimationFrame(frame.current); frame.current = null; };
+    window.addEventListener("scroll", schedule, { passive: true });
+    return () => { observer.disconnect(); window.removeEventListener("scroll", schedule); if (frame.current !== null) cancelAnimationFrame(frame.current); frame.current = null; };
   }, []);
   useEffect(() => {
     // Rich-text blocks are prepared after mount. Do not measure empty chapters.
@@ -73,7 +75,11 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
       frameId = requestAnimationFrame(() => {
         const target = sections.find(section => section.dataset.textPointId === id) || (id ? boundary.current : null);
         initialized.current = true;
-        element.scrollTo({ top: !target || target === sections[0] ? 0 : element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top - element.clientTop - 12, behavior: "auto" });
+        if (getComputedStyle(element).overflowY === "visible") {
+          if (target && (navigationRequest || target !== sections[0])) window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - 12, behavior: "auto" });
+        } else {
+          element.scrollTo({ top: !target || target === sections[0] ? 0 : element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top - element.clientTop - 12, behavior: "auto" });
+        }
         select(id);
       });
     }
@@ -90,6 +96,7 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
       </section>)}
       {!points.length && body.trim() && <LegacyLessonBody body={body} locale={locale}/>}
       {previewEnd && <div ref={boundary} data-text-point-id={firstLocked?.id}>{previewEnd}</div>}
+      {ending}
     </div>
   </div>;
 }

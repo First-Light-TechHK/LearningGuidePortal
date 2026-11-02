@@ -620,6 +620,11 @@
     "oauthError": "The provider sign-in could not be completed. Please try again or use email and password."
   },
   "learning": {
+    "textLessonEnd": {
+      "title": "You’ve reached the end of this lesson",
+      "continue": "Complete and continue",
+      "finish": "Complete course"
+    },
     "title": "My Learning",
     "signInRequired": "Sign in to see your courses.",
     "noCourses": "You have not started a course yet.",

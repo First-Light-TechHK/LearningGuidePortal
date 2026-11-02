@@ -1,4 +1,4 @@
-import { secureAuthCookie } from "@/services/runtimeConfig";
+import { safeReturnTo, secureAuthCookie } from "@/services/runtimeConfig";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createSession, issueEmailVerificationToken, publicUser, registerUserAttempt, verifyEmailToken } from "@/services/productStore";
@@ -17,9 +17,10 @@ export async function POST(request: Request) {
     if (verificationRequired && !emailDeliveryConfigured()) return NextResponse.json({ ok: false, code: "EMAIL_DELIVERY_NOT_CONFIGURED", requestId }, { status: 503 });
     const { user, created } = await registerUserAttempt({ email: body.email || "", password: body.password || "", nickname: body.nickname, locale: body.locale });
     const locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
+    const destination = safeReturnTo(typeof body.returnTo === "string" ? body.returnTo : undefined, `/${locale}/portal`);
     const deliverVerification = async () => {
       const verificationToken = await issueEmailVerificationToken(user.id, true);
-      const verificationUrl = `${publicAppOrigin(request)}/${locale}/portal/verify-email?token=${encodeURIComponent(verificationToken)}`;
+      const verificationUrl = `${publicAppOrigin(request)}/${locale}/portal/verify-email?token=${encodeURIComponent(verificationToken)}&returnTo=${encodeURIComponent(destination)}`;
       await sendVerificationEmail({ to: user.email, url: verificationUrl, locale });
     };
     if (!created) {

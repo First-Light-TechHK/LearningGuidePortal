@@ -5,6 +5,7 @@ export type RegistrationRequest = {
   password?: string;
   nickname?: string;
   locale?: Locale;
+  returnTo?: string;
   termsAccepted?: unknown;
 };
 

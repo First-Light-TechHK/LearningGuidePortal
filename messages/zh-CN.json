@@ -620,6 +620,11 @@
     "oauthError": "第三方登录没有完成，请重试或使用邮箱和密码。"
   },
   "learning": {
+    "textLessonEnd": {
+      "title": "本课时内容已结束",
+      "continue": "完成并继续",
+      "finish": "完成本课程"
+    },
     "title": "My Learning",
     "signInRequired": "登录后查看你的课程。",
     "noCourses": "你还没有开始课程。",

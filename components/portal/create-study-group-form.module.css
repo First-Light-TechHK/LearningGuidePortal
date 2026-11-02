@@ -1,0 +1,12 @@
+.panel { --create-group-padding:30px; box-sizing:border-box; width:min(760px,100%); max-height:calc(100dvh - 48px); overflow:auto; background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+.panel .form { min-width:0; box-sizing:border-box; width:100%; max-height:none; margin:0; padding:0; overflow:visible; background:transparent; border-radius:0; box-shadow:none; }
+.lead { margin:12px 0 28px; color:#8b8b8b; font-size:14px; line-height:22px; }
+.form :global(.lg-ant-form-item-label > label) { color:#111827; font-weight:600; }
+.form :global(.lg-ant-input-textarea-show-count) { margin-bottom:16px; }
+.actions { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:28px; }
+.actions :global(.portal-control-button) { min-width:80px; }
+.actions :global(.lg-ant-btn-primary) { min-width:200px; }
+.noCourses { color:#64748b; font-size:14px; line-height:22px; }
+.noCourses a { color:#155dfc; }
+.error { margin:16px 0 0; color:#d92d20; font-size:14px; line-height:22px; }
+@media(max-width:600px) { .panel { --create-group-padding:20px; }.actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:12px; }.actions > :global(.portal-control-button.lg-ant-btn) { width:100%; min-width:0; padding-inline:8px; }.form :global(.lg-ant-select) { max-width:100%; } }
