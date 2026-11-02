@@ -3,8 +3,8 @@
 // refused one of Admin's short lines or framed a click. Portal now picks the
 // template language exactly as Admin's guard does (workflow/guard.ts
 // learnerOf): Chinese characters with a Traditional-only one -> zh-TW,
-// Chinese -> zh-CN, Latin letters only -> English, neither (emoji, punctuation)
-// -> the page's language. A click (no text) follows the learner's own newest
+// Chinese -> zh-CN, anything not Chinese (English, Japanese, Korean, emoji or
+// punctuation only) -> English (owner 2026-11-02). A click (no text) follows the learner's own newest
 // words in the session, on either page (owner 2026-10-31: the card speaks the
 // learner's language, not the page's). The zh-TW strings are Admin's.
 import assert from "node:assert/strict";
@@ -40,15 +40,18 @@ const ADMIN_ZH_TW = {
 };
 
 test("the template language follows the learner's own text, as Admin's guard decides it", () => {
-  assert.equal(templateVariant("你好，付款失败怎么办", "zh-CN"), "zh-CN");
-  assert.equal(templateVariant("請問付款失敗怎麼辦", "zh-CN"), "zh-TW");
-  assert.equal(templateVariant("謝謝", "en-GB"), "zh-TW", "Chinese in the English chat gets Chinese copy");
-  assert.equal(templateVariant("你好", "en-GB"), "zh-CN");
-  assert.equal(templateVariant("hello", "zh-CN"), "en-GB", "Latin letters only: English, like Admin");
-  assert.equal(templateVariant("我的email收不到", "zh-CN"), "zh-CN", "mixed Chinese and English is Chinese");
-  assert.equal(templateVariant("👍🙏", "zh-CN"), "zh-CN");
-  assert.equal(templateVariant("？？", "en-GB"), "en-GB");
-  assert.equal(templateVariant("什么时候著名的乾隆后来头发", "zh-CN"), "zh-CN", "characters both scripts use are not Traditional");
+  assert.equal(templateVariant("你好，付款失败怎么办"), "zh-CN");
+  assert.equal(templateVariant("請問付款失敗怎麼辦"), "zh-TW");
+  assert.equal(templateVariant("謝謝"), "zh-TW", "Chinese in the English chat gets Chinese copy");
+  assert.equal(templateVariant("你好"), "zh-CN");
+  assert.equal(templateVariant("hello"), "en-GB", "Latin letters only: English, like Admin");
+  assert.equal(templateVariant("ログインできません"), "en-GB", "not Chinese (Japanese): English");
+  assert.equal(templateVariant("領収書が届かない"), "en-GB", "Japanese with kanji is still not Chinese");
+  assert.equal(templateVariant("로그인이 안 돼요"), "en-GB", "not Chinese (Korean): English");
+  assert.equal(templateVariant("我的email收不到"), "zh-CN", "mixed Chinese and English is Chinese");
+  assert.equal(templateVariant("👍🙏"), "en-GB", "emoji only is not Chinese: English (owner 2026-11-02)");
+  assert.equal(templateVariant("？？"), "en-GB");
+  assert.equal(templateVariant("什么时候著名的乾隆后来头发"), "zh-CN", "characters both scripts use are not Traditional");
   // A click has no text: the learner's newest words with letters decide, on either page; none yet -> the page's language.
   assert.equal(frameVariant("zh-CN", ["你好", "我的帳號登不進去"]), "zh-TW");
   assert.equal(frameVariant("zh-CN", ["我的帳號登不進去", "好的谢谢"]), "zh-CN", "the newest words decide");
@@ -71,8 +74,8 @@ test("the zh-TW templates are Admin's, every template passes Portal's own check,
   assert.equal(replyTemplate("zh-TW", "off_topic"), ADMIN_ZH_TW.offTopic);
   assert.equal(replyTemplate("zh-TW", "vague"), ADMIN_ZH_TW.greeting);
   assert.equal(replyTemplate("zh-CN", "greeting"), TURN_TEMPLATES["zh-CN"].greeting, "zh-CN unchanged");
-  assert.ok(Object.values(ADMIN_ZH_TW).every((line) => templateVariant(line, "zh-CN") === "zh-TW"), "the zh-TW copy is itself Traditional");
-  assert.ok([TURN_TEMPLATES["zh-CN"].greeting, TURN_TEMPLATES["zh-CN"].farewell, TURN_TEMPLATES["zh-CN"].offTopic, TURN_TEMPLATES["zh-CN"].opening, TURN_TEMPLATES["zh-CN"].closing].every((line) => templateVariant(line, "zh-CN") === "zh-CN"));
+  assert.ok(Object.values(ADMIN_ZH_TW).every((line) => templateVariant(line) === "zh-TW"), "the zh-TW copy is itself Traditional");
+  assert.ok([TURN_TEMPLATES["zh-CN"].greeting, TURN_TEMPLATES["zh-CN"].farewell, TURN_TEMPLATES["zh-CN"].offTopic, TURN_TEMPLATES["zh-CN"].opening, TURN_TEMPLATES["zh-CN"].closing].every((line) => templateVariant(line) === "zh-CN"));
 });
 
 function reply(name: string, input: AdminSuggestRequest, patch: Record<string, unknown> = {}): AdminSuggestReply {

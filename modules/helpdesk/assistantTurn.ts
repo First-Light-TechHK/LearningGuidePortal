@@ -57,32 +57,38 @@ export const TURN_TEMPLATES: Record<TemplateVariant, { opening: string; closing:
 };
 
 const HAN_SCRIPT = /\p{Script=Han}/u;
-const LATIN_SCRIPT = /\p{Script=Latin}/u;
+/** Japanese kana and Korean Hangul: text with these is not Chinese, even with Han characters (kanji, hanja) in it. */
+const NOT_CHINESE_SCRIPT = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const LETTER = /\p{L}/u;
 
-/**
- * The template language for what the learner wrote, decided as Admin's guard decides it (learnerOf): Chinese
- * characters -> zh-TW when one of them is Traditional-only, else zh-CN; only Latin letters -> English; neither
- * (emoji, punctuation) -> the page's language.
- */
-export function templateVariant(text: string, locale: HelpdeskLocale): TemplateVariant {
-  if (HAN_SCRIPT.test(text)) return hasTraditionalOnly(text) ? "zh-TW" : "zh-CN";
-  if (LATIN_SCRIPT.test(text)) return "en-GB";
-  return locale;
+/** Chinese: Han characters and no kana or Hangul. */
+export function isChinese(text: string): boolean {
+  return HAN_SCRIPT.test(text) && !NOT_CHINESE_SCRIPT.test(text);
 }
 
 /**
- * The frame of a click (no text of its own): the language and script of the learner's newest words in the session
- * that have letters (oldest first in learnerTexts), so a click answers in the language the learner writes in, whatever
- * the page's language; no such words yet -> the page's language.
+ * The language of a typed message (owner 2026-11-02: follow the language asked in; anything not Chinese gets English):
+ * Chinese -> zh-TW when one of its characters is Traditional-only, else zh-CN; everything else (English, other
+ * languages, emoji or punctuation only) -> English, whatever the page's language.
+ */
+export function templateVariant(text: string): TemplateVariant {
+  if (isChinese(text)) return hasTraditionalOnly(text) ? "zh-TW" : "zh-CN";
+  return "en-GB";
+}
+
+/**
+ * The frame of a click (no text of its own): the learner's newest words in the session that have letters (oldest first
+ * in learnerTexts), so a click answers in the language the learner writes in; no such words yet -> the page's language
+ * (the chips they click are in it).
  */
 export function frameVariant(locale: HelpdeskLocale, learnerTexts: readonly string[]): TemplateVariant {
-  for (const text of [...learnerTexts].reverse()) if (HAN_SCRIPT.test(text) || LATIN_SCRIPT.test(text)) return templateVariant(text, locale);
+  for (const text of [...learnerTexts].reverse()) if (LETTER.test(text)) return templateVariant(text);
   return locale;
 }
 
 /**
- * The language of the FAQ card a turn shows (owner 2026-10-31: a question in Chinese gets the Chinese card, also on the
- * English page): cards exist in zh-CN and en-GB only, so a Traditional (zh-TW) learner gets the zh-CN card in the
+ * The language of the FAQ card a turn shows (owner 2026-10-31 / 11-02: the language asked in, on either page; not
+ * Chinese -> English): cards exist in zh-CN and en-GB only, so a Traditional (zh-TW) learner gets the zh-CN card in the
  * zh-TW frame. The page's language stays the chat's (session, buttons, labels).
  */
 export function cardLocale(variant: TemplateVariant): HelpdeskLocale {

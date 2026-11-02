@@ -1,7 +1,7 @@
 // Owner 2026-10-31 (DEV): on the English page a learner asked "我如何取消订阅"; the opening and closing came back in
 // Chinese, but the FAQ card and its "Related FAQ" title were English, because Portal asked Admin for the card in the
 // page's language and read the cached release in that language too. The card now speaks the learner's language: a
-// typed question's own words (Chinese -> zh-CN, Latin letters -> en-GB, neither -> the page's), a click the learner's
+// typed question's own words (Chinese -> zh-CN; anything else -> en-GB, owner 2026-11-02), a click the learner's
 // newest words in the chat. The chat session, buttons and labels stay in the page's language. When the release in the
 // learner's language is not cached, a click falls back to the page's card and frame.
 import assert from "node:assert/strict";
@@ -91,16 +91,18 @@ test("a Chinese question on the English page gets the Chinese card, its Chinese 
   assert.deepEqual(turnOf(again.response).next?.steps.map((step) => step.label), [ZH_LABEL[SUPPORT]]);
 });
 
-test("an English question on the Chinese page gets the English card; emoji alone keep the page's language", async () => {
+test("on the Chinese page, anything not Chinese gets the English card: English, Japanese, Korean, emoji alone", async () => {
   const h = harness();
   const { sessionId } = await h.assistant.startSession(learner, { locale: "zh-CN", orderId: null });
-  const english = await h.assistant.ask(learner, { message: "I paid but my plan is not active", locale: "zh-CN", faqId: null, sessionId }, randomUUID());
-  assert.equal(h.asked[0].locale, "en-GB");
-  assert.equal(card(english.response)?.question, EN_RELEASE.nodes.find((node) => node.id === PAID)!.question);
-  assert.equal(turnOf(english.response).opening, TURN_TEMPLATES["en-GB"].opening);
-  const emoji = await h.assistant.ask(learner, { message: "🙏🙏", locale: "zh-CN", faqId: null, sessionId }, randomUUID());
-  assert.equal(h.asked[1].locale, "zh-CN");
-  assert.equal(card(emoji.response)?.question, ZH_TEXT[PAID].question);
+  const englishCard = EN_RELEASE.nodes.find((node) => node.id === PAID)!.question;
+  for (const [i, message] of ["I paid but my plan is not active", "支払ったのにプランが有効になりません", "결제했는데 플랜이 활성화되지 않았어요", "🙏🙏"].entries()) {
+    const { response } = await h.assistant.ask(learner, { message, locale: "zh-CN", faqId: null, sessionId }, randomUUID());
+    assert.equal(h.asked[i].locale, "en-GB", message);
+    assert.equal(card(response)?.question, englishCard, message);
+    assert.equal(turnOf(response).opening, TURN_TEMPLATES["en-GB"].opening, message);
+  }
+  const chinese = await h.assistant.ask(learner, { message: "我付款了但是会员没有开通", locale: "zh-CN", faqId: null, sessionId }, randomUUID());
+  assert.equal(card(chinese.response)?.question, ZH_TEXT[PAID].question);
 });
 
 test("a click follows the learner's newest words: before any, the page's language; after Chinese on the English page, the Chinese card", async () => {

@@ -313,7 +313,7 @@ export function createAssistantService(deps: AssistantDeps) {
     const columns = { sessionId: session.id, parentNodeId: session.currentNodeId, via: "typed" as const, intent: turn?.intent ?? null, releaseVersion, traceId: deps.traceId ?? null, signals: session.signals, blocks: null, expanded: null };
     const graph = await graphFor(locale, { minVersion: releaseVersion });
     // Portal's own fallbacks speak the learner's language and script, as Admin's templates do (zh-TW for Traditional).
-    const variant = templateVariant(base.question, locale);
+    const variant = templateVariant(base.question);
     if (reply.suggestion) {
       // The card is locked content: whatever kind Admin said, an answer with a card is an answer.
       const node = graph?.node(reply.suggestion.faqId) ?? null;
@@ -449,9 +449,9 @@ export function createAssistantService(deps: AssistantDeps) {
     await enforceRateLimit(learner.id);
     const source: AssistSource = input.faqId ? "chip" : "chat";
     const session = await sessionFor(learner, input.locale, input.sessionId ?? null);
-    // The card's language (owner 2026-10-31): a typed question's own words; a chip (no words of its own) the learner's
-    // newest words in the session. The session stays in the page's language.
-    const variant = input.faqId ? frameVariant(input.locale, await learnerWords(session.id)) : templateVariant(input.message, input.locale);
+    // The card's language (owner 2026-10-31 / 11-02): a typed question's own words (not Chinese -> English); a chip (no
+    // words of its own) the learner's newest words in the session. The session stays in the page's language.
+    const variant = input.faqId ? frameVariant(input.locale, await learnerWords(session.id)) : templateVariant(input.message);
     const locale = cardLocale(variant);
     const run = await runIds(learner.id);
     // v5 Part D: the card on screen, the session, and what the learner typed earlier in it (Portal's own log; never account data).
