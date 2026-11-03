@@ -2,6 +2,7 @@ import { expect, test, type Page } from "playwright/test";
 import {
   appAlerts,
   createGroup,
+  fillScheduleDialog,
   groupPath,
   groupView,
   joinGroup,
@@ -50,13 +51,8 @@ function localParts(at: Date) {
 }
 
 async function fillSchedule(page: Page, input: { title: string; startsAt: Date }) {
-  const dialog = page.getByRole("dialog");
-  const { date, time } = localParts(input.startsAt);
-  await dialog.locator('input[name="title"]').fill(input.title);
-  await dialog.locator('input[name="date"]').fill(date);
-  await dialog.locator('input[name="time"]').fill(time);
-  await dialog.locator('select[name="durationMinutes"]').selectOption({ index: 1 });
-  await dialog.locator('select[name="maxParticipants"]').selectOption("4");
+  // The Schedule dialog's Ant Design controls (08f0fef).
+  await fillScheduleDialog(page.getByRole("dialog"), { title: input.title, startsAt: input.startsAt, duration: "10 mins", max: "4" });
 }
 
 async function remindersFor(member: Member) {
@@ -89,11 +85,16 @@ test("BUG-0096: the Create dialog is centred in the viewport at every width and 
     await page.setViewportSize({ width: 1440, height: 500 });
     await page.getByRole("button", { name: "+ Create Study Group" }).click();
     const form = page.getByRole("dialog").locator("form");
-    expect(await form.evaluate((element) => element.scrollHeight > element.clientHeight && getComputedStyle(element).overflowY !== "visible")).toBe(true);
+    // 08f0fef: the panel around the Ant Design form is the scroll box.
+    expect(await form.evaluate((element) => {
+      const box = element.parentElement!;
+      return box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== "visible";
+    })).toBe(true);
     // Escape while the create request is in flight does not close it.
     await page.setViewportSize({ width: 1440, height: 900 });
     await form.locator('input[name="title"]').fill(unique("E2E 0096"));
-    await form.locator('select[name="courseId"]').selectOption({ index: 1 });
+    await form.getByRole("combobox").click();
+    await page.getByRole("dialog").locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("Escape during the request.");
     await page.route("**/api/study-groups", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
@@ -117,7 +118,8 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
     await page.getByRole("button", { name: "+ Create Study Group" }).click();
     const form = page.getByRole("dialog").locator("form");
     await form.locator('input[name="title"]').fill(title);
-    await form.locator('select[name="courseId"]').selectOption({ index: 1 });
+    await form.getByRole("combobox").click();
+    await page.getByRole("dialog").locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("Created from the E2E.");
     await form.getByRole("button", { name: "Create Study Group" }).dblclick();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -135,7 +137,8 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
 
     // A network failure keeps the form open with the network message.
     await form.locator('input[name="title"]').fill(unique("E2E 0097 offline"));
-    await form.locator('select[name="courseId"]').selectOption({ index: 1 });
+    await form.getByRole("combobox").click();
+    await page.getByRole("dialog").locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("This one fails.");
     await page.route("**/api/study-groups", (route) => route.request().method() === "POST" ? route.abort() : route.continue());
     await form.getByRole("button", { name: "Create Study Group" }).click();
@@ -174,7 +177,7 @@ test("BUG-0116 / BUG-0101: About stops at 200 characters, keeps emoji and lines,
     const form = page.getByRole("dialog").locator("form");
     await form.locator('textarea[name="about"]').fill("a".repeat(300));
     await expect(form.locator('textarea[name="about"]')).toHaveValue("a".repeat(200));
-    await expect(form.getByText("200/200")).toBeVisible();
+    await expect(form.getByText("200 / 200")).toBeVisible();
     await page.keyboard.press("Escape");
 
     // The API refuses 201 characters.
@@ -201,7 +204,12 @@ test("BUG-0116 / BUG-0101: About stops at 200 characters, keeps emoji and lines,
     }
     await longPage.setViewportSize({ width: 1440, height: 900 });
     await longPage.getByRole("button", { name: "Schedule Live Session" }).click();
-    expect(await longPage.getByRole("dialog").locator("form").evaluate((element) => element.scrollWidth <= element.clientWidth), "the schedule dialog wraps the About").toBe(true);
+    // 08f0fef: the Ant Design form sits in a scroll panel whose grid row
+    // overhangs the form by its gutter; the panel must not scroll sideways
+    // and the About in the group card must wrap.
+    const scheduleForm = longPage.getByRole("dialog").locator("form");
+    expect(await scheduleForm.evaluate((element) => element.parentElement!.scrollWidth <= element.parentElement!.clientWidth), "the schedule dialog wraps the About").toBe(true);
+    expect(await scheduleForm.locator("[class*=contextCard] span").evaluate((element) => element.scrollWidth <= element.clientWidth), "the About in the group card wraps").toBe(true);
   } finally {
     await host.context.close();
   }
@@ -270,11 +278,17 @@ test("BUG-0102 / BUG-0128: long titles wrap in the schedule and edit dialogs; Se
     const form = page.getByRole("dialog").locator("form");
     for (const opener of ["Schedule Live Session", "Edit Session"]) {
       await page.getByRole("button", { name: opener }).click();
-      expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth), `${opener} wraps`).toBe(true);
       if (opener === "Schedule Live Session") {
+        // 08f0fef: the Ant Design form sits in a scroll panel, and its grid
+        // row overhangs the form by the gutter (-10px each side) by design;
+        // the panel must not scroll sideways and the long title must wrap.
+        expect(await form.evaluate((element) => element.parentElement!.scrollWidth <= element.parentElement!.clientWidth), `${opener} wraps`).toBe(true);
+        expect(await form.locator("[class*=contextCard] strong").evaluate((element) => element.scrollWidth <= element.clientWidth), `${opener} title wraps`).toBe(true);
         await form.locator('input[name="title"]').fill("Q".repeat(60));
         await expect(form.locator('input[name="title"]')).toHaveValue("Q".repeat(50));
-        await expect(form.getByText("50/50")).toBeVisible();
+        await expect(form.getByText("50 / 50")).toBeVisible();
+      } else {
+        expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth), `${opener} wraps`).toBe(true);
       }
       await form.getByRole("button", { name: "Cancel" }).click();
     }
@@ -371,6 +385,77 @@ test("BUG-0157: an upcoming session lets only its date and start time change", a
   } finally {
     await host.context.close();
     await member.context.close();
+  }
+});
+
+// Product check 2026-11-02 (owner picked "fix 8"): after the start time passes
+// and before the Host starts, Edit Session still saves the unchanged time, so a
+// late Host can turn the AI Tutor off; the time itself cannot move into the past.
+test("2026-11-02: a late Host can still turn the AI Tutor off after the start time passes", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const host = await newMember(browser, appOrigin(baseURL), "late-host", "Study Host");
+  try {
+    const groupId = await createGroup(host, unique("E2E late Host"));
+    const sessionId = await scheduleSession(host, groupId, { title: "Late Host", startsInMs: 70_000, aiTutorEnabled: true });
+    const startsAt = Date.parse((await sessionView(host, sessionId)).startsAt);
+    await expect.poll(() => Date.now() > startsAt + 2_000, { timeout: 120_000, intervals: [5_000] }).toBe(true);
+
+    const page = await openGroupPage(host, groupId);
+    await page.getByRole("button", { name: "Edit Session" }).click();
+    const form = page.getByRole("dialog").locator("form");
+    // The unchanged start carries no min, so the browser does not block Save.
+    await expect(form.locator('[name="date"]')).not.toHaveAttribute("min", /.+/);
+    await expect(form.locator('[name="time"]')).not.toHaveAttribute("min", /.+/);
+    const tutor = form.locator('[name="aiTutor"]');
+    await expect(tutor).toBeChecked();
+    await tutor.uncheck();
+    await form.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const saved = (await sessionView(host, sessionId)) as Awaited<ReturnType<typeof sessionView>> & { aiTutorEnabled: boolean };
+    expect(saved.aiTutorEnabled).toBe(false);
+    expect(Date.parse(saved.startsAt), "the start time is unchanged").toBe(startsAt);
+
+    const patch = (data: Record<string, unknown>) => host.context.request.patch(`/api/study-groups/sessions/${sessionId}`, { data: { groupId, ...data } });
+    const past = await patch({ startsAt: new Date(Date.now() - 60_000).toISOString() });
+    expect(past.status()).toBe(400);
+    expect((await past.json()).code).toBe("start_in_past");
+    expect((await patch({ startsAt: new Date(Date.now() + HOUR).toISOString() })).status(), "a future time still works").toBe(200);
+  } finally {
+    await host.context.close();
+  }
+});
+
+// Product check 2026-11-02: starting with the AI Tutor on while the course's
+// Tutor went offline names the way out; saved with the Tutor off, it starts.
+test("2026-11-02: an offline course Tutor at start tells the Host how to start without it", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const host = await newMember(browser, appOrigin(baseURL), "offline-start", "Study Host");
+  const setKsOnline = (online: boolean) => host.context.request.post("http://127.0.0.1:8788/__control/ks-online", { data: { online } });
+  try {
+    const groupId = await createGroup(host, unique("E2E offline start"));
+    const sessionId = await scheduleSession(host, groupId, { title: "Offline Tutor", startsInMs: 5 * 60_000, aiTutorEnabled: true });
+    expect((await setKsOnline(false)).status()).toBe(200);
+
+    const page = await openGroupPage(host, groupId);
+    await page.getByRole("button", { name: "Start Live Session" }).click();
+    await expect(appAlerts(page).filter({ hasText: "AI Tutor is offline for this course" })).toHaveText(
+      "AI Tutor is offline for this course, so the Live Session can’t start with it on. Open Edit Session, save it with AI Tutor off, then start again."
+    );
+    expect((await sessionView(host, sessionId)).state).not.toBe("live");
+
+    await page.reload();
+    await page.getByRole("button", { name: "Edit Session" }).click();
+    const form = page.getByRole("dialog").locator("form");
+    const tutor = form.locator('[name="aiTutor"]');
+    if ((await tutor.isEnabled()) && (await tutor.isChecked())) await tutor.uncheck();
+    await expect(tutor).not.toBeChecked();
+    await form.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "Start Live Session" }).click();
+    await page.waitForURL(new RegExp(roomPath(sessionId)), { timeout: 20_000 });
+  } finally {
+    await setKsOnline(true);
+    await host.context.close();
   }
 });
 

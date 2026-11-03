@@ -1,6 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { ConfigProvider, Input, Select } from "antd";
+import { PortalProvider } from "./ui/PortalProvider";
+import { PortalButton } from "./ui/PortalButton";
+import styles from "./settings-form-controls.module.css";
 import { getMessages } from "@/lib/i18n/messages";
 import { AvatarCropper } from './AvatarCropper';
 import { isNameTooLong, isValidAccountName, normaliseName, normalisePastedName } from "@/lib/nameValidation";
@@ -26,7 +30,7 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
   const [ageRange, setAgeRange] = useState(initialAgeRange || "");
   const [education, setEducation] = useState(initialEducation || "");
   const [areasOfInterest, setAreasOfInterest] = useState(initialAreasOfInterest || []);
-        const [message, setMessage] = useState("");
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [avatar, setAvatar] = useState(hasAvatar);
@@ -86,7 +90,8 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
   }
 
   const initial = (nickname.trim()[0] || "L").toUpperCase();
-  return <form className="portal-form settings-form settings-design-form" onSubmit={submit}>
+  return <PortalProvider locale={uiLocale}><ConfigProvider theme={{ token: { controlHeight: 38, borderRadius: 6, colorBorder: "#cbd5e1", fontSize: 14 } }}>
+  <form className={`portal-form settings-form settings-design-form ${styles.root}`} onSubmit={submit}>
     {cropFile && <AvatarCropper file={cropFile} locale={uiLocale} onSave={uploadAvatar} onCancel={() => setCropFile(null)} />}
     <section className="settings-design-section settings-profile-section" aria-labelledby="settings-profile-heading">
       <h2 id="settings-profile-heading">{design.profile}</h2>
@@ -94,17 +99,17 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       <div className="settings-profile-grid">
         <div className="avatar-settings">
           <div className="avatar-preview">{avatar ? <img src={`/api/my-learning/avatar?v=${avatarVersion}`} alt={copy.avatar} /> : <span aria-hidden="true">{initial}</span>}</div>
-          <div><div className="backoffice-row-actions"><label hidden className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <button className="portal-button portal-button-secondary" onClick={() => void removeAvatar()} type="button">{copy.removeAvatar}</button> : null}</div><p hidden className="settings-hint">{design.avatarRules}</p></div>
+          <div><div className="backoffice-row-actions"><label hidden className="portal-button portal-button-secondary avatar-upload">{copy.uploadAvatar}<input type="file" aria-label={copy.uploadAvatar} accept="image/jpeg,image/png" onChange={(event) => { selectAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label>{avatar ? <PortalButton className="portal-button portal-button-secondary" onClick={() => void removeAvatar()}>{copy.removeAvatar}</PortalButton> : null}</div><p hidden className="settings-hint">{design.avatarRules}</p></div>
         </div>
         <div className="settings-profile-fields">
-          <label>{copy.nickname}<input value={nickname} autoComplete="name" onChange={event => { event.currentTarget.setCustomValidity(""); setNickname(event.target.value); }} onInvalid={event => event.currentTarget.setCustomValidity(nameCopy.nameInvalid)} onPaste={event => {
+          <label>{copy.nickname}<Input value={nickname} autoComplete="name" onChange={event => { event.currentTarget.setCustomValidity(""); setNickname(event.target.value); }} onInvalid={event => event.currentTarget.setCustomValidity(nameCopy.nameInvalid)} onPaste={event => {
             const pasted = normalisePastedName(event.clipboardData.getData("text"));
             event.preventDefault();
             const input = event.currentTarget;
             input.setCustomValidity("");
             setNickname(input.value.slice(0, input.selectionStart ?? 0) + pasted + input.value.slice(input.selectionEnd ?? input.value.length));
           }} required /></label>
-          <label>{copy.email}<input value={initialEmail} readOnly disabled /></label>
+          <label>{copy.email}<Input value={initialEmail} readOnly disabled /></label>
         </div>
       </div>
       {avatarError ? <p className="portal-form-error" role="alert">{avatarError}</p> : null}
@@ -113,23 +118,23 @@ export function SettingsForm({ countries, uiLocale, initialNickname, initialEmai
       <h2 id="settings-details-heading">{design.personalDetails}</h2>
       <p className="settings-section-intro">{design.detailsIntro}</p>
       <div className="settings-details-grid">
-        <label>{copy.country}<select aria-label={copy.country} value={country} onChange={(event) => setCountry(event.target.value)} required><option value="">{copy.countryPlaceholder}</option>{countries.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label htmlFor="settings-country">{copy.country}<Select id="settings-country" aria-label={copy.country} style={{ width: "100%", height: 38 }} value={country || undefined} onChange={setCountry} showSearch optionFilterProp="label" placeholder={copy.countryPlaceholder} options={countries.map(item => ({ value: item, label: item }))}/></label>
         <div className="settings-interest-field">
           <span id="settings-interests-label">{copy.areasOfInterest}</span>
-          <details className="settings-interest-menu"><summary aria-labelledby="settings-interests-label">{areasOfInterest.length ? areasOfInterest.map((item) => design.interestLabels[interestOptions.indexOf(item)] || item).join(" · ") : copy.areasHint}</summary>
-            <fieldset><legend className="sr-only">{copy.areasOfInterest}</legend>{interestOptions.map((item, index) => <label key={item}><input type="checkbox" checked={areasOfInterest.includes(item)} disabled={areasOfInterest.length >= 5 && !areasOfInterest.includes(item)} onChange={(event) => setAreasOfInterest((selected) => event.target.checked ? [...selected, item].slice(0, 5) : selected.filter((value) => value !== item))} />{design.interestLabels[index]}</label>)}</fieldset>
-          </details>
+          <Select aria-labelledby="settings-interests-label" style={{ width: "100%", minHeight: 38 }} mode="multiple" maxCount={5} maxTagCount="responsive"
+            value={areasOfInterest} onChange={values => setAreasOfInterest(values.slice(0, 5))} placeholder={copy.areasHint}
+            options={interestOptions.map((item, index) => ({ value: item, label: design.interestLabels[index] }))}/>
         </div>
-        <label>{copy.ageRange}<select aria-label={copy.ageRange} value={ageRange} onChange={(event) => setAgeRange(event.target.value)}><option value="">{copy.agePlaceholder}</option>{ageRanges.map((item, index) => <option key={item} value={item}>{design.ageLabels[index]}</option>)}</select></label>
-        <label>{copy.education}<select aria-label={copy.education} value={education} onChange={(event) => setEducation(event.target.value)}><option value="">{copy.educationPlaceholder}</option>{educationLevels.map((item, index) => <option key={item} value={item}>{design.educationLabels[index]}</option>)}</select></label>
+        <label htmlFor="settings-age">{copy.ageRange}<Select id="settings-age" aria-label={copy.ageRange} style={{ width: "100%", height: 38 }} allowClear value={ageRange || undefined} onChange={value => setAgeRange(value || "")} placeholder={copy.agePlaceholder} options={ageRanges.map((item, index) => ({ value: item, label: design.ageLabels[index] }))}/></label>
+        <label htmlFor="settings-education">{copy.education}<Select id="settings-education" aria-label={copy.education} style={{ width: "100%", height: 38 }} allowClear value={education || undefined} onChange={value => setEducation(value || "")} placeholder={copy.educationPlaceholder} options={educationLevels.map((item, index) => ({ value: item, label: design.educationLabels[index] }))}/></label>
       </div>
     </section>
     <section className="settings-design-section" aria-labelledby="settings-preferences-heading">
       <h2 id="settings-preferences-heading">{copy.language}</h2>
-      <label><span className="sr-only">{copy.language}</span><select value={locale} onChange={(event) => setLocale(event.target.value as "en-GB" | "zh-CN")}><option value="en-GB">{copy.english}</option><option value="zh-CN">{copy.chinese}</option></select></label>
+      <label htmlFor="settings-language"><span className="sr-only">{copy.language}</span><Select id="settings-language" aria-label={copy.language} style={{ width: "100%", height: 38 }} value={locale} onChange={setLocale} options={[{ value: "en-GB", label: copy.english }, { value: "zh-CN", label: copy.chinese }]}/></label>
     </section>
 
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}{message ? <p className="portal-success" role="status">{message}</p> : null}
-    <div className="settings-save-row"><button className="portal-button portal-button-primary" disabled={busy}>{copy.save}</button></div>
-  </form>;
+    <div className="settings-save-row"><PortalButton className="portal-button portal-button-primary" type="primary" htmlType="submit" disabled={busy} loading={busy}>{copy.save}</PortalButton></div>
+  </form></ConfigProvider></PortalProvider>;
 }

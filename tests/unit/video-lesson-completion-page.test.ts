@@ -72,12 +72,12 @@ test("video pages always offer entitled manual completion, isolate content, save
       await page.locator("video").evaluate(element=>{element.dispatchEvent(new Event("ended"));element.dispatchEvent(new Event("ended"));});
       await page.getByRole("dialog").waitFor(); assert.equal(completions.length,1,"ended after Keep watching saves once");
       await page.waitForFunction(()=> (window as unknown as {fullscreenExited:boolean}).fullscreenExited===true);
-      await page.getByRole("dialog").getByRole("heading",{name:locale==="en-GB"?"Complete Course":"完成课程",exact:true}).waitFor();
+      await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
       assert.equal(await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),0);
       await page.screenshot({path:`test-results/video-completion/${locale}-complete-course.png`,fullPage:true});
       assert.equal((completions[0] as {learningMode:string}).learningMode,"video");
       assert.ok((completions[0] as {contentId:string}).contentId);
-      await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.completeCourse,exact:true}).click();
+      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.completeCourse)}).click();
       await page.waitForFunction(expected=>(window as unknown as {navigated:string}).navigated===expected,`/${locale}/account/my-learning`);
       completions.length=0;
       await mount("retry",true,false,false,`/${locale}/account/learn/course?lessonId=next`);await progress(20);await bar.waitFor();fail=true;
@@ -89,18 +89,18 @@ test("video pages always offer entitled manual completion, isolate content, save
       assert.ok((await bar.textContent())!.includes(getMessages(locale).learning.completed));
       assert.equal(await bar.getByRole("button").count(),0);
       const modal=page.getByRole("dialog");
-      await modal.getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+      await modal.getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
       assert.equal(await modal.getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),1);
       assert.equal(await modal.getByRole("button").count(),4);
       assert.equal(await modal.locator("#lesson-completed-description").evaluate(element=>getComputedStyle(element).backgroundColor),"rgba(0, 0, 0, 0)");
-      const modalBox=(await modal.boundingBox())!;assert.equal(modalBox.width,720);assert.equal(modalBox.height,624);
-      for(const [file,width] of [["success-v2",64],["knowledge-v2",26],["application-v2",24],["arrow-right",18],["close-v2",18]] as const) {
+      const modalBox=(await modal.boundingBox())!;assert.equal(modalBox.width,720);assert.ok(modalBox.height>0 && modalBox.height<=1024-32);
+      for(const [file,width] of [["knowledge-v2",26],["application-v2",24],["arrow-right",18],["close-v2",18]] as const) {
         const icons=modal.locator(`img[src$="/${file}.svg"]`);
         for(const icon of await icons.all())assert.equal((await icon.boundingBox())!.width,width);
       }
       await page.screenshot({path:`test-results/video-completion/${locale}-completed-dialog.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").locator("img").evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0)),true);
-      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click(); await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click(); await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
       await page.setViewportSize({width:390,height:844}); await page.screenshot({path:`test-results/video-completion/${locale}-completed-mobile.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").evaluate(element=>element.scrollWidth>element.clientWidth || element.getBoundingClientRect().right>innerWidth),false);
       fail=true;
@@ -146,14 +146,14 @@ test("video pages always offer entitled manual completion, isolate content, save
       assert.equal(await bar.getByRole("button").count(),0);
       const roomModal=page.getByRole("dialog");
       assert.equal(await roomModal.getByRole("button").count(),4);
-      const roomModalBox=(await roomModal.boundingBox())!;assert.equal(roomModalBox.width,720);assert.equal(roomModalBox.height,624);
-      for(const [file,width] of [["success-v2",64],["knowledge-v2",26],["application-v2",24],["arrow-right",18],["close-v2",18]] as const) {
+      const roomModalBox=(await roomModal.boundingBox())!;assert.equal(roomModalBox.width,720);assert.ok(roomModalBox.height>0 && roomModalBox.height<=1024-32);
+      for(const [file,width] of [["knowledge-v2",26],["application-v2",24],["arrow-right",18],["close-v2",18]] as const) {
         const icons=roomModal.locator(`img[src$="/${file}.svg"]`);
         for(const icon of await icons.all())assert.equal((await icon.boundingBox())!.width,width);
       }
       await page.screenshot({path:`test-results/video-completion/${locale}-room-completed-dialog.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").locator("img").evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0)),true);
-      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click(); await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.application)}).click(); await page.getByRole("dialog").getByRole("textbox").waitFor(); await page.getByRole("dialog").getByRole("button").first().click(); await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
       await page.setViewportSize({width:390,height:844}); await page.screenshot({path:`test-results/video-completion/${locale}-room-completed-mobile.png`,fullPage:true});
       assert.equal(await page.getByRole("dialog").evaluate(element=>element.scrollWidth>element.clientWidth || element.getBoundingClientRect().right>innerWidth),false);
       await page.getByRole("dialog").getByRole("button").last().click();

@@ -35,7 +35,6 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
     <div className={styles.content}><Link className={styles.back} href={backHref}>{"\u2190"} {copy.back}</Link>
       <article className={styles.panel}><header><h1>{copy.title}</h1><p>{copy.description}</p></header>
         {error&&<p role="alert">{error} <button onClick={()=>void refresh()}>{records.retry}</button></p>}
-        <section className={styles.progressSection} aria-label={copy.progress}><h2>{copy.progress}</h2><div className={styles.progressLabel}><strong>{copy.completedCount.replace("{completed}",String(view.completed)).replace("{total}",String(view.total))}</strong><span>{view.percent}%</span></div><div className={styles.progress} role="progressbar" aria-label={copy.progress} aria-valuemin={0} aria-valuemax={Math.max(1,view.total)} aria-valuenow={view.completed}><span style={{width:`${view.percent}%`}}/></div></section>
         <section className={styles.courseAssessment}><h2>{copy.courseAssessment}</h2><div><strong>{tests.fluency}</strong><button type="button" disabled>{tests.comingSoon}</button></div></section>
         <section className={styles.lessonAssessments} aria-label={copy.lessonAssessments}><h2>{copy.lessonAssessments}</h2>
           <div className={`${styles.columns} ${styles.tableHeader}`} aria-hidden="true"><span>{copy.lessonAssessment}</span><span>{copy.status}</span><span>{copy.latestResult}</span><span>{copy.action}</span></div>

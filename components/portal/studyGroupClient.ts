@@ -231,8 +231,11 @@ export function studyGroupFormProblem(form: ValidatableForm): "validation" | "st
   return "validation";
 }
 
-export function hostMayOpenRoom(startOk: boolean, enterOk: boolean) {
-  return startOk && enterOk;
+// A started session opens the room for its Host: Start already holds the
+// Host's seat, and the room enters (and retries) on its own, so no separate
+// entry may keep the Host on the list (group.start.started-but-not-in-room).
+export function hostMayOpenRoom(startOk: boolean) {
+  return startOk;
 }
 
 export function tutorQueueBody(message: string, clientEventId?: string) {
@@ -280,6 +283,15 @@ export function tutorPendingState(session: Pick<StudySession, "viewerTutorQuesti
   const entry = listed ?? (typeof queuedPosition === "number" && queuedPosition > 0 ? { id, position: queuedPosition, answering: false } : undefined);
   if (!entry || entry.answering) return { state: "answering" as const, ahead: 0, withdrawable: false };
   return { state: "queued" as const, ahead: Math.max(0, entry.position), withdrawable: true };
+}
+
+// A Withdraw the server refused because the AI Tutor had already started
+// (tutor_answering) moves the line on to "answering" at once, without the
+// Withdraw, rather than waiting for the next session poll to say so
+// (group.tutor.tutor-withdraw-too-late). Any other failure leaves it as it is.
+export function tutorWithdrawState<T extends { state: "queued" | "answering"; ahead: number; withdrawable: boolean }>(pending: T, withdrawError?: string) {
+  if (withdrawError !== "tutor_answering") return pending;
+  return { ...pending, state: "answering" as const, ahead: 0, withdrawable: false };
 }
 
 // Whether the server still lists the asker's question as waiting or being

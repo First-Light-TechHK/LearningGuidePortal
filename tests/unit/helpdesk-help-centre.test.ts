@@ -26,14 +26,14 @@ const NONE = { q: "", category: null, faq: null };
 test("popular mode asks for popular FAQs, and for the newest ones when none is marked popular", async () => {
   const { client, calls } = fakeClient({ list: (filter) => (filter.popular ? [faq(1), faq(2)] : []) });
   const view = await loadHelpCentre(client, "en-GB", NONE, STATIC);
-  assert.deepEqual(calls, [["faqs", "en-GB", { popular: true, limit: 10 }]]);
+  assert.deepEqual(calls, [["faqs", "en-GB", { popular: true, limit: 50 }]]);
   assert.equal(view.mode, "popular");
   assert.equal(view.fallback, false);
   assert.deepEqual(view.articles.map((article) => article.id), [id(1), id(2)]);
   assert.deepEqual(view.articles[0], { id: id(1), category: "payments_subscriptions", question: "Question 1?", answer: "Answer **1**." });
   const none = fakeClient({ list: (filter) => (filter.popular ? [] : [faq(3)]) });
   const newest = await loadHelpCentre(none.client, "zh-CN", NONE, STATIC);
-  assert.deepEqual(none.calls, [["faqs", "zh-CN", { popular: true, limit: 10 }], ["faqs", "zh-CN", { limit: 10 }]]);
+  assert.deepEqual(none.calls, [["faqs", "zh-CN", { popular: true, limit: 50 }], ["faqs", "zh-CN", { limit: 10 }]]);
   assert.deepEqual(newest.articles.map((article) => article.id), [id(3)]);
 });
 

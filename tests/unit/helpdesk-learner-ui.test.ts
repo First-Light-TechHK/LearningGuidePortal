@@ -304,3 +304,18 @@ test("v3: the submit modal's answers the learner saw are kept per account for th
   assert.deepEqual(readSeenAnswers(raw, at).map((item) => item.id), [id(2), id(3)]);
   for (const bad of [null, "", "{", "{}", "[1]"]) assert.deepEqual(readSeenAnswers(bad, at), [], String(bad));
 });
+
+test("the chat's two hand-over buttons share one name, and the Help Centre fallback FAQ does not promise downloads (FAQ grounding check 2026-11-02)", () => {
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const messages = getMessages(locale);
+    // The handover card and the "Still need help?" card do the same thing, so they say the same.
+    assert.equal(messages.helpdesk.chat.contactPerson, messages.helpdesk.chat.handoverButton);
+    assert.equal(messages.helpdesk.chat.contactPerson, messages.helpCentre.contactButton);
+    // No lesson, reader or exhibit has a download control.
+    const download = messages.helpPage.design.faqItems.find((item) => /download|下载/i.test(item.question));
+    assert.ok(download);
+    assert.match(download.answer, locale === "en-GB" ? /^No\. .*no download option/ : /^不能下载。.*没有下载选项/);
+  }
+  assert.equal(getMessages("en-GB").helpdesk.chat.contactPerson, "Contact Support");
+  assert.equal(getMessages("zh-CN").helpdesk.chat.contactPerson, "联系客服");
+});

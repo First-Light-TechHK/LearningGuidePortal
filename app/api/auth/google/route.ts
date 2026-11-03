@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const requestId = randomUUID();
   const url = new URL(request.url);
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
-  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/account/my-learning`);
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/portal`);
   if (!googleConfigured()) {
     if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, code: "GOOGLE_NOT_CONFIGURED", requestId }, { status: 503 });
     try {

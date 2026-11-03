@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { liveKitDisconnectReasonName, liveKitDisconnectStep, transitionLiveKitClient, whileCurrentRoom } from "@/modules/group-study/liveKitClientRecovery";
@@ -12,7 +12,7 @@ import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
 import { TutorAnswer } from "./TutorAnswer";
 import { useFloatDrag } from "./useFloatDrag";
-import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, tutorWithdrawState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -107,6 +107,9 @@ type ChatLine = {
   tutorAnswerId?: string;
   // A question line its asker withdrew before the Tutor started on it.
   tutorWithdrawn?: boolean;
+  // The asker's waiting line: why the last Withdraw was refused (the Tutor
+  // had already started on it: tutor_answering), shown under the line.
+  withdrawError?: string;
 };
 
 // How long the asker waits on "answering" before the line says the AI Tutor is unavailable.
@@ -181,7 +184,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
-  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const chatPinnedRef = useRef(true);
   const caretRef = useRef<number | null>(null);
@@ -193,7 +196,35 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   // Meeting style): the people, the chat with the AI Tutor and the controls
   // float over it, each one collapsible.
   const roomEl = useRef<HTMLElement>(null);
+  const [roomNode, setRoomNode] = useState<HTMLElement | null>(null);
+  const attachRoom = useCallback((element: HTMLElement | null) => {
+    roomEl.current = element;
+    setRoomNode(element);
+  }, []);
   const [focus, setFocus] = useState(false);
+  useLayoutEffect(() => {
+    if (!roomNode || focus) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const style = getComputedStyle(roomNode);
+      const top = roomNode.getBoundingClientRect().top + window.scrollY + (parseFloat(style.paddingTop) || 0);
+      const space = `${Math.ceil(top + (parseFloat(style.paddingBottom) || 0))}px`;
+      if (roomNode.style.getPropertyValue("--room-stage-space") !== space) roomNode.style.setProperty("--room-stage-space", space);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
+    const observer = new ResizeObserver(schedule);
+    for (const element of [roomNode, roomNode.parentElement, roomNode.previousElementSibling, document.querySelector(".portal-header")]) if (element) observer.observe(element);
+    window.addEventListener("resize", schedule);
+    window.visualViewport?.addEventListener("resize", schedule);
+    return () => {
+      observer.disconnect(); cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+      roomNode.style.removeProperty("--room-stage-space");
+    };
+  }, [roomNode, focus]);
   const [peopleOpen, setPeopleOpen] = useState(true);
   const [sideOpen, setSideOpen] = useState(false);
   // In full screen the controls fade out after the pointer rests a while and
@@ -828,6 +859,15 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
     caretRef.current = null;
   });
 
+  // BUG-0284: the box grows with what is typed or pasted, up to its CSS
+  // max-height, and the rest scrolls inside it.
+  useLayoutEffect(() => {
+    const input = chatInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  }, [draft, sideTab, focus, sideOpen]);
+
   useEffect(() => () => {
     if (permissionWatchRef.current) permissionWatchRef.current.onchange = null;
   }, []);
@@ -1157,11 +1197,18 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
 
   // Takes back a question the AI Tutor has not started on: its waiting line
   // goes, and the question line says it was withdrawn. A question the Tutor
-  // has meanwhile started keeps waiting for its answer.
+  // has meanwhile started keeps waiting for its answer, and its line says so
+  // instead of the Withdraw doing nothing (group.tutor.tutor-withdraw-too-late);
+  // any other failure is said there too, with Withdraw still offered.
   async function withdrawTutor(answerId: string) {
     const requestId = answerId.replace(/^tutor-/, "");
+    setChat((items) => items.map((item) => item.id === answerId ? { ...item, withdrawError: undefined } : item));
     const withdrawn = await studyGroupRequest<{ id: string; withdrawn: boolean }>(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { method: "DELETE", body: JSON.stringify({ requestId }) });
-    if (!withdrawn.ok || !withdrawn.data.withdrawn) return;
+    if (!withdrawn.ok) {
+      setChat((items) => items.map((item) => item.id === answerId ? { ...item, withdrawError: withdrawn.code } : item));
+      return;
+    }
+    if (!withdrawn.data.withdrawn) return;
     setChat((items) => items.filter((item) => item.id !== answerId).map((item) => item.tutorAnswerId === answerId ? { ...item, tutorWithdrawn: true, tutorAnswerId: undefined } : item));
   }
 
@@ -1176,7 +1223,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   function updateMention(value: string, caret: number) {
     const upToCaret = value.slice(0, caret);
     const at = upToCaret.lastIndexOf("@");
-    if (at < 0 || (at > 0 && upToCaret[at - 1] !== " ")) {
+    if (at < 0 || (at > 0 && !/\s/.test(upToCaret[at - 1]))) {
       setMention(null);
       return;
     }
@@ -1194,7 +1241,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   return (
     <>
     {path()}
-    <section ref={roomEl} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
+    <section ref={attachRoom} className={styles.room} data-focus={focus ? "true" : "false"} data-side={sideOpen ? "open" : "closed"} data-idle={focus && idle ? "true" : "false"}>
       <div className={styles.stage}>
         <div className={styles.stageHead}>
           <h1>{session.title}</h1>
@@ -1226,8 +1273,9 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
             over it (collapsible), so the shared screen keeps the room's space. Owner 2026-10-30:
             the float is a light card with a labelled header and a row per person (name, role,
             mic), so it stands out on the dark share edge (Tencent Meeting style). Raised hands
-            come first, then the Host; speaking only lights a row up, so the list never jumps. */}
-        {tiles.length > 0 ? <div ref={peopleDrag.ref} style={peopleDrag.style} className={styles.avatarFloat} data-open={peopleOpen ? "true" : "false"} data-dragging={peopleDrag.dragging ? "true" : "false"}>
+            come first, then the Host; speaking only lights a row up, so the list never jumps.
+            BUG-0286: only in full screen; outside it the Participants tab beside the screen lists them. */}
+        {focus && tiles.length > 0 ? <div ref={peopleDrag.ref} style={peopleDrag.style} className={styles.avatarFloat} data-open={peopleOpen ? "true" : "false"} data-dragging={peopleDrag.dragging ? "true" : "false"}>
           <button type="button" className={styles.avatarToggle} aria-expanded={peopleOpen} onClick={togglePeople} {...peopleDrag.handle}><ControlIcon kind="people" /><span className={styles.avatarToggleLabel}>{roomCopy.participants}</span><span className={styles.tabCount}>{tiles.length}</span>{peopleOpen ? null : <span className={styles.avatarStack} aria-hidden="true">{floatPeople.slice(0, 3).map((tile) => <i key={tile.identity} data-speaking={tile.speaking ? "true" : "false"}>{tile.name.slice(0, 1)}</i>)}</span>}<span className={styles.avatarChevron} data-open={peopleOpen ? "true" : "false"} aria-hidden="true"><ControlIcon kind="chevron" /></span><span className={styles.srOnly}>{peopleOpen ? roomCopy.hideParticipants : roomCopy.showParticipants}</span></button>
           {peopleOpen ? <ul className={styles.avatarStrip} aria-label={roomCopy.participants}>
           {floatPeople.map((tile) => {
@@ -1249,11 +1297,11 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
         </div> : null}
         {/* Owner 2026-10-30: the sharer sees a clear banner with its own Stop sharing, not a line of small print. */}
         {sharing ? <div className={styles.sharingBanner} role="status"><span className={styles.sharerDot} aria-hidden="true" /><span>{roomCopy.sharingNotice}</span><button type="button" onClick={stopSharing}>{roomCopy.stopSharing}</button></div> : null}
-        {shareTrack ? null : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`}>
-          {tiles.length === 0 ? <div className={styles.tile}><span>{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
+        {shareTrack ? null : <div className={`${styles.videos}${tiles.length <= 1 ? ` ${styles.videosSingle}` : ""}`} data-count={tiles.length}>
+          {tiles.length === 0 ? <div className={`${styles.tile} ${styles.tileEmpty}`}><span role="status">{connected ? copy.loading : blocked || errorCode ? roomCopy.notConnected : roomCopy.connecting}</span></div> : tiles.map((tile) => {
             const camera = cameraTracks[tile.identity] ?? null;
             return (
-              <div className={styles.tile} data-video={camera ? "on" : "off"} key={tile.identity}>
+              <div className={styles.tile} data-video={camera ? "on" : "off"} data-speaking={tile.speaking ? "true" : "false"} key={tile.identity}>
                 <ParticipantCamera track={camera} />
                 {camera ? null : <span className={styles.tilePlaceholder} aria-hidden="true"><i><PersonGlyph /></i></span>}
                 {tile.speaking ? <span className={styles.speakingPill}>{roomCopy.speaking}</span> : null}
@@ -1340,12 +1388,12 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
                     ? roomCopy.tutorUnavailable
                     : line.pending
                     ? (() => {
-                        const pending = tutorPendingState(session, line.id, line.queuedPosition);
-                        return <span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>;
+                        const pending = tutorWithdrawState(tutorPendingState(session, line.id, line.queuedPosition), line.withdrawError);
+                        return <><span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>{line.withdrawError ? <p className={styles.alert} role="alert">{copy.errors[line.withdrawError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</>;
                       })()
                     : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
                 </div>
-              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
+              ) : <><p className={`${styles.chatBody} ${styles.chatText}`}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {
@@ -1378,11 +1426,15 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
                   ))}
                 </div>
               ) : null}
-              <input ref={chatInputRef} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
+              <textarea ref={chatInputRef} rows={1} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
                 // IME composition (Chinese/Japanese input): Enter picks the candidate and
                 // Escape/arrows drive the IME — the mention popup must not steal those.
                 if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                if (!mention || mentionRows.length === 0) return;
+                if (!mention || mentionRows.length === 0) {
+                  // Enter sends, as the hint says; Shift+Enter starts a new line.
+                  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+                  return;
+                }
                 if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); }
                 else if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); }
                 else if (event.key === "Escape") { event.preventDefault(); setMention(null); }

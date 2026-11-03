@@ -9,6 +9,7 @@
 // ?category= falls back to the popular heading). The 60 s cache and
 // stale-on-error live in the Admin client.
 import type { FaqCategory, FaqFilter, HelpCentreQuery, HelpFaq, HelpdeskLocale } from "@/contracts/helpdesk";
+import { HELP_POPULAR_SHOWN } from "./learnerUi";
 import { supportPaths } from "./learnerPages";
 
 export type HelpCentreClient = {
@@ -31,7 +32,10 @@ export type HelpCentreView = {
   missingFaq: boolean;
 };
 
-export const HELP_POPULAR_LIMIT = 10;
+/** Popular FAQs asked for: every one product marked (owner 2026-11-02 picked 25), in Admin's order. */
+export const HELP_POPULAR_LIMIT = 50;
+// Shown before "Show more"; lives in the client-safe learnerUi so the Help Centre component never imports this module's values.
+export { HELP_POPULAR_SHOWN } from "./learnerUi";
 export const HELP_LIST_LIMIT = 50;
 
 const article = (faq: HelpFaq): HelpArticle => ({ id: faq.id, category: faq.category, question: faq.question, answer: faq.answer });
@@ -48,7 +52,7 @@ export async function loadHelpCentre(client: HelpCentreClient, locale: HelpdeskL
   else if (mode === "category") listed = await safely(() => client.faqs(locale, { category: query.category, limit: HELP_LIST_LIMIT }));
   else {
     listed = await safely(() => client.faqs(locale, { popular: true, limit: HELP_POPULAR_LIMIT }));
-    if (listed && listed.length === 0) listed = await safely(() => client.faqs(locale, { limit: HELP_POPULAR_LIMIT }));
+    if (listed && listed.length === 0) listed = await safely(() => client.faqs(locale, { limit: HELP_POPULAR_SHOWN }));
   }
   if (!listed) {
     const words = query.q.toLocaleLowerCase(locale);

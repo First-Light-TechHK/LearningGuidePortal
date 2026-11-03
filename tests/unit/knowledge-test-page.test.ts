@@ -122,10 +122,10 @@ test("completion Knowledge Test supports six questions, optional notes, rating g
     await dialog.getByRole("heading",{name:getMessages(locale).applicationTest.title,exact:true}).waitFor();
     await page.keyboard.press("Escape");
     await dialog.getByRole("button",{name:/Knowledge Test|\u77e5\u8bc6\u6d4b\u8bd5/}).click();await page.getByRole("textbox").waitFor();
-    await page.keyboard.press("Escape");await dialog.getByRole("heading",{name:locale==="en-GB" ? "Lesson 1 completed" : "第 1 课时已完成"}).waitFor();
+    await page.keyboard.press("Escape");await dialog.getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle}).waitFor();
     await dialog.getByRole("button",{name:/Knowledge Test|\u77e5\u8bc6\u6d4b\u8bd5/}).click();await page.getByRole("textbox").waitFor();
     await page.getByRole("button",{name:copy.close,exact:true}).click();
-    assert.equal(await dialog.locator("h2").textContent(),locale==="en-GB" ? "Lesson 1 completed" : "第 1 课时已完成");
+    assert.equal(await dialog.locator("h2").textContent(),getMessages(locale).lessonCompleted.nextActionTitle);
     await page.close();
   }} finally { await browser.close(); }
 });

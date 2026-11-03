@@ -47,5 +47,9 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
       lessonCount:lessons.length, currentLesson:lessonId ? lessons.findIndex(lesson => lesson.id === lessonId) + 1 : null,
       lessonId, contentId, progress, mode, action, href };
   }));
-  return { name, courses:cards.filter((card): card is OverviewDisplayCourse => card !== null) };
+  return { name, courses:cards.filter((card): card is OverviewDisplayCourse => card !== null),
+    syncCourses: overview.courses.filter(record => catalogue.has(record.courseId)).map(record => ({
+      courseId: record.courseId, mode: record.mode, currentLessonId: record.currentLessonId,
+      currentContentId: record.currentContentId, progress: record.progress, updatedAt: record.updatedAt,
+    })) };
 }

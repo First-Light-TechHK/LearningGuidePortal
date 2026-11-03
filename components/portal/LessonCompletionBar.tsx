@@ -11,8 +11,9 @@ import styles from "./lesson-completion.module.css";
 import { completeLessonOutline } from "@/lib/completeLessonOutline";
 import { createClientEventId } from "@/lib/clientEventId";
 
-export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, lessonTitle, percentage, seconds, initialCompleted, assessmentAvailability, visible = true, contentId, endedRequest = 0, nextHref = null, endpoint = "/api/study/events" }: {
+export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, percentage, seconds, initialCompleted, assessmentAvailability, visible = true, contentId, endedRequest = 0, nextHref = null, endpoint = "/api/study/events" }: {
   assessmentAvailability?: AssessmentAvailability;
+  nextLesson?: { number: string; title: string };
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle?: string; percentage: number; seconds: number; initialCompleted: boolean;
   endpoint?: "/api/study/events" | "/api/study/preview";
   visible?: boolean; contentId?: string; endedRequest?: number;
@@ -62,5 +63,5 @@ export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, 
       <button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button>
     </>}
     {error && <p className={styles.error} role="alert">{error}{continuationFailed && <button type="button" disabled={busy} onClick={() => void continueLesson()}>{messages.assessmentRecords.retry}</button>}</p>}
-  </section>}{!showBar && error && <div role="alert"><p>{error}</p><button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button></div>}{dialogOpen && <LessonCompletedDialog isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} courseId={courseId} lessonId={lessonId} lessonTitle={lessonTitle} locale={locale} lessonNumber={lessonNumber} onClose={() => setDialogOpen(false)} onContinue={() => void continueLesson()}/>}</>;
+  </section>}{!showBar && error && <div role="alert"><p>{error}</p><button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button></div>}{dialogOpen && <LessonCompletedDialog nextLesson={nextLesson} isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} courseId={courseId} lessonId={lessonId} lessonTitle={lessonTitle} locale={locale} lessonNumber={lessonNumber} onClose={() => setDialogOpen(false)} onContinue={() => void continueLesson()}/>}</>;
 }

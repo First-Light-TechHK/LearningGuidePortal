@@ -259,6 +259,9 @@
     "tryApplication": "Try Application Test"
   },
   "lessonCompleted": {
+    "nextActionTitle": "What would you like to do next?",
+    "lessonLabel": "Lesson {number}",
+    "returnToLearning": "Return to My Learning",
     "completeCourse": "Complete Course",
     "courseDescription": "Check your understanding, or return to My Learning.",
     "cards": "20 cards",
@@ -339,6 +342,7 @@
     "videoMode": "Video mode",
     "textMode": "Text mode",
     "noLessonsInMode": "No lessons available in this mode.",
+    "lessonUnavailable": "Lesson content is currently unavailable.",
     "back": "Back to course details",
     "outline": "COURSE OUTLINE",
     "deepLearning": "Deep Learning",
@@ -698,6 +702,11 @@
     "oauthError": "The provider sign-in could not be completed. Please try again or use email and password."
   },
   "learning": {
+    "textLessonEnd": {
+      "title": "You’ve reached the end of this lesson",
+      "continue": "Complete and continue",
+      "finish": "Complete course"
+    },
     "title": "My Learning",
     "signInRequired": "Sign in to see your courses.",
     "noCourses": "You have not started a course yet.",
@@ -787,6 +796,17 @@
     "askTutorPlaceholder": "Ask about this lesson...",
     "newChat": "New chat",
     "closeTutor": "Close AI Tutor",
+    "tutorErrors": {
+      "unavailable": "AI Tutor is temporarily unavailable. Please try again in a moment.",
+      "offline": "AI Tutor is not available for this course right now.",
+      "signIn": "Your session has ended. Please sign in again.",
+      "noAccess": "You need access to this course to use AI Tutor.",
+      "notFound": "This course or lesson is not available.",
+      "tooLong": "Enter a question of up to 4,000 characters.",
+      "busy": "AI Tutor is still answering your previous question. Please wait a moment.",
+      "rateLimited": "You are asking questions too quickly. Please wait a moment and try again.",
+      "generic": "AI Tutor could not answer just now. Please try again."
+    },
     "signOut": "Sign out"
   },
   "account": {
@@ -955,7 +975,7 @@
         },
         {
           "question": "Can I download course materials?",
-          "answer": "Downloads are available only when a course provides them."
+          "answer": "No. Lessons open on the website only, and there is no download option. You can open them any time from My Learning while you have access to the course."
         }
       ]
     },
@@ -1031,6 +1051,8 @@
     "categoryEmpty": "There are no articles about this topic yet.",
     "popularEmpty": "There are no help articles yet.",
     "allArticles": "Back to popular articles",
+    "showMore": "Show {count} more",
+    "showLess": "Show fewer",
     "unavailable": "Help articles are temporarily unavailable. Here are some common answers.",
     "faqMissing": "This article is no longer available. Here are some other answers that may help.",
     "searchCount": "Articles found: {count}",
@@ -1059,7 +1081,7 @@
     "openGroup": "Open Group",
     "openStudyGroup": "Open Study Group",
     "arrangeLead": "Arrange a live study session for this Study Group",
-    "editSessionLead": "Only the date and start time can be changed. Everything else stays as members planned for.",
+    "editSessionLead": "Only the date, start time and AI Tutor switch can be changed. Everything else stays as members planned for.",
     "selectLesson": "Select Lesson",
     "relatedLesson": "Related Lesson",
     "selectStartTime": "Select start time",
@@ -1249,7 +1271,7 @@
       "course_access_required": "Valid Course access is required.",
       "course_unavailable": "This Course is no longer available, so this Study Group cannot be joined.",
       "forbidden": "You cannot do that.",
-      "session_time_only": "Only the date and start time of an upcoming Live Session can be changed.",
+      "session_time_only": "Only the date, start time and AI Tutor switch of an upcoming Live Session can be changed.",
       "not_found": "That Study Group or Live Session was not found.",
       "conflict": "The Related Course cannot be changed.",
       "session_full": "Session full.",
@@ -1267,6 +1289,7 @@
       "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
       "tutor_answering": "The AI Tutor is already answering that question.",
       "tutor_unavailable": "AI Tutor is not available right now. Try again in a minute.",
+      "tutor_offline_at_start": "AI Tutor is offline for this course, so the Live Session can’t start with it on. Open Edit Session, save it with AI Tutor off, then start again.",
       "seat_lapsed": "Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.",
       "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."
@@ -1306,7 +1329,8 @@
       "fullTitle": "This Live Session is full",
       "fullBody": "All places in this Live Session are taken. A place may free up when someone leaves.",
       "backToGroup": "Back to Study Group",
-      "enterNow": "Enter now"
+      "enterNow": "Enter now",
+      "viewSession": "View"
     }
   },
   "legal": {
@@ -1845,7 +1869,7 @@
       "handoverButton": "Contact Support",
       "checkinTitle": "Still need help?",
       "endChat": "End chat",
-      "contactPerson": "Contact a person",
+      "contactPerson": "Contact Support",
       "ended": "This chat has ended.",
       "endThanks": "Thanks for chatting. Ask again any time.",
       "situationTitle": "You might be running into:",

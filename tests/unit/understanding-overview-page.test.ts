@@ -58,7 +58,8 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     await knowledge.waitFor();assert.equal(await knowledge.getByText(labels.available,{exact:true}).count(),1);
     assert.equal(await lesson.locator('button[aria-expanded]').getByText(labels.available,{exact:true}).count(),1);
     assert.equal(await page.getByText(labels.current,{exact:true}).count(),0, 'available lessons are not all labelled as the current lesson');
-    const progress=page.getByRole('progressbar',{name:labels.progress,exact:true});assert.equal(await progress.getAttribute('aria-valuemax'),'10');assert.equal(await progress.getAttribute('aria-valuenow'),'0');
+    const completedTests=async()=> (await (await context.request.get(base+`/api/courses/${COURSE_ID}/understanding`)).json()).data.completed;
+    assert.equal(await page.getByRole('progressbar',{name:labels.progress,exact:true}).count(),0,'the current summary layout lists tests without a Study progress panel');
     const locked=page.locator('section[data-lesson-id="lesson-3"]');assert.equal(await locked.locator('[data-assessment-kind] button').count(),2);assert.equal(await locked.getByRole('button',{name:labels.start,exact:true}).count(),2);
     assert.equal((await context.request.get(base+`/api/courses/${COURSE_ID}/lessons/lesson-3/assessments/knowledge`)).status(),200);
     for(const width of [1440,1920,2560]){
@@ -101,11 +102,11 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     }
     await dialog.getByRole('heading',{name:copy.result,exact:true}).waitFor();await dialog.getByText('50%',{exact:true}).waitFor();
     await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});
-    await knowledge.getByRole('button',{name:labels.viewResult,exact:true}).waitFor();assert.equal(await knowledge.locator('[data-latest-result]').textContent(),'50%');assert.equal(await knowledge.getByText('100%',{exact:true}).count(),0);assert.equal(await progress.getAttribute('aria-valuenow'),'1');
+    await knowledge.getByRole('button',{name:labels.viewResult,exact:true}).waitFor();assert.equal(await knowledge.locator('[data-latest-result]').textContent(),'50%');assert.equal(await knowledge.getByText('100%',{exact:true}).count(),0);assert.equal(await completedTests(),1);
     await knowledge.getByRole('button',{name:labels.viewResult,exact:true}).click();await dialog.getByRole('button',{name:getMessages(locale).applicationTest.retake,exact:true}).waitFor();assert.equal(await dialog.locator('footer button').count(),1);
     const retakeBox=(await dialog.locator('footer button').boundingBox())!,dialogBox=(await dialog.boundingBox())!;assert.ok(retakeBox.x>dialogBox.x+dialogBox.width/2,'Retake is at the right of the result footer');
     await dialog.getByRole('button',{name:getMessages(locale).applicationTest.retake,exact:true}).click();await dialog.getByText('01/06',{exact:true}).waitFor();assert.equal(await dialog.getByRole('textbox').inputValue(),'');
-    await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});await page.reload();await knowledge.getByRole('button',{name:labels.continue,exact:true}).waitFor();assert.equal(await knowledge.locator('[data-latest-result]').textContent(),'50%');assert.equal(await progress.getAttribute('aria-valuenow'),'1');
+    await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});await page.reload();await knowledge.getByRole('button',{name:labels.continue,exact:true}).waitFor();assert.equal(await knowledge.locator('[data-latest-result]').textContent(),'50%');assert.equal(await completedTests(),1);
     await knowledge.getByRole('button',{name:labels.continue,exact:true}).click();await dialog.getByRole('textbox').waitFor();for(let i=0;i<6;i++){await dialog.getByRole('button',{name:copy.check,exact:true}).click();await dialog.getByRole('radio',{name:copy.wrong,exact:true}).check();await dialog.getByRole('button',{name:i===5?copy.seeResults:copy.next,exact:true}).click();}await dialog.getByRole('button',{name:copy.close,exact:true}).click();await dialog.waitFor({state:'detached'});await knowledge.getByRole('button',{name:labels.viewResult,exact:true}).waitFor();assert.equal(await knowledge.locator('[data-latest-result]').textContent(),'0%');
     await application.getByRole('button',{name:labels.start,exact:true}).click();await dialog.getByRole('textbox').fill('Actual application draft');
     await dialog.getByRole('button',{name:copy.exit,exact:true}).click();await dialog.waitFor({state:'detached'});
@@ -142,7 +143,7 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     await dialog.getByRole('button',{name:app.retake,exact:true}).click();await dialog.getByRole('textbox').waitFor();assert.equal(await dialog.getByRole('textbox').inputValue(),'');
     await dialog.getByRole('button',{name:copy.exit,exact:true}).click();await dialog.waitFor({state:'detached'});
     await page.goto(base+'/'+locale);await lesson.waitFor();
-    assert.equal(await progress.getAttribute('aria-valuenow'),'2');assert.equal(await application.locator('[data-latest-result]').textContent(),labels.strong);await application.getByRole('button',{name:labels.continue,exact:true}).waitFor();
+    assert.equal(await completedTests(),2);assert.equal(await application.locator('[data-latest-result]').textContent(),labels.strong);await application.getByRole('button',{name:labels.continue,exact:true}).waitFor();
     assert.equal(await locked.locator('[data-assessment-kind] button').count(),2);
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(originalCwd,`test-results/understanding-real/${locale}-mobile.png`),fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await context.close();

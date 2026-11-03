@@ -242,3 +242,44 @@ test("r3 server 7d: a reminder sent for an earlier Start Time is stale even when
   assert.equal(studyGroupReminderNotificationStillValid(store, "host", item(minutesFromNow(-2))), true);
   assert.equal(studyGroupReminderNotificationStillValid(store, "host", item(minutesFromNow(-20))), false, "sent before this Start Time's window: for an earlier time");
 });
+
+// FAQ grounding check 2026-11-02: a moved Start Time stored an in-site
+// "Live Session rescheduled" notice nobody could open (no inbox, and the
+// strip showed reminders only). It is now linked to its Session and shown in
+// the strip until the Session starts, to members who still plan to attend.
+test("a moved Start Time shows its notice in the strip until the member stops planning to attend", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Moved group", courseId: "course-1", about: "About the move." });
+  await service.joinGroup({ actorUserId: "member", groupId: group.id });
+  const session = await schedule(service, group.id, "Moved session", 120);
+  await service.planToAttend({ actorUserId: "member", sessionId: session.id });
+  assert.deepEqual(await service.listReminders("member"), []);
+
+  await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: minutesFromNow(240) });
+  const shown = await service.listReminders("member");
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0].kind, "rescheduled");
+  assert.equal(shown[0].sessionId, session.id);
+  assert.equal(shown[0].body, "The Start Time of Moved session has changed. Open the Study Group to see the new time.");
+  // The Host who moved it is not told.
+  assert.deepEqual(await service.listReminders("host"), []);
+
+  // A second move: still one row for the Session (the newest).
+  await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: minutesFromNow(300) });
+  assert.equal((await service.listReminders("member")).length, 1);
+
+  await service.cancelAttendance({ actorUserId: "member", sessionId: session.id });
+  assert.deepEqual(await service.listReminders("member"), []);
+});
+
+test("a rescheduled notice stops showing once the Session has started or ended", async () => {
+  const store = {
+    sessions: [{ id: "s1", groupId: "g1", status: "scheduled", startsAt: new Date(Date.now() - 60_000).toISOString() }],
+    groups: [{ id: "g1", status: "active", hostUserId: "host" }],
+    memberships: [{ groupId: "g1", userId: "member", leftAt: null }],
+    intents: [{ sessionId: "s1", userId: "member", cancelledAt: null }],
+    reminders: []
+  } as never;
+  const item = { body: "x", sessionId: "s1", kind: "rescheduled" as const };
+  assert.equal(studyGroupReminderNotificationStillValid(store, "member", item), false, "past its Start Time");
+  assert.equal(studyGroupReminderNotificationStillValid(store, "member", item, Date.now() - 120_000), true, "before its Start Time");
+});

@@ -296,6 +296,10 @@
 .help-centre-list-header p { margin: 6px 0 0; color: #7587a0; font-size: 13px; line-height: 16px; }
 .help-centre-back { display: inline-block; margin-top: 8px; color: #2566e8; font-size: 13px; font-weight: 500; text-decoration: none; }
 .help-centre-back:hover { text-decoration: underline; }
+/* "Show more" under the popular list: no frame, the .help-centre-back link look (待视觉验收). */
+.help-centre-more { display: inline-block; margin: 0 0 0 38px; padding: 0; border: 0; background: none; color: #2566e8; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.help-centre-more:hover { text-decoration: underline; }
+.help-centre-more:focus-visible { outline: 2px solid #2566e8; outline-offset: 2px; border-radius: 2px; }
 .help-centre-notice { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; background: #fff7e6; color: #8a5a00; font-size: 13px; }
 .help-centre-empty { margin: 23px 0 0; color: #405370; font-size: 14px; }
 .help-centre-articles { margin: 23px 0 0; padding: 0; list-style: none; }

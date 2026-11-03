@@ -214,7 +214,10 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
       </div>
       <span>{clock(time)} / {clock(duration)}</span>
       <div ref={volumeControl} className="la-video-volume"
-        onPointerEnter={event => { if (event.pointerType === 'mouse' && window.matchMedia('(hover: hover) and (pointer: fine)').matches) setVolumeOpen(true); }}
+        // 悬停展开用 pointermove 而不是 pointerenter：面板关闭后，指针仍停在控件上时
+        // 浏览器会补发一次 pointerenter，于是 Escape/失焦刚关上的面板立刻又弹开
+        // （video-progress 回归在慢机器上偶发失败即由此）。真实移动才展开，补发不会。
+        onPointerMove={event => { if (event.pointerType === 'mouse' && !volumeOpen && window.matchMedia('(hover: hover) and (pointer: fine)').matches) setVolumeOpen(true); }}
         onPointerLeave={event => {
           if (event.pointerType === 'mouse' && !event.currentTarget.querySelector('input')?.hasPointerCapture(event.pointerId) && !event.currentTarget.querySelector(':focus-visible')) setVolumeOpen(false);
         }}

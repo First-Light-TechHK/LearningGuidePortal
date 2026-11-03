@@ -21,6 +21,6 @@ export default async function MyLearningPage({ params }: { params: Promise<{ loc
     <AccountNav locale={locale} copy={messages.account}/>
     <OverviewDesign data={data} locale={locale}/>
     <PortalFooter locale={locale}/>
-    <OverviewModeSync userId={user.id} courses={data.courses.map(course => ({ courseId: course.courseId, mode: course.mode }))}/>
+    <OverviewModeSync userId={user.id} courses={data.syncCourses || data.courses.map(course => ({ courseId: course.courseId, mode: course.mode }))}/>
   </main>;
 }

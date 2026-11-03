@@ -292,12 +292,18 @@ test("the session page asks the entry check first; the room no longer waits or s
   assert.match(app, /if \(entry\.data\.next !== "wait"\) return;/);
   // Enter now names its reminder for a screen reader and works once at a time.
   assert.match(app, /<li role="status" key=\{item\.sessionId \?\? `\$\{item\.createdAt\}-\$\{item\.body\}`\}><span id=\{`study-group-reminder-\$\{index\}`\}>\{item\.body\}<\/span>/);
-  assert.match(app, /item\.sessionId \? <button className=\{styles\.reminderLink\} type="button" aria-describedby=\{`study-group-reminder-\$\{index\}`\} disabled=\{following !== null\} aria-busy=\{following === item\.sessionId\} onClick=\{\(\) => void followEntry\(item\.sessionId!\)\}>\{copy\.deepLink\.enterNow\}<\/button>/);
+  assert.match(app, /item\.sessionId \? <button className=\{styles\.reminderLink\} type="button" aria-describedby=\{`study-group-reminder-\$\{index\}`\} disabled=\{following !== null\} aria-busy=\{following === item\.sessionId\} onClick=\{\(\) => void followEntry\(item\.sessionId!\)\}>\{item\.kind === "rescheduled" \? copy\.deepLink\.viewSession : copy\.deepLink\.enterNow\}<\/button>/);
   // An Enter now refused (full, gone...) goes to the session page, which says
   // why; a failed request stays on the list with its error, or the two pages
   // would send the viewer back and forth (final review 2026-10-30).
   assert.match(app, /const refused = current\.ok \? await enter\(current\.data\) : current\.code;\n      if \(!refused\) return;\n      if \(!sessionRefusal\(refused\)\) \{\n        setErrorCode\(refused\);\n        return;\n      \}/);
-  assert.match(app, /if \(!entry\.ok\) \{\n        setErrorCode\(entry\.code\);\n        return;\n      \}/);
+  // A failed entry check, before any group is open, has a place of its own
+  // with Try again, instead of the page's error slot that only a group sheet
+  // or dialog shows (group.reminders.enter-now-does-nothing).
+  assert.match(app, /if \(!entry\.ok\) \{\n        setEntryError\(\{ sessionId, code: entry\.code \}\);\n        revealOnPhone\(mainRef\.current, window\.matchMedia\);\n        return;\n      \}/);
+  assert.match(app, /\{entryError \? <div className=\{styles\.panel\} role="alert"><p className=\{styles\.alert\}>\{copy\.errors\[entryError\.code as keyof typeof copy\.errors\] \|\| copy\.errors\.error\}<\/p>/);
+  assert.match(app, /onClick=\{\(\) => void followEntry\(entryError\.sessionId\)\}>\{copy\.retry\}<\/button>/);
+  assert.match(app, /href=\{roomSignInHref\(locale, entryError\.sessionId\)\}/);
 });
 
 test("the deep-link copy exists in both languages with the same keys", () => {
@@ -306,6 +312,11 @@ test("the deep-link copy exists in both languages with the same keys", () => {
   assert.equal(en.studyGroupsPage.deepLink.accessTitle, "Course access required");
   assert.equal(en.studyGroupsPage.deepLink.accessAction, "Get Course Access");
   assert.equal(zh.studyGroupsPage.deepLink.enterNow, "立即进入");
+  // A moved Start Time's notice in the strip says View, not Enter now (FAQ grounding check 2026-11-02).
+  assert.equal(en.studyGroupsPage.deepLink.viewSession, "View");
+  assert.equal(zh.studyGroupsPage.deepLink.viewSession, "查看");
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /\{item\.kind === "rescheduled" \? copy\.deepLink\.viewSession : copy\.deepLink\.enterNow\}/);
 });
 
 test("leaving the Study Group turns a member into a non-member at once: join first, no count; rejoining carries on", async () => {

@@ -16,7 +16,7 @@ export default async function SignInPage({ params, searchParams }: { params: Pro
   const locale = localeFrom(rawLocale);
   const messages = getMessages(locale);
   const providerError = oauthError === "wechat-conflict" ? messages.auth.oauthIdentityConflict : oauthError === "cancelled" ? messages.auth.oauthCancelled : oauthError === "state" ? messages.auth.oauthStateExpired : oauthError === "account-conflict" ? messages.auth.oauthAccountConflict : oauthError === "disabled" ? messages.auth.oauthAccountDisabled : oauthError === "email" ? messages.auth.oauthEmailUnverified : oauthError ? messages.auth.oauthError : undefined;
-  const safeReturnTo = normaliseReturnTo(returnTo, `/${locale}/account/my-learning`);
+  const safeReturnTo = normaliseReturnTo(returnTo, `/${locale}/portal`);
   const bindingUser = await currentEmailBindingUser();
   if (bindingUser && (!bindingUser.email || !bindingUser.emailVerifiedAt)) redirect(`/${locale}/portal/bind-email?returnTo=${encodeURIComponent(safeReturnTo)}`);
   if (bindingUser) redirect(safeReturnTo);

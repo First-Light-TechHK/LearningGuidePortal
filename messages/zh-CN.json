@@ -259,6 +259,9 @@
     "tryApplication": "尝试应用测试"
   },
   "lessonCompleted": {
+    "nextActionTitle": "接下来想做什么？",
+    "lessonLabel": "课时 {number}",
+    "returnToLearning": "返回我的学习",
     "completeCourse": "完成课程",
     "courseDescription": "选择测试来检验您的理解，或返回我的学习。",
     "cards": "20 张卡片",
@@ -339,6 +342,7 @@
     "videoMode": "视频模式",
     "textMode": "文本模式",
     "noLessonsInMode": "该模式下暂无课时。",
+    "lessonUnavailable": "该课时内容暂不可用。",
     "back": "返回课程详情",
     "outline": "课程目录",
     "deepLearning": "深度学习",
@@ -698,6 +702,11 @@
     "oauthError": "第三方登录没有完成，请重试或使用邮箱和密码。"
   },
   "learning": {
+    "textLessonEnd": {
+      "title": "本课时内容已结束",
+      "continue": "完成并继续",
+      "finish": "完成本课程"
+    },
     "title": "My Learning",
     "signInRequired": "登录后查看你的课程。",
     "noCourses": "你还没有开始课程。",
@@ -787,6 +796,17 @@
     "askTutorPlaceholder": "询问本课内容……",
     "newChat": "新对话",
     "closeTutor": "关闭 AI 导师",
+    "tutorErrors": {
+      "unavailable": "AI Tutor 暂时无法使用，请稍后再试。",
+      "offline": "本课程暂未开放 AI Tutor。",
+      "signIn": "登录已过期，请重新登录。",
+      "noAccess": "需要拥有本课程的学习权限才能使用 AI Tutor。",
+      "notFound": "找不到这门课程或这节课。",
+      "tooLong": "请输入 4,000 字以内的问题。",
+      "busy": "AI Tutor 还在回答上一个问题，请稍候。",
+      "rateLimited": "提问太频繁了，请稍等片刻再试。",
+      "generic": "AI Tutor 这次没能回答，请再试一次。"
+    },
     "signOut": "退出登录"
   },
   "account": {
@@ -955,7 +975,7 @@
         },
         {
           "question": "可以下载课程材料吗？",
-          "answer": "仅当课程提供下载时才能下载材料。"
+          "answer": "不能下载。课程只能在网站上打开，没有下载选项。在你能访问课程的期间，可以随时从“我的学习”打开。"
         }
       ]
     },
@@ -1031,6 +1051,8 @@
     "categoryEmpty": "这个主题下暂时还没有文章。",
     "popularEmpty": "暂时还没有帮助文章。",
     "allArticles": "返回热门文章",
+    "showMore": "查看更多（{count}）",
+    "showLess": "收起",
     "unavailable": "帮助文章暂时无法加载，以下是一些常见解答。",
     "faqMissing": "这篇文章已不再提供。以下是其他可能有帮助的解答。",
     "searchCount": "找到的文章：{count} 篇",
@@ -1059,7 +1081,7 @@
     "openGroup": "打开小组",
     "openStudyGroup": "打开学习小组",
     "arrangeLead": "为这个学习小组安排一节直播课",
-    "editSessionLead": "只能修改日期和开始时间，其他信息保持成员报名时的样子。",
+    "editSessionLead": "只能修改日期、开始时间和 AI Tutor 开关，其他信息保持成员计划参加时的样子。",
     "selectLesson": "选择课时",
     "relatedLesson": "相关课时",
     "selectStartTime": "选择开始时间",
@@ -1122,7 +1144,7 @@
     "confirmCancelSession": "这节直播课会从学习小组中移除。",
     "confirmCancelSessionAction": "确认取消本节",
     "leaveGroupConfirmTitle": "退出这个学习小组？",
-    "confirmLeaveGroup": "你报名参加的未开始直播课会一并取消。",
+    "confirmLeaveGroup": "你计划参加的未开始直播课会一并取消。",
     "confirmLeaveGroupAction": "确认退出",
     "sessionTitle": "直播课标题",
     "date": "日期",
@@ -1249,7 +1271,7 @@
       "course_access_required": "需要有效的课程访问权限。",
       "course_unavailable": "该课程已不再提供，无法加入这个学习小组。",
       "forbidden": "你不能进行这个操作。",
-      "session_time_only": "即将开始的直播课只能修改日期和开始时间。",
+      "session_time_only": "即将开始的直播课只能修改日期、开始时间和 AI Tutor 开关。",
       "not_found": "找不到该学习小组或直播课。",
       "conflict": "相关课程不能更改。",
       "session_full": "人数已满。",
@@ -1267,6 +1289,7 @@
       "tutor_rate_limited": "提问太频繁，请过一分钟再试。",
       "tutor_answering": "AI Tutor 已经在回答这个问题了。",
       "tutor_unavailable": "AI Tutor 现在不可用，请稍后再试。",
+      "tutor_offline_at_start": "本课程的 AI 导师暂未开放，开着 AI Tutor 无法开始直播课。请打开“编辑本节”，在 AI Tutor 关闭的状态下保存，再开始。",
       "seat_lapsed": "连接中断期间，你在直播课中的位置已失效。请等重新进入后再提问。",
       "network": "网络连接失败，请检查网络后重试。",
       "error": "出了点问题。请重试。"
@@ -1306,7 +1329,8 @@
       "fullTitle": "这节直播课人数已满",
       "fullBody": "这节直播课的名额已满。有人离开后可能会空出位置。",
       "backToGroup": "返回学习小组",
-      "enterNow": "立即进入"
+      "enterNow": "立即进入",
+      "viewSession": "查看"
     }
   },
   "legal": {
@@ -1845,7 +1869,7 @@
       "handoverButton": "联系客服",
       "checkinTitle": "还需要帮忙吗？",
       "endChat": "结束对话",
-      "contactPerson": "联系人工",
+      "contactPerson": "联系客服",
       "ended": "本次对话已结束",
       "endThanks": "感谢你的咨询，有问题随时再问。",
       "situationTitle": "你可能遇到的问题：",
