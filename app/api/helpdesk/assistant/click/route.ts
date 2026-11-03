@@ -1,5 +1,5 @@
 import { parseAssistantClick } from "@/contracts/helpdesk";
-import { idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireLearner } from "@/modules/helpdesk/http";
+import { idempotencyKey, jsonResponse, problemResponse, readJsonBody, requireAssistantFeature, requireLearner } from "@/modules/helpdesk/http";
 import { helpdeskAssistant } from "@/modules/helpdesk/runtime";
 
 export const runtime = "nodejs";
@@ -15,11 +15,15 @@ export const dynamic = "force-dynamic";
  * node verbatim with the fixed opening and closing. Neither the model nor
  * Admin is asked. Before Admin has a release a chip (with its label) goes
  * through Admin's per-FAQ path as before; a follow-up or option is 400.
- * Counts toward the learner's hourly assistant budget (429 rate_limited).
+ * Counts toward the learner's hourly assistant budget (429 rate_limited); 403 feature_unavailable when the
+ * learner's AI Support Assistant is off.
  */
 export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
+    // The same gate as a typed question (review 2026-11-03 H1): a learner whose AI Support Assistant is off
+    // (override Deny, global Off or the emergency switch) gets 403 feature_unavailable here too.
+    await requireAssistantFeature(learner);
     const key = idempotencyKey(request);
     const input = parseAssistantClick(await readJsonBody(request));
     const result = await helpdeskAssistant(request).click(learner, input, key);

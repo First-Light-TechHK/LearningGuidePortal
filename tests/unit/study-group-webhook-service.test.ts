@@ -61,13 +61,14 @@ async function webhookFixture(options: { gateway?: LiveKitRoomGateway } = {}): P
   const calls: WebhookFixture["calls"] = { updates: 0, insertAttempts: 0, marks: [] };
   const access = new Set(["host:course-1", "member:course-1"]);
   const repository: StudyGroupRepository = {
-    read: () => base.read(),
+    read: (scope) => base.read(scope),
     appendTokenLog: (line) => base.appendTokenLog(line),
-    update: (mutate) => {
+    update: (mutate, scope) => {
       calls.updates += 1;
       if (hooks.updateError) return Promise.reject(hooks.updateError);
-      return base.update(mutate);
+      return base.update(mutate, scope);
     },
+    pruneHistory: (input) => base.pruneHistory(input),
     renewSeat: (input) => base.renewSeat(input),
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),

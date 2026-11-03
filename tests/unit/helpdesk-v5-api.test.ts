@@ -200,3 +200,26 @@ test("v5 session end: own sessions only, the first end wins", async () => {
   assert.notEqual(after.turn.sessionId, sessionId);
   assert.equal(after.turn.turnIndex, 1);
 });
+
+test("H1 (review 2026-11-03): a click is behind the same AI Support Assistant switch as a question: Deny for the learner is 403 feature_unavailable, nothing is answered or stored", async (t) => {
+  const store = await import("../../services/productStore");
+  const { clearFeatureCache } = await import("../../modules/student-management/service");
+  const stranger = (await store.getUserBySessionToken(strangerCookie))!;
+  const deny = async (on: boolean) => {
+    await store.editProductData((data) => {
+      const state = (data.featureAccess ||= { globals: [], overrides: [], version: 0 });
+      state.overrides = state.overrides.filter((row) => !(row.userId === stranger.id && row.feature === "ai_support_assistant"));
+      if (on) state.overrides.push({ userId: stranger.id, feature: "ai_support_assistant", value: "deny", reason: "test", updated: { at: new Date().toISOString(), byId: "emp", byName: "Ops" } });
+    });
+    clearFeatureCache(stranger.id);
+  };
+  const { sessionId } = await (await start({ locale: "en-GB" }, strangerCookie)).json() as { sessionId: string };
+  assert.ok(sessionId);
+  const before = adminCalls.length;
+  await deny(true);
+  t.after(() => deny(false));
+  await problem(await click({ locale: "en-GB", nodeId: NODE.choice, via: "starter", sessionId }, { cookie: strangerCookie }), 403, "feature_unavailable");
+  assert.equal(adminCalls.length, before, "no Admin call for a refused click");
+  await deny(false);
+  assert.equal((await click({ locale: "en-GB", nodeId: NODE.choice, via: "starter", sessionId }, { cookie: strangerCookie })).status, 200, "allowed again once the override is gone");
+});

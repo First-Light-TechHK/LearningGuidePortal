@@ -1,4 +1,5 @@
 import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
+import { parseCreateGroupBody } from "@/modules/group-study/parsers";
 import { studyGroupService } from "@/modules/group-study/runtime";
 
 export async function GET(request: Request) {
@@ -40,13 +41,8 @@ export async function POST(request: Request) {
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   try {
-    const body = await readJsonObject<{ title?: string; courseId?: string; about?: string }>(request);
-    return studyGroupData(await studyGroupService().createGroup({
-      actorUserId: user.id,
-      title: body.title || "",
-      courseId: body.courseId || "",
-      about: body.about || ""
-    }));
+    const body = parseCreateGroupBody(await readJsonObject(request));
+    return studyGroupData(await studyGroupService().createGroup({ actorUserId: user.id, ...body }));
   } catch (error) {
     return studyGroupFailure(error);
   }

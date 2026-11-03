@@ -516,3 +516,32 @@ test("the session entry check: a signed-out visitor is only told to sign in; oth
   const unknown = (await (await call(getEntry, "http://localhost/api/study-groups/sessions/nope/entry", undefined, memberToken, { sessionId: "nope" })).json()).data;
   assert.equal(unknown.next, "unavailable");
 });
+
+test("M1/L2 (review 2026-11-03): aiTutorEnabled must be a boolean on schedule and on edit; other fields are typed by the parser, not by the first property read", async () => {
+  const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Typed", courseId: "api-course", about: "Parsers in front of the service." }, token);
+  const groupId = (await created.json()).data.id as string;
+  const startsAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const base = { title: "Typed session", startsAt, durationSeconds: 1800, maxParticipants: 4 };
+  // JSON null reads as "not sent" (parsers.ts); anything else that is not a boolean is refused.
+  for (const bad of ["true", 1, "yes", 0, {}]) {
+    const response = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, { ...base, aiTutorEnabled: bad }, token, { groupId });
+    assert.equal(response.status, 400, `schedule with aiTutorEnabled=${JSON.stringify(bad)}`);
+    assert.equal((await response.json()).code, "validation");
+  }
+  const scheduled = await call(postSession, `http://localhost/api/study-groups/${groupId}/sessions`, { ...base, aiTutorEnabled: false }, token, { groupId });
+  assert.equal(scheduled.status, 200, await scheduled.clone().text());
+  const sessionId = (await scheduled.json()).data.id as string;
+  const patched = await call(patchSession, `http://localhost/api/study-groups/sessions/${sessionId}`, { groupId, aiTutorEnabled: "true" }, token, { sessionId }, "PATCH");
+  assert.equal(patched.status, 400);
+  assert.equal((await patched.json()).code, "validation");
+  const stored = JSON.parse(await readFile(path.join(directory, "data", "knowledge_system", "learning_guide", "study-group", "study-group.json"), "utf8")) as { sessions: Array<{ id: string; aiTutorEnabled?: boolean }> };
+  assert.equal(stored.sessions.find((item) => item.id === sessionId)?.aiTutorEnabled, false, "a refused edit changes nothing");
+  // Non-object bodies and wrong shapes are 400 validation, never a 500.
+  for (const body of [[], "text", { title: 7, courseId: "api-course", about: "x" }]) {
+    const response = await call(postGroup, "http://localhost/api/study-groups", body, token);
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.equal((await response.json()).code, "validation");
+  }
+  const okPatch = await call(patchSession, `http://localhost/api/study-groups/sessions/${sessionId}`, { groupId, aiTutorEnabled: true }, token, { sessionId }, "PATCH");
+  assert.equal(okPatch.status, 200, await okPatch.clone().text());
+});
