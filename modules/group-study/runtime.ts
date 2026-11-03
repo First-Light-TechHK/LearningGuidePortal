@@ -307,6 +307,12 @@ export function studyGroupService() {
     notify: async (input) => {
       await recordUserNotification(input.userId, input.title, input.body, input.sessionId, input.copies);
     },
+    // Student Management (owner 2026-11-03): a deactivated account keeps its
+    // memberships and plans but is not notified.
+    accountActive: async (userId) => {
+      const user = await getUserById(userId);
+      return Boolean(user) && !user?.deactivatedAt && user?.status !== "disabled";
+    },
     // The reminders view reads the pending "Live Session reminder" rows and
     // re-checks each one against the current store through the module's own
     // validity rule: the read-side backstop behind the cancelling actions'
