@@ -129,7 +129,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                           <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
-                        <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
+                        <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={{ ...detail, start: page.openedLearningPointCount > 0 ? detail.start : detail.startLearning }} cta={page.cta} actionLessonId={page.actionLessonId} />
                       </article>;
                     })}
                   </div>

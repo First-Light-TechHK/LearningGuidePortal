@@ -140,7 +140,7 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       await mount(type, true, type);
       assert.equal(await page.getByRole("button", { name: messages.learning.completeLesson, exact: true }).count(), 0);
       assert.equal(await page.locator(".preview-progress button").count(), 0);
-      assert.equal(await page.getByRole("button", { name: messages.learning.nextLesson, exact: true }).isVisible(), true);
+      assert.equal(await page.getByRole("button", { name: messages.videoCompletion.markComplete, exact: true }).isVisible(), true);
       if (type === "text") await page.screenshot({ path: `test-results/lesson-tools/${locale}-text.png`, fullPage: true });
     }
     assert.deepEqual(errors, []);

@@ -7,8 +7,8 @@ import { getMessages } from "../../lib/i18n/messages";
 
 test("Stripe upgrade confirmation shows proration, unchanged term and renewal, localised retry and one consented submission", async () => {
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {SubscriptionConfirmation} from './components/portal/SubscriptionConfirmation';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>root.render(<SubscriptionConfirmation key={props.locale} {...props} copy={getMessages(props.locale).portal.subscriptionConfirmation}/>);`, resolveDir: process.cwd(), loader: "tsx" }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "navigation", setup(b) {
-    b.onResolve({ filter: /^next\/(navigation|image)$/ }, args => ({ path: args.path, namespace: "mock" }));
-    b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader:"tsx",resolveDir:process.cwd(),contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
+    b.onResolve({ filter: /^next\/(navigation|image|link)$/ }, args => ({ path: args.path, namespace: "mock" }));
+    b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader:"tsx",resolveDir:process.cwd(),contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
   } }] });
   await mkdir("test-results/stripe-upgrade-confirmation", { recursive: true });
   const browser = await chromium.launch();
@@ -18,7 +18,7 @@ test("Stripe upgrade confirmation shows proration, unchanged term and renewal, l
     await page.route("http://upgrade.test/**", async route => {
       if (new URL(route.request().url()).pathname === "/api/purchase/checkout") {
         requests.push(route.request().postDataJSON());
-        return route.fulfill({ status: reject ? 409 : 200, json: reject ? { code: "quote_expired" } : { checkoutUrl: `http://upgrade.test/${locale}/account/my-learning/subscription?orderId=order-native` } });
+        return route.fulfill({ status: reject ? 409 : 200, json: reject ? { code: "upgrade_in_progress", blockingOrderId: "order-blocked" } : { checkoutUrl: `http://upgrade.test/${locale}/account/my-learning/subscription?orderId=order-native` } });
       }
       return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
     });
@@ -46,7 +46,8 @@ test("Stripe upgrade confirmation shows proration, unchanged term and renewal, l
     await submit.evaluate((e: HTMLButtonElement) => { e.click(); e.click(); });
     await page.getByRole("alert").waitFor();
     assert.equal(requests.length, 1);
-    assert.equal(await page.getByRole("alert").textContent(), copy.paymentErrors.quote_expired);
+    assert.equal(await page.getByRole("alert").textContent(), copy.paymentErrors.upgrade_in_progress);
+    assert.equal(await page.getByRole("link", { name: copy.orderManagement.viewOrders }).getAttribute("href"), `/${locale}/account/my-learning/subscription?orderId=order-blocked#order-order-blocked`);
     assert.deepEqual(requests[0], { quoteId: "quote-native", locale, consents: { renewal: true, terms: true, refund: true } });
     reject = false; await submit.click();
     await page.waitForURL(`**/${locale}/account/my-learning/subscription?orderId=order-native`);

@@ -30,7 +30,7 @@ export type PaymentDiagnosticReason = "upgrade_stripe_mode_required" | "upgrade_
   | "upgrade_checkout_missing" | "upgrade_checkout_mismatch" | "upgrade_checkout_unavailable";
 
 export class PaymentError extends Error {
-  constructor(public readonly code: "price_unavailable" | "quote_expired" | "payment_unavailable" | "invalid_request" | "already_subscribed" | "upgrade_unavailable" | "upgrade_in_progress" | "origin_mismatch" | "consent_required", public readonly status = 400, public readonly diagnosticReason?: PaymentDiagnosticReason) {
+  constructor(public readonly code: "price_unavailable" | "quote_expired" | "payment_unavailable" | "invalid_request" | "already_subscribed" | "upgrade_unavailable" | "upgrade_in_progress" | "payment_pending" | "origin_mismatch" | "consent_required", public readonly status = 400, public readonly diagnosticReason?: PaymentDiagnosticReason, public readonly blockingOrderId?: string) {
     super(code);
   }
 }

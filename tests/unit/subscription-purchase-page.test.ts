@@ -10,6 +10,10 @@ test("owned categories and course terms cannot be selected or submitted in eithe
   const bundle = await build({
     stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PricingPlans} from './components/portal/PricingPlans';import {PurchasePanel} from './components/portal/PurchasePanel';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.direct?<PurchasePanel key={p.key} {...p} copy={{buy:getMessages(p.locale).pricingDesign.subscribe,choosePlan:getMessages(p.locale).learning.choosePlan,startTrial:getMessages(p.locale).learning.startTrial}}/>:<main className="portal-page pricing-design-page"><section className="pricing-design-main"><PricingPlans key={p.key} {...p} copy={getMessages(p.locale).pricingDesign}/></section></main>));`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
+    plugins: [{ name: "link", setup(b) {
+      b.onResolve({ filter: /^next\/link$/ }, args => ({ path: args.path, namespace: "mock" }));
+      b.onLoad({ filter: /.*/, namespace: "mock" }, () => ({ loader: "tsx", resolveDir: process.cwd(), contents: "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}" }));
+    } }],
   });
   const plans = ["European Humanities", "Chinese Humanities", "Science"].flatMap(category => [6, 12].map(term => ({ id: `${category}-${term}`, name: `${category} ${term}`, courseId: "*", scope: "category", scopeId: category, device: "pc", termMonths: term, currency: "usd", amountMinor: term === 6 ? 3900 : 7800, alreadySubscribed: category !== "Chinese Humanities" })));
   plans.push(...[6, 12].map(term => ({ id: `everything-${term}`, name: `Everything ${term}`, courseId: "*", scope: "everything", scopeId: "*", device: "pc", termMonths: term, currency: "usd", amountMinor: 9900, alreadySubscribed: false })));

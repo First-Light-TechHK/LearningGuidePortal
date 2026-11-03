@@ -1,4 +1,83 @@
 {
+  "orderManagement": {
+    "title": "Orders to resolve",
+    "history": "Closed orders",
+    "orderNumber": "Order number",
+    "created": "Created",
+    "deadline": "Pay before",
+    "checked": "Last checked",
+    "months": "{count} months",
+    "resume": "Continue payment",
+    "cancel": "Cancel order",
+    "check": "Check payment status",
+    "checking": "Checking…",
+    "support": "Contact support",
+    "viewPlans": "View plans",
+    "viewOrders": "View order",
+    "refresh": "Refresh orders",
+    "loading": "Loading orders…",
+    "empty": "You have no orders to resolve.",
+    "cancelTitle": "Cancel this order?",
+    "cancelDescription": "This closes this purchase or upgrade payment. Your existing active subscription remains in place. A payment already completed will be checked instead.",
+    "confirmCancel": "Cancel order",
+    "keep": "Keep order",
+    "close": "Close",
+    "retry": "Try again",
+    "blocked": "An unfinished order needs to be resolved before this purchase or upgrade can continue.",
+    "notCanceled": "The order is still open. Check its status or try canceling again.",
+    "notResumed": "Payment is not available for this order. Check the status shown below.",
+    "updated": "Payment status updated.",
+    "states": {
+      "unverified": "Awaiting status check",
+      "awaiting_payment": "Awaiting payment",
+      "processing": "Payment processing",
+      "synchronising": "Payment confirmed — updating subscription",
+      "unavailable": "Payment status unavailable",
+      "paid": "Paid",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "expired": "Expired",
+      "refunded": "Refunded"
+    },
+    "kinds": {
+      "purchase": "Purchase",
+      "trial_activation": "Trial activation",
+      "upgrade": "Upgrade"
+    },
+    "reasons": {
+      "provider_unavailable": "We could not reach the payment provider. Check again before placing another order.",
+      "identity_mismatch": "We could not verify this payment. Contact support with the order number.",
+      "missing_payment": "The payment reference is unavailable. Contact support with the order number.",
+      "fulfilment_pending": "Your payment is confirmed. We are updating your subscription; check again shortly.",
+      "payment_already_completed": "Payment completed before the cancellation could finish.",
+      "payment_still_open": "The payment is still open; cancellation was not completed."
+    },
+    "errors": {
+      "invalid_request": "The order request is invalid.",
+      "not_found": "Order not found.",
+      "unauthenticated": "Sign in to manage your orders.",
+      "forbidden_origin": "Refresh this page and try again.",
+      "payment_unavailable": "Orders are temporarily unavailable. Please try again.",
+      "forbidden": "Course Manager/Operator access is required."
+    },
+    "invoice": "Stripe Invoice",
+    "activityActions": {
+      "check_payment": "Check payment",
+      "resume_payment": "Resume payment",
+      "cancel_payment": "Cancel payment",
+      "refund": "Refund",
+      "resynchronise": "Synchronise"
+    },
+    "activityResults": {
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "processing": "Processing"
+    },
+    "actors": {
+      "learner": "Learner",
+      "operator": "Course Manager/Operator"
+    }
+  },
   "orderReceipt": {
     "title": "Learning Guide receipt",
     "plan": "Course plan",
@@ -1709,7 +1788,8 @@
     "origin_mismatch": "The checkout address does not match this website's configuration. Please use the configured website address or contact support.",
     "consent_required": "Please select all purchase confirmation options before continuing.",
     "checkAgain": "Check payment status",
-    "upgrade_in_progress": "An upgrade payment is in progress. Please complete or resolve it before changing subscriptions."
+    "payment_pending": "You have an unfinished order for this product. Continue its payment or cancel it before purchasing again.",
+    "upgrade_in_progress": "You have an unfinished purchase or upgrade payment. Resolve it before changing subscriptions."
   },
   "helpdesk": {
     "pageTitle": "Contact Support",

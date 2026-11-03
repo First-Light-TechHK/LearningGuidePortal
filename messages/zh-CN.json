@@ -1,4 +1,83 @@
 {
+  "orderManagement": {
+    "title": "待处理订单",
+    "history": "已关闭订单",
+    "orderNumber": "订单号",
+    "created": "创建时间",
+    "deadline": "支付截止时间",
+    "checked": "最近查询时间",
+    "months": "{count} 个月",
+    "resume": "继续付款",
+    "cancel": "取消订单",
+    "check": "查询支付状态",
+    "checking": "正在查询…",
+    "support": "联系支持",
+    "viewPlans": "查看订阅方案",
+    "viewOrders": "查看订单",
+    "refresh": "刷新订单",
+    "loading": "正在加载订单…",
+    "empty": "您没有待处理订单。",
+    "cancelTitle": "确认取消这笔订单？",
+    "cancelDescription": "这将关闭本次购买或升级付款，您当前已生效的订阅继续保留。如果付款已经完成，系统会查询并同步实际结果。",
+    "confirmCancel": "取消订单",
+    "keep": "保留订单",
+    "close": "关闭",
+    "retry": "重试",
+    "blocked": "您有一笔尚未完成的订单，请先处理该订单，再继续购买或升级。",
+    "notCanceled": "订单仍然开放，请查询支付状态或重试取消。",
+    "notResumed": "这笔订单目前无法继续付款，请查看下方最新状态。",
+    "updated": "支付状态已更新。",
+    "states": {
+      "unverified": "待核实支付状态",
+      "awaiting_payment": "待支付",
+      "processing": "支付处理中",
+      "synchronising": "已确认付款，正在更新订阅",
+      "unavailable": "暂时无法确认支付状态",
+      "paid": "已支付",
+      "failed": "支付失败",
+      "canceled": "已取消",
+      "expired": "已过期",
+      "refunded": "已退款"
+    },
+    "kinds": {
+      "purchase": "购买",
+      "trial_activation": "激活试用",
+      "upgrade": "升级"
+    },
+    "reasons": {
+      "provider_unavailable": "暂时无法连接支付服务，请重新查询后再发起其他购买。",
+      "identity_mismatch": "无法核实这笔付款，请提供订单号联系支持。",
+      "missing_payment": "暂时无法取得付款关联信息，请提供订单号联系支持。",
+      "fulfilment_pending": "付款已确认，正在更新您的订阅，请稍后重新查询。",
+      "payment_already_completed": "取消操作完成前，付款已经成功。",
+      "payment_still_open": "付款仍然开放，本次取消尚未完成。"
+    },
+    "errors": {
+      "invalid_request": "订单请求无效。",
+      "not_found": "未找到订单。",
+      "unauthenticated": "请先登录后管理订单。",
+      "forbidden_origin": "请刷新页面后重试。",
+      "payment_unavailable": "暂时无法获取订单，请稍后重试。",
+      "forbidden": "需要 Course Manager/Operator 权限。"
+    },
+    "invoice": "Stripe 账单",
+    "activityActions": {
+      "check_payment": "查询付款",
+      "resume_payment": "继续付款",
+      "cancel_payment": "取消付款",
+      "refund": "退款",
+      "resynchronise": "同步状态"
+    },
+    "activityResults": {
+      "succeeded": "已完成",
+      "failed": "失败",
+      "processing": "处理中"
+    },
+    "actors": {
+      "learner": "学员",
+      "operator": "Course Manager/Operator"
+    }
+  },
   "orderReceipt": {
     "title": "Learning Guide 收据",
     "plan": "课程方案",
@@ -1709,7 +1788,8 @@
     "origin_mismatch": "当前支付来源地址与网站配置不一致，请使用配置的网站地址访问或联系支持。",
     "consent_required": "请勾选全部购买确认选项后继续。",
     "checkAgain": "重新查询支付状态",
-    "upgrade_in_progress": "升级付款正在处理中，请先完成或处理该付款，再更改订阅。"
+    "payment_pending": "您已有该产品的未完成订单，请继续付款或取消该订单后再购买。",
+    "upgrade_in_progress": "您有尚未完成的购买或升级付款，请先处理该订单，再更改订阅。"
   },
   "helpdesk": {
     "pageTitle": "联系客服",

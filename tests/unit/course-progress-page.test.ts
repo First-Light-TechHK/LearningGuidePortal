@@ -6,7 +6,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("text points share continuous anchors, track scroll and resume, and preserve Next Lesson completion", async () => {
+test("text points share continuous anchors, track scroll and resume, and preserve Mark complete behaviour", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room?<LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/>:<PreviewLessonView key={props.key} {...props}/>));` },
     bundle: true, write: false, outfile: "progress.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
@@ -51,16 +51,16 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.locator('[data-text-point-id="t3"] .la-prose').first().waitFor();
     assert.equal(await reader.locator("[data-text-point-id]").count(), 3, "all text points share the same reading surface");
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    assert.equal(await page.locator('[data-text-completion]').getAttribute('data-revealed'),'false','long lessons do not reveal the card before reaching its end');
+    assert.equal(await page.locator('[data-text-completion]').getAttribute('data-on-surface'),'true','completion is available while the reading surface is visible');
     await reader.evaluate(element => { element.dataset.identity = "persistent-reader"; });
-    await Promise.all([waitFor(body => body.contentId === "t3"), reader.evaluate(element => { element.scrollTop = element.scrollHeight; })]);
+    await Promise.all([waitFor(body => body.contentId === "t3"), reader.evaluate(element => { window.scrollBy(0, element.querySelector('[data-text-point-id="t3"]')!.getBoundingClientRect().top - 12); })]);
     await page.waitForFunction(() => document.querySelector('button[aria-current="step"]')?.textContent?.includes("Reading 3"));
     await Promise.all([waitFor(body => body.contentId === "t2"), reader.evaluate(element => {
       const target = element.querySelector('[data-text-point-id="t2"]')!;
-      element.scrollTop += target.getBoundingClientRect().top - element.getBoundingClientRect().top - 12;
+      window.scrollBy(0, target.getBoundingClientRect().top - 12);
     })]);
     await page.waitForFunction(() => document.querySelector('button[aria-current="step"]')?.textContent?.includes("Reading 2"));
-    await Promise.all([waitFor(body => body.contentId === "t1"), reader.evaluate(element => { element.scrollTop = 0; })]);
+    await Promise.all([waitFor(body => body.contentId === "t1"), reader.evaluate(element => { window.scrollBy(0, element.getBoundingClientRect().top - 12); })]);
 
     assert.equal(await page.getByRole("button", { name: getMessages(locale).learning.completeLesson, exact: true }).count(), 0, "text lessons do not offer manual completion");
     await Promise.all([waitFor(body => body.contentId === "t3"), page.getByRole("button", { name: "1.3 Reading 3", exact: true }).click()]);
@@ -71,7 +71,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.getByRole("button", { name: "1.1 Reading 1", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("[data-text-reader]")!.scrollTop === 0);
     await mkdir("test-results/text-completion", {recursive:true});
-    await reader.evaluate(element => { const target = element.querySelector('[data-text-point-id="t2"]')!; element.scrollTop += target.getBoundingClientRect().top - element.getBoundingClientRect().top - 160; });
+    await reader.evaluate(element => { const target = element.querySelector('[data-text-point-id="t2"]')!; window.scrollBy(0, target.getBoundingClientRect().top - 160); });
     await page.screenshot({path:`test-results/text-completion/${locale}-continuous-desktop.png`,fullPage:true});
     await page.setViewportSize({width:390,height:844});
     await page.getByRole("button", {name:"1.2 Reading 2",exact:true}).click();
@@ -80,15 +80,14 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.screenshot({path:`test-results/text-completion/${locale}-continuous-mobile.png`,fullPage:true});
     await page.setViewportSize({width:1440,height:1100});
     await page.getByRole("button", {name:"1.1 Reading 1",exact:true}).click();
-    const next = page.getByRole("button", { name: getMessages(locale).learning.textLessonEnd.continue , exact: true });
+    const next = page.getByRole("button", { name: getMessages(locale).videoCompletion.markComplete , exact: true });
     await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
     await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='true');
-    await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-revealed')==='true');
+    await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-on-surface')==='true');
     assert.equal(requests.filter(body=>body.completeLesson).length,0,'reaching the end never automatically completes a lesson');
     const bar=page.locator('[data-text-completion]');
-    const headingBox=(await bar.locator('h2').boundingBox())!,buttonBox=(await next.boundingBox())!;
-    assert.ok(buttonBox.x>=headingBox.x+headingBox.width,'the completion button stays alongside the message');
-    assert.ok(Math.abs(headingBox.y+headingBox.height/2-buttonBox.y-buttonBox.height/2)<2,'message and action share a horizontal row');
+    assert.equal(await bar.locator('h2,p').count(),0,'the current floating control contains only its action');
+    assert.equal(await next.isEnabled(),true);
     assert.ok((await bar.boundingBox())!.height<=70,'desktop completion bar stays compact');
     await page.setViewportSize({width:390,height:844});
     await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
@@ -98,10 +97,10 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.setViewportSize({width:1440,height:1100});
     await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
     await page.screenshot({path:`test-results/text-completion/${locale}-end-card-desktop.png`,fullPage:true});
-    await reader.evaluate(element=>element.scrollTop=0);
+    await reader.evaluate(element=>window.scrollBy(0,element.getBoundingClientRect().top-12));
     await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='false');
-    await page.locator('[data-text-completion]').waitFor({state:'hidden'});
-    assert.equal(await page.locator('[data-text-completion]').getAttribute('inert'),'','hidden completion cannot receive keyboard focus');
+    await next.waitFor({state:'visible'});
+    assert.equal(await bar.getAttribute('inert'),null,'visible completion remains keyboard reachable');
     await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
     await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='true');
     await page.emulateMedia({reducedMotion:'reduce'});
@@ -118,7 +117,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     assert.equal(await page.evaluate(() => (window as any).destination), undefined, "navigation waits for successful save");
     assert.equal(await page.getByRole("dialog").count(),0,"completion cannot appear before the save succeeds");
     release!();hold=false;await page.getByRole("dialog").waitFor();
-    await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+    await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
     assert.equal(await page.evaluate(() => (window as any).destination),undefined,"successful save opens the dialog before navigation");
     assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0,"text completion has no inline progress or completion status");
     assert.equal(requests.filter(body=>body.completeLesson).at(-1).learningMode,"text");
@@ -134,13 +133,13 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     for(const room of [false,true])for(const type of ["text","pdf","legacy"]){
       await page.evaluate(props=>{delete (window as any).destination;(window as any).mount(props);},{key:`${room}-${type}`,room,locale,entitled:true,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:2,body:"Legacy reading",contents:type==="legacy"?undefined:[{id:"reading",type,title:"Reading",mode:"lecture",html:"<p>Text content</p>",url:"/reading.pdf",nodes:[]}]},outline:[{id:"lesson",title:"Lesson",number:"01",href:"/lesson"}],initialCompleted:false,poster:"",nextHref:null});
       assert.equal(await page.getByRole("button",{name:getMessages(locale).learning.completeLesson,exact:true}).count(),0);
-      await page.getByRole("button",{name:room?getMessages(locale).learning.nextLesson:getMessages(locale).learning.textLessonEnd.finish,exact:true}).click();await page.getByRole("dialog").waitFor();
-      await page.getByRole("dialog").getByRole("heading",{name:locale==="en-GB"?"Complete Course":"完成课程",exact:true}).waitFor();
-      assert.equal(await page.getByRole("dialog").getByText(getMessages(locale).lessonCompleted.courseDescription,{exact:true}).count(),1);
+      await page.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true}).click();await page.getByRole("dialog").waitFor();
+      await page.getByRole("dialog").getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
+      assert.match(await page.getByRole("dialog").locator("#lesson-completed-description").textContent() || "",/Lesson/);
       assert.equal(await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),0,"final Lesson never offers an unavailable next Lesson in the completion dialog");
       assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0,"text completion has no inline progress or completion status");
       if(type==="text"&&!room){await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/text-completion/${locale}-mobile.png`,fullPage:true});assert.equal(await page.getByRole("dialog").evaluate(e=>e.getBoundingClientRect().right>innerWidth),false);await page.setViewportSize({width:1440,height:1100});}
-      await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.completeCourse,exact:true}).click();
+      await page.getByRole("dialog").getByRole("button",{name:new RegExp(getMessages(locale).lessonCompleted.completeCourse)}).click();
       await page.waitForFunction(expected=>(window as any).destination===expected,`/${locale}/account/my-learning`);
     }
     const restoredProps={key:"restored",locale,entitled:true,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:2,body:"",contents:[{id:"reading",type:"text",title:"Reading",mode:"lecture",html:"<p>Saved text</p>",nodes:[]}]},outline:[{id:"lesson",title:"Lesson",number:"01",href:"/lesson"}],initialCompleted:true,completedContentIds:["reading"],poster:"",nextHref:"/next"};
@@ -149,13 +148,13 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.evaluate(props=>(window as any).mount(props),{...restoredProps,key:"video-complete-only",completedContentIds:["video"]});
     assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0,"video completion cannot complete text");
     await page.evaluate(props=>(window as any).mount(props),{...restoredProps,key:"preview",entitled:false});
-    assert.equal(await page.getByRole("button",{name:getMessages(locale).learning.nextLesson,exact:true}).count(),0,"unentitled previews cannot complete text");
+    assert.equal(await page.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true}).count(),0,"unentitled previews cannot complete text");
     assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0);
     await page.evaluate(props => (window as any).mount(props), {...restoredProps, key:"resume-middle", initialContentId:"t2", lesson:{...restoredProps.lesson,contents}});
     await page.locator('[data-text-point-id="t2"] .la-prose').first().waitFor();
     await page.waitForFunction(() => {
       const reader = document.querySelector("[data-text-reader]")!, point = reader.querySelector('[data-text-point-id="t2"]')!;
-      return Math.abs(point.getBoundingClientRect().top - reader.getBoundingClientRect().top - 12) < 2;
+      return Math.abs(point.getBoundingClientRect().top - 12) < 2;
     }, undefined, {timeout:3000}).catch(async error => {
       throw new Error(JSON.stringify(await page.evaluate(() => {
         const reader = document.querySelector("[data-text-reader]")!;

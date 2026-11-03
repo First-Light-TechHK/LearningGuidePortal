@@ -1,0 +1,26 @@
+.orders { margin:0 0 32px; color:#1a2945; }
+.heading { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+.heading h2 { margin:0 0 20px; font-size:18px; font-weight:600; line-height:26px; }
+.heading h3 { margin:0; font-size:15px; font-weight:600; line-height:22px; overflow-wrap:anywhere; }
+.heading p { margin:4px 0 12px; font-size:13px; color:#64748b; }
+.heading > strong { font-size:18px; line-height:24px; }
+.list { display:grid; gap:16px; }
+.card { min-width:0; padding:24px; border:1px solid #dbe3f0; border-radius:10px; background:#fff; scroll-margin-top:90px; }
+.status { display:block; font-size:14px; line-height:22px; }
+.card[data-state=awaiting_payment] .status { color:#b26b05; }
+.card[data-state=unavailable] .status,.card[data-state=failed] .status { color:#b42318; }
+.card dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; margin:16px 0; font-size:13px; line-height:20px; }
+.card dt { color:#64748b; }
+.card dd { margin:0; overflow-wrap:anywhere; }
+.explanation { font-size:13px; line-height:21px; }
+.actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; margin-top:16px; }
+.actions a,.actions button,.heading > button { padding:0; border:0; background:none; color:#1660d8; font-size:13px; font-weight:600; line-height:22px; cursor:pointer; text-decoration:none; }
+.actions button:disabled,.heading > button:disabled { opacity:.5; cursor:wait; }
+.actions a:focus-visible,.actions button:focus-visible,.heading > button:focus-visible { outline:2px solid #1660d8; outline-offset:4px; }
+.history { margin-top:20px; }
+.history > summary { cursor:pointer; font-size:14px; margin-bottom:16px; }
+.dialog { max-width:480px; width:calc(100% - 32px); padding:28px; border:1px solid #dbe3f0; border-radius:10px; color:#1a2945; }
+.dialog::backdrop { background:rgb(21 35 58 / 45%); }
+.dialog h2 { margin:0 0 12px; font-size:20px; }
+.dialog p { margin:0; font-size:14px; line-height:24px; }
+@media(max-width:600px) { .card { padding:20px; } .card dl { grid-template-columns:1fr; } .actions { gap:12px 16px; } }

@@ -166,18 +166,19 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
           openFailure=failure;
           await mount(`silent-${entitled}-${failure}`,entitled);
           await page.locator("video.la-lesson-video").waitFor();
-          const saved=failure==="http"
+          const beforeEvents=studyEvents.length;
+          const saved=!entitled ? null : failure==="http"
             ? page.waitForEvent("response",event=>event.url().endsWith("/api/study/preview"))
             : page.waitForEvent("requestfailed",event=>event.url().endsWith("/api/study/preview"));
           await page.locator("video.la-lesson-video").evaluate(video=>{
             video.dispatchEvent(new Event("error"));
             video.dispatchEvent(new Event("play"));
           });
-          await saved;await page.waitForLoadState("networkidle");
+          if(saved)await saved;await page.waitForLoadState("networkidle");
           assert.equal(await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).count(),0,"unavailable media has no notice");
           assert.equal(await page.getByText(getMessages(locale).overviewDesign.previewSaveError,{exact:true}).count(),0,"failed background progress saves have no notice");
           assert.equal(await page.locator(".la-content-player [role=status],.la-content-player [role=alert],.preview-progress").count(),0,"no feedback block is rendered in or below the player");
-          assert.ok(studyEvents.some(event=>event.body.event==="open" && event.body.contentId==="video"),"progress still saves in the background");
+          assert.equal(studyEvents.length>beforeEvents,entitled,"only entitled playback saves progress in the background");
         }
       }
       const controls=page.locator(".la-video-controls");

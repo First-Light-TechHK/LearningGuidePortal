@@ -88,7 +88,7 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
   }
   if (!visible) return null;
   return <><div ref={card} className={variant === "card" ? styles.card : variant === "inline" ? styles.inline : styles.row} data-text-completion data-at-end={atEnd} data-on-surface={onSurface} inert={variant === "card" && !onSurface ? true : undefined}>
-    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{variant !== "row" ? <>{busy ? messages.learning.processing : messages.lessonCompleted.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.lessonCompleted.markComplete}</button>
+    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{variant !== "row" ? <>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
     {error && <p role="alert">{error}</p>}
   </div>
     {dialogOpen && <LessonCompletedDialog nextLesson={nextLesson} isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}

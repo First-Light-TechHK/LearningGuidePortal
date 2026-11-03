@@ -48,14 +48,15 @@ export function OrderManager({ copy, locale = "en-GB" }: { copy: Copy; locale?: 
     return false;
   }
   useEffect(() => { void load(); return () => { ++version.current; }; }, [copy.error]);
-  async function action(orderId: string, nextAction: "refund" | "resynchronise") {
+  async function action(orderId: string, nextAction: "refund" | "resynchronise" | "cancel") {
     if (actionLock.current) return;
     actionLock.current = true; setBusyId(orderId); setError("");
     try {
       const response = await fetch("/api/backoffice/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId, action: nextAction }) });
-      const data = await response.json() as { error?: string };
+      const data = await response.json() as { error?: string; order?: { status: string } };
       if (!response.ok) throw new Error(data.error || copy.error);
       await load();
+      if (nextAction === "cancel" && data.order?.status === "pending") setError(getMessages(locale).orderManagement.notCanceled);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : copy.error); }
     finally { actionLock.current = false; setBusyId(""); }
   }
@@ -63,10 +64,13 @@ export function OrderManager({ copy, locale = "en-GB" }: { copy: Copy; locale?: 
     modal.confirm({ title: copy.confirmRefund, getContainer, okText: copy.refund, cancelText: common.cancel,
       okButtonProps: { danger: true }, onOk: () => action(order.id, "refund") });
   }
+  const orderText = getMessages(locale).orderManagement;
+  const activityLabel = (value: string, labels: Record<string, string>) => Object.hasOwn(labels, value) ? labels[value] : value;
   const state = (order: Order) => <Tag color={order.status === "paid" ? "success" : order.status === "failed" ? "error" : order.status === "pending" ? "processing" : "default"}>{copy.paymentStatus[order.status]}</Tag>;
   const actions = (order: Order) => <Space wrap>
     {order.status === "paid" && (order.paymentMode === "demo" || Boolean(order.stripePaymentIntentId)) && <Button danger disabled={Boolean(busyId)} loading={busyId === order.id} onClick={() => confirmRefund(order)}>{copy.refund}</Button>}
-    {order.paymentMode === "stripe" && order.stripeCheckoutSessionId && order.status !== "refunded" && <Button disabled={Boolean(busyId)} loading={busyId === order.id} onClick={() => void action(order.id, "resynchronise")}>{copy.resynchronise}</Button>}
+    {order.paymentMode === "stripe" && order.status !== "refunded" && <Button disabled={Boolean(busyId)} loading={busyId === order.id} onClick={() => void action(order.id, "resynchronise")}>{copy.resynchronise}</Button>}
+    {order.status === "pending" && <Button disabled={Boolean(busyId)} onClick={() => modal.confirm({ title: getMessages(locale).orderManagement.cancelTitle, content: getMessages(locale).orderManagement.cancelDescription, getContainer, okText: getMessages(locale).orderManagement.confirmCancel, cancelText: common.cancel, onOk: () => action(order.id, "cancel") })}>{getMessages(locale).orderManagement.cancel}</Button>}
   </Space>;
   const detail = (order: Order) => <div className="bo-detail">
     <Descriptions column={1} size="small" items={[
@@ -74,13 +78,16 @@ export function OrderManager({ copy, locale = "en-GB" }: { copy: Copy; locale?: 
       { key: "amount", label: copy.amount, children: formatPlanPrice(locale, order) },
       { key: "created", label: copy.orderDate, children: new Date(order.createdAt).toLocaleString(locale) },
       { key: "checkout", label: copy.checkoutSession, children: order.stripeCheckoutSessionId || common.none },
+      { key: "invoice", label: getMessages(locale).orderManagement.invoice, children: order.stripeInvoiceId || common.none },
       { key: "intent", label: copy.paymentIntent, children: order.stripePaymentIntentId || common.none },
       { key: "stripe", label: copy.latestStripeStatus, children: order.lastStripeStatus || common.none },
       { key: "synced", label: copy.lastSynced, children: order.lastSyncedAt ? new Date(order.lastSyncedAt).toLocaleString(locale) : common.none },
+      { key: "review", label: getMessages(locale).orderManagement.check, children: order.paymentReview ? getMessages(locale).orderManagement.states[order.paymentReview.state] : common.none },
+      { key: "deadline", label: getMessages(locale).orderManagement.deadline, children: order.paymentReview?.expiresAt ? new Date(order.paymentReview.expiresAt).toLocaleString(locale) : common.none },
     ]}/>
-    {order.failureReason && <Alert type="error" title={order.failureReason} showIcon/>}
+    {order.failureReason && <Alert type="error" title={activityLabel(order.failureReason, orderText.reasons)} showIcon/>}
     {actions(order)}
-    <div><h3>{copy.activity}</h3>{order.activities?.length ? <ul>{order.activities.map((item, index) => <li key={`${item.createdAt}-${index}`}><strong>{item.action}</strong> · {item.result} · {new Date(item.createdAt).toLocaleString(locale)}{item.reason ? ` · ${item.reason}` : ""}</li>)}</ul> : <p>{copy.noActivity}</p>}</div>
+    <div><h3>{copy.activity}</h3>{order.activities?.length ? <ul>{order.activities.map((item, index) => <li key={`${item.createdAt}-${index}`}><strong>{activityLabel(item.action, orderText.activityActions)}</strong> · {activityLabel(item.result, orderText.activityResults)}{item.actorRole ? ` · ${orderText.actors[item.actorRole]}` : ""} · {new Date(item.createdAt).toLocaleString(locale)}{item.reason ? ` · ${activityLabel(item.reason, orderText.reasons)}` : ""}</li>)}</ul> : <p>{copy.noActivity}</p>}</div>
   </div>;
   const columns: TableProps<Order>["columns"] = [
     { title: getMessages(locale).learning.plan, key: "plan", render: (_, order) => order.plan?.name || order.id },

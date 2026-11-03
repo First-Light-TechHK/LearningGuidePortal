@@ -60,14 +60,14 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     await page.setViewportSize({width:1440,height:1024});await assertFullWidthBreadcrumb(1440);
     const scroller=page.locator('[tabindex="0"]').filter({has:bars});
     const next=page.locator('[data-text-completion] button');
-    assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);
+    assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);assert.equal(await next.textContent(),locale==='en-GB'?'Mark complete':'\u6807\u8bb0\u5b8c\u6210');
     assert.equal(await page.locator('[data-text-completion] p').count(),0,'completion keeps only its short heading');
     const geometry=await scroller.evaluate(element=>({height:element.getBoundingClientRect().height,client:element.clientHeight,scroll:element.scrollHeight,overflow:getComputedStyle(element).overflowY,bottom:element.getBoundingClientRect().bottom}));
-    assert.ok(geometry.height>=674);assert.ok(geometry.height>674,'desktop reading area uses the remaining viewport height');assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
+    assert.ok(geometry.height>=674);assert.equal(geometry.overflow,'visible');assert.ok(Math.abs(geometry.scroll-geometry.client)<=1,'the page owns reading scroll');
     assert.equal(await scroller.locator('[data-text-completion-trigger]').count(),1,'reading content reserves a completion trigger');
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-desktop.png`,fullPage:true});
-    await scroller.focus();await page.keyboard.press('PageDown');await page.waitForFunction(()=>Array.from(document.querySelectorAll('[tabindex="0"]')).some(element=>element.scrollTop>0));
-    assert.equal(await next.isVisible(),false);
+    await scroller.focus();await page.keyboard.press('PageDown');await page.waitForFunction(()=>window.scrollY>0);
+    assert.equal(await next.isVisible(),true);
     await page.setViewportSize({width:390,height:844});await assertFullWidthBreadcrumb(390);assert.ok(await scroller.evaluate(element=>element.getBoundingClientRect().height)>=674);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/text-exhibit/${locale}-reading-mobile.png`,fullPage:true});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:'legacy',nextHref:null,lesson:{...viewProps.lesson,contents:[],body:'<Exh 1>\n\n'+'Legacy reading paragraph.\n\n'.repeat(60)}});
@@ -79,35 +79,24 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
       await page.setViewportSize({width,height});
       await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:`viewport-${width}-${height}`,shell:true,headerHeight});
       const reader=page.locator('[data-text-reader]');
-      await page.waitForFunction(()=>Boolean(document.querySelector('[data-course-id="course"]')?.getAttribute('style')?.includes('--text-reader-reserved')));
+      await reader.locator('[data-text-ready="true"]').first().waitFor();
       const bounds=await reader.evaluate(element=>{const rect=element.getBoundingClientRect();return {height:rect.height,bottom:rect.bottom,scroll:element.scrollHeight,client:element.clientHeight,reserved:parseFloat(getComputedStyle(element).getPropertyValue("--text-reader-reserved"))}});
-      if(width>700) {
-        assert.ok(bounds.height>=674,`reader minimum at ${width}x${height}`);
-        assert.ok(bounds.scroll>bounds.client,`reader retains its own scroll: ${locale} ${width}x${height}`);
-      } else {
-        assert.equal(await reader.evaluate(element=>getComputedStyle(element).overflowY),'visible');
-        assert.ok(Math.abs(bounds.scroll-bounds.client)<=1,'mobile content expands to its full height');
-        await reader.evaluate(element=>element.scrollTop=100);
-        assert.equal(await reader.evaluate(element=>element.scrollTop),0,'mobile reader cannot trap scrolling');
-        await page.evaluate(()=>window.scrollTo(0,200));
-        assert.ok(await page.evaluate(()=>window.scrollY)>0,'mobile page owns scrolling');
-        await page.evaluate(()=>window.scrollTo(0,0));
-      }
+      assert.equal(await reader.evaluate(element=>getComputedStyle(element).overflowY),'visible');
+      assert.ok(Math.abs(bounds.scroll-bounds.client)<=1,'reading expands to its full height');
+      await reader.evaluate(element=>element.scrollTop=100);
+      assert.equal(await reader.evaluate(element=>element.scrollTop),0,'reader cannot trap scrolling');
+      await page.evaluate(()=>window.scrollTo(0,200));
+      assert.ok(await page.evaluate(()=>window.scrollY)>0,'page owns reading scroll');
+      await page.evaluate(()=>window.scrollTo(0,0));
       const completion=page.locator('[data-text-completion] button');
       await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
       await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='true');
       const buttonBox=(await completion.boundingBox())!;
-      assert.equal(await completion.evaluate(element=>getComputedStyle(element.parentElement!).position),'absolute','completion floats over its reserved bottom space');
-      const contentBottom=await reader.locator('[data-text-point-id]').last().evaluate(element=>element.getBoundingClientRect().bottom);
-      assert.ok(buttonBox.y>=contentBottom,'completion follows every reading point without overlaying text');
+      assert.equal(await completion.evaluate(element=>getComputedStyle(element.parentElement!).position),'fixed','completion stays reachable at the viewport bottom');
+      assert.ok(Math.abs(buttonBox.y+buttonBox.height-height)<=2,'floating action stays within the viewport');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       assert.ok(await page.locator('main').evaluate(element=>element.getBoundingClientRect().bottom+window.scrollY)>=height,'learning background reaches viewport bottom');
-      if(width>=1440 && height-bounds.reserved>674) {
-        assert.ok(bounds.height>674,'tall viewports expand the reading surface');
-        assert.ok(Math.abs(await page.locator('main').evaluate(element=>element.getBoundingClientRect().height)-height)<=2,'tall desktop page fits its available height');
-      }
-
-      await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-revealed')==='true');
+      await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-on-surface')==='true');
       await page.screenshot({path:`test-results/text-exhibit/${locale}-viewport-${width}-${height}.png`,fullPage:true});
     }
     await page.close();

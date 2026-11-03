@@ -28,6 +28,14 @@
 @media(max-width:700px) { .dialog { padding:32px 20px 24px; }.dialog h2 { padding:0 42px; font-size:23px; }.meta { padding:0 32px; }.dialog .close { right:12px; top:12px; width:40px; height:40px; min-width:40px; }.dialog .question h3 { font-size:18px; }.assessment { display:block; }.assessment legend { float:none; margin:0 0 8px; line-height:normal; }.assessment > div { gap:8px; }.assessment label { padding:10px 12px; }.result { height:730px; }.columns { display:flex; flex-direction:column; gap:20px; overflow:auto; scrollbar-width:none; }.columns section { flex:none; min-height:auto; }.listFrame { flex:none; max-height:240px; }.scoreRow { padding-left:0; }.resultFooter { flex-wrap:wrap; }.dialog .primary,.dialog .exit { padding:12px 18px; font-size:14px; } }
 .resultFooter > button:only-child { margin-left:auto; }
 
+/* Result Review overflow keeps a visible, draggable native scrollbar. */
+.result,.result .columns,.result .list,.detail,.detail .body,.detail .answer,.detail .reference { scrollbar-width:auto; scrollbar-color:#9aaac2 #edf2f8; scrollbar-gutter:stable; }
+.result,.detail { overscroll-behavior:contain; }
+.result::-webkit-scrollbar,.result .columns::-webkit-scrollbar,.result .list::-webkit-scrollbar,.detail::-webkit-scrollbar,.detail .body::-webkit-scrollbar,.detail .answer::-webkit-scrollbar,.detail .reference::-webkit-scrollbar { display:block; width:12px; height:12px; }
+.result::-webkit-scrollbar-thumb,.result ::-webkit-scrollbar-thumb,.detail::-webkit-scrollbar-thumb,.detail ::-webkit-scrollbar-thumb { background:#9aaac2; border:3px solid #edf2f8; border-radius:8px; }
+.detail .body { flex:1; min-height:0; overflow-y:auto; }
+.detail .question { flex-shrink:0; }
+
 .inputBox:focus-within { border-color:#1d6bff; }
 .dialog .inputBox textarea:focus,.dialog .inputBox textarea:focus-visible { border:0; outline:none; box-shadow:none; }
 

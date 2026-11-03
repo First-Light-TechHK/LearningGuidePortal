@@ -104,4 +104,13 @@ test("save current knowledge point per mode, replay safely and deny inaccessible
   apiState.user={id:user.id};assert.equal((await invoke("v3")).status,400);
   const response=await invoke();assert.equal(response.status,200);assert.equal((await response.json()).record.progress,100);
   assert.equal((await invoke()).status,200);assert.equal((await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!.progress,100);
+  const manual=()=>compiled.exports.POST(new Request("http://localhost/api/study/events",{method:"POST",body:JSON.stringify({courseId:COURSE_ID,lessonId:PREVIEW_LP,contentId:"v1",learningMode:"video",event:"complete",seconds:0,clientEventId:"manual-video-before-playback"})}));
+  assert.equal((await manual()).status,200,"a video may be manually completed without playback or watched-percentage evidence");
+  assert.equal((await manual()).status,200);
+  const saved=await readProductData();
+  const manualEvents=saved.studyEvents.filter((event:{clientEventId:string})=>event.clientEventId==="manual-video-before-playback");
+  assert.equal(manualEvents.length,1);assert.equal(manualEvents[0].seconds,0);
+  assert.ok((await store.getLearningOverview(user.id)).courses[0].completedContentIds.includes("v1"));
+  saved.entitlements.filter((item:{userId:string})=>item.userId===user.id).forEach((item:{validTo:string})=>{item.validTo="2000-01-01T00:00:00Z";});await writeProductData(saved);
+  assert.equal((await manual()).status,403,"expired access still denies manual completion and replay");
 });

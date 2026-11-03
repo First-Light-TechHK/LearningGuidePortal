@@ -16,8 +16,8 @@ test("Category, Everything and Upgrade confirmations match the design and retain
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {SubscriptionConfirmation} from './components/portal/SubscriptionConfirmation';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(<SubscriptionConfirmation key={props.key} {...props} copy={getMessages(props.locale).portal.subscriptionConfirmation}/>));` },
     bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
     plugins: [{ name: "next", setup(b) {
-      b.onResolve({ filter: /^next\/(navigation|image)$/ }, args => ({ path: args.path, namespace: "mock" }));
-      b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
+      b.onResolve({ filter: /^next\/(navigation|image|link)$/ }, args => ({ path: args.path, namespace: "mock" }));
+      b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
     } }],
   });
   const output = "test-results/subscription-confirmation"; await mkdir(output, { recursive: true });
