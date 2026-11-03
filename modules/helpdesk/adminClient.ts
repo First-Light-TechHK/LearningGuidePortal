@@ -74,9 +74,9 @@ function bounded<T>(map: Map<string, T>, key: string, value: T) {
 }
 
 /** The value, or undefined when it is not there within ms (the work itself goes on). */
-function within<T>(work: Promise<T | undefined>, ms: number): Promise<T | undefined> {
+function within<T>(work: Promise<T | undefined>, ms: number, onLate?: () => void): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), ms); });
+  const late = new Promise<undefined>((resolve) => { timer = setTimeout(() => { onLate?.(); resolve(undefined); }, ms); });
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
@@ -308,7 +308,9 @@ export function createAdminHelpdeskClient(deps: AdminHelpdeskClientDeps = {}) {
       faqsInFlight.set(key, pending);
     }
     if (cached) return cached.value;
-    return within(pending, waitMs ?? timeouts.wait);
+    const wait = waitMs ?? timeouts.wait;
+    // The page goes on without the data; logged so a slow Admin is visible, not just a page with less on it
+    return within(pending, wait, () => log({ type: "helpdesk", event: "admin_faqs_slow", waitMs: wait }));
   }
 
   /** Published FAQs for the locale (popular first, then newest, as Admin orders them); null means Admin is unavailable and nothing is cached. */

@@ -306,7 +306,7 @@ test("Contact Support goes to the form when signed in and through sign-in when n
     await mountHelp(page, { locale, fail: true });
     const design = getMessages(locale).helpPage.design;
     assert.deepEqual(await v.questions.allTextContents(), design.faqItems.map((item) => item.question), "the static copy keeps the page useful");
-    assert.equal(await page.locator(".help-centre-notice").textContent(), v.copy.unavailable);
+    assert.equal(await page.locator(".help-centre-notice").count(), 0, "no 'temporarily unavailable' notice over the static answers (owner 2026-11-03)");
     assert.equal(await v.articles.first().locator(".help-centre-article-category").count(), 0, "static items have no category");
     await mountHelp(page, { locale, fail: true, searchParams: { category: "other" } });
     assert.equal(await page.getByRole("heading", { level: 2 }).first().textContent(), v.copy.popularTitle, "the static copy is not shown under a topic's name");

@@ -6,7 +6,7 @@ import { parseHelpCentreQuery } from "@/contracts/helpdesk";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { createAdminHelpdeskClient } from "@/modules/helpdesk/adminClient";
-import { contactSupportHref, loadHelpCentre } from "@/modules/helpdesk/helpCentre";
+import { contactSupportHref, helpCentreClient, loadHelpCentre } from "@/modules/helpdesk/helpCentre";
 import { currentProductUser } from "@/services/productAuth";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function PublicHelpPage({ params, searchParams }: { params:
   const messages = getMessages(locale);
   const [user, view] = await Promise.all([
     currentProductUser(),
-    loadHelpCentre(createAdminHelpdeskClient({ traceparent: (await headers()).get("traceparent") }), locale, query, messages.helpPage.design.faqItems)
+    loadHelpCentre(helpCentreClient(createAdminHelpdeskClient({ traceparent: (await headers()).get("traceparent") })), locale, query, messages.helpPage.design.faqItems)
   ]);
   return <main className="portal-page help-centre-page">
     <PortalHeader locale={locale} signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
