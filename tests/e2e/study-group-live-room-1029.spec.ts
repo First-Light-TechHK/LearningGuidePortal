@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "playwright/test";
-import { askTutor, createGroup, groupPath, newMember, openLiveRoom, tutorLine } from "./study-group-helpers";
+import { antOptions, askTutor, createGroup, fillScheduleDialog, groupPath, newMember, openLiveRoom, tutorLine } from "./study-group-helpers";
 
 // Owner requests 2026-10-29, after the KS review meeting ran in a Live Session:
 // one regression lock each.
@@ -82,15 +82,11 @@ test("1029-3: Schedule Live Session offers 10, 20, 30 and 40 minutes, and a 10-m
     await page.goto(groupPath(groupId));
     await page.getByRole("button", { name: "Schedule Live Session" }).click();
     const dialog = page.getByRole("dialog");
-    const duration = dialog.locator('select[name="durationMinutes"]');
-    await expect(duration.locator("option")).toHaveText(["Select duration", "10 mins", "20 mins", "30 mins", "40 mins"]);
+    // The Ant Design Select (08f0fef): its placeholder, then the four choices.
+    await expect(dialog.locator(".lg-ant-select:has(#durationMinutes) .lg-ant-select-placeholder")).toHaveText("Select duration");
+    expect(await antOptions(dialog, "durationMinutes")).toEqual(["10 mins", "20 mins", "30 mins", "40 mins"]);
     const at = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    const pad = (value: number) => String(value).padStart(2, "0");
-    await dialog.locator('input[name="title"]').fill("Ten minute check");
-    await dialog.locator('input[name="date"]').fill(`${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`);
-    await dialog.locator('input[name="time"]').fill(`${pad(at.getHours())}:${pad(at.getMinutes())}`);
-    await duration.selectOption("10");
-    await dialog.locator('select[name="maxParticipants"]').selectOption("4");
+    await fillScheduleDialog(dialog, { title: "Ten minute check", startsAt: at, duration: "10 mins", max: "4" });
     const saved = page.waitForResponse((response) => response.url().endsWith(`/api/study-groups/${groupId}/sessions`) && response.request().method() === "POST");
     await dialog.getByRole("button", { name: "Schedule Session" }).click();
     const body = await (await saved).json();

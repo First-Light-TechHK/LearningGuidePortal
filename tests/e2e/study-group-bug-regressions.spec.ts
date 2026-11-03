@@ -2,6 +2,7 @@ import { expect, test, type Page } from "playwright/test";
 import {
   appAlerts,
   createGroup,
+  fillScheduleDialog,
   groupPath,
   groupView,
   joinGroup,
@@ -50,13 +51,8 @@ function localParts(at: Date) {
 }
 
 async function fillSchedule(page: Page, input: { title: string; startsAt: Date }) {
-  const dialog = page.getByRole("dialog");
-  const { date, time } = localParts(input.startsAt);
-  await dialog.locator('input[name="title"]').fill(input.title);
-  await dialog.locator('input[name="date"]').fill(date);
-  await dialog.locator('input[name="time"]').fill(time);
-  await dialog.locator('select[name="durationMinutes"]').selectOption({ index: 1 });
-  await dialog.locator('select[name="maxParticipants"]').selectOption("4");
+  // The Schedule dialog's Ant Design controls (08f0fef).
+  await fillScheduleDialog(page.getByRole("dialog"), { title: input.title, startsAt: input.startsAt, duration: "10 mins", max: "4" });
 }
 
 async function remindersFor(member: Member) {
@@ -89,12 +85,16 @@ test("BUG-0096: the Create dialog is centred in the viewport at every width and 
     await page.setViewportSize({ width: 1440, height: 500 });
     await page.getByRole("button", { name: "+ Create Study Group" }).click();
     const form = page.getByRole("dialog").locator("form");
-    expect(await form.evaluate((element) => element.scrollHeight > element.clientHeight && getComputedStyle(element).overflowY !== "visible")).toBe(true);
+    // 08f0fef: the panel around the Ant Design form is the scroll box.
+    expect(await form.evaluate((element) => {
+      const box = element.parentElement!;
+      return box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== "visible";
+    })).toBe(true);
     // Escape while the create request is in flight does not close it.
     await page.setViewportSize({ width: 1440, height: 900 });
     await form.locator('input[name="title"]').fill(unique("E2E 0096"));
     await form.getByRole("combobox").click();
-    await form.locator(".lg-ant-select-item-option").first().click();
+    await page.getByRole("dialog").locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("Escape during the request.");
     await page.route("**/api/study-groups", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
@@ -119,7 +119,7 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
     const form = page.getByRole("dialog").locator("form");
     await form.locator('input[name="title"]').fill(title);
     await form.getByRole("combobox").click();
-    await form.locator(".lg-ant-select-item-option").first().click();
+    await page.getByRole("dialog").locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("Created from the E2E.");
     await form.getByRole("button", { name: "Create Study Group" }).dblclick();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -138,7 +138,7 @@ test("BUG-0097 / BUG-0110: a created group closes the form, opens as Host, and t
     // A network failure keeps the form open with the network message.
     await form.locator('input[name="title"]').fill(unique("E2E 0097 offline"));
     await form.getByRole("combobox").click();
-    await form.locator(".lg-ant-select-item-option").first().click();
+    await page.getByRole("dialog").locator(".lg-ant-select-item-option").first().click();
     await form.locator('textarea[name="about"]').fill("This one fails.");
     await page.route("**/api/study-groups", (route) => route.request().method() === "POST" ? route.abort() : route.continue());
     await form.getByRole("button", { name: "Create Study Group" }).click();
@@ -177,7 +177,7 @@ test("BUG-0116 / BUG-0101: About stops at 200 characters, keeps emoji and lines,
     const form = page.getByRole("dialog").locator("form");
     await form.locator('textarea[name="about"]').fill("a".repeat(300));
     await expect(form.locator('textarea[name="about"]')).toHaveValue("a".repeat(200));
-    await expect(form.getByText("200/200")).toBeVisible();
+    await expect(form.getByText("200 / 200")).toBeVisible();
     await page.keyboard.press("Escape");
 
     // The API refuses 201 characters.
@@ -204,7 +204,12 @@ test("BUG-0116 / BUG-0101: About stops at 200 characters, keeps emoji and lines,
     }
     await longPage.setViewportSize({ width: 1440, height: 900 });
     await longPage.getByRole("button", { name: "Schedule Live Session" }).click();
-    expect(await longPage.getByRole("dialog").locator("form").evaluate((element) => element.scrollWidth <= element.clientWidth), "the schedule dialog wraps the About").toBe(true);
+    // 08f0fef: the Ant Design form sits in a scroll panel whose grid row
+    // overhangs the form by its gutter; the panel must not scroll sideways
+    // and the About in the group card must wrap.
+    const scheduleForm = longPage.getByRole("dialog").locator("form");
+    expect(await scheduleForm.evaluate((element) => element.parentElement!.scrollWidth <= element.parentElement!.clientWidth), "the schedule dialog wraps the About").toBe(true);
+    expect(await scheduleForm.locator("[class*=contextCard] span").evaluate((element) => element.scrollWidth <= element.clientWidth), "the About in the group card wraps").toBe(true);
   } finally {
     await host.context.close();
   }
@@ -273,11 +278,17 @@ test("BUG-0102 / BUG-0128: long titles wrap in the schedule and edit dialogs; Se
     const form = page.getByRole("dialog").locator("form");
     for (const opener of ["Schedule Live Session", "Edit Session"]) {
       await page.getByRole("button", { name: opener }).click();
-      expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth), `${opener} wraps`).toBe(true);
       if (opener === "Schedule Live Session") {
+        // 08f0fef: the Ant Design form sits in a scroll panel, and its grid
+        // row overhangs the form by the gutter (-10px each side) by design;
+        // the panel must not scroll sideways and the long title must wrap.
+        expect(await form.evaluate((element) => element.parentElement!.scrollWidth <= element.parentElement!.clientWidth), `${opener} wraps`).toBe(true);
+        expect(await form.locator("[class*=contextCard] strong").evaluate((element) => element.scrollWidth <= element.clientWidth), `${opener} title wraps`).toBe(true);
         await form.locator('input[name="title"]').fill("Q".repeat(60));
         await expect(form.locator('input[name="title"]')).toHaveValue("Q".repeat(50));
-        await expect(form.getByText("50/50")).toBeVisible();
+        await expect(form.getByText("50 / 50")).toBeVisible();
+      } else {
+        expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth), `${opener} wraps`).toBe(true);
       }
       await form.getByRole("button", { name: "Cancel" }).click();
     }

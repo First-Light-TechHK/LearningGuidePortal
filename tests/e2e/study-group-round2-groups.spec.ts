@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "playwright/test";
 import {
+  antPick,
   appAlerts,
   createGroup,
   enterSession,
   groupPath,
+  localDate,
   joinGroup,
   newMember,
   openLiveRoom,
@@ -85,7 +87,7 @@ test("r2-B4 / r1-F-4: the waiting dialog renews when visible or online, and a fu
   }
 });
 
-test("r1-F-3: an empty title is reported before a Start Time in the past", async ({ browser, baseURL }) => {
+test("r1-F-3: an empty title is reported first, and a Start Time in the past cannot be entered", async ({ browser, baseURL }) => {
   const now = new Date();
   test.skip(now.getHours() === 0 && now.getMinutes() < 2, "needs a time earlier today");
   const host = await newMember(browser, appOrigin(baseURL), "f3", "Study Host");
@@ -94,16 +96,22 @@ test("r1-F-3: an empty title is reported before a Start Time in the past", async
     const page = await openGroupPage(host, groupId);
     await page.getByRole("button", { name: "Schedule Live Session" }).click();
     const dialog = page.getByRole("dialog");
-    const pad = (value: number) => String(value).padStart(2, "0");
-    await dialog.locator('input[name="date"]').fill(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
-    await dialog.locator('input[name="time"]').fill("00:00");
+    await antPick(dialog, "date", localDate(now));
+    // 08f0fef: the Ant Design time picker refuses a time already gone today
+    // (disabledTime), so the past can no longer be typed in at all.
+    const time = dialog.locator("#time");
+    await time.click();
+    await time.fill("00:00");
+    await time.press("Enter");
+    await expect(time).toHaveValue("");
     await dialog.getByRole("button", { name: "Schedule Session" }).click();
     await expect(dialog.getByRole("alert")).toHaveText("Check the required fields and try again.");
-    await dialog.locator('input[name="title"]').fill("Morning review");
-    await dialog.locator('select[name="durationMinutes"]').selectOption({ index: 1 });
-    await dialog.locator('select[name="maxParticipants"]').selectOption("4");
-    await dialog.getByRole("button", { name: "Schedule Session" }).click();
-    await expect(dialog.getByRole("alert")).toHaveText("Start Time must be in the future.");
+    // The server keeps its own rule for a start that has passed meanwhile.
+    const past = await host.context.request.post(`/api/study-groups/${groupId}/sessions`, {
+      data: { title: "Morning review", startsAt: new Date(Date.now() - 60_000).toISOString(), durationSeconds: 600, maxParticipants: 4, aiTutorEnabled: false },
+    });
+    expect(past.status()).toBe(400);
+    expect((await past.json()).code).toBe("start_in_past");
   } finally {
     await host.context.close();
   }
