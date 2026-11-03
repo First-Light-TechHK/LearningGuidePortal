@@ -751,6 +751,26 @@ test("M2 contract: limit 0 refuses and stores nothing; sweepRateHits deletes onl
   assert.deepEqual(kept.map((row) => `${row.key} ${row.hit_at.toISOString()}`), [`k:new ${plus(30 * HOUR)}`]);
 });
 
+test("M2/L1 contract: peekRateHit decides like tryRateHit without recording; assistKeyOwner names who used a key", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true }, "a peek records nothing");
+  assert.equal(await countRows("helpdesk_rate_hits", "key = 'k:p'"), 0);
+  assert.deepEqual(await repository.tryRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:p", 2, HOUR, plus(1)), { allowed: true });
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, plus(2)), { allowed: false, oldestAt: RATE_AT });
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, plus(HOUR)), { allowed: true }, "the oldest hit left the window");
+  assert.deepEqual(await repository.peekRateHit("k:p", 0, HOUR, plus(2)), { allowed: false, oldestAt: RATE_AT });
+  const key = randomUUID();
+  const row: AssistRecord = {
+    id: uuidv7(), learnerId: "user-a", source: "chat", locale: "en-GB", question: "password", faqId: null, faqQuestion: null, answer: null, feedback: null, ticketId: null,
+    clientEventId: key, payloadHash: "a".repeat(64), createdAt: RATE_AT, feedbackDeliveredAt: null, feedbackAttemptedAt: null, alternatives: []
+  };
+  assert.equal(await repository.assistKeyOwner(key), null);
+  assert.equal(await repository.insertAssist(row), "inserted");
+  assert.equal(await repository.assistKeyOwner(key), "user-a");
+});
+
 test("M2 across instances: two worker processes, each with its own pool, hammering one key admit exactly `limit` between them", async () => {
   const outcomes = await runWorkers(
     [

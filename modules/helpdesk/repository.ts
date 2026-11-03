@@ -213,6 +213,8 @@ export type HelpdeskRepository = {
    * never pass the limit together. Hits outside the window are dropped.
    */
   tryRateHit(key: string, limit: number, windowMs: number, atIso: string): Promise<{ allowed: true } | { allowed: false; oldestAt: string }>;
+  /** The same decision as tryRateHit without recording a hit: whether the next attempt would be admitted right now. */
+  peekRateHit(key: string, limit: number, windowMs: number, atIso: string): Promise<{ allowed: true } | { allowed: false; oldestAt: string }>;
   findAttachment(id: string): Promise<AttachmentRecord | null>;
   // ---- v2 §4a AI assist log
   /** "duplicate" when the id or the Idempotency-Key is already stored. */
@@ -220,6 +222,8 @@ export type HelpdeskRepository = {
   findAssist(id: string): Promise<AssistRecord | null>;
   /** The learner's own row for this Idempotency-Key (a key is scoped to the learner who used it). */
   findAssistByKey(clientEventId: string, learnerId: string): Promise<AssistRecord | null>;
+  /** Who used this Idempotency-Key (keys are unique across learners), or null when nobody has. */
+  assistKeyOwner(clientEventId: string): Promise<string | null>;
   /** Sets feedback only while it is null and the row belongs to learnerId; returns the row as stored afterwards (null: no such row for this learner). */
   setAssistFeedback(id: string, learnerId: string, feedback: AssistFeedback): Promise<AssistRecord | null>;
   /** Rate limiting: createdAt of the n-th newest row of this learner from these sources after sinceIso, or null. */

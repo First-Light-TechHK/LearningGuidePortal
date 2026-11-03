@@ -72,3 +72,22 @@ test("tryRateHit (local): limit 0 refuses every attempt and stores nothing; swee
   assert.deepEqual(await repo.tryRateHit("k:new", 1, HOUR, plus(30 * HOUR + 1)), { allowed: false, oldestAt: plus(30 * HOUR) }, "the kept hit still counts");
   assert.deepEqual(await repo.tryRateHit("k:old", 1, HOUR, plus(30 * HOUR + 1)), { allowed: true }, "the swept key starts clean");
 });
+
+test("peekRateHit (local) decides like tryRateHit without recording; assistKeyOwner names who used a key", async () => {
+  const repo = repository();
+  assert.deepEqual(await repo.peekRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repo.peekRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true }, "a peek records nothing");
+  assert.deepEqual(await repo.tryRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repo.tryRateHit("k:p", 2, HOUR, plus(1)), { allowed: true });
+  assert.deepEqual(await repo.peekRateHit("k:p", 2, HOUR, plus(2)), { allowed: false, oldestAt: RATE_AT });
+  assert.deepEqual(await repo.peekRateHit("k:p", 2, HOUR, plus(HOUR)), { allowed: true }, "the oldest hit left the window");
+  assert.deepEqual(await repo.peekRateHit("k:p", 0, HOUR, plus(2)), { allowed: false, oldestAt: RATE_AT });
+  const key = randomUUID();
+  const row: AssistRecord = {
+    id: "owner-row", learnerId: "user-a", source: "chat", locale: "en-GB", question: "password", faqId: null, faqQuestion: null, answer: null, feedback: null, ticketId: null,
+    clientEventId: key, payloadHash: "a".repeat(64), createdAt: RATE_AT, feedbackDeliveredAt: null, feedbackAttemptedAt: null, alternatives: []
+  };
+  assert.equal(await repo.assistKeyOwner(key), null);
+  assert.equal(await repo.insertAssist(row), "inserted");
+  assert.equal(await repo.assistKeyOwner(key), "user-a");
+});

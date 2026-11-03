@@ -132,7 +132,10 @@ test("pruneHistory removes only settled outbox rows and tutor requests older tha
     const outbox = (id: string, status: "queued" | "delivered" | "dead", createdAt: string) => ({ id, kind: "room_message" as const, dedupeKey: id, sessionId: "s1", payload: { room: "s1", projectId: "", text: "", messageId: id }, status, attempts: 0, leaseOwner: null, leaseExpiresAt: null, nextAttemptAt: null, failureClass: null, createdAt, deliveredAt: null });
     store.outbox.push(outbox("o-old-delivered", "delivered", old), outbox("o-older-dead", "dead", older), outbox("o-old-queued", "queued", older), outbox("o-new-delivered", "delivered", AT));
     const tutor = (id: string, status: "queued" | "answered" | "dead_letter", receivedAt: string) => ({ id, sessionId: "s1", userId: "anna", clientEventId: `e-${id}`, text: "q", receivedAt, inFlight: false, status });
-    store.tutorRequests.push(tutor("t-old-answered", "answered", old), tutor("t-older-dead", "dead_letter", older), tutor("t-old-queued", "queued", older), tutor("t-new-answered", "answered", AT));
+    store.tutorRequests.push(tutor("t-old-answered", "answered", old), tutor("t-older-dead", "dead_letter", older), tutor("t-old-queued", "queued", older), tutor("t-new-answered", "answered", AT),
+      tutor("t-old-referenced", "answered", older), tutor("t-old-noticed", "dead_letter", older));
+    // Like PostgreSQL: a settled request whose answer or "unavailable" notice is still queued in the outbox waits.
+    store.outbox.push(outbox("t-old-referenced", "queued", older), { ...outbox("t-old-noticed:unavailable", "queued", older), id: "o-notice" });
   });
   assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 1 }), { outbox: 1, tutorRequests: 1, webhookReceipts: 0 });
   let store = await repository.read();
@@ -141,8 +144,8 @@ test("pruneHistory removes only settled outbox rows and tutor requests older tha
   assert.ok(!store.tutorRequests.some((row) => row.id === "t-older-dead"));
   assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 100 }), { outbox: 1, tutorRequests: 1, webhookReceipts: 0 });
   store = await repository.read();
-  assert.deepEqual(ids(store.outbox), ["o-new-delivered", "o-old-queued", "o1"], "queued rows and recent rows stay whatever their age");
-  assert.deepEqual(ids(store.tutorRequests), ["t-new-answered", "t-old-queued", "t1", "t3"]);
+  assert.deepEqual(ids(store.outbox), ["o-new-delivered", "o-notice", "o-old-queued", "o1", "t-old-referenced"], "queued rows and recent rows stay whatever their age");
+  assert.deepEqual(ids(store.tutorRequests), ["t-new-answered", "t-old-noticed", "t-old-queued", "t-old-referenced", "t1", "t3"], "settled requests still referenced by an outbox row stay");
   assert.equal(store.presences.length, 5);
   assert.equal(store.sessions.length, 3);
   assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 100 }), { outbox: 0, tutorRequests: 0, webhookReceipts: 0 }, "idempotent");

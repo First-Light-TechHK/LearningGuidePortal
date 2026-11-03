@@ -589,7 +589,7 @@ test("M2 (review B): a failing rate-limit store fails the request closed (no Adm
   assert.deepEqual(await h.repository.tryRateHit(`submit:${learner.id}`, HELPDESK_LIMITS.submitChecksPerHour, HOUR, new Date().toISOString()), { allowed: true }, "submit checks have their own key");
 });
 
-test("M2 (review B): an attempt refused after the limiter still counted: an enquiry refused by the messages budget costs an enquiry hit", async () => {
+test("M2 (review B, fixed): an enquiry refused by the messages budget costs no enquiry of the ten (both budgets are checked before either is spent)", async () => {
   const h = harness();
   const ticket = await h.service.createTicket(learner, enquiry(), randomUUID());
   // 59 learner messages on the ticket plus the enquiry's own first message fill the 60 an hour.
@@ -598,16 +598,13 @@ test("M2 (review B): an attempt refused after the limiter still counted: an enqu
     sequence = (await h.service.learnerMessage(learner, ticket.ticket.id, { body: `m ${index}`, files: [], expectedSequence: sequence }, randomUUID())).ticket.sequence;
   }
   await rejects(h.service.createTicket(learner, enquiry({ subject: "blocked by messages" }), randomUUID()), "rate_limited");
-  // Documented cost (not a fix): the enquiry hit was taken before the messages budget refused, so one enquiry of the ten is gone.
-  const left = await h.repository.tryRateHit(`tickets:${learner.id}`, HELPDESK_LIMITS.ticketsPerHour, HOUR, new Date("2026-10-28T06:00:01.000Z").toISOString());
-  assert.deepEqual(left, { allowed: true });
-  let admitted = 1;
+  let admitted = 0;
   for (;;) {
     const next = await h.repository.tryRateHit(`tickets:${learner.id}`, HELPDESK_LIMITS.ticketsPerHour, HOUR, new Date("2026-10-28T06:00:01.000Z").toISOString());
     if (!next.allowed) break;
     admitted += 1;
   }
-  assert.equal(admitted, HELPDESK_LIMITS.ticketsPerHour - 2, "ten minus the created enquiry minus the refused attempt");
+  assert.equal(admitted, HELPDESK_LIMITS.ticketsPerHour - 1, "ten minus the created enquiry: the refused attempt cost nothing");
 });
 
 test("L1 (review B): the same learner's key replays only the same request: a different body, a different endpoint or a chip with the same key is 422, and the replay is answered without Admin", async () => {
@@ -640,10 +637,8 @@ test("L1 (review B): a key reused by another learner is refused only once their 
   await h.assistant.ask(learner, { message: "password", locale: "en-GB", faqId: null }, key);
   await rejects(h.assistant.ask(other, { message: "password", locale: "en-GB", faqId: null }, key), "idempotency_conflict");
   assert.equal(await h.repository.findAssistByKey(key, other.id), null);
-  // The per-learner lookup finds nothing for the other learner, so their request runs up to the insert, where the
-  // globally unique key refuses it: one Admin call and one assistant hit are spent on a key that was never theirs.
-  assert.equal(h.suggestCalls.length, 2);
-  assert.equal(h.suggestCalls[1].learnerId, other.id);
+  // Fixed (review B F2): the key's owner is checked before any work, so the probe costs no Admin call and no assistant hit.
+  assert.equal(h.suggestCalls.length, 1, "only my own question reached Admin");
   const hits = await h.repository.tryRateHit(`assist:${other.id}`, 1, HOUR, new Date("2026-10-28T06:00:01.000Z").toISOString());
-  assert.equal(hits.allowed, false);
+  assert.deepEqual(hits, { allowed: true }, "the other learner's budget is untouched");
 });
