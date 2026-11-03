@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseHelpCentreQuery, type FaqFilter, type HelpFaq } from "../../contracts/helpdesk";
-import { contactSupportHref, loadHelpCentre, type HelpCentreClient } from "../../modules/helpdesk/helpCentre";
+import { contactSupportHref, HELP_CENTRE_WAIT_MS, helpCentreClient, loadHelpCentre, type HelpCentreClient } from "../../modules/helpdesk/helpCentre";
 
 const id = (n: number) => `01a18100-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const faq = (n: number, extra: Partial<HelpFaq> = {}): HelpFaq => ({ id: id(n), category: "payments_subscriptions", popular: n <= 2, question: `Question ${n}?`, answer: `Answer **${n}**.`, signals: [], updatedAt: "2026-10-28T10:00:00.000Z", ...extra });
@@ -132,4 +132,16 @@ test("the old account help URLs redirect to the public Help Centre", async () =>
       return true;
     });
   }
+});
+
+test("the Help Centre waits up to 2.5 s for Admin on a cold cache, for lists and deep links (owner 2026-11-03: 500 ms showed the static answers)", async () => {
+  assert.equal(HELP_CENTRE_WAIT_MS, 2_500);
+  const waits: Array<[string, unknown]> = [];
+  const client = helpCentreClient({
+    faqs: async (_locale, filter, options) => { waits.push([JSON.stringify(filter), options?.waitMs]); return []; },
+    faq: async (id, _locale, options) => { waits.push([id, options?.waitMs]); return null; }
+  });
+  await client.faqs("en-GB", { popular: true, limit: 50 });
+  await client.faq("x", "zh-CN");
+  assert.deepEqual(waits, [[JSON.stringify({ popular: true, limit: 50 }), 2_500], ["x", 2_500]]);
 });

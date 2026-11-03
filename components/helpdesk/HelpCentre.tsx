@@ -121,7 +121,6 @@ export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB
           {view.mode === "popular" ? null : <Link prefetch={false} className="help-centre-back" href={root}>{copy.allArticles}</Link>}
         </header>
         <p className="helpdesk-visually-hidden help-centre-status" role="status" aria-live="polite">{view.mode === "search" && waiting === null ? fillTemplate(copy.searchCount, { count: String(view.articles.length) }) : ""}</p>
-        {view.fallback ? <p className="help-centre-notice" role="status">{copy.unavailable}</p> : null}
         {view.missingFaq ? <p className="help-centre-notice" role="status">{copy.faqMissing}</p> : null}
         {view.articles.length === 0 ? <p className="help-centre-empty">{empty}</p> : <ul className="help-centre-articles">
           {shown.map((article) => {
