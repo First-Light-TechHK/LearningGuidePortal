@@ -71,7 +71,6 @@ import { chooseSituationChips, waitingTicketOf, type ChipCandidate } from "./sit
 const RATE_WINDOW_MS = 3_600_000;
 /** Chat and chips share the learner's hourly budget; submit-time checks have their own (HELPDESK_LIMITS.submitChecksPerHour). */
 const LIMITED_SOURCES: readonly AssistSource[] = ["chat", "chip"];
-const SUBMIT_SOURCES: readonly AssistSource[] = ["submit"];
 /** Feedback Admin has not confirmed is retried for this long, a few rows per sweep. */
 const REDELIVERY_WINDOW_MS = 7 * 24 * 3_600_000;
 const REDELIVERY_BATCH = 5;
@@ -100,7 +99,7 @@ export type LearnerRecords = Pick<SignalSources, "user" | "orders" | "subscripti
 export const LEARNER_STATE_WAIT_MS = 300;
 
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "nthRecentAssistAt" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "tryRateHit" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
     | "createChatSession" | "findChatSession" | "recordTurn" | "endChatSession" | "sessionShowedNode" | "openEmptyChatSession" | "sessionLearnerTurns" | "setAssistExpanded" | "listTicketsByUser">;
   admin: AssistantAdmin;
   now?: () => Date;
@@ -383,32 +382,33 @@ export function createAssistantService(deps: AssistantDeps) {
     return turn ? { ...base, turn } : base;
   }
 
-  async function replay(key: string, hash: string): Promise<AssistantResponse | null> {
-    const earlier = await repository.findAssistByKey(key);
+  async function replay(key: string, hash: string, learnerId: string): Promise<AssistantResponse | null> {
+    const earlier = await repository.findAssistByKey(key, learnerId);
     if (!earlier) return null;
     if (earlier.payloadHash !== hash) throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
     return responseOf(earlier);
   }
 
+  // Exact per-learner hourly budget (review 2026-11-03 M2): counted and recorded under one lock per learner, never from the rows.
   async function enforceRateLimit(learnerId: string) {
     const at = now();
-    const oldest = await repository.nthRecentAssistAt(learnerId, new Date(at.getTime() - RATE_WINDOW_MS).toISOString(), HELPDESK_LIMITS.assistantPerHour, LIMITED_SOURCES);
-    if (!oldest) return;
-    const retryAfter = Math.max(1, Math.ceil((Date.parse(oldest) + RATE_WINDOW_MS - at.getTime()) / 1000));
+    const hit = await repository.tryRateHit(`assist:${learnerId}`, HELPDESK_LIMITS.assistantPerHour, RATE_WINDOW_MS, at.toISOString());
+    if (hit.allowed) return;
+    const retryAfter = Math.max(1, Math.ceil((Date.parse(hit.oldestAt) + RATE_WINDOW_MS - at.getTime()) / 1000));
     log({ type: "helpdesk", event: "rate_limited", limit: "assistant", retryAfter });
     throw new HelpdeskProblem("rate_limited", `You can ask at most ${HELPDESK_LIMITS.assistantPerHour} questions an hour. Try again later.`, { retryAfter });
   }
 
   /** One logical request per Idempotency-Key on this instance: a second one with the same key waits for the first and replays it. */
-  async function once(key: string, hash: string, work: () => Promise<{ response: AssistantResponse; replayed: boolean }>): Promise<{ response: AssistantResponse; replayed: boolean }> {
+  async function once(key: string, hash: string, learnerId: string, work: () => Promise<{ response: AssistantResponse; replayed: boolean }>): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const running = askInFlight.get(key);
     if (running) {
       await running.catch(() => undefined);
-      const stored = await replay(key, hash);
+      const stored = await replay(key, hash, learnerId);
       if (stored) return { response: stored, replayed: true };
     }
     const started = (async () => {
-      const earlier = await replay(key, hash);
+      const earlier = await replay(key, hash, learnerId);
       if (earlier) return { response: earlier, replayed: true };
       return work();
     })();
@@ -425,7 +425,7 @@ export function createAssistantService(deps: AssistantDeps) {
     const result = await repository.recordTurn(row, update);
     if (result.status === "inserted") return { response: await responseOf({ ...row, turnIndex: result.turnIndex }), replayed: false };
     if (result.status === "duplicate") {
-      const stored = await replay(key, hash);
+      const stored = await replay(key, hash, row.learnerId);
       if (stored) return { response: stored, replayed: true };
       throw new HelpdeskProblem("idempotency_conflict", "This answer was already recorded.");
     }
@@ -442,7 +442,7 @@ export function createAssistantService(deps: AssistantDeps) {
    */
   async function ask(learner: LearnerIdentity, input: AskInput, key: string, options: { onStep?: (step: AssistantStep) => void } = {}): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const hash = hashOf({ op: "assistant", learnerId: learner.id, message: input.message, locale: input.locale, faqId: input.faqId, ...(input.sessionId ? { sessionId: input.sessionId } : {}), ...(input.via ? { via: input.via } : {}) });
-    return once(key, hash, () => askOnce(learner, input, key, hash, options.onStep));
+    return once(key, hash, learner.id, () => askOnce(learner, input, key, hash, options.onStep));
   }
 
   async function askOnce(learner: LearnerIdentity, input: AskInput, key: string, hash: string, onStep?: (step: AssistantStep) => void): Promise<{ response: AssistantResponse; replayed: boolean }> {
@@ -484,7 +484,7 @@ export function createAssistantService(deps: AssistantDeps) {
    */
   async function click(learner: LearnerIdentity, input: AssistantClickInput, key: string): Promise<{ response: AssistantResponse; replayed: boolean }> {
     const hash = hashOf({ op: "assistant_click", learnerId: learner.id, ...input });
-    return once(key, hash, async () => {
+    return once(key, hash, learner.id, async () => {
       await enforceRateLimit(learner.id);
       // The card's language: the learner's newest words in this chat (owner 2026-10-31); when that language's release
       // is not cached, the page's, framed in the page's language.
@@ -633,7 +633,7 @@ export function createAssistantService(deps: AssistantDeps) {
   async function checkForSubmit(learner: LearnerIdentity, input: SuggestInput): Promise<SuggestionResponse> {
     // Over the hourly budget the learner simply gets no suggestion: Admin is not asked and nothing is logged.
     const at = now();
-    if (await repository.nthRecentAssistAt(learner.id, new Date(at.getTime() - RATE_WINDOW_MS).toISOString(), HELPDESK_LIMITS.submitChecksPerHour, SUBMIT_SOURCES)) {
+    if (!(await repository.tryRateHit(`submit:${learner.id}`, HELPDESK_LIMITS.submitChecksPerHour, RATE_WINDOW_MS, at.toISOString())).allowed) {
       log({ type: "helpdesk", event: "rate_limited", limit: "submit_check" });
       return { suggestion: null, alternatives: [] };
     }

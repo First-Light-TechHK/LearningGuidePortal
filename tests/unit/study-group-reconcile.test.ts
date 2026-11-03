@@ -75,12 +75,13 @@ async function reconcileFixture(options: {
   const calls: ReconcileFixture["calls"] = { updates: 0, abandon: [], listLimits: [], providerReads: [] };
   const incidents: ReconcileFixture["incidents"] = [];
   const repository: StudyGroupRepository = {
-    read: () => base.read(),
+    read: (scope) => base.read(scope),
     appendTokenLog: (line) => base.appendTokenLog(line),
-    update: (mutate) => {
+    update: (mutate, scope) => {
       calls.updates += 1;
-      return base.update(mutate);
+      return base.update(mutate, scope);
     },
+    pruneHistory: (input) => base.pruneHistory(input),
     renewSeat: (input) => base.renewSeat(input),
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),

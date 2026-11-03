@@ -21,7 +21,7 @@ import { uuidv7 } from "../../../lib/uuidv7";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
 import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 
-const TABLES = ["helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_rate_hits", "helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
 const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
 const MIGRATION_019 = readFileSync(path.join(process.cwd(), "db", "migrations", "019_helpdesk_outcome_delivery.sql"), "utf8");
@@ -688,4 +688,20 @@ test("023 in PostgreSQL: re-applies; the bootstrap adds the sessions and turn co
   assert.equal(oldRow?.sessionId, null);
   assert.equal(oldRow?.kind, null);
   assert.equal(oldRow?.texts, null);
+});
+
+test("M2 (review 2026-11-03): tryRateHit is exact under concurrency in PostgreSQL: 40 attempts at once admit exactly 30, refusals write nothing, the window slides, keys are separate", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  const at = "2026-10-28T06:00:00.000Z";
+  const outcomes = await Promise.all(Array.from({ length: 40 }, () => repository.tryRateHit("assist:pg-learner", 30, 3_600_000, at)));
+  assert.equal(outcomes.filter((item) => item.allowed).length, 30);
+  assert.equal(outcomes.filter((item) => !item.allowed && item.oldestAt === at).length, 10);
+  const { rows } = await getPool().query<{ count: string }>("SELECT count(*)::text AS count FROM helpdesk_rate_hits WHERE key = 'assist:pg-learner'");
+  assert.equal(rows[0].count, "30", "a refused attempt leaves no row");
+  assert.deepEqual(await repository.tryRateHit("assist:pg-learner", 30, 3_600_000, "2026-10-28T06:59:59.999Z"), { allowed: false, oldestAt: at });
+  assert.deepEqual(await repository.tryRateHit("assist:pg-learner", 30, 3_600_000, "2026-10-28T07:00:00.001Z"), { allowed: true });
+  const left = await getPool().query<{ count: string }>("SELECT count(*)::text AS count FROM helpdesk_rate_hits WHERE key = 'assist:pg-learner'");
+  assert.equal(left.rows[0].count, "1", "hits outside the window are deleted on the next attempt");
+  assert.deepEqual(await repository.tryRateHit("submit:pg-learner", 1, 3_600_000, at), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("assist:pg-other", 1, 3_600_000, at), { allowed: true });
 });

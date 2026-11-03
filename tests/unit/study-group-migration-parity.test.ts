@@ -67,13 +67,18 @@ test("012 and the ensureSchema bootstrap declare the same Study Group tables", (
   }
 });
 
-test("012 and the ensureSchema bootstrap declare the same Study Group indexes", () => {
-  const migration = extractIndexes(readFileSync(MIGRATION_PATH, "utf8"));
+test("012 + 027 and the ensureSchema bootstrap declare the same Study Group indexes", () => {
+  // 027 (review 2026-11-03 H2) adds the two indexes the scoped reads need.
+  const migration = new Map([
+    ...extractIndexes(readFileSync(MIGRATION_PATH, "utf8")),
+    ...extractIndexes(readFileSync(path.join(ROOT, "db", "migrations", "027_study_group_scope_indexes.sql"), "utf8"))
+  ]);
   const bootstrap = extractIndexes(readFileSync(BOOTSTRAP_PATH, "utf8"));
   const migrationNames = [...migration.keys()].filter(isStudyGroupName).sort();
   const bootstrapNames = [...bootstrap.keys()].filter(isStudyGroupName).sort();
-  assert.equal(migrationNames.length, 7, "012 must declare the seven Study Group indexes");
-  assert.deepEqual(bootstrapNames, migrationNames, "db.ts ensureSchema must declare the same Study Group indexes as 012");
+  assert.equal(migrationNames.length, 9, "012 declares seven Study Group indexes and 027 two more");
+  assert.ok(migrationNames.includes("study_group_outbox_session_idx") && migrationNames.includes("study_group_presences_open_user_idx"));
+  assert.deepEqual(bootstrapNames, migrationNames, "db.ts ensureSchema must declare the same Study Group indexes as 012 + 027");
   for (const name of migrationNames) {
     assert.equal(bootstrap.get(name), migration.get(name), `index ${name} drifted between 012 and db.ts ensureSchema`);
   }

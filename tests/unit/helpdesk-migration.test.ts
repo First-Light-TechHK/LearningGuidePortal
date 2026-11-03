@@ -179,3 +179,19 @@ test("024 (v5 Part G) adds the retention marker, the job runs, the paging indexe
   assert.doesNotMatch(plain, /CREATE (?:UNIQUE )?INDEX (?!IF NOT EXISTS)/);
   for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql", "022_helpdesk_order_link.sql", "023_helpdesk_chat_sessions.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /scrubbed_at|helpdesk_job_runs|helpdesk_assist_outcomes/);
 });
+
+test("026 (review 2026-11-03 M2) adds the rate-hit table the learner limits count under a lock; additive, repeatable, mirrored by the bootstrap and probe; 017–025 untouched", async () => {
+  const migration = await readFile("db/migrations/026_helpdesk_rate_hits.sql", "utf8");
+  const bootstrap = await readFile("services/persistence/db.ts", "utf8");
+  const plain = normalise(migration);
+  assert.doesNotMatch(plain, /\b(DROP|TRUNCATE|DELETE|UPDATE|ALTER)\b/i, "the migration only adds");
+  const statements = migration.replace(/--[^\n]*/g, "").match(/(?:CREATE (?:UNIQUE )?(?:TABLE|INDEX) IF NOT EXISTS)[\s\S]*?;/g) || [];
+  assert.equal(statements.length, 2);
+  for (const statement of statements) assert.ok(normalise(bootstrap).includes(normalise(statement)), `bootstrap mirrors: ${statement.split("\n")[0]}`);
+  assert.match(plain, /CREATE TABLE IF NOT EXISTS helpdesk_rate_hits \( id BIGSERIAL PRIMARY KEY, key TEXT NOT NULL CHECK \(char_length\(key\) BETWEEN 1 AND 160\), hit_at TIMESTAMPTZ NOT NULL \);/);
+  assert.match(plain, /CREATE INDEX IF NOT EXISTS helpdesk_rate_hits_key_idx ON helpdesk_rate_hits \(key, hit_at\);/, "the window query is (key, hit_at)");
+  assert.match(bootstrap, /to_regclass\('helpdesk_rate_hits'\) IS NOT NULL/, "the freshness probe covers the table");
+  assert.doesNotMatch(plain, /CREATE TABLE (?!IF NOT EXISTS)/);
+  assert.doesNotMatch(plain, /CREATE (?:UNIQUE )?INDEX (?!IF NOT EXISTS)/);
+  for (const earlier of ["017_helpdesk_tickets.sql", "018_helpdesk_v2.sql", "019_helpdesk_outcome_delivery.sql", "020_helpdesk_ai_ratings.sql", "022_helpdesk_order_link.sql", "023_helpdesk_chat_sessions.sql", "024_helpdesk_flywheel.sql", "025_auth_identity_keys.sql"]) assert.doesNotMatch(await readFile(`db/migrations/${earlier}`, "utf8"), /helpdesk_rate_hits/);
+});

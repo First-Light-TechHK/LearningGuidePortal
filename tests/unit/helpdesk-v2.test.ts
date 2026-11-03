@@ -539,3 +539,33 @@ test("mark_read for a snapshot is not undone by another agent's tag, flag or int
   await h.service.agentAction(ticket.id, { action: "add_tag", agent, tag: "second", expectedSequence: null }, randomUUID());
   assert.equal((await h.service.agentAction(ticket.id, { action: "mark_read", agent, expectedSequence: now }, randomUUID())).ticket.unreadByAgent, true, "a learner message after the snapshot keeps it");
 });
+
+// ---------------------------------------------------------------- backend review 2026-11-03 (M2, L1)
+
+test("M2: the hourly limits are exact under concurrency: 40 questions fired at once admit exactly 30, the rest are 429 and never reach Admin", async () => {
+  const h = harness();
+  const outcomes = await Promise.allSettled(Array.from({ length: 40 }, (_, index) => h.assistant.ask(learner, { message: `burst ${index}`, locale: "en-GB", faqId: null }, randomUUID())));
+  assert.equal(outcomes.filter((item) => item.status === "fulfilled").length, HELPDESK_LIMITS.assistantPerHour);
+  assert.equal(outcomes.filter((item) => item.status === "rejected" && (item.reason as HelpdeskProblem).code === "rate_limited").length, 40 - HELPDESK_LIMITS.assistantPerHour);
+  assert.equal(h.suggestCalls.length, HELPDESK_LIMITS.assistantPerHour, "a limited question never reaches Admin");
+  // The repository counts admitted attempts, not stored rows: a refused attempt leaves nothing behind.
+  const at = new Date(Date.parse("2026-10-28T06:00:00.000Z") + 1000).toISOString();
+  const again = await h.repository.tryRateHit(`assist:${learner.id}`, HELPDESK_LIMITS.assistantPerHour, HOUR, at);
+  assert.equal(again.allowed, false);
+  assert.equal(!again.allowed && again.oldestAt, "2026-10-28T06:00:00.000Z");
+  assert.deepEqual(await h.repository.tryRateHit(`assist:${learner.id}`, HELPDESK_LIMITS.assistantPerHour, HOUR, new Date(Date.parse(at) + HOUR).toISOString()), { allowed: true }, "the window slides: an hour later the oldest hit no longer counts");
+  assert.deepEqual(await h.repository.tryRateHit(`assist:${other.id}`, 1, HOUR, at), { allowed: true }, "keys are per learner");
+});
+
+test("L1: an Idempotency-Key is looked up per learner: another learner sending the same key and payload never gets my answer replayed (422, nothing stored for them)", async () => {
+  const h = harness();
+  const key = randomUUID();
+  const mine = await h.assistant.ask(learner, { message: "password", locale: "en-GB", faqId: null }, key);
+  // Keys are random UUIDs, so a reuse across learners is a probe, not a retry: the stored key stays unique and the reuse is refused.
+  await rejects(h.assistant.ask(other, { message: "password", locale: "en-GB", faqId: null }, key), "idempotency_conflict");
+  assert.equal(await h.repository.findAssistByKey(key, other.id), null, "nothing of the other learner's is recorded under my key");
+  assert.equal((await h.repository.findAssistByKey(key, learner.id))?.id, mine.response.id);
+  const replay = await h.assistant.ask(learner, { message: "password", locale: "en-GB", faqId: null }, key);
+  assert.equal(replay.response.id, mine.response.id, "my own replay still replays");
+  assert.equal(replay.replayed, true);
+});

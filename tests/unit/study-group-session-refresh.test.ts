@@ -60,9 +60,10 @@ async function refreshFixture(): Promise<RefreshFixture> {
   const access = new Set(["host:course-1", "member:course-1"]);
 
   const repository: StudyGroupRepository = {
-    read: () => base.read(),
+    read: (scope) => base.read(scope),
     appendTokenLog: (line) => base.appendTokenLog(line),
-    update: (mutate) => base.update(mutate),
+    update: (mutate, scope) => base.update(mutate, scope),
+    pruneHistory: (input) => base.pruneHistory(input),
     renewSeat: (input) => base.renewSeat(input),
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),

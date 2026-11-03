@@ -699,7 +699,7 @@ test("AI Support Assistant switched off for a learner (Student Management Deny):
     const state = (data.featureAccess ||= { globals: [], overrides: [], version: 0 });
     state.overrides = state.overrides.filter((row) => !(row.userId === strangerId && row.feature === "ai_support_assistant"));
     if (on) state.overrides.push({ userId: strangerId, feature: "ai_support_assistant", value: "deny", reason: "test", updated: { at: new Date().toISOString(), byId: "emp", byName: "Ops" } });
-  });
+  }).then(async () => (await import("../../modules/student-management/service")).clearFeatureCache(strangerId));
   await deny(true);
   t.after(() => deny(false));
   await problem(await routes.assistant.POST(learnerRequest("/api/helpdesk/assistant", { json: { message: "hello", locale: "en-GB" }, cookie: strangerCookie, key: randomUUID() }), ctx()), 403, "feature_unavailable");

@@ -213,3 +213,48 @@ test("contract parsers reject bad input", () => {
   assert.throws(() => contract.parseEmergencyInput({ actor, feature: "improve_tutor", off: true, reason: "" }), contract.StudentProblem);
   assert.equal(contract.parseStudentActionInput({ action: "change_email", actor, email: "Mixed@Example.TEST", reason: "x", exemption: null }).action, "change_email");
 });
+
+test("M3 (review 2026-11-03): deactivate evicts the learner from every live Study Group room; a failing eviction never fails the deactivation", async () => {
+  const evicted: string[] = [];
+  const original = sm.studentManagementHooks.evictFromLiveSessions;
+  sm.studentManagementHooks.evictFromLiveSessions = async (userId) => { evicted.push(userId); };
+  try {
+    const user = await learner();
+    const result = await sm.runStudentAction(user.id, { action: "deactivate", actor, reason: "fraud" }, request);
+    assert.equal(result.student.accountStatus, "inactive");
+    assert.deepEqual(evicted, [user.id]);
+    await sm.runStudentAction(user.id, { action: "activate", actor, reason: "ok" }, request);
+    assert.deepEqual(evicted, [user.id], "activate evicts nobody");
+    sm.studentManagementHooks.evictFromLiveSessions = async () => { throw new Error("provider down"); };
+    const again = await sm.runStudentAction(user.id, { action: "deactivate", actor, reason: "fraud" }, request);
+    assert.equal(again.student.accountStatus, "inactive", "the account is inactive even when the room provider fails");
+  } finally {
+    sm.studentManagementHooks.evictFromLiveSessions = original;
+  }
+});
+
+test("L3 (review 2026-11-03): isFeatureEnabled is cached per learner for a few seconds and every write in this module clears it", async () => {
+  const user = await learner();
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant"), true);
+  await setOverride(user.id, "ai_support_assistant", "deny");
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant"), false, "an override is seen at once");
+  await setOverride(user.id, "ai_support_assistant", "default");
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant"), true);
+  // A write that bypasses this module (another instance) is seen once the entry expires.
+  sm.clearFeatureCache(user.id);
+  const t0 = Date.now();
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant", t0), true);
+  await store.editProductData((data) => {
+    (data.featureAccess ||= { globals: [], overrides: [], version: 0 }).overrides.push({ userId: user.id, feature: "ai_support_assistant", value: "deny", reason: "elsewhere", updated: { at: new Date().toISOString(), byId: "emp", byName: "Ops" } });
+  });
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant", t0 + sm.FEATURE_CACHE_MS - 1), true, "still cached");
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant", t0 + sm.FEATURE_CACHE_MS), false, "expired: read again");
+  sm.clearFeatureCache(user.id);
+  await setGlobal("ai_support_assistant", false);
+  const fresh = await learner();
+  assert.equal(await sm.isFeatureEnabled(fresh.id, "ai_support_assistant"), false);
+  await setGlobal("ai_support_assistant", true);
+  assert.equal(await sm.isFeatureEnabled(fresh.id, "ai_support_assistant"), true, "a global change clears every entry");
+  await sm.runStudentAction(fresh.id, { action: "deactivate", actor, reason: "x" }, request);
+  assert.equal(await sm.isFeatureEnabled(fresh.id, "ai_support_assistant"), false, "deactivation clears the entry");
+});

@@ -823,16 +823,17 @@ test("a member start in flight cannot poison the Host's start", async () => {
   let gateArmed = false;
   let gateUsed = false;
   const gatedRepository: StudyGroupRepository = {
-    read: async () => {
+    read: async (scope) => {
       if (gateArmed && !gateUsed) {
         gateUsed = true;
         signalRead!();
         await readGate;
       }
-      return repository.read();
+      return repository.read(scope);
     },
     appendTokenLog: (line) => repository.appendTokenLog(line),
-    update: (mutate) => repository.update(mutate),
+    update: (mutate, scope) => repository.update(mutate, scope),
+    pruneHistory: (input) => repository.pruneHistory(input),
     renewSeat: (input) => repository.renewSeat(input),
     claimNextTutorRequest: (input) => repository.claimNextTutorRequest(input),
     settleTutorRequest: (input) => repository.settleTutorRequest(input),
@@ -2035,4 +2036,42 @@ test("starting with the AI Tutor on while the course's Tutor is offline tells th
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   const started = await local.startSession({ actorUserId: "host", sessionId: session.id });
   assert.equal(started.aiTutorEnabled, false);
+});
+
+test("M3 (review 2026-11-03): evictUser ends every seat of one user now: the waiting seat is released, the live room is left, an empty live session completes", async () => {
+  access.add("waiter:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Evict", courseId: "course-1", about: "A deactivated learner leaves at once." });
+  await service.joinGroup({ actorUserId: "waiter", groupId: group.id });
+  const waiting = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const live = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Now", startsAt: "2026-09-19T02:06:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "waiter", sessionId: waiting.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: live.id });
+  await service.enterSession({ actorUserId: "waiter", sessionId: live.id, requestedAt: NOW });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).occupancy, 2);
+  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 1 }, "one live room to leave; the waiting seat is just released");
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: waiting.id })).occupancy, 0);
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).occupancy, 1);
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "live");
+  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 0 }, "idempotent");
+  assert.deepEqual(await service.evictUser({ userId: "host" }), { sessions: 1 });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "completed", "nobody left: the live session ends");
+  assert.deepEqual(await service.evictUser({ userId: "nobody" }), { sessions: 0 });
+});
+
+test("H3 (review 2026-11-03): admission is checked before the entry queue: an unknown session and a learner without course access are refused without queueing", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Precheck", courseId: "course-1", about: "Access is checked outside the queue." });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await assert.rejects(() => service.enterSession({ actorUserId: "host", sessionId: "missing", requestedAt: NOW }), (error: unknown) => (error as { code: string }).code === "not_found");
+  await service.joinGroup({ actorUserId: "host", groupId: group.id }).catch(() => undefined);
+  access.delete("host:course-1");
+  await assert.rejects(() => service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW }), (error: unknown) => (error as { code: string }).code === "course_access_required");
+  access.add("host:course-1");
+  // Entries into two different sessions do not wait on each other: both are seated.
+  const other = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Also soon", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const [a, b] = await Promise.all([
+    service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW }),
+    service.enterSession({ actorUserId: "host", sessionId: other.id, requestedAt: NOW })
+  ]);
+  assert.equal((a as { occupancy: number }).occupancy, 1);
+  assert.equal((b as { occupancy: number }).occupancy, 1);
 });

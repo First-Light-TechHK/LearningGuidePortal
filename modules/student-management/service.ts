@@ -38,6 +38,33 @@ import {
 import { publicAppOrigin } from "@/services/runtimeConfig";
 import { decideAll, decideFeature, FEATURE_CATALOGUE, featureState, globalSetting, hasAiTutor, isCurrentSubscription, overrideFor } from "./featureAccess";
 
+/**
+ * Side effects of an account action outside the product aggregate (review
+ * 2026-11-03 M3): a deactivated learner leaves every Study Group room now.
+ * Loaded on first use so this module never pulls the Study Group runtime in;
+ * tests replace the hook.
+ */
+export const studentManagementHooks = {
+  evictFromLiveSessions: async (userId: string): Promise<void> => {
+    const { studyGroupService } = await import("@/modules/group-study/runtime");
+    await studyGroupService().evictUser({ userId });
+  }
+};
+
+/**
+ * isFeatureEnabled is on the hot path (every Helpdesk assistant request):
+ * the decision for one learner is kept for a few seconds instead of reading
+ * the whole product aggregate every time (review 2026-11-03 L3). Every write
+ * in this module clears it; a change made on another instance shows within
+ * FEATURE_CACHE_MS. myFeatures (the learner's own page) always reads fresh.
+ */
+export const FEATURE_CACHE_MS = 5_000;
+const featureCache = new Map<string, { at: number; value: MyFeaturesResponse }>();
+export function clearFeatureCache(userId?: string) {
+  if (userId === undefined) featureCache.clear();
+  else featureCache.delete(userId);
+}
+
 const ALL_COURSES = "All courses";
 
 /** Learning accounts only: staff accounts and records merged into another account are not students (PRD 3.2). */
@@ -228,6 +255,7 @@ export async function getStudent(userId: string): Promise<StudentDetails> {
 // ------------------------------------------------------------------ individual overrides (PRD 6.2, 6.4)
 
 export async function saveOverrides(userId: string, input: OverridesInput): Promise<StudentDetails> {
+  clearFeatureCache(userId);
   return editProductData((data) => {
     const user = findLearner(data, userId);
     if (user.deactivatedAt) throw new StudentProblem("account_inactive", "Reactivate the account before changing its access.");
@@ -271,6 +299,7 @@ export async function runStudentAction(userId: string, input: StudentActionInput
   switch (input.action) {
     case "deactivate":
     case "activate": {
+      clearFeatureCache(userId);
       const student = await editProductData((data) => {
         const user = findLearner(data, userId);
         const deactivate = input.action === "deactivate";
@@ -290,6 +319,12 @@ export async function runStudentAction(userId: string, input: StudentActionInput
         recordEvent(data, { userId, action: deactivate ? "account.deactivated" : "account.activated", actor: input.actor, before: { status: before }, after: { status: accountStatus(user) }, reason: input.reason });
         return details(data, user);
       });
+      if (input.action === "deactivate") {
+        // Signed out everywhere (above) and out of every live room now; a provider hiccup never fails the deactivation.
+        try { await studentManagementHooks.evictFromLiveSessions(userId); } catch (error) {
+          console.info(JSON.stringify({ type: "student_management", event: "evict_failed", userId, error: error instanceof Error ? error.name : "unknown" }));
+        }
+      }
       return { student, email: null };
     }
     case "change_email": {
@@ -415,6 +450,7 @@ function globalRow(data: ProductData, feature: FeatureKey) {
 }
 
 export async function saveFeatureSettings(input: FeatureSettingsInput) {
+  clearFeatureCache();
   return editProductData((data) => {
     if (String(featureState(data).version) !== input.expectedVersion) throw new StudentProblem("version_conflict", "Someone else changed these settings. Reload to see the latest.");
     let changed = false;
@@ -435,6 +471,7 @@ export async function saveFeatureSettings(input: FeatureSettingsInput) {
 }
 
 export async function setEmergencyOff(input: EmergencyInput) {
+  clearFeatureCache();
   return editProductData((data) => {
     const { state, row } = globalRow(data, input.feature);
     if (Boolean(row.emergencyOff) === input.off) return settings(data);
@@ -457,6 +494,10 @@ export async function myFeatures(userId: string): Promise<MyFeaturesResponse> {
   return { features };
 }
 
-export async function isFeatureEnabled(userId: string, feature: FeatureKey) {
-  return (await myFeatures(userId)).features[feature].enabled;
+export async function isFeatureEnabled(userId: string, feature: FeatureKey, at = Date.now()) {
+  const cached = featureCache.get(userId);
+  if (cached && at - cached.at < FEATURE_CACHE_MS) return cached.value.features[feature].enabled;
+  const value = await myFeatures(userId);
+  featureCache.set(userId, { at, value });
+  return value.features[feature].enabled;
 }

@@ -128,9 +128,10 @@ function gatedRepository(base: StudyGroupRepository, gate: ReturnType<typeof cre
     // Fetch the snapshot before holding on the gate: after the gate opens the racing operation
     // must resolve against the store as it was before the interleaved commits, otherwise a
     // check-then-act or stale-snapshot regression would still read fresh data and pass.
-    read: async () => { const result = await base.read(); if (point === "read") await gate.wait(); return result; },
+    read: async (scope) => { const result = await base.read(scope); if (point === "read") await gate.wait(); return result; },
     appendTokenLog: (line) => base.appendTokenLog(line),
-    update: async (mutate) => { if (point === "update") await gate.wait(); return base.update(mutate); },
+    update: async (mutate, scope) => { if (point === "update") await gate.wait(); return base.update(mutate, scope); },
+    pruneHistory: (input) => base.pruneHistory(input),
     renewSeat: async (input) => { if (point === "update") await gate.wait(); return base.renewSeat(input); },
     claimNextTutorRequest: (input) => base.claimNextTutorRequest(input),
     settleTutorRequest: (input) => base.settleTutorRequest(input),

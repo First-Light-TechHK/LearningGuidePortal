@@ -447,6 +447,27 @@ export function studyGroupService() {
     }, 5 * 60_000);
     timer.unref();
   }
+  // History prune (review 2026-11-03 H2): once an hour, PostgreSQL only (the
+  // file store is a dev stopgap and small by nature), bounded per tick, a
+  // failing tick swallowed and signalled like the sweeps above.
+  const pruneTimers = globalThis as typeof globalThis & { __lgStudyGroupPruneTimers?: Set<string> };
+  pruneTimers.__lgStudyGroupPruneTimers ??= new Set();
+  if (backend === "postgres" && !pruneTimers.__lgStudyGroupPruneTimers.has(key)) {
+    pruneTimers.__lgStudyGroupPruneTimers.add(key);
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          const result = await service.pruneHistory();
+          if (result.outbox > 0 || result.tutorRequests > 0 || result.webhookReceipts > 0) {
+            console.info(JSON.stringify({ type: "study_group.prune", ...result }));
+          }
+        } catch {
+          console.info(JSON.stringify({ type: "study_group.prune_failed" }));
+        }
+      })();
+    }, 60 * 60_000);
+    timer.unref();
+  }
   // Dedicated tutor-recovery timer (global review risk 1): exclusively the
   // crashed-process fallback — a live process retries its own failed work on
   // the outbox backoff (scheduleTutorRetry in the service), so only work
