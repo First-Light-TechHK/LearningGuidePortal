@@ -15,11 +15,14 @@ import { isNameTooLong, isValidAccountName } from "@/lib/nameValidation";
 const REMEMBERED_CREDENTIALS_KEY = "learning-guide.remembered-credentials";
 const REMEMBERED_CREDENTIALS_MAX_AGE_MS = 30 * 60 * 1000;
 
-function rememberCredentials(credentials: { email: string; password: string } | null) {
+// Keep me signed in remembers only the email for 30 minutes. The password is
+// never written to browser storage (it was kept there in plain text, readable
+// by anyone at a shared computer); the browser's own password manager can
+// still fill it through autocomplete="current-password".
+function rememberCredentials(credentials: { email: string } | null) {
   try {
     if (credentials) window.localStorage.setItem(REMEMBERED_CREDENTIALS_KEY, JSON.stringify({
       email: credentials.email.trim(),
-      password: credentials.password,
       expiresAt: Date.now() + REMEMBERED_CREDENTIALS_MAX_AGE_MS
     }));
     else window.localStorage.removeItem(REMEMBERED_CREDENTIALS_KEY);
@@ -56,16 +59,14 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       const saved = window.localStorage.getItem(REMEMBERED_CREDENTIALS_KEY);
       if (saved) {
         const credentials = JSON.parse(saved) as { email?: unknown; password?: unknown; expiresAt?: unknown };
-        if (typeof credentials.email !== "string" || typeof credentials.password !== "string" || typeof credentials.expiresAt !== "number" || !Number.isFinite(credentials.expiresAt) || credentials.expiresAt <= Date.now()) {
+        // A row written before this fix still holds a password: drop it at once.
+        if (typeof credentials.email !== "string" || "password" in credentials || typeof credentials.expiresAt !== "number" || !Number.isFinite(credentials.expiresAt) || credentials.expiresAt <= Date.now()) {
           rememberCredentials(null);
           return;
         }
         const initialEmailMatches = !initialEmail || initialEmail.trim().toLowerCase() === credentials.email.trim().toLowerCase();
         if (!initialEmail) setEmail(credentials.email);
-        if (initialEmailMatches) {
-          setPassword(credentials.password);
-          setRememberMe(true);
-        }
+        if (initialEmailMatches) setRememberMe(true);
       }
     } catch {
       // Invalid saved data is removed; unavailable browser storage must not block sign-in.
@@ -102,7 +103,7 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
           : labels.requestFailed;
         throw new Error(message);
       }
-      if (signIn) rememberCredentials(rememberMe ? { email, password } : null);
+      if (signIn) rememberCredentials(rememberMe ? { email } : null);
       if (data.data?.existingActiveEmail) {
         setExistingNotice(labels.existingEmailNotice);
         setExistingSeconds(3);
