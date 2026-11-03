@@ -276,6 +276,11 @@ export type HelpdeskRepository = {
   /** Writes the scrubbed text of each row still not replaced and marks it (scrubbed_at = atIso); returns how many changed. */
   applyRetention(updates: readonly RetentionUpdate[], atIso: string): Promise<number>;
   /**
+   * Deletes at most `limit` rate-limit hits recorded before olderThanIso, oldest first (tryRateHit prunes a key only on
+   * that key's next attempt, so hits of a learner who never returns would stay forever); returns how many were deleted.
+   */
+  sweepRateHits(olderThanIso: string, limit: number): Promise<number>;
+  /**
    * Runs work while holding the job's lock (PostgreSQL: a session advisory lock, so one instance at a time across the
    * fleet, released if the process dies); locked false, without running it, when another holder has it.
    */

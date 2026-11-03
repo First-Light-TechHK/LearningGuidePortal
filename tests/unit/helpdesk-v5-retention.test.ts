@@ -70,7 +70,7 @@ test("rows older than 180 days keep only scrubbed text and their labels; newer r
   assert.deepEqual([kept.kind, kept.intent, kept.feedback, kept.via, kept.releaseVersion, kept.signals, kept.createdAt], [old.kind, old.intent, old.feedback, old.via, old.releaseVersion, old.signals, old.createdAt]);
   // Observable: one structured line with counts and the run id, never text.
   const line = h.logs.find((entry) => entry.event === "job_run");
-  assert.deepEqual({ ...line, durationMs: 0 }, { type: "helpdesk", event: "job_run", job: "assist_retention", trigger: "schedule", runId: result.run?.id, day: "2026-10-30", status: "succeeded", attempts: 1, rowsScrubbed: 3, moreDue: false, durationMs: 0, instance: "test-instance" });
+  assert.deepEqual({ ...line, durationMs: 0 }, { type: "helpdesk", event: "job_run", job: "assist_retention", trigger: "schedule", runId: result.run?.id, day: "2026-10-30", status: "succeeded", attempts: 1, rowsScrubbed: 3, moreDue: false, rateHitsSwept: 0, durationMs: 0, instance: "test-instance" });
   assert.doesNotMatch(JSON.stringify(h.logs), /13800138000|Lin Learner|退款/);
 });
 
@@ -258,4 +258,19 @@ test("the server start: register() starts the loop once per process on the Node.
     Object.assign(process.env, env);
     delete flag.__lgHelpdeskJobsStarted;
   }
+});
+
+test("each run also sweeps rate-limit hits older than a day (bounded) and keeps the ones inside a day; the count is in the run's log line", async () => {
+  const h = harness();
+  const hour = 3_600_000;
+  assert.deepEqual(await h.repository.tryRateHit("assist:user-old", 10, hour, new Date(NOW - 2 * DAY).toISOString()), { allowed: true });
+  assert.deepEqual(await h.repository.tryRateHit("assist:user-old", 10, hour, new Date(NOW - 2 * DAY + 60_000).toISOString()), { allowed: true }, "inside the first hit's window, so the per-key prune keeps both");
+  assert.deepEqual(await h.repository.tryRateHit("assist:user-new", 10, hour, new Date(NOW - 2 * hour).toISOString()), { allowed: true });
+  const result = await h.job.runScheduled();
+  assert.equal(result.outcome, "ran");
+  assert.equal(result.run?.status, "succeeded");
+  const line = h.logs.find((entry) => entry.event === "job_run");
+  assert.equal(line?.rateHitsSwept, 2, "both hits older than a day are gone");
+  assert.equal(await h.repository.sweepRateHits(new Date(NOW - DAY).toISOString(), 100), 0, "nothing stale is left");
+  assert.deepEqual(await h.repository.tryRateHit("assist:user-new", 1, hour, new Date(NOW - hour - 1).toISOString()), { allowed: false, oldestAt: new Date(NOW - 2 * hour).toISOString() }, "the hit inside a day still counts (1 ms inside its hour window)");
 });

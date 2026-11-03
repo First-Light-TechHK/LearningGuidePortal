@@ -278,11 +278,20 @@ export function scopeStore(store: StudyGroupStore, scope: StudyGroupScope): Stud
   };
 }
 
-/** Rows a scoped mutation added (the shared objects were changed in place); appended to the whole store. */
+/**
+ * Rows a scoped mutation added (appended to the whole store) or replaced by a
+ * new object under a known id (swapped in, so the file adapter persists what
+ * PostgreSQL's by-id diff persists); a shared object changed in place is
+ * already in the whole store.
+ */
 export function mergeScopedRows(whole: StudyGroupStore, scoped: StudyGroupStore) {
   for (const table of Object.keys(whole) as Array<keyof StudyGroupStore>) {
     const rows = whole[table] as Array<{ id: string }>;
-    const known = new Set(rows.map((row) => row.id));
-    for (const row of scoped[table] as Array<{ id: string }>) if (!known.has(row.id)) rows.push(row);
+    const at = new Map(rows.map((row, index) => [row.id, index]));
+    for (const row of scoped[table] as Array<{ id: string }>) {
+      const index = at.get(row.id);
+      if (index === undefined) rows.push(row);
+      else if (rows[index] !== row) rows[index] = row;
+    }
   }
 }

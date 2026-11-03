@@ -60,9 +60,25 @@ export const studentManagementHooks = {
  */
 export const FEATURE_CACHE_MS = 5_000;
 const featureCache = new Map<string, { at: number; value: MyFeaturesResponse }>();
+// Bumped by every clear: a read that began before a clear stores nothing
+// (it may have read the aggregate before the write that cleared landed), so a
+// stale decision can never outlive the write by the cache window (review B
+// 2026-11-03 of L3). Writes clear before and after the aggregate write.
+let featureGeneration = 0;
 export function clearFeatureCache(userId?: string) {
+  featureGeneration += 1;
   if (userId === undefined) featureCache.clear();
   else featureCache.delete(userId);
+}
+
+/** A write that changes feature state: the cache is cleared before and after it, whatever its outcome. */
+async function clearingFeatureCache<T>(userId: string | undefined, write: () => Promise<T>): Promise<T> {
+  clearFeatureCache(userId);
+  try {
+    return await write();
+  } finally {
+    clearFeatureCache(userId);
+  }
 }
 
 const ALL_COURSES = "All courses";
@@ -255,8 +271,7 @@ export async function getStudent(userId: string): Promise<StudentDetails> {
 // ------------------------------------------------------------------ individual overrides (PRD 6.2, 6.4)
 
 export async function saveOverrides(userId: string, input: OverridesInput): Promise<StudentDetails> {
-  clearFeatureCache(userId);
-  return editProductData((data) => {
+  return clearingFeatureCache(userId, () => editProductData((data) => {
     const user = findLearner(data, userId);
     if (user.deactivatedAt) throw new StudentProblem("account_inactive", "Reactivate the account before changing its access.");
     if (overridesVersion(data, userId) !== input.expectedVersion) throw new StudentProblem("version_conflict", "Someone else changed this student's access. Reload to see the latest.");
@@ -271,7 +286,7 @@ export async function saveOverrides(userId: string, input: OverridesInput): Prom
       recordEvent(data, { userId, action: "feature_override.changed", actor: input.actor, before: { feature, value: before }, after: { feature, value: next }, reason: input.reason });
     }
     return details(data, user);
-  });
+  }));
 }
 
 // ------------------------------------------------------------------ account actions (PRD 4.2, 5)
@@ -299,8 +314,7 @@ export async function runStudentAction(userId: string, input: StudentActionInput
   switch (input.action) {
     case "deactivate":
     case "activate": {
-      clearFeatureCache(userId);
-      const student = await editProductData((data) => {
+      const student = await clearingFeatureCache(userId, () => editProductData((data) => {
         const user = findLearner(data, userId);
         const deactivate = input.action === "deactivate";
         // Repeating the same action changes nothing and records nothing (idempotent).
@@ -318,7 +332,7 @@ export async function runStudentAction(userId: string, input: StudentActionInput
         }
         recordEvent(data, { userId, action: deactivate ? "account.deactivated" : "account.activated", actor: input.actor, before: { status: before }, after: { status: accountStatus(user) }, reason: input.reason });
         return details(data, user);
-      });
+      }));
       if (input.action === "deactivate") {
         // Signed out everywhere (above) and out of every live room now; a provider hiccup never fails the deactivation.
         try { await studentManagementHooks.evictFromLiveSessions(userId); } catch (error) {
@@ -450,8 +464,7 @@ function globalRow(data: ProductData, feature: FeatureKey) {
 }
 
 export async function saveFeatureSettings(input: FeatureSettingsInput) {
-  clearFeatureCache();
-  return editProductData((data) => {
+  return clearingFeatureCache(undefined, () => editProductData((data) => {
     if (String(featureState(data).version) !== input.expectedVersion) throw new StudentProblem("version_conflict", "Someone else changed these settings. Reload to see the latest.");
     let changed = false;
     for (const feature of FEATURE_KEYS) {
@@ -467,19 +480,18 @@ export async function saveFeatureSettings(input: FeatureSettingsInput) {
     }
     if (changed) featureState(data).version += 1;
     return settings(data);
-  });
+  }));
 }
 
 export async function setEmergencyOff(input: EmergencyInput) {
-  clearFeatureCache();
-  return editProductData((data) => {
+  return clearingFeatureCache(undefined, () => editProductData((data) => {
     const { state, row } = globalRow(data, input.feature);
     if (Boolean(row.emergencyOff) === input.off) return settings(data);
     recordEvent(data, { userId: null, action: input.off ? "feature_emergency.off" : "feature_emergency.resumed", actor: input.actor, before: { feature: input.feature, emergencyOff: Boolean(row.emergencyOff) }, after: { feature: input.feature, emergencyOff: input.off }, reason: input.reason });
     row.emergencyOff = input.off ? { ...staffRecord(input.actor), reason: input.reason } : null;
     state.version += 1;
     return settings(data);
-  });
+  }));
 }
 
 // ------------------------------------------------------------------ learner side (PRD 6.2 step 5: enforce on the server)
@@ -497,7 +509,9 @@ export async function myFeatures(userId: string): Promise<MyFeaturesResponse> {
 export async function isFeatureEnabled(userId: string, feature: FeatureKey, at = Date.now()) {
   const cached = featureCache.get(userId);
   if (cached && at - cached.at < FEATURE_CACHE_MS) return cached.value.features[feature].enabled;
+  const generation = featureGeneration;
   const value = await myFeatures(userId);
-  featureCache.set(userId, { at, value });
+  // Only a read no write interrupted is kept (a cleared read may hold the aggregate as it was before the write).
+  if (generation === featureGeneration) featureCache.set(userId, { at, value });
   return value.features[feature].enabled;
 }

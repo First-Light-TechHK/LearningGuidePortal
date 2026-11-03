@@ -569,3 +569,81 @@ test("L1: an Idempotency-Key is looked up per learner: another learner sending t
   assert.equal(replay.response.id, mine.response.id, "my own replay still replays");
   assert.equal(replay.replayed, true);
 });
+
+// ---------------------------------------------------------------- review B 2026-11-03 (M2, L1)
+
+test("M2 (review B): a failing rate-limit store fails the request closed (no Admin call, nothing stored); the four budgets are separate keys", async () => {
+  const h = harness();
+  const failing = createAssistantService({ repository: { ...h.repository, tryRateHit: async () => { throw new Error("store down"); } }, admin: { async suggest() { throw new Error("must not be asked"); }, async reportOutcome() { return true; } }, now: () => new Date("2026-10-28T06:00:00.000Z"), log: () => undefined });
+  await assert.rejects(failing.ask(learner, { message: "password", locale: "en-GB", faqId: null }, randomUUID()), /store down/);
+  await assert.rejects(failing.click(learner, { locale: "en-GB", nodeId: FAQ_ID, via: "starter", sessionId: null, fromNodeId: null, label: "Password" }, randomUUID()), /store down/);
+  await assert.rejects(failing.checkForSubmit(learner, { category: "other", subject: "s", message: "m", locale: "en-GB" }), /store down/, "the submit check does not fall back to 'no suggestion' on a store failure: it fails like the rest");
+  assert.equal(h.suggestCalls.length, 0);
+  // Budgets: 30 assistant questions leave the 10 enquiries and 60 messages an hour untouched, and the other way round.
+  for (let index = 0; index < HELPDESK_LIMITS.assistantPerHour; index += 1) await h.assistant.ask(learner, { message: `q ${index}`, locale: "en-GB", faqId: null }, randomUUID());
+  await rejects(h.assistant.ask(learner, { message: "one more", locale: "en-GB", faqId: null }, randomUUID()), "rate_limited");
+  const ticket = await h.service.createTicket(learner, enquiry(), randomUUID());
+  assert.equal(ticket.replayed, false, "the assistant budget is not the enquiry budget");
+  for (let index = 1; index < HELPDESK_LIMITS.ticketsPerHour; index += 1) await h.service.createTicket(learner, enquiry({ subject: `s ${index}` }), randomUUID());
+  await rejects(h.service.createTicket(learner, enquiry({ subject: "eleventh" }), randomUUID()), "rate_limited");
+  assert.deepEqual(await h.repository.tryRateHit(`submit:${learner.id}`, HELPDESK_LIMITS.submitChecksPerHour, HOUR, new Date().toISOString()), { allowed: true }, "submit checks have their own key");
+});
+
+test("M2 (review B): an attempt refused after the limiter still counted: an enquiry refused by the messages budget costs an enquiry hit", async () => {
+  const h = harness();
+  const ticket = await h.service.createTicket(learner, enquiry(), randomUUID());
+  // 59 learner messages on the ticket plus the enquiry's own first message fill the 60 an hour.
+  let sequence = ticket.ticket.sequence;
+  for (let index = 1; index < HELPDESK_LIMITS.learnerMessagesPerHour; index += 1) {
+    sequence = (await h.service.learnerMessage(learner, ticket.ticket.id, { body: `m ${index}`, files: [], expectedSequence: sequence }, randomUUID())).ticket.sequence;
+  }
+  await rejects(h.service.createTicket(learner, enquiry({ subject: "blocked by messages" }), randomUUID()), "rate_limited");
+  // Documented cost (not a fix): the enquiry hit was taken before the messages budget refused, so one enquiry of the ten is gone.
+  const left = await h.repository.tryRateHit(`tickets:${learner.id}`, HELPDESK_LIMITS.ticketsPerHour, HOUR, new Date("2026-10-28T06:00:01.000Z").toISOString());
+  assert.deepEqual(left, { allowed: true });
+  let admitted = 1;
+  for (;;) {
+    const next = await h.repository.tryRateHit(`tickets:${learner.id}`, HELPDESK_LIMITS.ticketsPerHour, HOUR, new Date("2026-10-28T06:00:01.000Z").toISOString());
+    if (!next.allowed) break;
+    admitted += 1;
+  }
+  assert.equal(admitted, HELPDESK_LIMITS.ticketsPerHour - 2, "ten minus the created enquiry minus the refused attempt");
+});
+
+test("L1 (review B): the same learner's key replays only the same request: a different body, a different endpoint or a chip with the same key is 422, and the replay is answered without Admin", async () => {
+  const h = harness();
+  const key = randomUUID();
+  const first = await h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: null }, key);
+  assert.equal(h.suggestCalls.length, 1);
+  const replay = await h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: null }, key);
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.response.id, first.response.id);
+  assert.equal(h.suggestCalls.length, 1, "a replay never asks Admin");
+  await rejects(h.assistant.ask(learner, { message: "reset password", locale: "zh-CN", faqId: null }, key), "idempotency_conflict");
+  await rejects(h.assistant.ask(learner, { message: "reset password", locale: "en-GB", faqId: FAQ_ID }, key), "idempotency_conflict");
+  await rejects(h.assistant.click(learner, { locale: "en-GB", nodeId: FAQ_ID, via: "starter", sessionId: null, fromNodeId: null, label: "reset password" }, key), "idempotency_conflict");
+  assert.equal(h.suggestCalls.length, 1, "a conflicting reuse never asks Admin either");
+  // Two concurrent sends of the same request share one Admin call and one row.
+  const key2 = randomUUID();
+  const [a, b] = await Promise.all([
+    h.assistant.ask(learner, { message: "password again", locale: "en-GB", faqId: null }, key2),
+    h.assistant.ask(learner, { message: "password again", locale: "en-GB", faqId: null }, key2)
+  ]);
+  assert.equal(a.response.id, b.response.id);
+  assert.equal(h.suggestCalls.length, 2);
+  assert.equal([a, b].filter((item) => item.replayed).length, 1);
+});
+
+test("L1 (review B): a key reused by another learner is refused only once their own request has been run: Admin is asked and their budget is charged (documented cost)", async () => {
+  const h = harness();
+  const key = randomUUID();
+  await h.assistant.ask(learner, { message: "password", locale: "en-GB", faqId: null }, key);
+  await rejects(h.assistant.ask(other, { message: "password", locale: "en-GB", faqId: null }, key), "idempotency_conflict");
+  assert.equal(await h.repository.findAssistByKey(key, other.id), null);
+  // The per-learner lookup finds nothing for the other learner, so their request runs up to the insert, where the
+  // globally unique key refuses it: one Admin call and one assistant hit are spent on a key that was never theirs.
+  assert.equal(h.suggestCalls.length, 2);
+  assert.equal(h.suggestCalls[1].learnerId, other.id);
+  const hits = await h.repository.tryRateHit(`assist:${other.id}`, 1, HOUR, new Date("2026-10-28T06:00:01.000Z").toISOString());
+  assert.equal(hits.allowed, false);
+});

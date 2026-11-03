@@ -157,7 +157,9 @@ const SCHEMA_PROBE = `
   ) AS ready
 `;
 
-async function schemaIsCurrent(): Promise<boolean> {
+// Exported for the fresh-database proofs (tests/io/postgres/schema-fresh-vs-migrations.test.ts):
+// whether ensureSchema() would take the no-DDL fast path right now.
+export async function schemaIsCurrent(): Promise<boolean> {
   const result = await getPool().query<{ ready: boolean }>(SCHEMA_PROBE);
   return result.rows[0]?.ready === true;
 }

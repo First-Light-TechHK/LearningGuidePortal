@@ -545,3 +545,70 @@ test("M1/L2 (review 2026-11-03): aiTutorEnabled must be a boolean on schedule an
   const okPatch = await call(patchSession, `http://localhost/api/study-groups/sessions/${sessionId}`, { groupId, aiTutorEnabled: true }, token, { sessionId }, "PATCH");
   assert.equal(okPatch.status, 200, await okPatch.clone().text());
 });
+
+test("M1/L2 (review B 2026-11-03): route status codes for malformed bodies: invalid JSON, non-objects, wrong types are 400 validation; null fields and numeric strings are accepted", async () => {
+  const created = await call(postGroup, "http://localhost/api/study-groups", { title: "Shapes", courseId: "api-course", about: "Route body shapes." }, token);
+  const groupId = (await created.json()).data.id as string;
+  const startsAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const sessionsUrl = `http://localhost/api/study-groups/${groupId}/sessions`;
+  const raw = (handler: Route, url: string, body: string, params: Record<string, string> = {}, method = "POST") =>
+    handler(new Request(url, { method, headers: { "content-type": "application/json", cookie: `${SESSION_COOKIE}=${token}` }, body }), { params: Promise.resolve(params) });
+  for (const body of ["{not json", "", "null", "[]", "\"text\"", "42"]) {
+    const response = await raw(postSession, sessionsUrl, body, { groupId });
+    assert.equal(response.status, 400, `schedule body ${JSON.stringify(body)}`);
+    assert.equal((await response.json()).code, "validation");
+    const group = await raw(postGroup, "http://localhost/api/study-groups", body);
+    assert.equal(group.status, 400, `create body ${JSON.stringify(body)}`);
+  }
+  const wrong: Array<Record<string, unknown>> = [
+    { title: ["x"], startsAt, durationSeconds: 1800, maxParticipants: 4 },
+    { title: "T", startsAt: { iso: startsAt }, durationSeconds: 1800, maxParticipants: 4 },
+    { title: "T", startsAt, durationSeconds: true, maxParticipants: 4 },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: [4] },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: "four" },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: 4, focus: 7 },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: 4, relatedLessonId: {} },
+    { title: "T", startsAt, durationSeconds: "1e400", maxParticipants: 4 },
+    { title: "T", startsAt, durationSeconds: 2000, maxParticipants: 4 },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: 7 },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: 4.5 },
+    { title: "x".repeat(51), startsAt, durationSeconds: 1800, maxParticipants: 4 },
+    { title: "T", startsAt, durationSeconds: 1800, maxParticipants: 4, focus: "f".repeat(301) }
+  ];
+  for (const body of wrong) {
+    const response = await call(postSession, sessionsUrl, body, token, { groupId });
+    assert.equal(response.status, 400, JSON.stringify(body).slice(0, 80));
+    assert.equal((await response.json()).code, "validation");
+  }
+  const past = await call(postSession, sessionsUrl, { title: "T", startsAt: "2020-01-01T00:00:00.000Z", durationSeconds: 1800, maxParticipants: 4 }, token, { groupId });
+  assert.equal(past.status, 400);
+  assert.equal((await past.json()).code, "start_in_past");
+  // Null means not sent; numeric strings are what the forms send; prototype-named keys are plain data.
+  const lenient = await call(postSession, sessionsUrl, { title: "Lenient", startsAt, durationSeconds: "1800", maxParticipants: "4", focus: null, relatedLessonId: null, aiTutorEnabled: null, __proto__: { title: "proto" }, constructor: "c" }, token, { groupId });
+  assert.equal(lenient.status, 200, await lenient.clone().text());
+  const session = (await lenient.json()).data as { id: string; durationSeconds: number; maxParticipants: number; aiTutorEnabled: boolean; focus: string | null };
+  assert.equal(session.durationSeconds, 1800);
+  assert.equal(session.maxParticipants, 4);
+  assert.equal(session.aiTutorEnabled, true, "null aiTutorEnabled defaults on, like an absent field");
+  assert.equal(session.focus, null);
+  // Edit: a wrong type is 400, a null is "not sent", a changed course on the group edit is 409.
+  const patchUrl = `http://localhost/api/study-groups/sessions/${session.id}`;
+  for (const body of [{ groupId, startsAt: 1 }, { groupId, title: [] }, { groupId, durationSeconds: "soon" }, { groupId: 5 }]) {
+    const response = await call(patchSession, patchUrl, body, token, { sessionId: session.id }, "PATCH");
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.equal((await response.json()).code, "validation");
+  }
+  const missingGroup = await call(patchSession, patchUrl, { aiTutorEnabled: false }, token, { sessionId: session.id }, "PATCH");
+  assert.equal(missingGroup.status, 404, "an edit without its groupId finds no session");
+  const unchanged = await call(patchSession, patchUrl, { groupId, title: null, startsAt: null, durationSeconds: null, maxParticipants: null, aiTutorEnabled: false }, token, { sessionId: session.id }, "PATCH");
+  assert.equal(unchanged.status, 200, await unchanged.clone().text());
+  assert.equal((await unchanged.json()).data.aiTutorEnabled, false);
+  const patchGroup = (await import("../../app/api/study-groups/[groupId]/route")).PATCH as unknown as Route;
+  const groupUrl = `http://localhost/api/study-groups/${groupId}`;
+  assert.equal((await call(patchGroup, groupUrl, { title: "Shapes", about: "Still shapes.", courseId: null }, token, { groupId }, "PATCH")).status, 200);
+  const conflict = await call(patchGroup, groupUrl, { title: "Shapes", about: "Still shapes.", courseId: "another-course" }, token, { groupId }, "PATCH");
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).code, "conflict");
+  const typed = await call(patchGroup, groupUrl, { title: "Shapes", about: { text: "object" } }, token, { groupId }, "PATCH");
+  assert.equal(typed.status, 400);
+});

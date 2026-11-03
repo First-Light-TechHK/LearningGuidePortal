@@ -258,3 +258,36 @@ test("L3 (review 2026-11-03): isFeatureEnabled is cached per learner for a few s
   await sm.runStudentAction(fresh.id, { action: "deactivate", actor, reason: "x" }, request);
   assert.equal(await sm.isFeatureEnabled(fresh.id, "ai_support_assistant"), false, "deactivation clears the entry");
 });
+
+test("L3 (review B 2026-11-03): a read in flight while a write clears the cache stores nothing, and a write clears the cache after it lands too", async () => {
+  const user = await learner();
+  const deny = () => store.editProductData((data) => {
+    (data.featureAccess ||= { globals: [], overrides: [], version: 0 }).overrides.push({ userId: user.id, feature: "ai_support_assistant", value: "deny", reason: "elsewhere", updated: { at: new Date().toISOString(), byId: "emp", byName: "Ops" } });
+  });
+  sm.clearFeatureCache(user.id);
+  const t0 = Date.now();
+  // The read starts (nothing cached), a write clears while it is in flight, then the write's data lands.
+  const inFlight = sm.isFeatureEnabled(user.id, "ai_support_assistant", t0);
+  sm.clearFeatureCache(user.id);
+  assert.equal(await inFlight, true, "the read answers what it read");
+  await deny();
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant", t0 + 1), false, "the interrupted read must not have been cached: the next read sees the write");
+  // The module's own writes: the cache is clean after the write has landed, whatever a concurrent read did meanwhile.
+  await store.editProductData((data) => { data.featureAccess!.overrides = data.featureAccess!.overrides.filter((row) => row.userId !== user.id); });
+  sm.clearFeatureCache(user.id);
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant", t0 + 2), true);
+  const current = await sm.getStudent(user.id);
+  const saving = sm.saveOverrides(user.id, { actor, reason: "pilot", expectedVersion: current.overridesVersion, overrides: { ai_support_assistant: "deny" } });
+  // A read racing the write (it begins after the pre-write clear, before the write lands) reads the old aggregate.
+  const racing = sm.isFeatureEnabled(user.id, "ai_support_assistant", t0 + 3);
+  await saving;
+  await racing;
+  assert.equal(await sm.isFeatureEnabled(user.id, "ai_support_assistant", t0 + 4), false, "the post-write clear (or the generation check) keeps the stale read out");
+  // The emergency switch and a global setting clear everything after their write as well.
+  await sm.setEmergencyOff({ actor, feature: "ai_support_assistant", off: true, reason: "incident" });
+  const other = await learner();
+  const racingGlobal = sm.isFeatureEnabled(other.id, "ai_support_assistant", t0 + 5);
+  const resumed = sm.setEmergencyOff({ actor, feature: "ai_support_assistant", off: false, reason: "over" });
+  await Promise.all([racingGlobal, resumed]);
+  assert.equal(await sm.isFeatureEnabled(other.id, "ai_support_assistant", t0 + 6), true);
+});
