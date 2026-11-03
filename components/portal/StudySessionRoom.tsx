@@ -184,7 +184,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const [mediaNotice, setMediaNotice] = useState<{ kind: "mic" | "camera"; device: boolean } | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
-  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const chatPinnedRef = useRef(true);
   const caretRef = useRef<number | null>(null);
@@ -859,6 +859,15 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
     caretRef.current = null;
   });
 
+  // BUG-0284: the box grows with what is typed or pasted, up to its CSS
+  // max-height, and the rest scrolls inside it.
+  useLayoutEffect(() => {
+    const input = chatInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  }, [draft, sideTab, focus, sideOpen]);
+
   useEffect(() => () => {
     if (permissionWatchRef.current) permissionWatchRef.current.onchange = null;
   }, []);
@@ -1214,7 +1223,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
   function updateMention(value: string, caret: number) {
     const upToCaret = value.slice(0, caret);
     const at = upToCaret.lastIndexOf("@");
-    if (at < 0 || (at > 0 && upToCaret[at - 1] !== " ")) {
+    if (at < 0 || (at > 0 && !/\s/.test(upToCaret[at - 1]))) {
       setMention(null);
       return;
     }
@@ -1264,8 +1273,9 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
             over it (collapsible), so the shared screen keeps the room's space. Owner 2026-10-30:
             the float is a light card with a labelled header and a row per person (name, role,
             mic), so it stands out on the dark share edge (Tencent Meeting style). Raised hands
-            come first, then the Host; speaking only lights a row up, so the list never jumps. */}
-        {tiles.length > 0 ? <div ref={peopleDrag.ref} style={peopleDrag.style} className={styles.avatarFloat} data-open={peopleOpen ? "true" : "false"} data-dragging={peopleDrag.dragging ? "true" : "false"}>
+            come first, then the Host; speaking only lights a row up, so the list never jumps.
+            BUG-0286: only in full screen; outside it the Participants tab beside the screen lists them. */}
+        {focus && tiles.length > 0 ? <div ref={peopleDrag.ref} style={peopleDrag.style} className={styles.avatarFloat} data-open={peopleOpen ? "true" : "false"} data-dragging={peopleDrag.dragging ? "true" : "false"}>
           <button type="button" className={styles.avatarToggle} aria-expanded={peopleOpen} onClick={togglePeople} {...peopleDrag.handle}><ControlIcon kind="people" /><span className={styles.avatarToggleLabel}>{roomCopy.participants}</span><span className={styles.tabCount}>{tiles.length}</span>{peopleOpen ? null : <span className={styles.avatarStack} aria-hidden="true">{floatPeople.slice(0, 3).map((tile) => <i key={tile.identity} data-speaking={tile.speaking ? "true" : "false"}>{tile.name.slice(0, 1)}</i>)}</span>}<span className={styles.avatarChevron} data-open={peopleOpen ? "true" : "false"} aria-hidden="true"><ControlIcon kind="chevron" /></span><span className={styles.srOnly}>{peopleOpen ? roomCopy.hideParticipants : roomCopy.showParticipants}</span></button>
           {peopleOpen ? <ul className={styles.avatarStrip} aria-label={roomCopy.participants}>
           {floatPeople.map((tile) => {
@@ -1383,7 +1393,7 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
                       })()
                     : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
                 </div>
-              ) : <><p className={styles.chatBody}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
+              ) : <><p className={`${styles.chatBody} ${styles.chatText}`}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {
@@ -1416,11 +1426,15 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
                   ))}
                 </div>
               ) : null}
-              <input ref={chatInputRef} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
+              <textarea ref={chatInputRef} rows={1} maxLength={ROOM_CHAT_MAX_LENGTH} aria-label={roomCopy.chat} value={draft} onChange={(event) => { setDraft(event.target.value); updateMention(event.target.value, event.target.selectionStart ?? event.target.value.length); }} onKeyDown={(event) => {
                 // IME composition (Chinese/Japanese input): Enter picks the candidate and
                 // Escape/arrows drive the IME — the mention popup must not steal those.
                 if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                if (!mention || mentionRows.length === 0) return;
+                if (!mention || mentionRows.length === 0) {
+                  // Enter sends, as the hint says; Shift+Enter starts a new line.
+                  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+                  return;
+                }
                 if (event.key === "ArrowDown") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex + 1) % mentionRows.length }); }
                 else if (event.key === "ArrowUp") { event.preventDefault(); setMention({ ...mention, index: (mentionIndex - 1 + mentionRows.length) % mentionRows.length }); }
                 else if (event.key === "Escape") { event.preventDefault(); setMention(null); }

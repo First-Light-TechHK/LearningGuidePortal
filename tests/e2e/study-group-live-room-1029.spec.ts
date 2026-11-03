@@ -37,11 +37,14 @@ test("1029-1: while the Host shares, the others see avatars only under the share
     await expect(tiles).toHaveCount(2);
     await room.pageA.getByRole("button", { name: "Share" }).click();
     await expect(room.pageB.locator('[class*="shareMain"]')).toBeVisible();
+    await expect(tiles, "no participant cards under a shared screen").toHaveCount(0);
+    // BUG-0286: the avatars float only in full screen; outside it the Participants tab lists them.
+    await room.pageB.getByRole("button", { name: "Full screen" }).click();
     const strip = room.pageB.getByRole("list", { name: "Participants" });
     await expect(strip.getByRole("listitem")).toHaveCount(2);
-    await expect(tiles, "no participant cards under a shared screen").toHaveCount(0);
     const avatar = await strip.getByRole("listitem").first().boundingBox();
     expect(avatar && avatar.height <= 56, "an avatar, not a card").toBe(true);
+    await room.pageB.getByRole("button", { name: "Exit full screen" }).click();
     // The sharer keeps the cards (their own screen never fills their view).
     await expect(room.pageA.locator('[class*="videos"] [class*="tile"][data-video]')).toHaveCount(2);
     await room.pageA.getByRole("button", { name: "Share" }).click();
@@ -137,13 +140,6 @@ test("1029-5: a shared screen goes full screen with the people, the chat (AI Tut
     await expect(stage).toBeVisible();
     // Out of full screen the shared screen already takes most of the window's height.
     expect((await stage.boundingBox())!.height).toBeGreaterThanOrEqual(560);
-    // The people float over the screen and fold away.
-    const people = pageB.getByRole("list", { name: "Participants" });
-    await expect(people.getByRole("listitem")).toHaveCount(2);
-    await pageB.getByRole("button", { name: /Hide participants/ }).click();
-    await expect(people).toHaveCount(0);
-    await pageB.getByRole("button", { name: /Show participants/ }).click();
-    await expect(people.getByRole("listitem")).toHaveCount(2);
 
     await pageB.getByRole("button", { name: "Full screen" }).click();
     const room1 = pageB.locator('section[data-focus="true"]');
@@ -151,6 +147,13 @@ test("1029-5: a shared screen goes full screen with the people, the chat (AI Tut
     const box = (await stage.boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(1430);
     expect(box.height).toBeGreaterThanOrEqual(890);
+    // The people float over the screen and fold away.
+    const people = pageB.getByRole("list", { name: "Participants" });
+    await expect(people.getByRole("listitem")).toHaveCount(2);
+    await pageB.getByRole("button", { name: /Hide participants/ }).click();
+    await expect(people).toHaveCount(0);
+    await pageB.getByRole("button", { name: /Show participants/ }).click();
+    await expect(people.getByRole("listitem")).toHaveCount(2);
     // Controls float over the screen; the chat panel starts folded and opens on demand.
     await expect(pageB.getByRole("button", { name: "Mic" })).toBeVisible();
     await expect(pageB.locator('section[data-focus] > aside')).toBeHidden();
@@ -226,6 +229,10 @@ test("1030-2: the floating people are a light card with names, and the share but
     await pageB.setViewportSize({ width: 1440, height: 900 });
     await pageA.getByRole("button", { name: "Share" }).click();
     await expect(pageB.getByTestId("share-stage")).toBeVisible();
+    // The Full screen control is a light pill over the screen.
+    const full = pageB.getByRole("button", { name: "Full screen" });
+    expect(await full.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(255, 255, 255, 0.95)");
+    await full.click();
     const people = pageB.getByRole("list", { name: "Participants" });
     await expect(people.getByRole("listitem")).toHaveCount(2);
     const card = pageB.locator('[class*="avatarFloat"]');
@@ -239,9 +246,6 @@ test("1030-2: the floating people are a light card with names, and the share but
     await toggle.click();
     await expect(people).toHaveCount(0);
     await expect(pageB.getByRole("button", { name: /Show participants/ })).toBeVisible();
-    // Full screen and Chat are light pills over the screen.
-    const full = pageB.getByRole("button", { name: "Full screen" });
-    expect(await full.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(255, 255, 255, 0.95)");
   } finally {
     await room.close();
   }
@@ -260,6 +264,11 @@ test("1030-3: full screen keeps people in order, previews new lines while the ch
     const stage = pageB.getByTestId("share-stage");
     await expect(stage).toBeVisible();
     await expect(stage).toContainText("Study Host is sharing their screen");
+
+    // Double-click on the shared screen enters full screen; the top bar names the sharer and offers the way out.
+    await stage.locator("video").dblclick();
+    await expect(pageB.locator('section[data-focus="true"]')).toBeVisible();
+    await expect(pageB.getByText("Press Esc to exit")).toBeVisible();
     // The Host is listed first; a raised hand moves its owner above the Host.
     const rows = pageB.getByRole("list", { name: "Participants" }).getByRole("listitem");
     await expect(rows.first()).toContainText("Study Host");
@@ -267,11 +276,6 @@ test("1030-3: full screen keeps people in order, previews new lines while the ch
     await expect(rows.first()).toContainText("Study Guest");
     await pageB.getByRole("button", { name: "Raise Hand" }).click();
     await expect(rows.first()).toContainText("Study Host");
-
-    // Double-click on the shared screen enters full screen; the top bar names the sharer and offers the way out.
-    await stage.locator("video").dblclick();
-    await expect(pageB.locator('section[data-focus="true"]')).toBeVisible();
-    await expect(pageB.getByText("Press Esc to exit")).toBeVisible();
     await expect(pageB.locator('section[data-focus] > aside')).toBeHidden();
     // A line arriving while the chat is folded shows as a preview and a count on Chat.
     await pageA.getByRole("tab", { name: /Chat/ }).click();
@@ -293,7 +297,9 @@ test("1030-3: full screen keeps people in order, previews new lines while the ch
     await expect(pageB.locator('section[data-focus="false"]')).toBeVisible();
     await pageB.reload();
     await expect(pageB.getByTestId("share-stage")).toBeVisible({ timeout: 60_000 });
+    await pageB.getByRole("button", { name: "Full screen" }).click();
     await expect(pageB.getByRole("button", { name: /Show participants/ })).toBeVisible();
+    await pageB.getByRole("button", { name: "Exit full screen" }).click();
     // The sharer stops from the banner and everyone's stage goes back to the cards.
     await pageA.getByRole("button", { name: "Stop sharing" }).click();
     await expect(pageB.getByTestId("share-stage")).toHaveCount(0);
@@ -312,6 +318,8 @@ test("1030-4: the people card and the full-screen chat drag by their headers and
     await pageA.getByRole("button", { name: "Share" }).click();
     const stage = pageB.getByTestId("share-stage");
     await expect(stage).toBeVisible();
+    await pageB.getByRole("button", { name: "Full screen" }).click();
+    await expect(pageB.locator('section[data-focus="true"]')).toBeVisible();
     const card = pageB.locator('[class*="avatarFloat"]');
     const header = pageB.getByRole("button", { name: /Hide participants/ });
     const drag = async (from: { x: number; y: number }, dx: number, dy: number) => {
@@ -329,6 +337,10 @@ test("1030-4: the people card and the full-screen chat drag by their headers and
     expect(Math.round(after.y - before.y)).toBe(200);
     // The drag did not fold the card.
     await expect(pageB.getByRole("list", { name: "Participants" })).toBeVisible();
+    // A plain click on the header still folds and opens it.
+    await header.click();
+    await expect(pageB.getByRole("list", { name: "Participants" })).toHaveCount(0);
+    await pageB.getByRole("button", { name: /Show participants/ }).click();
     // Thrown far away it stops at the shared screen's edge.
     const moved = (await header.boundingBox())!;
     await drag({ x: moved.x + 30, y: moved.y + moved.height / 2 }, -3000, -3000);
@@ -336,12 +348,10 @@ test("1030-4: the people card and the full-screen chat drag by their headers and
     const pinned = (await card.boundingBox())!;
     expect(Math.round(pinned.x - box.x)).toBe(8);
     expect(Math.round(pinned.y - box.y)).toBe(8);
-    // A plain click on the header still folds and opens it.
-    await header.click();
-    await expect(pageB.getByRole("list", { name: "Participants" })).toHaveCount(0);
-    await pageB.getByRole("button", { name: /Show participants/ }).click();
 
-    // Full screen starts with the card back at rest; the chat float drags by its header.
+    // Full screen starts again with the card back at rest; the chat float drags by its header.
+    await pageB.getByRole("button", { name: "Exit full screen" }).click();
+    await expect(pageB.locator('section[data-focus="false"]')).toBeVisible();
     await pageB.getByRole("button", { name: "Full screen" }).click();
     await expect(pageB.locator('section[data-focus="true"]')).toBeVisible();
     const rest = (await card.boundingBox())!;

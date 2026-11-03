@@ -41,7 +41,7 @@ test("the chat control queues the user's text and does not carry a system prompt
   assert.match(room, /<time dateTime=\{line\.at\}>/);
   // The Tutor entry button toggles addressing; the "@AI Tutor " prefix still works.
   assert.match(room, /session\.aiTutorEnabled \? <button className=\{styles\.tutorEntry\}/);
-  assert.match(room, /<input ref=\{chatInputRef\}/);
+  assert.match(room, /<textarea ref=\{chatInputRef\}/);
   assert.equal(room.includes("/api/ai-tutor"), false);
   assert.equal(room.includes("prompts/"), false);
   assert.equal(room.includes("You are"), false);
@@ -549,7 +549,7 @@ test("typing @ in the chat opens a mention list for AI Tutor and the present mem
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   // "@" opens the list only at the start of the draft or after a space.
   assert.match(room, /const at = upToCaret\.lastIndexOf\("@"\);/);
-  assert.match(room, /if \(at < 0 \|\| \(at > 0 && upToCaret\[at - 1\] !== " "\)\) \{/);
+  assert.match(room, /if \(at < 0 \|\| \(at > 0 && !\/\\s\/\.test\(upToCaret\[at - 1\]\)\)\) \{/);
   assert.match(room, /setMention\(\{ start: at, query: upToCaret\.slice\(at \+ 1\), index: 0 \}\);/);
   // Candidates: AI Tutor first (only when enabled), members in roster order,
   // deduplicated, without the local participant, prefix-filtered, capped at 6.
@@ -568,7 +568,7 @@ test("typing @ in the chat opens a mention list for AI Tutor and the present mem
   assert.match(room, /input\.setSelectionRange\(caretRef\.current, caretRef\.current\)/);
   assert.match(room, /onMouseDown=\{\(event\) => \{ event\.preventDefault\(\); chooseMention\(row\); \}\}/);
   // Keyboard: arrows move, Escape closes, Enter selects instead of sending.
-  assert.match(room, /if \(!mention \|\| mentionRows\.length === 0\) return;/);
+  assert.match(room, /if \(!mention \|\| mentionRows\.length === 0\) \{/);
   // IME composition (Chinese/Japanese input) must not lose Enter/Escape/arrows to the popup.
   assert.match(room, /if \(event\.nativeEvent\.isComposing \|\| event\.keyCode === 229\) return;/);
   assert.match(room, /event\.key === "ArrowDown"/);
@@ -1066,11 +1066,17 @@ test("the chat input is one frame on the panel's bottom edge and the floating pe
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   // The box is the only frame, the @AI Tutor entry is a light-blue chip, and the log fills the panel so the box sits on its bottom edge.
-  assert.match(css, /\.chatForm input \{[^}]*border: 0;[^}]*background: transparent;/);
+  assert.match(css, /\.chatForm textarea \{[^}]*border: 0;[^}]*background: transparent;/);
   assert.match(css, /\.tutorEntry \{[^}]*border-radius: 999px; background: #eef4ff; color: #1d6bff;/);
   assert.match(css, /\.tutorEntry\[aria-pressed="true"\] \{ background: #1d6bff; color: #fff; \}/);
   assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
   assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
+  // BUG-0284: the input wraps and grows to a limit; Enter sends, Shift+Enter starts a new line; a message keeps its lines.
+  assert.match(css, /\.chatForm textarea \{[^}]*max-height: 120px;[^}]*overflow-wrap: anywhere;/);
+  assert.match(room, /event\.key === "Enter" && !event\.shiftKey\) \{ event\.preventDefault\(\); event\.currentTarget\.form\?\.requestSubmit\(\);/);
+  assert.match(css, /\.chatText \{ white-space: pre-wrap; \}/);
+  // BUG-0286: the people float only in full screen; outside it the Participants tab lists them.
+  assert.match(room, /\{focus && tiles\.length > 0 \? <div ref=\{peopleDrag\.ref\}/);
   // The people float is an opaque light card with a labelled header and a row per person (name, role, mic).
   assert.match(css, /\.avatarFloat \{[^}]*background: rgba\(255, 255, 255, \.96\);[^}]*box-shadow:/);
   assert.match(room, /<span className=\{styles\.avatarToggleLabel\}>\{roomCopy\.participants\}<\/span>/);
