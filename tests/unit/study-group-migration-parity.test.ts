@@ -102,3 +102,26 @@ test("021 and the ensureSchema bootstrap swap in the same 10/20/30/40-minute dur
   assert.match(migration, /CHECK \(duration_seconds IN \(600, 1200, 1800, 2400, 2700, 3600, 5400\)\)/);
   assert.match(bootstrap, /conname = 'live_sessions_duration_seconds_v2_check'/);
 });
+
+test("every bootstrap index and ALTER follows the CREATE TABLE of its table (fresh-database order)", () => {
+  // Regression: upstream overlay-check 2026-11-03 bootstrapped an empty
+  // database and failed with 'relation "study_group_outbox" does not exist'
+  // because the 027 outbox index was placed before the outbox table. The
+  // batch runs top to bottom in one transaction, so position is behaviour.
+  const source = stripComments(readFileSync(BOOTSTRAP_PATH, "utf8"));
+  const created = new Map<string, number>();
+  for (const match of source.matchAll(/CREATE TABLE IF NOT EXISTS\s+(\w+)/g)) {
+    if (!created.has(match[1])) created.set(match[1], match.index ?? 0);
+  }
+  const references = [
+    ...source.matchAll(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS\s+(\w+)\s+ON\s+(\w+)/g),
+    ...source.matchAll(/ALTER TABLE\s+(?:IF EXISTS\s+)?()(\w+)/g)
+  ];
+  assert.ok(references.length >= 9, "the bootstrap declares the Study Group indexes");
+  for (const match of references) {
+    const table = match[2];
+    const createdAt = created.get(table);
+    if (createdAt === undefined) continue; // tables owned by migrations only (not bootstrapped here)
+    assert.ok((match.index ?? 0) > createdAt, `${collapse(match[0])} runs before CREATE TABLE ${table} in db.ts ensureSchema`);
+  }
+});
