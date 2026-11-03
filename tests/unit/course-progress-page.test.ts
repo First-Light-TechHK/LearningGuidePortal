@@ -6,7 +6,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("text points share continuous anchors, track scroll and resume, and preserve Next Lesson completion", async () => {
+test("text points share continuous anchors, track scroll and resume, and preserve Mark complete behaviour", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room?<LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/>:<PreviewLessonView key={props.key} {...props}/>));` },
     bundle: true, write: false, outfile: "progress.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
@@ -78,7 +78,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.screenshot({path:`test-results/text-completion/${locale}-continuous-mobile.png`,fullPage:true});
     await page.setViewportSize({width:1440,height:1100});
     await page.getByRole("button", {name:"1.1 Reading 1",exact:true}).click();
-    const next = page.getByRole("button", { name: getMessages(locale).learning.nextLesson , exact: true });
+    const next = page.getByRole("button", { name: getMessages(locale).videoCompletion.markComplete , exact: true });
     await next.click(); await page.getByRole("alert").waitFor();
     assert.equal(await page.evaluate(() => (window as any).destination), undefined, "failed completion cannot navigate");
     assert.equal(await page.getByRole("dialog").count(),0);
@@ -106,7 +106,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     for(const room of [false,true])for(const type of ["text","pdf","legacy"]){
       await page.evaluate(props=>{delete (window as any).destination;(window as any).mount(props);},{key:`${room}-${type}`,room,locale,entitled:true,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:2,body:"Legacy reading",contents:type==="legacy"?undefined:[{id:"reading",type,title:"Reading",mode:"lecture",html:"<p>Text content</p>",url:"/reading.pdf",nodes:[]}]},outline:[{id:"lesson",title:"Lesson",number:"01",href:"/lesson"}],initialCompleted:false,poster:"",nextHref:null});
       assert.equal(await page.getByRole("button",{name:getMessages(locale).learning.completeLesson,exact:true}).count(),0);
-      await page.getByRole("button",{name:getMessages(locale).learning.nextLesson,exact:true}).click();await page.getByRole("dialog").waitFor();
+      await page.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true}).click();await page.getByRole("dialog").waitFor();
       await page.getByRole("dialog").getByRole("heading",{name:locale==="en-GB"?"Complete Course":"完成课程",exact:true}).waitFor();
       assert.equal(await page.getByRole("dialog").getByText(getMessages(locale).lessonCompleted.courseDescription,{exact:true}).count(),1);
       assert.equal(await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),0,"final Lesson never offers an unavailable next Lesson in the completion dialog");
@@ -121,7 +121,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.evaluate(props=>(window as any).mount(props),{...restoredProps,key:"video-complete-only",completedContentIds:["video"]});
     assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0,"video completion cannot complete text");
     await page.evaluate(props=>(window as any).mount(props),{...restoredProps,key:"preview",entitled:false});
-    assert.equal(await page.getByRole("button",{name:getMessages(locale).learning.nextLesson,exact:true}).count(),0,"unentitled previews cannot complete text");
+    assert.equal(await page.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true}).count(),0,"unentitled previews cannot complete text");
     assert.equal(await page.getByRole("status",{name:getMessages(locale).videoCompletion.label}).count(),0);
     await page.evaluate(props => (window as any).mount(props), {...restoredProps, key:"resume-middle", initialContentId:"t2", lesson:{...restoredProps.lesson,contents}});
     await page.locator('[data-text-point-id="t2"] .la-prose').first().waitFor();

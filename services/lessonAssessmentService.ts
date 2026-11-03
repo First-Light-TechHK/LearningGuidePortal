@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AssessmentError, parseAssessmentWrite, type AssessmentKind, type AssessmentSummary, type SavedAssessment } from "@/contracts/lesson-assessment";
-import { checkEntitlement, getProductCourse, getLearningOverview } from "@/services/productStore";
+import { checkEntitlement, getProductCourse } from "@/services/productStore";
 import { listLessonAssessments, saveLessonAssessment } from "@/repositories/lessonAssessmentRepository";
 import { getKnowledgeTestSamples } from "@/lib/knowledgeTestSamples";
 import { reviewKnowledgeResponses } from "@/lib/knowledgeTest";
@@ -11,9 +11,7 @@ export async function assessmentContext(userId: string, courseId: string) {
   const course = await getProductCourse(courseId);
   if (!course || course.status !== "published") throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
   if (!(await checkEntitlement(userId, course.id)).allowed) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
-  const overview = await getLearningOverview(userId);
-  const completedLessons = new Set(overview.courses.find(item => item.courseId === course.id)?.completedLessonIds || []);
-  return { course, completedLessons };
+  return { course };
 }
 export function summariseAssessment(record: SavedAssessment | undefined, kind: AssessmentKind, total = kind === "knowledge" ? getKnowledgeTestSamples("en-GB").length : 1, authored = false): AssessmentSummary {
   if (!record) return { status: "not_started", answered: 0, total, percent: 0, score: null, latestResult: null };
@@ -30,17 +28,12 @@ export function assessmentWasCompleted(record: SavedAssessment | undefined) {
   return Boolean(record && (record.latestResult || record.completedAt || (record.attempt.kind === "knowledge" ? reviewKnowledgeResponses(record.attempt.responses).complete : record.attempt.phase === "submitted")));
 }
 
-export function unlockedAssessmentLessons(lessons: readonly {id:string}[], completedStudyLessons: ReadonlySet<string>, records: readonly SavedAssessment[]) {
-  const bothCompleted=(lessonId:string)=> (["knowledge","application"] as const).every(kind=>assessmentWasCompleted(records.find(record=>record.lessonId===lessonId&&record.kind===kind)));
-  return new Set(lessons.filter((lesson,index)=>index===0?completedStudyLessons.has(lesson.id):bothCompleted(lessons[index-1].id)).map(lesson=>lesson.id));
-}
 export async function readAssessment(userId: string, courseId: string, lessonId: string, kind: AssessmentKind) {
-  const { course, completedLessons } = await assessmentContext(userId, courseId);
+  const { course } = await assessmentContext(userId, courseId);
   const lesson = course.sections.flatMap(section => section.lessons).find(lesson => lesson.id === lessonId);
   if (!lesson || !lessonAssessmentAvailability(lesson)[kind]) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
   const records = await listLessonAssessments(userId, course.id);
   const record = records.find(item => item.lessonId === lessonId && item.kind === kind) || null;
-  if (!unlockedAssessmentLessons(course.sections.flatMap(section=>section.lessons),completedLessons,records).has(lessonId) && !record) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
   return record;
 }
 
@@ -53,12 +46,11 @@ export async function readAssessmentBundle(userId: string, courseId: string, les
 export async function writeAssessment(userId: string, courseId: string, lessonId: string, kind: AssessmentKind, value: unknown) {
   const input = parseAssessmentWrite(value);
   if (kind !== input.attempt.kind) throw new AssessmentError("ASSESSMENT_INVALID");
-  const { course, completedLessons } = await assessmentContext(userId, courseId);
+  const { course } = await assessmentContext(userId, courseId);
   const lesson = course.sections.flatMap(section => section.lessons).find(lesson => lesson.id === lessonId);
   if (!lesson || !lessonAssessmentAvailability(lesson)[kind]) throw new AssessmentError("ASSESSMENT_NOT_FOUND", 404);
   const records = await listLessonAssessments(userId, course.id);
   const existing = records.find(item => item.lessonId === lessonId && item.kind === kind);
-  if (!unlockedAssessmentLessons(course.sections.flatMap(section=>section.lessons),completedLessons,records).has(lessonId) && !existing) throw new AssessmentError("ASSESSMENT_FORBIDDEN", 403);
   const attempt = input.attempt;
   let evaluationStartedAt: string | null = null;
   if (attempt.kind === "knowledge") {

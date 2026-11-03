@@ -13,11 +13,7 @@ import {
   verifiedUser,
 } from "./helpers/my-learning";
 
-// Break: Overview cards follow ML-FR-004/006 five-state / trial+started.
-// Purchased-never-started stays off the list (aligned with LEARN-02 / E2E-B1-007).
-// No-sub users who entered the private-course preview range DO get a card
-// (ML-FR-004). That conflicts with the LEARN-02 "preview must not mint a card"
-// handbook lock — this file follows the PRD and records the conflict.
+// Owner revision: preview does not create Study history; entitled learning keeps its existing lifecycle.
 
 const originalCwd = process.cwd();
 const originalStorageBackend = process.env.STORAGE_BACKEND;
@@ -51,17 +47,15 @@ test("LEARN-02 / ML-FR-006: purchased with no opened LP does not invent a course
   assert.equal(overview.emptyCta, "browse_courses");
 });
 
-test("ML-FR-004: no-sub user who opened the private-course preview range gets a card", async () => {
+test("preview-only entry stays off My Learning", async () => {
   const user = await verifiedUser(store, "ml-fr-004-preview-card@example.test");
   await openLearningPoint(store, user.id, PREVIEW_LP, "preview-enter", "preview");
 
   const overview = await store.getLearningOverview(user.id);
   assert.equal(overview.entitlements.length, 0);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
-  assert.ok(card, "entered preview range must list the private course");
-  assert.equal(card.cardState, "previewing");
-  assert.equal(card.cta, "continue_preview");
-  assert.equal(card.progress, 50);
+  assert.equal(card, undefined);
+  assert.equal(overview.courses.length, 0);
 });
 
 test("ML-FR-005: preview lessons cannot be marked complete", async () => {

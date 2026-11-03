@@ -1,4 +1,6 @@
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent, type PlanPurchaseAvailability } from "@/contracts/payment";
+import type { PaymentReview, OrderAction } from "@/contracts/order-management";
+import { entitledStudyHistory } from "@/lib/entitledStudyHistory";
 import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
@@ -138,6 +140,8 @@ export type ProductQuote = {
   createdAt: string;
 };
 export type ProductOrder = {
+  paymentReview?: PaymentReview;
+  cancellation?: { actorId: string; actorRole: "learner" | "operator"; createdAt: string };
   upgradeProration?: StripeUpgradeProration;
   upgradePrice?: StripePriceSnapshot;
   price?: StripePriceSnapshot;
@@ -167,7 +171,7 @@ export type ProductOrder = {
   failureReason?: string | null;
   createdAt: string;
 };
-export type ProductOrderActivity = { id: string; orderId: string; operatorId: string; action: "refund" | "resynchronise"; result: "succeeded" | "failed" | "processing"; reason: string | null; providerReference: string | null; createdAt: string };
+export type ProductOrderActivity = { id: string; orderId: string; operatorId: string; actorRole?: "learner" | "operator"; deduplicationKey?: string; action: "refund" | "resynchronise" | "check_payment" | "resume_payment" | "cancel_payment"; result: "succeeded" | "failed" | "processing"; reason: string | null; providerReference: string | null; createdAt: string };
 export type ProductSubscription = {
   id: string;
   userId: string;
@@ -200,6 +204,7 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  accessContext?: "entitled" | "preview";
   selectedMode?: CourseLearningMode;
   highestProgress?: HighestCourseProgress;
   knowledgePositions?: KnowledgePositions;
@@ -215,6 +220,7 @@ export type ProductStudyRecord = {
   completedAt: string | null;
 };
 export type ProductStudyEvent = {
+  accessContext?: "entitled" | "preview";
   completeLesson?: boolean;
   contentId?: string | null;
   learningMode?: CourseLearningMode;
@@ -418,7 +424,7 @@ function planCoversCourse(plan: ProductPlan, course: ProductCourse) {
   return scope.scopeId === course.id;
 }
 
-function entitlementCoversCourse(entitlement: ProductEntitlement, course: ProductCourse) {
+function entitlementCoversCourse(entitlement: Pick<ProductEntitlement, "courseId" | "scope" | "scopeId">, course: ProductCourse) {
   const scope = entitlement.scope || (entitlement.courseId === "*" ? "everything" : "course");
   if (scope === "everything") return true;
   if (scope === "category") return (entitlement.scopeId || null) === course.category;
@@ -428,6 +434,23 @@ function entitlementCoversCourse(entitlement: ProductEntitlement, course: Produc
 function entitlementForPlan(userId: string, plan: ProductPlan, source: ProductEntitlement["source"], validTo: string): ProductEntitlement {
   const scope = planScope(plan);
   return { id: id("entitlement"), userId, courseId: plan.courseId, state: "active", source, validTo, scope: scope.scope, scopeId: scope.scopeId, device: plan.device };
+}
+
+function studyHistoryFor(data: ProductData, userId: string, course: ProductCourse) {
+  const subscriptions = data.subscriptions.filter(subscription => {
+    if (subscription.userId !== userId) return false;
+    const plan = data.plans.find(plan => plan.id === subscription.planId);
+    return subscription.scope ? entitlementCoversCourse(subscription, course) : plan ? planCoversCourse(plan, course) : entitlementCoversCourse(subscription, course);
+  });
+  const orders = data.orders.filter(order => order.userId === userId && ["paid", "refunded"].includes(order.status)
+    && (() => { const plan = order.planSnapshot || data.plans.find(plan => plan.id === order.planId); return plan && planCoversCourse(plan, course); })());
+  const starts = [...subscriptions.map(subscription => subscription.validFrom), ...orders.map(order => order.servicePeriodStart)]
+    .filter((date): date is string => Boolean(date)).map(date => Date.parse(date)).filter(Number.isFinite);
+  return entitledStudyHistory(course, data.studyRecords.find(record => record.userId === userId && record.courseId === course.id),
+    data.studyEvents.filter(event => event.userId === userId && event.courseId === course.id), {
+      firstAccessAt: starts.length ? Math.min(...starts) : null,
+      hasAccessHistory: subscriptions.length > 0 || orders.length > 0 || data.entitlements.some(entitlement => entitlement.userId === userId && entitlementCoversCourse(entitlement, course)),
+    });
 }
 
 function subscriptionForPlan(userId: string, plan: ProductPlan, source: ProductSubscription["source"], validFrom: string, validTo: string, extra: Partial<ProductSubscription> = {}): ProductSubscription {
@@ -477,7 +500,8 @@ function alreadySubscribedToPlan(data: ProductData, userId: string, plan: Produc
 
 function assertPlanPurchaseAllowed(data: ProductData, userId: string, plan: ProductPlan) {
   if (alreadySubscribedToPlan(data, userId, plan)) throw new PaymentError("already_subscribed");
-  if (["category", "everything"].includes(planScope(plan).scope) && data.orders.some(order => order.userId === userId && order.upgradeProration && order.status === "pending")) throw new PaymentError("upgrade_in_progress", 409);
+  const pendingUpgrade = data.orders.find(order => order.userId === userId && order.upgradeProration && order.status === "pending");
+  if (["category", "everything"].includes(planScope(plan).scope) && pendingUpgrade) throw new PaymentError("upgrade_in_progress", 409, undefined, pendingUpgrade.id);
   if (planScope(plan).scope === "everything" && subscriptionCoverage(data.subscriptions, data.plans, userId).categoryIds.length >= 2) throw new PaymentError("upgrade_unavailable");
 }
 
@@ -564,11 +588,12 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
     if (!user) throw new CourseLearningModeError("unauthorised");
     const course = data.courses.find(item => item.id === courseId && item.status === "published");
     if (!course) throw new CourseLearningModeError("notFound");
-    const record = data.studyRecords.find(record => record.userId === userId && record.courseId === course.id);
+    const entitled = Boolean(activeEntitlement(data, userId, course.id));
+    const history = studyHistoryFor(data, userId, course);
+    const record = entitled ? history.record : undefined;
     let position: CourseLearningModeResult["position"];
     if (lessonId !== undefined) {
       const lessons = course.sections.flatMap(section => section.lessons);
-      const entitled = Boolean(activeEntitlement(data, userId, course.id));
       const preview = publicFirstLesson(course);
       if (!lessons.some(lesson => lesson.id === lessonId) || !entitled && preview?.id !== lessonId) throw new CourseLearningModeError("notFound");
       const accessiblePoints = courseKnowledgePoints(course, mode).filter(point => {
@@ -578,10 +603,12 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
         const content = preview.contents?.find(content => content.id === point.contentId);
         return Boolean(content && (content.startSeconds || 0) < (preview.preview?.videoLimitSeconds ?? 60));
       });
-      position = courseModePosition({ course, mode, userId, record, events: data.studyEvents, fallbackLessonId: lessonId, accessiblePoints });
+      position = courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
     }
     user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
     if (record) {
+      const index = data.studyRecords.findIndex(item => item.id === record.id);
+      if (index >= 0) data.studyRecords[index] = record;
       record.selectedMode = mode;
       record.currentMode = mode;
       record.updatedAt = now();
@@ -1177,7 +1204,8 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
     const entitlement = activeEntitlement(data, userId, course.id);
     const subscriptions = data.subscriptions.filter((item) => item.userId === userId);
     const accessState = accessStateFromSubscriptions(subscriptions);
-    const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === course.id);
+    const history = studyHistoryFor(data, userId, course);
+    const courseEvents = history.events;
     const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
     const completedLessonIds = [...new Set(courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId))];
     const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && entitlementCoversCourse(item, course));
@@ -1190,7 +1218,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       openedLessonIds,
       completedLessonIds,
     });
-    const record = data.studyRecords.find(item => item.userId === userId && item.courseId === course.id);
+    const record = history.record;
     const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? highestProgressLesson(course, record, courseEvents) : null;
     if (record?.knowledgePositions && record.currentMode) {
       const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
@@ -1391,7 +1419,11 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
 }
 
 export async function createUpgradeQuote(userId: string, subscriptionId: string) {
-  const preliminary = upgradeCalculation(await ensureProductData(), userId, subscriptionId);
+  const quoteData = await ensureProductData();
+  const pendingUpgrade = quoteData.orders.find(order => order.userId === userId && order.status === "pending" && order.upgradeProration && order.sourceSubscriptionId === subscriptionId);
+  if (pendingUpgrade) throw new PaymentError("upgrade_in_progress", 409, undefined, pendingUpgrade.id);
+  const preliminary = upgradeCalculation(quoteData, userId, subscriptionId);
+  const previousVoid = quoteData.orders.find(order => order.userId === userId && order.sourceSubscriptionId === subscriptionId && order.status === "canceled" && order.lastStripeStatus === "void" && order.upgradeProration && order.stripeInvoiceId);
   if (paymentMode() !== "stripe") throw new PaymentError("payment_unavailable", 503, "upgrade_stripe_mode_required");
   if (!preliminary.source.stripeSubscriptionId) throw new PaymentError("payment_unavailable", 503, "upgrade_subscription_missing");
   if (!preliminary.source.stripeCustomerId) throw new PaymentError("payment_unavailable", 503, "upgrade_customer_missing");
@@ -1404,7 +1436,7 @@ export async function createUpgradeQuote(userId: string, subscriptionId: string)
   });
   const price = await resolveSubscriptionPrice(preliminary.target.id);
   const upgradeProration = await previewStripeUpgrade({ subscriptionId: preliminary.source.stripeSubscriptionId, customerId: preliminary.source.stripeCustomerId,
-    sourcePriceId, sourceValidTo: preliminary.source.validTo, price, verifiedLegacyCheckout: !preliminary.sourcePrice });
+    sourcePriceId, sourceValidTo: preliminary.source.validTo, price, verifiedLegacyCheckout: !preliminary.sourcePrice, sourceVoidedUpgradeInvoiceId: previousVoid?.stripeInvoiceId || undefined });
   return editData((data) => {
     const calculation = upgradeCalculation(data, userId, subscriptionId);
     if (calculation.target.id !== preliminary.target.id || calculation.source.stripeSubscriptionId !== upgradeProration.subscriptionId || calculation.source.stripeCustomerId !== upgradeProration.customerId
@@ -1651,6 +1683,9 @@ export async function createPendingStripeOrder(userId: string, quoteId: string) 
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe");
     if (existing?.status !== "paid") assertPlanPurchaseAllowed(data, userId, plan);
     if (existing) return { order: existing, plan };
+    const pending = data.orders.find(item => item.userId === userId && item.paymentMode === "stripe" && item.status === "pending" && item.kind === "purchase"
+      && (() => { const other = item.planSnapshot || data.plans.find(p => p.id === item.planId); return other && other.device === plan.device && sameScope(other, plan); })());
+    if (pending) throw new PaymentError("payment_pending", 409, undefined, pending.id);
     if (!quote.price) throw new PaymentError("quote_expired");
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "purchase", price: quote.price, planSnapshot: quote.planSnapshot, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
@@ -1669,9 +1704,10 @@ export async function createPendingStripeUpgradeOrderFromQuote(userId: string, q
     if (new Date(quote.expiresAt) <= new Date() && !existing?.upgradeProration) throw new PaymentError("quote_expired");
     upgradeCalculation(data, userId, quote.sourceSubscriptionId || "", Boolean(existing?.upgradeProration));
     if (existing) return { order: existing, plan };
-    if (quote.upgradeProration && data.orders.some(item => item.userId === userId && item.sourceSubscriptionId === quote.sourceSubscriptionId && item.kind === "upgrade" && item.upgradeProration && item.status === "pending")) throw new PaymentError("upgrade_in_progress", 409);
-    if (quote.upgradeProration && data.orders.some(item => item.userId === userId && item.status === "pending" && item.kind === "purchase"
-      && (item.planSnapshot || data.plans.find(plan => plan.id === item.planId))?.scope === "category")) throw new PaymentError("upgrade_in_progress", 409);
+    const blocking = data.orders.find(item => item.userId === userId && item.status === "pending"
+      && (item.sourceSubscriptionId === quote.sourceSubscriptionId && item.kind === "upgrade" && item.upgradeProration
+        || item.kind === "purchase" && (item.planSnapshot || data.plans.find(plan => plan.id === item.planId))?.scope === "category"));
+    if (quote.upgradeProration && blocking) throw new PaymentError("upgrade_in_progress", 409, undefined, blocking.id);
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", price: quote.price, upgradePrice: quote.upgradePrice, upgradeProration: quote.upgradeProration, planSnapshot: quote.planSnapshot, sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: quote.upgradeProration?.subscriptionId || null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
@@ -2013,9 +2049,12 @@ export async function getLearningOverview(userId: string) {
     data.subscriptions.forEach((subscription) => {
       if (["active", "cancel_at_period_end", "grace"].includes(subscription.state) && new Date(subscription.validTo) <= currentTime) subscription.state = "expired";
     });
-    const records = data.studyRecords.filter((record) => record.userId === userId);
-    // D2.4 / ML-FR-004: preview and paid study share one record; preview mints a card.
-    // LEARN-02 handbook "preview must not mint" is not adopted.
+    const records = data.studyRecords.filter(record => record.userId === userId).flatMap(record => {
+      const course = data.courses.find(course => course.id === record.courseId);
+      const actual = course ? studyHistoryFor(data, userId, course).record : undefined;
+      return actual ? [actual] : [];
+    });
+    // Only server-authorised learning can create a My Learning card.
     const courseIds = [...new Set(records.map((record) => record.courseId))];
     const subscriptions = data.subscriptions.filter((item) => item.userId === userId).map((subscription) => ({ ...subscription, plan: data.plans.find((plan) => plan.id === subscription.planId) || null }));
     const accessState = accessStateFromSubscriptions(subscriptions);
@@ -2024,7 +2063,7 @@ export async function getLearningOverview(userId: string) {
       const course = data.courses.find((item) => item.id === courseId);
       const entitlement = course ? activeEntitlement(data, userId, courseId) : null;
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
-      const courseEvents = data.studyEvents.filter((event) => event.userId === userId && event.courseId === courseId);
+      const courseEvents = course ? studyHistoryFor(data, userId, course).events : [];
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
       const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModes?.[courseId] || "text";
       const modes = course ? availableCourseLearningModes(course) : [];
@@ -2111,7 +2150,37 @@ export async function getOrderForUser(userId: string, orderId: string) {
   const data = await ensureProductData();
   const order = data.orders.find((item) => item.id === orderId && item.userId === userId);
   if (!order) return null;
-  return { ...order, plan: data.plans.find((plan) => plan.id === order.planId) || null };
+  return { ...order, plan: order.planSnapshot || data.plans.find((plan) => plan.id === order.planId) || null };
+}
+
+export async function listOrdersForUser(userId: string) {
+  const data = await ensureProductData();
+  return data.orders.filter(order => order.userId === userId).map(order => ({ ...order,
+    plan: order.planSnapshot || data.plans.find(plan => plan.id === order.planId) || null,
+  })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function recordOrderPaymentReview(userId: string, orderId: string, review: PaymentReview, action: OrderAction, actorId = userId, actorRole: "learner" | "operator" = "learner", closureRequested = false) {
+  return editData(data => {
+    const order = data.orders.find(item => item.id === orderId && item.userId === userId);
+    if (!order) return null;
+    // A concurrent Webhook's terminal result always wins over an in-flight query.
+    if (order.status === "pending") order.paymentReview = review;
+    if (order.status === "canceled" && action === "cancel" && closureRequested && !order.cancellation) order.cancellation = { actorId, actorRole, createdAt: review.checkedAt };
+    order.lastSyncedAt = review.checkedAt;
+    if (review.providerStatus && (order.status === "pending" || order.status === "paid" && ["paid", "complete"].includes(review.providerStatus)
+      || order.status === "canceled" && ["expired", "void"].includes(review.providerStatus) || order.status === "failed" && ["failed", "uncollectible"].includes(review.providerStatus))) order.lastStripeStatus = review.providerStatus;
+    order.exceptionCode = order.status === "pending" && review.state === "unavailable" ? "synchronization_failed" : order.status === "pending" && review.state === "synchronising" ? "event_missing" : null;
+    order.failureReason = order.status === "pending" ? review.reason : null;
+    const key = `${order.id}:${action}:${order.status}:${review.state}:${review.providerStatus}:${review.reason}`;
+    const cancellationFailed = action === "cancel" && order.status !== "canceled" && (order.status !== "pending" || review.state === "awaiting_payment");
+    if (!data.orderActivities.some(item => item.deduplicationKey === key)) addOrderActivity(data, {
+      orderId, operatorId: actorId, actorRole, deduplicationKey: key, action: `${action}_payment`,
+      result: review.state === "unavailable" || cancellationFailed ? "failed" : order.status === "pending" && review.state !== "awaiting_payment" ? "processing" : "succeeded",
+      reason: review.reason || (cancellationFailed ? order.status === "paid" ? "payment_already_completed" : "payment_still_open" : null), providerReference: order.stripeInvoiceId || order.stripeCheckoutSessionId || null,
+    });
+    return order;
+  });
 }
 
 function addOrderActivity(data: ProductData, input: Omit<ProductOrderActivity, "id" | "createdAt">) {
@@ -2237,24 +2306,29 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     if (access === "preview" && publicFirstLesson(course)?.id !== lesson.id) throw new Error("This lesson is outside the preview range.");
     if (access === "preview" && input.learningMode === "text" && input.contentId && textLessonPreviewPolicy(lesson.contents || [], lesson.preview).points[input.contentId] === "locked") throw new Error("This point is outside the preview range.");
     if (access === "preview" && input.contentId && lesson.contents?.some(point => point.id === input.contentId && point.type === "video" && (point.startSeconds || 0) >= (lesson.preview?.videoLimitSeconds ?? 60))) throw new Error("This point is outside the preview range.");
+    if (access === "preview") return null;
+    const history = studyHistoryFor(data, input.userId, course);
     const existingClientEvent = data.studyEvents.some((event) => event.userId === input.userId && event.clientEventId === input.clientEventId);
     if (existingClientEvent) {
-      return data.studyRecords.find((record) => record.userId === input.userId && record.courseId === input.courseId) || null;
+      return history.record || null;
     }
     const totalCourseSeconds = course.sections.flatMap((section) => section.lessons).reduce((sum, item) => sum + item.durationMinutes * 60, 0);
-    const alreadyCompleted = input.event === "complete" && data.studyEvents.some((event) => event.userId === input.userId && event.courseId === input.courseId && event.lessonId === input.lessonId && event.event === "complete");
-    const lastForLesson = [...data.studyEvents].reverse().find((event) => event.userId === input.userId && event.courseId === input.courseId && event.lessonId === input.lessonId && event.event !== "open");
+    const alreadyCompleted = input.event === "complete" && history.events.some(event => event.lessonId === input.lessonId && event.event === "complete");
+    const lastForLesson = [...history.events].reverse().find(event => event.lessonId === input.lessonId && event.event !== "open");
     const elapsedSeconds = lastForLesson ? Math.max(0, (Date.now() - Date.parse(lastForLesson.createdAt)) / 1000) : Number.POSITIVE_INFINITY;
     const requested = Math.max(0, Math.round(input.seconds || 0));
     const seconds = alreadyCompleted ? 0 : input.event === "complete"
       ? Math.min(lesson.durationMinutes * 60, requested)
       : Math.min(300, requested, Math.floor(elapsedSeconds));
-    data.studyEvents.push({ id: id("study_event"), ...input, seconds, createdAt: now() });
-    let record = data.studyRecords.find((item) => item.userId === input.userId && item.courseId === input.courseId);
+    const event: ProductStudyEvent = { id: id("study_event"), ...input, accessContext: "entitled", seconds, createdAt: now() };
+    data.studyEvents.push(event);
+    const rawIndex = data.studyRecords.findIndex(item => item.userId === input.userId && item.courseId === input.courseId);
+    let record = history.record;
     if (!record) {
-      record = { id: id("study"), userId: input.userId, courseId: input.courseId, startedAt: now(), updatedAt: now(), currentLessonId: input.lessonId, totalSeconds: 0, progress: 0, completedAt: null };
-      data.studyRecords.unshift(record);
+      record = { id: rawIndex >= 0 ? data.studyRecords[rawIndex].id : id("study"), userId: input.userId, courseId: input.courseId, startedAt: now(), updatedAt: now(), currentLessonId: input.lessonId, totalSeconds: 0, progress: 0, completedAt: null };
     }
+    record.accessContext = "entitled";
+    if (rawIndex >= 0) data.studyRecords[rawIndex] = record; else data.studyRecords.unshift(record);
     record.currentLessonId = input.lessonId;
     if (input.learningMode) {
       record.currentMode = input.learningMode;
@@ -2263,7 +2337,7 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     record.totalSeconds += seconds;
     record.totalSeconds = Math.min(totalCourseSeconds, record.totalSeconds);
     const lessons = course.sections.flatMap((section) => section.lessons);
-    const openedIds = uniqueOpenedLearningPointIds(data.studyEvents.filter((event) => event.userId === input.userId && event.courseId === input.courseId));
+    const openedIds = uniqueOpenedLearningPointIds([...history.events, event]);
     const pointProgress = record.knowledgePositions && record.currentMode ? knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]) : null;
     const computed = pointProgress ? { progress: pointProgress.progress, completed: pointProgress.total > 0 && pointProgress.current === pointProgress.total }
       : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
@@ -2658,6 +2732,13 @@ export async function stripeOrderContext(orderId: string) {
   const order = data.orders.find(item => item.id === orderId && item.paymentMode === "stripe");
   if (!order) return null;
   return { order, source: data.subscriptions.find(item => item.id === order.sourceSubscriptionId), plan: order.planSnapshot || data.plans.find(item => item.id === order.planId) };
+}
+
+export async function listPendingStripeCategoryCheckouts(userId: string) {
+  const data = await ensureProductData();
+  return data.orders.filter(order => order.userId === userId && order.paymentMode === "stripe" && order.kind === "purchase"
+    && order.status === "pending" && order.stripeCheckoutSessionId
+    && (order.planSnapshot || data.plans.find(plan => plan.id === order.planId))?.scope === "category");
 }
 
 export async function stripeUpgradeInvoiceContext(invoiceId: string, subscriptionId: string, created: number) {

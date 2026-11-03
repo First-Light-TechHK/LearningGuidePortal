@@ -148,7 +148,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await card("everything").locator('img[src="/test-product.png"]').waitFor();
     await mount("pending-upgrade", [science], [{ ...order(science, "pending-upgrade", "pending"), kind: "upgrade", quoteId: "quote-pending", upgradeProration: { subscriptionId: science.stripeSubscriptionId } }]);
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
-    assert.equal(await page.locator('a[href*="confirmation?quoteId=quote-pending"]').count(), 1);
+    assert.equal(await page.locator(`a[href="/${locale}/account/my-learning/subscription?orderId=pending-upgrade#order-pending-upgrade"]`).count(), 1);
     await mount("empty", [], []); await page.locator('a.portal-button[href$="/subscription"]').waitFor();
     assert.equal(await page.locator('[data-subscription-id]').count(), 0);
     await page.close();

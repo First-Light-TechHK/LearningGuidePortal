@@ -6,8 +6,9 @@ import { getStripe } from "./stripeClient";
 import { applyVerifiedStripeEvent, assertStripeUpgradeAllowed, attachStripeUpgradeInvoice, createPendingStripeUpgradeOrderFromQuote,
   getQuoteForUser, prepareStripeCheckout, stripeUpgradeInvoiceContext } from "./productStore";
 import { invoiceSubscription, previewStripeUpgrade, stripeIdentity, validateUpgradePeriod } from "./stripeUpgradeProration";
+import { reconcilePendingStripeCategoryCheckouts } from "./stripeCheckoutPayment";
 
-function validateInvoice(invoice: Stripe.Invoice, snapshot: StripeUpgradeProration) {
+export function validateInvoice(invoice: Stripe.Invoice, snapshot: StripeUpgradeProration) {
   if (invoiceSubscription(invoice) !== snapshot.subscriptionId || stripeIdentity(invoice.customer) !== snapshot.customerId || invoice.billing_reason !== "subscription_update"
     || invoice.currency !== "usd" || invoice.amount_due !== snapshot.amountDueMinor || invoice.total !== snapshot.invoiceTotalMinor || invoice.lines.has_more
     || !invoice.lines.data.some(line => line.parent?.subscription_item_details?.proration)
@@ -31,6 +32,8 @@ export async function reconcileStripeUpgradeInvoice(event: { id: string; type: s
     periodStart: new Date(snapshot.periodStart * 1000).toISOString(), periodEnd: new Date(snapshot.periodEnd * 1000).toISOString() });
   const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
   if (stripeIdentity(subscription.customer) !== snapshot.customerId) throw new Error("Upgrade subscription mismatch.");
+  // Do not release a reservation until Stripe has removed its pending update.
+  if (["void", "uncollectible"].includes(invoice.status || "") && subscription.pending_update) return { pending: true };
   if (invoice.status === "paid") validateUpgradePeriod(subscription, snapshot);
   const currentPrice = subscription.items.data[0].price.id;
   if (invoice.status === "paid" && (subscription.pending_update || subscription.status !== "active" || currentPrice !== order.price.stripePriceId || invoice.amount_paid !== snapshot.amountDueMinor)) throw new Error("Upgrade subscription is not applied yet.");
@@ -50,6 +53,9 @@ export async function startStripeUpgradePayment(userId: string, quoted: NonNulla
   const stripe = getStripe();
   const returnUrl = (orderId: string) => `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(orderId)}`;
   if (quoted.upgradeOrder?.status === "paid") return { order: quoted.upgradeOrder, checkoutUrl: returnUrl(quoted.upgradeOrder.id) };
+  // An expired or completed Checkout can still be locally pending after a
+  // missed webhook. Reuse the verified webhook path before reserving upgrade.
+  await reconcilePendingStripeCategoryCheckouts(userId);
   // A lost response is recovered from the existing subscription's invoice before
   // retrying the same idempotent update. Never create a second proration invoice.
   let invoice: Stripe.Invoice | null = null;
@@ -66,7 +72,7 @@ export async function startStripeUpgradePayment(userId: string, quoted: NonNulla
   if (!invoice) {
     if (Date.parse(quoted.quote.expiresAt) <= Date.now()) throw new PaymentError("quote_expired");
     const preview = await previewStripeUpgrade({ subscriptionId: snapshot.subscriptionId, customerId: snapshot.customerId, sourcePriceId: snapshot.sourcePriceId,
-      sourceValidTo: source.validTo, price, prorationDate: snapshot.prorationDate, verifiedLegacyCheckout: snapshot.sourceRecordedValidTo !== undefined });
+      sourceValidTo: source.validTo, price, prorationDate: snapshot.prorationDate, verifiedLegacyCheckout: snapshot.sourceRecordedValidTo !== undefined, sourceVoidedUpgradeInvoiceId: snapshot.sourceVoidedUpgradeInvoiceId });
     // Persisted Quotes are hydrated from PostgreSQL JSONB, which can reorder
     // object keys. Compare every value strictly without depending on key order.
     if (!isDeepStrictEqual(preview, snapshot)) throw new PaymentError("quote_expired");

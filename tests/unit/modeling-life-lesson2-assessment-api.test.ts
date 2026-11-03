@@ -27,8 +27,8 @@ test("migrated Lesson 02 serves eight Knowledge questions and its Application re
     assert.equal((await get()).status, 403, "new definitions do not grant Course access");
     const { quote } = await store.createQuote(user.id, "science-pc-6");
     await store.completeDemoCheckout(user.id, quote.id);
-    assert.equal((await get()).status, 403, "paid access cannot bypass the preceding Lesson's tests");
-    assert.equal((await get("application")).status, 403);
+    assert.equal((await get()).status, 200, "paid access opens later tests before studying any Lesson");
+    assert.equal((await get("application")).status, 200);
     let overview = await getUnderstandingOverview(user.id, courseId);
     assert.equal(overview.total, 4);
     assert.equal(overview.lessons[1].knowledge.total, 8);
@@ -38,7 +38,7 @@ test("migrated Lesson 02 serves eight Knowledge questions and its Application re
     const first = (await store.getProductCourse(courseId))!.sections[0].lessons[0];
     const completeKnowledge: KnowledgeAttempt = { kind: "knowledge", responses: first.assessments!.knowledge.map(() => ({ answer: "Prior Lesson note", rating: "right" })), phase: "result", index: 17 };
     assert.equal((await put("knowledge", firstId, completeKnowledge)).status, 200);
-    assert.equal((await get()).status, 403, "one completed prerequisite Test does not unlock Lesson 02");
+    assert.equal((await get()).status, 200, "other test completion does not restrict Lesson 02");
     const evaluating: ApplicationAttempt = { kind: "application", answer: "Prior Lesson application response", phase: "evaluating" };
     assert.equal((await put("application", firstId, evaluating)).status, 200);
     assert.equal((await put("application", firstId, { ...evaluating, phase: "submitted" }, 1)).status, 400);

@@ -81,13 +81,14 @@ test('volume hover opens a separated vertical slider with zero mute, keyboard/to
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(locale => (window as any).mount(locale), locale);
       const name = locale === 'zh-CN' ? '音量' : 'Volume';
-      const button = page.getByRole('button', { name, exact: true });
+      const button = page.locator('.la-video-volume button');
       const slider = page.getByRole('slider', { name, exact: true });
       if (touch) {
         await button.tap();
+        assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).muted), false, 'tap restores audio');
         await button.tap();
-        assert.equal(await slider.count(), 0, 'touch can toggle the panel closed');
-        await button.tap();
+        assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).muted), true, 'second tap mutes');
+        assert.equal(await slider.count(), 1, 'touch mute toggling keeps the slider available');
       } else {
         await button.hover();
         assert.equal(await slider.count(), 1, 'hover opens without a click');
@@ -104,6 +105,7 @@ test('volume hover opens a separated vertical slider with zero mute, keyboard/to
         await button.hover();
         await button.click();
         assert.equal(await slider.count(), 1, 'click after hover does not immediately close the panel');
+        await button.click();
       }
       assert.equal(await button.getAttribute('aria-expanded'), 'true');
       assert.equal(await slider.getAttribute('aria-orientation'), 'vertical');
@@ -152,12 +154,15 @@ test('volume hover opens a separated vertical slider with zero mute, keyboard/to
       assert.equal(await slider.count(), 0);
       assert.equal(await button.evaluate(element => element === document.activeElement), true);
       await page.keyboard.press('Enter');
-      assert.equal(await slider.inputValue(), '37', 'closing and reopening preserves volume');
+      assert.equal(await slider.inputValue(), '0', 'Enter mutes while opening the panel');
+      await page.keyboard.press('Space');
+      assert.equal(await slider.inputValue(), '37', 'Space restores the previous volume');
       await page.locator('.la-video-surface').click({ position: { x: 8, y: 8 } });
       assert.equal(await slider.count(), 0, 'outside click dismisses');
       await button.click();
       await slider.focus();
       await page.keyboard.press('Tab');
+      await slider.waitFor({ state: 'detached' });
       assert.equal(await slider.count(), 0, 'tabbing out dismisses');
       if (!touch) {
         await page.mouse.move(0, 0);
@@ -174,7 +179,7 @@ test('volume hover opens a separated vertical slider with zero mute, keyboard/to
       await page.locator('.la-controlled-video').evaluate(element => { (element as any).requestFullscreen = undefined; });
       await page.getByRole('button', { name: locale === 'zh-CN' ? '切换全屏' : 'Toggle fullscreen', exact: true }).click();
       await button.click();
-      assert.equal(await slider.inputValue(), '37');
+      await slider.fill('37');
       await slider.focus();
       await page.keyboard.press('End');
       assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).volume), 1, 'fullscreen volume remains usable');

@@ -33,7 +33,7 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
   }
   if (!visible) return null;
   return <div className={styles.row}>
-    <button type="button" className={styles.next} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : messages.learning.nextLesson}</button>
+    <button type="button" className={styles.next} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
     {error && <p role="alert">{error}</p>}
     {dialogOpen && <LessonCompletedDialog isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}
   </div>;

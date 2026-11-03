@@ -6,6 +6,7 @@ import { PortalButton } from "./ui/PortalButton";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
@@ -38,6 +39,7 @@ function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeadin
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
+  const [blockingOrderId, setBlockingOrderId] = useState<string | null>(null);
   const isTrial = quote.kind === "trial";
   const isUpgrade = quote.kind === "upgrade" && Boolean(upgradeSource);
   const money = (amount: number) => formatPlanPrice(locale, { amountMinor: amount, currency: quote.currency });
@@ -74,13 +76,14 @@ function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeadin
   async function submit() {
     if (!renewal || !terms || !refund || submitting.current) return;
     submitting.current = true;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setBlockingOrderId(null);
     try {
       const endpoint = isTrial ? "/api/trial" : "/api/purchase/checkout";
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quote.id, locale, consents: { renewal: true, terms: true, refund: true } }) });
-      const data = await response.json() as { checkoutUrl?: string; error?: string; code?: string };
+      const data = await response.json() as { checkoutUrl?: string; error?: string; code?: string; blockingOrderId?: string };
       if (response.status === 401) { window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`); return; }
       if (!response.ok || !data.checkoutUrl) {
+        if (data.blockingOrderId) setBlockingOrderId(data.blockingOrderId);
         const errors = getMessages(locale).paymentErrors;
         const translated = data.code && Object.hasOwn(errors, data.code) ? errors[data.code as keyof typeof errors] : undefined;
         throw new Error(translated || data.error || details.checkoutError);
@@ -131,6 +134,7 @@ function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeadin
     </fieldset>
     {isUpgrade && <p className="upgrade-renewal-note">{upgrade.renewalNote.replace("{category}", sourceCategory).replace("{date}", renewalDate).replace("{price}", money(plan.amountMinor)).replace("{months}", String(plan.termMonths))}</p>}
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+    {blockingOrderId && <p><Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(blockingOrderId)}#order-${encodeURIComponent(blockingOrderId)}`}>{getMessages(locale).orderManagement.viewOrders}</Link></p>}
     <footer className="confirmation-actions"><PortalButton type="primary" loading={busy} disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}</PortalButton></footer>
   </dialog>;
 }

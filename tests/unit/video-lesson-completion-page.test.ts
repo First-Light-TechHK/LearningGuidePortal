@@ -6,7 +6,7 @@ import path from "node:path";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 
-test("video pages gate unlock and completion, reset on content changes, save explicitly and retry failures", async () => {
+test("video pages always offer entitled manual completion, isolate content, save explicitly and retry failures", async () => {
   const bundle = await build({
     stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room ? <LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/> : <PreviewLessonView key={props.key} {...props}/>));`,resolveDir:process.cwd(),loader:"tsx"},
     bundle:true,write:false,outfile:"completion.js",platform:"browser",jsx:"automatic",external:["/portal/*"],loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},
@@ -50,11 +50,20 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       const mount=(key:string,entitled=true,room=false,initialCompleted=false,nextHref:string|null=null,completedContentIds?:string[])=>page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{locale,key,room,lesson,initialCompleted,completedContentIds,courseId:"course",courseTitle:"The Art of Seeing",category:"Art",description:"Observe with attention, curiosity and confidence.",poster:"/portal/course-study.jpg",outline:[{id:"lesson",number:"01",title:lesson.title,href:"/lesson"}],nextHref,entitled,trialGate:entitled ? undefined : {pricingHref:"/subscription",recommendations:[],videoLimitSeconds:60}});
       const progress=async (time:number,duration=100)=>{await page.locator("video").waitFor();await page.locator("video").evaluate((element,{time,duration})=>{Object.defineProperty(element,"duration",{configurable:true,value:duration});Object.defineProperty(element,"currentTime",{configurable:true,writable:true,value:time});element.dispatchEvent(new Event("timeupdate",{bubbles:true}));},{time,duration});};
       const bar=page.getByRole("region",{name:locale === "zh-CN" ? "课时完成提示" : "Lesson completion"});
-      await mount("entitled");await progress(97.99);assert.equal(await bar.count(),0);
+      await mount("early-manual");await bar.waitFor();
+      const markComplete=()=>bar.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true});
+      assert.equal(await markComplete().isEnabled(),true,"manual completion is available before metadata or playback");
+      assert.equal(completions.length,0,"showing the button must not save completion");
+      await page.screenshot({path:`test-results/video-completion/${locale}-initial.png`,fullPage:true});
+      await markComplete().click();await page.getByRole("dialog").waitFor();
+      assert.equal((completions[0] as {seconds:number}).seconds,0);
+      assert.equal((completions[0] as {contentId:string}).contentId,"video");
+      await page.keyboard.press("Escape");completions.length=0;
+      await mount("entitled");await progress(97.99);assert.equal(await bar.count(),1);
       assert.equal(await page.locator('a[href*="/understanding?"]').getAttribute("href"),`/${locale}/portal/courses/course/understanding?lessonId=lesson&from=preview`);
       assert.equal(await page.locator('a[href="/en-GB/subscription?courseId=course"],a[href="/zh-CN/subscription?courseId=course"]').count(),0);
       await page.evaluate(`(()=>{let fullscreen=document.body;Object.defineProperty(document,"fullscreenElement",{configurable:true,get:()=>fullscreen});document.exitFullscreen=async()=>{fullscreen=null;window.fullscreenExited=true;};})()`);
-      await progress(98);await bar.waitFor();await page.waitForFunction(()=> (window as unknown as {fullscreenExited:boolean}).fullscreenExited===true);assert.equal(completions.length,0,"threshold must not save completion automatically");
+      await progress(98);await bar.waitFor();assert.equal(await page.evaluate(()=>Boolean((window as unknown as {fullscreenExited:boolean}).fullscreenExited)),false,"button visibility must not exit fullscreen");assert.equal(completions.length,0,"playback progress must not save completion automatically");
       const box=(await bar.boundingBox())!;assert.ok(box.height < 60);
       const headingBox=(await page.getByRole("heading",{name:lesson.title,exact:true}).boundingBox())!;assert.ok(box.x > headingBox.x);assert.ok(Math.abs(box.y-headingBox.y)<20);
       await page.screenshot({path:`test-results/video-completion/${locale}-98.png`,fullPage:true});
@@ -62,6 +71,7 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await progress(100); assert.equal(await page.getByRole("dialog").count(),0,"seeking to the end must not complete a lesson");
       await page.locator("video").evaluate(element=>{element.dispatchEvent(new Event("ended"));element.dispatchEvent(new Event("ended"));});
       await page.getByRole("dialog").waitFor(); assert.equal(completions.length,1,"ended after Keep watching saves once");
+      await page.waitForFunction(()=> (window as unknown as {fullscreenExited:boolean}).fullscreenExited===true);
       await page.getByRole("dialog").getByRole("heading",{name:locale==="en-GB"?"Complete Course":"完成课程",exact:true}).waitFor();
       assert.equal(await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),0);
       await page.screenshot({path:`test-results/video-completion/${locale}-complete-course.png`,fullPage:true});
@@ -70,7 +80,7 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.completeCourse,exact:true}).click();
       await page.waitForFunction(expected=>(window as unknown as {navigated:string}).navigated===expected,`/${locale}/account/my-learning`);
       completions.length=0;
-      await mount("retry",true,false,false,`/${locale}/account/learn/course?lessonId=next`);await progress(98);await bar.waitFor();fail=true;
+      await mount("retry",true,false,false,`/${locale}/account/learn/course?lessonId=next`);await progress(20);await bar.waitFor();fail=true;
       assert.equal(await page.locator(`a[href="/${locale}/account/learn/course?lessonId=next"]`).count(),0,"video playback omits the standalone continuation link");
       const complete=bar.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true});
       await complete.click();await bar.getByRole("alert").waitFor();assert.equal(await complete.isEnabled(),true);
@@ -111,7 +121,7 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       fail=false; await bar.getByRole("button").click(); await page.getByRole("dialog").waitFor();
       await page.keyboard.press("Escape"); assert.equal(await page.getByRole("dialog").count(),0);
       await mount("switch");await progress(98);await bar.waitFor();
-      await page.getByRole("button",{name:"1.2 Second video",exact:true}).click();assert.equal(await bar.count(),0);
+      await page.getByRole("button",{name:"1.2 Second video",exact:true}).click();await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"false");assert.ok((await bar.textContent())!.includes("0%"));
       await progress(98);await bar.waitFor();await page.setViewportSize({width:390,height:844});
       await page.screenshot({path:`test-results/video-completion/${locale}-mobile.png`,fullPage:true});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -123,12 +133,13 @@ test("video pages gate unlock and completion, reset on content changes, save exp
       await mount("per-content",true,false,true,null,["video"]);
       await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"true");
       await page.getByRole("button",{name:"1.2 Second video",exact:true}).click();
-      assert.equal(await bar.count(),0,"unplayed second video cannot inherit the completed first video or lesson flag");
-      await progress(30);assert.equal(await bar.count(),0);
+      await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"false","unplayed second video cannot inherit the completed first video or lesson flag");
+      assert.equal(await markComplete().isEnabled(),true);
+      await progress(30);assert.equal(await bar.count(),1);
       await progress(98);await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"false");
       await mount("text-only-completed",true,false,true,null,["text"]);
-      await progress(10);assert.equal(await bar.count(),0,"text completion cannot mark an unplayed video completed");
-      await page.setViewportSize({width:1440,height:1024}); await mount("room",true,true,false,`/${locale}/account/learn/course?lessonId=next`);await progress(97.99);assert.equal(await bar.count(),0);await progress(98);await bar.waitFor();
+      await progress(10);assert.equal(await bar.getAttribute("data-completed"),"false","text completion cannot mark an unplayed video completed");
+      await page.setViewportSize({width:1440,height:1024}); await mount("room",true,true,false,`/${locale}/account/learn/course?lessonId=next`);await bar.waitFor();assert.equal(await markComplete().isEnabled(),true);
       await bar.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true}).click();
       await page.getByRole("dialog").waitFor();
       assert.ok((await bar.textContent())!.includes(getMessages(locale).learning.completed));

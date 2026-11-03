@@ -24,6 +24,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
   const [seekFocused, setSeekFocused] = useState(false);
   const [seekHovered, setSeekHovered] = useState(false);
   const volumeControl = useRef<HTMLDivElement>(null), volumeButton = useRef<HTMLButtonElement>(null);
+  const lastAudibleVolume = useRef(1);
   const volumeId = useId();
   useImperativeHandle(ref, () => media.current!);
   const t = lessonMessages(locale);
@@ -39,8 +40,21 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
     return () => document.removeEventListener('pointerdown', closeOutside);
   }, [volumeOpen]);
   function updateVolume(video: HTMLVideoElement) {
+    if (video.volume > 0) lastAudibleVolume.current = video.volume;
     setMuted(video.muted || video.volume === 0);
     setVolume(video.muted ? 0 : Math.round(video.volume * 100));
+  }
+  function toggleMute() {
+    const video = media.current;
+    if (!video) return;
+    if (video.muted || video.volume === 0) {
+      if (video.volume === 0) video.volume = lastAudibleVolume.current;
+      video.muted = false;
+    } else {
+      video.muted = true;
+    }
+    updateVolume(video);
+    setVolumeOpen(true);
   }
   useLayoutEffect(() => { if (media.current) updateVolume(media.current); }, [props.muted]);
   useEffect(() => {
@@ -206,8 +220,8 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
         }}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setVolumeOpen(false); }}
         onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setVolumeOpen(false); volumeButton.current?.focus(); } }}>
-        <button ref={volumeButton} type="button" aria-label={t.videoVolume} title={t.videoVolume} aria-expanded={volumeOpen} aria-controls={volumeOpen ? volumeId : undefined}
-          onClick={event => setVolumeOpen(value => event.detail === 0 || !window.matchMedia('(hover: hover) and (pointer: fine)').matches ? !value : true)}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+        <button ref={volumeButton} type="button" aria-label={muted ? t.videoUnmute : t.videoMute} title={muted ? t.videoUnmute : t.videoMute} aria-expanded={volumeOpen} aria-controls={volumeOpen ? volumeId : undefined}
+          onClick={toggleMute}>{muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
         {volumeOpen && <div id={volumeId} className="la-video-volume-panel">
           <span aria-hidden="true">{volume}</span>
           <input className="la-video-volume-range" type="range" aria-label={t.videoVolume} aria-orientation="vertical" min={0} max={100} step={1} value={volume} aria-valuetext={`${volume}%`}

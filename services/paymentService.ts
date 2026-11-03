@@ -76,6 +76,15 @@ export function checkoutRequestOrigin(request: Request) {
   const local = appEnvironment() === "DEV" && target.protocol === "http:"
     && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname);
   if (local && supplied === target.origin) return target.origin;
+  // Next's Node adapter can use localhost internally for a 127.0.0.1 request.
+  // Accept only the actual loopback Host and port, never a forwarded host.
+  if (local && supplied) {
+    try {
+      const actual = new URL(supplied);
+      if (actual.origin === supplied && actual.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(actual.hostname)
+        && actual.port === target.port && request.headers.get("host") === actual.host) return actual.origin;
+    } catch { /* Invalid origins remain denied. */ }
+  }
   throw new PaymentError("origin_mismatch", 403);
 }
 

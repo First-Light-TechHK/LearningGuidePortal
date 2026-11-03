@@ -43,7 +43,7 @@ export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit,
   }
   function openCard(position: number) { resultScroll.current = lists.current.map(list => list?.scrollTop || 0); setIndex(position); setPhase("detail"); }
   const badge = (position: number, wrong = false) => <span className={`${styles.badge} ${wrong ? styles.orange : ""}`}>{number(position)}</span>;
-  return portalTarget ? createPortal(<PortalDialog className={`${styles.dialog} ${phase === "result" ? styles.result : phase === "question" ? styles.front : styles.back}`} labelledBy="knowledge-test-title" onClose={phase === "detail" ? () => setPhase("result") : onExit}>
+  return portalTarget ? createPortal(<PortalDialog className={`${styles.dialog} ${phase === "result" ? styles.result : phase === "question" ? styles.front : styles.back}${phase === "detail" ? ` ${styles.detail}` : ""}`} labelledBy="knowledge-test-title" onClose={phase === "detail" ? () => setPhase("result") : onExit}>
     {phase !== "detail" && <button type="button" className={styles.close} aria-label={copy.close} onClick={onExit}><Image src="/portal/knowledge-test/close-v2.svg" width={18} height={18} alt=""/></button>}
     <h2 ref={heading} tabIndex={-1} id="knowledge-test-title">{phase === "result" ? copy.result : copy.title}</h2>
     <p className={styles.meta}>{copy.lesson.replace("{number}", String(Number(lessonNumber) || lessonNumber))}{lessonTitle ? ` · ${lessonTitle}` : ""}</p>
@@ -52,13 +52,13 @@ export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit,
       <div className={styles.scoreRow}><strong className={styles.score}>{result.percent}%</strong><p>{copy.correct.replace("{correct}", String(result.strong.length)).replace("{total}", String(questions.length))}</p></div>
       <div className={styles.columns}>{(["strong", "needsReview"] as const).map((kind, groupIndex) => <section key={kind} aria-label={copy[kind]}>
         <h3>{copy[kind]}<span>{copy.cards.replace("{count}", String(result[kind].length))}</span></h3>
-        <div ref={node => { lists.current[groupIndex] = node; }} className={`${styles.list} ${kind === "needsReview" ? styles.needsReview : ""}`} tabIndex={0}>
+        <div ref={node => { lists.current[groupIndex] = node; }} data-knowledge-result-list={kind} className={`${styles.list} ${kind === "needsReview" ? styles.needsReview : ""}`} tabIndex={0}>
           {result[kind].length === 0 && <p className={styles.empty}>{copy.emptyList}</p>}
           {result[kind].map(position => <button type="button" id={`knowledge-card-${position}`} key={questions[position].id} className={styles.card} onClick={() => openCard(position)}>{badge(position, kind === "needsReview")}<span>{questions[position].prompt}</span><Image src={`/portal/knowledge-test/${position === 0 ? "chevron-v2" : "chevron-muted-v2"}.svg`} width={16} height={16} alt=""/></button>)}
         </div>
       </section>)}</div>
       <footer className={styles.resultFooter}>{entrySource === "overview" ? <button className={styles.primary} onClick={()=>{setResponses(questions.map(()=>({answer:"",rating:null})));setIndex(0);setPhase("question");resultScroll.current=[];}}>{getMessages(locale).applicationTest.retake}</button> : <><button className={styles.exit} onClick={onNextLesson || onExit}>{onNextLesson ? copy.nextLesson : copy.done}</button>{onApplicationTest && <button className={styles.primary} onClick={onApplicationTest}>{copy.tryApplication}</button>}</>}</footer>
-    </> : <div className={styles.body}>
+    </> : <div className={styles.body} data-knowledge-body={phase}>
       {phase !== "detail" && <><div className={styles.progressLabel}><span>{copy.review}</span><span>{number(index)}/{String(questions.length).padStart(2, "0")}</span></div>
       <div className={styles.track} role="progressbar" aria-label={copy.review} aria-valuemin={0} aria-valuemax={questions.length} aria-valuenow={index + 1}><span style={{ width: `${(index + 1) / questions.length * 100}%` }}/></div></>}
       <div className={styles.question}>{badge(index)}<p>{copy.question}</p><h3>{question.prompt}</h3></div>

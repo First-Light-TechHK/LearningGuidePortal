@@ -36,8 +36,8 @@ export function LessonCompletionBar({ locale, courseId, lessonId, lessonNumber, 
     } finally { setBusy(false); }
   }
   useEffect(() => {
-    if (visible && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-  }, [visible]);
+    if (dialogOpen && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, [dialogOpen]);
   const percent = String(Math.floor(Math.min(100, percentage)));
   const complete = useCallback(async () => {
     if (inFlight.current) return;

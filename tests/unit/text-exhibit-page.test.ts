@@ -59,7 +59,7 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     }
     await page.setViewportSize({width:1440,height:1024});await assertFullWidthBreadcrumb(1440);
     const scroller=page.locator('[tabindex="0"]').filter({has:bars});
-    const next=page.getByRole('button',{name:locale==='en-GB'?'Next lesson':'\u4e0b\u4e00\u8bfe\u65f6',exact:true});
+    const next=page.getByRole('button',{name:locale==='en-GB'?'Mark complete':'\u6807\u8bb0\u5b8c\u6210',exact:true});
     assert.equal(await next.count(),1);assert.equal(await next.isEnabled(),true);
     const geometry=await scroller.evaluate(element=>({height:element.getBoundingClientRect().height,client:element.clientHeight,scroll:element.scrollHeight,overflow:getComputedStyle(element).overflowY,bottom:element.getBoundingClientRect().bottom}));
     assert.equal(geometry.height,674);assert.ok(geometry.scroll>geometry.client);assert.equal(geometry.overflow,'auto');
