@@ -20,6 +20,7 @@ let repository: StudyGroupRepository;
 const access = new Set<string>();
 const mails: Array<{ to: string; subject: string; text: string }> = [];
 const notes: Array<{ userId: string; title: string; body: string }> = [];
+const inactive = new Set<string>();  // deactivated accounts (Student Management)
 const tokenLogKey = Buffer.alloc(32, 7);
 let liveKit: { apiKey: string; apiSecret: string; url: string };
 
@@ -27,6 +28,7 @@ beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lg-study-group-"));
   access.clear();
   access.add("host:course-1");
+  inactive.clear();
   notes.length = 0;
   mails.length = 0;
   liveKit = { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" };
@@ -39,6 +41,7 @@ beforeEach(async () => {
     accessibleCourses: async (userId) => access.has(`${userId}:course-1`) ? [{ id: "course-1", title: "German History", slug: "german-history" }] : [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: userId === "nomail" ? null : `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input); },
+    accountActive: async (userId) => !inactive.has(userId),
     listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     liveKit,
@@ -2048,14 +2051,14 @@ test("M3 (review 2026-11-03): evictUser ends every seat of one user now: the wai
   await service.startSession({ actorUserId: "host", sessionId: live.id });
   await service.enterSession({ actorUserId: "waiter", sessionId: live.id, requestedAt: NOW });
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).occupancy, 2);
-  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 1 }, "one live room to leave; the waiting seat is just released");
+  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 1, questions: 0 }, "one live room to leave; the waiting seat is just released");
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: waiting.id })).occupancy, 0);
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).occupancy, 1);
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "live");
-  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 0 }, "idempotent");
-  assert.deepEqual(await service.evictUser({ userId: "host" }), { sessions: 1 });
+  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 0, questions: 0 }, "idempotent");
+  assert.deepEqual(await service.evictUser({ userId: "host" }), { sessions: 1, questions: 0 });
   assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "completed", "nobody left: the live session ends");
-  assert.deepEqual(await service.evictUser({ userId: "nobody" }), { sessions: 0 });
+  assert.deepEqual(await service.evictUser({ userId: "nobody" }), { sessions: 0, questions: 0 });
 });
 
 test("H3 (review 2026-11-03): admission is checked before the entry queue: an unknown session and a learner without course access are refused without queueing", async () => {
@@ -2074,4 +2077,48 @@ test("H3 (review 2026-11-03): admission is checked before the entry queue: an un
   ]);
   assert.equal((a as { occupancy: number }).occupancy, 1);
   assert.equal((b as { occupancy: number }).occupancy, 1);
+});
+
+test("deactivated account (owner 2026-11-03): no reminder, reschedule or cancellation notice reaches it, its queued AI Tutor question is withdrawn on eviction, and its membership and plan stay for a reactivation", async () => {
+  access.add("gone:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Inactive member", courseId: "course-1", about: "A deactivated account stays a member but hears nothing." });
+  await service.joinGroup({ actorUserId: "gone", groupId: group.id });
+  const soon = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon session", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "gone", sessionId: soon.id });
+  access.add("stays:course-1");
+  await service.joinGroup({ actorUserId: "stays", groupId: group.id });
+  await service.planToAttend({ actorUserId: "stays", sessionId: soon.id });
+  const live = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Live session", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: live.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: live.id });
+  await service.enterSession({ actorUserId: "gone", sessionId: live.id, requestedAt: NOW });
+  await service.enqueueTutor({ actorUserId: "gone", sessionId: live.id, text: "Why 1933?", clientEventId: "evt-gone" });
+
+  inactive.add("gone");
+  assert.deepEqual(await service.evictUser({ userId: "gone" }), { sessions: 1, questions: 1 }, "out of the live room; the queued question is withdrawn");
+  const afterEviction = await repository.read();
+  const question = afterEviction.tutorRequests.find((row) => row.clientEventId === "evt-gone");
+  assert.deepEqual([question?.status, question?.terminalReason], ["dead_letter", "withdrawn"]);
+  assert.deepEqual(await service.evictUser({ userId: "gone" }), { sessions: 0, questions: 0 }, "idempotent");
+  assert.ok(afterEviction.memberships.some((row) => row.groupId === group.id && row.userId === "gone"), "the membership stays");
+  assert.ok(afterEviction.intents.some((row) => row.sessionId === soon.id && row.userId === "gone" && !row.cancelledAt), "the plan to attend stays");
+
+  notes.length = 0;
+  mails.length = 0;
+  await service.dispatchDueReminders();
+  assert.deepEqual(notes.filter((item) => item.body.includes("Soon session")).map((item) => item.userId).sort(), ["host", "stays"], "the T-10 reminder skips the deactivated account");
+  assert.deepEqual(mails.filter((item) => item.text.includes("Soon session")).map((item) => item.to).sort(), ["host@example.test", "stays@example.test"]);
+  await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: soon.id, startsAt: "2026-09-19T02:40:00.000Z" });
+  assert.equal(notes.some((item) => item.userId === "gone" && item.title === "Live Session rescheduled"), false, "no reschedule notice");
+  await service.cancelSession({ actorUserId: "host", sessionId: soon.id });
+  assert.equal(notes.some((item) => item.userId === "gone" && item.title === "Live Session cancelled"), false, "no cancellation notice");
+  assert.ok(notes.some((item) => item.userId === "stays" && item.title === "Live Session cancelled"), "others are still told");
+
+  // Reactivated: the same membership and plans work again without rejoining.
+  inactive.delete("gone");
+  const back = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Back session", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "gone", sessionId: back.id });
+  notes.length = 0;
+  await service.dispatchDueReminders();
+  assert.deepEqual(notes.filter((item) => item.body.includes("Back session")).map((item) => item.userId).sort(), ["gone", "host"], "reactivated: reminded again without rejoining");
 });

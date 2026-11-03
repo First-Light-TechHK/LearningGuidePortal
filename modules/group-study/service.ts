@@ -46,6 +46,12 @@ export type StudyGroupDeps = {
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
   notify: (input: { userId: string; title: string; body: string; sessionId?: string; copies?: LocalizedNotice }) => Promise<void>;
+  /**
+   * Whether the account can still be reached (Student Management, owner 2026-11-03): a deactivated account keeps its
+   * memberships and plans, but reminders, reschedule and cancellation notices are not sent to it and its queued AI Tutor
+   * questions are withdrawn when it is evicted. Absent means every account is reachable.
+   */
+  accountActive?: (userId: string) => Promise<boolean>;
   listReminders: (userId: string, locale?: "en-GB" | "zh-CN") => Promise<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>;
   // Withdraws the pending reminder rows a cancelling action invalidates
   // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
@@ -871,6 +877,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
   }
 
+  // A deactivated account is skipped by every notice (in-app and mail); a
+  // lookup failure counts as reachable so an outage never silences reminders.
+  async function reachable(userId: string) {
+    if (!deps.accountActive) return true;
+    try { return await deps.accountActive(userId); } catch { return true; }
+  }
+
   async function dispatchDueReminders(snapshot?: StudyGroupStore, onlySessionId?: string) {
     const now = deps.now();
     const dueJobs = (store: StudyGroupStore, record: boolean) => {
@@ -920,6 +933,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     };
     for (const [index, job] of due.entries()) {
       if (!stillDue(job)) continue;
+      if (!(await reachable(job.userId))) continue;
       // One recipient's failure must not cost the rest their reminder, nor
       // fail the page poll that triggered the dispatch (QA M11).
       try {
@@ -951,6 +965,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     await deps.withdrawReminders?.({ sessionIds: [session.id], sentBefore: session.movedAt })?.catch(() => undefined);
     await dispatchDueReminders(undefined, session.id).catch(() => undefined);
     for (const userId of session.planned) {
+      if (!(await reachable(userId))) continue;
       try {
         const profile = await deps.userProfile(userId);
         const copies = rescheduleCopies(session.title);
@@ -1389,6 +1404,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // Best-effort per member (QA M11): the group is already cancelled, so a
       // failed notice must not report the cancel itself as failed.
       await Promise.all(notified.map(async (userId) => {
+        if (!(await reachable(userId))) return;
         try {
           const profile = await deps.userProfile(userId);
           // Title and body share the recipient's locale (hunt L1): the body was
@@ -1561,6 +1577,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // The members who planned to attend are told, like a reschedule or a
       // cancelled group. Best effort per member: the cancel is already saved.
       for (const userId of planned) {
+        if (!(await reachable(userId))) continue;
         try {
           const profile = await deps.userProfile(userId);
           const copy = profile?.locale === "zh-CN"
@@ -1680,7 +1697,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         store.intents.push(row);
         return null;
       }, { session: input.sessionId });
-      if (restored) {
+      if (restored && await reachable(restored.userId)) {
         try {
           const profile = await deps.userProfile(restored.userId);
           const copy = reminderCopy(restored, profile?.locale, deps.now());
@@ -1792,9 +1809,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     // ends, and the provider disconnects the identity instead of waiting for
     // the participant token to expire. Best effort on the provider side.
     async evictUser(input: { userId: string }) {
+      let questions = 0;
       const rooms = await deps.repository.update((store) => {
         const now = deps.now();
         const affected: { id: string; liveKitProjectId: string | null }[] = [];
+        // Its queued AI Tutor questions are withdrawn (owner 2026-11-03): an
+        // answer nobody will read is not produced; one being answered finishes.
+        for (const row of store.tutorRequests.filter((item) => item.userId === input.userId && tutorRequestState(item) === "queued")) {
+          row.status = "dead_letter";
+          row.inFlight = false;
+          row.terminalReason = "withdrawn";
+          row.nextAttemptAt = null;
+          questions += 1;
+        }
         for (const presence of store.presences.filter((item) => item.userId === input.userId && !item.leftAt)) {
           const session = store.sessions.find((item) => item.id === presence.sessionId);
           presence.leftAt = now.toISOString();
@@ -1808,7 +1835,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         return affected;
       }, { seatsOf: input.userId });
       for (const session of rooms) await removeFromRoom(session, [input.userId]);
-      return { sessions: rooms.length };
+      return { sessions: rooms.length, questions };
     },
 
     async leaveSession(input: { actorUserId: string; sessionId: string; reason?: "unload" }) {

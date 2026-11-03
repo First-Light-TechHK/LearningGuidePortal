@@ -232,13 +232,13 @@ test("H2 evictUser (seatsOf): seats in rooms of different groups all go; a room 
   await enter("ben", b.id);
   await service.leaveSession({ actorUserId: "host2", sessionId: c.id });
   assert.equal((await sessionRow(c.id)).status, "live", "anna still holds a seat in C");
-  assert.deepEqual(await service.evictUser({ userId: "anna" }), { sessions: 2 }, "two live rooms to leave (A and C); the waiting seat in B is released without a provider call");
+  assert.deepEqual(await service.evictUser({ userId: "anna" }), { sessions: 2, questions: 0 }, "two live rooms to leave (A and C); the waiting seat in B is released without a provider call");
   assert.equal(await occupancy(a.id), 1, "the Host stays seated in A");
   assert.equal((await sessionRow(a.id)).status, "live");
   assert.equal(await occupancy(b.id), 1, "ben's waiting seat stays");
   assert.equal(await occupancy(c.id), 0);
   assert.equal((await sessionRow(c.id)).status, "completed", "nobody left in C: it ends, judged from every seat of C");
-  assert.deepEqual(await service.evictUser({ userId: "anna" }), { sessions: 0 });
+  assert.deepEqual(await service.evictUser({ userId: "anna" }), { sessions: 0, questions: 0 });
 });
 
 test("H2 session views and the entry decision count plans and seats of that session only", async () => {
