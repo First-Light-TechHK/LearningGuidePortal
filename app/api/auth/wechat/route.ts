@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   if (originRedirect) return originRedirect;
   const url = new URL(request.url);
   const locale = localeFrom(url.searchParams.get("locale") || "en-GB");
-  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/account/my-learning`);
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), `/${locale}/portal`);
   if (!wechatConfigured()) {
     if (!localSocialLoginEnabled()) return NextResponse.json({ ok: false, code: "WECHAT_NOT_CONFIGURED" }, { status: 503 });
     try {

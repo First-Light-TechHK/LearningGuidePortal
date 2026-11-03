@@ -343,6 +343,7 @@ export const PROBLEM_STATUS = {
   unauthenticated: 401,
   invalid_token: 401,
   forbidden_origin: 403,
+  feature_unavailable: 403,
   not_found: 404,
   // draft-ietf-httpapi-idempotency-key-header: a key reused with a different payload is 422.
   idempotency_conflict: 422,
@@ -370,6 +371,7 @@ const PROBLEM_TITLES: Record<HelpdeskProblemCode, string> = {
   unauthenticated: "Sign in is required",
   invalid_token: "Invalid service token",
   forbidden_origin: "Request origin is not allowed",
+  feature_unavailable: "The AI Support Assistant is not available for this account",
   not_found: "Not found",
   idempotency_conflict: "Idempotency key reused with a different request",
   stale_ticket: "The ticket has changed",

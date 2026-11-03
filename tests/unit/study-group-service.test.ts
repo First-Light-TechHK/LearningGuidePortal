@@ -1985,3 +1985,54 @@ test("a Session stored with a legacy 45/60/90-minute duration still edits its St
     (error: unknown) => (error as { code: string }).code === "validation"
   );
 });
+
+test("a late Host can still turn the AI Tutor off: an unchanged Start Time that has passed is kept, a moved one must be in the future (FAQ grounding check 2026-11-02)", async () => {
+  let clock = Date.parse(NOW);
+  const local = serviceWith({ now: () => new Date(clock) });
+  const group = await local.createGroup({ actorUserId: "host", title: "Late host", courseId: "course-1", about: "About the late host." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Late start", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  const notesBefore = notes.length;
+  const mailsBefore = mails.length;
+  // The Start Time has passed and the Host has not started yet.
+  clock = Date.parse("2026-09-19T02:07:00.000Z");
+  const off = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:05:00.000Z", aiTutorEnabled: false });
+  assert.equal(off.aiTutorEnabled, false);
+  assert.equal(off.startsAt, "2026-09-19T02:05:00.000Z");
+  // The same instant written another way is not a move; leaving the time out works too.
+  const same = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:05:00Z", aiTutorEnabled: true });
+  assert.equal(same.startsAt, "2026-09-19T02:05:00.000Z");
+  const omitted = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, aiTutorEnabled: false });
+  assert.equal(omitted.aiTutorEnabled, false);
+  // Moving it is still checked: another past time is refused, a future one is fine.
+  await assert.rejects(
+    () => local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:06:00.000Z" }),
+    (error: unknown) => (error as { code: string }).code === "start_in_past"
+  );
+  // Nothing was announced as rescheduled while the time stayed put.
+  assert.equal(notes.length, notesBefore);
+  assert.equal(mails.length, mailsBefore);
+  const moved = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:30:00.000Z" });
+  assert.equal(moved.startsAt, "2026-09-19T02:30:00.000Z");
+  // Other fields stay locked, whatever the time.
+  await assert.rejects(
+    () => local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, title: "Renamed" }),
+    (error: unknown) => (error as { code: string }).code === "session_time_only"
+  );
+});
+
+test("starting with the AI Tutor on while the course's Tutor is offline tells the Host to turn it off in Edit Session (FAQ grounding check 2026-11-02)", async () => {
+  let online = true;
+  const local = serviceWith({ tutorOnline: async () => online });
+  const group = await local.createGroup({ actorUserId: "host", title: "Offline at start", courseId: "course-1", about: "About the offline start." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Tutor went offline", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  online = false;
+  await assert.rejects(
+    () => local.startSession({ actorUserId: "host", sessionId: session.id }),
+    (error: unknown) => (error as { code: string }).code === "tutor_offline_at_start"
+  );
+  // The way out the message names: turn the switch off, then start.
+  await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, aiTutorEnabled: false });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  const started = await local.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(started.aiTutorEnabled, false);
+});

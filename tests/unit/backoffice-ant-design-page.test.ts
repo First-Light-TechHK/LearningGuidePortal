@@ -54,7 +54,7 @@ test("Backoffice Ant Design retains bilingual actions, retries, popup scope, mob
       const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
       const order:BackofficeOrder={id:"fixture-order",userEmail:"learner@fixture.test",amountMinor:3900,currency:"usd",status:"paid",paymentMode:"demo",createdAt:"2026-10-20T10:00:00Z",plan:{name:"Science plan"},activities:[]};
       const course={id:"fixture-course",slug:"fixture-course",title:"Fixture course",description:"Course description",category:"Science",status:"draft",sections:[],createdAt:"2026-10-20T10:00:00Z",updatedAt:"2026-10-20T10:00:00Z"};
-      let failOrders=true,failRefund=true,failPayment=true,failLibrary=true,failCms=true;
+      let failOrders=true,failRefund=true,failPayment=true,failLibrary=true,failCms=true,failCancel=true;
       const writes:Array<{path:string;body:Record<string,unknown>}>=[];
       let lastOrdersQuery="";
       await page.route("http://backoffice.test/**",async route=>{
@@ -65,6 +65,10 @@ test("Backoffice Ant Design retains bilingual actions, retries, popup scope, mob
         }
         if(pathname==="/api/backoffice/orders") {
           writes.push({path:pathname,body:req.postDataJSON()});
+          if(req.postDataJSON().action==="cancel") {
+            if(failCancel)return route.fulfill({status:503,json:{error:"Cancellation unavailable"}});
+            order.status="canceled";return route.fulfill({json:{ok:true,order:{...order}}});
+          }
           if(failRefund)return route.fulfill({status:503,json:{error:"Refund unavailable"}});
           order.status="refunded";return route.fulfill({json:{ok:true}});
         }
@@ -133,6 +137,23 @@ test("Backoffice Ant Design retains bilingual actions, retries, popup scope, mob
       await expect(page.getByRole("button",{name:common.menu,exact:true})).toHaveAttribute("aria-expanded","true");
       await expect(dialog.getByRole("link")).toHaveCount(5);await page.keyboard.press("Escape");await expect(dialog).toBeHidden();
       await page.screenshot({path:path.join(output,`${locale}-orders-mobile.png`),fullPage:true});
+
+      order.status="pending";order.paymentMode="stripe";order.stripeInvoiceId="in_pending_fixture";
+      order.paymentReview={state:"awaiting_payment",checkedAt:"2026-11-03T08:00:00Z",expiresAt:"2026-11-04T08:00:00Z",providerStatus:"open",reason:null};
+      order.activities=[{action:"check_payment",result:"succeeded",reason:null,createdAt:"2026-11-03T08:00:00Z",actorRole:"learner"}];
+      await page.getByRole("button",{name:copy.backoffice.orders.refresh,exact:true}).click();
+      await page.locator(".bo-mobile-cards summary").click();
+      const cancelOrder=page.locator(".bo-mobile-cards").getByRole("button",{name:copy.orderManagement.cancel,exact:true});
+      await cancelOrder.click();await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText(copy.orderManagement.cancelDescription);
+      assert.equal(await dialog.evaluate(el=>Boolean(el.closest(".backoffice-ui"))),true);
+      await dialog.getByRole("button",{name:copy.orderManagement.confirmCancel,exact:true}).click();
+      await expect(page.getByRole("alert")).toContainText("Cancellation unavailable");await expect(dialog).toBeHidden();
+      failCancel=false;await cancelOrder.click();
+      await page.screenshot({path:path.join(output,`${locale}-cancel-order-mobile.png`),fullPage:true});
+      await dialog.getByRole("button",{name:copy.orderManagement.confirmCancel,exact:true}).click();
+      await expect(dialog).toBeHidden();await expect(page.locator(".bo-mobile-cards")).toContainText(copy.backoffice.orders.paymentStatus.canceled);
+      assert.equal(writes.filter(write=>write.body.action==="cancel").length,2);
 
       await mount("payment");
       await page.getByLabel(copy.backoffice.payment.name,{exact:true}).fill("Local Stripe");

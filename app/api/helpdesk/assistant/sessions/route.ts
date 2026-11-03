@@ -1,5 +1,5 @@
 import { parseAssistantSessionInput } from "@/contracts/helpdesk";
-import { jsonResponse, problemResponse, readJsonBody, requireLearner } from "@/modules/helpdesk/http";
+import { jsonResponse, problemResponse, readJsonBody, requireAssistantFeature, requireLearner } from "@/modules/helpdesk/http";
 import { helpdeskAssistant } from "@/modules/helpdesk/runtime";
 
 export const runtime = "nodejs";
@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
+    await requireAssistantFeature(learner);
     const input = parseAssistantSessionInput(await readJsonBody(request));
     return jsonResponse(await helpdeskAssistant(request).startSession(learner, input), 201);
   } catch (error) { return problemResponse(error, "learner.assistant_session"); }

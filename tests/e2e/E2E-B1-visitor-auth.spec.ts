@@ -37,13 +37,27 @@ test("Remember password restores credentials after logout and clears on opt-out"
   await page.request.post("/api/auth/logout");
   await page.goto("/en-GB/portal/sign-in?step=password");
   await expect(page.locator('input[type="email"]')).toHaveValue(email);
-  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue(PASSWORD);
+  // The password is never kept in browser storage (plain-text password, 2026-11-03).
+  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
+  expect(await page.evaluate(() => window.localStorage.getItem("learning-guide.remembered-credentials"))).not.toContain(PASSWORD);
   await expect(page.getByRole("checkbox", { name: "Keep me signed in" })).toBeChecked();
   await page.getByRole("checkbox", { name: "Keep me signed in" }).uncheck();
   await page.reload();
   await expect(page.locator('input[type="email"]')).toHaveValue("");
   await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
   await expect(page.getByRole("checkbox", { name: "Keep me signed in" })).not.toBeChecked();
+});
+
+test("a remembered row from before the fix that still holds a password is removed", async ({ page }) => {
+  await page.goto("/en-GB/portal/sign-in?step=password");
+  await page.evaluate((password) => window.localStorage.setItem("learning-guide.remembered-credentials", JSON.stringify({
+    email: "legacy-remember@example.test",
+    password,
+    expiresAt: Date.now() + 60_000
+  })), PASSWORD);
+  await page.reload();
+  await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("learning-guide.remembered-credentials"))).toBeNull();
 });
 
 test("Remember password expires after 30 minutes", async ({ page }) => {

@@ -6,7 +6,7 @@ import { Check } from "lucide-react";
 
 type Copy = { checkEmailTitle: string; checkEmailDescription: string; resendEmail: string; resendSent: string; email: string; resendCountdown: string; verificationDailyLimit: string; requestFailed: string; emailDeliveryNotConfigured: string; checkEmailSignIn: string };
 
-export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB" | "zh-CN"; copy: Copy; initialEmail?: string }) {
+export function CheckEmail({ locale, copy, initialEmail = "", returnTo = `/${locale}/portal` }: { locale: "en-GB" | "zh-CN"; copy: Copy; initialEmail?: string; returnTo?: string }) {
   const [email, setEmail] = useState(initialEmail);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +24,7 @@ export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB
         const result = await response.json() as { ok?: boolean; data?: { exists?: boolean; pending?: boolean; retryAfter?: number } };
         if (!cancelled) { setSeconds(typeof result.data?.retryAfter === "number" ? result.data.retryAfter : 0); setReady(true); }
         if (!cancelled && response.ok && result.ok && result.data?.exists && !result.data.pending) {
-          window.location.assign(`/${locale}/portal/verify-email?email=${encodeURIComponent(normalisedEmail)}`);
+          window.location.assign(`/${locale}/portal/verify-email?email=${encodeURIComponent(normalisedEmail)}&returnTo=${encodeURIComponent(returnTo)}`);
         }
       } catch {
         if (!cancelled) setReady(true);
@@ -33,11 +33,11 @@ export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB
     void checkActivation();
     const timer = window.setInterval(() => void checkActivation(), 2000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [email, locale]);
+  }, [email, locale, returnTo]);
   async function resend(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     try {
-      const response = await fetch("/api/auth/resend-verification", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, locale }) });
+      const response = await fetch("/api/auth/resend-verification", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, locale, returnTo }) });
       const result = await response.json() as { ok?: boolean; code?: string; data?: { retryAfter?: number } };
       if (result.code === "VERIFICATION_RATE_LIMITED") { setSeconds(result.data?.retryAfter || 1); return; }
       if (result.code === "VERIFICATION_DAILY_LIMIT") throw new Error(copy.verificationDailyLimit);
@@ -57,6 +57,6 @@ export function CheckEmail({ locale, copy, initialEmail = "" }: { locale: "en-GB
       {message ? <p className="portal-success" role="status">{message}</p> : null}
       <button className="portal-button portal-button-secondary" disabled={disabled}>{seconds > 0 ? `${copy.resendCountdown} (${seconds}s)` : copy.resendEmail}</button>
     </form>
-    <Link href={`/${locale}/portal/sign-in?email=${encodeURIComponent(email)}`}>{copy.checkEmailSignIn}</Link>
+    <Link href={`/${locale}/portal/sign-in?email=${encodeURIComponent(email)}&returnTo=${encodeURIComponent(returnTo)}`}>{copy.checkEmailSignIn}</Link>
   </section>;
 }

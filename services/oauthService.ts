@@ -87,7 +87,7 @@ export function readOAuthState(value: string | undefined, state: string | null, 
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { provider?: string; state?: string; nonce?: string; codeVerifier?: string; locale?: string; returnTo?: string; expiresAt?: number };
     if (payload.provider !== provider || !payload.state || payload.state !== state || !payload.nonce || !payload.codeVerifier || !payload.expiresAt || payload.expiresAt <= Date.now()) return null;
     const locale = localeFrom(payload.locale);
-    return { locale, returnTo: payload.returnTo || `/${locale}/account/my-learning`, nonce: payload.nonce, codeVerifier: payload.codeVerifier };
+    return { locale, returnTo: payload.returnTo || `/${locale}/portal`, nonce: payload.nonce, codeVerifier: payload.codeVerifier };
   } catch {
     return null;
   }

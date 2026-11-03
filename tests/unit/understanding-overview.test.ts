@@ -25,14 +25,13 @@ after(async()=>{await restore();});
 const context=(kind='knowledge',lessonId=PREVIEW_LP)=>({params:Promise.resolve({courseId:COURSE_ID,lessonId,kind})});
 const draft=():KnowledgeAttempt=>({kind:'knowledge',responses:Array.from({length:6},()=>({answer:'',rating:null})),index:0,phase:'question'});
 
-test('Understanding counts whole tests and unlocks the next lesson only after both preceding tests finish',async()=>{
+test('Understanding exposes every available test without Study or preceding-test prerequisites',async()=>{
   let view=await getUnderstandingOverview(user.id,COURSE_ID);
   assert.equal(view.total,6);assert.equal(view.completed,0);assert.equal(view.percent,0);
-  assert.deepEqual(view.lessons.map(l=>[l.number,l.title,l.state]),[['01','Actual first lesson','locked'],['02','Actual second lesson','locked'],['03','Actual third lesson','locked']]);
-  await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'knowledge',{clientEventId:randomUUID(),expectedVersion:0,attempt:draft()}),{code:'ASSESSMENT_FORBIDDEN'});
-  await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,event:'complete',seconds:0,clientEventId:'complete-assessment-first'});
-  await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:'third-lesson',event:'complete',seconds:0,clientEventId:'complete-study-third'});
-  await assert.rejects(()=>readAssessment(user.id,COURSE_ID,'third-lesson','knowledge'),{code:'ASSESSMENT_FORBIDDEN'},'Study completion cannot bypass the preceding tests');
+  assert.deepEqual(view.lessons.map(l=>[l.number,l.title,l.state]),[['01','Actual first lesson','current'],['02','Actual second lesson','current'],['03','Actual third lesson','current']]);
+  assert.equal(await readAssessment(user.id,COURSE_ID,PREVIEW_LP,'knowledge'),null);
+  assert.deepEqual((await store.getLearningOverview(user.id)).courses,[]);
+  assert.equal(await readAssessment(user.id,COURSE_ID,'third-lesson','knowledge'),null,'later tests are available before any Study completion');
   const attempt=draft();attempt.responses[0]={answer:'Actual saved note',rating:'right'};attempt.index=1;
   const input={clientEventId:randomUUID(),expectedVersion:0,attempt,latestResult:{completedAt:'2000-01-01',score:100}};
   const first=await writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'knowledge',input);
@@ -43,12 +42,12 @@ test('Understanding counts whole tests and unlocks the next lesson only after bo
   assert.equal(view.lessons[0].application.status,'not_started');assert.equal(view.completed,0);
   assert.equal((await readAssessment(user.id,COURSE_ID,PREVIEW_LP,'knowledge'))!.attempt.kind,'knowledge');
   assert.equal((await getUnderstandingOverview(other.id,COURSE_ID)).lessons[0].knowledge.answered,0,'another user never sees the note or score');
-  await assert.rejects(()=>readAssessment(other.id,COURSE_ID,PREVIEW_LP,'knowledge'),{code:'ASSESSMENT_FORBIDDEN'});
+  assert.equal(await readAssessment(other.id,COURSE_ID,PREVIEW_LP,'knowledge'),null);
   const completed=draft();completed.responses.forEach((r,i)=>{r.answer='Note '+i;r.rating=i%2?'wrong':'right';});completed.phase='result';completed.index=5;
   const second=await writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'knowledge',{clientEventId:randomUUID(),expectedVersion:1,attempt:completed});
   assert.equal(second.version,2);
-  view=await getUnderstandingOverview(user.id,COURSE_ID);assert.equal(view.completed,1);assert.equal(view.percent,16);assert.equal(view.lessons[1].state,'locked');
-  await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge',{clientEventId:randomUUID(),expectedVersion:0,attempt:draft()}),{code:'ASSESSMENT_FORBIDDEN'});
+  view=await getUnderstandingOverview(user.id,COURSE_ID);assert.equal(view.completed,1);assert.equal(view.percent,16);assert.equal(view.lessons[1].state,'current');
+  assert.equal(await readAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge'),null);
   await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',{clientEventId:randomUUID(),expectedVersion:0,attempt:{kind:'application',answer:'Actual application answer',phase:'submitted'}}),{code:'ASSESSMENT_INVALID'},'a direct submission cannot complete before review');
   const starts=[1,2].map(()=>({clientEventId:randomUUID(),expectedVersion:0,evaluationStartedAt:'2000-01-01',attempt:{kind:'application',answer:'Actual application answer',phase:'evaluating'}}));
   const concurrent=await Promise.allSettled(starts.map(input=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',input)));
@@ -67,7 +66,7 @@ test('Understanding counts whole tests and unlocks the next lesson only after bo
   view=await getUnderstandingOverview(user.id,COURSE_ID);
   assert.equal(view.lessons[0].knowledge.score,50);assert.equal(view.lessons[0].knowledge.percent,100);
   assert.equal(view.lessons[0].application.status,'completed');assert.equal(view.lessons[0].application.score,null,'a simulated review never creates a numeric AI score');
-  assert.equal(view.completed,2);assert.equal(view.percent,33);assert.equal(view.lessons[1].knowledge.status,'not_started');assert.equal(view.lessons[1].state,'current');assert.equal(view.lessons[2].state,'locked');
+  assert.equal(view.completed,2);assert.equal(view.percent,33);assert.equal(view.lessons[1].knowledge.status,'not_started');assert.equal(view.lessons[1].state,'current');assert.equal(view.lessons[2].state,'current');
   assert.equal(await readAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge'),null,'the next tests unlock without requiring another Study completion');
   await writeAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge',{clientEventId:randomUUID(),expectedVersion:0,attempt:draft()});
   await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'knowledge',{...input,clientEventId:randomUUID()}),{code:'ASSESSMENT_CONFLICT'});

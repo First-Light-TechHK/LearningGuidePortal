@@ -1,6 +1,7 @@
 import { parseSuggestInput } from "@/contracts/helpdesk";
 import { jsonResponse, problemResponse, readJsonBody, requireLearner } from "@/modules/helpdesk/http";
 import { helpdeskAssistant } from "@/modules/helpdesk/runtime";
+import { isFeatureEnabled } from "@/modules/student-management/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,8 @@ export async function POST(request: Request) {
   try {
     const learner = await requireLearner(request, { write: true });
     const input = parseSuggestInput(await readJsonBody(request));
+    // AI Support Assistant switched off for this learner: no AI check, the page submits the enquiry directly.
+    if (!(await isFeatureEnabled(learner.id, "ai_support_assistant"))) return jsonResponse({ suggestion: null, alternatives: [] });
     return jsonResponse(await helpdeskAssistant(request).checkForSubmit(learner, input));
   } catch (error) { return problemResponse(error, "learner.suggest"); }
 }

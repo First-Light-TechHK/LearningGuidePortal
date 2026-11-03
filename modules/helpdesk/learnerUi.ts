@@ -4,6 +4,9 @@
 import type { AssistantTurn, HelpdeskAlternative, HelpdeskSuggestion, TicketDetail, TicketMessageView, TicketTimelineEntry } from "@/contracts/helpdesk";
 import { hasControlCharacters, isBlankText, textLength } from "@/contracts/helpdeskText";
 
+/** Help Centre popular FAQs shown before "Show more" (owner 2026-11-02: the first 10, the rest folded); also the newest-FAQs fallback size. */
+export const HELP_POPULAR_SHOWN = 10;
+
 /** questionMax: the chat question limit (code points). */
 export type HelpdeskUiLimits = { maxFiles: number; maxFileBytes: number; subjectMax: number; bodyMax: number; emailMax: number; questionMax: number };
 export type HelpdeskUiConfig = { categories: string[]; limits: HelpdeskUiLimits; extensions: string[]; accept: string };

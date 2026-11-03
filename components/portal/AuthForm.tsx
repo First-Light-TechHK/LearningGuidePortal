@@ -15,11 +15,14 @@ import { isNameTooLong, isValidAccountName } from "@/lib/nameValidation";
 const REMEMBERED_CREDENTIALS_KEY = "learning-guide.remembered-credentials";
 const REMEMBERED_CREDENTIALS_MAX_AGE_MS = 30 * 60 * 1000;
 
-function rememberCredentials(credentials: { email: string; password: string } | null) {
+// Keep me signed in remembers only the email for 30 minutes. The password is
+// never written to browser storage (it was kept there in plain text, readable
+// by anyone at a shared computer); the browser's own password manager can
+// still fill it through autocomplete="current-password".
+function rememberCredentials(credentials: { email: string } | null) {
   try {
     if (credentials) window.localStorage.setItem(REMEMBERED_CREDENTIALS_KEY, JSON.stringify({
       email: credentials.email.trim(),
-      password: credentials.password,
       expiresAt: Date.now() + REMEMBERED_CREDENTIALS_MAX_AGE_MS
     }));
     else window.localStorage.removeItem(REMEMBERED_CREDENTIALS_KEY);
@@ -56,16 +59,14 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       const saved = window.localStorage.getItem(REMEMBERED_CREDENTIALS_KEY);
       if (saved) {
         const credentials = JSON.parse(saved) as { email?: unknown; password?: unknown; expiresAt?: unknown };
-        if (typeof credentials.email !== "string" || typeof credentials.password !== "string" || typeof credentials.expiresAt !== "number" || !Number.isFinite(credentials.expiresAt) || credentials.expiresAt <= Date.now()) {
+        // A row written before this fix still holds a password: drop it at once.
+        if (typeof credentials.email !== "string" || "password" in credentials || typeof credentials.expiresAt !== "number" || !Number.isFinite(credentials.expiresAt) || credentials.expiresAt <= Date.now()) {
           rememberCredentials(null);
           return;
         }
         const initialEmailMatches = !initialEmail || initialEmail.trim().toLowerCase() === credentials.email.trim().toLowerCase();
         if (!initialEmail) setEmail(credentials.email);
-        if (initialEmailMatches) {
-          setPassword(credentials.password);
-          setRememberMe(true);
-        }
+        if (initialEmailMatches) setRememberMe(true);
       }
     } catch {
       // Invalid saved data is removed; unavailable browser storage must not block sign-in.
@@ -92,7 +93,7 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
     submitting.current = true;
     setBusy(true);
     try {
-      const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe, ...(!signIn ? { termsAccepted } : {}) }) });
+      const response = await fetch(`/api/auth/${mode === "sign-in" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, nickname, locale, rememberMe, ...(!signIn ? { termsAccepted, returnTo } : {}) }) });
       const data = await response.json() as { ok?: boolean; code?: string; data?: { verificationRequired?: boolean; existingActiveEmail?: boolean; email?: string } };
       if (!response.ok || !data.ok) {
         const message = data.code === "REGISTRATION_CONSENT_REQUIRED" ? labels.registrationConsentRequired
@@ -102,7 +103,7 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
           : labels.requestFailed;
         throw new Error(message);
       }
-      if (signIn) rememberCredentials(rememberMe ? { email, password } : null);
+      if (signIn) rememberCredentials(rememberMe ? { email } : null);
       if (data.data?.existingActiveEmail) {
         setExistingNotice(labels.existingEmailNotice);
         setExistingSeconds(3);
@@ -110,8 +111,8 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
         setBusy(false);
         return;
       }
-      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
-      window.location.assign(returnTo || `/${locale}/account/my-learning`);
+      if (data.data?.verificationRequired) return window.location.assign(`/${locale}/portal/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}&returnTo=${encodeURIComponent(returnTo)}`);
+      window.location.replace(returnTo || `/${locale}/portal`);
     } catch (requestError) {
       submitting.current = false;
       setError(requestError instanceof Error ? requestError.message : labels.requestFailed);
@@ -121,10 +122,10 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
 
   useEffect(() => {
     if (!existingNotice) return;
-    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?step=password&email=${encodeURIComponent(email.trim().toLowerCase())}`); return; }
+    if (existingSeconds <= 0) { window.location.assign(`/${locale}/portal/sign-in?step=password&email=${encodeURIComponent(email.trim().toLowerCase())}&returnTo=${encodeURIComponent(returnTo)}`); return; }
     const timer = window.setTimeout(() => setExistingSeconds(value => value - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [email, existingNotice, existingSeconds, locale]);
+  }, [email, existingNotice, existingSeconds, locale, returnTo]);
 
   const switchPath = `${signIn ? `/${locale}/portal/sign-up` : `/${locale}/portal/sign-in`}?returnTo=${encodeURIComponent(returnTo)}`;
   return (

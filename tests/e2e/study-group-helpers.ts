@@ -1,4 +1,4 @@
-import { expect, type Browser, type BrowserContext, type Page } from "playwright/test";
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from "playwright/test";
 
 // Shared setup for the Study Group E2E specs (local only: docker LiveKit,
 // tutor mock and SMTP sink from playwright.studygroup.config.ts).
@@ -111,6 +111,49 @@ export async function groupView(member: Member, groupId: string) {
 // is not part of the app and must not count.
 export function appAlerts(page: Page) {
   return page.locator('[role="alert"]:not(#__next-route-announcer__)');
+}
+
+// The Create and Schedule dialogs use Ant Design controls (08f0fef,
+// 2026-11-02): no native date/time inputs or <select>. Each control carries
+// its form field name as its id, and a dropdown opens inside the <dialog>,
+// outside the form.
+export async function antPick(dialog: Locator, field: "date" | "time", text: string) {
+  const input = dialog.locator(`#${field}`);
+  await input.click();
+  await input.fill(text);
+  await input.press("Enter");
+  await expect(input).toHaveValue(text);
+}
+
+export async function antSelect(dialog: Locator, field: string, label: string) {
+  await dialog.locator(`#${field}`).click();
+  await dialog.locator(`.lg-ant-select-dropdown:not(.lg-ant-select-dropdown-hidden) .lg-ant-select-item-option[title="${label}"]`).click();
+  await expect(dialog.locator(`.lg-ant-select:has(#${field}) .lg-ant-select-content`)).toHaveAttribute("title", label);
+}
+
+// The labels the Select's open dropdown offers, in order.
+export async function antOptions(dialog: Locator, field: string) {
+  await dialog.locator(`#${field}`).click();
+  const options = dialog.locator(".lg-ant-select-dropdown:not(.lg-ant-select-dropdown-hidden) .lg-ant-select-item-option");
+  await expect(options.first()).toBeVisible();
+  const labels = await options.evaluateAll((items) => items.map((item) => item.getAttribute("title") || ""));
+  await dialog.locator(`#${field}`).press("Escape");
+  return labels;
+}
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+export const localDate = (at: Date) => `${at.getFullYear()}-${pad2(at.getMonth() + 1)}-${pad2(at.getDate())}`;
+export const localTime = (at: Date) => `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+
+// Fills the Schedule Live Session dialog (the fields left out stay as they are).
+export async function fillScheduleDialog(dialog: Locator, input: { title?: string; startsAt?: Date; duration?: string; max?: string }) {
+  if (input.title !== undefined) await dialog.locator('input[name="title"]').fill(input.title);
+  if (input.startsAt) {
+    await antPick(dialog, "date", localDate(input.startsAt));
+    await antPick(dialog, "time", localTime(input.startsAt));
+  }
+  if (input.duration) await antSelect(dialog, "durationMinutes", input.duration);
+  if (input.max) await antSelect(dialog, "maxParticipants", input.max);
 }
 
 export const roomPath = (sessionId: string) => `/en-GB/portal/study-groups/sessions/${sessionId}`;

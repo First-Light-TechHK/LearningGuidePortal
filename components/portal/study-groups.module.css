@@ -224,8 +224,10 @@
 .tile .tileMic[data-status="speaking"], .tile .tileMic[data-status="mic-on"] { color: #12b76a; }
 .tile .tileMic[data-status="muted"] { background: #f54649; color: #fff; }
 .shareMain { width: 100%; min-height: 360px; max-height: 62vh; background: #101828; border-radius: 12px; object-fit: contain; }
-.videos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 990px; }
+.videos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width:100%; max-width:990px; margin-inline:auto; }
 .videosSingle { grid-template-columns: minmax(0, 490px); justify-content: center; }
+.videos[data-count="3"] > .tile:last-child, .videos[data-count="5"] > .tile:last-child { grid-column:1 / -1; justify-self:center; width:calc((100% - 10px) / 2); }
+.stage { min-width:0; }
 /* Shared screen (owner 2026-10-29, Tencent Meeting style; no Figma frame yet, reuses the room's styles, 待视觉验收):
    the screen takes the stage's height, the people float over its top-right corner as collapsible avatars, and
    Full screen puts the whole room on the screen with the chat (and AI Tutor) and the controls floating over it. */
@@ -296,7 +298,9 @@
 .avatar .tileMic[data-status="muted"] { background: #f54649; color: #fff; box-shadow: none; }
 .avatarHand { position: absolute; top: 0; left: 34px; font-size: 14px; }
 .controls button[aria-pressed="true"] { background: #1d6bff; color: #fff; border-color: #1d6bff; }
-.tile { position: relative; overflow: hidden; aspect-ratio: 7 / 4; min-height: 0; border-radius: 12px; background: #101828; color: #fff; display: grid; align-items: end; padding: 12px; }
+.tile { position: relative; overflow: hidden; aspect-ratio: 7 / 4; min-width:0; min-height: 0; box-sizing:border-box; border-radius: 12px; background: #101828; color: #fff; display: grid; align-items: end; padding: 12px; }
+.tileEmpty { display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; color:#d0d5dd; font-size:14px; line-height:22px; }
+.tile[data-speaking="true"]::after { content:""; position:absolute; inset:0; z-index:2; border:2px solid #1d6bff; border-radius:inherit; pointer-events:none; }
 .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .tile span { position: relative; z-index: 1; }
 .tile[data-video="off"] { background: #f2f4f7; }
@@ -373,7 +377,7 @@
 .chatForm { position: relative; display: flex; flex-direction: column; min-height: 100px; padding: 12px 44px 12px 12px; border: 1px solid #e4e7ed; border-radius: 8px; }
 /* The bordered box is the input: its textarea fills it edge to edge and keeps
    clear of the send button in the bottom-right corner. */
-.chatForm textarea { width: 100%; flex: 1 1 auto; min-height: 72px; max-height: 160px; resize: none; border: 0; padding: 0; font: inherit; line-height: 1.5; outline: none; background: transparent; }
+.chatForm textarea { display: block; width: 100%; flex: none; min-height: 0; max-height: 120px; resize: none; overflow-y: auto; overflow-wrap: anywhere; border: 0; border-radius: 0; padding: 0; font: inherit; font-size: 13px; line-height: 1.5; outline: none; background: transparent; }
 /* QA M27: the input draws no outline of its own, so the box shows where the keyboard is. */
 .chatForm:focus-within { border-color: #1d6bff; box-shadow: 0 0 0 3px rgba(29, 107, 255, .2); }
 .chatForm textarea::placeholder { color: #98a2b3; }
@@ -406,7 +410,7 @@
 .stageHead h1 { flex: 1 1 12ch; }
 .endActions { flex-wrap: wrap; gap: 12px; }
 /* BUG-0196: the room's Session Focus is a labelled block (the waiting dialog's 599:755 type), not a second title line. */
-.roomFocus { margin: 16px 0 0; }
+.roomFocus { max-width:990px; margin:16px auto 0; }
 .roomFocus .waitingFocus + p { margin: 0; color: #344054; }
 /* BUG-0198: the right panel keeps the design height (599:1277, 771px) and the chat scrolls inside it instead of stretching the page. */
 .side { height: min(771px, calc(100vh - 160px)); min-height: 520px; }
@@ -420,6 +424,8 @@
 .chatHead strong { font-size: 12px; font-weight: 600; color: #000; }
 .chatHead time { font-size: 10px; color: rgba(107, 115, 128, .4); }
 .chatBody { margin-top: 9px; font-size: 12px; color: rgba(0, 0, 0, .4); }
+/* BUG-0284: a message keeps the lines it was written in. */
+.chatText { white-space: pre-wrap; }
 /* Owner 2026-10-30: the answer sits in its own light-blue block in dark ink, so formulas read clearly. */
 .tutorBody { color: #344054; background: #f5f8ff; padding: 10px 12px; border-radius: 10px; }
 .tutorBody .tutorLead { color: inherit; font-weight: 400; }
@@ -441,9 +447,7 @@
 .chatForm { display: flex; flex-direction: column; flex: none; margin: 0 -8px -8px; padding: 12px 36px 8px 12px; }
 /* 599:1393 placeholder sits 12px inside the box: the global field padding and focus ring do not apply here (the box draws the focus). */
 /* 2026-10-30: the box is the only frame (8b5f17e dropped the input reset, so the global field border drew a box inside the box). */
-.chatForm input { width: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; outline: none; font-size: 13px; }
-.chatForm input:focus { box-shadow: none; }
-.chatForm input::placeholder { color: #98a2b3; }
+.chatForm textarea:focus { box-shadow: none; }
 .chatFormRow { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; }
 .enterHint { color: #98a2b3; font-size: 11px; }
 /* @AI Tutor entry: a light-blue chip with a spark on the box's bottom row, solid blue while it addresses the Tutor (owner 2026-10-30; the earlier style was lost in 8b5f17e, so it fell back to a grey system button). */
@@ -535,4 +539,19 @@
   .dlFacts { min-width: 0; margin-top: 0; }
   .dlGate { margin-top: 24px; padding: 28px 20px; }
   .dlActions > * { width: 100%; }
+}
+/* Camera grids retain their stage alignment when chat is closed or the page is wide. */
+@media(max-width:600px) {
+  .videos { grid-template-columns:minmax(0,1fr); }
+  .videos[data-count="3"] > .tile:last-child, .videos[data-count="5"] > .tile:last-child { grid-column:auto; width:100%; }
+  .tile .tilePlaceholder i { width:64px; height:64px; }
+}
+/* Fill the desktop viewport while retaining the stage's original intrinsic height. */
+@media(min-width:801px) {
+  .room[data-focus="false"] { --room-panel-height:max(520px,calc(100dvh - var(--room-stage-space,171px))); align-items:stretch; }
+  .room[data-focus="false"] > .stage { display:flex; flex-direction:column; box-sizing:border-box; height:var(--room-panel-height); min-height:max-content; }
+  .room[data-focus="false"] > .side { box-sizing:border-box; height:var(--room-panel-height); }
+  .room[data-focus="false"] > .stage > * { flex-shrink:0; }
+  .room[data-focus="false"] > .stage > .videos { flex:1 0 auto; align-content:center; }
+  .room[data-focus="false"] > .stage > .controls { margin-top:auto; padding-top:16px; }
 }

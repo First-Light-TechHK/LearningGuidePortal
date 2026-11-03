@@ -54,6 +54,11 @@ test("real short video seeks accurately at endpoints and fractions, cancels draf
       await volumeSlider.fill('40');await expect(video).toHaveJSProperty('volume',.4);
       await volumeSlider.fill('0');await expect(video).toHaveJSProperty('muted',true);
       await volumeSlider.fill('60');await expect(video).toHaveJSProperty('muted',false);
+      const sound = page.locator('.la-video-volume button');
+      await sound.click();await expect(video).toHaveJSProperty('muted',true);
+      await expect(video).toHaveJSProperty('volume',.6);
+      await sound.click();await expect(video).toHaveJSProperty('muted',false);
+      await expect(volumeSlider).toHaveValue('60');
       await volumeSlider.press('Escape');await expect(volumeSlider).toBeHidden();
       await expect(video).toHaveJSProperty('paused',true);
       await expect(page.locator('.la-video-action-feedback')).toHaveCount(0);

@@ -8,6 +8,7 @@ import { formatPlanPrice } from "@/lib/planPricing";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
+import Link from "next/link";
 
 type Plan = { alreadySubscribed?: boolean; upgradeUnavailable?: boolean; available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
 
@@ -25,6 +26,7 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
   const subscribed = plans.length > 0 && plans.every(plan => plan.alreadySubscribed);
   const messages = getMessages(locale);
   const [error, setError] = useState("");
+  const [blockingOrderId, setBlockingOrderId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<"trial" | "purchase" | null>(null);
   const submitting = useRef(false);
@@ -57,7 +59,8 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
     submitting.current = true; setPendingAction("trial"); setBusy(true); setError("");
     try {
       const response = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "trial" }) });
-      const data = await response.json() as { error?: string; quote?: { id: string }; code?: string };
+      const data = await response.json() as { error?: string; quote?: { id: string }; code?: string; blockingOrderId?: string };
+      setBlockingOrderId(data.blockingOrderId || null);
       if (response.status === 401) { signInForPlan(); return; }
       if (!response.ok) throw new Error(data.code === "already_subscribed" || data.code === "upgrade_unavailable" ? messages.paymentErrors[data.code] : data.error || "Trial activation failed.");
       if (!data.quote) throw new Error("Trial quote was not created.");
@@ -70,7 +73,8 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
     submitting.current = true; setPendingAction("purchase"); setBusy(true); setError("");
     try {
       const quoteResponse = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "purchase" }) });
-      const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string; code?: string };
+      const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string; code?: string; blockingOrderId?: string };
+      setBlockingOrderId(quoteData.blockingOrderId || null);
       if (quoteResponse.status === 401) { signInForPlan(); return; }
       if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.code === "already_subscribed" || quoteData.code === "upgrade_unavailable" ? messages.paymentErrors[quoteData.code] : quoteData.error || "Price calculation failed.");
       window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`);
@@ -85,6 +89,7 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
       </div></> : null}
       {subscribed && <p role="status">{messages.pricingDesign.alreadySubscribed}</p>}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+      {blockingOrderId && <p><Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(blockingOrderId)}#order-${encodeURIComponent(blockingOrderId)}`}>{messages.orderManagement.viewOrders}</Link></p>}
       <div className="purchase-actions">{allowTrial ? <PortalButton loading={pendingAction === "trial"} disabled={busy || blocked} onClick={startTrial}>{copy.startTrial}</PortalButton> : null}<PortalButton loading={pendingAction === "purchase"} disabled={busy || blocked} onClick={purchase} type="primary">{copy.buy}</PortalButton></div>
     </div>
   );

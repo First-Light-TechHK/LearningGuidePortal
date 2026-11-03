@@ -60,6 +60,7 @@
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "antd": "6.6.8",
+    "dayjs": "1.11.23",
     "google-auth-library": "^11.0.2",
     "katex": "^0.16.22",
     "livekit-client": "^2.15.8",
