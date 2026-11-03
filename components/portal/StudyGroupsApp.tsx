@@ -155,7 +155,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
   const [sessionLesson, setSessionLesson] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editAbout, setEditAbout] = useState("");
-  const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string; sessionId?: string }>>([]);
+  const [reminders, setReminders] = useState<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>([]);
   // Only the newest lists load and the newest read of the open group count
   // (QA M3, QA3 groups #5).
   const [listRequests] = useState(latestOnly);
@@ -205,7 +205,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         fetchAll ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
         studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
         fetchAll ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as CourseOption[] }),
-        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string; sessionId?: string }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string; sessionId?: string }> })
+        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> })
       ]);
       if (!listRequests.isLatest(ticket)) return;
       if (!myResult.ok || !discoverResult.ok) {
@@ -786,7 +786,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
     <div className={styles.layout}>
       <aside className={styles.sidebar} aria-label={copy.title}>
         <h1 className={styles.title}>{copy.title}</h1>
-        {reminders.length ? <ul className={styles.reminders}>{reminders.map((item, index) => <li role="status" key={item.sessionId ?? `${item.createdAt}-${item.body}`}><span id={`study-group-reminder-${index}`}>{item.body}</span>{item.sessionId ? <button className={styles.reminderLink} type="button" aria-describedby={`study-group-reminder-${index}`} disabled={following !== null} aria-busy={following === item.sessionId} onClick={() => void followEntry(item.sessionId!)}>{copy.deepLink.enterNow}</button> : null}</li>)}</ul> : null}
+        {reminders.length ? <ul className={styles.reminders}>{reminders.map((item, index) => <li role="status" key={item.sessionId ?? `${item.createdAt}-${item.body}`}><span id={`study-group-reminder-${index}`}>{item.body}</span>{item.sessionId ? <button className={styles.reminderLink} type="button" aria-describedby={`study-group-reminder-${index}`} disabled={following !== null} aria-busy={following === item.sessionId} onClick={() => void followEntry(item.sessionId!)}>{item.kind === "rescheduled" ? copy.deepLink.viewSession : copy.deepLink.enterNow}</button> : null}</li>)}</ul> : null}
         {/* BUG-0130: a signed-out visitor has no "My" Study Groups — the heading, Create
             button and All / Hosted by Me tabs render only for signed-in users. */}
         {signedIn ? <div className={styles.sectionHead}>

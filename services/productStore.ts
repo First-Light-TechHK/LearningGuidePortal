@@ -2372,21 +2372,33 @@ export async function deleteConversation(userId: string, courseId: string, lesso
 // check accepts the known per-locale titles; the en-GB one is the exact
 // string earlier environments already carry.
 const STUDY_GROUP_REMINDER_TITLES = new Set(["Live Session reminder", "直播课提醒"]);
+// A moved Start Time's notice (announceReschedule). Only rows linked to their
+// Session are shown; older unlinked rows had nowhere to point.
+const STUDY_GROUP_RESCHEDULE_TITLES = new Set(["Live Session rescheduled", "直播课时间已更改"]);
+
+export type StudyGroupReminderKind = "reminder" | "rescheduled";
 
 export async function listStudyGroupReminders(
   userId: string,
-  isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string }) => boolean | Promise<boolean>
+  isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string; kind: StudyGroupReminderKind }) => boolean | Promise<boolean>
 ) {
   const data = await readProductAggregate();
-  const reminders: Array<{ body: string; createdAt: string; sessionId?: string }> = [];
+  const reminders: Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> = [];
   const seenSessionIds = new Set<string>();
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
-    if (item.userId !== userId || !STUDY_GROUP_REMINDER_TITLES.has(item.title)) continue;
+    if (item.userId !== userId) continue;
+    const kind: StudyGroupReminderKind | null = STUDY_GROUP_REMINDER_TITLES.has(item.title)
+      ? "reminder"
+      : STUDY_GROUP_RESCHEDULE_TITLES.has(item.title) && item.sessionId ? "rescheduled" : null;
+    if (!kind) continue;
+    // Newest row per Session wins: a T-10 reminder sent after a move replaces its notice.
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
-    if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId })) continue;
+    if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId, kind })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);
-    reminders.push(item.sessionId ? { body: item.body, createdAt: item.createdAt, sessionId: item.sessionId } : { body: item.body, createdAt: item.createdAt });
+    const row: { body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" } = item.sessionId ? { body: item.body, createdAt: item.createdAt, sessionId: item.sessionId } : { body: item.body, createdAt: item.createdAt };
+    if (kind === "rescheduled") row.kind = "rescheduled";
+    reminders.push(row);
   }
   return reminders;
 }

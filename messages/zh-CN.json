@@ -1250,7 +1250,8 @@
       "fullTitle": "这节直播课人数已满",
       "fullBody": "这节直播课的名额已满。有人离开后可能会空出位置。",
       "backToGroup": "返回学习小组",
-      "enterNow": "立即进入"
+      "enterNow": "立即进入",
+      "viewSession": "查看"
     }
   },
   "legal": {

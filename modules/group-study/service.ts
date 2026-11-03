@@ -45,7 +45,7 @@ export type StudyGroupDeps = {
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
   notify: (input: { userId: string; title: string; body: string; sessionId?: string }) => Promise<void>;
-  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string; sessionId?: string }>>;
+  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>;
   // Withdraws the pending reminder rows a cancelling action invalidates
   // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
   // Scoped to the given Live Sessions, optionally to one user, and to rows
@@ -959,8 +959,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const copy = profile?.locale === "zh-CN"
           ? { title: "直播课时间已更改", body: `${session.title} 的开始时间已更改，请到学习小组查看新的时间。` }
           : { title: "Live Session rescheduled", body: `The Start Time of ${session.title} has changed. Open the Study Group to see the new time.` };
-        await deps.notify({ userId, title: copy.title, body: copy.body });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+        // Linked to its Session so the reminders strip on the Study Group page
+        // shows it until the Session starts (there is no in-site inbox).
+        await deps.notify({ userId, title: copy.title, body: copy.body, sessionId: session.id });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(session.id, profile?.locale === "zh-CN" ? "zh-CN" : "en-GB") ?? null });
       } catch {
         // One recipient's failure never blocks the others.
       }

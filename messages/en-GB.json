@@ -1250,7 +1250,8 @@
       "fullTitle": "This Live Session is full",
       "fullBody": "All places in this Live Session are taken. A place may free up when someone leaves.",
       "backToGroup": "Back to Study Group",
-      "enterNow": "Enter now"
+      "enterNow": "Enter now",
+      "viewSession": "View"
     }
   },
   "legal": {

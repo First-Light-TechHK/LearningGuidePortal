@@ -35,6 +35,20 @@ export function studyGroupReminderStillValid(store: StudyGroupStore, userId: str
   return store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt);
 }
 
+// A moved Start Time's notice shows from the move until the Session starts,
+// for a viewer who still plans to attend (or hosts) an active group's Session.
+export function studyGroupRescheduleNoticeStillValid(store: StudyGroupStore, userId: string, sessionId: string, nowMs: number = Date.now()) {
+  const session = store.sessions.find((item) => item.id === sessionId);
+  if (!session || session.status !== "scheduled") return false;
+  const startsAt = Date.parse(session.startsAt);
+  if (!Number.isFinite(startsAt) || nowMs >= startsAt) return false;
+  const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
+  if (!group) return false;
+  if (!store.memberships.some((item) => item.groupId === group.id && item.userId === userId && !item.leftAt)) return false;
+  if (group.hostUserId === userId) return true;
+  return store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt);
+}
+
 // Reminder notifications recorded before the sessionId linkage existed (the
 // pre-BUG-0109 rows already in production) carry the Session title inside
 // their body: "<title> starts in 10 minutes." / "<title> 将在 10 分钟后开始。"
@@ -63,9 +77,10 @@ function reminderBodyTitle(body: string): string | null {
 export function studyGroupReminderNotificationStillValid(
   store: StudyGroupStore,
   userId: string,
-  item: { body: string; sessionId?: string; createdAt?: string },
+  item: { body: string; sessionId?: string; createdAt?: string; kind?: "reminder" | "rescheduled" },
   nowMs: number = Date.now()
 ) {
+  if (item.kind === "rescheduled") return Boolean(item.sessionId && studyGroupRescheduleNoticeStillValid(store, userId, item.sessionId, nowMs));
   if (item.sessionId) {
     if (!studyGroupReminderStillValid(store, userId, item.sessionId, nowMs)) return false;
     const startsAt = Date.parse(store.sessions.find((row) => row.id === item.sessionId)?.startsAt ?? "");
