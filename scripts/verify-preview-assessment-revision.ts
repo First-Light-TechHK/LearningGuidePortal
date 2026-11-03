@@ -65,7 +65,8 @@ async function main() {
       const { quote } = await store.createQuote(account.id, "epicureanism-pc-6"); await store.completeDemoCheckout(account.id, quote.id);
       await page.goto(`${origin}/${locale}/portal/courses/${courseId}`);
       const start = page.locator('[data-syllabus] [data-course-cta-link="continue_learning"]');
-      await expect(start).toHaveText(messages.courseDetailDesign.startLearning);
+      await expect(start).toHaveCount(course.sections.flatMap((section: { lessons: unknown[] }) => section.lessons).length);
+      for (const entry of await start.all()) await expect(entry).toHaveText(messages.courseDetailDesign.start);
       const fresh = await context.request.get(`${origin}/api/portal/courses/${courseId}`);
       assert.equal((await fresh.json()).page.progress, 0);
       assert.equal((await store.getLearningOverview(account.id)).courses.length, 0);

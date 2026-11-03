@@ -39,6 +39,7 @@ export type CoursePage = {
   totalLearningPoints: number;
   progress: number | null;
   nextPreviewLessonId: string | null;
+  /** Recommended resume/preview target; entitled syllabus rows each retain their own entry. */
   actionLessonId: string | null;
 };
 
