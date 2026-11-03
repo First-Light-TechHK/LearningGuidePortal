@@ -52,8 +52,10 @@ export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit,
       <div className={styles.scoreRow}><strong className={styles.score}>{result.percent}%</strong><p>{copy.correct.replace("{correct}", String(result.strong.length)).replace("{total}", String(questions.length))}</p></div>
       <div className={styles.columns} data-single-column={result.strong.length === 0 || result.needsReview.length === 0}>{(["strong", "needsReview"] as const).map((kind, groupIndex) => result[kind].length > 0 ? <section key={kind} aria-label={copy[kind]}>
         <h3>{copy[kind]}<span>{copy.cards.replace("{count}", String(result[kind].length))}</span></h3>
-        <div ref={node => { lists.current[groupIndex] = node; }} className={`${styles.list} ${kind === "needsReview" ? styles.needsReview : ""}`} tabIndex={0}>
+        <div className={`${styles.listFrame} ${kind === "needsReview" ? styles.needsReview : ""}`}>
+        <div ref={node => { lists.current[groupIndex] = node; }} className={styles.list} tabIndex={0} aria-label={copy[kind]}>
           {result[kind].map(position => <button type="button" id={`knowledge-card-${position}`} key={questions[position].id} className={styles.card} onClick={() => openCard(position)}>{badge(position, kind === "needsReview")}<span>{questions[position].prompt}</span><Image src={`/portal/knowledge-test/${position === 0 ? "chevron-v2" : "chevron-muted-v2"}.svg`} width={16} height={16} alt=""/></button>)}
+        </div>
         </div>
       </section> : null)}</div>
       <footer className={styles.resultFooter}>{entrySource === "overview" ? <button className={styles.primary} onClick={()=>{setResponses(questions.map(()=>({answer:"",rating:null})));setIndex(0);setPhase("question");resultScroll.current=[];}}>{getMessages(locale).applicationTest.retake}</button> : <><button className={styles.exit} onClick={onNextLesson || onExit}>{onNextLesson ? copy.nextLesson : copy.done}</button>{onApplicationTest && <button className={styles.primary} onClick={onApplicationTest}>{copy.tryApplication}</button>}</>}</footer>
