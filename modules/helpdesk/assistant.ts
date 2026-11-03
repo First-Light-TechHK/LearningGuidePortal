@@ -99,7 +99,7 @@ export type LearnerRecords = Pick<SignalSources, "user" | "orders" | "subscripti
 export const LEARNER_STATE_WAIT_MS = 300;
 
 export type AssistantDeps = {
-  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "setAssistFeedback" | "tryRateHit" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
+  repository: Pick<HelpdeskRepository, "insertAssist" | "findAssist" | "findAssistByKey" | "assistKeyOwner" | "setAssistFeedback" | "tryRateHit" | "recordAssistDelivery" | "listUndeliveredAssists" | "conversationRootAssist" | "conversationShownFaqIds" | "insertAiRating"
     | "createChatSession" | "findChatSession" | "recordTurn" | "endChatSession" | "sessionShowedNode" | "openEmptyChatSession" | "sessionLearnerTurns" | "setAssistExpanded" | "listTicketsByUser">;
   admin: AssistantAdmin;
   now?: () => Date;
@@ -384,7 +384,12 @@ export function createAssistantService(deps: AssistantDeps) {
 
   async function replay(key: string, hash: string, learnerId: string): Promise<AssistantResponse | null> {
     const earlier = await repository.findAssistByKey(key, learnerId);
-    if (!earlier) return null;
+    if (!earlier) {
+      // Another learner's key (review B 2026-11-03 F2): refused here, before a model call or a budget hit is spent on it.
+      const owner = await repository.assistKeyOwner(key);
+      if (owner && owner !== learnerId) throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
+      return null;
+    }
     if (earlier.payloadHash !== hash) throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
     return responseOf(earlier);
   }

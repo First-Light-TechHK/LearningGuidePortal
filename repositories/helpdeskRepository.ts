@@ -349,6 +349,9 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     async findAssistByKey(clientEventId, learnerId) {
       return (await load()).assists.find((item) => item.clientEventId === clientEventId && item.learnerId === learnerId) ?? null;
     },
+    async assistKeyOwner(clientEventId) {
+      return (await load()).assists.find((item) => item.clientEventId === clientEventId)?.learnerId ?? null;
+    },
     setAssistFeedback(id, learnerId, feedback) {
       return exclusive(async () => {
         const store = await load();
@@ -489,6 +492,13 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       const store = await load();
       return (store.assists as LocalAssist[]).filter((row) => !row.scrubbedAt && row.createdAt < cutoffIso).sort(byCreated).slice(0, limit)
         .map((row): RetentionRow => ({ id: row.id, learnerId: row.learnerId, question: row.question, answer: row.answer, kind: row.kind ?? null, texts: row.texts ?? null, contacts: contactsOf(store.tickets, row.learnerId) }));
+    },
+    async peekRateHit(key, limit, windowMs, atIso) {
+      const store = await load();
+      const since = new Date(Date.parse(atIso) - windowMs).toISOString();
+      const mine = (store.rateHits ?? []).filter((hit) => hit.key === key && hit.at > since).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+      if (mine.length >= limit) return { allowed: false as const, oldestAt: mine[0]?.at ?? atIso };
+      return { allowed: true as const };
     },
     sweepRateHits(olderThanIso, limit) {
       return exclusive(async () => {
@@ -918,6 +928,10 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       const row = (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE client_event_id = $1 AND learner_id = $2`, [clientEventId, learnerId]))[0];
       return row ? assistFromRow(row) : null;
     },
+    async assistKeyOwner(clientEventId) {
+      const row = (await select<{ learner_id: string }>("SELECT learner_id FROM helpdesk_assist_log WHERE client_event_id = $1", [clientEventId]))[0];
+      return row?.learner_id ?? null;
+    },
     async setAssistFeedback(id, learnerId, feedback) {
       // First value wins: one conditional UPDATE, then read what is stored.
       await select("UPDATE helpdesk_assist_log SET feedback = $3 WHERE id = $1 AND learner_id = $2 AND feedback IS NULL", [id, learnerId, feedback]);
@@ -1057,6 +1071,12 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         FROM helpdesk_assist_log l ${CONTACTS_LATERAL}
         WHERE l.scrubbed_at IS NULL AND l.created_at < $1 ORDER BY l.created_at, l.id LIMIT $2`, [cutoffIso, limit]);
       return rows.map((row): RetentionRow => ({ id: row.id, learnerId: row.learner_id, question: row.question, answer: row.answer ?? null, kind: row.kind ?? null, texts: textsFromRow(row.texts), contacts: contactsFromRow(row) }));
+    },
+    async peekRateHit(key, limit, windowMs, atIso) {
+      const since = new Date(Date.parse(atIso) - windowMs).toISOString();
+      const { rows } = await getPool().query<{ count: string; oldest: Date | null }>("SELECT count(*)::text AS count, min(hit_at) AS oldest FROM helpdesk_rate_hits WHERE key = $1 AND hit_at > $2", [key, since]);
+      if (Number(rows[0].count) >= limit) return { allowed: false as const, oldestAt: rows[0].oldest ? iso(rows[0].oldest) : atIso };
+      return { allowed: true as const };
     },
     async sweepRateHits(olderThanIso, limit) {
       // Bounded: one small ORDER BY ... LIMIT scan a day keeps the table to the active keys without an index on hit_at.

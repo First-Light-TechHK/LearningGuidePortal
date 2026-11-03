@@ -416,7 +416,11 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
       const stale = <T>(rows: T[], settled: (row: T) => boolean, at: (row: T) => string) =>
         new Set(rows.filter((row) => settled(row) && Date.parse(at(row)) < cutoff).sort((a, b) => Date.parse(at(a)) - Date.parse(at(b))).slice(0, Math.max(0, input.limit)));
       const outbox = stale(store.outbox, (row) => row.status === "delivered" || row.status === "dead", (row) => row.createdAt);
-      const tutorRequests = stale(store.tutorRequests, (row) => tutorRequestState(row) === "answered" || tutorRequestState(row) === "dead_letter", (row) => row.receivedAt);
+      // Like the PostgreSQL statement: a settled request whose answer or
+      // "unavailable" notice is still in the outbox (by dedupe key) waits for
+      // that row to be pruned first. (The file store keeps no webhook receipts.)
+      const referenced = new Set(store.outbox.map((row) => row.dedupeKey));
+      const tutorRequests = stale(store.tutorRequests, (row) => (tutorRequestState(row) === "answered" || tutorRequestState(row) === "dead_letter") && !referenced.has(row.id) && !referenced.has(`${row.id}:unavailable`), (row) => row.receivedAt);
       store.outbox = store.outbox.filter((row) => !outbox.has(row));
       store.tutorRequests = store.tutorRequests.filter((row) => !tutorRequests.has(row));
       return { outbox: outbox.size, tutorRequests: tutorRequests.size, webhookReceipts: 0 };
