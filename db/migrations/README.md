@@ -1,5 +1,7 @@
 # Database migrations
 
+`025_auth_identity_keys.sql` protects the live `orm_rows` User email (trimmed/case-insensitive), Account provider subject, and email-binding token hash with unique expression indexes. It supports verified first-login WeChat linking to an existing Email/Google user. Additive/repeatable, mirrored by schema bootstrap and its freshness probe; local product transactions enforce matching uniqueness. Existing duplicate identities cause a visible migration failure and require explicit reconciliation. No users or business records are deleted/backfilled. Roll back application code first and retain these protections. Existing binding links without pinned account/target metadata must be reissued.
+
 Migration 按数字顺序执行。每次变更都要有唯一约束、回滚说明和 integration test。当前计划顺序见 `docs/phase1/domain-model.md`：User/Account → Course → Plan/Price → Order/Payment → Subscription/Entitlement → Study → Notification/Audit → KS links。
 
 本地可以使用 Docker PostgreSQL；DEV、SIT、UAT、PPE/PROD 使用各自的 RDS 数据，不共享生产数据。不要在 Route Handler 中直接写 SQL。

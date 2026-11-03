@@ -14,6 +14,8 @@ import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice } from "./stripePriceService";
 import { productTransaction } from "@/repositories/productTransactionRepository";
+import { hasIndependentEmailBindingHistory } from "@/repositories/emailBindingRepository";
+import type { EmailBindingIdentity, EmailBindingResult } from "@/contracts/emailBinding";
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "crypto";
 import { constants as fsConstants } from "fs";
 import { open as openFile, unlink } from "fs/promises";
@@ -64,6 +66,8 @@ export type ProductUser = {
   role: "student" | "teacher" | "operator";
   status: "pending" | "active" | "disabled";
   emailVerifiedAt: string | null;
+  mergedIntoUserId?: string;
+  mergedAt?: string;
   avatarPath?: string | null;
   avatarContentType?: string | null;
   country?: string | null;
@@ -289,7 +293,7 @@ export type ProductData = {
   stripeEvents: Array<{ id: string; type: string; processedAt: string }>;
   verificationTokens: ProductToken[];
   passwordResetTokens: ProductToken[];
-  emailBindingTokens: Array<ProductToken & { email: string }>;
+  emailBindingTokens: Array<ProductToken & EmailBindingIdentity & { email: string }>;
   paymentSettings: ProductPaymentSettings;
   orderActivities: ProductOrderActivity[];
   accounts: ProductAccount[];
@@ -1044,13 +1048,18 @@ export async function issueEmailBinding(userId: string, emailValue: string) {
     const user = data.users.find(user => user.id === userId && user.status === "active");
     if (!user || !data.accounts.some(account => account.userId === userId && account.provider === "wechat")) throw new Error("unauthorised");
     if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
-    if (data.users.some(user => user.id !== userId && user.email?.toLowerCase() === email)) throw new Error("email_in_use");
+    const accounts = data.accounts.filter(account => account.userId === userId);
+    if (accounts.length !== 1 || accounts[0].provider !== "wechat" || user.passwordHash || user.role !== "student") throw new Error("account_unavailable");
+    const targets = data.users.filter(other => other.id !== userId && other.email?.toLowerCase() === email);
+    if (targets.length > 1) throw new Error("account_conflict");
+    const target = targets[0];
+    if (target && (target.status !== "active" || !target.emailVerifiedAt || target.role !== "student")) throw new Error("account_unavailable");
     const latest = data.emailBindingTokens.find(token => token.userId === userId);
     if (latest && Date.now() - new Date(latest.createdAt).getTime() < 60_000) throw new Error("cooldown");
     const rawToken = randomBytes(32).toString("base64url");
     // Remove superseded links so they cannot be mistaken for successful replays.
     data.emailBindingTokens = data.emailBindingTokens.filter(token => token.userId !== userId);
-    data.emailBindingTokens.unshift({ id: id("binding"), userId, email, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
+    data.emailBindingTokens.unshift({ id: id("binding"), userId, email, accountId: accounts[0].id, targetUserId: target?.id || null, tokenHash: hashToken(rawToken), expiresAt: tokenExpiry(24), createdAt: now(), usedAt: null });
     return { token: rawToken, email };
   });
 }
@@ -1063,20 +1072,61 @@ export async function getPendingEmailBinding(userId: string) {
   return { email: token.email, retryAfter: Math.max(0, 60 - elapsedSeconds) };
 }
 
-export async function confirmEmailBinding(rawToken: string) {
-  return editData(data => {
+export async function confirmEmailBinding(rawToken: string, options: { confirmed?: boolean; sessionToken?: string } = {}): Promise<EmailBindingResult> {
+  if (options.confirmed !== true) throw new Error("confirmation_required");
+  return editData(async data => {
     const token = data.emailBindingTokens.find(token => token.tokenHash === hashToken(rawToken));
     if (!token) throw new Error("invalid_link");
+    const session = options.sessionToken ? data.sessions.find(item => item.tokenHash === hashToken(options.sessionToken!) && new Date(item.expiresAt) > new Date()) : undefined;
+    if (token.usedAt && token.completedUserId) {
+      const completed = data.users.find(user => user.id === token.completedUserId && user.status === "active" && user.email === token.email && user.emailVerifiedAt);
+      if (!completed) throw new Error("invalid_link");
+      return { userId: completed.id, alreadyBound: true, merged: completed.id !== token.userId, sameUser: session?.userId === completed.id };
+    }
+    if (token.usedAt || new Date(token.expiresAt) <= new Date()) throw new Error("invalid_link");
     const user = data.users.find(user => user.id === token.userId && user.status === "active");
     if (!user) throw new Error("invalid_link");
-    if (token.usedAt && user.email === token.email && user.emailVerifiedAt) return { userId: user.id, alreadyBound: true };
-    if (token.usedAt || new Date(token.expiresAt) <= new Date()) throw new Error("invalid_link");
     if (user.email && user.emailVerifiedAt) throw new Error("already_bound");
-    if (data.users.some(other => other.id !== user.id && other.email?.toLowerCase() === token.email)) throw new Error("email_in_use");
-    user.email = token.email;
-    user.emailVerifiedAt = now();
+    const accounts = data.accounts.filter(account => account.userId === user.id);
+    const account = accounts[0];
+    if (accounts.length !== 1 || account.provider !== "wechat" || account.id !== token.accountId || user.passwordHash || user.role !== "student") throw new Error("account_conflict");
+    const owners = data.users.filter(other => other.id !== user.id && other.email?.toLowerCase() === token.email);
+    if (owners.length > 1) throw new Error("account_conflict");
+    const target = owners[0];
+    // Never silently retarget a link after another registration or email change.
+    if ((target?.id || null) !== token.targetUserId) throw new Error("email_in_use");
+    let sessionToken: string | undefined;
+    if (target) {
+      if (target.status !== "active" || !target.emailVerifiedAt || target.role !== "student") throw new Error("account_unavailable");
+      if (data.accounts.some(other => other.userId === target.id && other.provider === "wechat")) throw new Error("account_conflict");
+      const history = [data.quotes, data.orders, data.subscriptions, data.entitlements, data.studyRecords, data.studyEvents, data.conversations];
+      if (history.some(rows => rows.some(row => row.userId === user.id))
+        || Object.keys(user.courseLearningModes || {}).length
+        || data.courses.some(course => course.authorIds?.includes(user.id))
+        || data.authoringActivities?.some(row => row.actorId === user.id || row.targetUserId === user.id)
+        || data.notifications.some(row => row.userId === user.id && row.title !== "Welcome to Learning Guide")
+        || await hasIndependentEmailBindingHistory(user.id, data.courses.map(course => course.id))) throw new Error("source_has_history");
+      account.userId = target.id;
+      user.status = "disabled";
+      user.mergedIntoUserId = target.id;
+      user.mergedAt = now();
+      data.sessions = data.sessions.filter(item => item.userId !== user.id);
+      data.verificationTokens = data.verificationTokens.filter(item => item.userId !== user.id);
+      data.passwordResetTokens = data.passwordResetTokens.filter(item => item.userId !== user.id);
+      data.emailBindingTokens = data.emailBindingTokens.filter(item => item.userId !== user.id || item.id === token.id);
+      data.notifications = data.notifications.filter(item => item.userId !== user.id);
+      if (session?.userId === user.id) {
+        sessionToken = randomBytes(32).toString("base64url");
+        const createdAt = now();
+        data.sessions.push({ id: id("session"), tokenHash: hashToken(sessionToken), userId: target.id, createdAt, expiresAt: addMonths(createdAt, 1) });
+      }
+    } else {
+      user.email = token.email;
+      user.emailVerifiedAt = now();
+    }
     token.usedAt = now();
-    return { userId: user.id, alreadyBound: false };
+    token.completedUserId = target?.id || user.id;
+    return { userId: token.completedUserId, alreadyBound: false, merged: Boolean(target), sameUser: Boolean(sessionToken) || session?.userId === token.completedUserId, sessionToken };
   });
 }
 

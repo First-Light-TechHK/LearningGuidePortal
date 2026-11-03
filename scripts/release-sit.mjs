@@ -23,6 +23,12 @@ function aws(service, operation, input = {}) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 if (aws('sts','get-caller-identity').Account !== '851987565851') throw new Error('Wrong AWS account');
+// `branch` comes from the current checkout unless GITHUB_REF_NAME is set, and it is
+// written into the service's SourceCodeVersion. Running this from another checkout
+// therefore repoints the SIT service at that branch — it happened on 2026-10-31,
+// when a release started from `dev` and briefly made SIT deploy `dev`. UAT already
+// refuses the wrong branch; SIT must too, before any AWS call.
+if (branch !== 'sit') throw new Error(`SIT releases must run from the sit branch or set GITHUB_REF_NAME=sit (current: ${branch})`);
 checkRequiredCI({ sha, branch });
 if (branchSha(branch) !== sha) throw new Error('Branch moved; verify and release the new revision');
 const summary = aws('apprunner','list-services').ServiceSummaryList.find(x => x.ServiceName === 'learning-guide-sit');

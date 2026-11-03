@@ -55,9 +55,21 @@ test("five subscription designs retain bilingual responsive states, original ico
         const upgrade = page.locator('.pricing-upgrade-card'), category = page.locator('.pricing-design-card--category');
         const assertActions=async(selected:"everything"|"category")=>{
           await page.waitForFunction(()=>Array.from(document.querySelectorAll('.pricing-design-card .purchase-actions button,.pricing-upgrade-action button')).every(button=>getComputedStyle(button).backgroundColor===(button.closest('[data-selected]')?.getAttribute('data-selected')==='true'?'rgb(36, 107, 253)':'rgb(255, 255, 255)')));
-          for(const [button,active] of [[upgrade.locator('.pricing-upgrade-action button'),selected==="everything"],[category.locator('.purchase-actions button'),selected==="category"]] as const){
-            assert.equal(await button.evaluate(e=>getComputedStyle(e).backgroundColor),active?"rgb(36, 107, 253)":"rgb(255, 255, 255)");
-            assert.equal(await button.evaluate(e=>getComputedStyle(e).color),active?"rgb(255, 255, 255)":"rgb(21, 93, 252)");
+          // The page-wide wait above can settle before a focus/selection change repaints
+          // the individual button (observed as rgb(254, 255, 255) on a slower runner).
+          // Waiting per selector keeps the expected colours while tolerating that repaint;
+          // if focus genuinely changed a colour this times out with the settled values.
+          for(const [selector,active] of [['.pricing-upgrade-action button',selected==="everything"],['.purchase-actions button',selected==="category"]] as const){
+            const expected={background:active?"rgb(36, 107, 253)":"rgb(255, 255, 255)",color:active?"rgb(255, 255, 255)":"rgb(21, 93, 252)"};
+            await page.waitForFunction(({sel,want})=>{
+              const el=document.querySelector(sel);
+              if(!el) return false;
+              const style=getComputedStyle(el);
+              return style.backgroundColor===want.background && style.color===want.color;
+            },{sel:selector,want:expected},{timeout:5_000});
+            const button=selector.startsWith('.pricing-upgrade-action')?upgrade.locator('.pricing-upgrade-action button'):category.locator('.purchase-actions button');
+            assert.equal(await button.evaluate(e=>getComputedStyle(e).backgroundColor),expected.background);
+            assert.equal(await button.evaluate(e=>getComputedStyle(e).color),expected.color);
           }
         };
         assert.equal(await upgrade.getAttribute("data-selected"), "true");

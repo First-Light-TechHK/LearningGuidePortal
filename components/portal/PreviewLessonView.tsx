@@ -10,7 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { LessonContent } from "@/contracts/lesson-content";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
-import { lessonLearningModes, type previewLessonOutline } from "@/lib/previewLessonPresentation";
+import { lessonLearningModes, lessonOutlineDestination, type previewLessonOutline } from "@/lib/previewLessonPresentation";
 import { LessonContentPlayer, TrialLimitModal, type TrialGate } from "./LessonContentPlayer";
 import { LessonCompletionBar } from "./LessonCompletionBar";
 import type { VideoPlaybackProgress } from "@/contracts/video-progress";
@@ -79,9 +79,21 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     setEnded(null);
   }, [lesson.id, preferredMode, initialContentId, presentation.contentId]);
   const hasMultipleModes = new Set([...outline.flatMap(item => item.modes || []), ...lessonLearningModes(lesson)]).size > 1;
-  const filteredOutline = outline.filter(item => !item.modes || item.modes.includes(mode));
   const videoContent = contents.find(content => content.type === "video");
   const textContent = contents.find(content => content.type === "text" || content.type === "pdf");
+  async function openLesson(destination: { href: string; mode: CourseLearningMode }) {
+    if (modeSaveLock.current) return;
+    modeSaveLock.current = true;setModeSaving(true);setModeError("");
+    pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
+    try {
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: destination.mode, lessonId: lesson.id }) });
+      const result = await response.json() as { ok?: boolean };
+      if (!response.ok || !result.ok) throw new Error("mode-save");
+      // This is an explicit lesson choice, so do not replace it with the mode's saved cursor.
+      if (modeMounted.current) router.push(destination.href);
+    } catch { if (modeMounted.current) setModeError(messages.courseLearningMode.saveError); }
+    finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
+  }
   async function switchMode(mode: CourseLearningMode) {
     if (modeSaveLock.current) return;
     const content = mode === "video" ? videoContent : textContent;
@@ -140,11 +152,15 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </select><Image src="/portal/learning-mode/dropdown.svg" alt="" width={10.3923} height={9} /></> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
-          {filteredOutline.map(item => <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!item.href ? styles.lockedLesson : ""}`}>
-            {item.href ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={`${item.href}${item.href.includes("?") ? "&" : "?"}viewMode=${mode}`}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true"><span>{item.number}</span>{item.title}</span>}
+          {outline.map(item => { const destination = lessonOutlineDestination(item, mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
+            {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} onClick={event => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              if (modeSaving) { event.preventDefault();return; }
+              if (destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
+            }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
             {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
-          </div>)}
-          {!filteredOutline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
+          </div>; })}
+          {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
         </nav>
       </aside>
       <article className={styles.main}>

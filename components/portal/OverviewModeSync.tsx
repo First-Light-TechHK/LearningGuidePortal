@@ -4,9 +4,12 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { isCourseLearningMode, type CourseModeSnapshot } from "@/contracts/course-learning-mode";
 
-const modeKey = (courses: CourseModeSnapshot[]) => JSON.stringify(courses.map(course => [course.courseId, course.mode]).sort((a, b) => a[0].localeCompare(b[0])));
+const modeKey = (courses: CourseModeSnapshot[]) => JSON.stringify([...courses].sort((a, b) => a.courseId.localeCompare(b.courseId)).map(course => [
+  course.courseId, course.mode, course.currentLessonId ?? null, course.currentContentId ?? null,
+  course.progress ?? null, course.updatedAt ?? null,
+]));
 
-/** Refresh history-restored My Learning cards after an explicit lesson-mode change. */
+/** Reconcile cached cards after study in another lesson, mode or browser tab. */
 export function OverviewModeSync({ userId, courses }: { userId: string; courses: CourseModeSnapshot[] }) {
   const router = useRouter(), snapshot = modeKey(courses);
   useEffect(() => {
@@ -20,10 +23,12 @@ export function OverviewModeSync({ userId, courses }: { userId: string; courses:
         if (request.signal.aborted) return;
         if (response.status === 401) { refresh();return; }
         if (!response.ok) return;
-        const result = await response.json() as { ok?: boolean; user?: { id?: string }; overview?: { courses?: Array<{ courseId: string; mode: string; courseStatus: string }> } };
+        const result = await response.json() as { ok?: boolean; user?: { id?: string }; overview?: { courses?: Array<CourseModeSnapshot & { courseStatus: string }> } };
         if (!result.ok || request.signal.aborted || !result.user?.id || !Array.isArray(result.overview?.courses)) return;
         const current = result.overview.courses.filter(course => course.courseStatus === "published");
-        if (!current.every(course => typeof course.courseId === "string" && isCourseLearningMode(course.mode))) return;
+        if (!current.every(course => typeof course.courseId === "string" && isCourseLearningMode(course.mode)
+          && [course.currentLessonId, course.currentContentId, course.updatedAt].every(value => value == null || typeof value === "string")
+          && (course.progress == null || (typeof course.progress === "number" && Number.isFinite(course.progress) && course.progress >= 0 && course.progress <= 100)))) return;
         if (result.user.id !== userId || modeKey(current as CourseModeSnapshot[]) !== snapshot) refresh();
       } catch { /* Preserve existing cards on transient failures. */ }
     };
