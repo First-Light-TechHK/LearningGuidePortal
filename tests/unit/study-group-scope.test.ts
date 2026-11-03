@@ -147,3 +147,21 @@ test("pruneHistory removes only settled outbox rows and tutor requests older tha
   assert.equal(store.sessions.length, 3);
   assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 100 }), { outbox: 0, tutorRequests: 0, webhookReceipts: 0 }, "idempotent");
 });
+
+test("a scoped file update persists a row the mutation replaced by a new object under a known id (PostgreSQL's by-id diff does), not only rows changed in place or added", async () => {
+  // Persistence review 2026-11-03: the scoped view shares row objects with the
+  // whole store, so an in-place change is already in `whole`; a mutation that
+  // swaps in a new object (`store.sessions[0] = { ...store.sessions[0], ... }`)
+  // used to be dropped silently by the file adapter while PostgreSQL persisted
+  // it, so the unit suite could not prove what production would store.
+  await repository.update((store) => { Object.assign(store, fixture()); });
+  await repository.update((store) => {
+    store.sessions[0] = { ...store.sessions[0], title: "renamed" };
+    store.presences[0] = { ...store.presences[0], leftAt: AT };
+  }, { session: "s1" });
+  const whole = await repository.read();
+  assert.equal(whole.sessions.find((row) => row.id === "s1")?.title, "renamed");
+  assert.equal(whole.presences.find((row) => row.id === "p-s1-host")?.leftAt, AT);
+  assert.equal(whole.sessions.length, 3, "nothing duplicated");
+  assert.equal(whole.presences.length, 5);
+});

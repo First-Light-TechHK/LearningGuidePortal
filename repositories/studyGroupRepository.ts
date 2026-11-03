@@ -498,6 +498,19 @@ async function persistDiff(client: PoolClient, before: StudyGroupStore, after: S
       ]
     );
   }
+  // A presence changed for a session this snapshot did not load (a scoped
+  // update reaching outside its scope, persistence review 2026-11-03): that
+  // session's derived occupancy — the input of the capacity CHECK backstop —
+  // must follow its seats too, or the backstop is bypassed for one write.
+  const loaded = new Set(after.sessions.map((row) => row.id));
+  for (const sessionId of occupancySessions) {
+    if (loaded.has(sessionId)) continue;
+    await client.query(
+      `UPDATE live_sessions SET occupancy = (SELECT count(*) FROM study_group_presences WHERE session_id = $1 AND entered_at IS NOT NULL AND left_at IS NULL)
+       WHERE id = $1`,
+      [sessionId]
+    );
+  }
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {

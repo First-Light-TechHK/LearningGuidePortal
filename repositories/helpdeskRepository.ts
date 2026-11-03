@@ -326,7 +326,7 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
         if (mine.length >= limit) {
           store.rateHits = hits;
           await save(store);
-          return { allowed: false as const, oldestAt: mine[0].at };
+          return { allowed: false as const, oldestAt: mine[0]?.at ?? atIso };  // limit 0: refused, retry "now"
         }
         hits.push({ key, at: atIso });
         store.rateHits = hits;
@@ -489,6 +489,18 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       const store = await load();
       return (store.assists as LocalAssist[]).filter((row) => !row.scrubbedAt && row.createdAt < cutoffIso).sort(byCreated).slice(0, limit)
         .map((row): RetentionRow => ({ id: row.id, learnerId: row.learnerId, question: row.question, answer: row.answer, kind: row.kind ?? null, texts: row.texts ?? null, contacts: contactsOf(store.tickets, row.learnerId) }));
+    },
+    sweepRateHits(olderThanIso, limit) {
+      return exclusive(async () => {
+        const store = await load();
+        const hits = store.rateHits ?? [];
+        const stale = hits.filter((hit) => hit.at < olderThanIso).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).slice(0, Math.max(0, limit));
+        if (stale.length === 0) return 0;
+        const gone = new Set(stale);
+        store.rateHits = hits.filter((hit) => !gone.has(hit));
+        await save(store);
+        return stale.length;
+      });
     },
     applyRetention(updates, atIso) {
       return exclusive(async () => {
@@ -889,7 +901,7 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         const since = new Date(Date.parse(atIso) - windowMs).toISOString();
         await client.query("DELETE FROM helpdesk_rate_hits WHERE key = $1 AND hit_at <= $2", [key, since]);
         const { rows } = await client.query<{ count: string; oldest: Date | null }>("SELECT count(*)::text AS count, min(hit_at) AS oldest FROM helpdesk_rate_hits WHERE key = $1", [key]);
-        if (Number(rows[0].count) >= limit && rows[0].oldest) return { allowed: false as const, oldestAt: iso(rows[0].oldest) };
+        if (Number(rows[0].count) >= limit) return { allowed: false as const, oldestAt: rows[0].oldest ? iso(rows[0].oldest) : atIso };  // limit 0: refused
         await client.query("INSERT INTO helpdesk_rate_hits (key, hit_at) VALUES ($1, $2)", [key, atIso]);
         return { allowed: true as const };
       });
@@ -1045,6 +1057,11 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         FROM helpdesk_assist_log l ${CONTACTS_LATERAL}
         WHERE l.scrubbed_at IS NULL AND l.created_at < $1 ORDER BY l.created_at, l.id LIMIT $2`, [cutoffIso, limit]);
       return rows.map((row): RetentionRow => ({ id: row.id, learnerId: row.learner_id, question: row.question, answer: row.answer ?? null, kind: row.kind ?? null, texts: textsFromRow(row.texts), contacts: contactsFromRow(row) }));
+    },
+    async sweepRateHits(olderThanIso, limit) {
+      // Bounded: one small ORDER BY ... LIMIT scan a day keeps the table to the active keys without an index on hit_at.
+      const rows = await select(`DELETE FROM helpdesk_rate_hits WHERE id IN (SELECT id FROM helpdesk_rate_hits WHERE hit_at < $1 ORDER BY hit_at, id LIMIT $2) RETURNING id`, [olderThanIso, Math.max(0, limit)]);
+      return rows.length;
     },
     async applyRetention(updates, atIso) {
       if (updates.length === 0) return 0;
