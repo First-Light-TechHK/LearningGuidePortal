@@ -96,6 +96,21 @@ test("search is debounced into ?q=, answered by Admin's search, with results or 
     await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 1, null, { timeout: 3_000 });
     assert.deepEqual((await harness.nav())[1], ["replace", `/${locale}/help`], "clearing the search goes back to popular articles");
 
+    // The wait after the last keystroke is 150 ms (owner 2026-11-03), timed inside the page
+    const waited = await page.evaluate(async () => {
+      const w = window as unknown as { __nav: unknown[] };
+      const before = w.__nav.length;
+      const box = document.querySelector<HTMLInputElement>('input[type="search"]');
+      if (!box) throw new Error("no search box");
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(box, "refund");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      const typedAt = performance.now();
+      while (w.__nav.length === before) await new Promise((resolve) => setTimeout(resolve, 5));
+      return performance.now() - typedAt;
+    });
+    assert.ok(waited >= 140 && waited < 290, `searched ${Math.round(waited)} ms after the last keystroke (expected about 150)`);
+
     const found = await mountHelp(page, { locale, faqs: FAQS, searchParams: { q: "invoice", category: "other" }, search: { invoice: [FAQS[3]] } });
     assert.deepEqual(found.requests, [{ kind: "faqs", locale, filter: { q: "invoice", limit: 50 } }], "the search goes to Admin (q), ignoring the category");
     assert.equal(await v.search.inputValue(), "invoice", "the box shows the current search");

@@ -25,7 +25,9 @@ import "./helpdesk.css";
 
 export type HelpCentreCopy = ReturnType<typeof getMessages>["helpCentre"];
 
-const SEARCH_DEBOUNCE_MS = 300;
+// Wait this long after the last keystroke before searching (owner 2026-11-03: 300 ms felt slow).
+// Shorter would send a search per letter and use up ADMIN_SEARCHES_PER_MINUTE sooner.
+const SEARCH_DEBOUNCE_MS = 150;
 const TOPICS: FaqCategory[] = ["account_technical", "courses_learning", "payments_subscriptions", "other"];
 
 export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB" | "zh-CN"; copy: HelpCentreCopy; view: HelpCentreView; contactHref: string }) {
