@@ -2100,12 +2100,7 @@ export async function getLearningOverview(userId: string) {
     });
     const records = data.studyRecords.filter(record => record.userId === userId).flatMap(record => {
       const course = data.courses.find(course => course.id === record.courseId);
-      // A course this account can no longer read still has history. Dropping the
-      // record made the card vanish silently, which reads as "your progress is
-      // gone"; keeping it lets the card report the progress as unavailable
-      // (progress: null, progressFailed: true) instead of inventing 0% — ML-FR-022.
-      if (!course) return [record];
-      const actual = studyHistoryFor(data, userId, course).record;
+      const actual = course ? studyHistoryFor(data, userId, course).record : undefined;
       return actual ? [actual] : [];
     });
     // Only server-authorised learning can create a My Learning card.
