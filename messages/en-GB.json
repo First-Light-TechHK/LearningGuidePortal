@@ -717,6 +717,17 @@
     "askTutorPlaceholder": "Ask about this lesson...",
     "newChat": "New chat",
     "closeTutor": "Close AI Tutor",
+    "tutorErrors": {
+      "unavailable": "AI Tutor is temporarily unavailable. Please try again in a moment.",
+      "offline": "AI Tutor is not available for this course right now.",
+      "signIn": "Your session has ended. Please sign in again.",
+      "noAccess": "You need access to this course to use AI Tutor.",
+      "notFound": "This course or lesson is not available.",
+      "tooLong": "Enter a question of up to 4,000 characters.",
+      "busy": "AI Tutor is still answering your previous question. Please wait a moment.",
+      "rateLimited": "You are asking questions too quickly. Please wait a moment and try again.",
+      "generic": "AI Tutor could not answer just now. Please try again."
+    },
     "signOut": "Sign out"
   },
   "account": {
