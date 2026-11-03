@@ -15,14 +15,16 @@
 .emptyOutline { margin:0; padding:12px; color:#64748b; font-size:13px; line-height:20px; }
 .modeSwitch:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
 .outline { display:flex; flex-direction:column; gap:8px; margin-top:20px; }
-.lesson { min-height:76px; padding:11px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; }
+.lesson { position:relative; isolation:isolate; min-height:76px; padding:11px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; }
 .activeLesson { background:#e8f0ff; border-color:#9bbeff; }
 .lessonLink { display:flex; gap:9px; color:#15233a; font-size:14px; line-height:19px; font-weight:600; text-decoration:none; overflow-wrap:anywhere; }
+.lesson > a.lessonLink::after { content:""; position:absolute; inset:0; z-index:1; border-radius:inherit; }
+.lesson > a.lessonLink:focus-visible::after { outline:2px solid #246bfd; outline-offset:3px; }
 .lessonLink > span { color:#94a3b8; font-size:12px; flex-shrink:0; }
 .activeLesson .lessonLink > span { color:#1660d8; }
 .lockedLesson .lessonLink { color:#94a3b8; }
 .contentLinks { display:flex; flex-direction:column; gap:5px; padding:9px 0 0 21px; }
-.contentLinks button { border:0; padding:0; background:transparent; color:#475569; font:inherit; font-size:12px; line-height:16px; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.contentLinks button { position:relative; z-index:2; border:0; padding:0; background:transparent; color:#475569; font:inherit; font-size:12px; line-height:16px; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
 .contentLinks button[aria-current] { color:#246bfd; }
 /* .main { min-width:0; padding:20px 196px 40px 0; } */
 .main { min-width:0; padding:20px 196px 20px 0; }

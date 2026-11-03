@@ -180,6 +180,7 @@
     "tryApplication": "Try Application Test"
   },
   "lessonCompleted": {
+    "markComplete": "Mark Complet",
     "nextActionTitle": "What would you like to do next?",
     "lessonLabel": "Lesson {number}",
     "returnToLearning": "Return to My Learning",
