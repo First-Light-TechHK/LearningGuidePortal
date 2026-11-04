@@ -55,6 +55,10 @@ jobs:
       - name: Install product dependencies
         run: npm ci
 
+      # The helpdesk and ai-tutor suites include page tests that run in Chromium.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Typecheck I/O
         run: npx tsc --noEmit -p tsconfig.io.json
 

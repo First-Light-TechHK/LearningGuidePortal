@@ -18,6 +18,12 @@ Overlay I/O failures require a diagnosis against the current contract. Confirm t
 - UAT release tooling now requires the latest successful Verify, Overlay and Forge push runs and their required jobs for the exact branch revision. CLI and workflow releases execute the same SIT-reference catalogue/media and authenticated-browser acceptance runner. A receipt records failures as well as successes. The runtime pins archived curriculum media to reviewed S3 object versions in `deploy/uat-course-media.json`; changing a source object cannot silently replace the pinned UAT asset.
 - The concise AUTH-05 SMTP-outage regression creates a pending account with asserted setup, ages its token beyond the cooldown and makes any SMTP transport creation fail. Duplicate registration must still return the accepted pending response without a session and leave the stored user and token unchanged. This regression passes.
 
+## Helpdesk and AI Tutor suites (4 November 2026)
+
+- `suites/helpdesk` runs `tests/unit/helpdesk-*.test.ts`, so a new file with that name joins by itself, then the Helpdesk PostgreSQL proofs. `suites/ai-tutor` runs the Tutor chat panel, KS client and fallback tests.
+- Both include page tests, so `overlay-check.yml` now installs Chromium. These are the same tests Verify runs: Overlay adds the mapping to function ids, and the check that they pass per suite.
+- LearningGuideAdmin has no Overlay. BackOffice and the Admin side of Helpdesk stay under its own CI.
+
 ## Study Group PostgreSQL proofs in the Overlay tree (11 October 2026)
 
 - The `study-group` suite product command now runs the unit suite followed by `scripts/studygroup-io-postgres.sh`, which runs the PostgreSQL io proofs (`tests/io/postgres/*.test.ts`) against a real PostgreSQL 16.
@@ -41,7 +47,7 @@ The sections below record the original tool integration and historical expected 
 
 - Overlay 状态只有 `active` | `blocked`。没有 `armed` / `draft` / `reviewed_by`。
 - `overlay.yaml`：`product.repo` 是本仓；`default_ref` 钉在 `ec9e12990fa700b034829fd2fd4af12d955bd40e`；`branches` 含 `main` / `dev` / `sit` / `uat` / `ppe` / `default`；`never_red_statuses: [blocked]`。
-- 七套件 `active`：login / payment / portal / my-learning / order / visitor-trial / study-group。`schema: overlay-suite/v2`。study-group 的产品命令匹配 `tests/unit/study-group-*.test.ts`；除了 Group 与 Live Session 行为，也覆盖 LiveKit 项目配置、Secrets Manager 凭据解析、红脱敏权限健康探测和缓存契约。真实 Cloud smoke 仍只在获授权的非生产环境执行。
+- 九套件 `active`：login / payment / portal / my-learning / order / visitor-trial / study-group / helpdesk / ai-tutor。`schema: overlay-suite/v2`。study-group 的产品命令匹配 `tests/unit/study-group-*.test.ts`；除了 Group 与 Live Session 行为，也覆盖 LiveKit 项目配置、Secrets Manager 凭据解析、红脱敏权限健康探测和缓存契约。真实 Cloud smoke 仍只在获授权的非生产环境执行。
 - `overlay-check.yml`：checkout `AIOps@overlay-v2.0.0` → `_aiops`，`overlay validate` + `cover` + `run`。不要把 `test:io` 加进 Verify。
 - `forge-check.yml`：checkout `AIOps@forge-v1.1.5` → `_aiops`，`forge check` + `forge status --check-state`。
 - `forge.yaml`：`protect: [main]`；required_checks = Typecheck / Lint / Build and test / overlay-check / forge-check。第一次不设 `deny_paths`。
