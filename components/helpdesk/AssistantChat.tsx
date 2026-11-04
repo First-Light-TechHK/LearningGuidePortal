@@ -346,6 +346,9 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     const session = sessionId();
     const viaRelease = request.kind === "step" || (request.kind === "chip" && request.via !== "alternative" && releaseKnown());
     setEntries((current) => [...current, question]);
+    // Saved before it is sent, not after the next render: a reload right after asking must
+    // find the question, or the answer it paid for has nothing to attach to and nobody asks again.
+    if (loaded) store(storageKey, latest.current);
     const key = newIdempotencyKey();
     // Clicks on the release never ask the model (the server checks the edge); typed text and the per-FAQ chips go to the assistant.
     // Before v5 (no session known) a chip is sent exactly as v3 sent it.
