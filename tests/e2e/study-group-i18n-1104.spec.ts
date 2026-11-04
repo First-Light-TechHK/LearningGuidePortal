@@ -111,6 +111,11 @@ for (const [locale, browserLocale] of [["zh-CN", "en-US"], ["en-GB", "zh-CN"]] a
       await expect(panel).toBeVisible();
       await expect(page.getByRole("button", { name: copy.lecture })).toBeVisible();
       await expectOneLanguage(page, locale, [...COURSE_TITLES, "小花", "Hana"], ".tutor-panel");
+      // A translated label must not change the layout: on a phone the mode buttons stay
+      // on one line, the same height in both languages.
+      await page.setViewportSize({ width: 360, height: 740 });
+      const heights = await page.locator(".tutor-panel .mode-switch button").evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
+      expect(heights).toEqual([25, 25]);
     } finally {
       await learner.context.close();
     }
