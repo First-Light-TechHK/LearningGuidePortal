@@ -25,6 +25,7 @@ import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, typ
 import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, leaseEndsAt, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { sessionEntryNext, type SessionEntryNext } from "./entry";
+import { createTicketQueue } from "./ticketQueue";
 
 // The room Tutor is KnowledgeSystem's (2026-10-23): Portal keeps only the
 // question queue and the room message. No prompt, model, key or provider call
@@ -89,7 +90,7 @@ export type StudyGroupDeps = {
   // the default is an unref'd setTimeout so a pending retry never keeps the
   // process alive.
   scheduleRetry?: (run: () => void, delayMs: number) => void | ReturnType<typeof setTimeout>;
-  /** Tests only: how long a caller waits behind an earlier caller's precheck. */
+  /** Tests only: how long a precheck keeps its place in the entry queue. */
   entryOrderWaitMs?: number;
 };
 
@@ -185,8 +186,8 @@ const PROVIDER_ROOM_CHECK_TIMEOUT_MS = 2_000;
 // this long (QA r3 X-4 follow-up), so a burst of re-entries costs one call.
 const PROVIDER_ROOM_READ_REUSE_MS = 3_000;
 
-// How long a caller keeps their place behind an earlier caller's precheck. The
-// prechecks are reads, normally milliseconds; this only bounds a hung one.
+// How long a precheck keeps its place in the entry queue. The prechecks are reads,
+// normally milliseconds; this only stops a hung one from holding others up.
 const ENTRY_ORDER_WAIT_MS = 2_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number) {
@@ -329,24 +330,12 @@ function plannedCount(store: StudyGroupStore, sessionId: string) {
 // asked, so a seat taken after the read is never judged by it.
 type RoomRead = { identities: ReadonlySet<string>; readAt: string };
 
-type EntryJob = {
-  requestedAt: string;
-  seq: number;
-  run: () => Promise<unknown>;
-  resolve: (value: unknown) => void;
-  reject: (error: unknown) => void;
-};
-
 export function createStudyGroupService(deps: StudyGroupDeps) {
   // One entry queue per Live Session (review 2026-11-03 H3): admissions to a
   // room run one at a time in receipt order, and rooms never wait for each
   // other. Nothing slow runs inside a queue: the session lookup and the
-  // course-access check happen before a caller joins it.
-  const entryQueues = new Map<string, { jobs: EntryJob[]; draining: boolean }>();
-  // Per session: settled once every caller received so far has passed its
-  // precheck and joined the entry queue (or failed the precheck).
-  const entryReceipts = new Map<string, Promise<void>>();
-  let entrySeq = 0;
+  // course-access check are its preparation.
+  const entryQueue = createTicketQueue({ maxPrepareMs: deps.entryOrderWaitMs ?? ENTRY_ORDER_WAIT_MS });
   const startingSessions = new Map<string, Promise<unknown>>();
   // Per room: the shared provider read for entries (single flight, reused
   // briefly) and when the sweep last asked about it (oldest asked first).
@@ -613,38 +602,6 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
   }
 
-  function enqueueEntry<T>(sessionId: string, requestedAt: string, run: () => Promise<T>) {
-    return new Promise<T>((resolve, reject) => {
-      const queue = entryQueues.get(sessionId) ?? { jobs: [], draining: false };
-      entryQueues.set(sessionId, queue);
-      queue.jobs.push({ requestedAt, seq: entrySeq++, run, resolve: (value) => resolve(value as T), reject });
-      kickEntryQueue(sessionId);
-    });
-  }
-
-  function kickEntryQueue(sessionId: string) {
-    const queue = entryQueues.get(sessionId);
-    if (!queue || queue.draining) return;
-    queue.draining = true;
-    void (async () => {
-      try {
-        while (queue.jobs.length) {
-          queue.jobs.sort((left, right) => left.seq - right.seq);
-          const job = queue.jobs.shift()!;
-          try {
-            job.resolve(await job.run());
-          } catch (error) {
-            job.reject(error);
-          }
-        }
-      } finally {
-        queue.draining = false;
-        if (queue.jobs.length) kickEntryQueue(sessionId);
-        else if (entryQueues.get(sessionId) === queue) entryQueues.delete(sessionId);
-      }
-    })();
-  }
-
   function groupIsLive(store: StudyGroupStore, groupId: string) {
     return store.sessions.some((session) => session.groupId === groupId && effectiveSessionState(session, deps.now()) === "live");
   }
@@ -856,30 +813,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // Entry: admissions run one at a time in receipt order (the entry queue),
   // and nothing slow runs inside it. The provider read X-4 needs happens
   // between two turns in the queue, for that caller only.
-  //
-  // Receipt order is fixed here, before the first await: the prechecks run side
-  // by side and take different times, so each caller joins the queue only after
-  // everyone received before them has. A precheck that hangs holds nobody up for
-  // longer than ENTRY_ORDER_WAIT_MS: order yields, admission does not stop.
   async function enterSession(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
-    const earlier = entryReceipts.get(input.sessionId) ?? Promise.resolve();
-    let joined!: () => void;
-    const mine = new Promise<void>((resolve) => { joined = resolve; });
-    const receipt = Promise.all([earlier, mine]).then(() => undefined);
-    entryReceipts.set(input.sessionId, receipt);
-    void receipt.then(() => { if (entryReceipts.get(input.sessionId) === receipt) entryReceipts.delete(input.sessionId); });
-    const precheck = admissionPrecheck(input);
-    let first: Promise<{ occupancy: number } | { roomCheck: LiveSessionRow }>;
-    try {
-      await Promise.all([precheck, withTimeout(earlier, deps.entryOrderWaitMs ?? ENTRY_ORDER_WAIT_MS).catch(() => undefined)]);
-      first = enqueueEntry(input.sessionId, input.requestedAt, () => seat(input));
-    } finally {
-      joined();
-    }
-    let outcome = await first;
+    let outcome = await entryQueue.enter(input.sessionId, () => admissionPrecheck(input), () => seat(input));
     if ("roomCheck" in outcome) {
       const inRoom = await sharedRoomRead(outcome.roomCheck);
-      outcome = await enqueueEntry(input.sessionId, input.requestedAt, () => seat(input, inRoom));
+      outcome = await entryQueue.enter(input.sessionId, async () => undefined, () => seat(input, inRoom));
     }
     if ("roomCheck" in outcome) throw new StudyGroupError("session_full", "Session Full.");
     return outcome;
