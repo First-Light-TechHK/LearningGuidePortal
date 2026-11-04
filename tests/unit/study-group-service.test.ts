@@ -778,9 +778,36 @@ test("provider failures emit one normalized incident without exposing the gatewa
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "livekit_temporarily_unavailable");
 
-  assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "eu-primary", code: "provider_rate_limited", source: "gateway" }]);
+  assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "eu-primary", code: "provider_rate_limited", source: "gateway", failure: "rate_limited" }]);
   assert.equal(JSON.stringify(incidents).includes("LiveKitGatewayError"), false);
 });
+
+// UAT 2026-11-04: a replaced Live Key LiveKit refuses and a key-pair secret
+// the server cannot use both answer 503 `unavailable` at Start and both log
+// provider_credentials_invalid; the incident's `failure` tells them apart.
+for (const failure of ["unauthorized", "credential_unavailable"] as const) {
+  test(`a Start refused for ${failure} answers unavailable and logs the gateway failure class`, async () => {
+    const incidents: Array<{ sessionId: string; projectId: string | null; code: string; source: string; failure?: string }> = [];
+    const local = serviceWith({
+      liveKitProjects: parseLiveKitProjects(JSON.stringify([
+        { id: "uat-primary", url: "wss://uat-primary.livekit.cloud", state: "active", credentialSecretId: "lg-uat-studygroup-livekit" }
+      ])),
+      liveKitGateway: {
+        ensureRoom: async () => { throw new LiveKitGatewayError(failure); },
+        issueParticipantToken: async () => ({ token: "unreachable", expiresAt: NOW, url: "wss://uat-primary.livekit.cloud" }),
+        publishTutorMessage: async () => undefined,
+        removeParticipant: async () => undefined,
+        healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+      },
+      liveKitIncidentReporter: (incident) => { incidents.push(incident); }
+    });
+    const group = await local.createGroup({ actorUserId: "host", title: "Replaced key", courseId: "course-1", about: "About keys." });
+    const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Key check", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+    await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+    await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+    assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "uat-primary", code: "provider_credentials_invalid", source: "gateway", failure }]);
+  });
+}
 
 test("concurrent host starts share one room-creation operation", async () => {
   let creates = 0;

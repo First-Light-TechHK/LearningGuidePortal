@@ -203,7 +203,13 @@ function liveKitRuntime() {
       onRejected: (reason) => console.info(JSON.stringify({ type: "study_group.livekit_projects_rejected", reason }))
     })
     : parseLiveKitProjects(rawProjects);
-  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({ reader: secrets });
+  // A rejected key-pair read logs one redacted line (project id, unreadable
+  // or invalid, whether the last good pair is still used), never a value, so
+  // a bad secret is told apart from a key LiveKit refuses.
+  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({
+    reader: secrets,
+    onRejected: (rejection) => console.info(JSON.stringify({ type: "study_group.livekit_credentials_rejected", ...rejection }))
+  });
   const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
   const gateway = createLiveKitCloudGateway({
     resolveCredentials: (project, options) => resolver.resolve(project, options),
