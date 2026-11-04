@@ -89,6 +89,8 @@ export type StudyGroupDeps = {
   // the default is an unref'd setTimeout so a pending retry never keeps the
   // process alive.
   scheduleRetry?: (run: () => void, delayMs: number) => void | ReturnType<typeof setTimeout>;
+  /** Tests only: how long a caller waits behind an earlier caller's precheck. */
+  entryOrderWaitMs?: number;
 };
 
 export type GroupView = StudyGroupRow & {
@@ -182,6 +184,10 @@ const PROVIDER_ROOM_CHECK_TIMEOUT_MS = 2_000;
 // Entries that need the provider's word on one room share a single read for
 // this long (QA r3 X-4 follow-up), so a burst of re-entries costs one call.
 const PROVIDER_ROOM_READ_REUSE_MS = 3_000;
+
+// How long a caller keeps their place behind an earlier caller's precheck. The
+// prechecks are reads, normally milliseconds; this only bounds a hung one.
+const ENTRY_ORDER_WAIT_MS = 2_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -337,6 +343,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // other. Nothing slow runs inside a queue: the session lookup and the
   // course-access check happen before a caller joins it.
   const entryQueues = new Map<string, { jobs: EntryJob[]; draining: boolean }>();
+  // Per session: settled once every caller received so far has passed its
+  // precheck and joined the entry queue (or failed the precheck).
+  const entryReceipts = new Map<string, Promise<void>>();
   let entrySeq = 0;
   const startingSessions = new Map<string, Promise<unknown>>();
   // Per room: the shared provider read for entries (single flight, reused
@@ -847,9 +856,27 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // Entry: admissions run one at a time in receipt order (the entry queue),
   // and nothing slow runs inside it. The provider read X-4 needs happens
   // between two turns in the queue, for that caller only.
+  //
+  // Receipt order is fixed here, before the first await: the prechecks run side
+  // by side and take different times, so each caller joins the queue only after
+  // everyone received before them has. A precheck that hangs holds nobody up for
+  // longer than ENTRY_ORDER_WAIT_MS: order yields, admission does not stop.
   async function enterSession(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
-    await admissionPrecheck(input);
-    let outcome = await enqueueEntry(input.sessionId, input.requestedAt, () => seat(input));
+    const earlier = entryReceipts.get(input.sessionId) ?? Promise.resolve();
+    let joined!: () => void;
+    const mine = new Promise<void>((resolve) => { joined = resolve; });
+    const receipt = Promise.all([earlier, mine]).then(() => undefined);
+    entryReceipts.set(input.sessionId, receipt);
+    void receipt.then(() => { if (entryReceipts.get(input.sessionId) === receipt) entryReceipts.delete(input.sessionId); });
+    const precheck = admissionPrecheck(input);
+    let first: Promise<{ occupancy: number } | { roomCheck: LiveSessionRow }>;
+    try {
+      await Promise.all([precheck, withTimeout(earlier, deps.entryOrderWaitMs ?? ENTRY_ORDER_WAIT_MS).catch(() => undefined)]);
+      first = enqueueEntry(input.sessionId, input.requestedAt, () => seat(input));
+    } finally {
+      joined();
+    }
+    let outcome = await first;
     if ("roomCheck" in outcome) {
       const inRoom = await sharedRoomRead(outcome.roomCheck);
       outcome = await enqueueEntry(input.sessionId, input.requestedAt, () => seat(input, inRoom));
