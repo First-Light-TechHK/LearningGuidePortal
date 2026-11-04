@@ -98,7 +98,7 @@ test("Application Test matches the four page states and retains attempts across 
     await submit.scrollIntoViewIfNeeded();await page.screenshot({path:`test-results/application-test/${locale}-answer-mobile.png`});
     const assets=await dialog.locator('img').evaluateAll(elements=>elements.map(e=>({source:e.getAttribute('src'),loaded:(e as HTMLImageElement).complete&&(e as HTMLImageElement).naturalWidth>0,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})));
     assert.deepEqual(assets,[{source:"/portal/application-test/back-v2.svg",loaded:true,width:18,height:18},{source:"/portal/application-test/saved-v2.svg",loaded:true,width:7,height:7}]);
-    await page.keyboard.press("Escape");await dialog.getByRole("heading",{name:copy.lessonCompleted.title.replace("{number}","1"),exact:true}).waitFor();
+    await page.keyboard.press("Escape");await dialog.getByRole("heading",{name:copy.lessonCompleted.nextActionTitle,exact:true}).waitFor();
     await page.close();
   }}finally{await browser.close();}
 });

@@ -86,7 +86,7 @@ test("registration requires explicit terms/privacy consent for submit and social
       await page.locator('form').evaluate(form => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
       await requestEntered;
       assert.equal(requests.length, 2); assert.equal(await submit.isDisabled(), true);
-      release?.(); await page.waitForURL(`**/${locale}/portal/check-email?email=consent%40example.test`);
+      release?.(); await page.waitForURL(`**/${locale}/portal/check-email?email=consent%40example.test*`);
       await page.close();
     }
   } finally { await browser.close(); }

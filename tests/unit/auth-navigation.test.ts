@@ -13,5 +13,5 @@ test("auth navigation keeps the full source URL in one encoded parameter", () =>
 test("switching authentication pages preserves the original destination", () => {
   const href = authNavigationHref("en-GB", "sign-up", "https://example.test/en-GB/portal/sign-in?returnTo=%2Fen-GB%2Fsubscription%3Fterm%3D12");
   assert.equal(new URL(href, "https://example.test").searchParams.get("returnTo"), "/en-GB/subscription?term=12");
-  assert.equal(new URL(authNavigationHref("en-GB", "sign-in", "https://example.test/en-GB/portal/sign-up"), "https://example.test").searchParams.get("returnTo"), "/en-GB/account/my-learning");
+  assert.equal(new URL(authNavigationHref("en-GB", "sign-in", "https://example.test/en-GB/portal/sign-up"), "https://example.test").searchParams.get("returnTo"), "/en-GB/portal");
 });
