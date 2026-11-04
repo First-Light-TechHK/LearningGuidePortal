@@ -57,8 +57,8 @@ export async function entitle(context: BrowserContext, appOrigin: string) {
 }
 
 // A signed-in learner with Course access (entitle: false leaves them without).
-export async function newMember(browser: Browser, appOrigin: string, side: string, nickname: string, options: { initScript?: () => void; entitle?: boolean } = {}): Promise<Member> {
-  const context = await browser.newContext({ baseURL: appOrigin, ignoreHTTPSErrors: true });
+export async function newMember(browser: Browser, appOrigin: string, side: string, nickname: string, options: { initScript?: () => void; entitle?: boolean; browserLocale?: string } = {}): Promise<Member> {
+  const context = await browser.newContext({ baseURL: appOrigin, ignoreHTTPSErrors: true, ...(options.browserLocale ? { locale: options.browserLocale } : {}) });
   if (options.initScript) await context.addInitScript(options.initScript);
   const email = options.entitle === false ? await register(context, side, nickname) : await registerAndEntitle(context, side, nickname, appOrigin);
   return { context, email, nickname };

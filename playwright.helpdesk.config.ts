@@ -37,7 +37,7 @@ const env = {
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["**/helpdesk-support.spec.ts"],
+  testMatch: ["**/helpdesk-support.spec.ts", "**/helpdesk-i18n-1104.spec.ts"],
   globalTeardown: "./tests/e2e/helpdesk-global-teardown.ts",
   workers: 1,
   timeout: 60_000,

@@ -266,6 +266,10 @@ export type ProductNotification = {
   // write time (hunt L1): "Live Session reminder" for en-GB, "直播课提醒"
   // for zh-CN.
   sessionId?: string;
+  // Both languages of a row a page shows later (the Study Group reminders
+  // strip). The page's language decides which one is read; title and body stay
+  // the recipient's language at write time, for mail and for older rows.
+  copies?: Partial<Record<Locale, { title: string; body: string }>>;
 };
 export type ProductSession = { id: string; tokenHash: string; userId: string; expiresAt: string; createdAt: string };
 export type ProductToken = { id: string; userId: string; tokenHash: string; expiresAt: string; usedAt: string | null; createdAt: string };
@@ -2454,7 +2458,8 @@ export type StudyGroupReminderKind = "reminder" | "rescheduled";
 
 export async function listStudyGroupReminders(
   userId: string,
-  isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string; kind: StudyGroupReminderKind }) => boolean | Promise<boolean>
+  isPendingReminder: (item: { body: string; createdAt: string; sessionId?: string; kind: StudyGroupReminderKind }) => boolean | Promise<boolean>,
+  locale?: Locale
 ) {
   const data = await readProductAggregate();
   const reminders: Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> = [];
@@ -2470,7 +2475,8 @@ export async function listStudyGroupReminders(
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
     if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId, kind })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);
-    const row: { body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" } = item.sessionId ? { body: item.body, createdAt: item.createdAt, sessionId: item.sessionId } : { body: item.body, createdAt: item.createdAt };
+    const body = (locale && item.copies?.[locale]?.body) || item.body;
+    const row: { body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" } = item.sessionId ? { body, createdAt: item.createdAt, sessionId: item.sessionId } : { body, createdAt: item.createdAt };
     if (kind === "rescheduled") row.kind = "rescheduled";
     reminders.push(row);
   }
@@ -2501,11 +2507,21 @@ export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyA
   });
 }
 
-export async function recordUserNotification(userId: string, title: string, body: string, sessionId?: string) {
+export async function recordUserNotification(userId: string, title: string, body: string, sessionId?: string, copies?: ProductNotification["copies"]) {
   return editData((data) => {
-    const notification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now(), ...(sessionId ? { sessionId } : {}) };
+    const notification: ProductNotification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now(), ...(sessionId ? { sessionId } : {}), ...(copies ? { copies } : {}) };
     data.notifications.unshift(notification);
     return notification;
+  });
+}
+
+/** The language the user last chose (the header switch, Settings). Mail and the AI Tutor use it. */
+export async function setUserLocale(userId: string, locale: Locale) {
+  return editData((data) => {
+    const user = data.users.find((item) => item.id === userId);
+    if (!user) throw new Error("User not found.");
+    user.locale = locale;
+    return user.locale;
   });
 }
 

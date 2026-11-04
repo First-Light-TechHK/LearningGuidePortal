@@ -25,7 +25,8 @@ export async function GET(request: Request) {
       // delivered on that very request; later polls inside the window are
       // skipped like any other request-triggered sweep (hunt L5).
       await service.dispatchDueRemindersOnRequest();
-      return studyGroupData(await service.listReminders(user.id));
+      const locale = new URL(request.url).searchParams.get("locale");
+      return studyGroupData(await service.listReminders(user.id, locale === "zh-CN" || locale === "en-GB" ? locale : undefined));
     }
     return studyGroupData(await service.listDiscover({
       actorUserId: user?.id || null,

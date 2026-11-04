@@ -44,8 +44,8 @@ export type StudyGroupDeps = {
   courseLessons?: (courseId: string) => Promise<Array<{ id: string; title: string }>>;
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
-  notify: (input: { userId: string; title: string; body: string; sessionId?: string }) => Promise<void>;
-  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>;
+  notify: (input: { userId: string; title: string; body: string; sessionId?: string; copies?: LocalizedNotice }) => Promise<void>;
+  listReminders: (userId: string, locale?: "en-GB" | "zh-CN") => Promise<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>;
   // Withdraws the pending reminder rows a cancelling action invalidates
   // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
   // Scoped to the given Live Sessions, optionally to one user, and to rows
@@ -235,10 +235,27 @@ type ReminderJob = { userId: string; sessionId: string; sessionTitle: string; gr
 // The row title is localised at write time and doubles as the reminders
 // view's marker (hunt L1): the en-GB title must stay exactly this string.
 function reminderCopy(job: ReminderJob, locale: string | undefined, now: Date) {
+  const copies = reminderCopies(job, now);
+  return locale === "zh-CN" ? copies["zh-CN"] : copies["en-GB"];
+}
+
+// A row the Study Group page shows later carries both languages: the reader's
+// page may be in another language than the one the recipient had at write time.
+export type LocalizedNotice = Record<"en-GB" | "zh-CN", { title: string; body: string }>;
+
+function reminderCopies(job: ReminderJob, now: Date): LocalizedNotice {
   const minutes = Math.max(1, Math.ceil((Date.parse(job.startsAt) - now.getTime()) / 60_000));
-  return locale === "zh-CN"
-    ? { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` }
-    : { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` };
+  return {
+    "zh-CN": { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` },
+    "en-GB": { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` }
+  };
+}
+
+function rescheduleCopies(sessionTitle: string): LocalizedNotice {
+  return {
+    "zh-CN": { title: "直播课时间已更改", body: `${sessionTitle} 的开始时间已更改，请到学习小组查看新的时间。` },
+    "en-GB": { title: "Live Session rescheduled", body: `The Start Time of ${sessionTitle} has changed. Open the Study Group to see the new time.` }
+  };
 }
 
 function clean(value: unknown) {
@@ -949,7 +966,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // The body names the group and the minutes really left (QA M10-a): a
         // reminder sent again after a reschedule rarely lands at T-10.
         const copy = reminderCopy(job, profile?.locale, now);
-        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
+        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId, copies: reminderCopies(job, now) });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(job.sessionId, profile.locale) ?? null });
       } catch {
         // Best-effort per recipient; the reminder row is already written.
@@ -971,12 +988,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     for (const userId of session.planned) {
       try {
         const profile = await deps.userProfile(userId);
-        const copy = profile?.locale === "zh-CN"
-          ? { title: "直播课时间已更改", body: `${session.title} 的开始时间已更改，请到学习小组查看新的时间。` }
-          : { title: "Live Session rescheduled", body: `The Start Time of ${session.title} has changed. Open the Study Group to see the new time.` };
+        const copies = rescheduleCopies(session.title);
+        const copy = profile?.locale === "zh-CN" ? copies["zh-CN"] : copies["en-GB"];
         // Linked to its Session so the reminders strip on the Study Group page
         // shows it until the Session starts (there is no in-site inbox).
-        await deps.notify({ userId, title: copy.title, body: copy.body, sessionId: session.id });
+        await deps.notify({ userId, title: copy.title, body: copy.body, sessionId: session.id, copies });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(session.id, profile?.locale === "zh-CN" ? "zh-CN" : "en-GB") ?? null });
       } catch {
         // One recipient's failure never blocks the others.
@@ -1703,7 +1719,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         try {
           const profile = await deps.userProfile(restored.userId);
           const copy = reminderCopy(restored, profile?.locale, deps.now());
-          await deps.notify({ userId: restored.userId, title: copy.title, body: copy.body, sessionId: restored.sessionId });
+          await deps.notify({ userId: restored.userId, title: copy.title, body: copy.body, sessionId: restored.sessionId, copies: reminderCopies(restored, deps.now()) });
         } catch {
           // Best effort: the plan is saved; the reminders view still lists the Session.
         }
@@ -2161,8 +2177,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return deps.repository.studyGroupOperationalMetrics();
     },
 
-    listReminders(actorUserId: string) {
-      return deps.listReminders(actorUserId);
+    listReminders(actorUserId: string, locale?: "en-GB" | "zh-CN") {
+      return deps.listReminders(actorUserId, locale);
     },
 
     listCreatableCourses(actorUserId: string) {

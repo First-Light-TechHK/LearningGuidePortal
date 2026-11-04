@@ -478,7 +478,7 @@
     "eyebrow": "Learning Guide Portal",
     "title": "Learn through guided courses",
     "description": "Explore a course, start with the public lesson, and continue learning with a course-aligned AI Tutor.",
-    "navigation": {
+    "navigation": {"primaryLabel": "Primary navigation", 
       "courses": "Courses",
       "studyGroups": "Study Groups",
       "pricing": "Subscription",
@@ -1345,7 +1345,7 @@
       "Course access is determined by the subscription and entitlement returned by the service. Public first lessons remain available only where the course has enabled them. Subscription renewal, cancellation and refund conditions are shown before checkout and in Stripe's hosted payment flow.",
       "AI Tutor responses support learning and should not be treated as professional, legal, medical or financial advice."
     ],
-    "cookiesTitle": "Cookie Settings",
+    "cookiesLabel": "Cookie preferences", "cookiesTitle": "Cookie Settings",
     "cookiesIntro": "Essential cookies keep sign-in and security functions working. Optional analytics cookies are off until you choose otherwise.",
     "acceptOptional": "Allow optional cookies",
     "rejectOptional": "Use essential cookies only",

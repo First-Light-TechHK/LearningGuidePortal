@@ -205,7 +205,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
         fetchAll ? studyGroupRequest<Card[]>("/api/study-groups?view=mine") : Promise.resolve({ ok: true, code: "ok", message: "", data: [] as Card[] }),
         studyGroupRequest<Card[]>(`/api/study-groups?view=discover&courseId=${encodeURIComponent(courseFilter)}&q=${encodeURIComponent(query)}`),
         fetchAll ? studyGroupRequest<CourseOption[]>("/api/study-groups?view=courses") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as CourseOption[] }),
-        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>("/api/study-groups?view=reminders") : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> })
+        fetchAll ? studyGroupRequest<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>(`/api/study-groups?view=reminders&locale=${locale}`) : Promise.resolve({ ok: false, code: "skipped", message: "", data: [] as Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> })
       ]);
       if (!listRequests.isLatest(ticket)) return;
       if (!myResult.ok || !discoverResult.ok) {

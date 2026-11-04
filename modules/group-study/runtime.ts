@@ -107,10 +107,10 @@ export function studyGroupReminderNotificationStillValid(
 // disappears immediately, without any read. Exported for the unit test that
 // pins the read behaviour.
 export function createReminderListReader(repository: { read(): Promise<StudyGroupStore> }) {
-  return async (userId: string) => {
+  return async (userId: string, locale?: "en-GB" | "zh-CN") => {
     let snapshot: Promise<StudyGroupStore> | null = null;
     return listStudyGroupReminders(userId, (item) =>
-      (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
+      (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)), locale);
   };
 }
 
@@ -305,7 +305,7 @@ export function studyGroupService() {
       return user ? studyGroupProfile(user) : null;
     },
     notify: async (input) => {
-      await recordUserNotification(input.userId, input.title, input.body, input.sessionId);
+      await recordUserNotification(input.userId, input.title, input.body, input.sessionId, input.copies);
     },
     // The reminders view reads the pending "Live Session reminder" rows and
     // re-checks each one against the current store through the module's own

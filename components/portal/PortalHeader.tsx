@@ -55,7 +55,7 @@ export function PortalHeader({ locale, active, signedIn: initialSignedIn = false
           <span className="portal-brand-mark" aria-hidden="true"><Image src="/portal/figma-logo.svg" width={24} height={24} alt="" /></span>
           <span>{messages.brand}</span>
         </Link>
-        <nav className="portal-nav" aria-label="Primary navigation">
+        <nav className="portal-nav" aria-label={copy.navigation.primaryLabel}>
           <Link prefetch={false} className={active === "courses" ? "active" : ""} href={`/${locale}/portal/courses`}>{copy.navigation.courses}</Link>
           <Link prefetch={false} className={active === "study-groups" ? "active" : ""} href={`/${locale}/portal/study-groups`}>{copy.navigation.studyGroups}</Link>
           {/* Resolve the current Session and subscription coverage on every entry, including same-page reentry. */}
