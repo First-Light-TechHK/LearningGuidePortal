@@ -90,6 +90,9 @@ test("mode switching resumes the last visited point after backward review, with 
       await select.selectOption("video"); await video.waitFor();
       await select.selectOption("text");
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
+      // The step updates before the reader scrolls to it, and a full-page screenshot
+      // resizes the viewport. Taken in between, the scroll lands on the wrong point.
+      await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="a-text-3"]')!.getBoundingClientRect().top - 12) < 2);
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-reviewed-1-3.png`, fullPage: true });
       await select.selectOption("video"); await video.waitFor();
       const videoReviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-video-1");
