@@ -18,7 +18,7 @@ import {
   type TutorReplyTo
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
-import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
+import { LiveKitGatewayError, type LiveKitGatewayFailureCode, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
@@ -69,7 +69,11 @@ export type StudyGroupDeps = {
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
   liveKitGateway?: LiveKitRoomGateway;
-  liveKitIncidentReporter?: (input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway" }) => void;
+  // `failure` (gateway incidents only) is the typed gateway class behind the
+  // incident: provider_credentials_invalid covers both a secret the server
+  // could not use (credential_unavailable) and a key LiveKit refused
+  // (unauthorized), which need different fixes.
+  liveKitIncidentReporter?: (input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway"; failure?: LiveKitGatewayFailureCode }) => void;
   // Resolved lazily at issuance only: data operations must work on an
   // environment where the key is not configured yet (managed environments get
   // it injected from Secrets Manager; DEV resolves it on first real issuance).
@@ -600,7 +604,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
   }
 
-  function emitLiveKitIncident(input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway" }) {
+  function emitLiveKitIncident(input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway"; failure?: LiveKitGatewayFailureCode }) {
     try {
       deps.liveKitIncidentReporter?.(input);
     } catch {
@@ -859,7 +863,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           sessionId: current.id,
           projectId: assigned,
           code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: pinned ? "existing_room" : "new_room" }).code,
-          source: "gateway"
+          source: "gateway",
+          failure: error.code
         });
         if (error.code !== "credential_unavailable" && error.code !== "unauthorized") {
           // A room may exist on this project. Keep the durable assignment so a
@@ -1966,7 +1971,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             sessionId: session.id,
             projectId: assignedProjectId,
             code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: "existing_room" }).code,
-            source: "gateway"
+            source: "gateway",
+            failure: error.code
           });
           throw liveKitFailure(error, "LiveKit cannot issue a verified participant token right now.");
         }
