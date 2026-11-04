@@ -18,7 +18,6 @@ function realTimer(ms: number): QueueTimer {
   let handle: ReturnType<typeof setTimeout> | undefined;
   const elapsed = new Promise<void>((resolve) => {
     handle = setTimeout(resolve, ms);
-    handle.unref?.();
   });
   return { elapsed, cancel: () => clearTimeout(handle) };
 }
