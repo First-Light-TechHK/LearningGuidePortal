@@ -1,0 +1,51 @@
+schema: overlay-trace/v1
+suite: ai-tutor
+items:
+  - function_id: AIT-01
+    level: unit
+    case_id: AIT-01/unit/functional
+    type: functional
+  - function_id: AIT-01
+    level: unit
+    case_id: AIT-01/unit/negative
+    type: negative
+  - function_id: AIT-01
+    level: unit
+    case_id: AIT-01/unit/edge
+    type: edge
+  - function_id: AIT-02
+    level: unit
+    case_id: AIT-02/unit/functional
+    type: functional
+  - function_id: AIT-02
+    level: unit
+    case_id: AIT-02/unit/negative
+    type: negative
+  - function_id: AIT-02
+    level: unit
+    case_id: AIT-02/unit/edge
+    type: edge
+  - function_id: AIT-03
+    level: unit
+    case_id: AIT-03/unit/functional
+    type: functional
+  - function_id: AIT-03
+    level: unit
+    case_id: AIT-03/unit/negative
+    type: negative
+  - function_id: AIT-03
+    level: unit
+    case_id: AIT-03/unit/edge
+    type: edge
+  - function_id: AIT-04
+    level: unit
+    case_id: AIT-04/unit/functional
+    type: functional
+  - function_id: AIT-04
+    level: unit
+    case_id: AIT-04/unit/negative
+    type: negative
+  - function_id: AIT-04
+    level: unit
+    case_id: AIT-04/unit/edge
+    type: edge
