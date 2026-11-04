@@ -26,5 +26,5 @@ export function CookieConsent({ locale }: { locale: Locale }) {
   }
 
   if (saved || !visible) return null;
-  return <aside className="cookie-consent" aria-label="Cookie preferences"><div><strong>{copy.cookiesTitle}</strong><p>{copy.cookiesIntro}</p><Link href={`/${locale}/cookie-policy`}>{copy.cookiesTitle}</Link></div><div className="cookie-consent-actions"><button className="portal-button portal-button-secondary" type="button" onClick={() => save("essential")}>{copy.rejectOptional}</button><button className="portal-button portal-button-primary" type="button" onClick={() => save("optional")}>{copy.acceptOptional}</button></div></aside>;
+  return <aside className="cookie-consent" aria-label={copy.cookiesLabel}><div><strong>{copy.cookiesTitle}</strong><p>{copy.cookiesIntro}</p><Link href={`/${locale}/cookie-policy`}>{copy.cookiesTitle}</Link></div><div className="cookie-consent-actions"><button className="portal-button portal-button-secondary" type="button" onClick={() => save("essential")}>{copy.rejectOptional}</button><button className="portal-button portal-button-primary" type="button" onClick={() => save("optional")}>{copy.acceptOptional}</button></div></aside>;
 }

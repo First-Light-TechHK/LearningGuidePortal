@@ -23,8 +23,8 @@ test("playwright.e2e.config.ts carries no Helpdesk wiring and no ADMIN_HOSTS ove
   }
 });
 
-test("the Helpdesk e2e config runs only helpdesk-support.spec.ts, on its own port, with the stub Admin and local-only env", () => {
-  assert.deepEqual(([] as unknown[]).concat(helpdeskConfig.testMatch ?? []), ["**/helpdesk-support.spec.ts"]);
+test("the Helpdesk e2e config runs only the Helpdesk specs, on its own port, with the stub Admin and local-only env", () => {
+  assert.deepEqual(([] as unknown[]).concat(helpdeskConfig.testMatch ?? []), ["**/helpdesk-support.spec.ts", "**/helpdesk-i18n-1104.spec.ts"]);
   const [portal, stub, ...rest] = servers(helpdeskConfig.webServer);
   assert.equal(rest.length, 0);
   assert.match(portal.command, /next dev --hostname 127\.0\.0\.1 -p 3014\b/);
