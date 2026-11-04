@@ -1,13 +1,13 @@
 "use client";
 
-import { Col, ConfigProvider, DatePicker, Form, Input, Row, Select, Switch, TimePicker, Tooltip } from "antd";
+import { Col, ConfigProvider, DatePicker, Form, Input, Row, Select, Switch, TimePicker } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/en-gb";
 import "dayjs/locale/zh-cn";
-import { Info } from "lucide-react";
 import { useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
+import { AiTutorSwitchRow } from "./AiTutorSwitchRow";
 import { DURATION_MINUTE_CHOICES, fill, SESSION_FOCUS_MAX, SESSION_TITLE_MAX } from "./studyGroupClient";
 import { PortalProvider } from "./ui/PortalProvider";
 import { PortalButton } from "./ui/PortalButton";
@@ -89,11 +89,9 @@ export function ScheduleStudySessionForm({ locale, group, busy, error, onCancel,
         <Form.Item style={{ marginBottom: 18 }} name="focus" label={copy.focus} normalize={(value: string) => value.slice(0, SESSION_FOCUS_MAX)}>
           <Input.TextArea style={{ minHeight: 80 }} name="focus" maxLength={SESSION_FOCUS_MAX} showCount placeholder={copy.enterFocus} autoSize={{ minRows: 3, maxRows: 6 }}/>
         </Form.Item>
-        <div className={`${layout.switch} ${tutorOffline ? layout.switchDisabled : ""}`}>
-          <span className={layout.switchLabel}>{copy.aiTutorLabel}{tutorOffline && <Tooltip title={copy.aiTutorOfflineHint} getPopupContainer={popupContainer}><span className={layout.tutorInfo} tabIndex={0} aria-label={copy.aiTutorOfflineHint}><Info size={15} aria-hidden="true"/></span></Tooltip>}</span>
-          <span className={layout.switchText}>{copy.enableAiTutor}</span>
+        <AiTutorSwitchRow offline={tutorOffline} label={copy.aiTutorLabel} enableText={copy.enableAiTutor} offlineHint={copy.aiTutorOfflineHint}>
           <Form.Item name="aiTutor" valuePropName="checked" noStyle><Switch disabled={busy || tutorOffline} aria-label={copy.enableAiTutor}/></Form.Item>
-        </div>
+        </AiTutorSwitchRow>
         <Row align="middle" gutter={12} style={{ marginTop: 8 }}>
           <Col span={8}><PortalButton style={{ width: 80, maxWidth: "100%", minHeight: 38, height: 38, fontSize: 14 }} onClick={onCancel} disabled={busy}>{copy.cancel}</PortalButton></Col>
           <Col span={16} style={{ textAlign: "right" }}><PortalButton style={{ width: 200, maxWidth: "100%", minHeight: 38, height: 38, fontSize: 14 }} type="primary" htmlType="submit" loading={busy} disabled={busy}>{copy.scheduleAction}</PortalButton></Col>

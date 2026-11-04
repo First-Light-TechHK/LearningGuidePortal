@@ -186,11 +186,13 @@ test("a live tile says who is speaking, who has a microphone, and who is muted",
   assert.equal(en.studyGroupsPage.getCourseAccess, "View Course");
   assert.equal(en.studyGroupsPage.enableAiTutor, "Enable AI Tutor for this session");
   assert.equal(zh.studyGroupsPage.enableAiTutor, "为本节启用 AI Tutor");
-  assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /styles\.switchText\}>\{copy\.enableAiTutor\}/);
-  // Offline AI Tutor: the row is greyed and the hint moves to the info icon's hover title.
-  const scheduleSource = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.match(scheduleSource, /styles\.tutorInfo[\s\S]*title=\{copy\.aiTutorOfflineHint\}/);
-  assert.doesNotMatch(scheduleSource, /<p className=\{styles\.hint\}>\{copy\.aiTutorOfflineHint\}<\/p>/);
+  // Offline AI Tutor (BUG-0299): both forms share the row that says why in words,
+  // not in a hover. tests/e2e/study-group-ai-tutor-switch-1104.spec.ts locks the behaviour.
+  for (const form of ["StudyGroupsApp.tsx", "ScheduleStudySessionForm.tsx"]) {
+    const formSource = readFileSync(new URL(`../../components/portal/${form}`, import.meta.url), "utf8");
+    assert.match(formSource, /<AiTutorSwitchRow offline=\{tutorOffline\}[^>]*offlineHint=\{copy\.aiTutorOfflineHint\}>/);
+    assert.doesNotMatch(formSource, /tutorInfo/);
+  }
   assert.equal(en.studyGroupsPage.notStartedBody, "This Live Session was not started.");
   assert.match(readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8"), /sessionNotStarted\(session\) \? copy\.notStartedBody/);
   assert.equal(zh.studyGroupsPage.notStarted, "未开始");

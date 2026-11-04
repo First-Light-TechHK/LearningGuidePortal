@@ -165,12 +165,12 @@
 .contextCard strong { display: block; font-size: 14px; font-weight: 600; }
 .contextCard span { display: block; margin-top: 6px; color: #6b7280; font-size: 12px; }
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 18px; font-size: 12px; font-weight: 600; }
-.switchLabel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.switchText { font-size: 12px; font-weight: 400; }
+.switchLabel { flex: none; white-space: nowrap; }
+.switchText { min-width: 0; font-size: 12px; font-weight: 400; }
+.switch > input, .switch > button { flex: none; }
 .switchDisabled { color: #98a2b3; }
-.switchDisabled .switchText { color: #98a2b3; }
-.tutorInfo { display: inline-flex; align-items: center; flex-shrink: 0; color: #98a2b3; cursor: help; }
-.tutorInfo:focus-visible { outline: 2px solid #246bfd; outline-offset: 2px; border-radius: 50%; }
+/* BUG-0299: here the words are the reason the switch is off, so they stay readable. */
+.switchDisabled .switchText { color: #667085; }
 /* 599:1823 AI Tutor switch: 32x16 knob track (global input padding/border otherwise inflates the checkbox past 34x30). */
 .switch input { appearance: none; width: 32px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: #d0d5dd; position: relative; cursor: pointer; }
 .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }

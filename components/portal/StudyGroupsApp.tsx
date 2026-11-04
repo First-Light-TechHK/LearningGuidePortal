@@ -8,6 +8,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { discoverEmptyCopy, groupAnswerStep, joinGate, latestOnly, mineEmptyCopy, paneStatusAfterGroup, sessionStateLabel, studyGroupErrorPlace, studyGroupHasError, studyGroupListFailurePlace, studyGroupMutation, studyGroupPane, uniqueReminderBodies, waitingDialogStep, type StudyGroupNotice, type WaitingDialogStep } from "@/modules/group-study/uiState";
 import { PortalDialog } from "./PortalDialog";
 import { CreateStudyGroupForm } from "./CreateStudyGroupForm";
+import { AiTutorSwitchRow } from "./AiTutorSwitchRow";
 import { ScheduleStudySessionForm } from "./ScheduleStudySessionForm";
 import styles from "./study-groups.module.css";
 import { clampGroupAbout, durationOptions, fill, fillCount, GROUP_ABOUT_MAX, groupCourseLabel, hostMayOpenRoom, plannedMinutes, revealOnPhone, roomSignInHref, scheduleSessionFields, SEAT_HEARTBEAT_MS, sessionFullForViewer, SESSION_FOCUS_MAX, SESSION_TITLE_MAX, sessionDateLabel, sessionNotStarted, sessionRefusal, sessionScheduleLabel, sessionTimeLabel, sessionTitleCount, studyGroupFormProblem, sessionToEnterFromQuery, studyGroupIdFromQuery, studyGroupPath, studyGroupRequest, studyGroupSignInHref, studyGroupsPageHref, studySessionHref, type SessionEntry, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
@@ -955,20 +956,9 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
                   <label className={styles.field}><span>{copy.maxParticipants} <span className={styles.req}>*</span> <span className={styles.hint}>{copy.maximumSix}</span></span><select name="maxParticipants" required disabled={timeOnly} value={sessionMax} onChange={(event) => setSessionMax(event.target.value)}><option value="">{copy.selectMaximum}</option>{[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
                 </div>
                 <label className={styles.field}>{copy.focus}<span className={`${styles.fieldBox} ${styles.focusBox}`}><textarea name="focus" disabled={timeOnly} maxLength={SESSION_FOCUS_MAX} placeholder={copy.enterFocus} value={sessionFocus} onChange={(event) => setSessionFocus(event.target.value.slice(0, SESSION_FOCUS_MAX))} /><span className={styles.counter}>{sessionFocus.length}/{SESSION_FOCUS_MAX}</span></span></label>
-                <label className={`${styles.switch} ${tutorOffline ? styles.switchDisabled : ""}`}>
-                  <span className={styles.switchLabel}>
-                    {copy.aiTutorLabel}
-                    {tutorOffline ? <span className={styles.tutorInfo} title={copy.aiTutorOfflineHint} aria-label={copy.aiTutorOfflineHint} tabIndex={0} role="img">
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4" />
-                        <path d="M8 4.8v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                        <circle cx="8" cy="11.2" r="0.9" fill="currentColor" />
-                      </svg>
-                    </span> : null}
-                  </span>
-                  <span className={styles.switchText}>{copy.enableAiTutor}</span>
+                <AiTutorSwitchRow offline={tutorOffline} label={copy.aiTutorLabel} enableText={copy.enableAiTutor} offlineHint={copy.aiTutorOfflineHint}>
                   <input name="aiTutor" type="checkbox" disabled={tutorOffline} checked={sessionTutor} onChange={(event) => setSessionTutor(event.target.checked)} />
-                </label>
+                </AiTutorSwitchRow>
               </>
             ) : null}
             {errorPlace === "dialog" ? <p className={styles.alert} role="alert">{errorText}</p> : null}
