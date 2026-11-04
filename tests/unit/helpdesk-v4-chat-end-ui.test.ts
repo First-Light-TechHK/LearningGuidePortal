@@ -341,7 +341,8 @@ test("v4 Part B: after an enquiry was sent, the handover card opens a fresh form
   await c.handovers.first().getByRole("button", { name: c.copy.handoverButton }).click();
   await c.subject.waitFor();
   assert.equal(await c.subject.inputValue(), "", "a fresh form");
-  assert.equal(await c.subject.evaluate((node) => node === document.activeElement), true);
+  // The form moves focus right after it renders, on the next task.
+  await page.waitForFunction((node) => node === document.activeElement, await c.subject.elementHandle());
   await c.subject.fill("Second enquiry");
   await c.message.fill("Still wrong.");
   await c.submit.click();
