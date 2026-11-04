@@ -19,6 +19,7 @@ export const ORIGIN = "http://helpdesk.test";
 const ENTRY = `
 import React from 'react';
 import {createRoot} from 'react-dom/client';
+import {flushSync} from 'react-dom';
 import {ContactSupport} from './components/helpdesk/ContactSupport';
 import {EnquiryDetail} from './components/helpdesk/EnquiryDetail';
 import {AccountNav} from './components/portal/AccountNav';
@@ -26,13 +27,16 @@ import EnquiriesPage from './app/[locale]/account/my-learning/support/enquiries/
 import HelpPage from './app/[locale]/help/page';
 import {getMessages} from './lib/i18n/messages';
 const root=createRoot(document.getElementById('root'));
+// Mounted when the call returns. root.render alone only schedules: the old page stays in the DOM, and a
+// locator can match it just before it is replaced, then read the new page before it has loaded.
+const show=element=>flushSync(()=>root.render(element));
 let mounts=0;
 window.__nav=[];
-window.mountContact=p=>root.render(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips} order={p.order} orderUnavailable={p.orderUnavailable} session={p.session}/>);
-window.mountDetail=p=>root.render(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
-window.mountNav=p=>root.render(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
-window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});root.render(<React.Fragment key={p.inPlace?mounts:++mounts}>{page}</React.Fragment>);await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));return 'rendered'}catch(error){return String(error&&error.message||error)}};
-window.mountList=async p=>{window.__list={...p,identities:[]};try{const page=await EnquiriesPage({params:Promise.resolve({locale:p.locale})});root.render(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
+window.mountContact=p=>show(<ContactSupport key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} account={p.account} chips={p.chips} order={p.order} orderUnavailable={p.orderUnavailable} session={p.session}/>);
+window.mountDetail=p=>show(<EnquiryDetail key={++mounts} locale={p.locale} copy={getMessages(p.locale).helpdesk} config={p.config} initial={p.ticket}/>);
+window.mountNav=p=>show(<AccountNav key={++mounts} locale={p.locale} copy={getMessages(p.locale).account}/>);
+window.mountHelp=async p=>{window.__help={faqs:[],search:{},extra:[],...p,requests:[]};try{const page=await HelpPage({params:Promise.resolve({locale:p.locale}),searchParams:Promise.resolve(p.searchParams||{})});show(<React.Fragment key={p.inPlace?mounts:++mounts}>{page}</React.Fragment>);await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));return 'rendered'}catch(error){return String(error&&error.message||error)}};
+window.mountList=async p=>{window.__list={...p,identities:[]};try{const page=await EnquiriesPage({params:Promise.resolve({locale:p.locale})});show(<React.Fragment key={++mounts}>{page}</React.Fragment>);return 'rendered'}catch(error){return String(error&&error.message||error)}};
 `;
 
 const STUBS: Record<string, string> = {
