@@ -949,6 +949,26 @@ test("chat: a question with no reply after 18 s shows the error; a reload during
   await blocked.page.close();
 });
 
+test("chat: the question is saved in the tab before it is sent, so a reload at any moment finds it", async () => {
+  const harness = await open("en-GB", api({ assistant: () => new Promise<Reply>(() => undefined) }), { locale: "en-GB", chips: [] });
+  const { page } = harness;
+  const c = chat(page, "en-GB");
+  // What the tab holds at the very moment the request leaves.
+  await page.evaluate(() => {
+    const original = window.fetch;
+    window.fetch = (...args) => {
+      (window as unknown as { atSend: string }).atSend = JSON.stringify(Object.values(window.sessionStorage));
+      return original(...args);
+    };
+  });
+  await c.input.fill("Saved before sending");
+  await page.keyboard.press("Enter");
+  await waitForCalls(harness, (calls) => count(calls, isAssistant) === 1);
+  const atSend = await page.evaluate(() => (window as unknown as { atSend: string }).atSend);
+  assert.match(atSend, /Saved before sending/);
+  await page.close();
+});
+
 test("chat chips show the full question on hover when it is cut off", async () => {
   const longChip = { id: FAQ[2], question: `How do I ${"really ".repeat(30)}change my plan?` };
   const harness = await open("en-GB", api({}), { locale: "en-GB", chips: [longChip] });
