@@ -184,6 +184,8 @@ test("more than 10 popular FAQs: the first 10 show and the rest fold behind Show
     assert.equal(await v.questions.count(), 10, "Show fewer folds them again");
 
     await mountHelp(page, { locale, faqs: many, searchParams: { faq: id(111) } });
+    // The list unfolds after the mount: wait for it, or this reads the first 10.
+    await v.questions.nth(24).waitFor();
     assert.equal(await v.questions.count(), 25, "a link to the 12th opens the list unfolded");
     assert.equal(await page.getByRole("button", { name: many[11].question }).getAttribute("aria-expanded"), "true");
     assert.equal(await more.textContent(), v.copy.showLess);
