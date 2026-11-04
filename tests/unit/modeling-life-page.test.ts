@@ -105,7 +105,7 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();assert.equal(await page.locator('.la-prose img').count(),5,"preview retains only the first readable point");assert.equal(await page.getByRole('dialog').count(),0);
       await mount({...base,key:"full-text",explorationData:courseExploration(course)});
       await page.getByRole('button',{name:/^1\.2 Defining Vectors$/}).click();await page.locator('.la-prose img[src$="lesson-1-image6.png"]').waitFor();
-      assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<innerHeight*3),true,"all chapter content remains inside the reading panel");
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,"the chapter scrolls with the page and never overflows sideways");
       await page.screenshot({path:path.join(output,`${locale}-text-desktop.png`),fullPage:true});
       await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`${locale}-text-mobile.png`),fullPage:true});
       await page.setViewportSize({width:1440,height:1024});
