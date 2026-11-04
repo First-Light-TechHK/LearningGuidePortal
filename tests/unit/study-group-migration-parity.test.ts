@@ -84,6 +84,14 @@ test("012 + 027 and the ensureSchema bootstrap declare the same Study Group inde
   }
 });
 
+test("the bootstrap creates every Study Group table before an index on it: an empty database must come up", () => {
+  const source = stripComments(readFileSync(BOOTSTRAP_PATH, "utf8"));
+  for (const match of source.matchAll(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS (\w+)\s+ON (study_group\w+)/g)) {
+    const table = source.indexOf(`CREATE TABLE IF NOT EXISTS ${match[2]} (`);
+    assert.ok(table >= 0 && table < match.index, `${match[1]} comes before the table ${match[2]}`);
+  }
+});
+
 test("021 and the ensureSchema bootstrap swap in the same 10/20/30/40-minute duration constraint, and the probe checks it", () => {
   // Owner 2026-10-29: Sessions are scheduled for 10, 20, 30 or 40 minutes; stored 45/60/90 stay valid.
   const migration = collapse(stripComments(readFileSync(path.join(ROOT, "db", "migrations", "021_live_session_short_durations.sql"), "utf8")));

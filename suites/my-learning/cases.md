@@ -8,7 +8,7 @@ Signed-out HTTP I/O lives in `tests/io/my-learning.test.ts`. Store unit tests do
 
 
 ### Functional
-- Title: Entitled or preview-started course appears as a card
+- Title: Entitled course appears as a card; a preview-only course does not
 - Steps: Sign in; open My Learning overview
 - Expected: Cards follow the five-state / trial+started rules; progress is an integer 0–100
 

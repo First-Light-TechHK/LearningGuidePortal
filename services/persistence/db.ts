@@ -562,12 +562,6 @@ WHERE table_name = 'emailBindingTokens';
         -- Seat lease (QA 2026-10-19 redesign): same idempotent self-heal,
         -- mirroring db/migrations/016_study_group_presence_last_seen.sql.
         ALTER TABLE study_group_presences ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
-        -- Scoped reads (review 2026-11-03 H2), mirroring
-        -- db/migrations/027_study_group_scope_indexes.sql.
-        CREATE INDEX IF NOT EXISTS study_group_outbox_session_idx
-          ON study_group_outbox (session_id);
-        CREATE INDEX IF NOT EXISTS study_group_presences_open_user_idx
-          ON study_group_presences (user_id) WHERE left_at IS NULL;
         CREATE TABLE IF NOT EXISTS study_group_meetings (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES live_sessions(id),
@@ -621,6 +615,13 @@ WHERE table_name = 'emailBindingTokens';
         );
         CREATE INDEX IF NOT EXISTS study_group_outbox_claim_idx
           ON study_group_outbox (status, next_attempt_at);
+        -- Scoped reads (review 2026-11-03 H2), mirroring
+        -- db/migrations/027_study_group_scope_indexes.sql. After the outbox and
+        -- presence tables: on an empty database an index before its table fails.
+        CREATE INDEX IF NOT EXISTS study_group_outbox_session_idx
+          ON study_group_outbox (session_id);
+        CREATE INDEX IF NOT EXISTS study_group_presences_open_user_idx
+          ON study_group_presences (user_id) WHERE left_at IS NULL;
         CREATE TABLE IF NOT EXISTS study_group_token_log (
           id BIGSERIAL PRIMARY KEY,               -- append-only; replaces token-issuance.log
           line TEXT NOT NULL,                     -- encrypted issuance line, no token, no secret
