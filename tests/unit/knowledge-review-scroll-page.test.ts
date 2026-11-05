@@ -41,14 +41,18 @@ test("Knowledge Result Review supports wheel and draggable scrollbars for long r
       await list.hover(); await page.mouse.wheel(0, 380); await expect.poll(() => list.evaluate(element => element.scrollTop)).toBeGreaterThan(100);
       const down = await list.evaluate(element => element.scrollTop);
       await page.mouse.wheel(0, -180); await expect.poll(() => list.evaluate(element => element.scrollTop)).toBeLessThan(down);
-      await list.evaluate(element => { element.scrollTop = 0; });
-      const box = (await list.boundingBox())!, thumb = Math.max(18, box.height * size.client / size.scroll);
+      // At half scroll, the native thumb is centred in its track, regardless
+      // of platform-specific arrow buttons or the minimum thumb size.
+      const dragStart = await list.evaluate(element => {
+        element.scrollTop = (element.scrollHeight - element.clientHeight) / 2;
+        return element.scrollTop;
+      });
+      const box = (await list.boundingBox())!, scrollbarX = box.x + box.width - size.bar / 2;
       await page.screenshot({ path: `test-results/knowledge-review-scroll/${locale}-${width}-track.png` });
-      // Grab near the top of the thumb: a fixed 16px inset lands below the
-      // minimum-sized native thumb on macOS and clicks the track instead.
-      await page.mouse.move(box.x + box.width - 7, box.y + Math.min(6, thumb / 2)); await page.mouse.down();
-      await page.mouse.move(box.x + box.width - 7, box.y + box.height - 15, { steps: 10 }); await page.mouse.up();
-      await expect.poll(() => list.evaluate(element => element.scrollTop), { message: JSON.stringify({ locale, width, box, size, thumb }) }).toBeGreaterThan(size.client);
+      await page.mouse.move(scrollbarX, box.y + box.height / 2); await page.mouse.down();
+      await page.mouse.move(scrollbarX, box.y + box.height - size.bar, { steps: 10 }); await page.mouse.up();
+      const minimumDrag = Math.min(size.client, (size.scroll - size.client - dragStart) / 2);
+      await expect.poll(() => list.evaluate(element => element.scrollTop), { message: JSON.stringify({ locale, width, box, size, dragStart, minimumDrag }) }).toBeGreaterThan(dragStart + minimumDrag);
       assert.equal(await page.evaluate(() => window.scrollY), 0, "modal scrolling leaves the background fixed");
       await page.screenshot({ path: `test-results/knowledge-review-scroll/${locale}-${width}-results.png` });
       const card = list.locator("button").nth(20); await card.scrollIntoViewIfNeeded();
