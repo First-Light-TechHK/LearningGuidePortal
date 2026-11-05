@@ -25,6 +25,33 @@ after(async()=>{await restore();});
 const context=(kind='knowledge',lessonId=PREVIEW_LP)=>({params:Promise.resolve({courseId:COURSE_ID,lessonId,kind})});
 const draft=():KnowledgeAttempt=>({kind:'knowledge',responses:Array.from({length:6},()=>({answer:'',rating:null})),index:0,phase:'question'});
 
+test('later Knowledge and Application APIs accept drafts before any Study or preceding tests, without manufacturing progress',async()=>{
+  const session=await store.createSession(other.id);setCookie(SESSION_COOKIE,session.token);
+  const overviewContext={params:Promise.resolve({courseId:COURSE_ID})};
+  const before=await (await overviewRoute.GET(jsonRequest('GET','http://localhost/api/understanding'),overviewContext)).json();
+  assert.equal(before.data.completed,0);assert.equal(before.data.percent,0);
+  assert.ok(before.data.lessons.every((lesson:{state:string})=>lesson.state==='current'));
+  for(const kind of ['knowledge','application'] as const){
+    const ctx=context(kind,'third-lesson');
+    const empty=await routes.GET(jsonRequest('GET','http://localhost/api/assessments'),ctx);
+    assert.equal(empty.status,200);assert.equal((await empty.json()).data,null);
+    const attempt=kind==='knowledge'?draft():{kind:'application',answer:'Later Lesson draft',phase:'answer'};
+    const input={clientEventId:randomUUID(),expectedVersion:0,attempt};
+    const saved=await routes.PUT(jsonRequest('PUT','http://localhost/api/assessments',input),ctx);
+    assert.equal(saved.status,200);const record=(await saved.json()).data;
+    assert.equal(record.version,1);assert.equal(record.completedAt,null);
+    assert.deepEqual((await (await routes.PUT(jsonRequest('PUT','http://localhost/api/assessments',input),ctx)).json()).data,record);
+    assert.equal(await readAssessment(user.id,COURSE_ID,'third-lesson',kind),null,'the other account cannot see this draft');
+  }
+  const view=await getUnderstandingOverview(other.id,COURSE_ID);
+  assert.equal(view.completed,0);assert.equal(view.percent,0);
+  assert.equal(view.lessons[0].knowledge.status,'not_started');
+  assert.equal(view.lessons[2].application.status,'in_progress');
+  assert.deepEqual((await store.getLearningOverview(other.id)).courses,[]);
+  assert.equal((await store.ensureProductData()).studyEvents.filter(event=>event.userId===other.id).length,0);
+  clearCookies();
+});
+
 test('Understanding exposes every available test without Study or preceding-test prerequisites',async()=>{
   let view=await getUnderstandingOverview(user.id,COURSE_ID);
   assert.equal(view.total,6);assert.equal(view.completed,0);assert.equal(view.percent,0);
@@ -93,4 +120,26 @@ test('authenticated API derives ownership, rejects malformed payloads, invalid k
   const data=await readProductData();data.entitlements.filter((e:{userId:string})=>e.userId===user.id).forEach((e:{validTo:string})=>e.validTo='2020-01-01');await writeProductData(data);
   assert.equal((await routes.GET(jsonRequest('GET','http://localhost/api/assessments'),context())).status,403);
   assert.equal((await routes.PUT(jsonRequest('PUT','http://localhost/api/assessments',{clientEventId:randomUUID(),expectedVersion:2,attempt:draft()}),context())).status,403);
+});
+
+test('unrestricted test entry still rejects absent definitions, foreign Lessons and unpublished Courses',async()=>{
+  setCookie(SESSION_COOKIE,(await store.createSession(other.id)).token);
+  const original=await readProductData();
+  try{
+    const data=await readProductData(), course=data.courses.find((item:{id:string})=>item.id===COURSE_ID);
+    course.sections.flatMap((section:{lessons:{id:string;assessments?:unknown}[]})=>section.lessons).find((lesson:{id:string})=>lesson.id==='third-lesson').assessments={knowledge:[],application:null};
+    await writeProductData(data);
+    for(const kind of ['knowledge','application']){
+      const ctx=context(kind,'third-lesson');
+      assert.equal((await routes.GET(jsonRequest('GET','http://localhost/api/assessments'),ctx)).status,404,'even an existing draft does not expose a removed test');
+      const attempt=kind==='knowledge'?draft():{kind:'application',answer:'Draft',phase:'answer'};
+      assert.equal((await routes.PUT(jsonRequest('PUT','http://localhost/api/assessments',{clientEventId:randomUUID(),expectedVersion:1,attempt}),ctx)).status,404);
+    }
+    assert.equal((await routes.GET(jsonRequest('GET','http://localhost/api/assessments'),context('knowledge','foreign-lesson'))).status,404);
+    const view=await getUnderstandingOverview(other.id,COURSE_ID);
+    assert.equal(view.lessons[2].knowledge.total,0);assert.equal(view.lessons[2].application.total,0);
+    course.status='draft';await writeProductData(data);
+    assert.equal((await routes.GET(jsonRequest('GET','http://localhost/api/assessments'),context())).status,404);
+    assert.equal((await overviewRoute.GET(jsonRequest('GET','http://localhost/api/understanding'),{params:Promise.resolve({courseId:COURSE_ID})})).status,404);
+  }finally{await writeProductData(original);clearCookies();}
 });

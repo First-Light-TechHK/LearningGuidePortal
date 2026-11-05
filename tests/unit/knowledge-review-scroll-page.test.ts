@@ -44,7 +44,9 @@ test("Knowledge Result Review supports wheel and draggable scrollbars for long r
       await list.evaluate(element => { element.scrollTop = 0; });
       const box = (await list.boundingBox())!, thumb = Math.max(18, box.height * size.client / size.scroll);
       await page.screenshot({ path: `test-results/knowledge-review-scroll/${locale}-${width}-track.png` });
-      await page.mouse.move(box.x + box.width - 7, box.y + 16 + thumb / 2); await page.mouse.down();
+      // Grab near the top of the thumb: a fixed 16px inset lands below the
+      // minimum-sized native thumb on macOS and clicks the track instead.
+      await page.mouse.move(box.x + box.width - 7, box.y + Math.min(6, thumb / 2)); await page.mouse.down();
       await page.mouse.move(box.x + box.width - 7, box.y + box.height - 15, { steps: 10 }); await page.mouse.up();
       await expect.poll(() => list.evaluate(element => element.scrollTop), { message: JSON.stringify({ locale, width, box, size, thumb }) }).toBeGreaterThan(size.client);
       assert.equal(await page.evaluate(() => window.scrollY), 0, "modal scrolling leaves the background fixed");

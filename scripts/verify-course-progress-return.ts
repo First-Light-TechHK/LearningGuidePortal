@@ -20,7 +20,8 @@ async function main() {
   Object.assign(process.env, {
     STORAGE_BACKEND: "local", APP_ENV: "DEV", PAYMENT_MODE: "demo", LOCAL_SOCIAL_LOGIN: "0",
     DATABASE_URL: "", DATA_S3_BUCKET: "", KS_TUTOR_BASE_URL: "", NEXT_DIST_DIR: dist,
-    NEXT_PUBLIC_APP_URL: origin, SESSION_SECRET: "course-progress-disposable-test-secret",
+    NEXT_PUBLIC_APP_URL: origin, SESSION_SECRET: "course-progress-disposable-test-secret", ADMIN_HOSTS: "admin.example.test",
+    AWS_ACCESS_KEY_ID: "local-verification-only", AWS_SECRET_ACCESS_KEY: "local-verification-only", AWS_EC2_METADATA_DISABLED: "true",
   });
   process.chdir(temporary);
   let server: ReturnType<typeof spawn> | undefined, browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
@@ -38,23 +39,28 @@ async function main() {
       await store.saveCourseLearningMode(user.id, course.id, "video");
       users.push({ user, locale, email, password });
     }
-    server = spawn(process.execPath, [path.join(repo, "node_modules/next/dist/bin/next"), "start", repo, "-p", String(port), "--hostname", "127.0.0.1"], { cwd: temporary, env: process.env, windowsHide: true, stdio: "ignore" });
+    let startupOutput = "", readinessStatus: number | undefined;
+    server = spawn(process.execPath, [path.join(repo, "node_modules/next/dist/bin/next"), "start", repo, "-p", String(port), "--hostname", "127.0.0.1"], { cwd: temporary, env: process.env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    server.stdout?.on("data", chunk => { startupOutput = (startupOutput + chunk.toString()).slice(-8000); });
+    server.stderr?.on("data", chunk => { startupOutput = (startupOutput + chunk.toString()).slice(-8000); });
     let ready = false;
     for (let attempt = 0; attempt < 80; attempt++) {
-      try { if ((await fetch(`${origin}/en-GB/portal`, { signal: AbortSignal.timeout(2000) })).ok) { ready = true;break; } } catch { /* Wait for the isolated server. */ }
+      try { const response = await fetch(`${origin}/en-GB/portal/sign-in`, { signal: AbortSignal.timeout(2000) }); readinessStatus = response.status; if (response.ok) { ready = true;break; } } catch { /* Wait for the isolated server. */ }
       if (server.exitCode !== null) throw new Error("Isolated Next server stopped");
       await new Promise(resolve => setTimeout(resolve, 250));
     }
-    assert.ok(ready);browser = await chromium.launch();
+    assert.ok(ready, `Isolated Next server did not become ready (last HTTP status ${readinessStatus}). ${startupOutput}`);browser = await chromium.launch();
     for (const { locale, email, password } of users) {
       const context = await browser.newContext(), page = await context.newPage(), copy = getMessages(locale).courseDetailDesign;
       await page.route("**/*", route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       assert.equal((await context.request.post(`${origin}/api/auth/login`, { data: { email, password } })).status(), 200);
       const target = `${origin}/${locale}/portal/courses/${course.slug}`;
-      const start = page.locator('[data-syllabus] [data-course-cta-link="continue_learning"]');
+      const starts = page.locator('[data-syllabus] [data-course-cta-link="continue_learning"]');
+      const start = page.locator(`[data-syllabus] [data-lesson-id="${second.id}"] [data-course-cta-link="continue_learning"]`);
       const expected: string = `/${locale}/account/learn/${course.id}?lessonId=${second.id}`;
       await page.goto(target);await start.waitFor();
-      assert.equal(await start.getAttribute("href"), `/${locale}/account/learn/${course.id}?lessonId=${lessons[0].id}`);
+      assert.equal(await starts.count(), lessons.length);
+      assert.equal(await start.getAttribute("href"), expected);
       // Keep a first-Lesson snapshot in Next's client-router history.
       await page.locator("header .portal-brand").click();await page.waitForURL(`${origin}/${locale}/portal`);
       await page.waitForLoadState("networkidle");
@@ -69,19 +75,28 @@ async function main() {
       assert.equal((await current.json()).page.actionLessonId, second.id, "Start follows the highest progress despite reviewing Lesson 1");
       assert.equal(current.headers()["cache-control"], "private, no-store");assert.ok(current.headers().vary.split(/,\s*/).includes("Cookie"));
       await page.goBack();await start.waitFor();await page.waitForLoadState("networkidle");
-      await page.waitForFunction(expected => document.querySelector('[data-syllabus] [data-course-cta-link="continue_learning"]')?.getAttribute("href") === expected, expected, { timeout: 10000 });
+      await page.waitForFunction(expected => document.querySelector('[data-course-plan-status="included"] a')?.getAttribute("href") === expected, expected, { timeout: 10000 });
       assert.equal(await start.textContent(), copy.start);
       assert.equal(await page.locator('[data-course-plan-status="included"] a').getAttribute("href"), expected);
-      assert.equal(await page.locator(`[data-lesson-id="${lessons[0].id}"] [data-course-cta-link]`).count(), 0);
+      assert.equal(await starts.count(), lessons.length);
+      for (const lesson of lessons) {
+        const entry = page.locator(`[data-syllabus] [data-lesson-id="${lesson.id}"] [data-course-cta-link]`);
+        assert.equal(await entry.textContent(), copy.start);
+        assert.equal(await entry.getAttribute('href'), `/${locale}/account/learn/${course.id}?lessonId=${lesson.id}`);
+      }
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 1000 });
         await page.screenshot({ path: path.join(output, `${locale}-${width}.png`), fullPage: true });
       }
-      await start.click();await page.waitForURL(origin + expected);
-      await page.getByRole("heading", { name: second.title, exact: true }).waitFor();
+      for (const lesson of lessons) {
+        await page.locator(`[data-syllabus] [data-lesson-id="${lesson.id}"] [data-course-cta-link]`).click();
+        await page.waitForURL(`${origin}/${locale}/account/learn/${course.id}?lessonId=${lesson.id}`);
+        await page.getByRole("heading", { name: lesson.title, exact: true }).waitFor();
+        await page.goto(target);await start.waitFor();
+      }
       await context.close();
     }
-    console.log("PASS: Modeling life highest 86% keeps Start on Lesson 2 after reviewing Lesson 1 and restoring Next history in both locales.");
+    console.log("PASS: every entitled Lesson has its own working Start button; the included-plan resume retains the course maximum after review and history restore in both locales.");
   } finally {
     await browser?.close();
     if (server && server.exitCode === null) { const stopped = new Promise<void>(resolve => server!.once("exit", () => resolve()));server.kill();await stopped; }

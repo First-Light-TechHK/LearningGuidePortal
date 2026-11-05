@@ -17,7 +17,8 @@ async function main() {
   const directory = await mkdtemp(path.join(tmpdir(), "lg-preview-assessment-")), output = path.join(repo, "test-results/preview-assessment-production");
   await mkdir(output, { recursive: true });
   Object.assign(process.env, { STORAGE_BACKEND: "local", APP_ENV: "DEV", PAYMENT_MODE: "demo", LOCAL_EMAIL_PREVIEW: "1", LOCAL_SOCIAL_LOGIN: "0", STRIPE_SECRET_KEY: "",
-    NEXT_DIST_DIR: dist, NEXT_PUBLIC_APP_URL: origin, SESSION_SECRET: "preview-assessment-disposable-local-secret", KS_TUTOR_BASE_URL: "" });
+    NEXT_DIST_DIR: dist, NEXT_PUBLIC_APP_URL: origin, SESSION_SECRET: "preview-assessment-disposable-local-secret", KS_TUTOR_BASE_URL: "",
+    ADMIN_HOSTS: "admin.example.test" });
   process.chdir(directory);
   let server: ReturnType<typeof spawn> | undefined, browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
@@ -35,14 +36,17 @@ async function main() {
       lesson.contents = [{ id: `${lesson.id}-text`, title: "Reading", type: "text", mode: "lecture", html: "<p>Local course reading for the preview and entitled learning check.</p>", nodes: [] }];
     }
     await writeFile(file, JSON.stringify(data));
-    server = spawn(process.execPath, [path.join(repo, "node_modules/next/dist/bin/next"), "start", repo, "-p", String(port), "--hostname", "127.0.0.1"], { cwd: directory, env: process.env, windowsHide: true, stdio: "ignore" });
+    let startupOutput = "", readinessStatus: number | undefined;
+    server = spawn(process.execPath, [path.join(repo, "node_modules/next/dist/bin/next"), "start", repo, "-p", String(port), "--hostname", "127.0.0.1"], { cwd: directory, env: process.env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    server.stdout?.on("data", chunk => { startupOutput = (startupOutput + chunk.toString()).slice(-8000); });
+    server.stderr?.on("data", chunk => { startupOutput = (startupOutput + chunk.toString()).slice(-8000); });
     let ready = false;
     for (let i = 0; i < 80; i++) {
-      try { if ((await fetch(`${origin}/en-GB/portal/sign-in`, { signal: AbortSignal.timeout(2000) })).ok) { ready = true; break; } } catch { /* Isolated startup. */ }
-      if (server.exitCode !== null) throw new Error("Isolated Next server stopped.");
+      try { const response = await fetch(`${origin}/en-GB/portal/sign-in`, { signal: AbortSignal.timeout(2000) }); readinessStatus = response.status; if (response.ok) { ready = true; break; } } catch { /* Isolated startup. */ }
+      if (server.exitCode !== null) throw new Error(`Isolated Next server stopped. ${startupOutput}`);
       await new Promise(resolve => setTimeout(resolve, 250));
     }
-    assert(ready); browser = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+    assert(ready, `Isolated Next server did not become ready (last HTTP status ${readinessStatus}). ${startupOutput}`); browser = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
     for (const account of accounts) {
       const { locale } = account, messages = getMessages(locale);
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -61,7 +65,8 @@ async function main() {
       const { quote } = await store.createQuote(account.id, "epicureanism-pc-6"); await store.completeDemoCheckout(account.id, quote.id);
       await page.goto(`${origin}/${locale}/portal/courses/${courseId}`);
       const start = page.locator('[data-syllabus] [data-course-cta-link="continue_learning"]');
-      await expect(start).toHaveText(messages.courseDetailDesign.startLearning);
+      await expect(start).toHaveCount(course.sections.flatMap((section: { lessons: unknown[] }) => section.lessons).length);
+      for (const entry of await start.all()) await expect(entry).toHaveText(messages.courseDetailDesign.start);
       const fresh = await context.request.get(`${origin}/api/portal/courses/${courseId}`);
       assert.equal((await fresh.json()).page.progress, 0);
       assert.equal((await store.getLearningOverview(account.id)).courses.length, 0);

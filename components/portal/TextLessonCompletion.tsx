@@ -11,12 +11,13 @@ import { createClientEventId } from "@/lib/clientEventId";
 import { LessonCompletedDialog } from "./LessonCompletedDialog";
 import styles from "./text-lesson-completion.module.css";
 
-export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, nextHref, variant = "row", assessmentAvailability, visible = true, endpoint = "/api/study/events" }: {
+export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, nextHref, variant = "row", learningMode = "text", assessmentAvailability, visible = true, endpoint = "/api/study/events" }: {
   assessmentAvailability?: AssessmentAvailability;
   nextLesson?: { number: string; title: string };
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle: string;
   nextHref: string | null; visible?: boolean;
-  variant?: "row" | "card";
+  variant?: "row" | "card" | "inline";
+  learningMode?: "text" | "video";
   endpoint?: "/api/study/events" | "/api/study/preview";
 }) {
   const router = useRouter(), messages = getMessages(locale);
@@ -80,14 +81,14 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
     inFlight.current = true; setBusy(true); setError("");
     request.current ||= createClientEventId();
     try {
-      await completeLessonOutline(endpoint, courseId, lessonId, "text", request.current);
+      await completeLessonOutline(endpoint, courseId, lessonId, learningMode, request.current);
       saved.current = true; setDialogOpen(true);
     } catch { setError(messages.overviewDesign.previewSaveError); }
     finally { inFlight.current = false; setBusy(false); }
   }
   if (!visible) return null;
-  return <><div ref={card} className={variant === "card" ? styles.card : styles.row} data-text-completion data-at-end={atEnd} data-on-surface={onSurface} inert={variant === "card" && !onSurface ? true : undefined}>
-    <button type="button" className={variant === "card" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{variant === "card" ? <>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
+  return <><div ref={card} className={variant === "card" ? styles.card : variant === "inline" ? styles.inline : styles.row} data-text-completion data-at-end={atEnd} data-on-surface={onSurface} inert={variant === "card" && !onSurface ? true : undefined}>
+    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{variant !== "row" ? <>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
     {error && <p role="alert">{error}</p>}
   </div>
     {dialogOpen && <LessonCompletedDialog nextLesson={nextLesson} isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}

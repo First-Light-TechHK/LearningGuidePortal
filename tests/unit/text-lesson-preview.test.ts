@@ -53,7 +53,13 @@ test("preview study API rejects locked text points and completion after expiry w
     await assert.rejects(store.recordStudyEvent(event, "preview"), /outside the preview/);
     await assert.rejects(store.recordStudyEvent({ ...event, event: "complete" }, "preview"), /cannot be completed/);
     const initial = await store.recordStudyEvent({ ...event, contentId: "text-2", clientEventId: "allowed-point" }, "preview");
-    assert.equal(initial?.knowledgePositions?.text?.contentId, "text-2");
+    // 42db8b9: a preview never persists learning state. A point inside the preview
+    // range is accepted (no throw) but records nothing, so a preview cannot create a
+    // My Learning card, a resume position or any Study history.
+    assert.equal(initial, null, "a permitted preview point records nothing");
+    const afterPreview = await readProductData();
+    assert.equal(afterPreview.studyRecords.length, 0, "a preview writes no Study record");
+    assert.equal(afterPreview.studyEvents.length, 0, "a preview writes no Study event");
     const { quote } = await store.createQuote(user.id, "everything-pc-6"); await store.completeDemoCheckout(user.id, quote.id);
     await store.recordStudyEvent(event);
     const route = await import("../../app/api/study/preview/route");

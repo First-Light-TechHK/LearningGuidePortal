@@ -212,6 +212,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>
         </div>
+        {mode === "video" && entitled && <TextLessonCompletion key={`${lesson.id}:video-completion`} variant="inline" learningMode="video" locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextLesson={nextLesson} nextHref={nextHref} assessmentAvailability={assessmentAvailability} endpoint={studyEndpoint}/>}
         {tutorOpen && entitled && tutorOnline && <TutorDrawer onClose={() => setTutorOpen(false)}><TutorChat locale={locale} courseId={courseId} lessonId={lesson.id} copy={messages.learning} onClose={() => setTutorOpen(false)}/></TutorDrawer>}
         <div className={styles.progress}>
           <PreviewProgress enabled={entitled && !textLocked && (mode !== "video" || playingId === selected?.id)} showError={entitled && mode !== "video"} endpoint={studyEndpoint} courseId={courseId} lessonId={lesson.id} contentId={selected?.id || null} learningMode={selected ? selected.type === "video" ? "video" : "text" : !contents.length && lesson.body?.trim() ? "text" : undefined} seconds={lesson.durationMinutes * 60} initialCompleted={initialCompleted} canComplete={false} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />

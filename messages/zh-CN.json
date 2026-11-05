@@ -259,6 +259,7 @@
     "tryApplication": "尝试应用测试"
   },
   "lessonCompleted": {
+    "markComplete": "完成课时",
     "nextActionTitle": "接下来想做什么？",
     "lessonLabel": "课时 {number}",
     "returnToLearning": "返回我的学习",

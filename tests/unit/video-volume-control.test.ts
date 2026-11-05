@@ -134,7 +134,7 @@ test('volume wheel adjusts native audio without scrolling the page or seeking in
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
       await page.setContent('<body style="margin:0;min-height:3000px"><div id="root" style="width:900px;padding:80px 20px"></div></body>');
       await page.addStyleTag({ content: await readFile('components/portal/lesson-authoring.css', 'utf8') });
-      await page.addScriptTag({ content: 'window.__name=value=>value; window.wheelEvents=0; window.addEventListener("wheel", event => {window.wheelEvents++; window.wheelPrevented=event.defaultPrevented;});' });
+      await page.addScriptTag({ content: 'window.__name=value=>value; window.wheelEvents=0; window.addEventListener("wheel", event => {window.wheelEvents++; window.wheelPrevented=event.defaultPrevented; window.wheelCancelable=event.cancelable;});' });
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(locale => (window as any).mount(locale), locale);
       const button = page.locator('.la-video-volume button');
@@ -147,7 +147,11 @@ test('volume wheel adjusts native audio without scrolling the page or seeking in
         await page.waitForFunction(count => (window as any).wheelEvents > count, before.count);
         await page.waitForFunction(value => document.querySelector('.la-video-volume-range')?.getAttribute('aria-valuetext') === `${value}%`, expected);
         assert.deepEqual(await mediaState(), { volume: expected, muted: expected === 0, time: 0, paused: true });
-        assert.equal(await page.evaluate(() => (window as any).wheelPrevented), true, 'wheel over volume prevents page scrolling');
+        // Chrome can send a noncancelable wheel while fallback fullscreen
+        // locks page scrolling. Only cancelable events can be defaultPrevented;
+        // the unchanged page position below is required in either case.
+        const cancellation = await page.evaluate(() => ({ prevented: (window as { wheelPrevented?: boolean }).wheelPrevented, cancelable: (window as { wheelCancelable?: boolean }).wheelCancelable }));
+        assert.equal(cancellation.prevented, cancellation.cancelable, 'cancelable wheel over volume is prevented');
         assert.equal(await page.evaluate(() => window.scrollY), before.scroll);
       };
 

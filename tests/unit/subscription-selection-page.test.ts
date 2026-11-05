@@ -40,6 +40,12 @@ test("five subscription designs retain bilingual responsive states, original ico
     });
     await page.goto(`http://selection.test/${locale}/subscription`);
     for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
+    // The component's own CSS modules (PortalHeader included) are emitted by the
+    // bundle above; a real browser receives them. Injecting only the two global
+    // sheets left the header with desktop layout at 390px, so the overflow check
+    // was measuring a header with no mobile styles at all.
+    const bundleCss = bundle.outputFiles.find(file => file.path.endsWith(".css"));
+    if (bundleCss) await page.addStyleTag({ content: bundleCss.text });
     for (const weight of [400, 500, 600, 700]) await page.addStyleTag({ content: `@font-face{font-family:Inter;src:url(data:font/woff2;base64,${(await readFile(`node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)).toString("base64")});font-weight:${weight}}` });
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
     const footer = renderToStaticMarkup(await Footer({ locale }));

@@ -1664,6 +1664,9 @@ test("a transient publish failure schedules its own retry and delivers in the sa
   assert.deepEqual(published, ["The republic ended in 1933."]);
   assert.equal(scheduled.length, 1);
   assert.equal(after?.status, "delivered");
+  // The delivered row can be visible before the background drain finishes
+  // its final empty claims. Wait behind it before afterEach removes the store.
+  await local.deliverTutorAnswer({ sessionId: session.id });
 });
 
 test("recoverTutorWork drains stranded tutor work without an inbound ask", async () => {
