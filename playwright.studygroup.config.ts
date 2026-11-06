@@ -59,6 +59,20 @@ const nextEnv = {
   ...(useCloud ? {} : { NODE_EXTRA_CA_CERTS: "/tmp/lg-livekit-certs/cert.pem" }),
 };
 
+// The app under test is a production build (next build + next start), as on
+// DEV/SIT/UAT. `next dev` compiles each route on its first request and drops
+// routes it has not served for a while, so a Leave, an AI Tutor question or
+// the first page of a test could wait 7-10 s for a compile on a slower
+// machine: longer than the room's 8 s seat-intent deadline and the tests' own
+// "answers at once" checks (SG E2E 2026-11-06: M15, two-browser, N5,
+// BUG-0108 went red on that, not on the product). STUDYGROUP_E2E_NEXT=dev
+// runs against `next dev` for quick local iteration.
+const useDevServer = process.env.STUDYGROUP_E2E_NEXT === "dev";
+const nextCommand = useDevServer
+  ? `npx next dev --hostname 127.0.0.1 -p ${port}`
+  // The build points next-env.d.ts at its own folder; put the file back.
+  : `npx next build && (git checkout -q -- next-env.d.ts || true) && npx next start --hostname 127.0.0.1 -p ${port}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   workers: 1,
@@ -110,11 +124,11 @@ export default defineConfig({
           },
         ]),
     {
-      command: `npx next dev --hostname 127.0.0.1 -p ${port}`,
+      command: nextCommand,
       url: `${baseURL}/api/health`,
       reuseExistingServer: true,
-      timeout: 180_000,
-      env: nextEnv,
+      timeout: useDevServer ? 180_000 : 900_000,
+      env: useDevServer ? nextEnv : { ...nextEnv, NEXT_DIST_DIR: ".next-e2e-sg" },
     },
   ],
   projects: [
