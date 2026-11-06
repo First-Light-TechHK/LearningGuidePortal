@@ -5,11 +5,13 @@ import {
   deleteConversation,
   getConversation,
   getProductCourse,
-  saveConversation,
+  saveTutorReplyIfUnchanged,
+  trimLastTutorTurn,
   type ProductConversation,
 } from "@/services/productStore";
 import { getTutorAvailability, getTutorWelcome, KsTutorError, streamTutorText } from "@/services/ksTutorClient";
 import type { Locale } from "@/lib/i18n/config";
+import { requestOriginMatches } from "@/services/adminHost";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +53,7 @@ export async function GET(request: Request) {
 
 /** New chat：删除当前用户在该课程/课时下的对话记录（2026-10-27：不再按模式隔离，幂等）。 */
 export async function DELETE(request: Request) {
+  if (!requestOriginMatches(request)) return jsonError("Invalid origin.", 403);
   const user = await currentProductUser();
   if (!user) return jsonError("Sign in is required.", 401);
   const url = new URL(request.url);
@@ -65,7 +68,21 @@ export async function DELETE(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
+export async function PATCH(request: Request) {
+  if (!requestOriginMatches(request)) return jsonError("Invalid origin.", 403);
+  const user = await currentProductUser();
+  if (!user) return jsonError("Sign in is required.", 401);
+  const body = await request.json() as { courseId?: string; lessonId?: string; conversationId?: string; lastUserAt?: string };
+  const course = await getProductCourse(body.courseId || "");
+  if (!course || course.status !== "published") return jsonError("Course not found.", 404);
+  if (!(await checkEntitlement(user.id, course.id)).allowed) return jsonError("Course access is required.", 403);
+  const result = await trimLastTutorTurn(user.id, body.conversationId || "", course.id, body.lessonId || "", body.lastUserAt || "");
+  if (!result) return jsonError("Conversation changed.", 409);
+  return NextResponse.json({ ok: true, question: result.question });
+}
+
 export async function POST(request: Request) {
+  if (!requestOriginMatches(request)) return jsonError("Invalid origin.", 403);
   const user = await currentProductUser();
   if (!user) return jsonError("Sign in is required.", 401);
   try {
@@ -76,6 +93,8 @@ export async function POST(request: Request) {
       message?: string;
       conversationId?: string;
       locale?: "en-GB" | "zh-CN";
+      action?: "retry";
+      lastUserAt?: string;
     };
     const course = await getProductCourse(body.courseId || "");
     if (!course || course.status !== "published") return jsonError("Course not found.", 404);
@@ -84,7 +103,11 @@ export async function POST(request: Request) {
 
     const lesson = course.sections.flatMap((section) => section.lessons).find((item) => item.id === body.lessonId) || course.sections[0]?.lessons[0];
     if (!lesson) return jsonError("Lesson not found.", 404);
-    const message = body.message?.trim();
+    const mode = body.mode === "socratic" ? "socratic" : "lecture";
+    const conversation = await getConversation(user.id, body.conversationId, course.id, lesson.id, mode);
+    const lastUser = conversation.messages.findLastIndex((item) => item.role === "user");
+    if (body.action === "retry" && (conversation.id !== body.conversationId || lastUser < 0 || conversation.messages[lastUser].createdAt !== body.lastUserAt)) return jsonError("Conversation changed.", 409);
+    const message = (body.action === "retry" ? conversation.messages[lastUser].content : body.message)?.trim();
     if (!message || message.length > 4000) {
       return jsonError("Enter a message of up to 4,000 characters.", 400);
     }
@@ -98,10 +121,13 @@ export async function POST(request: Request) {
       return jsonError("AI Tutor is not available for this course.", 403, "AI_TUTOR_OFFLINE");
     }
 
-    const mode = body.mode === "socratic" ? "socratic" : "lecture";
     const locale: Locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
-    const conversation = await getConversation(user.id, body.conversationId, course.id, lesson.id, mode);
-    const history = conversation.messages.slice(-10);
+    let history = conversation.messages.slice(-10);
+    if (body.action === "retry") {
+      const trimmed = await trimLastTutorTurn(user.id, conversation.id, course.id, lesson.id, body.lastUserAt || "");
+      if (!trimmed) return jsonError("Conversation changed.", 409);
+      history = trimmed.history.slice(-10);
+    }
 
     const generator = streamTutorText({
       externalCourseId: course.slug,
@@ -135,7 +161,7 @@ export async function POST(request: Request) {
               { role: "user", content: message, createdAt: timestamp },
               { role: "assistant", content: answer, createdAt: new Date().toISOString() },
             ];
-            await saveConversation({ ...conversation, mode, messages });
+            await saveTutorReplyIfUnchanged({ ...conversation, mode, messages }, history, Boolean(body.action || conversation.messages.length));
           }
           controller.close();
         } catch (error) {

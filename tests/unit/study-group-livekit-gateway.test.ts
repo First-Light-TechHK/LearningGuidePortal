@@ -49,12 +49,14 @@ test("Cloud gateway publishes a shared reliable tutor packet with a stable messa
   });
 
   await gateway.publishTutorMessage({ project, room: "session-1", messageId: "tutor-request-1", text: "Grounded answer", mode: "course" });
+  await gateway.publishTutorMessage({ project, room: "session-1", messageId: "tutor-request-2", text: "Partial", mode: "progress", sequence: 1 });
 
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 2);
   assert.equal(sent[0].room, "session-1");
   assert.equal(sent[0].kind, "RELIABLE");
   assert.equal(sent[0].options.destinationIdentities, undefined);
   assert.deepEqual(JSON.parse(new TextDecoder().decode(sent[0].data)), { type: "tutor", id: "tutor-request-1", text: "Grounded answer", mode: "course" });
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(sent[1].data)), { type: "tutor-progress", id: "tutor-request-2", text: "Partial", mode: "progress", sequence: 1 });
 });
 
 test("Cloud gateway uses a non-mutating room listing as a redacted permission health check", async () => {

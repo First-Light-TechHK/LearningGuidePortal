@@ -50,3 +50,17 @@ test("deleteConversation removes all rows for the current learner's course/lesso
   assert.deepEqual(after.conversations.map((item) => item.id).sort(), ["keep-other-lesson", "keep-other-user"]);
   assert.equal(await store.deleteConversation("u1", "c1", "l1", "lecture"), 0, "a repeated New chat must stay idempotent");
 });
+
+test("undo removes only the owner's last turn and an older stream cannot restore it", async () => {
+  const timestamp = "2026-11-06T10:00:00.000Z";
+  const conversation: import("../../services/productStore").ProductConversation = {
+    id: "tutor-undo", userId: "undo-owner", courseId: "undo-course", lessonId: "undo-lesson", mode: "lecture", updatedAt: timestamp,
+    messages: [{ role: "user", content: "Question", createdAt: timestamp }, { role: "assistant", content: "Answer", createdAt: timestamp }],
+  };
+  await store.saveConversation(conversation);
+  assert.equal(await store.trimLastTutorTurn("other-user", conversation.id, conversation.courseId, "undo-lesson", timestamp), null);
+  assert.equal(await store.trimLastTutorTurn(conversation.userId, conversation.id, conversation.courseId, "undo-lesson", "wrong"), null);
+  assert.equal((await store.trimLastTutorTurn(conversation.userId, conversation.id, conversation.courseId, "undo-lesson", timestamp))?.question, "Question");
+  assert.equal(await store.saveTutorReplyIfUnchanged(conversation, conversation.messages, true), false);
+  assert.deepEqual((await store.getConversation(conversation.userId, conversation.id, conversation.courseId, "undo-lesson", "lecture")).messages, []);
+});

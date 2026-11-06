@@ -255,8 +255,8 @@ export function createLiveKitCloudGateway(deps: CloudGatewayDeps): LiveKitRoomGa
       const credentials = await verifiedCurrentCredentials(project);
       return participantToken(credentials, { project, room, identity, name, ttlSeconds });
     },
-    async publishTutorMessage({ project, room, messageId, text, mode, replyTo, reason }) {
-      const payload = new TextEncoder().encode(JSON.stringify({ type: "tutor", id: messageId, text, mode, ...(replyTo ? { replyTo } : {}), ...(reason ? { reason } : {}) }));
+    async publishTutorMessage({ project, room, messageId, text, mode, replyTo, reason, sequence }) {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: mode === "progress" ? "tutor-progress" : "tutor", id: messageId, text, mode, ...(replyTo ? { replyTo } : {}), ...(reason ? { reason } : {}), ...(sequence ? { sequence } : {}) }));
       await withRoomService(project, (service) => service.sendData(room, payload, "RELIABLE", {}));
     },
     async removeParticipant({ project, room, identity }) {
