@@ -194,7 +194,14 @@ async function chatFormLooksRight(page: Page, panel: string) {
   const input = form.getByRole("textbox");
   expect(await input.evaluate((element) => getComputedStyle(element).borderTopWidth), "one frame only: the field draws no border of its own").toBe("0px");
   const entry = form.getByRole("button", { name: "@AI Tutor" });
-  expect(await entry.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color]), "a light-blue chip, not a grey system button").toEqual(["rgb(238, 244, 255)", "rgb(29, 107, 255)"]);
+  // Owner 2026-11-06: drawn like the lesson AI Tutor's New Chat button, not a grey system button or a one-off chip.
+  expect(await entry.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color, style.borderTopColor, style.borderTopLeftRadius]; })).toEqual(["rgb(255, 255, 255)", "rgb(0, 92, 255)", "rgb(209, 220, 255)", "7px"]);
+  // While it addresses the Tutor it fills like the lesson Tutor's selected mode.
+  await entry.click();
+  await expect(entry).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => entry.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color])).toEqual(["rgb(0, 92, 255)", "rgb(255, 255, 255)"]);
+  await entry.click();
+  await expect(entry).toHaveAttribute("aria-pressed", "false");
 }
 
 test("1030-1: the chat input is one frame on the panel's bottom edge, in the room and in full screen", async ({ browser, baseURL }) => {

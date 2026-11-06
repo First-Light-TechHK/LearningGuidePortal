@@ -450,11 +450,13 @@
 .chatForm textarea:focus { box-shadow: none; }
 .chatFormRow { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; }
 .enterHint { color: #98a2b3; font-size: 11px; }
-/* @AI Tutor entry: a light-blue chip with a spark on the box's bottom row, solid blue while it addresses the Tutor (owner 2026-10-30; the earlier style was lost in 8b5f17e, so it fell back to a grey system button). */
-.tutorEntry { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: #eef4ff; color: #1d6bff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.tutorEntry svg { width: 12px; height: 12px; }
-.tutorEntry[aria-pressed="true"] { background: #1d6bff; color: #fff; }
-.tutorEntry:disabled { background: #f2f4f7; color: #98a2b3; cursor: not-allowed; }
+/* @AI Tutor entry on the box's bottom row (kept, owner 2026-11-06): drawn like the lesson AI Tutor's own controls (.tutor-new-chat outline button, .mode-switch selected fill in app/styles.css), so it reads as LG's AI Tutor rather than a one-off chip. */
+.tutorEntry { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border: 1px solid #d1dcff; border-radius: 7px; background: #fff; color: #005cff; font: 400 11px/16px Inter, Arial, sans-serif; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+.tutorEntry svg { width: 12px; height: 12px; flex: none; }
+.tutorEntry:hover:not(:disabled) { border-color: #3f7bff; background: #f5f8ff; }
+.tutorEntry:focus-visible { outline: 2px solid rgba(0, 92, 255, .25); outline-offset: 1px; }
+.tutorEntry[aria-pressed="true"], .tutorEntry[aria-pressed="true"]:hover:not(:disabled) { border-color: #005cff; background: #005cff; color: #fff; font-weight: 500; }
+.tutorEntry:disabled { opacity: .6; cursor: not-allowed; }
 /* 599:1392: the input sits 12px above the panel's bottom edge; the log takes the rest of the panel's height instead of stopping at a cap. */
 .side .chatLog { max-height: none; }
 .side .chatForm { margin-top: auto; }

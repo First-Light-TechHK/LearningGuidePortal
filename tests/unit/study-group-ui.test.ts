@@ -1069,8 +1069,9 @@ test("the chat input is one frame on the panel's bottom edge and the floating pe
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   // The box is the only frame, the @AI Tutor entry is a light-blue chip, and the log fills the panel so the box sits on its bottom edge.
   assert.match(css, /\.chatForm textarea \{[^}]*border: 0;[^}]*background: transparent;/);
-  assert.match(css, /\.tutorEntry \{[^}]*border-radius: 999px; background: #eef4ff; color: #1d6bff;/);
-  assert.match(css, /\.tutorEntry\[aria-pressed="true"\] \{ background: #1d6bff; color: #fff; \}/);
+  // Owner 2026-11-06: the entry stays, drawn like the lesson AI Tutor's controls (.tutor-new-chat / .mode-switch).
+  assert.match(css, /\.tutorEntry \{[^}]*border: 1px solid #d1dcff; border-radius: 7px; background: #fff; color: #005cff;/);
+  assert.match(css, /\.tutorEntry\[aria-pressed="true"\], \.tutorEntry\[aria-pressed="true"\]:hover:not\(:disabled\) \{ border-color: #005cff; background: #005cff; color: #fff;/);
   assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
   assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
   // BUG-0284: the input wraps and grows to a limit; Enter sends, Shift+Enter starts a new line; a message keeps its lines.
