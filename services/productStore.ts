@@ -2491,6 +2491,13 @@ export async function listStudyGroupReminders(
   const data = await readProductAggregate();
   const reminders: Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> = [];
   const seenSessionIds = new Set<string>();
+  const pendingReminderFor = async (sessionId: string) => {
+    for (const row of data.notifications) {
+      if (row.userId !== userId || row.sessionId !== sessionId || !STUDY_GROUP_REMINDER_TITLES.has(row.title)) continue;
+      if (await isPendingReminder({ body: row.body, createdAt: row.createdAt, sessionId, kind: "reminder" })) return true;
+    }
+    return false;
+  };
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
     if (item.userId !== userId) continue;
@@ -2498,8 +2505,12 @@ export async function listStudyGroupReminders(
       ? "reminder"
       : STUDY_GROUP_RESCHEDULE_TITLES.has(item.title) && item.sessionId ? "rescheduled" : null;
     if (!kind) continue;
-    // Newest row per Session wins: a T-10 reminder sent after a move replaces its notice.
+    // One row per Session. A pending T-10 reminder replaces the moved Start
+    // Time's notice whichever was written last: a move inside the reminder
+    // window sends the reminder for the new time and then tells the planned
+    // members, so the notice is often the newer row (N9-a / M10-a).
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
+    if (kind === "rescheduled" && await pendingReminderFor(item.sessionId!)) continue;
     if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId, kind })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);
     const body = (locale && item.copies?.[locale]?.body) || item.body;
