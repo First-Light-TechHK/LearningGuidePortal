@@ -26,7 +26,7 @@ function tutorBundle() {
       resolveDir: process.cwd(),
       loader: "tsx",
     },
-    bundle: true, write: false, platform: "browser", jsx: "automatic", loader: { ".module.css": "text", ".css": "text" },
+    bundle: true, write: false, platform: "browser", jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"' },
   });
 }

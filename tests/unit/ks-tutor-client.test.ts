@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import {
   getTutorAvailability,
-  getTutorImage,
   getTutorWelcome,
   KsTutorError,
   streamTutorText,
@@ -87,26 +86,6 @@ test("getTutorAvailability 只认 KS 的 available 字段", async () => {
     reachable: true,
     reason: "not-in-ks",
   });
-});
-
-test("getTutorImage uses the service key when configured and permits local KS without it", async () => {
-  const requests: Array<{ url: string; key: string | null }> = [];
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    requests.push({ url: String(input), key: new Headers(init?.headers).get("X-API-Key") });
-    return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } });
-  }) as typeof fetch;
-  const asset = "54105f2f-6fb2-458d-b077-2936aaa12a58.png";
-  assert.equal((await getTutorImage("modeling-life", asset)).status, 200);
-  delete process.env.KS_TUTOR_API_KEY;
-  try {
-    assert.equal((await getTutorImage("modeling-life", asset)).status, 200);
-  } finally {
-    process.env.KS_TUTOR_API_KEY = "service-token";
-  }
-  assert.deepEqual(requests, [
-    { url: `http://ks.test/api/user/courses/modeling-life/images/${asset}`, key: "service-token" },
-    { url: `http://ks.test/api/user/courses/modeling-life/images/${asset}`, key: null },
-  ]);
 });
 
 test("getTutorAvailability 在 KS 不可达时按 offline 处理", async () => {

@@ -34,7 +34,7 @@ function tutorBundle() {
       resolveDir: PROJECT_ROOT,
       loader: "tsx",
     },
-    bundle: true, write: false, platform: "browser", jsx: "automatic", loader: { ".module.css": "text", ".css": "text" },
+    bundle: true, write: false, platform: "browser", jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"' },
   });
 }

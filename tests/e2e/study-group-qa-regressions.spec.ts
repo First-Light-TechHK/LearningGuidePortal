@@ -347,7 +347,7 @@ test("N5 / M21: two waiting questions per person and five a minute; asking retur
 
     // M21: a slow answer does not hold the ask request.
     const started = Date.now();
-    const first = await member.context.request.post(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { headers: { origin: appOrigin(baseURL) }, data: { message: "[slow] first question", clientEventId: `e2e-${Date.now()}-1` } });
+    const first = await member.context.request.post(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { data: { message: "[slow] first question", clientEventId: `e2e-${Date.now()}-1` } });
     expect(first.status()).toBe(200);
     expect(Date.now() - started, "the ask returns before the answer").toBeLessThan(4_000);
 
@@ -366,7 +366,7 @@ test("N5 / M21: two waiting questions per person and five a minute; asking retur
     let accepted = 2;
     let refused: { status: number; code: string } | null = null;
     for (let index = 0; index < 6 && !refused; index += 1) {
-      const response = await member.context.request.post(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { headers: { origin: appOrigin(baseURL) }, data: { message: `quick question ${index}`, clientEventId: `e2e-${Date.now()}-q${index}` } });
+      const response = await member.context.request.post(`/api/study-groups/sessions/${sessionId}/ai-tutor`, { data: { message: `quick question ${index}`, clientEventId: `e2e-${Date.now()}-q${index}` } });
       if (response.status() === 200) accepted += 1;
       else refused = { status: response.status(), code: (await response.json()).code };
       await pageB.waitForTimeout(1_500);

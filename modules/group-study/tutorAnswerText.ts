@@ -10,17 +10,6 @@
 
 export type TutorAnswerParts = { markdown: string; sources: string[] };
 
-export function normalizeTutorIndent(text: string): string {
-  const protectedToken = /(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1[ \t]*(?=\n|$)|$)|(`+)[^\n]*?\2|\\\[[\s\S]*?(?:\\\]|$)|\\\([\s\S]*?(?:\\\)|$)|(?<!\\)\$\$[\s\S]*?(?:\$\$|$)|(?<!\\)\$(?!\$)[^$\n]*(?:\$|(?=\n|$))/g;
-  const prose = (part: string) => part.replace(/^(?: {4,}|\t+)(?=(?:\*\*|[-*] |Sources[ \t]*$|\[\d+\][ \t]))/gm, "");
-  let result = "", start = 0;
-  for (const match of text.matchAll(protectedToken)) {
-    result += prose(text.slice(start, match.index)) + match[0];
-    start = match.index + match[0].length;
-  }
-  return result + prose(text.slice(start));
-}
-
 const SOURCE = /\s*[[［【]\s*(?:Source|来源)\s*[:：]\s*([^\]］】]+?)\s*[\]］】]/gi;
 
 function mathDelimiters(text: string) {
@@ -40,16 +29,9 @@ function groupedLine(line: string) {
 
 export function tutorAnswerParts(text: string): TutorAnswerParts {
   const sources: string[] = [];
-  let prose = normalizeTutorIndent(text).replace(SOURCE, (_match, name: string) => {
+  const prose = text.replace(SOURCE, (_match, name: string) => {
     const clean = name.trim();
     if (clean && !sources.includes(clean)) sources.push(clean);
-    return "";
-  });
-  prose = prose.replace(/^(?:\*\*)?Sources(?:\*\*)?[ \t]*\n((?:(?:\*\*)?\[\d+\][^\n]*(?:\n|$))+)[ \t]*$/m, (_match, entries: string) => {
-    for (const entry of entries.trimEnd().replace(/[ \t]+(?=(?:\*\*)?\[\d+\][ \t])/g, "\n").split("\n")) {
-      const clean = entry.trim().replace(/^\*\*|\*\*$/g, "").replace(/&#x20;$/i, "").trim();
-      if (clean && !sources.includes(clean)) sources.push(clean);
-    }
     return "";
   });
   const lines = arithmeticStars(mathDelimiters(prose)).split("\n");

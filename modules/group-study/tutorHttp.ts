@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { requestOriginMatches } from "@/services/adminHost";
-import { StudyGroupError } from "./domain";
 import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "./http";
 import { studyGroupService } from "./runtime";
 
@@ -12,7 +10,6 @@ export async function tutorDeliveriesSettled() {
 }
 
 export async function acceptTutorPost(request: Request, sessionId: string) {
-  if (!requestOriginMatches(request)) return studyGroupFailure(new StudyGroupError("forbidden", "Invalid origin."));
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   try {
@@ -41,7 +38,6 @@ export async function acceptTutorPost(request: Request, sessionId: string) {
 
 // DELETE: the asker takes back a question the AI Tutor has not started on.
 export async function acceptTutorWithdraw(request: Request, sessionId: string) {
-  if (!requestOriginMatches(request)) return studyGroupFailure(new StudyGroupError("forbidden", "Invalid origin."));
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   try {

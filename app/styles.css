@@ -273,16 +273,6 @@ textarea:not(:where([class*="lg-ant-"])):focus, input:not(:where([class*="lg-ant
 .tutor-message-row { display:flex; flex-direction:column; }
 .tutor-message-line { display:flex; min-width:0; }
 .tutor-message-row.user .tutor-message-line { justify-content:flex-end; }
-.tutor-message-actions { display:flex; gap:4px; margin-left:42px; }
-.tutor-message-row.user .tutor-message-actions { justify-content:flex-end; margin-left:0; margin-right:38px; }
-.tutor-message-actions button { border:0; border-radius:4px; background:transparent; color:#667085; cursor:pointer; font-size:11px; padding:3px 5px; }
-.tutor-message-actions button:hover:not(:disabled) { color:#005cff; background:#eef3ff; }
-.tutor-message-actions button:disabled { opacity:.45; cursor:not-allowed; }
-.tutor-message-actions details { position:relative; }
-.tutor-message-actions summary { display:flex; align-items:center; padding:3px 5px; border-radius:4px; color:#667085; cursor:pointer; list-style:none; }
-.tutor-message-actions summary:hover { color:#005cff; background:#eef3ff; }
-.tutor-message-actions .tutor-copy-menu { position:absolute; z-index:10; bottom:100%; left:0; display:flex; flex-direction:column; min-width:145px; padding:4px; border:1px solid #d9e2f1; border-radius:6px; background:#fff; box-shadow:0 4px 12px #10182820; }
-.tutor-message-actions .tutor-copy-menu button { text-align:left; white-space:nowrap; }
 .tutor-message-bubble-wrap { display:flex; flex-direction:row; align-items:flex-end; width:fit-content; max-width:min(640px,92%); gap:6px 8px; }
 .tutor-message-row.user .tutor-avatar { order:3; align-self:flex-start; }
 .tutor-message-row.user .tutor-message { order:2; }
@@ -306,7 +296,6 @@ textarea:not(:where([class*="lg-ant-"])):focus, input:not(:where([class*="lg-ant
 .tutor-message .markdown-answer code { font-size:.9em; }
 .tutor-message .markdown-answer .katex { font-size:1.08em; }
 .tutor-message .markdown-answer .katex-display { margin:6px 0; overflow-x:auto; }
-.tutor-message .markdown-answer img { display:block; max-width:100%; height:auto; border-radius:6px; }
 .tutor-message .markdown-answer a { color:inherit; text-decoration:underline; }
 .tutor-message .markdown-answer strong { font-weight:700; color:#101828; }
 .tutor-message.user .markdown-answer strong { color:#fff; }

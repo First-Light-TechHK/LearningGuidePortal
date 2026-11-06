@@ -350,12 +350,10 @@ export function studyGroupService() {
     operationalLog: (event) => console.info(JSON.stringify(event)),
     // KS Lecture proxy (2026-10-23): the room Tutor uses KnowledgeSystem's
     // course AI Tutor (Lecture prompt/model/key); the welcome is not used.
-    tutorKs: async ({ courseId, message, locale, history, deadline, onProgress }) => {
+    tutorKs: async ({ courseId, message, locale, history, deadline }) => {
       const course = await getProductCourse(courseId);
       if (!course || course.status !== "published") throw new Error("Course is not available.");
       let text = "";
-      let progressPublishing = false;
-      let lastProgressAt = 0;
       const signal = AbortSignal.timeout(Math.max(1_000, deadline - Date.now()));
       for await (const delta of streamTutorText({
         externalCourseId: course.slug,
@@ -368,11 +366,6 @@ export function studyGroupService() {
         channel: "study-group"
       })) {
         text += delta;
-        if (onProgress && !progressPublishing && Date.now() - lastProgressAt >= 150 && Buffer.byteLength(text, "utf8") <= 16_384) {
-          progressPublishing = true;
-          lastProgressAt = Date.now();
-          void onProgress(text).catch(() => undefined).finally(() => { progressPublishing = false; });
-        }
       }
       return text;
     },
@@ -384,11 +377,11 @@ export function studyGroupService() {
       const availability = await getTutorAvailability(course.slug);
       return availability.reachable && availability.online;
     },
-    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, reason, sequence }) => {
+    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, reason }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
       await liveKit.projects.refresh?.();
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, reason, sequence });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, reason });
     }
   });
   services.set(key, service);

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { tutorChatLines, tutorProgressLines } from "../../components/portal/studyGroupClient";
-import { parseRoomDataMessage } from "../../modules/group-study/roomData";
+import { tutorChatLines } from "../../components/portal/studyGroupClient";
 
 // Design §3.2 client companion / §4.5: the room-message outbox publishes
 // at-least-once, so a crash between publish and settle can republish an
@@ -29,17 +28,4 @@ test("the room keys tutor chat lines by the payload message id", () => {
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /id: message\.id \? `tutor-\$\{message\.id\}` : `tutor-\$\{items\.length\}`/);
   assert.match(room, /setChat\(\(items\) => tutorChatLines\(items, \{/);
-});
-
-test("only server progress updates a pending answer, ordered by sequence; final wins", () => {
-  const packet = new TextEncoder().encode(JSON.stringify({ type: "tutor-progress", id: "m-1", text: "First", sequence: 1 }));
-  assert.equal(parseRoomDataMessage(packet, false), null);
-  assert.deepEqual(parseRoomDataMessage(packet, true), { type: "tutor-progress", id: "m-1", text: "First", sequence: 1 });
-  const pending = { ...tutorLine("tutor-m-1", ""), pending: true, progressSeq: 0 };
-  const first = tutorProgressLines([pending], { ...pending, text: "First", progressSeq: 1 });
-  const later = tutorProgressLines(first, { ...pending, text: "First answer", progressSeq: 2 });
-  assert.equal(tutorProgressLines(later, { ...pending, text: "stale", progressSeq: 1 }), later);
-  const final = tutorChatLines(later, { ...tutorLine("tutor-m-1", "Final answer"), pending: false, progressSeq: 2 });
-  assert.equal(final[0].text, "Final answer");
-  assert.equal(tutorProgressLines(final, { ...pending, text: "late", progressSeq: 3 }), final);
 });

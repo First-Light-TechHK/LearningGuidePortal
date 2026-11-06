@@ -498,7 +498,7 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   assert.doesNotMatch(room, /line\.kind === "quiz"/);
   assert.doesNotMatch(room, /roomCopy\.tutorGeneral/);
   // Owner 2026-10-29: the answer renders as Markdown with KaTeX math (TutorAnswer).
-  assert.match(room, /<TutorAnswer text=\{line\.text\} courseId=\{group\?\.courseId\} sourcesLabel=\{roomCopy\.tutorSources\}/);
+  assert.match(room, /<TutorAnswer text=\{line\.text\} sourcesLabel=\{roomCopy\.tutorSources\} className=\{styles\.tutorAnswer\} sourcesClassName=\{styles\.tutorSources\} \/>/);
   assert.doesNotMatch(room, /<strong key="lead"/);
 
   assert.equal(en.studyGroupsPage.room.tutorUnavailable, "AI Tutor is temporarily unavailable. Please try again.");
@@ -1115,7 +1115,7 @@ test("full screen: a top bar to leave, chat as a float with unread and a preview
   assert.match(room, /<div className=\{styles\.sharingBanner\} role="status">/);
   assert.match(css, /\.controls button\[data-mic="off"\] \{ background: #fef3f2; color: #d92d20;/);
   // The Tutor's answer is a light-blue block in dark ink.
-  assert.match(css, /\.tutorBubble \{ background: #f5f8ff; padding: 10px 12px; border-radius: 10px; \}/);
+  assert.match(css, /\.tutorBody \{ color: #344054; background: #f5f8ff;/);
 });
 
 test("Edit Session says the AI Tutor switch can change, keeps a passed Start Time valid, and an offline Tutor at start names the way out (FAQ grounding check 2026-11-02)", () => {
