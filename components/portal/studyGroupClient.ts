@@ -255,6 +255,13 @@ export function tutorChatLines<T extends { id: string; pending?: boolean }>(curr
   return current.map((item, position) => position === index ? line : item);
 }
 
+export function tutorProgressLines<T extends { id: string; pending?: boolean; progressSeq?: number }>(current: T[], line: T): T[] {
+  const index = current.findIndex((item) => item.id === line.id);
+  if (index < 0) return [...current, line];
+  if (!current[index].pending || (current[index].progressSeq ?? 0) >= (line.progressSeq ?? 0)) return current;
+  return current.map((item, position) => position === index ? { ...item, ...line } : item);
+}
+
 // The asker's question line asks again, with a new client event id, once its
 // answer came back unavailable (the model failed, or the wait timed out): the
 // old id is settled on the server, so a retry under it would only return the

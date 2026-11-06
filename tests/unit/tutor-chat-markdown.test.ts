@@ -7,6 +7,7 @@ import { build } from "esbuild";
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { tutorMarkdown } from "../../components/portal/TutorMarkdown";
 
 /** TutorChat 气泡（assistant/welcome/user）现在走 MarkdownAnswer，应支持 LaTeX + markdown。 */
 
@@ -16,6 +17,15 @@ type MountProps = { locale: "en-GB" | "zh-CN"; courseId: string; lessonId: strin
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..", "..");
 const STYLES_CSS = readFileSync(join(PROJECT_ROOT, "app", "styles.css"), "utf-8");
+
+test("Ask AI Tutor normalizes indented prose and Sources without changing fenced code", () => {
+  const input = "![图](/api/user/courses/modeling-life/images/22222222-2222-4222-8222-222222222222.png)\n\n    **标量**是一个数。[1]\n    - 正数方向不变\n\n    Sources\n    [1] Lesson 1\n\n```text\n    **code**\n```";
+  const output = tutorMarkdown(input);
+  assert.match(output, /\n\n\*\*标量\*\*是一个数/);
+  assert.match(output, /\n- 正数方向不变/);
+  assert.match(output, /> Sources\n>\n> \[1\] Lesson 1/);
+  assert.match(output, /```text\n    \*\*code\*\*\n```/);
+});
 
 function tutorBundle() {
   return build({
@@ -31,7 +41,7 @@ function tutorBundle() {
       resolveDir: PROJECT_ROOT,
       loader: "tsx",
     },
-    bundle: true, write: false, platform: "browser", jsx: "automatic",
+    bundle: true, write: false, platform: "browser", jsx: "automatic", loader: { ".module.css": "text", ".css": "text" },
     define: { "process.env.NODE_ENV": '"production"' },
   });
 }

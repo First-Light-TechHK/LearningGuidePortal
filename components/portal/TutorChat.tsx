@@ -1,7 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { MarkdownAnswer } from "@/components/MarkdownAnswer";
+import { PortalDialog } from "./PortalDialog";
+import { TutorMarkdown } from "./TutorMarkdown";
+import { getMessages } from "@/lib/i18n/messages";
+import { Copy as CopyIcon, RotateCw, Undo2 } from "lucide-react";
 import { TutorRequestError, tutorErrorMessage } from "./tutorChatError";
 
 type Message = { role: "user" | "assistant"; content: string; createdAt?: string };
@@ -37,6 +40,7 @@ function CloseIcon() {
 const MAX_TEXTAREA_HEIGHT = 196;
 
 export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { locale: "en-GB" | "zh-CN"; courseId: string; lessonId: string; copy: Copy; onClose?: () => void }) {
+  const actions = getMessages(locale).learning;
   const [mode, setMode] = useState<"lecture" | "socratic">("lecture");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -100,19 +104,19 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages, welcome, busy]);
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    const message = input.trim();
-    if (!message || busy) return;
+  async function sendMessage(message: string, retryAt?: string) {
+    if (!message.trim() || busy) return;
     const generation = generationRef.current;
     const controller = new AbortController();
     requestRef.current = controller;
-    setInput(""); setBusy(true); setError("");
+    if (!retryAt) setInput("");
+    setBusy(true); setError("");
     const createdAt = new Date().toISOString();
-    const next = [...messages, { role: "user" as const, content: message, createdAt }, { role: "assistant" as const, content: "", createdAt }];
+    const prior = retryAt ? messages.slice(0, messages.findLastIndex((item) => item.role === "user")) : messages;
+    const next = [...prior, { role: "user" as const, content: message, createdAt }, { role: "assistant" as const, content: "", createdAt }];
     setMessages(next);
     try {
-      const response = await fetch("/api/ai-tutor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, mode, message, conversationId, locale }), signal: controller.signal });
+      const response = await fetch("/api/ai-tutor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, mode, message, conversationId, locale, ...(retryAt ? { action: "retry", lastUserAt: retryAt } : {}) }), signal: controller.signal });
       if (generationRef.current !== generation) return;
       if (!response.ok) throw new TutorRequestError(response.status, await response.text().catch(() => ""));
       setConversationId(response.headers.get("X-Conversation-Id") || conversationId);
@@ -125,15 +129,42 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
         answer += decoder.decode(chunk.value, { stream: true });
         setMessages([...next.slice(0, -1), { role: "assistant", content: answer, createdAt }]);
       }
+      const refreshed = await fetch(`/api/ai-tutor?courseId=${encodeURIComponent(courseId)}&lessonId=${encodeURIComponent(lessonId)}&mode=${mode}&locale=${locale}`);
+      if (refreshed.ok && generationRef.current === generation) {
+        const data = await refreshed.json() as { conversation?: { messages: Message[] } };
+        // Only adopt persisted timestamps for the answer just displayed; a stale read must not erase it.
+        const saved = data.conversation?.messages;
+        if (saved?.at(-1)?.role === "assistant" && saved.at(-1)?.content === answer) setMessages(saved);
+      }
     } catch (requestError) {
       if (generationRef.current !== generation) return;
       // REQ-0140: never show the API body (JSON) to the learner, only a fixed localised line.
       setError(requestError instanceof TutorRequestError ? tutorErrorMessage(locale, requestError.status, requestError.body) : tutorErrorMessage(locale, null, ""));
-      setMessages(next.slice(0, -1));
+      setMessages(retryAt ? prior : next.slice(0, -1));
     }
     if (generationRef.current !== generation) return;
     setBusy(false);
     if (requestRef.current === controller) requestRef.current = null;
+  }
+
+  function send(event: FormEvent) { event.preventDefault(); void sendMessage(input.trim()); }
+
+  async function undo(message: Message) {
+    if (!window.confirm(actions.tutorUndoConfirm)) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/ai-tutor", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, conversationId, lastUserAt: message.createdAt }) });
+      if (!response.ok) throw new Error();
+      const result = await response.json() as { question: string };
+      setMessages((current) => current.slice(0, current.findLastIndex((item) => item.role === "user")));
+      setInput(result.question);
+    } catch { setError(actions.tutorActionFailed); }
+    finally { setBusy(false); }
+  }
+
+  async function copyText(value: string) {
+    try { await navigator.clipboard.writeText(value); }
+    catch { setError(actions.tutorActionFailed); }
   }
 
   /** New chat：中止当前流、清空界面并删除服务端当前对话记录，下一轮从空白上下文开始。 */
@@ -177,7 +208,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
         <div className="tutor-message-line">
           <div className="tutor-message-bubble-wrap">
             <span className="tutor-avatar tutor-avatar-ai" aria-hidden="true">AI</span>
-            <div className="tutor-message assistant">{welcome ? <MarkdownAnswer content={welcome} compact /> : null}</div>
+            <div className="tutor-message assistant">{welcome ? <TutorMarkdown content={welcome} courseId={courseId} /> : null}</div>
             <time className="tutor-message-time" dateTime={openedAt}>{formatTime(openedAt, locale)}</time>
           </div>
         </div>
@@ -188,9 +219,21 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
             <span className={`tutor-avatar ${message.role === "assistant" ? "tutor-avatar-ai" : "tutor-avatar-user"}`} aria-hidden="true">
               {message.role === "assistant" ? "AI" : Array.from(copy.you)[0]}
             </span>
-            <div className={`tutor-message ${message.role}`}>{message.content ? <MarkdownAnswer content={message.content} compact /> : (busy ? <p>...</p> : null)}</div>
+            <div className={`tutor-message ${message.role}`}>{message.content ? <TutorMarkdown content={message.content} courseId={courseId} /> : (busy ? <p>...</p> : null)}</div>
             <time className="tutor-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, locale)}</time>
           </div>
+        </div>
+        <div className="tutor-message-actions">
+          {message.role === "assistant" ? <>
+            <details><summary aria-label={actions.tutorCopy} title={actions.tutorCopy}><CopyIcon size={15} /></summary><div className="tutor-copy-menu">
+              <button type="button" disabled={!message.content} onClick={() => void copyText(message.content.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, ""))}>{actions.tutorCopyPlain}</button>
+              <button type="button" disabled={!message.content} onClick={() => void copyText(message.content)}>{actions.tutorCopyMarkdown}</button>
+            </div></details>
+          </> : <>
+            <button type="button" aria-label={actions.tutorCopy} title={actions.tutorCopy} onClick={() => void copyText(message.content)}><CopyIcon size={15} /></button>
+            <button type="button" aria-label={actions.tutorRetry} title={actions.tutorRetry} disabled={busy || index !== messages.findLastIndex((item) => item.role === "user")} onClick={() => void sendMessage(message.content, message.createdAt)}><RotateCw size={15} /></button>
+            <button type="button" aria-label={actions.tutorUndo} title={actions.tutorUndo} disabled={busy || index !== messages.findLastIndex((item) => item.role === "user")} onClick={() => void undo(message)}><Undo2 size={15} /></button>
+          </>}
         </div>
       </div>)}
       {!messages.length && !welcome ? <p className="tutor-empty">{copy.askTutor}</p> : null}
@@ -199,6 +242,10 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
       <textarea ref={textareaRef} value={input} onChange={(event) => setInput(event.target.value)} placeholder={copy.askTutorPlaceholder} maxLength={4000} rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }}/>
       <button className="portal-button portal-button-primary" disabled={busy || !input.trim()}>{copy.send}</button>
     </form>
-    {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
+    {error ? <PortalDialog labelledBy="tutor-error-title" onClose={() => setError("")}>
+      <h2 id="tutor-error-title">{actions.tutorErrorTitle}</h2>
+      <p role="alert">{error}</p>
+      <button type="button" onClick={() => setError("")}>{actions.tutorErrorClose}</button>
+    </PortalDialog> : null}
   </>;
 }

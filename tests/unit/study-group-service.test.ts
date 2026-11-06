@@ -1578,6 +1578,29 @@ test("the KS answer reaches the room verbatim, without a local tag or clean-up",
   assert.deepEqual(published, [delivered]);
 });
 
+test("room tutor publishes ordered progress before the durable final answer", async () => {
+  const published: Array<{ text: string; mode: string; sequence?: number }> = [];
+  const local = serviceWith({
+    publishRoomChat: async ({ text, mode, sequence }) => { published.push({ text, mode, sequence }); },
+    tutorKs: async ({ onProgress }) => {
+      await onProgress?.("First");
+      await onProgress?.("First answer");
+      return "Final answer";
+    }
+  });
+  const group = await local.createGroup({ actorUserId: "host", title: "Streaming", courseId: "course-1", about: "Shared answer." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Streaming", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+  await local.enqueueTutor({ actorUserId: "host", sessionId: session.id, text: "Explain", clientEventId: "evt-streaming" });
+  await local.deliverTutorAnswer({ sessionId: session.id });
+  assert.deepEqual(published, [
+    { text: "First", mode: "progress", sequence: 1 },
+    { text: "First answer", mode: "progress", sequence: 2 },
+    { text: "Final answer", mode: "course", sequence: undefined },
+  ]);
+});
+
 test("one delivery answers every waiting question in fair order", async () => {
   const published: string[] = [];
   const calls: string[] = [];

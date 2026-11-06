@@ -2427,6 +2427,33 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
+/** Prevent an older stream from restoring history removed by Undo or New chat. */
+export async function saveTutorReplyIfUnchanged(conversation: ProductConversation, history: ProductConversationMessage[], expectExisting: boolean) {
+  return editData((data) => {
+    const index = data.conversations.findIndex((item) => item.id === conversation.id && item.userId === conversation.userId);
+    const current = index >= 0 ? data.conversations[index] : null;
+    if (expectExisting && !current) return false;
+    if (current && JSON.stringify(current.messages.slice(-10)) !== JSON.stringify(history)) return false;
+    if (!current && data.conversations.some((item) => item.userId === conversation.userId && item.courseId === conversation.courseId && item.lessonId === conversation.lessonId)) return false;
+    if (index >= 0) data.conversations[index] = { ...conversation, messages: conversation.messages.slice(-12), updatedAt: now() };
+    else data.conversations.unshift({ ...conversation, messages: conversation.messages.slice(-12), updatedAt: now() });
+    return true;
+  });
+}
+
+export async function trimLastTutorTurn(userId: string, conversationId: string, courseId: string, lessonId: string, lastUserAt: string) {
+  return editData((data) => {
+    const item = data.conversations.find((entry) => entry.id === conversationId && entry.userId === userId && entry.courseId === courseId && entry.lessonId === lessonId);
+    if (!item) return null;
+    const index = item.messages.findLastIndex((message) => message.role === "user");
+    if (index < 0 || item.messages[index].createdAt !== lastUserAt) return null;
+    const question = item.messages[index].content;
+    item.messages = item.messages.slice(0, index);
+    item.updatedAt = now();
+    return { question, history: item.messages };
+  });
+}
+
 /** New chat：清除当前用户在该课程/课时下的对话记录（2026-10-27：不再按 mode 隔离，幂等）。 */
 export async function deleteConversation(userId: string, courseId: string, lessonId: string | undefined, mode: "lecture" | "socratic") {
   return editData((data) => {

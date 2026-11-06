@@ -49,7 +49,10 @@ test.describe("live release e2e", () => {
       expect((await request.get(new URL("/api/courses", admin).toString())).status()).toBe(401);
       expect((await request.get(new URL("/api/backoffice/orders", admin).toString())).status()).toBe(404);
     }
-    expect((await request.post("/api/ai-tutor", { data: { courseId: slug, message: "smoke" } })).status()).toBe(401);
+    const tutorBody = { courseId: slug, message: "smoke" };
+    expect((await request.post("/api/ai-tutor", { data: tutorBody })).status()).toBe(403);
+    expect((await request.post("/api/ai-tutor", { data: tutorBody, headers: { origin: "https://example.invalid" } })).status()).toBe(403);
+    expect((await request.post("/api/ai-tutor", { data: tutorBody, headers: { origin: new URL(process.env.LIVE_ORIGIN!).origin } })).status()).toBe(401);
     expect((await request.post("/api/study/events", { data: { courseId: slug, lessonId: "public", event: "complete", seconds: 1, clientEventId: "live-playwright" } })).status()).not.toBe(200);
   });
 

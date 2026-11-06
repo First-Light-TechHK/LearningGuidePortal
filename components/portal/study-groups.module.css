@@ -427,7 +427,13 @@
 /* BUG-0284: a message keeps the lines it was written in. */
 .chatText { white-space: pre-wrap; }
 /* Owner 2026-10-30: the answer sits in its own light-blue block in dark ink, so formulas read clearly. */
-.tutorBody { color: #344054; background: #f5f8ff; padding: 10px 12px; border-radius: 10px; }
+.tutorBody { color: #344054; }
+.tutorBubble { background: #f5f8ff; padding: 10px 12px; border-radius: 10px; }
+.tutorActions { margin-top: 6px; padding-left: 12px; }
+.chatActionRow { margin: 6px 0 0; }
+.chatAction { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #667085; cursor: pointer; }
+.chatAction:hover { background: #f2f4f7; }
+.chatAction:focus-visible { outline: 2px solid #1d6bff; outline-offset: 2px; }
 .tutorBody .tutorLead { color: inherit; font-weight: 400; }
 /* Owner 2026-10-29: the answer renders Markdown and KaTeX in the chat's own 12px ink; one point per paragraph, wide formulas scroll inside the panel instead of overflowing it. */
 .tutorAnswer { line-height: 1.6; overflow-wrap: anywhere; }
@@ -441,8 +447,10 @@
 .tutorAnswer .katex { font-size: 1.1em; }
 .tutorAnswer .katex-display { margin: 6px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
 .tutorAnswer table { border-collapse: collapse; margin: 0 0 6px; display: block; overflow-x: auto; }
+.tutorAnswer img { display: block; max-width: 100%; height: auto; margin: 6px 0; }
 .tutorAnswer th, .tutorAnswer td { border: 1px solid #e4e7ec; padding: 2px 6px; }
 .tutorSources { margin: 6px 0 0; color: #98a2b3; font-size: 11px; }
+.tutorSources p { margin: 0 0 2px; }
 /* 599:1392: 266x100 input 12px from the panel's sides and bottom; the @AI Tutor entry sits on its bottom-left edge. */
 .chatForm { display: flex; flex-direction: column; flex: none; margin: 0 -8px -8px; padding: 12px 36px 8px 12px; }
 /* 599:1393 placeholder sits 12px inside the box: the global field padding and focus ring do not apply here (the box draws the focus). */

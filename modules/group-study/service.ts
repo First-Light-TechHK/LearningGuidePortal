@@ -81,11 +81,11 @@ export type StudyGroupDeps = {
   // KS Lecture proxy (2026-10-23): the room Tutor asks KnowledgeSystem's
   // learner chat-stream, so the model/prompt/key stay the course AI Tutor's.
   // Absent (unit fixtures) means the room answers unavailable.
-  tutorKs?: (input: { courseId: string; message: string; locale: "en-GB" | "zh-CN"; history: Array<{ role: "user" | "assistant"; content: string }>; deadline: number }) => Promise<string>;
+  tutorKs?: (input: { courseId: string; message: string; locale: "en-GB" | "zh-CN"; history: Array<{ role: "user" | "assistant"; content: string }>; deadline: number; onProgress?: (text: string) => Promise<void> }) => Promise<string>;
   // KS course-level Online switch; checked before the host enables the Tutor
   // and again when the Host starts the Live Session.
   tutorOnline?: (courseId: string) => Promise<boolean>;
-  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo; reason?: string }) => Promise<void>;
+  publishRoomChat?: (input: { room: string; text: string; projectId: string | null; messageId: string; mode: string; replyTo?: TutorReplyTo; reason?: string; sequence?: number }) => Promise<void>;
   // One redacted operational line (a fixed type and counts, never an id or
   // a name); the runtime writes it to the log stream.
   operationalLog?: (event: Record<string, unknown>) => void;
@@ -544,6 +544,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const startedAt = deps.now().getTime();
         let text = "";
         let failure: TutorAnswerFailure | null = null;
+        let progressSequence = 0;
         if (!ksTutor || !group) {
           failure = "offline";
         } else {
@@ -556,7 +557,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
                 { role: "user" as const, content: exchange.question },
                 { role: "assistant" as const, content: exchange.answer }
               ]).slice(-10),
-              deadline: answerBy
+              deadline: answerBy,
+              onProgress: deps.publishRoomChat ? async (partial) => {
+                try {
+                  await deps.publishRoomChat!({ room: session.id, projectId: session.liveKitProjectId, messageId: item.id, text: partial, mode: "progress", sequence: ++progressSequence, replyTo });
+                } catch {
+                  // The durable final answer still publishes through the outbox.
+                }
+              } : undefined
             })).trim();
             if (!text) failure = "provider";
           } catch (error) {
