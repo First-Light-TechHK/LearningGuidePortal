@@ -99,7 +99,7 @@ after(async () => {
 
 // The fixture is copied byte for byte into the Admin repo (server and client
 // tests). Any edit here must be copied there and this pin updated together.
-const FIXTURE_SHA256 = "01e5ef39a411b0299b47eebc8cd5503dda319f0ba11b997a9a96c8b539cd6963";
+const FIXTURE_SHA256 = "ce0916a76f76f053b5aed43f9203a97ebf9ac07433fb118a313c990b7f5bd413";
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
@@ -440,7 +440,7 @@ const v7 = () => fixture.adminToPortal as unknown as Record<string, Json> & {
 };
 
 test("v7: the feed and job enums and limits match Portal's constants", () => {
-  assert.equal(fixture.version, 7);
+  assert.ok(fixture.version >= 7, "v7 is part of every later version");
   assert.deepEqual(fixture.enums.closeReason, [...CLOSE_REASONS]);
   assert.deepEqual(fixture.enums.turnKind, [...TURN_KINDS]);
   assert.deepEqual(fixture.enums.turnGuard, [...TURN_GUARDS]);
@@ -542,4 +542,47 @@ test("v7: the feed and the job routes Portal serves have the contract's shape", 
   const listed = await runs.GET(request(p.jobRunsRequest));
   assert.equal(listed.status, 200);
   assertSameShape(await listed.json() as Json, p.jobRunsResponse as unknown as Json);
+});
+
+// ---------------------------------------------------------------- v8: one message that asks several things (2026-11-06)
+
+test("v8: Portal sends the several-asks request like any context request and reads the further cards and the missed asks as Admin sent them", async () => {
+  assert.equal(fixture.version, 8);
+  const sent: Array<{ body: unknown }> = [];
+  const replies: Response[] = [];
+  const fakeFetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    sent.push({ body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return replies.shift()!;
+  }) as typeof fetch;
+  process.env.ADMIN_HELPDESK_BASE_URL = "http://admin.local.test";
+  process.env.ADMIN_HELPDESK_TOKEN = "local-test-admin-token";
+  try {
+    const p = fixture.portalToAdmin;
+    const request = p.suggestMultiAskRequest as unknown as AdminSuggestRequest;
+    const response = p.suggestMultiAskResponse as Record<string, Json>;
+    // Nothing new is sent: the several asks are Admin's to find in the message.
+    assert.ok(Object.keys(request).every((key) => key in p.suggestContextRequest), "no new request field");
+    assert.deepEqual(Object.keys(request.context ?? {}), ["sessionId"], "no card on screen: a clarify never splits");
+    replies.push(new Response(JSON.stringify(response), { status: 200 }));
+    const read = await createAdminHelpdeskClient({ fetch: fakeFetch, log: () => undefined }).suggestReply(request);
+    assert.equal(JSON.stringify(sent[0].body), JSON.stringify(request), "sent exactly as in the contract (key order included)");
+    assert.deepEqual(read.turn, { ...turnOf(response), more: response.more, missed: response.missed });
+    assert.deepEqual(read.suggestion, response.suggestion, "the first card is the suggestion, as for one ask");
+    // Every further card is a published answer node, verbatim, and never the suggestion's own card.
+    const release = parseFaqRelease(p.faqReleaseResponse)!;
+    for (const card of response.more as Array<Record<string, Json>>) {
+      const node = release.nodes.find((entry) => entry.id === card.faqId)!;
+      assert.equal(node.type, "answer");
+      assert.deepEqual([card.question, card.answer], [node.question, node.answer]);
+      assert.notEqual(card.faqId, response.nodeId);
+    }
+    // An older Admin (every v7 answer) has neither key.
+    for (const name of ["suggestAnswerContextResponse", "suggestChoiceResponse", "suggestNoMatchContextResponse"]) {
+      const turn = parseSuggestTurn(p[name]);
+      assert.equal(turn && ("more" in turn || "missed" in turn), false, name);
+    }
+  } finally {
+    delete process.env.ADMIN_HELPDESK_BASE_URL;
+    delete process.env.ADMIN_HELPDESK_TOKEN;
+  }
 });

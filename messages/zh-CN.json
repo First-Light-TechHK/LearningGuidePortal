@@ -1892,7 +1892,9 @@
       "followUpsTitle": "你可能还想问：",
       "clarifySource": "根据「{question}」解释",
       "clarifyUnavailable": "这一点我没法在这里讲清楚，我帮你转给客服确认一下。",
-      "clarifyNotCovered": "这一点答案里没有写到，我帮你转给客服确认一下。"
+      "clarifyNotCovered": "这一点答案里没有写到，我帮你转给客服确认一下。",
+      "missedOne": "你问的另一件事我还没有现成的答案，可以转给人工客服帮你看。",
+      "missedMany": "你问的另外 {n} 件事我还没有现成的答案，可以转给人工客服帮你看。"
     },
     "assistant": {
       "title": "AI 客服助手",

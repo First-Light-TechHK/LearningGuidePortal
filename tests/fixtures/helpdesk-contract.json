@@ -1,10 +1,10 @@
 {
   "$comment": [
-    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number. v5 (helpdesk-v4-order-and-chat-end Part A, 2026-10-29) adds the enquiry's order: orderId (string or null) on every list and detail ticket, and detail.order, a read-only projection Portal builds by code from the learner's own order record ({ id, status, amount (minor units), currency, planName, kind, createdAt, paymentMode }, nothing else; null without an order), with the orderStatus, orderKind and paymentMode enums Admin labels. The suggest requests are unchanged: the AI agent never receives order data. v6 (helpdesk-v5-context-chips-and-smalltalk Parts A/B/D/H and helpdesk-v5-faq-graph-design, 2026-10-30, all additive) adds: the situation-signal enums (situationSignal: what Portal computes by code from its own stores, never sent to Admin or the model; faqSignal: the tags an FAQ can carry, in chip priority order) and signals on every public FAQ; the FAQ question-tree release Portal caches (GET /api/integration/helpdesk/faq-release/current?locale=, bearer, ETag \"v<version>\", If-None-Match -> 304, 404 no_release before the first release) with answer|choice nodes, follow_up|option edges (labels resolved) and answer blocks b1..bn split by code at release time; the suggest request's context { nodeId?, sessionId?, recentTurns? (learner text only, at most 3) }, sent only by a v6 Portal; and, only when the request carries context, the suggest answer's kind (answer|smalltalk|clarify|no_match), intent, confidence (sure|unsure), nodeId, blocks, opening, closing, reply, explanation, covered, guard ({ result: passed|fallback, reason, fallback }) and releaseVersion. A request without context gets exactly the v5 answer, so an old Portal is unaffected; an old Admin ignores context. v7 (helpdesk-v5-context-chips-and-smalltalk Part G and helpdesk-v5-faq-graph-design §3/§5.5, 2026-10-30, all additive) adds the flywheel feed Admin reads (GET /api/integration/helpdesk/insights?since=&until=&cursor=&limit=, bearer, read-only; oldest first by (createdAt, id), limit 1-500 default 200; until is fixed by the first page, never later than a minute ago, and carried in the opaque nextCursor, so a cursor always answers the same page): every assist turn with the learner's text scrubbed by Portal's code-only scrubber (placeholders <kind> from piiPlaceholder) and its labels as enum names (kind turnKind, intent, guard turnGuard, via assistVia, sessionEndReason chatEndReason, vote, rating, node ids, release version, session and turn index, handover, ticketAfterChat, signals) and the enquiry outcome ({ linked, status, closeReason, resolvedByAgent, agentReplied, agentReply }, agentReply scrubbed and only when resolvedByAgent); never a learner id, name, email, order, ticket id, number, subject, answer text or trace id. It also adds Portal's raw-text retention job (after 180 days only scrubbed text and labels stay): GET /api/integration/helpdesk/jobs/assist-retention (the newest runs) and POST .../run ({ agent }, Idempotency-Key; the same key answers with the same run, another agent on that key is 422 idempotency_conflict, already_running when another instance holds the job). No new problem codes.",
+    "Helpdesk wire contract between Portal and Admin (BackOffice). v1 was captured from a real local run of both apps on 2026-10-28 and anonymised; v2 (tickets-v2-figma-addendum.md §2/§4a, 2026-10-28) adds the flag, the student-timeline filters, aiAssist, the FAQ reads and the suggest source. v3 (helpdesk-agent-v2-pi-dsh, 2026-10-29) adds the suggest runId / parentRunId and the W3C traceparent header Portal sends on every Admin helpdesk call. v4 (helpdesk-v3-alternatives-rating, 2026-10-29) adds the suggest alternatives (\"You might be asking\": 0-3 { faqId, question }, only when suggestion is null, [] when rate limited) and the learner's rating (1-5 or null) of each aiAssist answer; the first aiAssist item carries a rating (4) so both sides compare a number. v5 (helpdesk-v4-order-and-chat-end Part A, 2026-10-29) adds the enquiry's order: orderId (string or null) on every list and detail ticket, and detail.order, a read-only projection Portal builds by code from the learner's own order record ({ id, status, amount (minor units), currency, planName, kind, createdAt, paymentMode }, nothing else; null without an order), with the orderStatus, orderKind and paymentMode enums Admin labels. The suggest requests are unchanged: the AI agent never receives order data. v6 (helpdesk-v5-context-chips-and-smalltalk Parts A/B/D/H and helpdesk-v5-faq-graph-design, 2026-10-30, all additive) adds: the situation-signal enums (situationSignal: what Portal computes by code from its own stores, never sent to Admin or the model; faqSignal: the tags an FAQ can carry, in chip priority order) and signals on every public FAQ; the FAQ question-tree release Portal caches (GET /api/integration/helpdesk/faq-release/current?locale=, bearer, ETag \"v<version>\", If-None-Match -> 304, 404 no_release before the first release) with answer|choice nodes, follow_up|option edges (labels resolved) and answer blocks b1..bn split by code at release time; the suggest request's context { nodeId?, sessionId?, recentTurns? (learner text only, at most 3) }, sent only by a v6 Portal; and, only when the request carries context, the suggest answer's kind (answer|smalltalk|clarify|no_match), intent, confidence (sure|unsure), nodeId, blocks, opening, closing, reply, explanation, covered, guard ({ result: passed|fallback, reason, fallback }) and releaseVersion. A request without context gets exactly the v5 answer, so an old Portal is unaffected; an old Admin ignores context. v7 (helpdesk-v5-context-chips-and-smalltalk Part G and helpdesk-v5-faq-graph-design §3/§5.5, 2026-10-30, all additive) adds the flywheel feed Admin reads (GET /api/integration/helpdesk/insights?since=&until=&cursor=&limit=, bearer, read-only; oldest first by (createdAt, id), limit 1-500 default 200; until is fixed by the first page, never later than a minute ago, and carried in the opaque nextCursor, so a cursor always answers the same page): every assist turn with the learner's text scrubbed by Portal's code-only scrubber (placeholders <kind> from piiPlaceholder) and its labels as enum names (kind turnKind, intent, guard turnGuard, via assistVia, sessionEndReason chatEndReason, vote, rating, node ids, release version, session and turn index, handover, ticketAfterChat, signals) and the enquiry outcome ({ linked, status, closeReason, resolvedByAgent, agentReplied, agentReply }, agentReply scrubbed and only when resolvedByAgent); never a learner id, name, email, order, ticket id, number, subject, answer text or trace id. It also adds Portal's raw-text retention job (after 180 days only scrubbed text and labels stay): GET /api/integration/helpdesk/jobs/assist-retention (the newest runs) and POST .../run ({ agent }, Idempotency-Key; the same key answers with the same run, another agent on that key is 422 idempotency_conflict, already_running when another instance holds the job). No new problem codes. v8 (one message that asks several things, 2026-11-06, additive) adds, on a context answer of kind answer only and only when present, more (1-2 further cards { faqId, question, answer, blocks }, in the order the user asked, each a different card from the suggestion's, blocks under the same excerpt rule as the suggestion's) and missed (1-2: how many of the asks found no card; Portal says so and offers a person). An older Portal reads neither and shows the first card alone; a message with one ask gets exactly the v7 answer (suggestMultiAskRequest, suggestMultiAskResponse).",
     "Identical copies live in learningguideportal/tests/fixtures/helpdesk-contract.json, learningguideadmin/server/src/backoffice/tests/fixtures/helpdesk-contract.json and learningguideadmin/client/tests/fixtures/helpdesk-contract.json.",
     "Change all copies together; each repo's tests check its own side against this file."
   ],
-  "version": 7,
+  "version": 8,
   "enums": {
     "ticketStatus": [
       "OPEN",
@@ -1264,6 +1264,54 @@
       "covered": null,
       "guard": null,
       "releaseVersion": 3
+    },
+    "suggestMultiAskRequest": {
+      "learnerId": "user_fixture_learner",
+      "locale": "en-GB",
+      "source": "chat",
+      "message": "I paid but my plan is not active. Will I be charged twice if I pay again? And can I get a refund?",
+      "context": {
+        "sessionId": "01a18100-0000-7000-8000-000000000030"
+      },
+      "runId": "01a18100-0000-7000-8000-000000000032",
+      "parentRunId": null
+    },
+    "suggestMultiAskResponse": {
+      "suggestion": {
+        "id": "01a18100-0000-7000-8000-000000000032",
+        "faqId": "01a18100-0000-7000-8000-000000000022",
+        "question": "I paid but my plan is not active",
+        "answer": "Payments can take a few minutes to confirm.\n\n1. Reload **My Learning**\n2. Sign out and sign in again\n\n- Check that you are signed in with the email you paid with\n- Look for the receipt email in your spam folder\n\nStill not active? Contact support with the order number from your receipt."
+      },
+      "alternatives": [],
+      "kind": "answer",
+      "intent": "question",
+      "confidence": "sure",
+      "nodeId": "01a18100-0000-7000-8000-000000000022",
+      "blocks": [
+        "b2",
+        "b3"
+      ],
+      "opening": "You asked a few things, so here they are in the order you asked:",
+      "closing": "Try this first, and tell me if it still doesn't work.",
+      "reply": null,
+      "explanation": null,
+      "covered": null,
+      "guard": {
+        "result": "passed",
+        "reason": null,
+        "fallback": []
+      },
+      "releaseVersion": 3,
+      "more": [
+        {
+          "faqId": "01a18100-0000-7000-8000-000000000023",
+          "question": "Will I be charged twice if I pay again?",
+          "answer": "No. A failed payment is not taken from your account. If you see two charges, contact support and we will check them.",
+          "blocks": []
+        }
+      ],
+      "missed": 1
     }
   }
 }

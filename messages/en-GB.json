@@ -1892,7 +1892,9 @@
       "followUpsTitle": "You might also ask:",
       "clarifySource": "Explained from “{question}”",
       "clarifyUnavailable": "I can’t explain that point well here, so let’s check it with our support team.",
-      "clarifyNotCovered": "The answer doesn’t cover that point, so let’s check it with our support team."
+      "clarifyNotCovered": "The answer doesn’t cover that point, so let’s check it with our support team.",
+      "missedOne": "I don’t have a ready answer for the other thing you asked yet. A person on our support team can look at it.",
+      "missedMany": "I don’t have a ready answer for {n} of the other things you asked yet. A person on our support team can look at them."
     },
     "assistant": {
       "title": "AI Support Assistant",

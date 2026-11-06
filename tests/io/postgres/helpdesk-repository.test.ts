@@ -802,3 +802,42 @@ test("L1 contract: findAssistByKey is per learner while client_event_id stays UN
   const unique = await rows<{ definition: string }>("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'helpdesk_assist_log'::regclass AND contype = 'u'");
   assert.ok(unique.some((row) => row.definition === "UNIQUE (client_event_id)"), "client_event_id is still UNIQUE");
 });
+
+test("v8 in PostgreSQL: a several-asks answer keeps its further cards and missed asks in texts (JSONB), so a replay shows the same cards; a one-ask row has neither", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  const at = "2026-11-06T09:00:00.000Z";
+  const first = "01a18100-0000-7000-8000-000000000021";
+  const second = "01a18100-0000-7000-8000-000000000023";
+  const release = { version: 3, publishedAt: at, locale: "en-GB" as const, nodes: [
+    { id: first, key: "failed", type: "answer" as const, entry: true, category: "payments_subscriptions" as const, popular: false, question: "My payment failed", answer: "Try another card.", blocks: [{ id: "b1", text: "Try another card." }], signals: [] },
+    { id: second, key: "twice", type: "answer" as const, entry: false, category: "payments_subscriptions" as const, popular: false, question: "Charged twice?", answer: "No, a failed payment is not taken.", blocks: [{ id: "b1", text: "No, a failed payment is not taken." }], signals: [] }
+  ], edges: [] };
+  let several = true;
+  const assistant = createAssistantService({
+    repository, now: () => new Date(at), log: () => undefined, traceId: null,
+    admin: { async suggest() { return null; }, async suggestReply(input) {
+      return { suggestion: { id: input.runId, faqId: first, question: "My payment failed", answer: "Try another card." }, alternatives: [], turn: {
+        kind: "answer", intent: "question", confidence: "sure", nodeId: first, blocks: [], opening: "Here's how:", closing: "Tell me if it works.", reply: null, explanation: null, covered: null,
+        guard: { result: "passed", reason: null, fallback: [] }, releaseVersion: 3,
+        ...(several ? { more: [{ faqId: second, question: "Charged twice?", answer: "No, a failed payment is not taken.", blocks: [] }], missed: 1 } : {})
+      } };
+    }, async reportOutcome() { return true; } },
+    release: { async current() { return release; } },
+    learnerRecords: async () => ({ user: { email: learner.email, emailVerifiedAt: null }, orders: [], subscriptions: [] })
+  });
+  const { sessionId } = await assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  const key = randomUUID();
+  const asked = await assistant.ask(learner, { message: "My payment failed. Will I be charged twice? Can I get a refund?", locale: "en-GB", faqId: null, sessionId }, key);
+  const stored = (await rows<{ texts: Record<string, unknown> }>("SELECT texts FROM helpdesk_assist_log WHERE id = $1", [asked.response.id]))[0];
+  assert.deepEqual(stored.texts, { opening: "Here's how:", closing: "Tell me if it works.", reply: null, explanation: null, nodeType: "answer", more: [{ faqId: second, question: "Charged twice?", answer: "No, a failed payment is not taken.", blocks: [] }], missed: 1 });
+  const turn = (asked.response as unknown as { turn: { more?: unknown; missed?: number } }).turn;
+  assert.deepEqual(turn.more, [{ faqId: second, question: "Charged twice?", answer: "No, a failed payment is not taken.", excerpt: null }]);
+  assert.equal(turn.missed, 1);
+  const again = await assistant.ask(learner, { message: "My payment failed. Will I be charged twice? Can I get a refund?", locale: "en-GB", faqId: null, sessionId }, key);
+  assert.equal(again.replayed, true);
+  assert.deepEqual(again.response, asked.response, "the replay is built from the row: the same cards");
+  several = false;
+  const single = await assistant.ask(learner, { message: "My payment failed", locale: "en-GB", faqId: null, sessionId }, randomUUID());
+  const plain = (await rows<{ texts: Record<string, unknown> }>("SELECT texts FROM helpdesk_assist_log WHERE id = $1", [single.response.id]))[0];
+  assert.deepEqual(Object.keys(plain.texts).sort(), ["closing", "explanation", "nodeType", "opening", "reply"], "a one-ask row is as before v8");
+});

@@ -30,6 +30,7 @@ import {
   type AssistantStep,
   type AssistantSessionInput,
   type AssistantSessionResponse,
+  type AssistantMoreCard,
   type AssistantTurn,
   type AssistantTurnResponse,
   type ClickVia,
@@ -42,6 +43,7 @@ import {
   type LearnerEndReason,
   type LearnerState,
   type SituationSignal,
+  type SuggestMoreCard,
   type SuggestTurn,
   type AdminSuggestRequest,
   type AssistFeedback,
@@ -64,7 +66,7 @@ import { CHAT_SESSION_RULES } from "./chatSession";
 import { releaseGraph, type ReleaseGraph } from "./faqReleaseCache";
 import { learnerSignals, type SignalSources } from "./learnerSignals";
 import { learnerState, type LearnerStateSources } from "./learnerState";
-import { answeredByPortal, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type TurnUpdate } from "./repository";
+import { answeredByPortal, type AssistMoreCard, type AssistRecord, type AssistTexts, type ChatSessionRecord, type HelpdeskRepository, type TurnUpdate } from "./repository";
 import type { LearnerIdentity } from "./service";
 import { chooseSituationChips, waitingTicketOf, type ChipCandidate } from "./situationChips";
 
@@ -320,11 +322,14 @@ export function createAssistantService(deps: AssistantDeps) {
       const opening = nodeType === "choice" || !turn ? { text: null, refused: null } : screened("opening", turn.opening);
       const closing = nodeType === "choice" || !turn ? { text: null, refused: null } : screened("closing", turn.closing);
       const excerpt = node && node.answer === reply.suggestion.answer && turn ? excerptOf(node, turn.blocks) : null;
+      // v8: one message that asked several things: the further cards, kept with the row so a replay shows the same reply.
+      const more = nodeType === "answer" && turn ? moreShown(graph, turn.more ?? []) : [];
       const texts: AssistTexts = {
         // An Admin with turns frames an answer node always (its template when its own line failed); Portal's template when Portal refused it.
         opening: turn && nodeType === "answer" ? opening.text ?? TURN_TEMPLATES[variant].opening : null,
         closing: turn && nodeType === "answer" ? closing.text ?? TURN_TEMPLATES[variant].closing : null,
-        reply: null, explanation: null, nodeType
+        reply: null, explanation: null, nodeType,
+        ...(more.length ? { more } : {}), ...(nodeType === "answer" && turn?.missed ? { missed: turn.missed } : {})
       };
       return {
         row: { ...base, ...columns, nodeId: reply.suggestion.faqId, kind: "answer", guard: guardOf(turn, opening.refused ?? closing.refused), blocks: excerpt ? excerpt.map((block) => block.id) : [], covered: null, texts },
@@ -354,6 +359,20 @@ export function createAssistantService(deps: AssistantDeps) {
     return { row: { ...base, ...columns, nodeId: null, kind: "no_match", guard: null, covered: null, texts: null }, update: { unsolved: "increment" } };
   }
 
+  /**
+   * v8: the further cards of a several-asks answer as they are stored: a card the cached release has as a choice node
+   * is dropped (its options need a turn of their own); the excerpt's blocks are kept only when the release's text is
+   * the text Admin sent (else the whole answer shows, as on the first card).
+   */
+  function moreShown(graph: ReleaseGraph | null, cards: readonly SuggestMoreCard[]): AssistMoreCard[] {
+    return cards.flatMap((card) => {
+      const node = graph?.node(card.faqId) ?? null;
+      if (node?.type === "choice") return [];
+      const excerpt = node && node.answer === card.answer ? excerptOf(node, card.blocks) : null;
+      return [{ faqId: card.faqId, question: clip(card.question, 200), answer: card.answer, blocks: excerpt ? excerpt.map((block) => block.id) : [] }];
+    });
+  }
+
   /** The v5 turn of a row, built from the row alone (so a fresh answer and an Idempotency-Key replay are the same) and the cached release. */
   async function turnOf(row: AssistRecord): Promise<AssistantTurn | null> {
     if (!row.kind || row.kind === "handover" || !row.sessionId || !row.turnIndex || !row.via) return null;
@@ -372,8 +391,16 @@ export function createAssistantService(deps: AssistantDeps) {
       source: row.kind === "clarify" && row.faqId && row.faqQuestion ? { faqId: row.faqId, question: row.faqQuestion } : null,
       releaseVersion: row.releaseVersion ?? null, sessionId: row.sessionId, turnIndex: row.turnIndex,
       unsolved: row.kind === "no_match" || (row.kind === "clarify" && !covered) || (row.kind === "answer" && row.answer === null),
-      countsAsQuestion: row.kind === "answer" || row.kind === "no_match"
+      countsAsQuestion: row.kind === "answer" || row.kind === "no_match",
+      ...(answered && texts?.more?.length ? { more: texts.more.map((card) => moreCardOf(graph, card)) } : {}),
+      ...(answered && texts?.missed ? { missed: texts.missed } : {})
     };
+  }
+
+  /** v8: a stored further card as the chat shows it (the excerpt from the cached release, as on the first card). */
+  function moreCardOf(graph: ReleaseGraph | null, card: AssistMoreCard): AssistantMoreCard {
+    const node = graph?.node(card.faqId) ?? null;
+    return { faqId: card.faqId, question: card.question, answer: card.answer, excerpt: node && node.answer === card.answer ? excerptOf(node, card.blocks) : null };
   }
 
   async function responseOf(row: AssistRecord): Promise<AssistantResponse | AssistantTurnResponse> {
