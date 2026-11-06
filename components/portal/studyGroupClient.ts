@@ -25,7 +25,8 @@ export type StudySession = {
   attendees: Array<{ userId: string; displayName: string }>;
   // Live sessions with the AI Tutor on: whether the room offers it right now
   // (and why not), and the viewer's own questions still waiting.
-  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "budget" | "offline" };
+  // D4: the server says why the AI Tutor is off (modules/group-study/service.ts RoomTutorOffReason).
+  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "offline" };
   viewerTutorQuestions?: Array<{ id: string; position: number; answering: boolean }>;
 };
 export type StudyGroupDetail = {

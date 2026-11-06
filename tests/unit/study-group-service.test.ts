@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { readFile } from "node:fs/promises";
-import { createStudyGroupService, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
+import { createStudyGroupService, tutorAvailabilityFromKs, type StudyGroupDeps, type StudyGroupService } from "../../modules/group-study/service";
 import { LiveKitGatewayError } from "../../modules/group-study/liveKitGateway";
 import { createStudyGroupRepository, type StudyGroupRepository } from "../../modules/group-study/repository";
 import { emptyStore, type StudyGroupStore } from "../../modules/group-study/domain";
@@ -1384,7 +1384,7 @@ test("KS-owned Tutor answers with the Lecture proxy and only @ Tutor history", a
   const calls: Array<{ message: string; history: Array<{ role: string; content: string }>; locale: string }> = [];
   const local = serviceWith({
     publishRoomChat: async ({ text, mode }) => { published.push({ text, mode }); },
-    tutorOnline: async () => true,
+    tutorStatus: async () => ({ available: true }),
     tutorKs: async ({ message, history, locale }) => {
       calls.push({ message, history, locale });
       return `KS: ${message}`;
@@ -1413,9 +1413,46 @@ test("KS-owned Tutor answers with the Lecture proxy and only @ Tutor history", a
   ]);
 });
 
+// D4 (docs/phase1/ai-tutor-answer-layer.md, 2026-11-06): KS says why its Tutor
+// is off; the room used to fold every reason into "offline".
+test("KS's reason for an unavailable Tutor maps to the room's three reasons", () => {
+  assert.deepEqual(tutorAvailabilityFromKs({ online: true }), { available: true });
+  assert.deepEqual(tutorAvailabilityFromKs({ online: false, reason: "not-configured" }), { available: false, reason: "no_key" });
+  for (const reason of ["http-error", "timeout", "network"] as const) {
+    assert.deepEqual(tutorAvailabilityFromKs({ online: false, reason }), { available: false, reason: "provider_down" }, reason);
+  }
+  for (const reason of ["not-in-ks", "not-online", undefined] as const) {
+    assert.deepEqual(tutorAvailabilityFromKs({ online: false, reason }), { available: false, reason: "offline" }, String(reason));
+  }
+});
+
+test("the live room shows KS's reason while the Tutor is off, and a status read that hangs counts as KS trouble, not offline (D4)", async () => {
+  const local = serviceWith({ tutorStatus: async () => ({ available: true }) });
+  access.add("member:course-1");
+  const group = await local.createGroup({ actorUserId: "host", title: "Tutor reasons", courseId: "course-1", about: "Why the Tutor is off." });
+  await local.joinGroup({ actorUserId: "member", groupId: group.id });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Reasons", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  await local.startSession({ actorUserId: "host", sessionId: session.id });
+
+  // The room reads the status through a 10-second cache, so each case below
+  // asks through a fresh service over the same store.
+  // KS reports trouble: the room says "try again shortly", not "offline for this course".
+  const trouble = serviceWith({ tutorStatus: async () => ({ available: false, reason: "provider_down" }) });
+  assert.deepEqual((await trouble.getSession({ actorUserId: "member", sessionId: session.id })).tutor, { available: false, reason: "provider_down" });
+
+  // KS not set up in this environment.
+  const unset = serviceWith({ tutorStatus: async () => ({ available: false, reason: "no_key" }) });
+  assert.deepEqual((await unset.getSession({ actorUserId: "member", sessionId: session.id })).tutor, { available: false, reason: "no_key" });
+
+  // A status read that never answers is cut at 2.5 s and counts as KS trouble.
+  const hung = serviceWith({ tutorStatus: () => new Promise(() => undefined) });
+  assert.deepEqual((await hung.getSession({ actorUserId: "member", sessionId: session.id })).tutor, { available: false, reason: "provider_down" });
+});
+
 test("a KS-offline course cannot enable the room Tutor and reports it to the Host", async () => {
   const local = serviceWith({
-    tutorOnline: async () => false,
+    tutorStatus: async () => ({ available: false, reason: "offline" }),
     tutorKs: async () => "never called"
   });
   const group = await local.createGroup({ actorUserId: "host", title: "Offline tutor", courseId: "course-1", about: "About the offline tutor." });
@@ -2079,7 +2116,7 @@ test("a late Host can still turn the AI Tutor off: an unchanged Start Time that 
 
 test("starting with the AI Tutor on while the course's Tutor is offline tells the Host to turn it off in Edit Session (FAQ grounding check 2026-11-02)", async () => {
   let online = true;
-  const local = serviceWith({ tutorOnline: async () => online });
+  const local = serviceWith({ tutorStatus: async () => online ? { available: true } : { available: false, reason: "offline" } });
   const group = await local.createGroup({ actorUserId: "host", title: "Offline at start", courseId: "course-1", about: "About the offline start." });
   const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Tutor went offline", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
   online = false;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import React, { createElement } from "react";
-import { tutorAnswerParts } from "../../modules/group-study/tutorAnswerText";
+import { tutorAnswerParts } from "../../lib/tutorAnswer";
 
 // The component file uses the automatic JSX runtime under Next; the test
 // loader compiles it with the classic one, which reads a global React.

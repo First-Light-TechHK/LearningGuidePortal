@@ -1070,8 +1070,8 @@ test("the chat input is one frame on the panel's bottom edge and the floating pe
   // The box is the only frame, the @AI Tutor entry is a light-blue chip, and the log fills the panel so the box sits on its bottom edge.
   assert.match(css, /\.chatForm textarea \{[^}]*border: 0;[^}]*background: transparent;/);
   // Owner 2026-11-06: the entry stays, drawn like the lesson AI Tutor's controls (.tutor-new-chat / .mode-switch).
-  assert.match(css, /\.tutorEntry \{[^}]*border: 1px solid #d1dcff; border-radius: 7px; background: #fff; color: #005cff;/);
-  assert.match(css, /\.tutorEntry\[aria-pressed="true"\], \.tutorEntry\[aria-pressed="true"\]:hover:not\(:disabled\) \{ border-color: #005cff; background: #005cff; color: #fff;/);
+  assert.match(css, /\.tutorEntry \{[^}]*border: 1px solid var\(--lg-tutor-accent-border\); border-radius: 7px; background: #fff; color: var\(--lg-tutor-accent\);/);
+  assert.match(css, /\.tutorEntry\[aria-pressed="true"\], \.tutorEntry\[aria-pressed="true"\]:hover:not\(:disabled\) \{ border-color: var\(--lg-tutor-accent\); background: var\(--lg-tutor-accent\); color: #fff;/);
   assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
   assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
   // BUG-0284: the input wraps and grows to a limit; Enter sends, Shift+Enter starts a new line; a message keeps its lines.
@@ -1115,7 +1115,7 @@ test("full screen: a top bar to leave, chat as a float with unread and a preview
   assert.match(room, /<div className=\{styles\.sharingBanner\} role="status">/);
   assert.match(css, /\.controls button\[data-mic="off"\] \{ background: #fef3f2; color: #d92d20;/);
   // The Tutor's answer is a light-blue block in dark ink.
-  assert.match(css, /\.tutorBubble \{ background: #f5f8ff; padding: 10px 12px; border-radius: 10px; \}/);
+  assert.match(css, /\.tutorBubble \{ background: var\(--lg-tutor-accent-soft\); padding: 10px 12px; border-radius: 10px; \}/);
 });
 
 test("Edit Session says the AI Tutor switch can change, keeps a passed Start Time valid, and an offline Tutor at start names the way out (FAQ grounding check 2026-11-02)", () => {

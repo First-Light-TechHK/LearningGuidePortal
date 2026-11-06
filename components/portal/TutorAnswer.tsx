@@ -7,20 +7,26 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { tutorAnswerParts } from "@/modules/group-study/tutorAnswerText";
+import { tutorAnswerParts } from "@/lib/tutorAnswer";
 
-// Room chat is shared with everyone in the call; only course images behind the
-// Portal entitlement proxy render. Links open without a referrer, and raw HTML
-// is never rendered (react-markdown's default).
+// D2 (docs/phase1/ai-tutor-answer-layer.md): the one renderer for an AI Tutor
+// answer. The lesson drawer (TutorChat) and the Study Group room both use it,
+// so the same KnowledgeSystem answer looks the same in both; the layout lives
+// in app/styles.css under "AI Tutor answer" (.tutor-answer), and each page
+// keeps only its own bubble around it.
+//
+// What may render, for both places (the room shares an answer with everyone in
+// the call):
+// - images only from KS course storage, through the Portal entitlement proxy;
+// - links only to http(s), in a new tab with no referrer;
+// - never raw HTML (react-markdown's default);
+// - KaTeX that cannot run macros or expand without bound, and that renders HTML
+//   only, so copying or reading the text gives the formula once, not twice.
 const KS_IMAGE = /^\/api\/(?:user\/courses\/[^/]+\/images|files\/images\/[^/]+)\/([0-9a-f-]{36}\.(?:png|jpg|gif|webp))$/i;
-const linkComponents: Components = {
-  a({ href, children }) {
-    return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
-  }
-};
+const KATEX = { throwOnError: false, strict: "ignore", trust: false, maxExpand: 100, output: "html" } as const;
 
-// Class names come from the room (study-groups.module.css) so this stays
-// renderable without a CSS loader (tests/unit/study-group-tutor-answer.test.ts).
+// The room's copy action (an icon button outside the bubble). The lesson
+// drawer keeps its own two-item copy menu (plain text / Markdown).
 export function TutorCopyButton({ text, copyLabel, copiedLabel, className }: { text: string; copyLabel: string; copiedLabel: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   async function copyAnswer() {
@@ -48,21 +54,24 @@ export function TutorCopyButton({ text, copyLabel, copiedLabel, className }: { t
   return <button className={className} type="button" aria-label={label} title={label} onClick={() => void copyAnswer()}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}</button>;
 }
 
-export function TutorAnswer({ text, courseId, sourcesLabel, className, sourcesClassName }: { text: string; courseId?: string; sourcesLabel: string; className?: string; sourcesClassName?: string }) {
+/** `courseId` is the Portal course the answer belongs to; without it course images show their alt text. */
+export function TutorAnswer({ text, courseId, sourcesLabel }: { text: string; courseId?: string; sourcesLabel: string }) {
   const { markdown, sources } = tutorAnswerParts(text);
   const components = useMemo<Components>(() => ({
-    ...linkComponents,
+    a({ href, children }) {
+      return /^https?:\/\//i.test(href || "") ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
+    },
     img({ src, alt }) {
       const match = KS_IMAGE.exec(String(src || ""));
       return match && courseId ? <img src={`/api/ai-tutor/images/${match[1]}?courseId=${encodeURIComponent(courseId)}`} alt={alt || "Tutor figure"} loading="lazy" /> : <span>{alt || ""}</span>;
     },
   }), [courseId]);
   return (
-    <div className={className} data-testid="tutor-answer">
-      <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore", output: "html" }]]} components={components}>
+    <div className="tutor-answer" data-testid="tutor-answer">
+      <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[[rehypeKatex, KATEX]]} components={components}>
         {markdown}
       </ReactMarkdown>
-      {sources.length ? <div className={sourcesClassName}><p>{sourcesLabel}</p>{sources.map((source) => <p key={source}>{source}</p>)}</div> : null}
+      {sources.length ? <div className="tutor-answer-sources"><p>{sourcesLabel}</p>{sources.map((source) => <p key={source}>{source}</p>)}</div> : null}
     </div>
   );
 }

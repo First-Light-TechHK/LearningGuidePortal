@@ -117,7 +117,9 @@ test("1029-4: the room AI Tutor's LaTeX renders as math, one point per line, wit
     await expect(answer.locator("li")).toHaveCount(2);
     // Sources sit under the answer: a "Sources" heading, then one line per
     // source (952e66b, 2026-11-06, dropped the colon and put each on its own line).
-    await expect(answer.locator('[class*="tutorSources"] p')).toHaveText(["Sources", "Modeling Life - 2.2"]);
+    // Since the shared answer layer (docs/phase1/ai-tutor-answer-layer.md) the
+    // block is .tutor-answer-sources, the same as in the lesson drawer.
+    await expect(answer.locator(".tutor-answer-sources p")).toHaveText(["Sources", "Modeling Life - 2.2"]);
     // A wide formula scrolls inside the chat panel instead of widening it.
     const fits = await answer.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
     expect(fits).toBe(true);

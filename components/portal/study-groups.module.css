@@ -366,7 +366,7 @@
 .chatHead time { margin-left: auto; color: #98a2b3; font-size: 12px; }
 .chatBody { margin: 4px 0 0; color: #344054; font-size: 13px; }
 .chatHost { background: #e8f1ff; color: #1d6bff; border-radius: 8px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
-.tutorAvatar { width: 20px; height: 20px; border-radius: 10px; background: #1d6bff; color: #fff; display: grid; place-items: center; flex: none; font-size: 11px; }
+.tutorAvatar { width: 20px; height: 20px; border-radius: 10px; background: var(--lg-tutor-accent); color: #fff; display: grid; place-items: center; flex: none; font-size: 11px; }
 .tutorName { color: #111827; }
 /* One ink for the whole answer: the body used to be blue while its first line
    was black, so a reply looked like two different colours (2026-10-23). */
@@ -428,29 +428,13 @@
 .chatText { white-space: pre-wrap; }
 /* Owner 2026-10-30: the answer sits in its own light-blue block in dark ink, so formulas read clearly. */
 .tutorBody { color: #344054; }
-.tutorBubble { background: #f5f8ff; padding: 10px 12px; border-radius: 10px; }
+.tutorBubble { background: var(--lg-tutor-accent-soft); padding: 10px 12px; border-radius: 10px; }
 .tutorActions { margin-top: 6px; padding-left: 12px; }
 .chatActionRow { margin: 6px 0 0; }
 .chatAction { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #667085; cursor: pointer; }
 .chatAction:hover { background: #f2f4f7; }
 .chatAction:focus-visible { outline: 2px solid #1d6bff; outline-offset: 2px; }
 .tutorBody .tutorLead { color: inherit; font-weight: 400; }
-/* Owner 2026-10-29: the answer renders Markdown and KaTeX in the chat's own 12px ink; one point per paragraph, wide formulas scroll inside the panel instead of overflowing it. */
-.tutorAnswer { line-height: 1.6; overflow-wrap: anywhere; }
-.tutorAnswer p { margin: 0 0 6px; }
-.tutorAnswer > :last-child { margin-bottom: 0; }
-.tutorAnswer ul, .tutorAnswer ol { margin: 0 0 6px; padding-left: 18px; }
-.tutorAnswer li { margin: 2px 0; }
-.tutorAnswer li > p { margin: 0; }
-.tutorAnswer strong { font-weight: 600; }
-.tutorAnswer code { font-size: 11px; background: #f2f4f7; border-radius: 4px; padding: 0 4px; color: #344054; }
-.tutorAnswer .katex { font-size: 1.1em; }
-.tutorAnswer .katex-display { margin: 6px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
-.tutorAnswer table { border-collapse: collapse; margin: 0 0 6px; display: block; overflow-x: auto; }
-.tutorAnswer img { display: block; max-width: 100%; height: auto; margin: 6px 0; }
-.tutorAnswer th, .tutorAnswer td { border: 1px solid #e4e7ec; padding: 2px 6px; }
-.tutorSources { margin: 6px 0 0; color: #98a2b3; font-size: 11px; }
-.tutorSources p { margin: 0 0 2px; }
 /* 599:1392: 266x100 input 12px from the panel's sides and bottom; the @AI Tutor entry sits on its bottom-left edge. */
 .chatForm { display: flex; flex-direction: column; flex: none; margin: 0 -8px -8px; padding: 12px 36px 8px 12px; }
 /* 599:1393 placeholder sits 12px inside the box: the global field padding and focus ring do not apply here (the box draws the focus). */
@@ -459,11 +443,11 @@
 .chatFormRow { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; }
 .enterHint { color: #98a2b3; font-size: 11px; }
 /* @AI Tutor entry on the box's bottom row (kept, owner 2026-11-06): drawn like the lesson AI Tutor's own controls (.tutor-new-chat outline button, .mode-switch selected fill in app/styles.css), so it reads as LG's AI Tutor rather than a one-off chip. */
-.tutorEntry { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border: 1px solid #d1dcff; border-radius: 7px; background: #fff; color: #005cff; font: 400 11px/16px Inter, Arial, sans-serif; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+.tutorEntry { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border: 1px solid var(--lg-tutor-accent-border); border-radius: 7px; background: #fff; color: var(--lg-tutor-accent); font: 400 11px/16px Inter, Arial, sans-serif; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
 .tutorEntry svg { width: 12px; height: 12px; flex: none; }
-.tutorEntry:hover:not(:disabled) { border-color: #3f7bff; background: #f5f8ff; }
+.tutorEntry:hover:not(:disabled) { border-color: #3f7bff; background: var(--lg-tutor-accent-soft); }
 .tutorEntry:focus-visible { outline: 2px solid rgba(0, 92, 255, .25); outline-offset: 1px; }
-.tutorEntry[aria-pressed="true"], .tutorEntry[aria-pressed="true"]:hover:not(:disabled) { border-color: #005cff; background: #005cff; color: #fff; font-weight: 500; }
+.tutorEntry[aria-pressed="true"], .tutorEntry[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--lg-tutor-accent); background: var(--lg-tutor-accent); color: #fff; font-weight: 500; }
 .tutorEntry:disabled { opacity: .6; cursor: not-allowed; }
 /* 599:1392: the input sits 12px above the panel's bottom edge; the log takes the rest of the panel's height instead of stopping at a cap. */
 .side .chatLog { max-height: none; }

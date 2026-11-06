@@ -6,7 +6,7 @@ import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, 
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
 import { STARTING_SOON_MS, type StudyGroupStore } from "./domain";
 import { createStudyGroupRepository } from "./repository";
-import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
+import { createStudyGroupService, tutorAvailabilityFromKs, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
 import { createHotLiveKitProjectRegistry, parseLiveKitProjects } from "./liveKitProjectRegistry";
@@ -376,13 +376,14 @@ export function studyGroupService() {
       }
       return text;
     },
-    // The host switch follows the KS course-level Online state (no cache here;
-    // the service caches this read for 10 seconds).
-    tutorOnline: async (courseId) => {
+    // The host switch and the room's @AI Tutor follow the KS course-level
+    // status, with KS's reason when it is off (D4, no cache here; the service
+    // caches this read for 10 seconds). A course Portal no longer offers is
+    // simply offline.
+    tutorStatus: async (courseId) => {
       const course = await getProductCourse(courseId);
-      if (!course || course.status !== "published") return false;
-      const availability = await getTutorAvailability(course.slug);
-      return availability.reachable && availability.online;
+      if (!course || course.status !== "published") return { available: false, reason: "offline" };
+      return tutorAvailabilityFromKs(await getTutorAvailability(course.slug));
     },
     publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, reason, sequence }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");

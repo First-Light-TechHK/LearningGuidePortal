@@ -7,9 +7,9 @@ import { build } from "esbuild";
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { tutorMarkdown } from "../../components/portal/TutorMarkdown";
+import { tutorAnswerParts } from "../../lib/tutorAnswer";
 
-/** TutorChat 气泡（assistant/welcome/user）现在走 MarkdownAnswer，应支持 LaTeX + markdown。 */
+/** TutorChat 气泡（assistant/welcome/user）走与学习小组共用的 TutorAnswer（docs/phase1/ai-tutor-answer-layer.md），应支持 LaTeX + markdown。 */
 
 const copy = { tutor: "AI Tutor", lecture: "Lecture", socratic: "Socratic", send: "Send", askTutor: "Ask the tutor", you: "You", newChat: "New chat", closeTutor: "Close AI Tutor", askTutorPlaceholder: "Ask about this lesson..." } as const;
 type MountProps = { locale: "en-GB" | "zh-CN"; courseId: string; lessonId: string; copy: typeof copy };
@@ -18,13 +18,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..", "..");
 const STYLES_CSS = readFileSync(join(PROJECT_ROOT, "app", "styles.css"), "utf-8");
 
-test("Ask AI Tutor normalizes indented prose and Sources without changing fenced code", () => {
+test("Ask AI Tutor normalizes indented prose and moves Sources under the answer without changing fenced code", () => {
   const input = "![图](/api/user/courses/modeling-life/images/22222222-2222-4222-8222-222222222222.png)\n\n    **标量**是一个数。[1]\n    - 正数方向不变\n\n    Sources\n    [1] Lesson 1\n\n```text\n    **code**\n```";
-  const output = tutorMarkdown(input);
-  assert.match(output, /\n\n\*\*标量\*\*是一个数/);
-  assert.match(output, /\n- 正数方向不变/);
-  assert.match(output, /> Sources\n>\n> \[1\] Lesson 1/);
-  assert.match(output, /```text\n    \*\*code\*\*\n```/);
+  const { markdown, sources } = tutorAnswerParts(input);
+  assert.match(markdown, /\n\n\*\*标量\*\*是一个数/);
+  assert.match(markdown, /\n\n- 正数方向不变/);
+  // The same source list the Study Group room shows, not a quote inside the prose.
+  assert.deepEqual(sources, ["[1] Lesson 1"]);
+  assert.doesNotMatch(markdown, /Sources/);
+  assert.match(markdown, /```text\n    \*\*code\*\*\n```/);
 });
 
 function tutorBundle() {
@@ -122,6 +124,8 @@ test("welcome, assistant and user bubbles render LaTeX and markdown", async () =
     assert.ok(await page.locator(".tutor-message.assistant .katex-display").count() >= 1, "assistant bubble should render block LaTeX");
     // assistant 气泡应有列表
     assert.ok(await page.locator(".tutor-message.assistant ol").count() >= 1, "assistant bubble should render ordered list");
+    // 与学习小组同一个渲染器和同一套 .tutor-answer 样式
+    assert.ok(await page.locator(".tutor-message.assistant .tutor-answer").count() >= 1, "assistant bubble should use the shared TutorAnswer");
 
     // user 气泡也应渲染 markdown（行内公式）
     const userKatex = await page.locator(".tutor-message.user .katex").count();

@@ -1395,13 +1395,13 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
                     : line.pending && line.text
-                    ? <><span className={styles.tutorRow} role="status">{roomCopy.tutorAnswering}</span><TutorAnswer text={line.text} courseId={group?.courseId} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} /></>
+                    ? <><span className={styles.tutorRow} role="status">{roomCopy.tutorAnswering}</span><TutorAnswer text={line.text} courseId={group?.courseId} sourcesLabel={roomCopy.tutorSources} /></>
                     : line.pending
                     ? (() => {
                         const pending = tutorWithdrawState(tutorPendingState(session, line.id, line.queuedPosition), line.withdrawError);
                         return <><span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>{line.withdrawError ? <p className={styles.alert} role="alert">{copy.errors[line.withdrawError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</>;
                       })()
-                    : <TutorAnswer text={line.text} courseId={group?.courseId} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
+                    : <TutorAnswer text={line.text} courseId={group?.courseId} sourcesLabel={roomCopy.tutorSources} />}
                   </div>
                   {!line.pending && line.mode !== "unavailable" ? <div className={styles.tutorActions}><TutorCopyButton text={line.text} copyLabel={roomCopy.tutorCopy} copiedLabel={roomCopy.tutorCopied} className={styles.chatAction} /></div> : null}
                 </div>

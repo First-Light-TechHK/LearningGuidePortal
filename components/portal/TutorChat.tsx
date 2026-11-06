@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { PortalDialog } from "./PortalDialog";
-import { TutorMarkdown } from "./TutorMarkdown";
+import { TutorAnswer } from "./TutorAnswer";
 import { getMessages } from "@/lib/i18n/messages";
 import { Copy as CopyIcon, RotateCw, Undo2 } from "lucide-react";
 import { TutorRequestError, tutorErrorMessage } from "./tutorChatError";
@@ -208,7 +208,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
         <div className="tutor-message-line">
           <div className="tutor-message-bubble-wrap">
             <span className="tutor-avatar tutor-avatar-ai" aria-hidden="true">AI</span>
-            <div className="tutor-message assistant">{welcome ? <TutorMarkdown content={welcome} courseId={courseId} /> : null}</div>
+            <div className="tutor-message assistant">{welcome ? <TutorAnswer text={welcome} courseId={courseId} sourcesLabel={actions.tutorSources} /> : null}</div>
             <time className="tutor-message-time" dateTime={openedAt}>{formatTime(openedAt, locale)}</time>
           </div>
         </div>
@@ -219,7 +219,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
             <span className={`tutor-avatar ${message.role === "assistant" ? "tutor-avatar-ai" : "tutor-avatar-user"}`} aria-hidden="true">
               {message.role === "assistant" ? "AI" : Array.from(copy.you)[0]}
             </span>
-            <div className={`tutor-message ${message.role}`}>{message.content ? <TutorMarkdown content={message.content} courseId={courseId} /> : (busy ? <p>...</p> : null)}</div>
+            <div className={`tutor-message ${message.role}`}>{message.content ? <TutorAnswer text={message.content} courseId={courseId} sourcesLabel={actions.tutorSources} /> : (busy ? <p>...</p> : null)}</div>
             <time className="tutor-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, locale)}</time>
           </div>
         </div>
