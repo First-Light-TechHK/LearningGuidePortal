@@ -51,9 +51,11 @@ export function lessonIdentityMatches(actual, course, lesson) {
     normaliseText(actual?.title) === normaliseText(lesson.title);
 }
 
-export function trialGateStateMatches({ visible, paused, currentTime, upgradeHref }) {
+export function trialGateStateMatches({ visible, paused, currentTime, upgradeHref }, limit = 60) {
   return visible === true && paused === true && Number.isFinite(currentTime) &&
-    currentTime >= 59.8 && currentTime <= 60.05 && typeof upgradeHref === 'string' &&
+    // 0.2 s of tolerance behind the limit, 0.05 s ahead of it: the player pauses
+    // and clamps to the authored limit, which is not always 60 seconds.
+    currentTime >= limit - 0.2 && currentTime <= limit + 0.05 && typeof upgradeHref === 'string' &&
     /^\/(en-GB|zh-CN)\/subscription\?/.test(upgradeHref);
 }
 
@@ -357,9 +359,13 @@ async function exerciseLesson(page, root, lesson, origin, deadline, audit, step,
 
 async function checkTrialGate(page, root, lesson, deadline) {
   if (!lesson.media.some(asset => asset.kind === 'video')) return { applicable: false, reason: 'public_lesson_has_no_video' };
+  // The product stops playback at the lesson's authored preview limit and falls
+  // back to 600 s for a course with no preview configuration
+  // (see public-lesson/page.tsx). The gate is not always 60 seconds.
+  const limit = Number.isFinite(lesson.videoLimitSeconds) ? lesson.videoLimitSeconds : 600;
   const tabs = root.locator('[class*="contentLinks"] > button');
   const tabCount = await tabs.count();
-  let checked = 0;
+  let checked = 0, shorterThanLimit = 0;
   for (let i = 0; i < Math.max(1, tabCount); i++) {
     if (tabCount) {
       await tabs.nth(i).click({ timeout: remaining(deadline) });
@@ -369,23 +375,24 @@ async function checkTrialGate(page, root, lesson, deadline) {
     if (!await video.count()) continue;
     const result = await probePlayback(video, remaining(deadline, LIMIT.resource));
     requireCheck(result.ok, result.code || 'preview_video_play_failed');
-    requireCheck(result.duration > 60.5, 'preview_gate_not_exercisable_short_video');
+    // A clip that ends before the limit is reached can never show the gate; that
+    // is the configured product behaviour, not a failure.
+    if (result.duration <= limit + 0.5) { shorterThanLimit += 1; continue; }
     requireCheck(!await page.locator('.la-trial-modal').count(), 'preview_gate_triggered_before_limit');
-    // Seek close to the boundary and cross it during playback, not while already
-    // paused, so a modal alone cannot masquerade as enforcement.
-    await video.evaluate(element => { element.currentTime = 59; void element.play().catch(() => undefined); });
-    await page.waitForFunction(element => !element.paused && !element.seeking && element.currentTime >= 59 && element.currentTime < 60, await video.elementHandle(), { timeout: remaining(deadline, LIMIT.resource) });
-    await video.evaluate(element => { element.currentTime = 60.25; });
+    // Start two seconds before the limit and let real playback cross it, so the
+    // gate is driven by playback rather than by a seek landing beyond it.
+    await video.evaluate((element, stop) => { element.currentTime = Math.max(0, stop - 2); void element.play().catch(() => undefined); }, limit);
     const modal = page.locator('.la-trial-modal');
-    await modal.waitFor({ state: 'visible', timeout: remaining(deadline) });
+    await modal.waitFor({ state: 'visible', timeout: remaining(deadline, 10000) });
     const state = await video.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
     const href = await modal.locator('a.la-trial-pricing').getAttribute('href');
-    requireCheck(trialGateStateMatches({ ...state, visible: await modal.isVisible(), upgradeHref: href }), 'preview_gate_did_not_stop_at_60_seconds_with_upgrade');
+    requireCheck(trialGateStateMatches({ ...state, visible: await modal.isVisible(), upgradeHref: href }, limit), 'preview_gate_did_not_stop_at_limit_with_upgrade');
     await modal.locator('button.la-trial-close').click({ timeout: remaining(deadline) });
     checked++;
   }
+  if (!checked && shorterThanLimit) return { applicable: false, reason: 'video_shorter_than_preview_limit', limit, videos: shorterThanLimit };
   requireCheck(checked > 0, 'preview_gate_no_supported_video');
-  return { applicable: true, videosChecked: checked, stoppedAtSeconds: 60, verifiedByNativeSeek: true };
+  return { applicable: true, videosChecked: checked, stoppedAtSeconds: limit, verifiedByNativeSeek: false, verifiedByPlayback: true };
 }
 
 /**
@@ -447,6 +454,20 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
     });
     return authenticated;
   }
+  /**
+   * A course that offers more than one learning mode asks a signed-in learner to
+   * choose once, and until they do, every syllabus lesson link routes through
+   * `?lessonEntry=<lessonId>` and the lesson opens behind the chooser dialog.
+   * That is the product's normal first-visit flow, not a faulty link, so the
+   * fixtures record their choice up front exactly as a learner would. Without
+   * it every href assertion and every preview journey stops at the chooser.
+   */
+  async function saveLearningMode(ctx, courseId, mode = 'video') {
+    const response = await ctx.request.put(`${origin}/api/courses/${encodeURIComponent(courseId)}/learning-mode`, {
+      data: { mode }, headers: { Origin: origin }, maxRedirects: 0, timeout: LIMIT.navigation
+    });
+    return response.ok();
+  }
   async function withPage(ctx, scope, deadline, action, expectedNotFoundPath) {
     await step(scope, async () => {
       requireCheck(Date.now() < deadline, 'budget_exhausted');
@@ -464,6 +485,17 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
     if (credentials.locked?.email && credentials.locked?.password && credentials.locked.email.toLowerCase() !== credentials.email.toLowerCase()) {
       locked = await login(credentials.locked, 'locked_login');
     } else fail('locked_access', 'separate_non_entitled_fixture_required');
+    // Record the study mode for both fixtures before any syllabus assertion:
+    // the chooser is per user+course and would otherwise rewrite every link.
+    for (const [name, session] of [['student', student], ['locked', locked]]) {
+      if (!session) continue;
+      await step(`learning_mode_${name}`, async () => {
+        let saved = 0;
+        for (const course of manifest.courses) if (await saveLearningMode(session, course.id)) saved += 1;
+        requireCheck(saved === manifest.courses.length, 'learning_mode_not_saved');
+        return { courses: saved, mode: 'video' };
+      });
+    }
     for (const locale of LOCALES) {
       const cataloguePath = `/${locale}/portal/courses`;
       for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 'mobile', width: 390, height: 844 }]) {

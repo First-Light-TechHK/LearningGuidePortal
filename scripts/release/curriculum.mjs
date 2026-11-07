@@ -34,7 +34,7 @@ export function curriculumManifest(product) {
     media: mediaReferences(course),
     sections: (course.sections || []).filter(section => !section.archivedAt).map(section => ({
       id: section.id, title: section.title,
-      lessons: (section.lessons || []).map(lesson => ({ id: lesson.id, title: lesson.title, isPublic: lesson.isPublic, bodyHash: digest(lesson.body || ''), contentsHash: digest(lesson.contents || []), media: mediaReferences(lesson) }))
+      lessons: (section.lessons || []).map(lesson => ({ id: lesson.id, title: lesson.title, isPublic: lesson.isPublic, bodyHash: digest(lesson.body || ''), contentsHash: digest(lesson.contents || []), media: mediaReferences(lesson), videoLimitSeconds: lesson.preview?.videoLimitSeconds ?? null }))
     }))
   })).sort((a, b) => a.id.localeCompare(b.id));
   return { version: 1, hash: digest(courses), courses };
