@@ -117,6 +117,12 @@ async function fixture(t, faults = {}) {
     }
     if (url.pathname === '/api/auth/me') return json({ ok: true, user: kind ? { role: 'student', email: kind === 'entitled' ? credentials.email : credentials.locked.email } : null });
     if (url.pathname === '/api/entitlements/check') return json({ ok: true, entitlement: { allowed: kind === 'entitled' } });
+    // The product records a learner's study mode before a multi-mode course
+    // shows direct lesson links; the fixture answers it like the real route.
+    if (url.pathname.startsWith('/api/courses/') && url.pathname.endsWith('/learning-mode')) {
+      if (request.method !== 'PUT' || !kind) return send('{}', 'application/json', kind ? 405 : 401);
+      return json({ ok: true, data: { courseId: course.id, mode: 'video' } });
+    }
     if (url.pathname === '/cover.svg') {
       if (faults.cover) return send('forbidden SECRET_SIGNED_URL', 'text/plain', 403);
       return send('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="50"><rect width="80" height="50" fill="teal"/></svg>', 'image/svg+xml');
@@ -175,7 +181,16 @@ test('Chromium acceptance covers both locales, every lesson, locked routes, lazy
   for (const path of result.evidence.screenshots) assert.ok((await readFile(path)).length > 100);
   const record = await readFile(join(result.evidence.screenshots[0], '..', 'result.json'), 'utf8');
   for (const secret of [credentials.email, credentials.password, credentials.locked.email, credentials.locked.password, 'SIGNATURE_SECRET', 'Set-Cookie', 'X-Amz-Signature']) assert.ok(!record.includes(secret));
-  assert.ok(f.requests.every(request => request.method === 'GET' || request.path === '/api/auth/login'));
+  // The run may only read, sign in, and record the study-mode preference the
+  // product requires before it shows direct lesson links. Two writes, one per
+  // fixture; anything else changing state is a failure.
+  const writes = f.requests.filter(request => request.method !== 'GET');
+  assert.deepEqual(writes.map(request => `${request.method} ${request.path}`).sort(), [
+    'POST /api/auth/login',
+    'POST /api/auth/login',
+    'PUT /api/courses/fixture-course/learning-mode',
+    'PUT /api/courses/fixture-course/learning-mode',
+  ]);
 });
 
 test('browser detects actual sign-in redirects and continues through both locales', { timeout: 60_000 }, async t => {
