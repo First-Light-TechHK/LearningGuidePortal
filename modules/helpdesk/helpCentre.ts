@@ -9,12 +9,24 @@
 // ?category= falls back to the popular heading). The 60 s cache and
 // stale-on-error live in the Admin client.
 import type { FaqCategory, FaqFilter, HelpCentreQuery, HelpFaq, HelpdeskLocale } from "@/contracts/helpdesk";
+import { HELP_POPULAR_SHOWN } from "./learnerUi";
 import { supportPaths } from "./learnerPages";
 
 export type HelpCentreClient = {
   faqs(locale: HelpdeskLocale, filter?: FaqFilter): Promise<HelpFaq[] | null>;
   faq(id: string, locale: HelpdeskLocale): Promise<HelpFaq | null>;
 };
+
+type WaitOption = { waitMs?: number };
+
+/** The Admin client as the Help Centre reads it: every read waits up to HELP_CENTRE_WAIT_MS on a cold cache. */
+export function helpCentreClient(admin: {
+  faqs(locale: HelpdeskLocale, filter?: FaqFilter, options?: WaitOption): Promise<HelpFaq[] | null>;
+  faq(id: string, locale: HelpdeskLocale, options?: WaitOption): Promise<HelpFaq | null>;
+}): HelpCentreClient {
+  const wait = { waitMs: HELP_CENTRE_WAIT_MS };
+  return { faqs: (locale, filter) => admin.faqs(locale, filter, wait), faq: (id, locale) => admin.faq(id, locale, wait) };
+}
 
 /** One listed article; category is null for the static fallback copy. */
 export type HelpArticle = { id: string; category: FaqCategory | null; question: string; answer: string };
@@ -31,8 +43,16 @@ export type HelpCentreView = {
   missingFaq: boolean;
 };
 
-export const HELP_POPULAR_LIMIT = 10;
+/** Popular FAQs asked for: every one product marked (owner 2026-11-02 picked 25), in Admin's order. */
+export const HELP_POPULAR_LIMIT = 50;
+// Shown before "Show more"; lives in the client-safe learnerUi so the Help Centre component never imports this module's values.
+export { HELP_POPULAR_SHOWN } from "./learnerUi";
 export const HELP_LIST_LIMIT = 50;
+/**
+ * The Help Centre waits this long for Admin when nothing is cached (other pages: ADMIN_FAQS_WAIT_MS, 500 ms).
+ * At 500 ms a cold cache or a slow Admin showed the static fallback instead of the real articles (owner 2026-11-03).
+ */
+export const HELP_CENTRE_WAIT_MS = 2_500;
 
 const article = (faq: HelpFaq): HelpArticle => ({ id: faq.id, category: faq.category, question: faq.question, answer: faq.answer });
 
@@ -48,7 +68,7 @@ export async function loadHelpCentre(client: HelpCentreClient, locale: HelpdeskL
   else if (mode === "category") listed = await safely(() => client.faqs(locale, { category: query.category, limit: HELP_LIST_LIMIT }));
   else {
     listed = await safely(() => client.faqs(locale, { popular: true, limit: HELP_POPULAR_LIMIT }));
-    if (listed && listed.length === 0) listed = await safely(() => client.faqs(locale, { limit: HELP_POPULAR_LIMIT }));
+    if (listed && listed.length === 0) listed = await safely(() => client.faqs(locale, { limit: HELP_POPULAR_SHOWN }));
   }
   if (!listed) {
     const words = query.q.toLocaleLowerCase(locale);

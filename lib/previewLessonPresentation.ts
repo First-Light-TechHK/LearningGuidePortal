@@ -23,3 +23,13 @@ export function previewLessonOutline(course: ProductCourse, locale: string, enti
       : null,
   }));
 }
+
+/** Keep every lesson in the menu; choose a mode supported by the destination. */
+export function lessonOutlineDestination(item: { href: string | null; modes?: CourseLearningMode[] }, preferredMode: CourseLearningMode) {
+  if (!item.href || item.modes?.length === 0) return null;
+  const mode = !item.modes || item.modes.includes(preferredMode) ? preferredMode : item.modes[0];
+  const url = new URL(item.href, "https://learning-guide.invalid");
+  url.searchParams.set("viewMode", mode);
+  url.searchParams.delete("contentId");
+  return { href: url.pathname + url.search + url.hash, mode };
+}

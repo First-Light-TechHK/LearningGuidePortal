@@ -35,6 +35,20 @@ export function studyGroupReminderStillValid(store: StudyGroupStore, userId: str
   return store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt);
 }
 
+// A moved Start Time's notice shows from the move until the Session starts,
+// for a viewer who still plans to attend (or hosts) an active group's Session.
+export function studyGroupRescheduleNoticeStillValid(store: StudyGroupStore, userId: string, sessionId: string, nowMs: number = Date.now()) {
+  const session = store.sessions.find((item) => item.id === sessionId);
+  if (!session || session.status !== "scheduled") return false;
+  const startsAt = Date.parse(session.startsAt);
+  if (!Number.isFinite(startsAt) || nowMs >= startsAt) return false;
+  const group = store.groups.find((item) => item.id === session.groupId && item.status === "active");
+  if (!group) return false;
+  if (!store.memberships.some((item) => item.groupId === group.id && item.userId === userId && !item.leftAt)) return false;
+  if (group.hostUserId === userId) return true;
+  return store.intents.some((item) => item.sessionId === session.id && item.userId === userId && !item.cancelledAt);
+}
+
 // Reminder notifications recorded before the sessionId linkage existed (the
 // pre-BUG-0109 rows already in production) carry the Session title inside
 // their body: "<title> starts in 10 minutes." / "<title> 将在 10 分钟后开始。"
@@ -63,9 +77,10 @@ function reminderBodyTitle(body: string): string | null {
 export function studyGroupReminderNotificationStillValid(
   store: StudyGroupStore,
   userId: string,
-  item: { body: string; sessionId?: string; createdAt?: string },
+  item: { body: string; sessionId?: string; createdAt?: string; kind?: "reminder" | "rescheduled" },
   nowMs: number = Date.now()
 ) {
+  if (item.kind === "rescheduled") return Boolean(item.sessionId && studyGroupRescheduleNoticeStillValid(store, userId, item.sessionId, nowMs));
   if (item.sessionId) {
     if (!studyGroupReminderStillValid(store, userId, item.sessionId, nowMs)) return false;
     const startsAt = Date.parse(store.sessions.find((row) => row.id === item.sessionId)?.startsAt ?? "");
@@ -92,10 +107,10 @@ export function studyGroupReminderNotificationStillValid(
 // disappears immediately, without any read. Exported for the unit test that
 // pins the read behaviour.
 export function createReminderListReader(repository: { read(): Promise<StudyGroupStore> }) {
-  return async (userId: string) => {
+  return async (userId: string, locale?: "en-GB" | "zh-CN") => {
     let snapshot: Promise<StudyGroupStore> | null = null;
     return listStudyGroupReminders(userId, (item) =>
-      (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)));
+      (snapshot ??= repository.read()).then((store) => studyGroupReminderNotificationStillValid(store, userId, item)), locale);
   };
 }
 
@@ -188,7 +203,13 @@ function liveKitRuntime() {
       onRejected: (reason) => console.info(JSON.stringify({ type: "study_group.livekit_projects_rejected", reason }))
     })
     : parseLiveKitProjects(rawProjects);
-  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({ reader: secrets });
+  // A rejected key-pair read logs one redacted line (project id, unreadable
+  // or invalid, whether the last good pair is still used), never a value, so
+  // a bad secret is told apart from a key LiveKit refuses.
+  const resolver = localCredentialResolver() ?? createAwsLiveKitCredentialResolver({
+    reader: secrets,
+    onRejected: (rejection) => console.info(JSON.stringify({ type: "study_group.livekit_credentials_rejected", ...rejection }))
+  });
   const fakeGateway = (process.env.APP_ENV || "DEV").trim().toUpperCase() === "DEV" && process.env.LIVEKIT_FAKE_GATEWAY === "1";
   const gateway = createLiveKitCloudGateway({
     resolveCredentials: (project, options) => resolver.resolve(project, options),
@@ -290,7 +311,13 @@ export function studyGroupService() {
       return user ? studyGroupProfile(user) : null;
     },
     notify: async (input) => {
-      await recordUserNotification(input.userId, input.title, input.body, input.sessionId);
+      await recordUserNotification(input.userId, input.title, input.body, input.sessionId, input.copies);
+    },
+    // Student Management (owner 2026-11-03): a deactivated account keeps its
+    // memberships and plans but is not notified.
+    accountActive: async (userId) => {
+      const user = await getUserById(userId);
+      return Boolean(user) && !user?.deactivatedAt && user?.status !== "disabled";
     },
     // The reminders view reads the pending "Live Session reminder" rows and
     // re-checks each one against the current store through the module's own
@@ -430,6 +457,27 @@ export function studyGroupService() {
         }
       })();
     }, 5 * 60_000);
+    timer.unref();
+  }
+  // History prune (review 2026-11-03 H2): once an hour, PostgreSQL only (the
+  // file store is a dev stopgap and small by nature), bounded per tick, a
+  // failing tick swallowed and signalled like the sweeps above.
+  const pruneTimers = globalThis as typeof globalThis & { __lgStudyGroupPruneTimers?: Set<string> };
+  pruneTimers.__lgStudyGroupPruneTimers ??= new Set();
+  if (backend === "postgres" && !pruneTimers.__lgStudyGroupPruneTimers.has(key)) {
+    pruneTimers.__lgStudyGroupPruneTimers.add(key);
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          const result = await service.pruneHistory();
+          if (result.outbox > 0 || result.tutorRequests > 0 || result.webhookReceipts > 0) {
+            console.info(JSON.stringify({ type: "study_group.prune", ...result }));
+          }
+        } catch {
+          console.info(JSON.stringify({ type: "study_group.prune_failed" }));
+        }
+      })();
+    }, 60 * 60_000);
     timer.unref();
   }
   // Dedicated tutor-recovery timer (global review risk 1): exclusively the

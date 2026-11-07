@@ -29,7 +29,7 @@ test('shared video toolbar adjusts 0–100 volume and keeps seek and mute in ste
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(locale => (window as unknown as { mount: (locale: string) => void }).mount(locale), locale);
 
-      await page.getByRole('button', { name: copy.volume, exact: true }).click();
+      await page.getByRole('button', { name: copy.mute, exact: true }).hover();
       const volume = page.getByRole('slider', { name: copy.volume, exact: true });
       await volume.waitFor();
       // Exactly one volume slider; the seek bar keeps its own identity so the
@@ -40,16 +40,40 @@ test('shared video toolbar adjusts 0–100 volume and keeps seek and mute in ste
       assert.equal(await mediaVolume(page), 1);
       assert.equal(await mediaMuted(page), false);
 
+      const sound = page.locator('.la-video-volume button');
+      await page.locator('video').evaluate(video => { (video as HTMLVideoElement).volume = 0; });
+      await volumeValue(page, '0');
+      await page.getByRole('button', { name: copy.unmute, exact: true }).click();
+      assert.equal(await mediaMuted(page), false, 'zero-volume media can be unmuted with the icon');
+      assert.equal(await mediaVolume(page), 1, 'no earlier audible level falls back to full volume');
+
       await volume.fill('40');
       assert(near(await mediaVolume(page), 0.4), 'slider drives the media volume');
       assert.equal(await mediaMuted(page), false, 'raising volume leaves the video audible');
       await volumeShows(page, '40%');
       assert.equal(await volume.getAttribute('aria-valuetext'), '40%');
 
+      await page.getByRole('button', { name: copy.mute, exact: true }).click();
+      assert.equal(await mediaMuted(page), true, 'clicking the sound icon mutes');
+      assert.equal(await mediaVolume(page), 0.4, 'muting preserves the native volume');
+      assert.equal(await sound.locator('.lucide-volume-x').count(), 1);
+      assert.equal(await volume.inputValue(), '0');
+      await page.getByRole('button', { name: copy.unmute, exact: true }).click();
+      assert.equal(await mediaMuted(page), false, 'clicking again restores sound');
+      assert.equal(await volume.inputValue(), '40', 'unmute restores the previous level');
+      assert.equal(await sound.getAttribute('aria-label'), copy.mute);
+      assert.equal(await sound.locator('.lucide-volume-x').count(), 0);
+      await sound.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+      assert.equal(await mediaMuted(page), false, 'rapid toggles use native state');
+
       await volume.fill('0');
       assert.equal(await mediaMuted(page), true, 'zero volume mutes the video');
       await volumeShows(page, '0%');
       assert.equal(await volume.getAttribute('aria-valuetext'), '0%');
+      await page.getByRole('button', { name: copy.unmute, exact: true }).click();
+      assert.equal(await mediaVolume(page), 0.4, 'the icon recovers the last nonzero slider level');
+      assert.equal(await mediaMuted(page), false);
+      await volume.fill('0');
 
       // Raising zero restores audio at the explicitly selected level.
       await volume.fill('60');
@@ -87,7 +111,7 @@ test('shared video toolbar adjusts 0–100 volume and keeps seek and mute in ste
       await seek.focus();
       await seek.press('End');
       // Leaving the volume group dismisses its panel; reopen it after seeking.
-      await page.getByRole('button', { name: copy.volume, exact: true }).click();
+      await page.getByRole('button', { name: copy.mute, exact: true }).click();
       await volume.fill('30');
       await volumeShows(page, '30%');
       assert(near(await mediaVolume(page), 0.3), 'the volume slider still works after seeking');
@@ -110,10 +134,10 @@ test('volume wheel adjusts native audio without scrolling the page or seeking in
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
       await page.setContent('<body style="margin:0;min-height:3000px"><div id="root" style="width:900px;padding:80px 20px"></div></body>');
       await page.addStyleTag({ content: await readFile('components/portal/lesson-authoring.css', 'utf8') });
-      await page.addScriptTag({ content: 'window.__name=value=>value; window.wheelEvents=0; window.addEventListener("wheel", event => {window.wheelEvents++; window.wheelPrevented=event.defaultPrevented;});' });
+      await page.addScriptTag({ content: 'window.__name=value=>value; window.wheelEvents=0; window.addEventListener("wheel", event => {window.wheelEvents++; window.wheelPrevented=event.defaultPrevented; window.wheelCancelable=event.cancelable;});' });
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(locale => (window as any).mount(locale), locale);
-      const button = page.getByRole('button', { name: locale === 'zh-CN' ? '音量' : 'Volume', exact: true });
+      const button = page.locator('.la-video-volume button');
       const slider = page.locator('.la-video-volume-range');
       const mediaState = () => page.locator('video').evaluate(video => ({ volume: Math.round((video as HTMLVideoElement).volume * 100), muted: (video as HTMLVideoElement).muted, time: (video as HTMLVideoElement).currentTime, paused: (video as HTMLVideoElement).paused }));
       const wheel = async (target: import('playwright').Locator, delta: number, expected: number) => {
@@ -123,7 +147,11 @@ test('volume wheel adjusts native audio without scrolling the page or seeking in
         await page.waitForFunction(count => (window as any).wheelEvents > count, before.count);
         await page.waitForFunction(value => document.querySelector('.la-video-volume-range')?.getAttribute('aria-valuetext') === `${value}%`, expected);
         assert.deepEqual(await mediaState(), { volume: expected, muted: expected === 0, time: 0, paused: true });
-        assert.equal(await page.evaluate(() => (window as any).wheelPrevented), true, 'wheel over volume prevents page scrolling');
+        // Chrome can send a noncancelable wheel while fallback fullscreen
+        // locks page scrolling. Only cancelable events can be defaultPrevented;
+        // the unchanged page position below is required in either case.
+        const cancellation = await page.evaluate(() => ({ prevented: (window as { wheelPrevented?: boolean }).wheelPrevented, cancelable: (window as { wheelCancelable?: boolean }).wheelCancelable }));
+        assert.equal(cancellation.prevented, cancellation.cancelable, 'cancelable wheel over volume is prevented');
         assert.equal(await page.evaluate(() => window.scrollY), before.scroll);
       };
 

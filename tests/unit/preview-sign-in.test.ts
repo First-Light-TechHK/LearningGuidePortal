@@ -36,7 +36,7 @@ test("Preview login returns an authenticated visitor to the original course deta
       assert.ok(await render(returnTo, "password"), "guests can enter their password");
       state.user = { email: "learner@example.test", emailVerifiedAt: "2026-01-01" };
       for (const step of [undefined, "password"]) await assert.rejects(() => render(returnTo, step), { message: `redirect:${returnTo}` });
-      await assert.rejects(() => render("https://external.test/"), { message: `redirect:/${locale}/account/my-learning` });
+      await assert.rejects(() => render("https://external.test/"), { message: `redirect:/${locale}/portal` });
       state.user = { email: null, emailVerifiedAt: null };
       await assert.rejects(() => render(), { message: `redirect:/${locale}/portal/bind-email?returnTo=${encodeURIComponent(returnTo)}` });
       assert.equal(getMessages(locale).portal.navigation.pricing, locale === "en-GB" ? "Subscription" : "订阅");

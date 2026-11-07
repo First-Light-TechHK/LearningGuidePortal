@@ -502,3 +502,95 @@ test("a withdrawal settles only a queued question of the asker, and a withdrawn 
   await repository.settleTutorRequest({ id: "w-1", leaseOwner: "owner-1", outcome: { status: "answered", terminalReason: "answered" }, outbox: { room: "s-withdraw", projectId: "p-1", text: "answer", messageId: "w-1" } });
   assert.equal(await repository.claimNextTutorRequest({ sessionId: "s-withdraw", leaseOwner: "owner-2", leaseSeconds: 60, maxAttempts: 3 }), null);
 });
+
+test("H2 (review 2026-11-03): a scoped read loads the scope only, a scoped update writes within it, and pruneHistory removes settled history only", async () => {
+  const repository = studyGroupRepository();
+  await seedGroupAndSession(repository, { sessionId: "s-scope-a", maxParticipants: 4 });
+  await seedGroupAndSession(repository, { sessionId: "s-scope-b", maxParticipants: 4 });
+  await seatUser(repository, "s-scope-a", "u-1");
+  await seatUser(repository, "s-scope-b", "u-1");
+  await seatUser(repository, "s-scope-b", "u-2");
+  await seedTutorRequest(repository, { id: "t-scope-a", sessionId: "s-scope-a" });
+  const bySession = await repository.read({ session: "s-scope-a" });
+  assert.deepEqual(bySession.sessions.map((row) => row.id), ["s-scope-a"]);
+  assert.deepEqual(bySession.groups.map((row) => row.id), ["g-s-scope-a"]);
+  assert.deepEqual(bySession.memberships.map((row) => row.groupId), ["g-s-scope-a", "g-s-scope-a"]);
+  assert.deepEqual(bySession.presences.map((row) => row.userId), ["u-1"]);
+  assert.deepEqual(bySession.tutorRequests.map((row) => row.id), ["t-scope-a"]);
+  const byGroup = await repository.read({ group: "g-s-scope-b" });
+  assert.deepEqual(byGroup.sessions.map((row) => row.id), ["s-scope-b"]);
+  assert.deepEqual(byGroup.presences.map((row) => row.userId).sort(), ["u-1", "u-2"]);
+  assert.equal(byGroup.tutorRequests.length, 0);
+  const seats = await repository.read({ seatsOf: "u-2" });
+  assert.deepEqual(seats.sessions.map((row) => row.id), ["s-scope-b"]);
+  assert.deepEqual(seats.presences.map((row) => row.userId).sort(), ["u-1", "u-2"], "everyone seated in those sessions");
+  assert.deepEqual((await repository.read({ seatsOf: "nobody" })).sessions, []);
+  // A scoped update changes rows in the scope and inserts new ones; the derived occupancy is still counted in the database.
+  await repository.update((store) => {
+    assert.deepEqual(store.sessions.map((row) => row.id), ["s-scope-b"]);
+    store.presences.find((row) => row.userId === "u-2")!.leftAt = TEST_NOW;
+    store.presences.push({ id: "p-scope-b-u3", sessionId: "s-scope-b", userId: "u-3", requestedAt: `${TEST_NOW}#00000009`, enteredAt: TEST_NOW, lastSeenAt: TEST_NOW, leftAt: null, phase: "live", liveKitParticipantSid: null });
+  }, { session: "s-scope-b" });
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_presences WHERE session_id = 's-scope-b' AND left_at IS NULL"), 2);
+  assert.equal(await countScalar("SELECT occupancy FROM live_sessions WHERE id = 's-scope-b'"), 2);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_presences WHERE session_id = 's-scope-a' AND left_at IS NULL"), 1, "the other session is untouched");
+  // Prune: settled rows older than the cutoff only, bounded, product history kept.
+  await getPool().query("UPDATE study_group_tutor_requests SET status = 'answered', answered_at = NOW() - INTERVAL '45 days', received_at = NOW() - INTERVAL '45 days' WHERE id = 't-scope-a'");
+  await getPool().query(`INSERT INTO study_group_outbox (id, kind, dedupe_key, session_id, payload, status, attempts, created_at, delivered_at)
+    VALUES ('o-scope-old', 'room_message', 't-scope-a', 's-scope-a', '{}'::jsonb, 'delivered', 1, NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days'),
+           ('o-scope-new', 'room_message', 'k-new', 's-scope-a', '{}'::jsonb, 'delivered', 1, NOW(), NOW()),
+           ('o-scope-queued', 'room_message', 'k-queued', 's-scope-a', '{}'::jsonb, 'queued', 0, NOW() - INTERVAL '45 days', NULL)`);
+  await getPool().query(`INSERT INTO study_group_webhook_receipts (receipt_id, event_type, session_id, payload, status, received_at)
+    VALUES ('w-old-done', 'room_finished', 's-scope-a', '{}'::jsonb, 'processed', NOW() - INTERVAL '45 days'),
+           ('w-old-open', 'room_finished', 's-scope-a', '{}'::jsonb, 'received', NOW() - INTERVAL '45 days')`);
+  assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 100 }), { outbox: 1, tutorRequests: 1, webhookReceipts: 1 });
+  assert.deepEqual((await rows<{ id: string }>("SELECT id FROM study_group_outbox ORDER BY id")).map((row) => row.id), ["o-scope-new", "o-scope-queued"]);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_tutor_requests"), 0);
+  assert.deepEqual((await rows<{ receipt_id: string }>("SELECT receipt_id FROM study_group_webhook_receipts")).map((row) => row.receipt_id), ["w-old-open"], "a receipt still awaiting its retry stays");
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_presences"), 4, "product history is never pruned");
+  assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 100 }), { outbox: 0, tutorRequests: 0, webhookReceipts: 0 });
+});
+
+test("H2 (review 2026-11-03): with 10,000 rows of history a session-scoped read and write touch that session's rows only and cost a fraction of the whole store", async () => {
+  const repository = studyGroupRepository();
+  await seedGroupAndSession(repository, { sessionId: "s-perf-hot", maxParticipants: 6 });
+  await seatUser(repository, "s-perf-hot", "u-1");
+  // 200 groups, 2,000 completed sessions, 10,000 presences, 10,000 delivered outbox rows, 5,000 answered tutor requests: a year of use.
+  const old = "NOW() - INTERVAL '40 days'";
+  await getPool().query(`INSERT INTO study_groups (id, title, course_id, about, host_user_id, status, created_at, updated_at)
+    SELECT 'g-perf-' || g, 'G', 'course-1', '', 'host', 'active', ${old}, ${old} FROM generate_series(1, 200) g`);
+  await getPool().query(`INSERT INTO live_sessions (id, group_id, title, related_lesson_id, starts_at, duration_seconds, max_participants, focus, ai_tutor_enabled, livekit_project_id, status, occupancy, started_at, completed_at, created_at, updated_at)
+    SELECT 's-perf-' || s, 'g-perf-' || ((s % 200) + 1), 'S', NULL, ${old}, 1800, 6, NULL, true, NULL, 'completed', 0, ${old}, ${old}, ${old}, ${old} FROM generate_series(1, 2000) s`);
+  await getPool().query(`INSERT INTO study_group_presences (id, session_id, user_id, requested_at, entered_at, left_at, phase)
+    SELECT 'p-perf-' || n, 's-perf-' || ((n % 2000) + 1), 'u-perf-' || (n / 2000), '${TEST_NOW}#00000001', ${old}, ${old}, 'live' FROM generate_series(1, 10000) n`);
+  await getPool().query(`INSERT INTO study_group_outbox (id, kind, dedupe_key, session_id, payload, status, attempts, created_at, delivered_at)
+    SELECT 'o-perf-' || n, 'room_message', 'k-perf-' || n, 's-perf-' || ((n % 2000) + 1), '{}'::jsonb, 'delivered', 1, ${old}, ${old} FROM generate_series(1, 10000) n`);
+  await getPool().query(`INSERT INTO study_group_tutor_requests (id, session_id, user_id, client_event_id, text, received_at, status, answered_at)
+    SELECT 't-perf-' || n, 's-perf-' || ((n % 2000) + 1), 'u-perf-' || (n / 2000), 'e-perf-' || n, 'q', ${old}, 'answered', ${old} FROM generate_series(1, 5000) n`);
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_presences"), 10001);
+  const time = async (work: () => Promise<unknown>, runs: number) => {
+    const samples: number[] = [];
+    for (let index = 0; index < runs; index += 1) {
+      const started = process.hrtime.bigint();
+      await work();
+      samples.push(Number(process.hrtime.bigint() - started) / 1e6);
+    }
+    return samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)];
+  };
+  await repository.read();
+  const wholeMs = await time(() => repository.read(), 3);
+  const scopedMs = await time(() => repository.read({ session: "s-perf-hot" }), 5);
+  const scoped = await repository.read({ session: "s-perf-hot" });
+  assert.deepEqual(scoped.sessions.map((row) => row.id), ["s-perf-hot"]);
+  assert.equal(scoped.presences.length, 1);
+  assert.equal(scoped.outbox.length, 0);
+  assert.equal(scoped.tutorRequests.length, 0);
+  assert.equal((await repository.read()).sessions.length, 2001, "the whole store is still there for the callers that need it");
+  const writeMs = await time(() => repository.update((store) => { store.presences[0].lastSeenAt = TEST_NOW; }, { session: "s-perf-hot" }), 5);
+  console.info(JSON.stringify({ type: "study_group.scope_perf", wholeMs: Math.round(wholeMs), scopedReadMs: Math.round(scopedMs * 10) / 10, scopedWriteMs: Math.round(writeMs * 10) / 10 }));
+  assert.ok(scopedMs * 5 < wholeMs, `a scoped read (${scopedMs.toFixed(1)} ms) is at least five times cheaper than the whole store (${wholeMs.toFixed(1)} ms)`);
+  assert.ok(writeMs * 3 < wholeMs, `a scoped write (${writeMs.toFixed(1)} ms) costs less than a third of one whole read (${wholeMs.toFixed(1)} ms)`);
+  // The prune bound holds under volume: one tick removes at most `limit` rows per table.
+  assert.deepEqual(await repository.pruneHistory({ olderThanDays: 30, limit: 1000 }), { outbox: 1000, tutorRequests: 1000, webhookReceipts: 0 });
+  assert.equal(await countScalar("SELECT count(*) FROM study_group_outbox"), 9000);
+});

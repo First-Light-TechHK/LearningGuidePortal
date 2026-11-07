@@ -36,17 +36,21 @@
 .planStatus { display:flex; flex-direction:column; gap:16px; padding:24px; border:1px solid #d6e3f7; border-radius:12px; background:#f0f7ff; }
 .page .planStatus h2 { display:flex; align-items:center; gap:10px; margin:0; color:#15233a; font:600 18px/22px Inter,Arial,sans-serif; }
 .planStatus h2 img { flex:none; width:24px; height:24px; }
-.page .learningAction { display:flex; align-items:center; justify-content:center; box-sizing:border-box; width:100%; padding:13px 12px; border-radius:8px; background:#1d6bff; color:#fff; font:600 15px/18px Inter,Arial,sans-serif; text-align:center; text-decoration:none; }
-.curriculum details { margin-top: 8px; }
-.curriculum summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; list-style: none; cursor: pointer; }
-.curriculum summary::-webkit-details-marker { display: none; }
+.page .learningAction { display:flex; align-items:center; justify-content:center; box-sizing:border-box; width:100%; padding:13px 12px; border-radius:8px; background:#1d6bff; color:#fff; font:600 15px/18px Inter,Arial,sans-serif; text-align:center; text-decoration:none; transition:background-color 160ms ease,box-shadow 160ms ease,transform 160ms ease; }
+.disclosure { margin-top: 8px; }
+.page .curriculumToggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; width:100%; margin:0; padding:0; border:0; background:transparent; font:inherit; text-align:left; cursor:pointer; }
+.curriculumBody { display:grid; grid-template-rows:1fr; opacity:1; transition:grid-template-rows 300ms cubic-bezier(.22,1,.36,1),opacity 220ms ease; }
+.curriculumClip { min-height:0; overflow:hidden; }
+.disclosure[data-expanded="false"] .curriculumBody { grid-template-rows:0fr; opacity:0; }
+.disclosure .lessonList { transform:translateY(0); transition:transform 300ms cubic-bezier(.22,1,.36,1); }
+.disclosure[data-expanded="false"] .lessonList { transform:translateY(-6px); }
 .meta { display: flex; gap: 24px; color: #99a1af; font-size: 14px; line-height: 20px; }
 .meta span { display: flex; gap: 8px; align-items: center; }
 .toggle { display: flex; align-items: center; gap: 8px; color: #155dfc; font-size: 14px; font-weight: 500; }
-.less, details[open] .more { display: none; }
-details[open] .less { display: inline; }
-.toggle img { transform: rotate(180deg); }
-details[open] .toggle img { transform: none; }
+.less, .disclosure[data-expanded="true"] .more { display: none; }
+.disclosure[data-expanded="true"] .less { display: inline; }
+.toggle img { transform: rotate(180deg); transition:transform 300ms cubic-bezier(.22,1,.36,1); }
+.disclosure[data-expanded="true"] .toggle img { transform: none; }
 .lessonList { display: grid; gap: 12px; margin-top: 16px; }
 .lesson { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 100px; padding: 15px 33px 17px 18px; border: 1px solid rgb(0 0 0 / 10%); border-radius: 8px; }
 .lessonMain { min-width: 0; flex: 1; }
@@ -56,11 +60,19 @@ details[open] .toggle img { transform: none; }
 .lessonDescription { display: flex; align-items: flex-start; gap: 20px; color: #99a1af; font-size: 14px; line-height: 17px; }
 .lessonDescription time { flex: 0 0 53px; border-right: 1px solid rgb(0 0 0 / 10%); min-height: 32px; padding-top: 2px; }
 .page .lessonDescription p { margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.page .preview { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 116px; min-height: 42px; padding: 10px 16px; border-radius: 10px; background: #155dfc; color: #fff; font-size: 16px; font-weight: 500; line-height: 20px; text-decoration: none; }
-.page a:focus-visible, .page summary:focus-visible { outline: 2px solid #155dfc; outline-offset: 4px; }
+.page .preview { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 116px; min-height: 42px; padding: 10px 16px; border-radius: 10px; background: #155dfc; color: #fff; font-size: 16px; font-weight: 500; line-height: 20px; text-decoration: none; transition:background-color 160ms ease,box-shadow 160ms ease,transform 160ms ease; }
+.page a:focus-visible, .page .curriculumToggle:focus-visible { outline: 2px solid #155dfc; outline-offset: 4px; }
 .page button.preview { border: 0; font-family: inherit; }
 .page .preview:disabled { opacity: .5; cursor: not-allowed; }
 /* Keep the shared components; scope this screen's Figma presentation. */
+@media (hover:hover) and (pointer:fine) {
+  .page .preview:hover:not(:disabled), .page .learningAction:hover { background:#124ce5; box-shadow:0 4px 10px rgb(21 93 252 / 20%); transform:translateY(-1px); }
+  .page .preview:active:not(:disabled), .page .learningAction:active { background:#1043ca; box-shadow:0 1px 3px rgb(21 93 252 / 16%); transform:translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .curriculumBody, .disclosure .lessonList, .toggle img, .page .preview, .page .learningAction { transition:none; }
+  .page .preview:hover:not(:disabled), .page .learningAction:hover { transform:none; }
+}
 @media (max-width: 1100px) {
   .body { width: calc(100% - 40px); grid-template-columns: minmax(0, 1fr) 320px; }
   .card { padding: 24px; }

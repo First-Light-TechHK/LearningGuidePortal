@@ -8,6 +8,8 @@ export type BackofficeOrder = {
   paymentMode: "demo" | "stripe";
   createdAt: string;
   stripeCheckoutSessionId?: string | null;
+  stripeInvoiceId?: string | null;
+  paymentReview?: import("./order-management").PaymentReview;
   stripePaymentIntentId?: string | null;
   lastStripeStatus?: string | null;
   lastSyncedAt?: string | null;
@@ -15,5 +17,5 @@ export type BackofficeOrder = {
   failureReason?: string | null;
   plan: { name: string } | null;
   subscription?: { state: string; validTo: string } | null;
-  activities?: Array<{ action: string; result: string; reason: string | null; createdAt: string }>;
+  activities?: Array<{ action: string; result: string; reason: string | null; createdAt: string; actorRole?: "learner" | "operator" }>;
 };

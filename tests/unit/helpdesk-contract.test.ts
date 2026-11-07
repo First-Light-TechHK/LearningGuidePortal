@@ -220,7 +220,9 @@ test("problem+json body follows RFC 9457 with a stable type URI per code", () =>
     idempotency_conflict: 422, stale_ticket: 409, invalid_transition: 409, reopen_window_passed: 409, rating_window_passed: 409, already_rated: 409,
     tag_limit_reached: 409, rate_limited: 429, integration_disabled: 503, helpdesk_unavailable: 503, assistant_unavailable: 503,
     // v3 (helpdesk-v3-alternatives-rating.md §2): a second, different rating of one AI answer.
-    answer_already_rated: 409
+    answer_already_rated: 409,
+    // Student Management (2026-11-02): the AI Support Assistant is switched off for this learner.
+    feature_unavailable: 403
   };
   assert.deepEqual(PROBLEM_STATUS, statuses);
 });

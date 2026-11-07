@@ -3,9 +3,10 @@
 // refused one of Admin's short lines or framed a click. Portal now picks the
 // template language exactly as Admin's guard does (workflow/guard.ts
 // learnerOf): Chinese characters with a Traditional-only one -> zh-TW,
-// Chinese -> zh-CN, Latin letters only -> English, neither (emoji, punctuation)
-// -> the page's language. A click (no text) in the zh-CN chat follows the
-// learner's own last words in the session. The zh-TW strings are Admin's.
+// Chinese -> zh-CN, anything not Chinese (English, Japanese, Korean, emoji or
+// punctuation only) -> English (owner 2026-11-02). A click (no text) follows the learner's own newest
+// words in the session, on either page (owner 2026-10-31: the card speaks the
+// learner's language, not the page's). The zh-TW strings are Admin's.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -39,21 +40,26 @@ const ADMIN_ZH_TW = {
 };
 
 test("the template language follows the learner's own text, as Admin's guard decides it", () => {
-  assert.equal(templateVariant("你好，付款失败怎么办", "zh-CN"), "zh-CN");
-  assert.equal(templateVariant("請問付款失敗怎麼辦", "zh-CN"), "zh-TW");
-  assert.equal(templateVariant("謝謝", "en-GB"), "zh-TW", "Chinese in the English chat gets Chinese copy");
-  assert.equal(templateVariant("你好", "en-GB"), "zh-CN");
-  assert.equal(templateVariant("hello", "zh-CN"), "en-GB", "Latin letters only: English, like Admin");
-  assert.equal(templateVariant("我的email收不到", "zh-CN"), "zh-CN", "mixed Chinese and English is Chinese");
-  assert.equal(templateVariant("👍🙏", "zh-CN"), "zh-CN");
-  assert.equal(templateVariant("？？", "en-GB"), "en-GB");
-  assert.equal(templateVariant("什么时候著名的乾隆后来头发", "zh-CN"), "zh-CN", "characters both scripts use are not Traditional");
-  // A click has no text: the zh-CN chat follows the learner's last words; the English chat stays English (its cards are English).
+  assert.equal(templateVariant("你好，付款失败怎么办"), "zh-CN");
+  assert.equal(templateVariant("請問付款失敗怎麼辦"), "zh-TW");
+  assert.equal(templateVariant("謝謝"), "zh-TW", "Chinese in the English chat gets Chinese copy");
+  assert.equal(templateVariant("你好"), "zh-CN");
+  assert.equal(templateVariant("hello"), "en-GB", "Latin letters only: English, like Admin");
+  assert.equal(templateVariant("ログインできません"), "en-GB", "not Chinese (Japanese): English");
+  assert.equal(templateVariant("領収書が届かない"), "en-GB", "Japanese with kanji is still not Chinese");
+  assert.equal(templateVariant("로그인이 안 돼요"), "en-GB", "not Chinese (Korean): English");
+  assert.equal(templateVariant("我的email收不到"), "zh-CN", "mixed Chinese and English is Chinese");
+  assert.equal(templateVariant("👍🙏"), "en-GB", "emoji only is not Chinese: English (owner 2026-11-02)");
+  assert.equal(templateVariant("？？"), "en-GB");
+  assert.equal(templateVariant("什么时候著名的乾隆后来头发"), "zh-CN", "characters both scripts use are not Traditional");
+  // A click has no text: the learner's newest words with letters decide, on either page; none yet -> the page's language.
   assert.equal(frameVariant("zh-CN", ["你好", "我的帳號登不進去"]), "zh-TW");
   assert.equal(frameVariant("zh-CN", ["我的帳號登不進去", "好的谢谢"]), "zh-CN", "the newest words decide");
-  assert.equal(frameVariant("zh-CN", ["ok", "👍"]), "zh-CN", "no Chinese at all: the page's language");
+  assert.equal(frameVariant("zh-CN", ["请问", "👍"]), "zh-CN", "emoji have no language: the words before them decide");
+  assert.equal(frameVariant("zh-CN", ["👍", "？"]), "zh-CN", "no letters at all: the page's language");
   assert.equal(frameVariant("zh-CN", []), "zh-CN");
-  assert.equal(frameVariant("en-GB", ["請問"]), "en-GB");
+  assert.equal(frameVariant("en-GB", ["請問"]), "zh-TW", "Chinese words on the English page: a Chinese frame");
+  assert.equal(frameVariant("zh-CN", ["你好", "how do I cancel"]), "en-GB", "English words on the Chinese page: an English frame");
 });
 
 test("the zh-TW templates are Admin's, every template passes Portal's own check, and each intent has its line", () => {
@@ -68,8 +74,8 @@ test("the zh-TW templates are Admin's, every template passes Portal's own check,
   assert.equal(replyTemplate("zh-TW", "off_topic"), ADMIN_ZH_TW.offTopic);
   assert.equal(replyTemplate("zh-TW", "vague"), ADMIN_ZH_TW.greeting);
   assert.equal(replyTemplate("zh-CN", "greeting"), TURN_TEMPLATES["zh-CN"].greeting, "zh-CN unchanged");
-  assert.ok(Object.values(ADMIN_ZH_TW).every((line) => templateVariant(line, "zh-CN") === "zh-TW"), "the zh-TW copy is itself Traditional");
-  assert.ok([TURN_TEMPLATES["zh-CN"].greeting, TURN_TEMPLATES["zh-CN"].farewell, TURN_TEMPLATES["zh-CN"].offTopic, TURN_TEMPLATES["zh-CN"].opening, TURN_TEMPLATES["zh-CN"].closing].every((line) => templateVariant(line, "zh-CN") === "zh-CN"));
+  assert.ok(Object.values(ADMIN_ZH_TW).every((line) => templateVariant(line) === "zh-TW"), "the zh-TW copy is itself Traditional");
+  assert.ok([TURN_TEMPLATES["zh-CN"].greeting, TURN_TEMPLATES["zh-CN"].farewell, TURN_TEMPLATES["zh-CN"].offTopic, TURN_TEMPLATES["zh-CN"].opening, TURN_TEMPLATES["zh-CN"].closing].every((line) => templateVariant(line) === "zh-CN"));
 });
 
 function reply(name: string, input: AdminSuggestRequest, patch: Record<string, unknown> = {}): AdminSuggestReply {
@@ -80,14 +86,15 @@ function reply(name: string, input: AdminSuggestRequest, patch: Record<string, u
   return { suggestion: suggestion as AdminSuggestReply["suggestion"], alternatives: (body.alternatives as AdminSuggestReply["alternatives"]) ?? [], ...(turn ? { turn } : {}) };
 }
 
-function harness(answer: (input: AdminSuggestRequest) => AdminSuggestReply, release: FaqRelease | null = ZH_RELEASE) {
+function harness(answer: (input: AdminSuggestRequest) => AdminSuggestReply, release: FaqRelease | FaqRelease[] | null = ZH_RELEASE) {
+  const releases = release === null ? [] : [release].flat();
   const repository = createLocalHelpdeskRepository(path.join(root, randomUUID()));
   const assistant = createAssistantService({
     repository,
     admin: { async suggest() { return null; }, async suggestReply(input: AdminSuggestRequest) { return answer(input); }, async reportOutcome() { return true; }, async faqs() { return []; }, async faq() { return null; } },
     now: () => new Date("2026-10-30T09:00:00.000Z"),
     log: () => undefined,
-    release: { async current(locale) { return release && release.locale === locale ? release : null; } },
+    release: { async current(locale) { return releases.find((one) => one.locale === locale) ?? null; } },
     learnerRecords: async () => ({ user: { email: learner.email, emailVerifiedAt: "2026-01-01T00:00:00.000Z" }, orders: [], subscriptions: [] })
   });
   return { assistant, repository };
@@ -116,7 +123,7 @@ test("a refused opening or closing of a typed answer is framed in zh-TW for a Tr
   assert.equal(turn.closing, ADMIN_ZH_TW.closing);
 });
 
-test("a click is framed in zh-TW after the learner wrote Traditional Chinese in this session, in zh-CN otherwise; the English chat stays English", async () => {
+test("a click is framed in zh-TW after the learner wrote Traditional Chinese in this session, in zh-CN otherwise, on the English page too", async () => {
   const h = harness((input) => reply("suggestChoiceResponse", input));
   const { sessionId } = await h.assistant.startSession(learner, { locale: "zh-CN", orderId: null });
   const fresh = await h.assistant.click(learner, { locale: "zh-CN", nodeId: FAILED, fromNodeId: null, via: "signal", sessionId, label: null }, randomUUID());
@@ -125,11 +132,17 @@ test("a click is framed in zh-TW after the learner wrote Traditional Chinese in 
   const option = await h.assistant.click(learner, { locale: "zh-CN", nodeId: FAILED, fromNodeId: CHOICE, via: "option", sessionId, label: null }, randomUUID());
   assert.equal(turnOf(option.response).opening, ADMIN_ZH_TW.opening);
   assert.equal(turnOf(option.response).closing, ADMIN_ZH_TW.closing);
-  const english = harness((input) => reply("suggestChoiceResponse", input), EN_RELEASE);
+  const english = harness((input) => reply("suggestChoiceResponse", input), [EN_RELEASE, ZH_RELEASE]);
   const en = await english.assistant.startSession(learner, { locale: "en-GB", orderId: null });
   await english.assistant.ask(learner, { message: "付款有問題", locale: "en-GB", faqId: null, sessionId: en.sessionId }, randomUUID());
   const enOption = await english.assistant.click(learner, { locale: "en-GB", nodeId: FAILED, fromNodeId: CHOICE, via: "option", sessionId: en.sessionId, label: null }, randomUUID());
-  assert.equal(turnOf(enOption.response).opening, TURN_TEMPLATES["en-GB"].opening);
+  assert.equal(turnOf(enOption.response).opening, ADMIN_ZH_TW.opening, "the English page follows the learner's Chinese");
+  // Only the English release cached: the English card, so the English frame
+  const englishOnly = harness((input) => reply("suggestChoiceResponse", input), EN_RELEASE);
+  const only = await englishOnly.assistant.startSession(learner, { locale: "en-GB", orderId: null });
+  await englishOnly.assistant.ask(learner, { message: "付款有問題", locale: "en-GB", faqId: null, sessionId: only.sessionId }, randomUUID());
+  const onlyOption = await englishOnly.assistant.click(learner, { locale: "en-GB", nodeId: FAILED, fromNodeId: CHOICE, via: "option", sessionId: only.sessionId, label: null }, randomUUID());
+  assert.equal(turnOf(onlyOption.response).opening, TURN_TEMPLATES["en-GB"].opening);
 });
 
 test("a chip through Admin's per-FAQ path (no release yet) is framed in zh-TW after Traditional words in the session", async () => {

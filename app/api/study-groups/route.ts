@@ -1,4 +1,5 @@
 import { readJsonObject, signedInUser, studyGroupData, studyGroupFailure, unauthenticated } from "@/modules/group-study/http";
+import { parseCreateGroupBody } from "@/modules/group-study/parsers";
 import { studyGroupService } from "@/modules/group-study/runtime";
 
 export async function GET(request: Request) {
@@ -24,7 +25,8 @@ export async function GET(request: Request) {
       // delivered on that very request; later polls inside the window are
       // skipped like any other request-triggered sweep (hunt L5).
       await service.dispatchDueRemindersOnRequest();
-      return studyGroupData(await service.listReminders(user.id));
+      const locale = new URL(request.url).searchParams.get("locale");
+      return studyGroupData(await service.listReminders(user.id, locale === "zh-CN" || locale === "en-GB" ? locale : undefined));
     }
     return studyGroupData(await service.listDiscover({
       actorUserId: user?.id || null,
@@ -40,13 +42,8 @@ export async function POST(request: Request) {
   const user = await signedInUser(request);
   if (!user) return unauthenticated();
   try {
-    const body = await readJsonObject<{ title?: string; courseId?: string; about?: string }>(request);
-    return studyGroupData(await studyGroupService().createGroup({
-      actorUserId: user.id,
-      title: body.title || "",
-      courseId: body.courseId || "",
-      about: body.about || ""
-    }));
+    const body = parseCreateGroupBody(await readJsonObject(request));
+    return studyGroupData(await studyGroupService().createGroup({ actorUserId: user.id, ...body }));
   } catch (error) {
     return studyGroupFailure(error);
   }

@@ -234,3 +234,64 @@ export class StudyGroupError extends Error {
     this.code = code;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Scoped reads (backend review 2026-11-03 H2). The service used to load the
+// whole Study Group store for every request; a request about one session, one
+// group or one user's seats now names its scope, and the repository loads
+// only those rows. The rule for what a scope holds lives here, once, so the
+// file adapter filters exactly what the PostgreSQL adapter selects, and the
+// unit suite (file adapter) proves every scoped call site needs nothing more.
+//
+//   { session }  the session, its group, the group's memberships and every row
+//                of that session (intents, presences, meetings, reminders, tutor
+//                requests, outbox).
+//   { group }    the group, its memberships, its sessions and every row of
+//                those sessions.
+//   { seatsOf }  the sessions where this user holds an open seat (presence
+//                without leftAt), with their groups, memberships and rows.
+export type StudyGroupScope = { session: string } | { group: string } | { seatsOf: string };
+
+export function scopeSessionIds(store: StudyGroupStore, scope: StudyGroupScope): Set<string> {
+  if ("session" in scope) return new Set([scope.session]);
+  if ("group" in scope) return new Set(store.sessions.filter((item) => item.groupId === scope.group).map((item) => item.id));
+  return new Set(store.presences.filter((item) => item.userId === scope.seatsOf && !item.leftAt).map((item) => item.sessionId));
+}
+
+/** The rows of `store` that `scope` holds, as the same row objects (a mutation through the subset reaches the whole). */
+export function scopeStore(store: StudyGroupStore, scope: StudyGroupScope): StudyGroupStore {
+  const sessionIds = scopeSessionIds(store, scope);
+  const sessions = store.sessions.filter((item) => sessionIds.has(item.id));
+  const groupIds = new Set(sessions.map((item) => item.groupId));
+  if ("group" in scope) groupIds.add(scope.group);
+  const ofSession = <T extends { sessionId: string }>(rows: T[]) => rows.filter((item) => sessionIds.has(item.sessionId));
+  return {
+    groups: store.groups.filter((item) => groupIds.has(item.id)),
+    memberships: store.memberships.filter((item) => groupIds.has(item.groupId)),
+    sessions,
+    intents: ofSession(store.intents),
+    presences: ofSession(store.presences),
+    meetings: ofSession(store.meetings),
+    reminders: ofSession(store.reminders),
+    tutorRequests: ofSession(store.tutorRequests),
+    outbox: ofSession(store.outbox)
+  };
+}
+
+/**
+ * Rows a scoped mutation added (appended to the whole store) or replaced by a
+ * new object under a known id (swapped in, so the file adapter persists what
+ * PostgreSQL's by-id diff persists); a shared object changed in place is
+ * already in the whole store.
+ */
+export function mergeScopedRows(whole: StudyGroupStore, scoped: StudyGroupStore) {
+  for (const table of Object.keys(whole) as Array<keyof StudyGroupStore>) {
+    const rows = whole[table] as Array<{ id: string }>;
+    const at = new Map(rows.map((row, index) => [row.id, index]));
+    for (const row of scoped[table] as Array<{ id: string }>) {
+      const index = at.get(row.id);
+      if (index === undefined) rows.push(row);
+      else if (rows[index] !== row) rows[index] = row;
+    }
+  }
+}

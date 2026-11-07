@@ -1,5 +1,6 @@
 // Stripe's invoice preview, pinned to the original subscription period.
 export type StripeUpgradeProration = {
+  sourceVoidedUpgradeInvoiceId?: string;
   subscriptionId: string;
   customerId: string;
   itemId: string;

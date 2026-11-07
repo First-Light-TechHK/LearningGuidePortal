@@ -1,0 +1,13 @@
+schema: overlay-suite/v2
+id: helpdesk
+title: Helpdesk — learner enquiries, assistant and Help Centre
+status: active
+kind: functional
+subject: product
+source: inbox/helpdesk.md
+packages:
+  - modules/helpdesk
+  - components/helpdesk
+  - app/api/helpdesk
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/helpdesk-*.test.ts && bash scripts/pg-io-postgres.sh tests/io/postgres/helpdesk-repository.test.ts tests/io/postgres/helpdesk-insights.test.ts

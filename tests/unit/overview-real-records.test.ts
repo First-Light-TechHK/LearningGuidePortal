@@ -18,6 +18,33 @@ before(async()=>{
 });
 after(async()=>{stop();process.chdir(cwd);process.env=environment;if(directory&&path.dirname(directory)===tmpdir())await rm(directory,{recursive:true,force:true});});
 
+test("three courses with three interleaved lessons retain every event and one current card per course", async () => {
+  const user=await verifiedUser(store,"three-courses@example.test"), data=await readProductData();
+  const template=data.courses.find((course:ProductCourse)=>course.id===COURSE_ID);
+  const courses=[1,2,3].map(number=>({ ...structuredClone(template), id:`parallel-course-${number}`,slug:`parallel-course-${number}`,status:"published",
+    sections:[{id:`section-${number}`,title:"Three lessons",lessons:[1,2,3].map(index=>({
+      id:`parallel-${number}-lesson-${index}`,title:`Lesson ${index}`,body:"",isPublic:index===1,durationMinutes:1,
+      contents:[{id:`parallel-${number}-text-${index}`,title:"Reading",type:"text",mode:"lecture",html:"<p>Reading</p>",nodes:[]}],
+    }))}],
+  }));
+  data.courses.push(...courses);await writeProductData(data);
+  const {quote}=await store.createQuote(user.id,"everything-pc-6");await store.completeDemoCheckout(user.id,quote.id);
+  let count=0;
+  for(const index of [0,1,2,0]) for(const course of courses){
+    const lesson=course.sections[0].lessons[index];
+    await store.recordStudyEvent({userId:user.id,courseId:course.id,lessonId:lesson.id,learningMode:"text",contentId:lesson.contents[0].id,event:"open",seconds:0,clientEventId:`parallel-${count++}`});
+    const display=await getOverviewDisplay(user.id,user.nickname,"en-GB");
+    const card=display.courses.find(item=>item.courseId===course.id)!;
+    assert.equal(card.lessonId,lesson.id);assert.equal(card.contentId,lesson.contents[0].id);
+    assert.equal(display.syncCourses?.find(item=>item.courseId===course.id)?.currentLessonId,lesson.id);
+  }
+  const overview=await store.getLearningOverview(user.id), saved=await readProductData();
+  assert.equal(overview.courses.length,3);
+  assert.equal(saved.studyRecords.filter((row:{userId:string})=>row.userId===user.id).length,3);
+  assert.equal(saved.studyEvents.filter((row:{userId:string})=>row.userId===user.id).length,12);
+  assert.ok(overview.courses.every(item=>item.progress===100),"reviewing Lesson 1 retains the saved maximum");
+});
+
 test("Overview follows the current user's actual video points, metadata, access and completion",async()=>{
   const user=await verifiedUser(store,"real-overview@example.test","Alice"), other=await verifiedUser(store,"other-overview@example.test","Bob");
   const data=await readProductData(), course=data.courses.find((c:ProductCourse)=>c.id===COURSE_ID);
@@ -32,6 +59,11 @@ test("Overview follows the current user's actual video points, metadata, access 
   await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,learningMode:"video",contentId:"v2",event:"open",seconds:0,clientEventId:"real-point"});
   const before=(await readProductData()).studyRecords;
   const display=await getOverviewDisplay(user.id,user.nickname,"en-GB"), card=display.courses[0];
+  const raw=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
+  assert.deepEqual(display.syncCourses?.find(item=>item.courseId===COURSE_ID), {
+    courseId: raw.courseId, mode: raw.mode, currentLessonId: raw.currentLessonId,
+    currentContentId: raw.currentContentId, progress: raw.progress, updatedAt: raw.updatedAt,
+  }, "cached-page reconciliation uses the raw Study snapshot, not a display fallback");
   assert.equal(display.name,"Alice");assert.equal(display.courses.length,1);
   assert.equal(card.title,"Real video course");assert.equal(card.cover,"/portal/course-book.jpg");
   assert.equal(card.progress,67);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
@@ -55,13 +87,11 @@ test("Overview follows the current user's actual video points, metadata, access 
   assert.deepEqual((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses,[]);
 });
 
-test("preview history resumes only the public point and never grants protected access",async()=>{
+test("preview never creates an Overview card or grants protected access",async()=>{
   const data=await readProductData();data.courses.find((c:ProductCourse)=>c.id===COURSE_ID).status="published";await writeProductData(data);
   const visitor=await verifiedUser(store,"preview-overview@example.test","Visitor");
   await store.recordStudyEvent({userId:visitor.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,learningMode:"video",contentId:"v1",event:"open",seconds:0,clientEventId:"preview-point"},"preview");
-  const card=(await getOverviewDisplay(visitor.id,visitor.nickname,"zh-CN")).courses[0];
-  assert.equal(card.action,"preview");assert.equal(card.progress,33);
-  assert.ok(card.href.includes("/public-lesson?viewMode=video&contentId=v1"));
+  assert.deepEqual((await getOverviewDisplay(visitor.id,visitor.nickname,"zh-CN")).courses,[]);
   assert.equal((await store.checkEntitlement(visitor.id,COURSE_ID)).allowed,false);
 });
 
@@ -82,7 +112,7 @@ test("Overview route derives record ownership from session and redirects before 
   state.user={id:"session-owner",nickname:"Current User"};state.fail=true;await assert.rejects(invoke(),/record-store-unavailable/,"a data failure must not become a fabricated empty history");
 });
 
-test("a first outline entry uses the course-wide count and cannot create other course histories",async()=>{
+test("preview outline entry cannot create any course history",async()=>{
   const user=await verifiedUser(store,"chinese-preview@example.test","Preview User");
   const data=await readProductData();const template=data.courses.find((course:ProductCourse)=>course.id===COURSE_ID);
   const courses=[0,1,2,3].map(index=>({...structuredClone(template),id:`chinese-preview-${index}`,slug:`chinese-preview-${index}`,title:`Chinese Humanities ${index}`,category:"Chinese Humanities",sections:[{id:"chinese-section",title:"Section",lessons:[0,1,2,3].map(number=>({id:`chinese-lesson-${number}`,title:`Lesson ${number}`,isPublic:number===0,durationMinutes:10,body:"",contents:[{id:`chinese-point-${number}`,title:"Point",type:"video",mode:"lecture",url:number===0?"/video.mp4":undefined,html:number===0?undefined:"Reading",nodes:[]}]}))}]}));
@@ -91,8 +121,7 @@ test("a first outline entry uses the course-wide count and cannot create other c
   await store.recordStudyEvent({userId:user.id,courseId:courses[0].id,lessonId:"chinese-lesson-0",contentId:"chinese-point-0",learningMode:"video",event:"video_progress",seconds:10,clientEventId:"chinese-preview-partial"},"preview");
   const saved=(await readProductData()).studyRecords;
   for(const locale of ["en-GB","zh-CN"] as const){
-    const display=await getOverviewDisplay(user.id,user.nickname,locale);assert.equal(display.courses.length,1);
-    const card=display.courses[0];assert.equal(card.courseId,courses[0].id);assert.equal(card.lessonCount,4);assert.equal(card.progress,25);assert.equal(card.action,"preview");assert.equal(card.currentLesson,1);assert.equal(card.contentId,"chinese-point-0");
+    const display=await getOverviewDisplay(user.id,user.nickname,locale);assert.equal(display.courses.length,0);
   }
   assert.deepEqual((await readProductData()).studyRecords,saved,"Overview reads the saved maximum without deleting history or changing the resume cursor");
   await assert.rejects(()=>store.recordStudyEvent({userId:user.id,courseId:courses[0].id,lessonId:"chinese-lesson-0",contentId:"chinese-point-0",learningMode:"video",event:"complete",seconds:600,clientEventId:"chinese-preview-cannot-complete"},"preview"),/cannot be completed/);
@@ -100,7 +129,7 @@ test("a first outline entry uses the course-wide count and cannot create other c
 
 test("missing course learning points render unavailable progress and course detail instead of invented completion",async()=>{
   const data=await readProductData();
-  const visitor=data.users.find((user:{email:string})=>user.email==="preview-overview@example.test");
+  const visitor=data.users.find((user:{email:string})=>user.email==="real-overview@example.test");
   data.courses.find((course:ProductCourse)=>course.id===COURSE_ID).sections=[];await writeProductData(data);
   const card=(await getOverviewDisplay(visitor.id,visitor.nickname,"en-GB")).courses[0];
   assert.equal(card.progress,null);assert.equal(card.action,"detail");assert.equal(card.currentLesson,null);

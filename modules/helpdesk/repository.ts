@@ -205,12 +205,25 @@ export type HelpdeskRepository = {
   nthRecentTicketAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
   /** Rate limiting: the same for public messages this learner wrote on their own tickets (a ticket's first message included). */
   nthRecentLearnerMessageAt(userId: string, sinceIso: string, n: number): Promise<string | null>;
+  /**
+   * Exact rate limiting (review 2026-11-03 M2): records one hit for key when
+   * fewer than limit hits are newer than atIso - windowMs, else refuses with
+   * the oldest hit still in the window (the limit lifts an hour after it).
+   * Count and insert happen under one lock per key, so racing requests can
+   * never pass the limit together. Hits outside the window are dropped.
+   */
+  tryRateHit(key: string, limit: number, windowMs: number, atIso: string): Promise<{ allowed: true } | { allowed: false; oldestAt: string }>;
+  /** The same decision as tryRateHit without recording a hit: whether the next attempt would be admitted right now. */
+  peekRateHit(key: string, limit: number, windowMs: number, atIso: string): Promise<{ allowed: true } | { allowed: false; oldestAt: string }>;
   findAttachment(id: string): Promise<AttachmentRecord | null>;
   // ---- v2 §4a AI assist log
   /** "duplicate" when the id or the Idempotency-Key is already stored. */
   insertAssist(record: AssistRecord): Promise<"inserted" | "duplicate">;
   findAssist(id: string): Promise<AssistRecord | null>;
-  findAssistByKey(clientEventId: string): Promise<AssistRecord | null>;
+  /** The learner's own row for this Idempotency-Key (a key is scoped to the learner who used it). */
+  findAssistByKey(clientEventId: string, learnerId: string): Promise<AssistRecord | null>;
+  /** Who used this Idempotency-Key (keys are unique across learners), or null when nobody has. */
+  assistKeyOwner(clientEventId: string): Promise<string | null>;
   /** Sets feedback only while it is null and the row belongs to learnerId; returns the row as stored afterwards (null: no such row for this learner). */
   setAssistFeedback(id: string, learnerId: string, feedback: AssistFeedback): Promise<AssistRecord | null>;
   /** Rate limiting: createdAt of the n-th newest row of this learner from these sources after sinceIso, or null. */
@@ -266,6 +279,11 @@ export type HelpdeskRepository = {
   listTicketTimings(window: { createdBeforeIso: string; openAtOrAfterIso: string }): Promise<TicketTiming[]>;
   /** Writes the scrubbed text of each row still not replaced and marks it (scrubbed_at = atIso); returns how many changed. */
   applyRetention(updates: readonly RetentionUpdate[], atIso: string): Promise<number>;
+  /**
+   * Deletes at most `limit` rate-limit hits recorded before olderThanIso, oldest first (tryRateHit prunes a key only on
+   * that key's next attempt, so hits of a learner who never returns would stay forever); returns how many were deleted.
+   */
+  sweepRateHits(olderThanIso: string, limit: number): Promise<number>;
   /**
    * Runs work while holding the job's lock (PostgreSQL: a session advisory lock, so one instance at a time across the
    * fleet, released if the process dies); locked false, without running it, when another holder has it.

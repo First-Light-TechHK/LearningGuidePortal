@@ -9,6 +9,7 @@ import { createAdminHelpdeskClient } from "@/modules/helpdesk/adminClient";
 import { supportOrder, supportSignInPath } from "@/modules/helpdesk/learnerPages";
 import { helpdeskUiConfig } from "@/modules/helpdesk/learnerUiConfig";
 import { helpdeskAssistant, learnerOrder } from "@/modules/helpdesk/runtime";
+import { isFeatureEnabled } from "@/modules/student-management/service";
 import { currentProductUser } from "@/services/productAuth";
 
 export const dynamic = "force-dynamic";
@@ -50,12 +51,14 @@ export default async function SupportPage({ params, searchParams }: { params: Pr
   const { order, orderUnavailable } = await supportOrder(orderParam, (orderId) => learnerOrder(user.id, orderId));
   // v5: the session's situation chips; the popular starter chips when no session could be started, or when it has
   // none (Admin's list was not read in time; the FAQ list cache has had a moment to fill by now).
-  const started = await chatSession(user, locale, order?.id ?? null);
-  const chips = started?.chips.length ? started.chips : (await popularChips(locale)).map((chip) => ({ ...chip, reason: "popular" as const }));
+  // Student Management: with the AI Support Assistant switched off for this learner the page is the enquiry form only.
+  const assistant = await isFeatureEnabled(user.id, "ai_support_assistant");
+  const started = assistant ? await chatSession(user, locale, order?.id ?? null) : null;
+  const chips = !assistant ? [] : started?.chips.length ? started.chips : (await popularChips(locale)).map((chip) => ({ ...chip, reason: "popular" as const }));
   const session = started ? { ...started, chips, situational: started.situational && started.chips.length > 0 } : null;
   return <main className="portal-page helpdesk-page">
     <PortalHeader locale={locale} active="my-learning" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <ContactSupport locale={locale} copy={messages.helpdesk} config={helpdeskUiConfig()} account={{ id: user.id, name: user.nickname || "", email: user.email || "" }} chips={chips} order={order} orderUnavailable={orderUnavailable} session={session} />
+    <ContactSupport locale={locale} copy={messages.helpdesk} config={helpdeskUiConfig()} account={{ id: user.id, name: user.nickname || "", email: user.email || "" }} chips={chips} order={order} orderUnavailable={orderUnavailable} session={session} assistant={assistant} />
     <PortalFooter locale={locale} />
   </main>;
 }

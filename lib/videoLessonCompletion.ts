@@ -10,8 +10,3 @@ export function videoCompletionPercent(progress: VideoPlaybackProgress | null): 
   if (!progress || !Number.isFinite(progress.duration) || progress.duration <= 0 || !Number.isFinite(progress.currentTime) || progress.currentTime < 0) return null;
   return Math.min(100, progress.currentTime / progress.duration * 100);
 }
-
-export function canPromptVideoCompletion(entitled: boolean, selectedContentId: string | undefined, progress: VideoPlaybackProgress | null) {
-  const percent = videoCompletionPercent(progress);
-  return entitled && selectedContentId === progress?.contentId && percent !== null && percent >= 98;
-}

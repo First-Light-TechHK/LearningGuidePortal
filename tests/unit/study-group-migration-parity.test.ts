@@ -67,15 +67,28 @@ test("012 and the ensureSchema bootstrap declare the same Study Group tables", (
   }
 });
 
-test("012 and the ensureSchema bootstrap declare the same Study Group indexes", () => {
-  const migration = extractIndexes(readFileSync(MIGRATION_PATH, "utf8"));
+test("012 + 027 and the ensureSchema bootstrap declare the same Study Group indexes", () => {
+  // 027 (review 2026-11-03 H2) adds the two indexes the scoped reads need.
+  const migration = new Map([
+    ...extractIndexes(readFileSync(MIGRATION_PATH, "utf8")),
+    ...extractIndexes(readFileSync(path.join(ROOT, "db", "migrations", "027_study_group_scope_indexes.sql"), "utf8"))
+  ]);
   const bootstrap = extractIndexes(readFileSync(BOOTSTRAP_PATH, "utf8"));
   const migrationNames = [...migration.keys()].filter(isStudyGroupName).sort();
   const bootstrapNames = [...bootstrap.keys()].filter(isStudyGroupName).sort();
-  assert.equal(migrationNames.length, 7, "012 must declare the seven Study Group indexes");
-  assert.deepEqual(bootstrapNames, migrationNames, "db.ts ensureSchema must declare the same Study Group indexes as 012");
+  assert.equal(migrationNames.length, 9, "012 declares seven Study Group indexes and 027 two more");
+  assert.ok(migrationNames.includes("study_group_outbox_session_idx") && migrationNames.includes("study_group_presences_open_user_idx"));
+  assert.deepEqual(bootstrapNames, migrationNames, "db.ts ensureSchema must declare the same Study Group indexes as 012 + 027");
   for (const name of migrationNames) {
     assert.equal(bootstrap.get(name), migration.get(name), `index ${name} drifted between 012 and db.ts ensureSchema`);
+  }
+});
+
+test("the bootstrap creates every Study Group table before an index on it: an empty database must come up", () => {
+  const source = stripComments(readFileSync(BOOTSTRAP_PATH, "utf8"));
+  for (const match of source.matchAll(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS (\w+)\s+ON (study_group\w+)/g)) {
+    const table = source.indexOf(`CREATE TABLE IF NOT EXISTS ${match[2]} (`);
+    assert.ok(table >= 0 && table < match.index, `${match[1]} comes before the table ${match[2]}`);
   }
 });
 
@@ -88,4 +101,27 @@ test("021 and the ensureSchema bootstrap swap in the same 10/20/30/40-minute dur
   for (const statement of statements) assert.ok(bootstrap.includes(`${statement};`), statement);
   assert.match(migration, /CHECK \(duration_seconds IN \(600, 1200, 1800, 2400, 2700, 3600, 5400\)\)/);
   assert.match(bootstrap, /conname = 'live_sessions_duration_seconds_v2_check'/);
+});
+
+test("every bootstrap index and ALTER follows the CREATE TABLE of its table (fresh-database order)", () => {
+  // Regression: upstream overlay-check 2026-11-03 bootstrapped an empty
+  // database and failed with 'relation "study_group_outbox" does not exist'
+  // because the 027 outbox index was placed before the outbox table. The
+  // batch runs top to bottom in one transaction, so position is behaviour.
+  const source = stripComments(readFileSync(BOOTSTRAP_PATH, "utf8"));
+  const created = new Map<string, number>();
+  for (const match of source.matchAll(/CREATE TABLE IF NOT EXISTS\s+(\w+)/g)) {
+    if (!created.has(match[1])) created.set(match[1], match.index ?? 0);
+  }
+  const references = [
+    ...source.matchAll(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS\s+(\w+)\s+ON\s+(\w+)/g),
+    ...source.matchAll(/ALTER TABLE\s+(?:IF EXISTS\s+)?()(\w+)/g)
+  ];
+  assert.ok(references.length >= 9, "the bootstrap declares the Study Group indexes");
+  for (const match of references) {
+    const table = match[2];
+    const createdAt = created.get(table);
+    if (createdAt === undefined) continue; // tables owned by migrations only (not bootstrapped here)
+    assert.ok((match.index ?? 0) > createdAt, `${collapse(match[0])} runs before CREATE TABLE ${table} in db.ts ensureSchema`);
+  }
 });

@@ -71,10 +71,10 @@ test("mode switching resumes the last visited point after backward review, with 
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="b"] [aria-current="step"]')?.textContent?.includes("text 2"));
       assert.equal(await page.evaluate(() => new URL((window as any).destination, location.href).searchParams.get("contentId")), "b-text-2");
       // The active point updates before the browser applies the reader's scheduled scroll.
-      await page.waitForFunction(() => (document.querySelector("[data-text-reader]")?.scrollTop || 0) > 0);
-      assert.ok(await page.locator("[data-text-reader]").evaluate(element => element.scrollTop > 0));
+      await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="b-text-2"]')!.getBoundingClientRect().top - 12) < 2);
+      assert.equal(await page.locator("[data-text-reader]").evaluate(element => element.scrollTop), 0, "desktop reading also uses page scrolling");
       assert.deepEqual(modeRequests[1], { mode: "text", lessonId: "a" });
-      await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-last-position.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-last-position.png` });
       await select.selectOption("video");
       await page.locator('[data-lesson-id="a"] video').waitFor();
       await page.waitForFunction(() => { const media = document.querySelector<HTMLVideoElement>("video.la-lesson-video"); return media && media.readyState >= 2 && Math.abs(media.currentTime - .5) < .03; });
@@ -90,7 +90,11 @@ test("mode switching resumes the last visited point after backward review, with 
       await select.selectOption("video"); await video.waitFor();
       await select.selectOption("text");
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
-      await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-reviewed-1-3.png`, fullPage: true });
+      // The step updates before the reader scrolls to it. These screenshots stay inside
+      // the viewport: a full-page one can resize the page to 1x1 for a moment, the text
+      // reflows, and the reader saves whichever point that leaves on screen.
+      await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="a-text-3"]')!.getBoundingClientRect().top - 12) < 2);
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-reviewed-1-3.png` });
       await select.selectOption("video"); await video.waitFor();
       const videoReviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-video-1");
       await page.getByRole("button", { name: /^1\.1 video 1/ }).click();
@@ -107,10 +111,13 @@ test("mode switching resumes the last visited point after backward review, with 
       await page.waitForFunction(() => {
         const reader = document.querySelector('[data-text-reader]'), target = document.querySelector('[data-text-point-id="b-text-3"]');
         if (!reader || !target) return false;
-        const offset = target.getBoundingClientRect().top - reader.getBoundingClientRect().top;
+        const offset = target.getBoundingClientRect().top;
         return offset >= 0 && offset < 40;
       });
-      await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-position-mobile.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-position-mobile.png` });
+      await page.locator('[data-text-point-id="b-text-2"]').evaluate(element => window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - 12));
+      await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 2"));
+      assert.equal(await page.locator('[data-text-reader]').evaluate(element => element.scrollTop), 0, "mobile point tracking uses page scrolling");
       assert.deepEqual(errors, []);
       await page.close();
     }

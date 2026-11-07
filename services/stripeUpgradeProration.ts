@@ -15,7 +15,7 @@ export function validateUpgradePeriod(subscription: Stripe.Subscription, snapsho
     || subscription.billing_cycle_anchor !== snapshot.billingCycleAnchor) throw new PaymentError("quote_expired");
 }
 
-export async function previewStripeUpgrade(input: { subscriptionId: string; customerId: string; sourcePriceId: string; sourceValidTo: string; price: StripePriceSnapshot; prorationDate?: number; verifiedLegacyCheckout?: boolean }) {
+export async function previewStripeUpgrade(input: { subscriptionId: string; customerId: string; sourcePriceId: string; sourceValidTo: string; price: StripePriceSnapshot; prorationDate?: number; verifiedLegacyCheckout?: boolean; sourceVoidedUpgradeInvoiceId?: string }) {
   try {
     const stripe = getStripe();
     const target = await stripe.prices.retrieve(input.price.stripePriceId);
@@ -25,10 +25,12 @@ export async function previewStripeUpgrade(input: { subscriptionId: string; cust
     const item = subscription.items.data[0];
     if (stripeIdentity(subscription.customer) === input.customerId && subscription.pending_update) throw new PaymentError("upgrade_in_progress");
     const latest = typeof subscription.latest_invoice === "string" ? await stripe.invoices.retrieve(subscription.latest_invoice) : subscription.latest_invoice;
+    const verifiedVoid = latest?.status === "void" && latest.id === input.sourceVoidedUpgradeInvoiceId
+      && invoiceSubscription(latest) === subscription.id && stripeIdentity(latest.customer) === input.customerId && latest.billing_reason === "subscription_update";
     if (stripeIdentity(subscription.customer) !== input.customerId || subscription.status !== "active" || subscription.cancel_at_period_end || subscription.pause_collection || subscription.schedule
       || subscription.collection_method !== "charge_automatically" || subscription.items.data.length !== 1 || !item || item.quantity !== 1
       || item.price.id !== input.sourcePriceId || item.price.currency !== target.currency || item.price.recurring?.interval !== target.recurring?.interval
-      || item.price.recurring?.interval_count !== target.recurring?.interval_count || latest?.status !== "paid"
+      || item.price.recurring?.interval_count !== target.recurring?.interval_count || latest?.status !== "paid" && !verifiedVoid
       || !input.verifiedLegacyCheckout && Math.floor(Date.parse(input.sourceValidTo) / 1000) !== item.current_period_end) throw new PaymentError("upgrade_unavailable");
     const prorationDate = input.prorationDate ?? Math.floor(Date.now() / 1000);
     if (prorationDate < item.current_period_start || prorationDate >= item.current_period_end) throw new PaymentError("quote_expired");
@@ -43,6 +45,7 @@ export async function previewStripeUpgrade(input: { subscriptionId: string; cust
       prorationDate, periodStart: item.current_period_start, periodEnd: item.current_period_end, billingCycleAnchor: subscription.billing_cycle_anchor,
       debitMinor, creditMinor, adjustmentsMinor: invoice.amount_due - (debitMinor - creditMinor), invoiceTotalMinor: invoice.total, amountDueMinor: invoice.amount_due };
     if (input.verifiedLegacyCheckout) result.sourceRecordedValidTo = input.sourceValidTo;
+    if (verifiedVoid) result.sourceVoidedUpgradeInvoiceId = latest.id;
     return result;
   } catch (error) {
     if (error instanceof PaymentError) throw error;

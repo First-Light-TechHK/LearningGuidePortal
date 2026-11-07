@@ -15,7 +15,7 @@ import {
   type TutorRequestRow,
   type TutorRequestStatus
 } from "@/modules/group-study/domain";
-import type { StudyGroupOperationalMetrics, StudyGroupRepository, WebhookReceiptRow } from "@/modules/group-study/repository";
+import type { StudyGroupOperationalMetrics, StudyGroupPruneResult, StudyGroupRepository, StudyGroupScope, WebhookReceiptRow } from "@/modules/group-study/repository";
 
 // Study Group production store (Phase C slice 1, design §3.1/§3.2). SQL lives
 // only here (AGENTS: repositories own SQL); the schema is
@@ -292,18 +292,52 @@ function mapLiveSessionRef(row: LiveSessionRefDbRow): { id: string; liveKitProje
   return { id: row.id, liveKitProjectId: row.livekit_project_id };
 }
 
-async function loadStore(client: PoolClient): Promise<StudyGroupStore> {
+// The WHERE clauses of a scoped load (domain.ts StudyGroupScope, review
+// 2026-11-03 H2): the same rows scopeStore() keeps on the file adapter.
+// `children` filters every per-session table by session_id.
+function scopeClauses(scope: StudyGroupScope | undefined): { groups: string; memberships: string; sessions: string; children: string; params: string[] } {
+  if (!scope) return { groups: "", memberships: "", sessions: "", children: "", params: [] };
+  if ("session" in scope) {
+    return {
+      groups: " WHERE id IN (SELECT group_id FROM live_sessions WHERE id = $1)",
+      memberships: " WHERE group_id IN (SELECT group_id FROM live_sessions WHERE id = $1)",
+      sessions: " WHERE id = $1",
+      children: " WHERE session_id = $1",
+      params: [scope.session]
+    };
+  }
+  if ("group" in scope) {
+    return {
+      groups: " WHERE id = $1",
+      memberships: " WHERE group_id = $1",
+      sessions: " WHERE group_id = $1",
+      children: " WHERE session_id IN (SELECT id FROM live_sessions WHERE group_id = $1)",
+      params: [scope.group]
+    };
+  }
+  const open = "(SELECT session_id FROM study_group_presences WHERE user_id = $1 AND left_at IS NULL)";
+  return {
+    groups: ` WHERE id IN (SELECT group_id FROM live_sessions WHERE id IN ${open})`,
+    memberships: ` WHERE group_id IN (SELECT group_id FROM live_sessions WHERE id IN ${open})`,
+    sessions: ` WHERE id IN ${open}`,
+    children: ` WHERE session_id IN ${open}`,
+    params: [scope.seatsOf]
+  };
+}
+
+async function loadStore(client: PoolClient, scope?: StudyGroupScope): Promise<StudyGroupStore> {
   // Sequential on one connection: the advisory lock (or the REPEATABLE READ
   // transaction) makes every SELECT see one consistent snapshot.
-  const groups = await client.query<GroupDbRow>("SELECT * FROM study_groups");
-  const memberships = await client.query<MembershipDbRow>("SELECT * FROM study_group_memberships");
-  const sessions = await client.query<SessionDbRow>("SELECT * FROM live_sessions");
-  const intents = await client.query<IntentDbRow>("SELECT * FROM study_group_attendance_intents");
-  const presences = await client.query<PresenceDbRow>("SELECT * FROM study_group_presences");
-  const meetings = await client.query<MeetingDbRow>("SELECT * FROM study_group_meetings");
-  const reminders = await client.query<ReminderDbRow>("SELECT * FROM study_group_reminders");
-  const tutorRequests = await client.query<TutorDbRow>("SELECT * FROM study_group_tutor_requests");
-  const outbox = await client.query<OutboxDbRow>("SELECT * FROM study_group_outbox");
+  const where = scopeClauses(scope);
+  const groups = await client.query<GroupDbRow>(`SELECT * FROM study_groups${where.groups}`, where.params);
+  const memberships = await client.query<MembershipDbRow>(`SELECT * FROM study_group_memberships${where.memberships}`, where.params);
+  const sessions = await client.query<SessionDbRow>(`SELECT * FROM live_sessions${where.sessions}`, where.params);
+  const intents = await client.query<IntentDbRow>(`SELECT * FROM study_group_attendance_intents${where.children}`, where.params);
+  const presences = await client.query<PresenceDbRow>(`SELECT * FROM study_group_presences${where.children}`, where.params);
+  const meetings = await client.query<MeetingDbRow>(`SELECT * FROM study_group_meetings${where.children}`, where.params);
+  const reminders = await client.query<ReminderDbRow>(`SELECT * FROM study_group_reminders${where.children}`, where.params);
+  const tutorRequests = await client.query<TutorDbRow>(`SELECT * FROM study_group_tutor_requests${where.children}`, where.params);
+  const outbox = await client.query<OutboxDbRow>(`SELECT * FROM study_group_outbox${where.children}`, where.params);
   return {
     groups: groups.rows.map(mapGroup),
     memberships: memberships.rows.map(mapMembership),
@@ -464,6 +498,19 @@ async function persistDiff(client: PoolClient, before: StudyGroupStore, after: S
       ]
     );
   }
+  // A presence changed for a session this snapshot did not load (a scoped
+  // update reaching outside its scope, persistence review 2026-11-03): that
+  // session's derived occupancy — the input of the capacity CHECK backstop —
+  // must follow its seats too, or the backstop is bypassed for one write.
+  const loaded = new Set(after.sessions.map((row) => row.id));
+  for (const sessionId of occupancySessions) {
+    if (loaded.has(sessionId)) continue;
+    await client.query(
+      `UPDATE live_sessions SET occupancy = (SELECT count(*) FROM study_group_presences WHERE session_id = $1 AND entered_at IS NOT NULL AND left_at IS NULL)
+       WHERE id = $1`,
+      [sessionId]
+    );
+  }
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -471,12 +518,12 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 }
 
 export function createPostgresStudyGroupRepository(): StudyGroupRepository {
-  async function read(): Promise<StudyGroupStore> {
+  async function read(scope?: StudyGroupScope): Promise<StudyGroupStore> {
     await ensureSchema();
     const client = await getPool().connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const store = await loadStore(client);
+      const store = await loadStore(client, scope);
       await client.query("COMMIT");
       return store;
     } catch (error) {
@@ -491,13 +538,17 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     }
   }
 
-  async function update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>): Promise<T> {
+  async function update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>, scope?: StudyGroupScope): Promise<T> {
     await ensureSchema();
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
+      // One write lock for the whole store, scoped or not: a scoped write and
+      // a whole-store write (a sweep, a group cancel) can touch the same row,
+      // and the diff below is only safe when no other writer saw the same
+      // snapshot. The scope shortens what is held under it, not who waits.
       await client.query(STUDY_GROUP_WRITE_LOCK);
-      const snapshot = await loadStore(client);
+      const snapshot = await loadStore(client, scope);
       const before = structuredClone(snapshot);
       const result = mutate(snapshot);
       if (isThenable(result)) {
@@ -864,10 +915,60 @@ export function createPostgresStudyGroupRepository(): StudyGroupRepository {
     };
   }
 
+  // The one deletion path (review 2026-11-03 H2): settled operational rows
+  // older than the cutoff, oldest first, at most `limit` rows per table per
+  // call, under the write lock so no update() diff spans a vanished row. Product
+  // history (groups, memberships, sessions, intents, presences, meetings,
+  // reminders) is never pruned. An outbox row goes before the tutor request
+  // whose answer it carried, so a settled request never loses its row first.
+  async function pruneHistory(input: { olderThanDays: number; limit: number }): Promise<StudyGroupPruneResult> {
+    await ensureSchema();
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(STUDY_GROUP_WRITE_LOCK);
+      const params = [input.olderThanDays, input.limit];
+      const outbox = await client.query(
+        `DELETE FROM study_group_outbox WHERE id IN (
+           SELECT id FROM study_group_outbox
+           WHERE status IN ('delivered', 'dead') AND created_at < NOW() - ($1::int * INTERVAL '1 day')
+           ORDER BY created_at, id LIMIT $2)`,
+        params
+      );
+      const tutorRequests = await client.query(
+        `DELETE FROM study_group_tutor_requests WHERE id IN (
+           SELECT id FROM study_group_tutor_requests
+           WHERE status IN ('answered', 'dead_letter') AND received_at < NOW() - ($1::int * INTERVAL '1 day')
+             AND NOT EXISTS (SELECT 1 FROM study_group_outbox o WHERE o.dedupe_key = study_group_tutor_requests.id OR o.dedupe_key = study_group_tutor_requests.id || ':unavailable')
+           ORDER BY received_at, seq LIMIT $2)`,
+        params
+      );
+      const webhookReceipts = await client.query(
+        `DELETE FROM study_group_webhook_receipts WHERE receipt_id IN (
+           SELECT receipt_id FROM study_group_webhook_receipts
+           WHERE status <> 'received' AND received_at < NOW() - ($1::int * INTERVAL '1 day')
+           ORDER BY received_at, receipt_id LIMIT $2)`,
+        params
+      );
+      await client.query("COMMIT");
+      return { outbox: outbox.rowCount ?? 0, tutorRequests: tutorRequests.rowCount ?? 0, webhookReceipts: webhookReceipts.rowCount ?? 0 };
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // The connection is unusable; the original error is the real one.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   return {
     read,
     appendTokenLog,
     update,
+    pruneHistory,
     renewSeat,
     claimNextTutorRequest,
     settleTutorRequest,

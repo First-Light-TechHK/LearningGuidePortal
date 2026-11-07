@@ -38,3 +38,8 @@ items:
       - SG-03
       - SG-04
     span: interaction
+  - id: INV-helpdesk-own-tickets
+    text: A learner only sees and acts on their own enquiries and attachments.
+    function_ids:
+      - HD-03
+    span: local

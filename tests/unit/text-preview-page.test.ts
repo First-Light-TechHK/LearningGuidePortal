@@ -45,7 +45,11 @@ test("text previews stop inline, blur withheld material and open access plans on
     assert.equal(await titleCta.evaluate(e => e === document.activeElement), true);
     await page.getByRole("button", { name: "1.2 Read visual cues", exact: true }).click();
     const scroller = page.getByLabel(getMessages(locale).previewVideoDesign.textMode, { exact: true }).filter({ has: end });
-    await end.waitFor(); await scroller.evaluate(e => { e.scrollTop = e.scrollHeight; });
+    await end.waitFor();
+    // The reading surface is page-scrolled now (.textPlayer is overflow:visible and
+    // TextLessonReader tracks window scroll when overflowY is visible), so setting
+    // element.scrollTop on it does nothing. Scroll the page the way a reader does.
+    await end.scrollIntoViewIfNeeded();
     await end.getByRole("button", { name: copy.choosePlan }).waitFor({ state: "visible" });
     assert.equal(await dialog.count(), 0, "scrolling to the preview boundary must never open a modal");
     assert.deepEqual(await end.locator("img").evaluate(e => [e.getBoundingClientRect().width, e.getBoundingClientRect().height, (e as HTMLImageElement).naturalWidth]), [16, 16, 16]);
@@ -55,7 +59,7 @@ test("text previews stop inline, blur withheld material and open access plans on
     await page.screenshot({ path: `${output}/${locale}-boundary.png`, fullPage: true });
     await end.getByRole("button", { name: copy.choosePlan }).click(); await dialog.waitFor();
     assert.equal(await dialog.getByRole("link", { name: copy.cta }).getAttribute("href"), props.trialGate.pricingHref);
-    await scroller.evaluate(element => { element.scrollTop = 0; });
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
     await page.waitForFunction(() => document.querySelector('button[aria-current="step"]')?.textContent?.includes("Observe composition"));
     assert.equal(await dialog.isVisible(), true, "scroll tracking cannot dismiss an explicitly opened access dialog");
     await page.keyboard.press("Escape");

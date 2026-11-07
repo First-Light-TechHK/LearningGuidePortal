@@ -16,7 +16,7 @@ async function main() {
   await new Promise<void>(resolve=>probe.close(()=>resolve()));
   const temporary=await mkdtemp(path.join(tmpdir(),"lg-course-sign-in-")),output=path.join(repo,"test-results/course-sign-in-return");
   await mkdir(output,{recursive:true});
-  Object.assign(process.env,{STORAGE_BACKEND:"local",APP_ENV:"DEV",PAYMENT_MODE:"demo",LOCAL_EMAIL_PREVIEW:"1",LOCAL_SOCIAL_LOGIN:"0",NEXT_DIST_DIR:dist,NEXT_PUBLIC_APP_URL:origin,SESSION_SECRET:"course-sign-in-disposable-test-secret"});
+  Object.assign(process.env,{STORAGE_BACKEND:"local",APP_ENV:"DEV",PAYMENT_MODE:"demo",LOCAL_EMAIL_PREVIEW:"1",LOCAL_SOCIAL_LOGIN:"0",NEXT_DIST_DIR:dist,NEXT_PUBLIC_APP_URL:origin,SESSION_SECRET:"course-sign-in-disposable-test-secret",ADMIN_HOSTS:"admin.example.test"});
   process.chdir(temporary);
   let server:ReturnType<typeof spawn>|undefined,browser:Awaited<ReturnType<typeof chromium.launch>>|undefined;
   try {
@@ -29,7 +29,7 @@ async function main() {
     server=spawn(process.execPath,[path.join(repo,"node_modules/next/dist/bin/next"),"start",repo,"-p",String(port),"--hostname","127.0.0.1"],{cwd:temporary,env:process.env,windowsHide:true,stdio:"ignore"});
     let ready=false;
     for(let attempt=0;attempt<80;attempt++) {
-      try {if((await fetch(`${origin}/en-GB/portal`,{signal:AbortSignal.timeout(2000)})).ok){ready=true;break;}}catch {/* Wait for the isolated server. */}
+      try {if((await fetch(`${origin}/en-GB/portal/sign-in`,{signal:AbortSignal.timeout(2000)})).ok){ready=true;break;}}catch {/* Wait for the isolated server. */}
       if(server.exitCode!==null)throw new Error("Isolated Next server stopped");
       await new Promise(resolve=>setTimeout(resolve,250));
     }
@@ -44,8 +44,10 @@ async function main() {
       await page.waitForURL(url=>url.searchParams.get("step")==="password");
       assert.equal(new URL(page.url()).searchParams.get("returnTo"),new URL(target).pathname);
       await page.locator('input[autocomplete="current-password"]').fill(password);await page.locator('button.auth-submit').click();
-      await page.waitForURL(target);await start().waitFor();
-      assert.equal(await start().textContent(),copy.courseDetailDesign.start);assert.equal(await preview().count(),0);
+      await page.waitForURL(target);await start().first().waitFor();
+      assert.equal(await start().count(),2);
+      for(const entry of await start().all()) assert.equal(await entry.textContent(),copy.courseDetailDesign.start);
+      assert.equal(await preview().count(),0);
       assert.equal(await page.locator('[data-course-plan-status="included"]').count(),1);
       await page.screenshot({path:path.join(output,`${locale}-login-return.png`),fullPage:true});
 
@@ -54,7 +56,7 @@ async function main() {
       await page.locator('header .portal-brand').click();await page.waitForURL(`${origin}/${locale}/portal`);
       await page.waitForLoadState("networkidle");
       const login=await context.request.post(`${origin}/api/auth/login`,{data:{email,password}});assert.equal(login.status(),200);
-      await page.goBack();await start().waitFor();
+      await page.goBack();await start().first().waitFor();assert.equal(await start().count(),2);
       assert.equal(page.url(),target);assert.equal(await preview().count(),0);
       assert.equal(await page.locator('[data-course-plan-status="included"]').count(),1);
       await page.screenshot({path:path.join(output,`${locale}-restored-start.png`),fullPage:true});

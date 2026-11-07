@@ -123,6 +123,7 @@ test("a hanging Admin never holds the page: nothing cached -> hidden within the 
   assert.ok(Date.now() - started < 1_000, `waited ${Date.now() - started} ms`);
   assert.equal(await client.faqs("en-GB", POPULAR), null, "a second load while the first request is still out");
   assert.equal(stub.calls.length, 1, "one request in flight per locale");
+  assert.equal(logs.filter((line) => line.event === "admin_faqs_slow" && line.waitMs === 40).length, 2, "each page that went on without the data is logged");
   release(json({ faqs: [QUESTION] }));
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(await client.faqs("en-GB", POPULAR), [QUESTION]);

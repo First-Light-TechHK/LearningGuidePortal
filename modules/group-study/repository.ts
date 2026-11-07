@@ -1,15 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { compareTutorFairOrder, emptyStore, plannedEndMs, tutorRequestState, type OutboxRow, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
+import { compareTutorFairOrder, emptyStore, mergeScopedRows, plannedEndMs, scopeStore, tutorRequestState, type OutboxRow, type StudyGroupScope, type StudyGroupStore, type TutorOutboxPayload, type TutorRequestRow, type TutorRequestStatus } from "./domain";
 
 export type {
   OutboxKind,
   OutboxRow,
   OutboxStatus,
+  StudyGroupScope,
   TutorRequestRow,
   TutorRequestStatus
 } from "./domain";
+
+// What the history prune removed (review 2026-11-03 H2): settled operational
+// rows only, never product history (groups, memberships, sessions, intents,
+// presences, meetings, reminders stay).
+export type StudyGroupPruneResult = Readonly<{ outbox: number; tutorRequests: number; webhookReceipts: number }>;
 
 // The receipt status union mirrors the CHECK on study_group_webhook_receipts
 // in db/migrations/012_study_group_persistence.sql.
@@ -40,9 +46,18 @@ export type StudyGroupOperationalMetrics = Readonly<{
 // operations are used only by the slice-2 route, which never runs on the file
 // store, so the file adapter refuses them with a typed error.
 export type StudyGroupRepository = {
-  read(): Promise<StudyGroupStore>;
+  // With a scope (domain.ts StudyGroupScope, review 2026-11-03 H2) only the
+  // rows the scope holds are loaded; without one, the whole store. A scoped
+  // update() sees and writes those rows only (the file adapter filters the
+  // same way, so the unit suite proves a scope is wide enough).
+  read(scope?: StudyGroupScope): Promise<StudyGroupStore>;
   appendTokenLog(line: string): Promise<void>;
-  update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>): Promise<T>;
+  update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>, scope?: StudyGroupScope): Promise<T>;
+  // Bounded removal of settled operational history older than the cutoff:
+  // delivered or dead outbox rows, answered or dead-lettered tutor requests,
+  // settled webhook receipts. The only deletion path; update() still refuses
+  // to delete (persistDiff assertNoDeletions).
+  pruneHistory(input: { olderThanDays: number; limit: number }): Promise<StudyGroupPruneResult>;
   // The heartbeat's one-row write: moves lastSeenAt of the caller's open seat
   // to `at` when that seat was last seen after `heldSince` (still held) and
   // its session is live, or scheduled with a start at or before `startsBy`
@@ -165,13 +180,18 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
   const file = path.join(directory, "study-group.json");
   const queues = (fileQueues.__lgStudyGroupFileQueues ??= new Map());
 
-  async function read(): Promise<StudyGroupStore> {
+  async function readWhole(): Promise<StudyGroupStore> {
     try {
       return normalise(JSON.parse(await readFile(file, "utf8")) as StudyGroupStore);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyStore();
       throw error;
     }
+  }
+
+  async function read(scope?: StudyGroupScope): Promise<StudyGroupStore> {
+    const whole = await readWhole();
+    return scope ? scopeStore(whole, scope) : whole;
   }
 
   async function write(store: StudyGroupStore) {
@@ -193,11 +213,15 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     await writeFile(logFile, `${previous}${line}\n`, "utf8");
   }
 
-  function update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>) {
+  function update<T>(mutate: (store: StudyGroupStore) => T | Promise<T>, scope?: StudyGroupScope) {
     const run = (queues.get(file) ?? Promise.resolve()).then(async () => {
-      const store = await read();
+      const whole = await readWhole();
+      // The scoped view shares its row objects with the whole store, so a
+      // change made through it is already in `whole`; only added rows merge.
+      const store = scope ? scopeStore(whole, scope) : whole;
       const result = await mutate(store);
-      await write(store);
+      if (scope) mergeScopedRows(whole, store);
+      await write(whole);
       return result;
     });
     queues.set(file, run.then(() => undefined, () => undefined));
@@ -383,10 +407,31 @@ export function createStudyGroupRepository(directory: string): StudyGroupReposit
     return [...pending].sort().slice(0, input.limit);
   }
 
+  // Single-process equivalent of the PostgreSQL prune: the one path that
+  // removes rows from the file store, bounded, oldest first.
+  function pruneHistory(input: { olderThanDays: number; limit: number }) {
+    return update((store) => {
+      const cutoff = Date.now() - input.olderThanDays * 86_400_000;
+      // The bound is per table, like the PostgreSQL statements' LIMIT.
+      const stale = <T>(rows: T[], settled: (row: T) => boolean, at: (row: T) => string) =>
+        new Set(rows.filter((row) => settled(row) && Date.parse(at(row)) < cutoff).sort((a, b) => Date.parse(at(a)) - Date.parse(at(b))).slice(0, Math.max(0, input.limit)));
+      const outbox = stale(store.outbox, (row) => row.status === "delivered" || row.status === "dead", (row) => row.createdAt);
+      // Like the PostgreSQL statement: a settled request whose answer or
+      // "unavailable" notice is still in the outbox (by dedupe key) waits for
+      // that row to be pruned first. (The file store keeps no webhook receipts.)
+      const referenced = new Set(store.outbox.map((row) => row.dedupeKey));
+      const tutorRequests = stale(store.tutorRequests, (row) => (tutorRequestState(row) === "answered" || tutorRequestState(row) === "dead_letter") && !referenced.has(row.id) && !referenced.has(`${row.id}:unavailable`), (row) => row.receivedAt);
+      store.outbox = store.outbox.filter((row) => !outbox.has(row));
+      store.tutorRequests = store.tutorRequests.filter((row) => !tutorRequests.has(row));
+      return { outbox: outbox.size, tutorRequests: tutorRequests.size, webhookReceipts: 0 };
+    });
+  }
+
   return {
     read,
     appendTokenLog,
     update,
+    pruneHistory,
     renewSeat,
     claimNextTutorRequest,
     settleTutorRequest,

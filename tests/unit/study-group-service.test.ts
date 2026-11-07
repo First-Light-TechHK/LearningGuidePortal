@@ -20,6 +20,7 @@ let repository: StudyGroupRepository;
 const access = new Set<string>();
 const mails: Array<{ to: string; subject: string; text: string }> = [];
 const notes: Array<{ userId: string; title: string; body: string }> = [];
+const inactive = new Set<string>();  // deactivated accounts (Student Management)
 const tokenLogKey = Buffer.alloc(32, 7);
 let liveKit: { apiKey: string; apiSecret: string; url: string };
 
@@ -27,6 +28,7 @@ beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lg-study-group-"));
   access.clear();
   access.add("host:course-1");
+  inactive.clear();
   notes.length = 0;
   mails.length = 0;
   liveKit = { apiKey: "lk-key", apiSecret: "lk-secret-at-least-32-characters", url: "wss://livekit.example.test" };
@@ -39,6 +41,7 @@ beforeEach(async () => {
     accessibleCourses: async (userId) => access.has(`${userId}:course-1`) ? [{ id: "course-1", title: "German History", slug: "german-history" }] : [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: userId === "nomail" ? null : `${userId}@example.test`, locale: "en-GB" }),
     notify: async (input) => { notes.push(input); },
+    accountActive: async (userId) => !inactive.has(userId),
     listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     liveKit,
@@ -775,9 +778,36 @@ test("provider failures emit one normalized incident without exposing the gatewa
   await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
   await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "livekit_temporarily_unavailable");
 
-  assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "eu-primary", code: "provider_rate_limited", source: "gateway" }]);
+  assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "eu-primary", code: "provider_rate_limited", source: "gateway", failure: "rate_limited" }]);
   assert.equal(JSON.stringify(incidents).includes("LiveKitGatewayError"), false);
 });
+
+// UAT 2026-11-04: a replaced Live Key LiveKit refuses and a key-pair secret
+// the server cannot use both answer 503 `unavailable` at Start and both log
+// provider_credentials_invalid; the incident's `failure` tells them apart.
+for (const failure of ["unauthorized", "credential_unavailable"] as const) {
+  test(`a Start refused for ${failure} answers unavailable and logs the gateway failure class`, async () => {
+    const incidents: Array<{ sessionId: string; projectId: string | null; code: string; source: string; failure?: string }> = [];
+    const local = serviceWith({
+      liveKitProjects: parseLiveKitProjects(JSON.stringify([
+        { id: "uat-primary", url: "wss://uat-primary.livekit.cloud", state: "active", credentialSecretId: "lg-uat-studygroup-livekit" }
+      ])),
+      liveKitGateway: {
+        ensureRoom: async () => { throw new LiveKitGatewayError(failure); },
+        issueParticipantToken: async () => ({ token: "unreachable", expiresAt: NOW, url: "wss://uat-primary.livekit.cloud" }),
+        publishTutorMessage: async () => undefined,
+        removeParticipant: async () => undefined,
+        healthCheck: async ({ project }) => ({ projectId: project.id, status: "healthy", evidence: "provider_api", providerVerified: true, checkedAt: NOW, latencyMs: 0, activeRooms: 0 })
+      },
+      liveKitIncidentReporter: (incident) => { incidents.push(incident); }
+    });
+    const group = await local.createGroup({ actorUserId: "host", title: "Replaced key", courseId: "course-1", about: "About keys." });
+    const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Key check", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+    await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+    await assert.rejects(() => local.startSession({ actorUserId: "host", sessionId: session.id }), (error: unknown) => (error as { code?: string }).code === "unavailable");
+    assert.deepEqual(incidents, [{ sessionId: session.id, projectId: "uat-primary", code: "provider_credentials_invalid", source: "gateway", failure }]);
+  });
+}
 
 test("concurrent host starts share one room-creation operation", async () => {
   let creates = 0;
@@ -823,16 +853,17 @@ test("a member start in flight cannot poison the Host's start", async () => {
   let gateArmed = false;
   let gateUsed = false;
   const gatedRepository: StudyGroupRepository = {
-    read: async () => {
+    read: async (scope) => {
       if (gateArmed && !gateUsed) {
         gateUsed = true;
         signalRead!();
         await readGate;
       }
-      return repository.read();
+      return repository.read(scope);
     },
     appendTokenLog: (line) => repository.appendTokenLog(line),
-    update: (mutate) => repository.update(mutate),
+    update: (mutate, scope) => repository.update(mutate, scope),
+    pruneHistory: (input) => repository.pruneHistory(input),
     renewSeat: (input) => repository.renewSeat(input),
     claimNextTutorRequest: (input) => repository.claimNextTutorRequest(input),
     settleTutorRequest: (input) => repository.settleTutorRequest(input),
@@ -1633,6 +1664,9 @@ test("a transient publish failure schedules its own retry and delivers in the sa
   assert.deepEqual(published, ["The republic ended in 1933."]);
   assert.equal(scheduled.length, 1);
   assert.equal(after?.status, "delivered");
+  // The delivered row can be visible before the background drain finishes
+  // its final empty claims. Wait behind it before afterEach removes the store.
+  await local.deliverTutorAnswer({ sessionId: session.id });
 });
 
 test("recoverTutorWork drains stranded tutor work without an inbound ask", async () => {
@@ -1984,4 +2018,137 @@ test("a Session stored with a legacy 45/60/90-minute duration still edits its St
     () => service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, durationSeconds: 4000 }),
     (error: unknown) => (error as { code: string }).code === "validation"
   );
+});
+
+test("a late Host can still turn the AI Tutor off: an unchanged Start Time that has passed is kept, a moved one must be in the future (FAQ grounding check 2026-11-02)", async () => {
+  let clock = Date.parse(NOW);
+  const local = serviceWith({ now: () => new Date(clock) });
+  const group = await local.createGroup({ actorUserId: "host", title: "Late host", courseId: "course-1", about: "About the late host." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Late start", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  const notesBefore = notes.length;
+  const mailsBefore = mails.length;
+  // The Start Time has passed and the Host has not started yet.
+  clock = Date.parse("2026-09-19T02:07:00.000Z");
+  const off = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:05:00.000Z", aiTutorEnabled: false });
+  assert.equal(off.aiTutorEnabled, false);
+  assert.equal(off.startsAt, "2026-09-19T02:05:00.000Z");
+  // The same instant written another way is not a move; leaving the time out works too.
+  const same = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:05:00Z", aiTutorEnabled: true });
+  assert.equal(same.startsAt, "2026-09-19T02:05:00.000Z");
+  const omitted = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, aiTutorEnabled: false });
+  assert.equal(omitted.aiTutorEnabled, false);
+  // Moving it is still checked: another past time is refused, a future one is fine.
+  await assert.rejects(
+    () => local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:06:00.000Z" }),
+    (error: unknown) => (error as { code: string }).code === "start_in_past"
+  );
+  // Nothing was announced as rescheduled while the time stayed put.
+  assert.equal(notes.length, notesBefore);
+  assert.equal(mails.length, mailsBefore);
+  const moved = await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T02:30:00.000Z" });
+  assert.equal(moved.startsAt, "2026-09-19T02:30:00.000Z");
+  // Other fields stay locked, whatever the time.
+  await assert.rejects(
+    () => local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, title: "Renamed" }),
+    (error: unknown) => (error as { code: string }).code === "session_time_only"
+  );
+});
+
+test("starting with the AI Tutor on while the course's Tutor is offline tells the Host to turn it off in Edit Session (FAQ grounding check 2026-11-02)", async () => {
+  let online = true;
+  const local = serviceWith({ tutorOnline: async () => online });
+  const group = await local.createGroup({ actorUserId: "host", title: "Offline at start", courseId: "course-1", about: "About the offline start." });
+  const session = await local.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Tutor went offline", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4, aiTutorEnabled: true });
+  online = false;
+  await assert.rejects(
+    () => local.startSession({ actorUserId: "host", sessionId: session.id }),
+    (error: unknown) => (error as { code: string }).code === "tutor_offline_at_start"
+  );
+  // The way out the message names: turn the switch off, then start.
+  await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, aiTutorEnabled: false });
+  await local.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW });
+  const started = await local.startSession({ actorUserId: "host", sessionId: session.id });
+  assert.equal(started.aiTutorEnabled, false);
+});
+
+test("M3 (review 2026-11-03): evictUser ends every seat of one user now: the waiting seat is released, the live room is left, an empty live session completes", async () => {
+  access.add("waiter:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Evict", courseId: "course-1", about: "A deactivated learner leaves at once." });
+  await service.joinGroup({ actorUserId: "waiter", groupId: group.id });
+  const waiting = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const live = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Now", startsAt: "2026-09-19T02:06:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "waiter", sessionId: waiting.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: live.id });
+  await service.enterSession({ actorUserId: "waiter", sessionId: live.id, requestedAt: NOW });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).occupancy, 2);
+  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 1, questions: 0 }, "one live room to leave; the waiting seat is just released");
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: waiting.id })).occupancy, 0);
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).occupancy, 1);
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "live");
+  assert.deepEqual(await service.evictUser({ userId: "waiter" }), { sessions: 0, questions: 0 }, "idempotent");
+  assert.deepEqual(await service.evictUser({ userId: "host" }), { sessions: 1, questions: 0 });
+  assert.equal((await service.getSession({ actorUserId: "host", sessionId: live.id })).state, "completed", "nobody left: the live session ends");
+  assert.deepEqual(await service.evictUser({ userId: "nobody" }), { sessions: 0, questions: 0 });
+});
+
+test("H3 (review 2026-11-03): admission is checked before the entry queue: an unknown session and a learner without course access are refused without queueing", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Precheck", courseId: "course-1", about: "Access is checked outside the queue." });
+  const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await assert.rejects(() => service.enterSession({ actorUserId: "host", sessionId: "missing", requestedAt: NOW }), (error: unknown) => (error as { code: string }).code === "not_found");
+  await service.joinGroup({ actorUserId: "host", groupId: group.id }).catch(() => undefined);
+  access.delete("host:course-1");
+  await assert.rejects(() => service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW }), (error: unknown) => (error as { code: string }).code === "course_access_required");
+  access.add("host:course-1");
+  // Entries into two different sessions do not wait on each other: both are seated.
+  const other = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Also soon", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  const [a, b] = await Promise.all([
+    service.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: NOW }),
+    service.enterSession({ actorUserId: "host", sessionId: other.id, requestedAt: NOW })
+  ]);
+  assert.equal((a as { occupancy: number }).occupancy, 1);
+  assert.equal((b as { occupancy: number }).occupancy, 1);
+});
+
+test("deactivated account (owner 2026-11-03): no reminder, reschedule or cancellation notice reaches it, its queued AI Tutor question is withdrawn on eviction, and its membership and plan stay for a reactivation", async () => {
+  access.add("gone:course-1");
+  const group = await service.createGroup({ actorUserId: "host", title: "Inactive member", courseId: "course-1", about: "A deactivated account stays a member but hears nothing." });
+  await service.joinGroup({ actorUserId: "gone", groupId: group.id });
+  const soon = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Soon session", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "gone", sessionId: soon.id });
+  access.add("stays:course-1");
+  await service.joinGroup({ actorUserId: "stays", groupId: group.id });
+  await service.planToAttend({ actorUserId: "stays", sessionId: soon.id });
+  const live = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Live session", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.enterSession({ actorUserId: "host", sessionId: live.id, requestedAt: NOW });
+  await service.startSession({ actorUserId: "host", sessionId: live.id });
+  await service.enterSession({ actorUserId: "gone", sessionId: live.id, requestedAt: NOW });
+  await service.enqueueTutor({ actorUserId: "gone", sessionId: live.id, text: "Why 1933?", clientEventId: "evt-gone" });
+
+  inactive.add("gone");
+  assert.deepEqual(await service.evictUser({ userId: "gone" }), { sessions: 1, questions: 1 }, "out of the live room; the queued question is withdrawn");
+  const afterEviction = await repository.read();
+  const question = afterEviction.tutorRequests.find((row) => row.clientEventId === "evt-gone");
+  assert.deepEqual([question?.status, question?.terminalReason], ["dead_letter", "withdrawn"]);
+  assert.deepEqual(await service.evictUser({ userId: "gone" }), { sessions: 0, questions: 0 }, "idempotent");
+  assert.ok(afterEviction.memberships.some((row) => row.groupId === group.id && row.userId === "gone"), "the membership stays");
+  assert.ok(afterEviction.intents.some((row) => row.sessionId === soon.id && row.userId === "gone" && !row.cancelledAt), "the plan to attend stays");
+
+  notes.length = 0;
+  mails.length = 0;
+  await service.dispatchDueReminders();
+  assert.deepEqual(notes.filter((item) => item.body.includes("Soon session")).map((item) => item.userId).sort(), ["host", "stays"], "the T-10 reminder skips the deactivated account");
+  assert.deepEqual(mails.filter((item) => item.text.includes("Soon session")).map((item) => item.to).sort(), ["host@example.test", "stays@example.test"]);
+  await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: soon.id, startsAt: "2026-09-19T02:40:00.000Z" });
+  assert.equal(notes.some((item) => item.userId === "gone" && item.title === "Live Session rescheduled"), false, "no reschedule notice");
+  await service.cancelSession({ actorUserId: "host", sessionId: soon.id });
+  assert.equal(notes.some((item) => item.userId === "gone" && item.title === "Live Session cancelled"), false, "no cancellation notice");
+  assert.ok(notes.some((item) => item.userId === "stays" && item.title === "Live Session cancelled"), "others are still told");
+
+  // Reactivated: the same membership and plans work again without rejoining.
+  inactive.delete("gone");
+  const back = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Back session", startsAt: "2026-09-19T02:10:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
+  await service.planToAttend({ actorUserId: "gone", sessionId: back.id });
+  notes.length = 0;
+  await service.dispatchDueReminders();
+  assert.deepEqual(notes.filter((item) => item.body.includes("Back session")).map((item) => item.userId).sort(), ["gone", "host"], "reactivated: reminded again without rejoining");
 });

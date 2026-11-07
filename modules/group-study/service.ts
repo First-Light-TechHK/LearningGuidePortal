@@ -18,13 +18,14 @@ import {
   type TutorReplyTo
 } from "./domain";
 import { signParticipantToken } from "./liveKitToken";
-import { LiveKitGatewayError, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
+import { LiveKitGatewayError, type LiveKitGatewayFailureCode, type LiveKitRoomGateway, type LiveKitWebhookEvent } from "./liveKitGateway";
 import { classifyLiveKitIncident, type LiveKitIncidentCode } from "./liveKitIncident";
 import type { LiveKitProjectRegistry } from "./liveKitProjectRegistry";
 import { StudyGroupStoreUnsupportedError, type StudyGroupOperationalMetrics, type StudyGroupRepository } from "./repository";
 import { abandonedLiveSessions, closeLapsedSeats, completeSession, endLiveSessionIfEmpty, leaseEndsAt, SEAT_LEASE_MS, seatCount, seatHeld, seatLapsed, seatRenewable, sweepSeats } from "./presence";
 import { encryptTokenLogLine } from "./tokenLog";
 import { sessionEntryNext, type SessionEntryNext } from "./entry";
+import { createTicketQueue } from "./ticketQueue";
 
 // The room Tutor is KnowledgeSystem's (2026-10-23): Portal keeps only the
 // question queue and the room message. No prompt, model, key or provider call
@@ -44,8 +45,14 @@ export type StudyGroupDeps = {
   courseLessons?: (courseId: string) => Promise<Array<{ id: string; title: string }>>;
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
-  notify: (input: { userId: string; title: string; body: string; sessionId?: string }) => Promise<void>;
-  listReminders: (userId: string) => Promise<Array<{ body: string; createdAt: string; sessionId?: string }>>;
+  notify: (input: { userId: string; title: string; body: string; sessionId?: string; copies?: LocalizedNotice }) => Promise<void>;
+  /**
+   * Whether the account can still be reached (Student Management, owner 2026-11-03): a deactivated account keeps its
+   * memberships and plans, but reminders, reschedule and cancellation notices are not sent to it and its queued AI Tutor
+   * questions are withdrawn when it is evicted. Absent means every account is reachable.
+   */
+  accountActive?: (userId: string) => Promise<boolean>;
+  listReminders: (userId: string, locale?: "en-GB" | "zh-CN") => Promise<Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }>>;
   // Withdraws the pending reminder rows a cancelling action invalidates
   // (BUG-0109 storage honesty; the read-side validity filter is the backstop).
   // Scoped to the given Live Sessions, optionally to one user, and to rows
@@ -62,7 +69,11 @@ export type StudyGroupDeps = {
   liveKit: { apiKey: string; apiSecret: string; url: string };
   liveKitProjects?: LiveKitProjectRegistry;
   liveKitGateway?: LiveKitRoomGateway;
-  liveKitIncidentReporter?: (input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway" }) => void;
+  // `failure` (gateway incidents only) is the typed gateway class behind the
+  // incident: provider_credentials_invalid covers both a secret the server
+  // could not use (credential_unavailable) and a key LiveKit refused
+  // (unauthorized), which need different fixes.
+  liveKitIncidentReporter?: (input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway"; failure?: LiveKitGatewayFailureCode }) => void;
   // Resolved lazily at issuance only: data operations must work on an
   // environment where the key is not configured yet (managed environments get
   // it injected from Secrets Manager; DEV resolves it on first real issuance).
@@ -89,6 +100,8 @@ export type StudyGroupDeps = {
   // the default is an unref'd setTimeout so a pending retry never keeps the
   // process alive.
   scheduleRetry?: (run: () => void, delayMs: number) => void | ReturnType<typeof setTimeout>;
+  /** Tests only: how long a precheck keeps its place in the entry queue. */
+  entryOrderWaitMs?: number;
 };
 
 export type GroupView = StudyGroupRow & {
@@ -126,6 +139,9 @@ const TUTOR_REPLY_QUOTE_MAX = 80;
 // running drain claims whatever was queued meanwhile.
 const TUTOR_DRAIN_BUDGET_MS = 45_000;
 const TUTOR_DRAIN_WAIT_MS = 60_000;
+// Settled outbox rows, tutor requests and webhook receipts older than this are pruned, at most this many per table per tick.
+const HISTORY_RETENTION_DAYS = 30;
+const HISTORY_PRUNE_LIMIT = 1000;
 // One claimed question is answered within this long of its claim, every key
 // it tries included, so its settle lands well inside the 60 s claim lease
 // and no other instance re-claims it for a second paid call (QA r3 server 5).
@@ -180,6 +196,10 @@ const PROVIDER_ROOM_CHECK_TIMEOUT_MS = 2_000;
 // this long (QA r3 X-4 follow-up), so a burst of re-entries costs one call.
 const PROVIDER_ROOM_READ_REUSE_MS = 3_000;
 
+// How long a precheck keeps its place in the entry queue. The prechecks are reads,
+// normally milliseconds; this only stops a hung one from holding others up.
+const ENTRY_ORDER_WAIT_MS = 2_000;
+
 function withTimeout<T>(promise: Promise<T>, ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -232,10 +252,27 @@ type ReminderJob = { userId: string; sessionId: string; sessionTitle: string; gr
 // The row title is localised at write time and doubles as the reminders
 // view's marker (hunt L1): the en-GB title must stay exactly this string.
 function reminderCopy(job: ReminderJob, locale: string | undefined, now: Date) {
+  const copies = reminderCopies(job, now);
+  return locale === "zh-CN" ? copies["zh-CN"] : copies["en-GB"];
+}
+
+// A row the Study Group page shows later carries both languages: the reader's
+// page may be in another language than the one the recipient had at write time.
+export type LocalizedNotice = Record<"en-GB" | "zh-CN", { title: string; body: string }>;
+
+function reminderCopies(job: ReminderJob, now: Date): LocalizedNotice {
   const minutes = Math.max(1, Math.ceil((Date.parse(job.startsAt) - now.getTime()) / 60_000));
-  return locale === "zh-CN"
-    ? { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` }
-    : { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` };
+  return {
+    "zh-CN": { title: "直播课提醒", body: `学习小组“${job.groupTitle}”的 ${job.sessionTitle} 将在 ${minutes} 分钟后开始。` },
+    "en-GB": { title: "Live Session reminder", body: `${job.sessionTitle} in the Study Group "${job.groupTitle}" starts in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.` }
+  };
+}
+
+function rescheduleCopies(sessionTitle: string): LocalizedNotice {
+  return {
+    "zh-CN": { title: "直播课时间已更改", body: `${sessionTitle} 的开始时间已更改，请到学习小组查看新的时间。` },
+    "en-GB": { title: "Live Session rescheduled", body: `The Start Time of ${sessionTitle} has changed. Open the Study Group to see the new time.` }
+  };
 }
 
 function clean(value: unknown) {
@@ -263,10 +300,13 @@ function requiredValue(value: unknown, label: string) {
 const START_TIME_MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
 const START_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
-function parseStartTime(value: unknown, now: Date) {
+function parseStartTime(value: unknown, now: Date, stored?: string) {
   const text = clean(value);
   const startsAt = new Date(text);
   if (!START_TIME_PATTERN.test(text) || Number.isNaN(startsAt.getTime())) throw new StudyGroupError("validation", "Start Time is required.");
+  // Edit Session may resend the Start Time it showed: an unchanged time stays
+  // valid after it has passed, so a late Host can still turn the AI Tutor off.
+  if (stored !== undefined && startsAt.getTime() === new Date(stored).getTime()) return startsAt;
   if (startsAt.getTime() <= now.getTime()) throw new StudyGroupError("start_in_past", "Start Time must be in the future.");
   if (startsAt.getTime() > now.getTime() + START_TIME_MAX_AHEAD_MS) throw new StudyGroupError("validation", "Start Time must be within a year.");
   return startsAt;
@@ -300,18 +340,12 @@ function plannedCount(store: StudyGroupStore, sessionId: string) {
 // asked, so a seat taken after the read is never judged by it.
 type RoomRead = { identities: ReadonlySet<string>; readAt: string };
 
-type EntryJob = {
-  requestedAt: string;
-  seq: number;
-  run: () => Promise<unknown>;
-  resolve: (value: unknown) => void;
-  reject: (error: unknown) => void;
-};
-
 export function createStudyGroupService(deps: StudyGroupDeps) {
-  const entryJobs: EntryJob[] = [];
-  let entrySeq = 0;
-  let draining = false;
+  // One entry queue per Live Session (review 2026-11-03 H3): admissions to a
+  // room run one at a time in receipt order, and rooms never wait for each
+  // other. Nothing slow runs inside a queue: the session lookup and the
+  // course-access check are its preparation.
+  const entryQueue = createTicketQueue({ maxPrepareMs: deps.entryOrderWaitMs ?? ENTRY_ORDER_WAIT_MS });
   const startingSessions = new Map<string, Promise<unknown>>();
   // Per room: the shared provider read for entries (single flight, reused
   // briefly) and when the sweep last asked about it (oldest asked first).
@@ -473,7 +507,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         });
         if (!item) break;
         const answerBy = Date.now() + (deps.tutorAnswerBudgetMs ?? TUTOR_ANSWER_BUDGET_MS);
-        const snapshot = await deps.repository.read();
+        const snapshot = await deps.repository.read({ session: sessionId });
         const session = snapshot.sessions.find((entry) => entry.id === sessionId && entry.status !== "removed");
         if (!session) {
           // The room was removed after the question was queued; the item can
@@ -570,40 +604,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     }
   }
 
-  function emitLiveKitIncident(input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway" }) {
+  function emitLiveKitIncident(input: { sessionId: string; projectId: string | null; code: LiveKitIncidentCode; source: "client" | "gateway"; failure?: LiveKitGatewayFailureCode }) {
     try {
       deps.liveKitIncidentReporter?.(input);
     } catch {
       // Observability must never turn a recoverable meeting failure into a user failure.
     }
-  }
-
-  function enqueueEntry<T>(requestedAt: string, run: () => Promise<T>) {
-    return new Promise<T>((resolve, reject) => {
-      entryJobs.push({ requestedAt, seq: entrySeq++, run, resolve: (value) => resolve(value as T), reject });
-      kickEntryQueue();
-    });
-  }
-
-  function kickEntryQueue() {
-    if (draining) return;
-    draining = true;
-    void (async () => {
-      try {
-        while (entryJobs.length) {
-          entryJobs.sort((left, right) => left.seq - right.seq);
-          const job = entryJobs.shift()!;
-          try {
-            job.resolve(await job.run());
-          } catch (error) {
-            job.reject(error);
-          }
-        }
-      } finally {
-        draining = false;
-        if (entryJobs.length) kickEntryQueue();
-      }
-    })();
   }
 
   function groupIsLive(store: StudyGroupStore, groupId: string) {
@@ -720,14 +726,18 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // provider's view of the room when the caller has already been sent to ask
   // for it (enterSession); undefined means nobody asked yet, and then a
   // caller who needs it gets `{ roomCheck }` back instead of a refusal.
-  async function seat(input: { actorUserId: string; sessionId: string; requestedAt: string }, inRoom?: RoomRead | null): Promise<{ occupancy: number } | { roomCheck: LiveSessionRow }> {
-    const snapshot = await deps.repository.read();
+  // Before the entry queue: the session must exist and the caller must hold
+  // course access. Both are slow reads (the store, the entitlement aggregate)
+  // and neither belongs inside a queue other callers wait on.
+  async function admissionPrecheck(input: { actorUserId: string; sessionId: string }) {
+    const snapshot = await deps.repository.read({ session: input.sessionId });
     const pending = snapshot.sessions.find((item) => item.id === input.sessionId);
-    const allowed = pending ? await deps.hasCourseAccess(input.actorUserId, snapshot.groups.find((item) => item.id === pending.groupId)?.courseId || "") : false;
-    if (!pending || !allowed) {
-      if (!pending || pending.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
-      throw new StudyGroupError("course_access_required", "Valid Course access is required.");
-    }
+    if (!pending || pending.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
+    const courseId = snapshot.groups.find((item) => item.id === pending.groupId)?.courseId || "";
+    if (!await deps.hasCourseAccess(input.actorUserId, courseId)) throw new StudyGroupError("course_access_required", "Valid Course access is required.");
+  }
+
+  async function seat(input: { actorUserId: string; sessionId: string; requestedAt: string }, inRoom?: RoomRead | null): Promise<{ occupancy: number } | { roomCheck: LiveSessionRow }> {
     const outcome = await deps.repository.update<{ occupancy: number } | { notOpen: string } | { roomCheck: LiveSessionRow }>((store) => {
       const now = deps.now();
       const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
@@ -805,7 +815,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         });
       }
       return { occupancy: seats + 1 };
-    });
+    }, { session: input.sessionId });
     if ("notOpen" in outcome) throw new StudyGroupError("session_not_open", outcome.notOpen);
     return outcome;
   }
@@ -814,10 +824,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // and nothing slow runs inside it. The provider read X-4 needs happens
   // between two turns in the queue, for that caller only.
   async function enterSession(input: { actorUserId: string; sessionId: string; requestedAt: string }) {
-    let outcome = await enqueueEntry(input.requestedAt, () => seat(input));
+    let outcome = await entryQueue.enter(input.sessionId, () => admissionPrecheck(input), () => seat(input));
     if ("roomCheck" in outcome) {
       const inRoom = await sharedRoomRead(outcome.roomCheck);
-      outcome = await enqueueEntry(input.requestedAt, () => seat(input, inRoom));
+      outcome = await entryQueue.enter(input.sessionId, async () => undefined, () => seat(input, inRoom));
     }
     if ("roomCheck" in outcome) throw new StudyGroupError("session_full", "Session Full.");
     return outcome;
@@ -843,7 +853,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (!row || row.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
         row.liveKitProjectId ??= candidateId;
         return row.liveKitProjectId ?? candidateId;
-      });
+      }, { session: current.id });
       try {
         await gateway.ensureRoom({ project: projects.getAssigned(assigned), room: current.id, maxParticipants: current.maxParticipants });
         return assigned;
@@ -853,7 +863,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           sessionId: current.id,
           projectId: assigned,
           code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: pinned ? "existing_room" : "new_room" }).code,
-          source: "gateway"
+          source: "gateway",
+          failure: error.code
         });
         if (error.code !== "credential_unavailable" && error.code !== "unauthorized") {
           // A room may exist on this project. Keep the durable assignment so a
@@ -863,12 +874,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         await deps.repository.update((store) => {
           const row = store.sessions.find((item) => item.id === current.id);
           if (row && row.liveKitProjectId === assigned) row.liveKitProjectId = null;
-        });
+        }, { session: current.id });
         excluded.add(assigned);
         pinned = null;
       }
     }
     throw new StudyGroupError("unavailable", "No LiveKit project can create this room right now.");
+  }
+
+  // A deactivated account is skipped by every notice (in-app and mail); a
+  // lookup failure counts as reachable so an outage never silences reminders.
+  async function reachable(userId: string) {
+    if (!deps.accountActive) return true;
+    try { return await deps.accountActive(userId); } catch { return true; }
   }
 
   async function dispatchDueReminders(snapshot?: StudyGroupStore, onlySessionId?: string) {
@@ -920,6 +938,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     };
     for (const [index, job] of due.entries()) {
       if (!stillDue(job)) continue;
+      if (!(await reachable(job.userId))) continue;
       // One recipient's failure must not cost the rest their reminder, nor
       // fail the page poll that triggered the dispatch (QA M11).
       try {
@@ -931,7 +950,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // The body names the group and the minutes really left (QA M10-a): a
         // reminder sent again after a reschedule rarely lands at T-10.
         const copy = reminderCopy(job, profile?.locale, now);
-        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId });
+        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId, copies: reminderCopies(job, now) });
         if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(job.sessionId, profile.locale) ?? null });
       } catch {
         // Best-effort per recipient; the reminder row is already written.
@@ -951,13 +970,15 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     await deps.withdrawReminders?.({ sessionIds: [session.id], sentBefore: session.movedAt })?.catch(() => undefined);
     await dispatchDueReminders(undefined, session.id).catch(() => undefined);
     for (const userId of session.planned) {
+      if (!(await reachable(userId))) continue;
       try {
         const profile = await deps.userProfile(userId);
-        const copy = profile?.locale === "zh-CN"
-          ? { title: "直播课时间已更改", body: `${session.title} 的开始时间已更改，请到学习小组查看新的时间。` }
-          : { title: "Live Session rescheduled", body: `The Start Time of ${session.title} has changed. Open the Study Group to see the new time.` };
-        await deps.notify({ userId, title: copy.title, body: copy.body });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale });
+        const copies = rescheduleCopies(session.title);
+        const copy = profile?.locale === "zh-CN" ? copies["zh-CN"] : copies["en-GB"];
+        // Linked to its Session so the reminders strip on the Study Group page
+        // shows it until the Session starts (there is no in-site inbox).
+        await deps.notify({ userId, title: copy.title, body: copy.body, sessionId: session.id, copies });
+        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(session.id, profile?.locale === "zh-CN" ? "zh-CN" : "en-GB") ?? null });
       } catch {
         // One recipient's failure never blocks the others.
       }
@@ -1151,7 +1172,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         });
         return row;
       });
-      return toView(group, await deps.repository.read(), 1, "host");
+      return toView(group, await deps.repository.read({ group: group.id }), 1, "host");
     },
 
     async listMine(actorUserId: string) {
@@ -1189,7 +1210,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async getGroup(input: { actorUserId: string | null; groupId: string }) {
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ group: input.groupId });
       const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
       if (!group) throw new StudyGroupError("not_found", "Study Group was not found.");
       const active = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt);
@@ -1214,7 +1235,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async joinGroup(input: { actorUserId: string; groupId: string }) {
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ group: input.groupId });
       const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
       if (!group) throw new StudyGroupError("not_found", "Study Group was not found.");
       if (!await deps.hasCourseAccess(input.actorUserId, group.courseId)) {
@@ -1236,12 +1257,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           current.memberships.push({ id: randomUUID(), groupId: input.groupId, userId: input.actorUserId, role: "member", joinedAt: now, leftAt: null });
         }
         return current.memberships.filter((item) => item.groupId === input.groupId && !item.leftAt).length;
-      });
-      return { ...(await toView(group, await deps.repository.read(), memberCount, "member")), role: "member" as const, memberCount };
+      }, { group: input.groupId });
+      return { ...(await toView(group, await deps.repository.read({ group: input.groupId }), memberCount, "member")), role: "member" as const, memberCount };
     },
 
     async leaveGroup(input: { actorUserId: string; groupId: string }) {
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ group: input.groupId });
       const group = store.groups.find((item) => item.id === input.groupId && item.status === "active");
       if (!group) throw new StudyGroupError("not_found", "Study Group was not found.");
       const membership = store.memberships.find((item) => item.groupId === input.groupId && item.userId === input.actorUserId && !item.leftAt);
@@ -1284,7 +1305,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           endLiveSessionIfEmpty(current, session, at);
         }
         return { sessionIds: current.sessions.filter((item) => item.groupId === input.groupId).map((item) => item.id), liveRooms };
-      });
+      }, { group: input.groupId });
       // Leaving drops the member's pending Plan-to-Attend reminders (BR-023):
       // withdraw their reminder rows for this group's Sessions only.
       await deps.withdrawReminders?.({ sessionIds, userId: input.actorUserId })?.catch(() => undefined);
@@ -1332,8 +1353,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         row.about = about;
         row.updatedAt = now;
         return row;
-      });
-      const store = await deps.repository.read();
+      }, { group: input.groupId });
+      const store = await deps.repository.read({ group: input.groupId });
       const memberCount = store.memberships.filter((item) => item.groupId === group.id && !item.leftAt).length;
       return toView(group, store, memberCount, "host");
     },
@@ -1375,7 +1396,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           notified: store.memberships.filter((item) => item.groupId === row.id && !item.leftAt && item.userId !== row.hostUserId).map((item) => item.userId),
           sessionIds: store.sessions.filter((item) => item.groupId === row.id).map((item) => item.id)
         };
-      });
+      }, { group: input.groupId });
       // The cancelled group's pending reminders die with it (storage honesty);
       // the members' in-site cancellation notices below are kept. Like every
       // withdrawal, best effort: the cancel is already saved, and a failed
@@ -1388,6 +1409,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // Best-effort per member (QA M11): the group is already cancelled, so a
       // failed notice must not report the cancel itself as failed.
       await Promise.all(notified.map(async (userId) => {
+        if (!(await reachable(userId))) return;
         try {
           const profile = await deps.userProfile(userId);
           // Title and body share the recipient's locale (hunt L1): the body was
@@ -1418,15 +1440,16 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // schedule dialog offers; anything else would point the room at another
       // course's material.
       if (relatedLessonId && deps.courseLessons) {
-        const pre = await deps.repository.read();
+        const pre = await deps.repository.read({ group: input.groupId });
         const group = pre.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (group && !(await deps.courseLessons(group.courseId)).some((lesson) => lesson.id === relatedLessonId)) {
           throw new StudyGroupError("validation", "Related Lesson is not part of this Course.");
         }
       }
+      if (input.aiTutorEnabled !== undefined && typeof input.aiTutorEnabled !== "boolean") throw new StudyGroupError("validation", "aiTutorEnabled must be true or false.");
       let aiTutorEnabled = input.aiTutorEnabled !== false;
       if (aiTutorEnabled && deps.tutorOnline) {
-        const pre = await deps.repository.read();
+        const pre = await deps.repository.read({ group: input.groupId });
         const group = pre.groups.find((item) => item.id === input.groupId && item.status === "active");
         if (group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
           // An explicit "on" is the Host asking for something the course does
@@ -1467,13 +1490,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         };
         store.sessions.push(row);
         return row;
-      });
-      return sessionView(await deps.repository.read(), session, input.actorUserId);
+      }, { group: input.groupId });
+      return sessionView(await deps.repository.read({ session: session.id }), session, input.actorUserId);
     },
 
     async editSession(input: { actorUserId: string; groupId: string; sessionId: string; title?: string; relatedLessonId?: string | null; startsAt?: string; durationSeconds?: number; maxParticipants?: number; focus?: string | null; aiTutorEnabled?: boolean }) {
       if (input.title !== undefined) requireText(input.title, "Session Title", 50);
-      const startsAt = input.startsAt !== undefined ? parseStartTime(input.startsAt, deps.now()) : undefined;
+      if (input.aiTutorEnabled !== undefined && typeof input.aiTutorEnabled !== "boolean") throw new StudyGroupError("validation", "aiTutorEnabled must be true or false.");
       if (input.durationSeconds !== undefined && !STORED_SESSION_DURATION_SECONDS.includes(input.durationSeconds as (typeof STORED_SESSION_DURATION_SECONDS)[number])) throw new StudyGroupError("validation", "Duration is required.");
       if (input.maxParticipants !== undefined && (!Number.isInteger(input.maxParticipants) || input.maxParticipants < 2 || input.maxParticipants > 6)) throw new StudyGroupError("validation", "Maximum Participants must be from 2 to 6.");
       let focus: string | null | undefined;
@@ -1483,7 +1506,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         focus = focus || null;
       }
       if (input.aiTutorEnabled !== undefined && deps.tutorOnline) {
-        const pre = await deps.repository.read();
+        const pre = await deps.repository.read({ session: input.sessionId });
         const current = pre.sessions.find((item) => item.id === input.sessionId && item.groupId === input.groupId);
         const group = current ? pre.groups.find((item) => item.id === current.groupId) : undefined;
         if (input.aiTutorEnabled && group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
@@ -1496,6 +1519,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (!current || current.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can edit a Live Session.");
         if (current.status !== "scheduled") throw new StudyGroupError("forbidden", "Edit Session is available only before the Session starts.");
+        // Checked against the stored time: only a moved Start Time must be in the future.
+        const startsAt = input.startsAt !== undefined ? parseStartTime(input.startsAt, deps.now(), current.startsAt) : undefined;
         // An upcoming Session keeps everything people planned around; only its
         // Start Time can move (BUG-0157). Resending an unchanged value is fine.
         const changesOtherThanTime =
@@ -1508,7 +1533,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // The Host may turn the room AI Tutor on or off until the Session starts.
         if (input.aiTutorEnabled !== undefined) current.aiTutorEnabled = input.aiTutorEnabled;
         const previousStartsAt = current.startsAt;
-        if (startsAt) current.startsAt = startsAt.toISOString();
+        // Same instant written another way is not a move (no reschedule notice).
+        if (startsAt && startsAt.getTime() !== new Date(current.startsAt).getTime()) current.startsAt = startsAt.toISOString();
         current.updatedAt = now;
         const moved = current.startsAt !== previousStartsAt;
         if (moved) {
@@ -1521,9 +1547,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const group = store.groups.find((item) => item.id === current.groupId);
         const planned = store.intents.filter((item) => item.sessionId === current.id && !item.cancelledAt && item.userId !== group?.hostUserId).map((item) => item.userId);
         return { ...current, moved, planned, movedAt: now };
-      });
+      }, { session: input.sessionId });
       if (session.moved) await announceReschedule(session);
-      return sessionView(await deps.repository.read(), session, input.actorUserId);
+      return sessionView(await deps.repository.read({ session: input.sessionId }), session, input.actorUserId);
     },
 
     async cancelSession(input: { actorUserId: string; sessionId: string }) {
@@ -1549,13 +1575,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           title: current.title,
           planned: store.intents.filter((item) => item.sessionId === current.id && !item.cancelledAt && item.userId !== group?.hostUserId && activeMembership(store, current.groupId, item.userId)).map((item) => item.userId)
         };
-      });
+      }, { session: input.sessionId });
       // The cancelled Session can start no more, so its pending reminders are
       // withdrawn for every audience member (BUG-0109 storage honesty).
       await deps.withdrawReminders?.({ sessionIds: [input.sessionId] })?.catch(() => undefined);
       // The members who planned to attend are told, like a reschedule or a
       // cancelled group. Best effort per member: the cancel is already saved.
       for (const userId of planned) {
+        if (!(await reachable(userId))) continue;
         try {
           const profile = await deps.userProfile(userId);
           const copy = profile?.locale === "zh-CN"
@@ -1569,7 +1596,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async getSession(input: { actorUserId: string; sessionId: string }) {
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ session: input.sessionId });
       const session = store.sessions.find((item) => item.id === input.sessionId);
       if (!session || session.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
       const group = store.groups.find((item) => item.id === session.groupId);
@@ -1592,7 +1619,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const nothing = (signedIn: boolean) => ({ next: sessionEntryNext({ signedIn, found: false, state: null, missed: false, courseAvailable: false, courseAccess: false, member: false, host: false, seatForViewer: false }), now: now.toISOString(), opensAt: null, viewer: null, session: null, group: null, course: null });
       // A signed-out visitor learns nothing and costs no store read.
       if (!userId) return nothing(false);
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ session: input.sessionId });
       const session = store.sessions.find((item) => item.id === input.sessionId && item.status !== "removed");
       const group = session ? store.groups.find((item) => item.id === session.groupId && item.status === "active") : undefined;
       const effective = session && group ? effectiveSessionState(session, now) : "removed";
@@ -1674,12 +1701,12 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const row: AttendanceIntentRow = { id: randomUUID(), sessionId: session.id, userId: input.actorUserId, plannedAt: now, cancelledAt: null };
         store.intents.push(row);
         return null;
-      });
-      if (restored) {
+      }, { session: input.sessionId });
+      if (restored && await reachable(restored.userId)) {
         try {
           const profile = await deps.userProfile(restored.userId);
           const copy = reminderCopy(restored, profile?.locale, deps.now());
-          await deps.notify({ userId: restored.userId, title: copy.title, body: copy.body, sessionId: restored.sessionId });
+          await deps.notify({ userId: restored.userId, title: copy.title, body: copy.body, sessionId: restored.sessionId, copies: reminderCopies(restored, deps.now()) });
         } catch {
           // Best effort: the plan is saved; the reminders view still lists the Session.
         }
@@ -1693,7 +1720,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const existing = store.intents.find((item) => item.sessionId === input.sessionId && item.userId === input.actorUserId && !item.cancelledAt);
         if (existing) existing.cancelledAt = now;
         return Boolean(existing);
-      });
+      }, { session: input.sessionId });
       // Cancelling attendance removes the member's reminder (BR-019): withdraw
       // the pending row the member's Plan to Attend produced. Only an actual
       // cancellation withdraws — a no-op cancel must not touch a reminder that
@@ -1710,7 +1737,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const alreadyStarting = startingSessions.get(startKey);
       if (alreadyStarting) return alreadyStarting as Promise<ReturnType<typeof sessionView>>;
       const operation = (async () => {
-      const pending = await deps.repository.read();
+      const pending = await deps.repository.read({ session: input.sessionId });
       const pendingSession = pending.sessions.find((item) => item.id === input.sessionId);
       // KS-owned Tutor (2026-10-23): the Host set the switch earlier, but the
       // course may have gone offline since. Refuse to start with it on so the
@@ -1719,7 +1746,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const membership = activeMembership(pending, pendingSession.groupId, input.actorUserId);
         const group = pending.groups.find((item) => item.id === pendingSession.groupId);
         if (membership?.role === "host" && group && !(await tutorAvailability(group.courseId, { fresh: true })).available) {
-          throw new StudyGroupError("tutor_unavailable", "AI Tutor is offline for this course. Turn it off before starting the Live Session.");
+          // Its own code, so the Host is told the way out: turn the switch off in Edit Session.
+          throw new StudyGroupError("tutor_offline_at_start", "AI Tutor is offline for this course. Save the session with AI Tutor off in Edit Session, then start the Live Session.");
         }
       }
       let assignedProjectId: string | null = null;
@@ -1774,11 +1802,45 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           }
         }
         return current;
-      });
-      return sessionView(await deps.repository.read(), session, input.actorUserId);
+      }, { session: input.sessionId });
+      return sessionView(await deps.repository.read({ session: input.sessionId }), session, input.actorUserId);
       })().finally(() => { startingSessions.delete(startKey); });
       startingSessions.set(startKey, operation);
       return operation;
+    },
+
+    // A deactivated account (Student Management, review 2026-11-03 M3) is out
+    // of every room at once: its seats are released, an emptied live room
+    // ends, and the provider disconnects the identity instead of waiting for
+    // the participant token to expire. Best effort on the provider side.
+    async evictUser(input: { userId: string }) {
+      let questions = 0;
+      const rooms = await deps.repository.update((store) => {
+        const now = deps.now();
+        const affected: { id: string; liveKitProjectId: string | null }[] = [];
+        // Its queued AI Tutor questions are withdrawn (owner 2026-11-03): an
+        // answer nobody will read is not produced; one being answered finishes.
+        for (const row of store.tutorRequests.filter((item) => item.userId === input.userId && tutorRequestState(item) === "queued")) {
+          row.status = "dead_letter";
+          row.inFlight = false;
+          row.terminalReason = "withdrawn";
+          row.nextAttemptAt = null;
+          questions += 1;
+        }
+        for (const presence of store.presences.filter((item) => item.userId === input.userId && !item.leftAt)) {
+          const session = store.sessions.find((item) => item.id === presence.sessionId);
+          presence.leftAt = now.toISOString();
+          if (!session || session.status === "removed") continue;
+          closeLapsedSeats(store, now, session.id);
+          if (session.status === "live") {
+            affected.push({ id: session.id, liveKitProjectId: session.liveKitProjectId });
+            endLiveSessionIfEmpty(store, session, now);
+          }
+        }
+        return affected;
+      }, { seatsOf: input.userId });
+      for (const session of rooms) await removeFromRoom(session, [input.userId]);
+      return { sessions: rooms.length, questions };
     },
 
     async leaveSession(input: { actorUserId: string; sessionId: string; reason?: "unload" }) {
@@ -1794,7 +1856,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && !item.leftAt);
         if (presence) presence.leftAt = now.toISOString();
         endLiveSessionIfEmpty(store, session, now);
-      });
+      }, { session: input.sessionId });
     },
 
     // The seat holder's heartbeat: renews the lease of the caller's own seat.
@@ -1828,13 +1890,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (presence && renewable) presence.lastSeenAt = now.toISOString();
         if (presence && !renewable) presence.leftAt = now.toISOString();
         return { seated: Boolean(presence) && renewable, occupancy: seatCount(store, session.id, now), state: effectiveSessionState(session, now) };
-      });
+      }, { session: input.sessionId });
     },
 
     sweepPresence: () => sweepPresence(),
 
     async issueToken(input: { actorUserId: string; sessionId: string; recovery?: boolean }) {
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ session: input.sessionId });
       const { session, group, membership } = requireOpenSession(store, input.sessionId, input.actorUserId);
       const state = effectiveSessionState(session, deps.now());
       if (state === "completed") throw new StudyGroupError("session_unavailable", "This Live Session has ended.");
@@ -1862,7 +1924,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             if (!row || row.status === "removed") throw new StudyGroupError("not_found", "Live Session was not found.");
             row.liveKitProjectId ??= selected.id;
             return row.liveKitProjectId;
-          });
+          }, { session: session.id });
         }
         const signed = deps.liveKitProjects && deps.liveKitGateway
           ? await (() => {
@@ -1909,7 +1971,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
             sessionId: session.id,
             projectId: assignedProjectId,
             code: classifyLiveKitIncident({ source: "gateway", code: error.code, phase: "existing_room" }).code,
-            source: "gateway"
+            source: "gateway",
+            failure: error.code
           });
           throw liveKitFailure(error, "LiveKit cannot issue a verified participant token right now.");
         }
@@ -1918,7 +1981,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     },
 
     async reportLiveKitIncident(input: { actorUserId: string; sessionId: string; code: LiveKitIncidentCode }) {
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ session: input.sessionId });
       const { session } = requireOpenSession(store, input.sessionId, input.actorUserId);
       const presence = store.presences.find((item) => item.sessionId === session.id && item.userId === input.actorUserId && item.enteredAt && !item.leftAt);
       if (!presence) throw new StudyGroupError("forbidden", "Enter the Live Session before reporting a connection issue.");
@@ -1935,7 +1998,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       // is still taken and answered "unavailable" (QA N4: the question line
       // must not block), and the room greys the entry out for it.
       // KS-owned Tutor (2026-10-23): availability follows the related Course.
-      const availabilityStore = await deps.repository.read();
+      const availabilityStore = await deps.repository.read({ session: input.sessionId });
       const availabilitySession = availabilityStore.sessions.find((item) => item.id === input.sessionId);
       const availabilityGroup = availabilitySession ? availabilityStore.groups.find((item) => item.id === availabilitySession.groupId) : undefined;
       const availability: TutorAvailability = availabilityGroup
@@ -1984,13 +2047,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // Where the question stands, so the asker sees "waiting" with how many
         // are ahead rather than a bare "answering".
         return { ...row, position: tutorQueuePosition(store, row) };
-      });
+      }, { session: input.sessionId });
     },
 
     // The asker takes back a question the Tutor has not started on.
     async withdrawTutor(input: { actorUserId: string; sessionId: string; requestId: string }) {
       const requestId = requiredValue(input.requestId, "AI Tutor request id");
-      const store = await deps.repository.read();
+      const store = await deps.repository.read({ session: input.sessionId });
       const row = store.tutorRequests.find((item) => item.id === requestId && item.sessionId === input.sessionId && item.userId === input.actorUserId);
       if (!row) throw new StudyGroupError("not_found", "That AI Tutor question was not found.");
       const outcome = await deps.repository.withdrawTutorRequest({ id: requestId, userId: input.actorUserId });
@@ -2096,6 +2159,14 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return { abandonedReceipts, sessionsChecked: swept.sessionsEnded, presencesClosed: swept.seatsClosed };
     },
 
+    // Settled operational history older than HISTORY_RETENTION_DAYS goes
+    // (review 2026-11-03 H2): bounded per tick, so the tables every scoped
+    // read still touches (outbox, tutor requests, webhook receipts) stay
+    // small. Product history is never pruned (repository.pruneHistory).
+    async pruneHistory() {
+      return deps.repository.pruneHistory({ olderThanDays: HISTORY_RETENTION_DAYS, limit: HISTORY_PRUNE_LIMIT });
+    },
+
     async operationalMetrics(): Promise<StudyGroupOperationalMetrics> {
       // Redacted counts only (slice-3 design §5.2): a thin passthrough. Errors
       // propagate — including the file adapter's typed
@@ -2104,8 +2175,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       return deps.repository.studyGroupOperationalMetrics();
     },
 
-    listReminders(actorUserId: string) {
-      return deps.listReminders(actorUserId);
+    listReminders(actorUserId: string, locale?: "en-GB" | "zh-CN") {
+      return deps.listReminders(actorUserId, locale);
     },
 
     listCreatableCourses(actorUserId: string) {

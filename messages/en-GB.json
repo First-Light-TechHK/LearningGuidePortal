@@ -1,4 +1,83 @@
 {
+  "orderManagement": {
+    "title": "Orders to resolve",
+    "history": "Closed orders",
+    "orderNumber": "Order number",
+    "created": "Created",
+    "deadline": "Pay before",
+    "checked": "Last checked",
+    "months": "{count} months",
+    "resume": "Continue payment",
+    "cancel": "Cancel order",
+    "check": "Check payment status",
+    "checking": "Checking…",
+    "support": "Contact support",
+    "viewPlans": "View plans",
+    "viewOrders": "View order",
+    "refresh": "Refresh orders",
+    "loading": "Loading orders…",
+    "empty": "You have no orders to resolve.",
+    "cancelTitle": "Cancel this order?",
+    "cancelDescription": "This closes this purchase or upgrade payment. Your existing active subscription remains in place. A payment already completed will be checked instead.",
+    "confirmCancel": "Cancel order",
+    "keep": "Keep order",
+    "close": "Close",
+    "retry": "Try again",
+    "blocked": "An unfinished order needs to be resolved before this purchase or upgrade can continue.",
+    "notCanceled": "The order is still open. Check its status or try canceling again.",
+    "notResumed": "Payment is not available for this order. Check the status shown below.",
+    "updated": "Payment status updated.",
+    "states": {
+      "unverified": "Awaiting status check",
+      "awaiting_payment": "Awaiting payment",
+      "processing": "Payment processing",
+      "synchronising": "Payment confirmed — updating subscription",
+      "unavailable": "Payment status unavailable",
+      "paid": "Paid",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "expired": "Expired",
+      "refunded": "Refunded"
+    },
+    "kinds": {
+      "purchase": "Purchase",
+      "trial_activation": "Trial activation",
+      "upgrade": "Upgrade"
+    },
+    "reasons": {
+      "provider_unavailable": "We could not reach the payment provider. Check again before placing another order.",
+      "identity_mismatch": "We could not verify this payment. Contact support with the order number.",
+      "missing_payment": "The payment reference is unavailable. Contact support with the order number.",
+      "fulfilment_pending": "Your payment is confirmed. We are updating your subscription; check again shortly.",
+      "payment_already_completed": "Payment completed before the cancellation could finish.",
+      "payment_still_open": "The payment is still open; cancellation was not completed."
+    },
+    "errors": {
+      "invalid_request": "The order request is invalid.",
+      "not_found": "Order not found.",
+      "unauthenticated": "Sign in to manage your orders.",
+      "forbidden_origin": "Refresh this page and try again.",
+      "payment_unavailable": "Orders are temporarily unavailable. Please try again.",
+      "forbidden": "Course Manager/Operator access is required."
+    },
+    "invoice": "Stripe Invoice",
+    "activityActions": {
+      "check_payment": "Check payment",
+      "resume_payment": "Resume payment",
+      "cancel_payment": "Cancel payment",
+      "refund": "Refund",
+      "resynchronise": "Synchronise"
+    },
+    "activityResults": {
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "processing": "Processing"
+    },
+    "actors": {
+      "learner": "Learner",
+      "operator": "Course Manager/Operator"
+    }
+  },
   "orderReceipt": {
     "title": "Learning Guide receipt",
     "plan": "Course plan",
@@ -180,6 +259,10 @@
     "tryApplication": "Try Application Test"
   },
   "lessonCompleted": {
+    "markComplete": "Mark Complet",
+    "nextActionTitle": "What would you like to do next?",
+    "lessonLabel": "Lesson {number}",
+    "returnToLearning": "Return to My Learning",
     "completeCourse": "Complete Course",
     "courseDescription": "Check your understanding, or return to My Learning.",
     "cards": "20 cards",
@@ -260,6 +343,7 @@
     "videoMode": "Video mode",
     "textMode": "Text mode",
     "noLessonsInMode": "No lessons available in this mode.",
+    "lessonUnavailable": "Lesson content is currently unavailable.",
     "back": "Back to course details",
     "outline": "COURSE OUTLINE",
     "deepLearning": "Deep Learning",
@@ -395,7 +479,7 @@
     "eyebrow": "Learning Guide Portal",
     "title": "Learn through guided courses",
     "description": "Explore a course, start with the public lesson, and continue learning with a course-aligned AI Tutor.",
-    "navigation": {
+    "navigation": {"primaryLabel": "Primary navigation", 
       "courses": "Courses",
       "studyGroups": "Study Groups",
       "pricing": "Subscription",
@@ -619,6 +703,11 @@
     "oauthError": "The provider sign-in could not be completed. Please try again or use email and password."
   },
   "learning": {
+    "textLessonEnd": {
+      "title": "You’ve reached the end of this lesson",
+      "continue": "Complete and continue",
+      "finish": "Complete course"
+    },
     "title": "My Learning",
     "signInRequired": "Sign in to see your courses.",
     "noCourses": "You have not started a course yet.",
@@ -708,6 +797,17 @@
     "askTutorPlaceholder": "Ask about this lesson...",
     "newChat": "New chat",
     "closeTutor": "Close AI Tutor",
+    "tutorErrors": {
+      "unavailable": "AI Tutor is temporarily unavailable. Please try again in a moment.",
+      "offline": "AI Tutor is not available for this course right now.",
+      "signIn": "Your session has ended. Please sign in again.",
+      "noAccess": "You need access to this course to use AI Tutor.",
+      "notFound": "This course or lesson is not available.",
+      "tooLong": "Enter a question of up to 4,000 characters.",
+      "busy": "AI Tutor is still answering your previous question. Please wait a moment.",
+      "rateLimited": "You are asking questions too quickly. Please wait a moment and try again.",
+      "generic": "AI Tutor could not answer just now. Please try again."
+    },
     "signOut": "Sign out"
   },
   "account": {
@@ -876,7 +976,7 @@
         },
         {
           "question": "Can I download course materials?",
-          "answer": "Downloads are available only when a course provides them."
+          "answer": "No. Lessons open on the website only, and there is no download option. You can open them any time from My Learning while you have access to the course."
         }
       ]
     },
@@ -944,7 +1044,7 @@
     "searchPlaceholder": "Search help articles...",
     "searchLabel": "Search help articles",
     "popularTitle": "Popular articles",
-    "popularSubtitle": "Quick answers to the questions students ask most often.",
+    "popularSubtitle": "Quick answers to the questions people ask most often.",
     "searchTitle": "Search results",
     "searchSubtitle": "Articles matching “{q}”.",
     "searchEmpty": "No articles match “{q}”. Try different words, or contact our support team.",
@@ -952,7 +1052,8 @@
     "categoryEmpty": "There are no articles about this topic yet.",
     "popularEmpty": "There are no help articles yet.",
     "allArticles": "Back to popular articles",
-    "unavailable": "Help articles are temporarily unavailable. Here are some common answers.",
+    "showMore": "Show {count} more",
+    "showLess": "Show fewer",
     "faqMissing": "This article is no longer available. Here are some other answers that may help.",
     "searchCount": "Articles found: {count}",
     "topicsTitle": "Popular topics",
@@ -980,7 +1081,7 @@
     "openGroup": "Open Group",
     "openStudyGroup": "Open Study Group",
     "arrangeLead": "Arrange a live study session for this Study Group",
-    "editSessionLead": "Only the date and start time can be changed. Everything else stays as members planned for.",
+    "editSessionLead": "Only the date, start time and AI Tutor switch can be changed. Everything else stays as members planned for.",
     "selectLesson": "Select Lesson",
     "relatedLesson": "Related Lesson",
     "selectStartTime": "Select start time",
@@ -1170,7 +1271,7 @@
       "course_access_required": "Valid Course access is required.",
       "course_unavailable": "This Course is no longer available, so this Study Group cannot be joined.",
       "forbidden": "You cannot do that.",
-      "session_time_only": "Only the date and start time of an upcoming Live Session can be changed.",
+      "session_time_only": "Only the date, start time and AI Tutor switch of an upcoming Live Session can be changed.",
       "not_found": "That Study Group or Live Session was not found.",
       "conflict": "The Related Course cannot be changed.",
       "session_full": "Session full.",
@@ -1188,6 +1289,7 @@
       "tutor_rate_limited": "Too many questions in a short time. Try again in a minute.",
       "tutor_answering": "The AI Tutor is already answering that question.",
       "tutor_unavailable": "AI Tutor is not available right now. Try again in a minute.",
+      "tutor_offline_at_start": "AI Tutor is offline for this course, so the Live Session can’t start with it on. Open Edit Session, save it with AI Tutor off, then start again.",
       "seat_lapsed": "Your place in the Live Session lapsed while the connection was down. Wait until you are back in, then ask again.",
       "network": "The connection failed. Check your network and try again.",
       "error": "Something went wrong. Try again."
@@ -1227,7 +1329,8 @@
       "fullTitle": "This Live Session is full",
       "fullBody": "All places in this Live Session are taken. A place may free up when someone leaves.",
       "backToGroup": "Back to Study Group",
-      "enterNow": "Enter now"
+      "enterNow": "Enter now",
+      "viewSession": "View"
     }
   },
   "legal": {
@@ -1243,7 +1346,7 @@
       "Course access is determined by the subscription and entitlement returned by the service. Public first lessons remain available only where the course has enabled them. Subscription renewal, cancellation and refund conditions are shown before checkout and in Stripe's hosted payment flow.",
       "AI Tutor responses support learning and should not be treated as professional, legal, medical or financial advice."
     ],
-    "cookiesTitle": "Cookie Settings",
+    "cookiesLabel": "Cookie preferences", "cookiesTitle": "Cookie Settings",
     "cookiesIntro": "Essential cookies keep sign-in and security functions working. Optional analytics cookies are off until you choose otherwise.",
     "acceptOptional": "Allow optional cookies",
     "rejectOptional": "Use essential cookies only",
@@ -1684,7 +1787,8 @@
     "origin_mismatch": "The checkout address does not match this website's configuration. Please use the configured website address or contact support.",
     "consent_required": "Please select all purchase confirmation options before continuing.",
     "checkAgain": "Check payment status",
-    "upgrade_in_progress": "An upgrade payment is in progress. Please complete or resolve it before changing subscriptions."
+    "payment_pending": "You have an unfinished order for this product. Continue its payment or cancel it before purchasing again.",
+    "upgrade_in_progress": "You have an unfinished purchase or upgrade payment. Resolve it before changing subscriptions."
   },
   "helpdesk": {
     "pageTitle": "Contact Support",
@@ -1765,7 +1869,7 @@
       "handoverButton": "Contact Support",
       "checkinTitle": "Still need help?",
       "endChat": "End chat",
-      "contactPerson": "Contact a person",
+      "contactPerson": "Contact Support",
       "ended": "This chat has ended.",
       "endThanks": "Thanks for chatting. Ask again any time.",
       "situationTitle": "You might be running into:",

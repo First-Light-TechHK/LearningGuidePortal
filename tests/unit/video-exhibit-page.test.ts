@@ -94,14 +94,14 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await modeSwitch.selectOption("text");
       await textSaved;
       assert.equal(await page.evaluate(()=>(window as unknown as {modeDestination:string}).modeDestination),"/lesson?viewMode=text&contentId=text");
-      assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).count(),0);
+      assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).getAttribute("href"),"/video-lesson?viewMode=video");
       assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text");
       assert.equal(await page.getByRole("link",{name:/Locked text lesson/}).count(),0);
       await page.getByText("Mode switch reading content.",{exact:true}).waitFor();
       assert.equal(await page.locator("video.la-lesson-video").count(),0);
       await modeSwitch.selectOption("video");
       await page.locator("video.la-lesson-video").waitFor();
-      assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).count(),0);
+      assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text");
       assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).count(),1);
       await page.locator("video.la-lesson-video").waitFor();
       const videoBounds=(await page.locator("video.la-lesson-video").boundingBox())!;
@@ -166,18 +166,19 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
           openFailure=failure;
           await mount(`silent-${entitled}-${failure}`,entitled);
           await page.locator("video.la-lesson-video").waitFor();
-          const saved=failure==="http"
+          const beforeEvents=studyEvents.length;
+          const saved=!entitled ? null : failure==="http"
             ? page.waitForEvent("response",event=>event.url().endsWith("/api/study/preview"))
             : page.waitForEvent("requestfailed",event=>event.url().endsWith("/api/study/preview"));
           await page.locator("video.la-lesson-video").evaluate(video=>{
             video.dispatchEvent(new Event("error"));
             video.dispatchEvent(new Event("play"));
           });
-          await saved;await page.waitForLoadState("networkidle");
+          if(saved)await saved;await page.waitForLoadState("networkidle");
           assert.equal(await page.getByText(lessonMessages(locale).mediaFailed,{exact:true}).count(),0,"unavailable media has no notice");
           assert.equal(await page.getByText(getMessages(locale).overviewDesign.previewSaveError,{exact:true}).count(),0,"failed background progress saves have no notice");
           assert.equal(await page.locator(".la-content-player [role=status],.la-content-player [role=alert],.preview-progress").count(),0,"no feedback block is rendered in or below the player");
-          assert.ok(studyEvents.some(event=>event.body.event==="open" && event.body.contentId==="video"),"progress still saves in the background");
+          assert.equal(studyEvents.length>beforeEvents,entitled,"only entitled playback saves progress in the background");
         }
       }
       const controls=page.locator(".la-video-controls");

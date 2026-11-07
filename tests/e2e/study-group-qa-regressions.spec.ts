@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type Page } from "playwright/test";
 import {
+  fillScheduleDialog,
   appAlerts,
   askTutor,
   createGroup,
@@ -453,11 +454,7 @@ test("N8: a double click schedules one session and joins once; the server folds 
     const dialog = page.getByRole("dialog");
     const start = new Date(Date.now() + 3 * 60 * 60_000);
     const pad = (value: number) => String(value).padStart(2, "0");
-    await dialog.locator('input[name="title"]').fill("Double click session");
-    await dialog.locator('input[name="date"]').fill(`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`);
-    await dialog.locator('input[name="time"]').fill(`${pad(start.getHours())}:${pad(start.getMinutes())}`);
-    await dialog.locator('select[name="durationMinutes"]').selectOption({ index: 1 });
-    await dialog.locator('select[name="maxParticipants"]').selectOption("4");
+    await fillScheduleDialog(dialog, { title: "Double click session", startsAt: start, duration: "10 mins", max: "4" });
     await dialog.getByRole("button", { name: "Schedule Session" }).dblclick();
     await expect(page.getByRole("heading", { name: "Double click session" })).toHaveCount(1);
     await page.waitForTimeout(3_000);

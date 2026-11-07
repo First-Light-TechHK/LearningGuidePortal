@@ -346,17 +346,20 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
   }
 
   /**
-   * Per-learner limits over a rolling hour, counted from the stored tickets
-   * and messages (no counter table). Requests racing each other can pass a
-   * limit by a few; it is a brake on floods, not an exact quota.
+   * Per-learner limits over a rolling hour: one admitted attempt per hit,
+   * counted and recorded under one lock per learner (repository.tryRateHit,
+   * review 2026-11-03 M2), so requests racing each other cannot pass a limit
+   * together. A replay never reaches here (it is answered first) and so never
+   * counts.
    */
-  async function enforceRateLimit(kind: "tickets" | "messages", learnerId: string) {
+  async function enforceRateLimit(kind: "tickets" | "messages", learnerId: string, mode: "spend" | "check" = "spend") {
     const at = now();
-    const since = new Date(at.getTime() - RATE_WINDOW_MS).toISOString();
     const limit = kind === "tickets" ? HELPDESK_LIMITS.ticketsPerHour : HELPDESK_LIMITS.learnerMessagesPerHour;
-    const oldest = kind === "tickets" ? await repository.nthRecentTicketAt(learnerId, since, limit) : await repository.nthRecentLearnerMessageAt(learnerId, since, limit);
-    if (!oldest) return;
-    const retryAfter = Math.max(1, Math.ceil((Date.parse(oldest) + RATE_WINDOW_MS - at.getTime()) / 1000));
+    const hit = mode === "spend"
+      ? await repository.tryRateHit(`${kind}:${learnerId}`, limit, RATE_WINDOW_MS, at.toISOString())
+      : await repository.peekRateHit(`${kind}:${learnerId}`, limit, RATE_WINDOW_MS, at.toISOString());
+    if (hit.allowed) return;
+    const retryAfter = Math.max(1, Math.ceil((Date.parse(hit.oldestAt) + RATE_WINDOW_MS - at.getTime()) / 1000));
     log({ type: "helpdesk", event: "rate_limited", limit: kind, retryAfter });
     throw new HelpdeskProblem("rate_limited", kind === "tickets" ? `You can open at most ${limit} enquiries an hour. Try again later.` : `You can send at most ${limit} messages an hour. Try again later.`, { retryAfter });
   }
@@ -542,6 +545,9 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     };
     const earlier = await replayTicket();
     if (earlier) return earlier;
+    // Both budgets are checked before either is spent (review B 2026-11-03 F3): an enquiry the messages budget refuses
+    // costs no enquiry of the ten. (Only a race between the check and the spend can still cost one.)
+    await enforceRateLimit("messages", learner.id, "check");
     await enforceRateLimit("tickets", learner.id);
     await enforceRateLimit("messages", learner.id);
     // After the limiter: a learner over the limit costs no order-store read, whatever orderId they send.

@@ -1,0 +1,14 @@
+schema: overlay-suite/v2
+id: ai-tutor
+title: AI Tutor — availability, chat panel and failure lines
+status: active
+kind: functional
+subject: product
+source: inbox/ai-tutor.md
+packages:
+  - components/portal/TutorChat.tsx
+  - components/portal/TutorDrawer.tsx
+  - components/portal/tutorChatError.ts
+  - services/ksTutorClient.ts
+blocked_reason: null
+product_command: node --import tsx --require ./scripts/register-tsconfig-paths.cjs --test --test-concurrency=1 tests/unit/tutor-chat-*.test.ts tests/unit/ks-tutor-client.test.ts tests/unit/ai-tutor-new-chat.test.ts tests/unit/product-tutor-fallback.test.ts tests/unit/LEARN-03-tutor-pack-not-epicureanism.test.ts

@@ -183,7 +183,7 @@ test("real services and APIs enforce configured preview access and eighteen-ques
     assert.equal((await routes.GET(jsonRequest("GET","http://localhost/api/assessments"),context())).status,403);
     const {quote}=await store.createQuote(user.id,"science-pc-6");await store.completeDemoCheckout(user.id,quote.id);
     assert.equal((await store.checkEntitlement(user.id,course.id)).allowed,true);
-    await assert.rejects(()=>services.readAssessment(user.id,course.id,first.id,"knowledge"),{code:"ASSESSMENT_FORBIDDEN"});
+    assert.equal(await services.readAssessment(user.id,course.id,first.id,"knowledge"),null,"current Course access opens tests before Study completion");
     await store.recordStudyEvent({userId:user.id,courseId:course.id,lessonId:first.id,event:"complete",seconds:0,learningMode:"text",completeLesson:true,clientEventId:"modeling-complete-first"});
     const response=await routes.GET(jsonRequest("GET","http://localhost/api/assessments"),context());
     assert.equal(response.status,200);const payload=await response.json();assert.equal(payload.data,null);assert.equal(payload.definition.knowledge.length,18);
@@ -194,7 +194,7 @@ test("real services and APIs enforce configured preview access and eighteen-ques
     const input={expectedVersion:0,clientEventId:randomUUID(),attempt};const saved=await services.writeAssessment(user.id,course.id,first.id,"knowledge",input);
     assert.deepEqual(await services.writeAssessment(user.id,course.id,first.id,"knowledge",input),saved);
     await assert.rejects(()=>services.readAssessment(other.id,course.id,first.id,"knowledge"),{code:"ASSESSMENT_FORBIDDEN"});
-    assert.equal((await routes.GET(jsonRequest("GET","http://localhost/api/assessments"),context("knowledge",second.id))).status,403,"Lesson 2 exists but requires both Lesson 1 tests completed");
+    assert.equal((await routes.GET(jsonRequest("GET","http://localhost/api/assessments"),context("knowledge",second.id))).status,200,"Lesson 2 tests are accessible independently of Lesson 1 tests");
     const data=await readProductData();data.entitlements.filter((row:{userId:string})=>row.userId===user.id).forEach((row:{validTo:string})=>row.validTo="2020-01-01T00:00:00Z");await writeProductData(data);
     assert.equal((await routes.GET(jsonRequest("GET","http://localhost/api/assessments"),context())).status,403);
     clearCookies();assert.equal((await routes.GET(jsonRequest("GET","http://localhost/api/assessments"),context())).status,401);

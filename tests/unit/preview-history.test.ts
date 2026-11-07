@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 
-test('preview viewers without entitlement save an open event and cannot complete', async () => {
-  const bundle = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {PreviewProgress} from './components/portal/PreviewProgress'; createRoot(document.getElementById('root')).render(React.createElement(PreviewProgress, {courseId:'course', lessonId:'public', seconds:60, initialCompleted:false, canComplete:false, copy:{completeLesson:'Complete',completed:'Completed',saveError:'Save failed'}}));`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'router', setup(builder) { builder.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: 'router', namespace: 'mock' })); builder.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({ contents: 'export function useRouter(){return {refresh(){window.refreshed=true}}}' })); } }] });
+test('preview viewers without entitlement do not send progress requests or show completion', async () => {
+  const bundle = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {PreviewProgress} from './components/portal/PreviewProgress'; createRoot(document.getElementById('root')).render(React.createElement(PreviewProgress, {courseId:'course', lessonId:'public', seconds:60, initialCompleted:false, enabled:false, canComplete:false, copy:{completeLesson:'Complete',completed:'Completed',saveError:'Save failed'}}));`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'router', setup(builder) { builder.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: 'router', namespace: 'mock' })); builder.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({ contents: 'export function useRouter(){return {refresh(){window.refreshed=true}}}' })); } }] });
   const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || undefined });
   try {
     const page = await browser.newPage();
@@ -13,9 +13,8 @@ test('preview viewers without entitlement save an open event and cannot complete
     await page.route('http://preview.test/', route => route.fulfill({ body: '<div id="root"></div>', contentType: 'text/html' }));
     await page.goto('http://preview.test/');
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
-    const deadline = Date.now() + 5000;
-    while (!requests.length && Date.now() < deadline) await page.waitForTimeout(50);
-    assert.deepEqual(requests, [{ courseId: 'course', lessonId: 'public', event: 'open', seconds: 0, clientEventId: 'open_course_public' }]);
+    await page.waitForTimeout(150);
+    assert.deepEqual(requests, []);
     assert.equal(await page.getByRole('button', { name: 'Complete', exact: true }).count(), 0);
     await page.close();
   } finally { await browser.close(); }

@@ -10,7 +10,7 @@ export function paymentFailure(error: unknown, locale: "en-GB" | "zh-CN" = "en-G
   if (error instanceof PaymentError) {
     if (error.status >= 500) console.error(JSON.stringify({ event: "payment_failure", requestId, code: error.code, status: error.status, reason: error.diagnosticReason || error.code }));
     const message = getMessages(locale).paymentErrors[error.code];
-    return NextResponse.json({ ok: false, code: error.code, error: message, message, requestId }, { status: error.status });
+    return NextResponse.json({ ok: false, code: error.code, error: message, message, requestId, ...(error.blockingOrderId ? { blockingOrderId: error.blockingOrderId } : {}) }, { status: error.status, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   }
   const detail = error instanceof Error ? error.message : "Payment unavailable.";
   if (CLIENT_PAYMENT.test(detail)) {

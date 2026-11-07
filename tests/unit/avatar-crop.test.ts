@@ -12,7 +12,7 @@ test('avatar crop position stays within portrait and landscape images', async ()
 });
 
 test('settings uploads only the chosen crop; cancel and failed uploads preserve the avatar', async () => {
-  const bundle = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {SettingsForm} from './components/portal/SettingsForm'; import {getMessages} from './lib/i18n/messages'; window.mount=locale=>createRoot(document.getElementById('root')).render(React.createElement(SettingsForm,{countries:['China'],uiLocale:locale,initialNickname:'Test',initialEmail:'test@example.test',initialLocale:locale,initialCountry:'China',hasAvatar:false,copy:getMessages(locale).learning}));`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' } });
+  const bundle = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {SettingsForm} from './components/portal/SettingsForm'; import {getMessages} from './lib/i18n/messages'; window.mount=locale=>createRoot(document.getElementById('root')).render(React.createElement(SettingsForm,{countries:['China'],uiLocale:locale,initialNickname:'Test',initialEmail:'test@example.test',initialLocale:locale,initialCountry:'China',hasAvatar:false,copy:getMessages(locale).learning}));`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, outfile: 'settings.js', loader: { '.css': 'local-css' }, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' } });
   const blue = await sharp({ create: { width: 600, height: 600, channels: 3, background: '#0000ff' } }).png().toBuffer();
   const source = await sharp({ create: { width: 1200, height: 600, channels: 3, background: '#ff0000' } }).composite([{ input: blue, left: 600, top: 0 }]).png().toBuffer();
   const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || undefined });
@@ -32,7 +32,7 @@ test('settings uploads only the chosen crop; cancel and failed uploads preserve 
       });
       await page.goto('http://avatar.test/');
       await page.addStyleTag({ content: readFileSync('app/portal-design.css', 'utf8') });
-      await page.addScriptTag({ content: bundle.outputFiles[0].text });
+      await page.addScriptTag({ content: bundle.outputFiles.find(file => file.path.endsWith(".js"))!.text });
       await page.evaluate(locale => (window as unknown as {mount: (locale: string) => void}).mount(locale), locale);
       const input = page.locator('input[type=file]');
       const choose = () => input.setInputFiles({ name: 'source.png', mimeType: 'image/png', buffer: source });

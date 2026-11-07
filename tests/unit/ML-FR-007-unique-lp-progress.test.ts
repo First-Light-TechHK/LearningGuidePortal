@@ -165,7 +165,7 @@ test("ML-FR-010: opening every Learning Point is Completed at 100%, not a percen
   assert.ok(card?.completedAt);
 });
 
-test("ML-FR-009: preview opens merge into paid unique-LP progress after purchase", async () => {
+test("preview opens are excluded from paid unique-LP progress after purchase", async () => {
   const user = await verifiedUser(store, "ml-fr-007-merge@example.test");
   await openLearningPoint(store, user.id, PREVIEW_LP, "preview-before-pay", "preview");
   await purchaseCourse(store, user.id);
@@ -173,7 +173,7 @@ test("ML-FR-009: preview opens merge into paid unique-LP progress after purchase
 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
-  assert.equal(card?.openedLearningPointCount, 2);
-  assert.equal(card?.progress, 100);
-  assert.equal(card?.cardState, "completed");
+  assert.equal(card?.openedLearningPointCount, 1);
+  assert.equal(card?.progress, 50);
+  assert.equal(card?.cardState, "learning");
 });

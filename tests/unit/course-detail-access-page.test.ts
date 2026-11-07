@@ -63,6 +63,18 @@ test("course detail replaces purchase with the Figma included-plan card only for
         await page.locator("#root").evaluate((element, html) => { element.innerHTML = html; }, html);
         assert.equal(await page.locator('[data-course-plan-status="included"]').count(), fixture.included ? 1 : 0, `${locale}/${fixture.name}`);
         assert.equal(await page.locator('[data-course-plan-status="purchase"]').count(), fixture.included ? 0 : 1);
+        const syllabus = page.locator('[data-syllabus]');
+        const entries = syllabus.locator('[data-course-cta-link]');
+        const coursePage = await store.getCoursePage(COURSE_ID, fixture.user?.id);
+        assert.equal(await entries.count(), fixture.included ? coursePage.syllabus.length : 1, `${locale}/${fixture.name}: each entitled Lesson has its own entry; previews retain one`);
+        for (const lesson of coursePage.syllabus) {
+          const row = syllabus.locator(`[data-lesson-id="${lesson.lessonId}"]`);
+          if (fixture.included) {
+            const entry = row.getByRole('link', { name: copy.start, exact: true });
+            assert.equal(await entry.count(), 1);
+            assert.equal(await entry.getAttribute('href'), `/${locale}/account/learn/${COURSE_ID}?lessonId=${encodeURIComponent(lesson.lessonId)}`);
+          } else if (!lesson.openable) assert.equal(await row.getByRole('link').count(), 0);
+        }
         if (!fixture.included) { assert.equal(await page.getByRole("link", { name: copy.benefits, exact: true }).count(), 1);continue; }
         const card = page.locator('[data-course-plan-status="included"]');
         assert.equal(await card.getByRole("heading").textContent(), copy.includedInPlan);
@@ -86,6 +98,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
       const action = page.locator('[data-course-plan-status="included"] a');
       assert.equal(await action.textContent(), copy.continueLearning);
       assert.equal(await action.getAttribute("href"), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`);
+      assert.equal(await page.locator('[data-syllabus]').getByRole('link', { name: copy.start, exact: true }).count(), (await store.getCoursePage(COURSE_ID, owner.id)).syllabus.length, 'review progress does not hide earlier Lesson buttons');
       // Restore the fixture's no-record state for the next locale.
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
       const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;

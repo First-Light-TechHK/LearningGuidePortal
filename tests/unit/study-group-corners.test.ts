@@ -24,11 +24,18 @@ function codeOf(error: unknown) {
   return (error as { code?: string }).code;
 }
 
-function serviceWith(liveKit: StudyGroupDeps["liveKit"]) {
+// A caller's precheck can be held open to pin the order the prechecks finish in.
+const heldPrechecks = new Map<string, Promise<void>>();
+
+function serviceWith(liveKit: StudyGroupDeps["liveKit"], extra: Partial<StudyGroupDeps> = {}) {
   return createStudyGroupService({
+    ...extra,
     repository,
     now: () => new Date(NOW),
-    hasCourseAccess: async (userId, courseId) => access.has(`${userId}:${courseId}`),
+    hasCourseAccess: async (userId, courseId) => {
+      await heldPrechecks.get(userId);
+      return access.has(`${userId}:${courseId}`);
+    },
     courseSummary: async (courseId) => courseId === "course-1" ? { id: courseId, title: "German History", slug: "german-history" } : null,
     accessibleCourses: async () => [],
     userProfile: async (userId) => ({ id: userId, displayName: userId === "host" ? "Anna Williams" : userId, email: `${userId}@example.test`, locale: "en-GB" }),
@@ -143,7 +150,7 @@ test("planned duration is 10, 20, 30, or 40 minutes stored as seconds (owner 202
   }
 });
 
-test("conflicting joins stay within 6 including the Host and the earlier request time wins", async () => {
+test("conflicting joins stay within 6 including the Host, in the order they were received", async () => {
   const group = await service.createGroup({ actorUserId: "host", title: "Capacity", courseId: "course-1", about: "About the group." });
   await assert.rejects(
     () => service.scheduleSession({
@@ -180,6 +187,60 @@ test("conflicting joins stay within 6 including the Host and the earlier request
   assert.equal(settled[6].status, "rejected");
   if (settled[6].status === "rejected") assert.equal(codeOf(settled[6].reason), "session_full");
   assert.equal(settled[0].status, "fulfilled");
+});
+
+async function raceForLastSeat(extra?: Partial<StudyGroupDeps>) {
+  const racing = extra ? serviceWith({ apiKey: "lk-key", apiSecret: SECRET, url: "wss://livekit.example.test" }, extra) : service;
+  const group = await racing.createGroup({ actorUserId: "host", title: "Last seat", courseId: "course-1", about: "About the group." });
+  const session = await racing.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Two seats", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: STORED_DURATION_SECONDS, maxParticipants: 2 });
+  for (const userId of ["early", "late"]) {
+    access.add(`${userId}:course-1`);
+    await racing.joinGroup({ actorUserId: userId, groupId: group.id });
+  }
+  await racing.enterSession({ actorUserId: "host", sessionId: session.id, requestedAt: "2026-09-19T02:00:00.000Z" });
+  return { racing, session };
+}
+
+test("the last seat goes to whoever asked first, even when their precheck finishes last", async () => {
+  const { racing, session } = await raceForLastSeat();
+  let release!: () => void;
+  heldPrechecks.set("early", new Promise<void>((resolve) => { release = resolve; }));
+  const early = racing.enterSession({ actorUserId: "early", sessionId: session.id, requestedAt: "2026-09-19T02:00:01.000Z" });
+  const late = racing.enterSession({ actorUserId: "late", sessionId: session.id, requestedAt: "2026-09-19T02:00:02.000Z" });
+  await new Promise((resolve) => setTimeout(resolve, 30)); // late's precheck is done, early's is not
+  release();
+  heldPrechecks.delete("early");
+  const [first, second] = await Promise.allSettled([early, late]);
+  assert.equal(first.status, "fulfilled", "the earlier caller keeps the seat");
+  assert.equal(second.status, "rejected");
+  if (second.status === "rejected") assert.equal(codeOf(second.reason), "session_full");
+  assert.deepEqual((await activeUsers(session.id)).slice().sort(), ["early", "host"]);
+});
+
+test("an earlier caller refused at the precheck does not hold the seat or the queue", async () => {
+  const { racing, session } = await raceForLastSeat();
+  access.delete("early:course-1");
+  let release!: () => void;
+  heldPrechecks.set("early", new Promise<void>((resolve) => { release = resolve; }));
+  const early = racing.enterSession({ actorUserId: "early", sessionId: session.id, requestedAt: "2026-09-19T02:00:01.000Z" });
+  const late = racing.enterSession({ actorUserId: "late", sessionId: session.id, requestedAt: "2026-09-19T02:00:02.000Z" });
+  release();
+  heldPrechecks.delete("early");
+  const [first, second] = await Promise.allSettled([early, late]);
+  assert.equal(first.status, "rejected");
+  if (first.status === "rejected") assert.equal(codeOf(first.reason), "course_access_required");
+  assert.equal(second.status, "fulfilled");
+  assert.deepEqual((await activeUsers(session.id)).slice().sort(), ["host", "late"]);
+});
+
+test("a precheck that hangs delays later callers only for the bounded wait, then they are admitted", async () => {
+  const { racing, session } = await raceForLastSeat({ entryOrderWaitMs: 20 });
+  heldPrechecks.set("early", new Promise<void>(() => undefined)); // never finishes
+  void racing.enterSession({ actorUserId: "early", sessionId: session.id, requestedAt: "2026-09-19T02:00:01.000Z" });
+  const late = await racing.enterSession({ actorUserId: "late", sessionId: session.id, requestedAt: "2026-09-19T02:00:02.000Z" });
+  heldPrechecks.delete("early");
+  assert.equal(late.occupancy, 2);
+  assert.deepEqual((await activeUsers(session.id)).slice().sort(), ["host", "late"]);
 });
 
 test("a failed seat grant writes no meeting and no token log", async () => {

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const origin = publicAppOrigin(request);
   const secure = secureAuthCookie(request);
   const locale = state?.locale || "en-GB";
-  const returnTo = safeReturnTo(state?.returnTo, `/${locale}/account/my-learning`);
+  const returnTo = safeReturnTo(state?.returnTo, `/${locale}/portal`);
   function redirect(target: URL) {
     const response = NextResponse.redirect(target, 303);
     response.cookies.set(OAUTH_STATE_COOKIE, "", { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 0 });

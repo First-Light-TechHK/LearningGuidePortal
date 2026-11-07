@@ -10,6 +10,7 @@ import { CourseLearningModeDialog } from "@/components/portal/CourseLearningMode
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
 import { CourseCurriculumAction } from "@/components/portal/CourseCurriculumAction";
+import { CourseCurriculumDisclosure } from "@/components/portal/CourseCurriculumDisclosure";
 import { CourseDetailSync } from "@/components/portal/CourseDetailSync";
 import { PortalFooter } from "@/components/portal/PortalFooter";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -110,14 +111,13 @@ export default async function CourseDetailPage({ params, searchParams }: {
               </section>
               <section className={`${styles.card} ${styles.curriculum}`} data-syllabus="true">
                 <h2>{detail.curriculum}</h2>
-                <details open>
-                  <summary>
+                <CourseCurriculumDisclosure summary={<>
                     <span className={styles.meta}>
                       <span><Image src={asset("lessons")} alt="" width={20} height={20} />{identity.lessonCount} {detail.lessons}</span>
                       <span><Image src={asset("clock")} alt="" width={20} height={20} />{durationLabel}</span>
                     </span>
                     <span className={styles.toggle}><span className={styles.less}>{detail.less}</span><span className={styles.more}>{detail.more}</span><Image src={asset("chevron-up")} alt="" width={16} height={16} /></span>
-                  </summary>
+                  </>}>
                   <div className={styles.lessonList}>
                     {page.syllabus.map((lesson, index) => {
                       const lessonHref = !course || !lesson.openable ? null : lesson.access === "entitled"
@@ -133,7 +133,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                       </article>;
                     })}
                   </div>
-                </details>
+                </CourseCurriculumDisclosure>
               </section>
             </div>
             <aside className={styles.aside}>

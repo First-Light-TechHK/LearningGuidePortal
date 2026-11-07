@@ -34,6 +34,12 @@ const JOB = "assist_retention" as const;
 const DAY_MS = 86_400_000;
 
 export const RETENTION_RULES = { days: ASSIST_RETENTION_DAYS, batchSize: 200, maxBatches: 50, maxAttempts: 3 } as const;
+/**
+ * Rate-limit hits (helpdesk_rate_hits, migration 026) are pruned per key on that key's next attempt only, so each daily
+ * run also deletes a bounded number of hits older than a day (every limit window is an hour): learners who never return
+ * leave nothing behind (persistence review 2026-11-03, F5).
+ */
+export const RATE_HIT_SWEEP = { olderThanMs: DAY_MS, limit: 10_000 } as const;
 export type RetentionRules = { days: number; batchSize: number; maxBatches: number; maxAttempts: number };
 
 const QUESTION_MAX = 500;
@@ -64,7 +70,7 @@ function errorCodeOf(error: unknown): string {
 }
 
 export type RetentionDeps = {
-  repository: Pick<HelpdeskRepository, "listRetentionDue" | "applyRetention" | "withJobLock" | "findScheduledRun" | "findJobRunByKey" | "saveJobRun" | "listJobRuns">;
+  repository: Pick<HelpdeskRepository, "listRetentionDue" | "applyRetention" | "sweepRateHits" | "withJobLock" | "findScheduledRun" | "findJobRunByKey" | "saveJobRun" | "listJobRuns">;
   accounts: AccountDirectory;
   now?: () => Date;
   log?: (line: Record<string, unknown>) => void;
@@ -86,6 +92,7 @@ export function createRetentionJob(deps: RetentionDeps) {
   async function execute(start: JobRunRecord): Promise<JobRunRecord> {
     let run = start;
     const started = Date.now();
+    let rateHitsSwept = 0;
     await repository.saveJobRun(run);
     try {
       let more = false;
@@ -99,6 +106,7 @@ export function createRetentionJob(deps: RetentionDeps) {
         await repository.saveJobRun(run);
         if (!more) break;
       }
+      rateHitsSwept = await repository.sweepRateHits(new Date(now().getTime() - RATE_HIT_SWEEP.olderThanMs).toISOString(), RATE_HIT_SWEEP.limit);
       run = { ...run, status: "succeeded", finishedAt: now().toISOString(), moreDue: more, errorCode: null };
     } catch (error) {
       run = { ...run, status: "failed", finishedAt: now().toISOString(), errorCode: errorCodeOf(error) };
@@ -106,7 +114,7 @@ export function createRetentionJob(deps: RetentionDeps) {
     await repository.saveJobRun(run);
     log({
       type: "helpdesk", event: "job_run", job: run.job, trigger: run.trigger, runId: run.id, day: run.day, status: run.status, attempts: run.attempts,
-      rowsScrubbed: run.rowsScrubbed, moreDue: run.moreDue, durationMs: Date.now() - started, instance,
+      rowsScrubbed: run.rowsScrubbed, moreDue: run.moreDue, rateHitsSwept, durationMs: Date.now() - started, instance,
       ...(run.errorCode ? { errorCode: run.errorCode } : {}), ...(run.requestedBy ? { requestedBy: run.requestedBy.id } : {})
     });
     return run;

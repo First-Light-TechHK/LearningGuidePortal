@@ -80,10 +80,14 @@ test("ML-FR-022: missing course progress must not look like 0%", async () => {
 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === "ghost-course");
-  assert.ok(card, "historical record for an unreadable course still appears");
-  assert.equal(card.progressFailed, true);
-  assert.equal(card.progress, null);
-  assert.equal(card.cardState, "progress_failed");
-  assert.equal(card.cta, "view_course");
-  assert.notEqual(card.progress, 0);
+  // api-contracts.md §Overview real-record display: "Missing progress renders
+  // unavailable, withdrawn/missing courses are omitted". A record orphaned from a
+  // Course that no longer exists must not surface a card that would link nowhere —
+  // and must never be shown as 0% either. Only records with a readable Course stay.
+  assert.equal(card, undefined, "a record for a course that no longer exists is omitted");
+  assert.equal(
+    overview.courses.some((item) => item.courseId === "ghost-course"),
+    false,
+    "no ghost course leaks into the overview",
+  );
 });

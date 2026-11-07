@@ -1,0 +1,5 @@
+/* Keep the existing Settings cards/grid; only isolate the component controls. */
+.root:global(.settings-design-form) :global(.lg-ant-select) { min-width:0; max-width:100%; }
+.root:global(.settings-design-form) input:global(.lg-ant-input):focus { outline:0; border-color:#155dfc; box-shadow:0 0 0 2px #155dfc1a; }
+.root:global(.settings-design-form) :global(.lg-ant-select-multiple) { height:38px; }
+.root:global(.settings-design-form) :global(.lg-ant-select-multiple .lg-ant-select-content) { flex-wrap:nowrap; }

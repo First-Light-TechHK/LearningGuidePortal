@@ -18,10 +18,11 @@ import { createHelpdeskService } from "../../../modules/helpdesk/service";
 import { createAssistantService } from "../../../modules/helpdesk/assistant";
 import { eventType, type EventRecord, type MessageRecord, type TicketRecord } from "../../../modules/helpdesk/domain";
 import { uuidv7 } from "../../../lib/uuidv7";
-import { closePool, requireDatabaseUrl, rows } from "./harness";
+import type { AssistRecord } from "../../../modules/helpdesk/repository";
+import { closePool, requireDatabaseUrl, rows, runWorkers, workerResult } from "./harness";
 import { DOCX, PDF as PDF_BYTES, XLSX } from "../../unit/helpdesk-fixtures";
 
-const TABLES = ["helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_rate_hits", "helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION = readFileSync(path.join(process.cwd(), "db", "migrations", "017_helpdesk_tickets.sql"), "utf8");
 const MIGRATION_V2 = readFileSync(path.join(process.cwd(), "db", "migrations", "018_helpdesk_v2.sql"), "utf8");
 const MIGRATION_019 = readFileSync(path.join(process.cwd(), "db", "migrations", "019_helpdesk_outcome_delivery.sql"), "utf8");
@@ -688,4 +689,116 @@ test("023 in PostgreSQL: re-applies; the bootstrap adds the sessions and turn co
   assert.equal(oldRow?.sessionId, null);
   assert.equal(oldRow?.kind, null);
   assert.equal(oldRow?.texts, null);
+});
+
+test("M2 (review 2026-11-03): tryRateHit is exact under concurrency in PostgreSQL: 40 attempts at once admit exactly 30, refusals write nothing, the window slides, keys are separate", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  const at = "2026-10-28T06:00:00.000Z";
+  const outcomes = await Promise.all(Array.from({ length: 40 }, () => repository.tryRateHit("assist:pg-learner", 30, 3_600_000, at)));
+  assert.equal(outcomes.filter((item) => item.allowed).length, 30);
+  assert.equal(outcomes.filter((item) => !item.allowed && item.oldestAt === at).length, 10);
+  const { rows } = await getPool().query<{ count: string }>("SELECT count(*)::text AS count FROM helpdesk_rate_hits WHERE key = 'assist:pg-learner'");
+  assert.equal(rows[0].count, "30", "a refused attempt leaves no row");
+  assert.deepEqual(await repository.tryRateHit("assist:pg-learner", 30, 3_600_000, "2026-10-28T06:59:59.999Z"), { allowed: false, oldestAt: at });
+  assert.deepEqual(await repository.tryRateHit("assist:pg-learner", 30, 3_600_000, "2026-10-28T07:00:00.001Z"), { allowed: true });
+  const left = await getPool().query<{ count: string }>("SELECT count(*)::text AS count FROM helpdesk_rate_hits WHERE key = 'assist:pg-learner'");
+  assert.equal(left.rows[0].count, "1", "hits outside the window are deleted on the next attempt");
+  assert.deepEqual(await repository.tryRateHit("submit:pg-learner", 1, 3_600_000, at), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("assist:pg-other", 1, 3_600_000, at), { allowed: true });
+});
+
+// ---------------------------------------------------------------- persistence review 2026-11-03 (M2, L1 repository contracts)
+
+const REVIEW_WORKER = path.join(process.cwd(), "tests", "io", "postgres", "reviewWorkers.ts");
+const RATE_AT = "2026-10-28T06:00:00.000Z";
+const HOUR = 3_600_000;
+const plus = (ms: number) => new Date(Date.parse(RATE_AT) + ms).toISOString();
+const countRows = async (table: string, where: string) => Number((await rows<{ count: string }>(`SELECT count(*)::text AS count FROM ${table} WHERE ${where}`))[0].count);
+
+test("M2 contract: tryRateHit in PostgreSQL: limit reached vs exceeded, the window closes at exactly windowMs, keys are isolated, a key never holds more than `limit` rows", async () => {
+  // The same sequence runs against the local adapter in tests/unit/helpdesk-rate-hits.test.ts; the outcomes must match line for line.
+  const repository = createPostgresHelpdeskRepository();
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, plus(10 * 60_000)), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, plus(20 * 60_000)), { allowed: true }, "the limit is reached, not exceeded: the third is admitted");
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, plus(30 * 60_000)), { allowed: false, oldestAt: RATE_AT }, "the fourth exceeds it");
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, plus(HOUR - 1)), { allowed: false, oldestAt: RATE_AT }, "1 ms inside the window the oldest hit still counts");
+  assert.deepEqual(await repository.tryRateHit("k:b", 1, HOUR, plus(30 * 60_000)), { allowed: true }, "another key is unaffected by a full one");
+  assert.deepEqual(await repository.tryRateHit("k:b", 1, HOUR, plus(31 * 60_000)), { allowed: false, oldestAt: plus(30 * 60_000) });
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, plus(HOUR)), { allowed: true }, "exactly windowMs after the oldest hit it is outside the window");
+  assert.deepEqual(await repository.tryRateHit("k:a", 3, HOUR, plus(HOUR + 1)), { allowed: false, oldestAt: plus(10 * 60_000) });
+  const stored = await rows<{ key: string; hit_at: Date }>("SELECT key, hit_at FROM helpdesk_rate_hits ORDER BY key, hit_at");
+  assert.deepEqual(stored.map((row) => `${row.key} ${row.hit_at.toISOString()}`), [`k:a ${plus(10 * 60_000)}`, `k:a ${plus(20 * 60_000)}`, `k:a ${plus(HOUR)}`, `k:b ${plus(30 * 60_000)}`], "refusals write nothing; hits outside the window are gone");
+  // Per-key bound: a burst far beyond the limit leaves exactly `limit` rows, and a later burst inside the window adds none.
+  await Promise.all(Array.from({ length: 45 }, () => repository.tryRateHit("k:burst", 30, HOUR, RATE_AT)));
+  await Promise.all(Array.from({ length: 45 }, () => repository.tryRateHit("k:burst", 30, HOUR, plus(30 * 60_000))));
+  assert.equal(await countRows("helpdesk_rate_hits", "key = 'k:burst'"), 30, "a key never holds more than `limit` rows");
+});
+
+test("M2 contract: limit 0 refuses and stores nothing; sweepRateHits deletes only hits older than the cutoff, oldest first, at most `limit`", async () => {
+  // Same sequence as the local adapter in tests/unit/helpdesk-rate-hits.test.ts.
+  const repository = createPostgresHelpdeskRepository();
+  assert.deepEqual(await repository.tryRateHit("k:zero", 0, HOUR, RATE_AT), { allowed: false, oldestAt: RATE_AT });
+  assert.equal(await countRows("helpdesk_rate_hits", "key = 'k:zero'"), 0);
+  assert.deepEqual(await repository.tryRateHit("k:old", 5, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:old", 5, HOUR, plus(1)), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:mid", 5, HOUR, plus(2 * HOUR)), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:new", 5, HOUR, plus(30 * HOUR)), { allowed: true });
+  assert.equal(await repository.sweepRateHits(plus(24 * HOUR), 1), 1, "bounded: one of the three stale hits");
+  assert.equal(await repository.sweepRateHits(plus(24 * HOUR), 10), 2, "the remaining stale hits");
+  assert.equal(await repository.sweepRateHits(plus(24 * HOUR), 10), 0, "the hit inside a day is kept");
+  const kept = await rows<{ key: string; hit_at: Date }>("SELECT key, hit_at FROM helpdesk_rate_hits WHERE key IN ('k:old', 'k:mid', 'k:new') ORDER BY key");
+  assert.deepEqual(kept.map((row) => `${row.key} ${row.hit_at.toISOString()}`), [`k:new ${plus(30 * HOUR)}`]);
+});
+
+test("M2/L1 contract: peekRateHit decides like tryRateHit without recording; assistKeyOwner names who used a key", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true }, "a peek records nothing");
+  assert.equal(await countRows("helpdesk_rate_hits", "key = 'k:p'"), 0);
+  assert.deepEqual(await repository.tryRateHit("k:p", 2, HOUR, RATE_AT), { allowed: true });
+  assert.deepEqual(await repository.tryRateHit("k:p", 2, HOUR, plus(1)), { allowed: true });
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, plus(2)), { allowed: false, oldestAt: RATE_AT });
+  assert.deepEqual(await repository.peekRateHit("k:p", 2, HOUR, plus(HOUR)), { allowed: true }, "the oldest hit left the window");
+  assert.deepEqual(await repository.peekRateHit("k:p", 0, HOUR, plus(2)), { allowed: false, oldestAt: RATE_AT });
+  const key = randomUUID();
+  const row: AssistRecord = {
+    id: uuidv7(), learnerId: "user-a", source: "chat", locale: "en-GB", question: "password", faqId: null, faqQuestion: null, answer: null, feedback: null, ticketId: null,
+    clientEventId: key, payloadHash: "a".repeat(64), createdAt: RATE_AT, feedbackDeliveredAt: null, feedbackAttemptedAt: null, alternatives: []
+  };
+  assert.equal(await repository.assistKeyOwner(key), null);
+  assert.equal(await repository.insertAssist(row), "inserted");
+  assert.equal(await repository.assistKeyOwner(key), "user-a");
+});
+
+test("M2 across instances: two worker processes, each with its own pool, hammering one key admit exactly `limit` between them", async () => {
+  const outcomes = await runWorkers(
+    [
+      { mode: "rate-hit", env: { LG_IO_RATE_KEY: "k:two-pools", LG_IO_RATE_LIMIT: "30", LG_IO_RATE_ATTEMPTS: "20", LG_IO_RATE_AT: RATE_AT } },
+      { mode: "rate-hit", env: { LG_IO_RATE_KEY: "k:two-pools", LG_IO_RATE_LIMIT: "30", LG_IO_RATE_ATTEMPTS: "20", LG_IO_RATE_AT: RATE_AT } }
+    ],
+    { workerFile: REVIEW_WORKER, timeoutMs: 60_000, readyTimeoutMs: 60_000 }
+  );
+  const results = outcomes.map((outcome) => workerResult<{ allowed: number; refused: number }>(outcome));
+  assert.equal(results[0].allowed + results[1].allowed, 30, `exactly the limit was admitted across both processes (${JSON.stringify(results)})`);
+  assert.equal(results[0].refused + results[1].refused, 10);
+  assert.ok(results[0].allowed > 0 && results[1].allowed > 0, "both processes took part");
+  assert.equal(await countRows("helpdesk_rate_hits", "key = 'k:two-pools'"), 30);
+});
+
+test("L1 contract: findAssistByKey is per learner while client_event_id stays UNIQUE: the other learner finds nothing under my key and cannot store a row under it", async () => {
+  const repository = createPostgresHelpdeskRepository();
+  const key = randomUUID();
+  const record = (id: string, learnerId: string): AssistRecord => ({
+    id, learnerId, source: "chat", locale: "en-GB", question: "password", faqId: null, faqQuestion: null, answer: null, feedback: null, ticketId: null,
+    clientEventId: key, payloadHash: "a".repeat(64), createdAt: RATE_AT, feedbackDeliveredAt: null, feedbackAttemptedAt: null, alternatives: []
+  });
+  const mine = uuidv7();
+  assert.equal(await repository.insertAssist(record(mine, "pg-learner")), "inserted");
+  assert.equal(await repository.insertAssist(record(uuidv7(), "pg-other")), "duplicate", "the key is unique across learners (nothing stored for the other learner)");
+  assert.equal(await repository.findAssistByKey(key, "pg-other"), null, "the other learner does not see my row under the key");
+  assert.equal((await repository.findAssistByKey(key, "pg-learner"))?.id, mine);
+  assert.equal(await countRows("helpdesk_assist_log", `client_event_id = '${key}'`), 1);
+  const unique = await rows<{ definition: string }>("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'helpdesk_assist_log'::regclass AND contype = 'u'");
+  assert.ok(unique.some((row) => row.definition === "UNIQUE (client_event_id)"), "client_event_id is still UNIQUE");
 });

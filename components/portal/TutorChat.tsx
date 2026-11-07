@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { MarkdownAnswer } from "@/components/MarkdownAnswer";
+import { TutorRequestError, tutorErrorMessage } from "./tutorChatError";
 
 type Message = { role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -113,9 +114,9 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
     try {
       const response = await fetch("/api/ai-tutor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, mode, message, conversationId, locale }), signal: controller.signal });
       if (generationRef.current !== generation) return;
-      if (!response.ok) throw new Error(await response.text() || "AI Tutor request failed.");
+      if (!response.ok) throw new TutorRequestError(response.status, await response.text().catch(() => ""));
       setConversationId(response.headers.get("X-Conversation-Id") || conversationId);
-      if (!response.body) throw new Error("AI Tutor returned no stream.");
+      if (!response.body) throw new TutorRequestError(null, "");
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let answer = "";
       while (true) {
         const chunk = await reader.read();
@@ -126,7 +127,8 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
       }
     } catch (requestError) {
       if (generationRef.current !== generation) return;
-      setError(requestError instanceof Error ? requestError.message : "AI Tutor request failed.");
+      // REQ-0140: never show the API body (JSON) to the learner, only a fixed localised line.
+      setError(requestError instanceof TutorRequestError ? tutorErrorMessage(locale, requestError.status, requestError.body) : tutorErrorMessage(locale, null, ""));
       setMessages(next.slice(0, -1));
     }
     if (generationRef.current !== generation) return;

@@ -75,6 +75,7 @@ const SCHEMA_PROBE = `
     AND to_regclass('helpdesk_chat_sessions') IS NOT NULL
     AND to_regclass('helpdesk_job_runs') IS NOT NULL
     AND to_regclass('helpdesk_assist_outcomes') IS NOT NULL
+    AND to_regclass('helpdesk_rate_hits') IS NOT NULL
     AND to_regclass('lesson_assessments') IS NOT NULL
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
@@ -93,6 +94,8 @@ const SCHEMA_PROBE = `
     AND to_regclass('study_group_outbox') IS NOT NULL
     AND to_regclass('study_group_token_log') IS NOT NULL
     AND to_regclass('study_group_webhook_receipts') IS NOT NULL
+    AND to_regclass('study_group_outbox_session_idx') IS NOT NULL
+    AND to_regclass('study_group_presences_open_user_idx') IS NOT NULL
     AND EXISTS (
       SELECT 1 FROM information_schema.columns
       WHERE table_name = 'study_group_presences'
@@ -154,7 +157,9 @@ const SCHEMA_PROBE = `
   ) AS ready
 `;
 
-async function schemaIsCurrent(): Promise<boolean> {
+// Exported for the fresh-database proofs (tests/io/postgres/schema-fresh-vs-migrations.test.ts):
+// whether ensureSchema() would take the no-DDL fast path right now.
+export async function schemaIsCurrent(): Promise<boolean> {
   const result = await getPool().query<{ ready: boolean }>(SCHEMA_PROBE);
   return result.rows[0]?.ready === true;
 }
@@ -385,6 +390,15 @@ ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS covered BOOLEAN;
 ALTER TABLE helpdesk_assist_log ADD COLUMN IF NOT EXISTS texts JSONB;
 CREATE UNIQUE INDEX IF NOT EXISTS helpdesk_assist_log_session_turn_idx ON helpdesk_assist_log (session_id, turn_index) WHERE session_id IS NOT NULL;
 
+-- Mirrors db/migrations/026_helpdesk_rate_hits.sql (exact learner-side rate
+-- limits: one row per admitted attempt, counted under an advisory lock); same
+-- parity rule as 017 above.
+CREATE TABLE IF NOT EXISTS helpdesk_rate_hits (
+  id BIGSERIAL PRIMARY KEY,
+  key TEXT NOT NULL CHECK (char_length(key) BETWEEN 1 AND 160),
+  hit_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS helpdesk_rate_hits_key_idx ON helpdesk_rate_hits (key, hit_at);
 -- Mirrors db/migrations/024_helpdesk_flywheel.sql (v5 Part G: the retention
 -- marker, the job runs, the paging indexes and the ticket-outcome view); same
 -- parity rule as 017 above.
@@ -603,6 +617,13 @@ WHERE table_name = 'emailBindingTokens';
         );
         CREATE INDEX IF NOT EXISTS study_group_outbox_claim_idx
           ON study_group_outbox (status, next_attempt_at);
+        -- Scoped reads (review 2026-11-03 H2), mirroring
+        -- db/migrations/027_study_group_scope_indexes.sql. After the outbox and
+        -- presence tables: on an empty database an index before its table fails.
+        CREATE INDEX IF NOT EXISTS study_group_outbox_session_idx
+          ON study_group_outbox (session_id);
+        CREATE INDEX IF NOT EXISTS study_group_presences_open_user_idx
+          ON study_group_presences (user_id) WHERE left_at IS NULL;
         CREATE TABLE IF NOT EXISTS study_group_token_log (
           id BIGSERIAL PRIMARY KEY,               -- append-only; replaces token-issuance.log
           line TEXT NOT NULL,                     -- encrypted issuance line, no token, no secret

@@ -77,6 +77,8 @@ type LocalStore = {
   sessions: ChatSessionRecord[];
   /** v5 Part G job runs. */
   jobRuns: JobRunRecord[];
+  /** Admitted rate-limit attempts (migration 026). */
+  rateHits?: { key: string; at: string }[];
 };
 
 /** v5 Part G: a local assist row also keeps when its raw text was replaced (helpdesk_assist_log.scrubbed_at). */
@@ -315,6 +317,23 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       const own = new Set(store.tickets.filter((item) => item.userId === userId).map((item) => item.id));
       return nthNewest(store.messages.filter((item) => item.authorKind === "learner" && own.has(item.ticketId)).map((item) => item.createdAt), sinceIso, n);
     },
+    tryRateHit(key, limit, windowMs, atIso) {
+      return exclusive(async () => {
+        const store = await load();
+        const since = new Date(Date.parse(atIso) - windowMs).toISOString();
+        const hits = (store.rateHits ??= []).filter((hit) => hit.key !== key || hit.at > since);
+        const mine = hits.filter((hit) => hit.key === key).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+        if (mine.length >= limit) {
+          store.rateHits = hits;
+          await save(store);
+          return { allowed: false as const, oldestAt: mine[0]?.at ?? atIso };  // limit 0: refused, retry "now"
+        }
+        hits.push({ key, at: atIso });
+        store.rateHits = hits;
+        await save(store);
+        return { allowed: true as const };
+      });
+    },
     insertAssist(record) {
       return exclusive(async () => {
         const store = await load();
@@ -327,8 +346,11 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     async findAssist(id) {
       return (await load()).assists.find((item) => item.id === id) ?? null;
     },
-    async findAssistByKey(clientEventId) {
-      return (await load()).assists.find((item) => item.clientEventId === clientEventId) ?? null;
+    async findAssistByKey(clientEventId, learnerId) {
+      return (await load()).assists.find((item) => item.clientEventId === clientEventId && item.learnerId === learnerId) ?? null;
+    },
+    async assistKeyOwner(clientEventId) {
+      return (await load()).assists.find((item) => item.clientEventId === clientEventId)?.learnerId ?? null;
     },
     setAssistFeedback(id, learnerId, feedback) {
       return exclusive(async () => {
@@ -470,6 +492,25 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
       const store = await load();
       return (store.assists as LocalAssist[]).filter((row) => !row.scrubbedAt && row.createdAt < cutoffIso).sort(byCreated).slice(0, limit)
         .map((row): RetentionRow => ({ id: row.id, learnerId: row.learnerId, question: row.question, answer: row.answer, kind: row.kind ?? null, texts: row.texts ?? null, contacts: contactsOf(store.tickets, row.learnerId) }));
+    },
+    async peekRateHit(key, limit, windowMs, atIso) {
+      const store = await load();
+      const since = new Date(Date.parse(atIso) - windowMs).toISOString();
+      const mine = (store.rateHits ?? []).filter((hit) => hit.key === key && hit.at > since).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+      if (mine.length >= limit) return { allowed: false as const, oldestAt: mine[0]?.at ?? atIso };
+      return { allowed: true as const };
+    },
+    sweepRateHits(olderThanIso, limit) {
+      return exclusive(async () => {
+        const store = await load();
+        const hits = store.rateHits ?? [];
+        const stale = hits.filter((hit) => hit.at < olderThanIso).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).slice(0, Math.max(0, limit));
+        if (stale.length === 0) return 0;
+        const gone = new Set(stale);
+        store.rateHits = hits.filter((hit) => !gone.has(hit));
+        await save(store);
+        return stale.length;
+      });
     },
     applyRetention(updates, atIso) {
       return exclusive(async () => {
@@ -862,6 +903,19 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         WHERE t.user_id = $1 AND m.author_kind = 'learner' AND m.created_at > $2 ORDER BY m.created_at DESC OFFSET $3 LIMIT 1`, [userId, sinceIso, n - 1]))[0];
       return row ? iso(row.created_at) : null;
     },
+    tryRateHit(key, limit, windowMs, atIso) {
+      // One transaction per attempt: the advisory lock on the key serialises
+      // count and insert, so two requests can never both see "under the limit".
+      return inTransaction(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`helpdesk-rate:${key}`]);
+        const since = new Date(Date.parse(atIso) - windowMs).toISOString();
+        await client.query("DELETE FROM helpdesk_rate_hits WHERE key = $1 AND hit_at <= $2", [key, since]);
+        const { rows } = await client.query<{ count: string; oldest: Date | null }>("SELECT count(*)::text AS count, min(hit_at) AS oldest FROM helpdesk_rate_hits WHERE key = $1", [key]);
+        if (Number(rows[0].count) >= limit) return { allowed: false as const, oldestAt: rows[0].oldest ? iso(rows[0].oldest) : atIso };  // limit 0: refused
+        await client.query("INSERT INTO helpdesk_rate_hits (key, hit_at) VALUES ($1, $2)", [key, atIso]);
+        return { allowed: true as const };
+      });
+    },
     async insertAssist(record) {
       const rows = await select(ASSIST_INSERT, assistParams(record, record.turnIndex ?? null));
       return rows.length ? "inserted" : "duplicate";
@@ -870,9 +924,13 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
       const row = (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE id = $1`, [id]))[0];
       return row ? assistFromRow(row) : null;
     },
-    async findAssistByKey(clientEventId) {
-      const row = (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE client_event_id = $1`, [clientEventId]))[0];
+    async findAssistByKey(clientEventId, learnerId) {
+      const row = (await select(`SELECT ${ASSIST_COLUMNS} FROM helpdesk_assist_log WHERE client_event_id = $1 AND learner_id = $2`, [clientEventId, learnerId]))[0];
       return row ? assistFromRow(row) : null;
+    },
+    async assistKeyOwner(clientEventId) {
+      const row = (await select<{ learner_id: string }>("SELECT learner_id FROM helpdesk_assist_log WHERE client_event_id = $1", [clientEventId]))[0];
+      return row?.learner_id ?? null;
     },
     async setAssistFeedback(id, learnerId, feedback) {
       // First value wins: one conditional UPDATE, then read what is stored.
@@ -1013,6 +1071,17 @@ export function createPostgresHelpdeskRepository(): HelpdeskRepository {
         FROM helpdesk_assist_log l ${CONTACTS_LATERAL}
         WHERE l.scrubbed_at IS NULL AND l.created_at < $1 ORDER BY l.created_at, l.id LIMIT $2`, [cutoffIso, limit]);
       return rows.map((row): RetentionRow => ({ id: row.id, learnerId: row.learner_id, question: row.question, answer: row.answer ?? null, kind: row.kind ?? null, texts: textsFromRow(row.texts), contacts: contactsFromRow(row) }));
+    },
+    async peekRateHit(key, limit, windowMs, atIso) {
+      const since = new Date(Date.parse(atIso) - windowMs).toISOString();
+      const { rows } = await getPool().query<{ count: string; oldest: Date | null }>("SELECT count(*)::text AS count, min(hit_at) AS oldest FROM helpdesk_rate_hits WHERE key = $1 AND hit_at > $2", [key, since]);
+      if (Number(rows[0].count) >= limit) return { allowed: false as const, oldestAt: rows[0].oldest ? iso(rows[0].oldest) : atIso };
+      return { allowed: true as const };
+    },
+    async sweepRateHits(olderThanIso, limit) {
+      // Bounded: one small ORDER BY ... LIMIT scan a day keeps the table to the active keys without an index on hit_at.
+      const rows = await select(`DELETE FROM helpdesk_rate_hits WHERE id IN (SELECT id FROM helpdesk_rate_hits WHERE hit_at < $1 ORDER BY hit_at, id LIMIT $2) RETURNING id`, [olderThanIso, Math.max(0, limit)]);
+      return rows.length;
     },
     async applyRetention(updates, atIso) {
       if (updates.length === 0) return 0;

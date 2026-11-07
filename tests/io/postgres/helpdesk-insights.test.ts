@@ -24,7 +24,7 @@ import { createTicketStatsService } from "../../../modules/helpdesk/ticketStats"
 import type { AssistRecord, JobRunRecord } from "../../../modules/helpdesk/repository";
 import { closePool, requireDatabaseUrl, rows } from "./harness";
 
-const TABLES = ["helpdesk_job_runs", "helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
+const TABLES = ["helpdesk_rate_hits", "helpdesk_job_runs", "helpdesk_ai_ratings", "helpdesk_assist_log", "helpdesk_chat_sessions", "helpdesk_ticket_tags", "helpdesk_ticket_events", "helpdesk_attachments", "helpdesk_ticket_messages", "helpdesk_tickets", "helpdesk_ticket_counters"];
 const MIGRATION_024 = readFileSync(path.join(process.cwd(), "db", "migrations", "024_helpdesk_flywheel.sql"), "utf8");
 const fixture = JSON.parse(readFileSync("tests/fixtures/helpdesk-contract.json", "utf8")) as { portalToAdmin: Record<string, Record<string, unknown>> };
 const RELEASE = parseFaqRelease(fixture.portalToAdmin.faqReleaseResponse) as FaqRelease;

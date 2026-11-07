@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "playwright/test";
 import {
+  fillScheduleDialog,
   appAlerts,
   createGroup,
   entitle,
@@ -253,15 +254,11 @@ test("DL-7: Session Focus takes up to 300 characters when scheduling (owner requ
     const dialog = page.getByRole("dialog");
     const at = new Date(Date.now() + 2 * 60 * 60 * 1000);
     const pad = (value: number) => String(value).padStart(2, "0");
-    await dialog.locator('input[name="title"]').fill("Long focus");
-    await dialog.locator('input[name="date"]').fill(`${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`);
-    await dialog.locator('input[name="time"]').fill(`${pad(at.getHours())}:${pad(at.getMinutes())}`);
-    await dialog.locator('select[name="durationMinutes"]').selectOption("30");
-    await dialog.locator('select[name="maxParticipants"]').selectOption("4");
+    await fillScheduleDialog(dialog, { title: "Long focus", startsAt: at, duration: "30 mins", max: "4" });
     const focus = dialog.locator('textarea[name="focus"]');
     await focus.fill("f".repeat(320));
     await expect(focus).toHaveValue("f".repeat(300));
-    await expect(dialog.getByText("300/300")).toBeVisible();
+    await expect(dialog.getByText("300 / 300")).toBeVisible();
     const saved = page.waitForResponse((response) => response.url().endsWith(`/api/study-groups/${groupId}/sessions`) && response.request().method() === "POST");
     await dialog.getByRole("button", { name: "Schedule Session" }).click();
     const body = await (await saved).json();

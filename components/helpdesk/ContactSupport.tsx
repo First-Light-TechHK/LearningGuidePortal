@@ -51,7 +51,7 @@ export type Picked = { status: "pending"; faqId: string } | { status: "answer"; 
 
 const THANKS_REDIRECT_MS = 2_000;
 
-export function ContactSupport({ locale, copy, config, account, chips, order = null, orderUnavailable = false, session = null }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null; /** v4: opened for an order that could not be attached (not the learner's, unknown, or the order store failed). */ orderUnavailable?: boolean; /** v5 Part A: the chat session the page started, with its situation chips (none: the starter chips). */ session?: AssistantSessionResponse | null }) {
+export function ContactSupport({ locale, copy, config, account, chips, order = null, orderUnavailable = false, session = null, assistant = true }: { locale: Locale; copy: HelpdeskCopy; config: HelpdeskUiConfig; account: { id: string; name: string; email: string }; chips: ChatChip[]; order?: { id: string } | null; /** v4: opened for an order that could not be attached (not the learner's, unknown, or the order store failed). */ orderUnavailable?: boolean; /** v5 Part A: the chat session the page started, with its situation chips (none: the starter chips). */ session?: AssistantSessionResponse | null; /** Student Management: false when the AI Support Assistant is switched off for this learner (form only). */ assistant?: boolean }) {
   const router = useRouter();
   const ids = useId();
   // Figma 1.2 Help Page: defaults to Technical Support; v4: Payments & Subscriptions when opened from a payment record.
@@ -397,8 +397,8 @@ export function ContactSupport({ locale, copy, config, account, chips, order = n
             <button ref={submitButton} type="submit" className="helpdesk-submit-button" disabled={disabled}>{busy === "checking" ? copy.assistant.checking : busy === "submitting" ? copy.submitting : copy.submit}</button>
           </div>
         </form>}
-      <div className="helpdesk-divider" aria-hidden="true" />
-      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} pageInput={pageInput} session={session} orderId={order?.id ?? null} />
+      {assistant ? <><div className="helpdesk-divider" aria-hidden="true" />
+      <AssistantChat locale={locale} copy={copy} questionMax={config.limits.questionMax} accountId={account.id} chips={chips} onIdeas={shareIdeas} onAssistIds={(ids) => { assistIds.current = ids; }} onHandover={openFormFromChat} pageInput={pageInput} session={session} orderId={order?.id ?? null} /></> : null}
     </div>
     {phase === "suggestion" || phase === "alternatives" || phase === "rating" || phase === "thanks" ? <AssistantModal copy={copy} locale={locale} stage={phase} suggestion={suggestion} busy={busy === "submitting"} accountHome={accountHome}
       enquiry={{ name: account.name, email: email.trim(), subject: subject.trim(), category: category as TicketCategory, message: message.trim(), askedAt: askedAt ?? new Date(), files: attachments.files }}

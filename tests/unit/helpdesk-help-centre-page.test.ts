@@ -54,7 +54,7 @@ test("popular articles: question, summary line and category link per row; answer
     const harness = await open(locale);
     const { page } = harness;
     const v = view(page, locale);
-    assert.deepEqual(harness.requests, [{ kind: "faqs", locale, filter: { popular: true, limit: 10 } }]);
+    assert.deepEqual(harness.requests, [{ kind: "faqs", locale, filter: { popular: true, limit: 50 } }]);
     assert.equal(await page.getByRole("heading", { level: 1 }).textContent(), v.copy.title);
     assert.ok((await page.locator(".help-centre-hero").textContent())?.includes(v.copy.subtitle));
     assert.equal(await v.search.getAttribute("placeholder"), v.copy.searchPlaceholder);
@@ -95,6 +95,21 @@ test("search is debounced into ?q=, answered by Admin's search, with results or 
     await v.search.fill("");
     await page.waitForFunction(() => (window as unknown as { __nav: unknown[] }).__nav.length > 1, null, { timeout: 3_000 });
     assert.deepEqual((await harness.nav())[1], ["replace", `/${locale}/help`], "clearing the search goes back to popular articles");
+
+    // The wait after the last keystroke is 150 ms (owner 2026-11-03), timed inside the page
+    const waited = await page.evaluate(async () => {
+      const w = window as unknown as { __nav: unknown[] };
+      const before = w.__nav.length;
+      const box = document.querySelector<HTMLInputElement>('input[type="search"]');
+      if (!box) throw new Error("no search box");
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(box, "refund");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      const typedAt = performance.now();
+      while (w.__nav.length === before) await new Promise((resolve) => setTimeout(resolve, 5));
+      return performance.now() - typedAt;
+    });
+    assert.ok(waited >= 140 && waited < 290, `searched ${Math.round(waited)} ms after the last keystroke (expected about 150)`);
 
     const found = await mountHelp(page, { locale, faqs: FAQS, searchParams: { q: "invoice", category: "other" }, search: { invoice: [FAQS[3]] } });
     assert.deepEqual(found.requests, [{ kind: "faqs", locale, filter: { q: "invoice", limit: 50 } }], "the search goes to Admin (q), ignoring the category");
@@ -146,6 +161,47 @@ test("?faq= opens and scrolls to the article, loading it by id when it is not li
     assert.equal(await answer.locator("script").count(), 0);
     assert.ok((await answer.textContent())?.includes("<script>alert(1)</script> Yes, tell us."), "raw HTML stays text and a javascript: link keeps its label");
     assert.equal(await answer.locator("a").count(), 0);
+    await page.close();
+  }
+});
+
+test("more than 10 popular FAQs: the first 10 show and the rest fold behind Show more; a ?faq= link to a folded one unfolds the list", async () => {
+  const many = Array.from({ length: 25 }, (_, index) => ({ id: id(100 + index), category: "account_technical", popular: true, question: `Popular question ${index + 1}?`, answer: `Answer ${index + 1}.`, updatedAt: "2026-11-02T10:00:00.000Z" }));
+  for (const locale of LOCALES) {
+    const harness = await open(locale, { faqs: many });
+    const { page } = harness;
+    const v = view(page, locale);
+    const more = page.locator(".help-centre-more");
+    assert.deepEqual(harness.requests, [{ kind: "faqs", locale, filter: { popular: true, limit: 50 } }], "every popular FAQ is asked for");
+    assert.deepEqual(await v.questions.allTextContents(), many.slice(0, 10).map((faq) => faq.question), "the first 10, in Admin's order");
+    assert.equal(await more.textContent(), fillTemplate(v.copy.showMore, { count: "15" }));
+    assert.equal(await more.getAttribute("aria-expanded"), "false");
+    await more.click();
+    assert.deepEqual(await v.questions.allTextContents(), many.map((faq) => faq.question), "all 25 after Show more");
+    assert.equal(await more.textContent(), v.copy.showLess);
+    assert.equal(await more.getAttribute("aria-expanded"), "true");
+    await more.click();
+    assert.equal(await v.questions.count(), 10, "Show fewer folds them again");
+
+    await mountHelp(page, { locale, faqs: many, searchParams: { faq: id(111) } });
+    // The list unfolds after the mount: wait for it, or this reads the first 10.
+    await v.questions.nth(24).waitFor();
+    assert.equal(await v.questions.count(), 25, "a link to the 12th opens the list unfolded");
+    assert.equal(await page.getByRole("button", { name: many[11].question }).getAttribute("aria-expanded"), "true");
+    assert.equal(await more.textContent(), v.copy.showLess);
+
+    await mountHelp(page, { locale, faqs: many });
+    assert.equal(await v.questions.count(), 10);
+    await mountHelp(page, { locale, faqs: many, searchParams: { faq: id(120) }, inPlace: true });
+    assert.equal(await v.questions.count(), 25, "also when the page changes in place");
+    assert.equal(await page.getByRole("button", { name: many[20].question }).getAttribute("aria-expanded"), "true");
+
+    await mountHelp(page, { locale, faqs: many.slice(0, 10) });
+    assert.equal(await v.questions.count(), 10);
+    assert.equal(await more.count(), 0, "10 or fewer: nothing to fold");
+    await mountHelp(page, { locale, faqs: many, searchParams: { category: "account_technical" } });
+    assert.equal(await v.questions.count(), 25, "a topic lists everything, unfolded");
+    assert.equal(await more.count(), 0);
     await page.close();
   }
 });
@@ -252,7 +308,7 @@ test("Contact Support goes to the form when signed in and through sign-in when n
     await mountHelp(page, { locale, fail: true });
     const design = getMessages(locale).helpPage.design;
     assert.deepEqual(await v.questions.allTextContents(), design.faqItems.map((item) => item.question), "the static copy keeps the page useful");
-    assert.equal(await page.locator(".help-centre-notice").textContent(), v.copy.unavailable);
+    assert.equal(await page.locator(".help-centre-notice").count(), 0, "no 'temporarily unavailable' notice over the static answers (owner 2026-11-03)");
     assert.equal(await v.articles.first().locator(".help-centre-article-category").count(), 0, "static items have no category");
     await mountHelp(page, { locale, fail: true, searchParams: { category: "other" } });
     assert.equal(await page.getByRole("heading", { level: 2 }).first().textContent(), v.copy.popularTitle, "the static copy is not shown under a topic's name");

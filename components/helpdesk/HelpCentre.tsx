@@ -7,7 +7,10 @@
 // place (a topic link, All articles, Back); while a search is on its way the
 // list is aria-busy, and a polite status announces how many articles it found.
 // Search results, the empty states, the expanded answer, the fallback and
-// missing-article notices have no frame (待视觉验收).
+// missing-article notices have no frame (待视觉验收). Popular articles: all that
+// product marked, in Admin's order; the first 10 show and the rest fold behind
+// "Show more" (owner 2026-11-02; no frame, existing link style, 待视觉验收). A
+// ?faq= deep link to a folded article opens the list unfolded.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, CircleHelp, Search } from "lucide-react";
@@ -15,14 +18,16 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { FaqCategory } from "@/contracts/helpdesk";
 import type { getMessages } from "@/lib/i18n/messages";
 import type { HelpCentreView } from "@/modules/helpdesk/helpCentre";
-import { fillTemplate } from "@/modules/helpdesk/learnerUi";
+import { fillTemplate, HELP_POPULAR_SHOWN } from "@/modules/helpdesk/learnerUi";
 import { summaryLine } from "@/modules/helpdesk/markdown";
 import { Markdown } from "./Markdown";
 import "./helpdesk.css";
 
 export type HelpCentreCopy = ReturnType<typeof getMessages>["helpCentre"];
 
-const SEARCH_DEBOUNCE_MS = 300;
+// Wait this long after the last keystroke before searching (owner 2026-11-03: 300 ms felt slow).
+// Shorter would send a search per letter and use up ADMIN_SEARCHES_PER_MINUTE sooner.
+const SEARCH_DEBOUNCE_MS = 150;
 const TOPICS: FaqCategory[] = ["account_technical", "courses_learning", "payments_subscriptions", "other"];
 
 export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB" | "zh-CN"; copy: HelpCentreCopy; view: HelpCentreView; contactHref: string }) {
@@ -30,6 +35,17 @@ export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB
   const root = `/${locale}/help`;
   const [value, setValue] = useState(view.q);
   const [open, setOpen] = useState<Set<string>>(() => new Set(view.openId ? [view.openId] : []));
+  const foldable = view.mode === "popular" && view.articles.length > HELP_POPULAR_SHOWN;
+  // A ?faq= link to a folded popular FAQ unfolds the list, also when the page changes in place
+  // (state adjusted while rendering, so the article is there when the effect below scrolls to it).
+  const opensFolded = foldable && view.articles.findIndex((article) => article.id === view.openId) >= HELP_POPULAR_SHOWN;
+  const [unfolded, setUnfolded] = useState(opensFolded);
+  const [unfoldedFor, setUnfoldedFor] = useState(view.openId);
+  if (view.openId !== unfoldedFor) {
+    setUnfoldedFor(view.openId);
+    if (opensFolded) setUnfolded(true);
+  }
+  const shown = foldable && !unfolded ? view.articles.slice(0, HELP_POPULAR_SHOWN) : view.articles;
   const [waiting, setWaiting] = useState<string | null>(null);
   const awaited = useRef<string | null>(null);
   const typed = useRef(false);
@@ -105,10 +121,9 @@ export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB
           {view.mode === "popular" ? null : <Link prefetch={false} className="help-centre-back" href={root}>{copy.allArticles}</Link>}
         </header>
         <p className="helpdesk-visually-hidden help-centre-status" role="status" aria-live="polite">{view.mode === "search" && waiting === null ? fillTemplate(copy.searchCount, { count: String(view.articles.length) }) : ""}</p>
-        {view.fallback ? <p className="help-centre-notice" role="status">{copy.unavailable}</p> : null}
         {view.missingFaq ? <p className="help-centre-notice" role="status">{copy.faqMissing}</p> : null}
         {view.articles.length === 0 ? <p className="help-centre-empty">{empty}</p> : <ul className="help-centre-articles">
-          {view.articles.map((article) => {
+          {shown.map((article) => {
             const expanded = open.has(article.id);
             const answerId = `faq-${article.id}-answer`;
             return <li key={article.id} id={`faq-${article.id}`} className={`help-centre-article${expanded ? " is-open" : ""}`}>
@@ -122,6 +137,7 @@ export function HelpCentre({ locale, copy, view, contactHref }: { locale: "en-GB
             </li>;
           })}
         </ul>}
+        {foldable ? <button type="button" className="help-centre-more" aria-expanded={unfolded} onClick={() => setUnfolded((value) => !value)}>{unfolded ? copy.showLess : fillTemplate(copy.showMore, { count: String(view.articles.length - HELP_POPULAR_SHOWN) })}</button> : null}
       </section>
       <aside className="help-centre-side">
         <h2>{copy.topicsTitle}</h2>

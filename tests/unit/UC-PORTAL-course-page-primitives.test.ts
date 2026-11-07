@@ -40,7 +40,7 @@ function assertCurriculumActions(page: CoursePage) {
         ? `/${locale}/account/learn/${COURSE_ID}?lessonId=${lesson.lessonId}`
         : `/${locale}/portal/courses/${COURSE_ID}/public-lesson?lessonId=${lesson.lessonId}`;
       const html = renderToStaticMarkup(createElement(Action, { lesson, href, copy, className: "preview", cta: page.cta, actionLessonId: page.actionLessonId }));
-      if (lesson.lessonId !== page.actionLessonId) {
+      if (lesson.access !== "entitled" && lesson.lessonId !== page.actionLessonId) {
         assert.equal(html, "");
         continue;
       }
@@ -125,7 +125,9 @@ test("UC-PORTAL-1: a later lesson remains locked even when legacy data marks it 
   );
 });
 
-test("ML-FR-004: opening a preview LP records unique progress and switches CTA to Continue preview", async () => {
+// Preview is not learning (BUG-0268, BUG-0269, BUG-0270): opening a preview LP
+// records nothing, so buying the course later starts it from the beginning.
+test("ML-FR-004: opening a preview LP records no progress and no card; the CTA stays Start preview", async () => {
   const user = await verifiedUser(store, "uc-portal-preview-open@example.test");
   const before = await store.getCoursePage(COURSE_ID, user.id);
   assert.equal(before.cta, "start_preview");
@@ -134,19 +136,14 @@ test("ML-FR-004: opening a preview LP records unique progress and switches CTA t
   await openLearningPoint(store, user.id, PREVIEW_LP, "course-page-preview-open", "preview");
 
   const page = await store.getCoursePage(COURSE_ID, user.id);
-  assert.equal(page.cta, "continue_preview");
+  assert.equal(page.cta, "start_preview");
   assert.equal(page.secondaryCta, "view_plans");
-  assert.equal(page.openedLearningPointCount, 1);
-  assert.equal(page.totalLearningPoints, 2);
-  assert.equal(page.progress, 50);
+  assert.equal(page.openedLearningPointCount, 0);
+  assert.equal(page.progress, 0);
   assertCurriculumActions(page);
 
   const overview = await store.getLearningOverview(user.id);
-  const card = overview.courses.find((item) => item.courseId === COURSE_ID);
-  assert.ok(card, "preview open must mint the ML card");
-  assert.equal(card.cardState, "previewing");
-  assert.equal(card.cta, "continue_preview");
-  assert.equal(card.progress, 50);
+  assert.equal(overview.courses.find((item) => item.courseId === COURSE_ID), undefined, "a preview must not mint the My Learning card");
 });
 
 test("ML-FR-005: completing a preview lesson is rejected", async () => {
@@ -180,7 +177,7 @@ test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learni
   assertCurriculumActions(page);
 });
 
-test("completed course keeps its sole action on the final lesson when revisiting an earlier lesson", async () => {
+test("completed course recommends the final lesson while keeping every entitled lesson accessible", async () => {
   const user = await verifiedUser(store, "course-page-completed@example.test");
   await purchaseCourse(store, user.id);
   await openLearningPoint(store, user.id, PREVIEW_LP, "completed-course-first");
@@ -192,7 +189,7 @@ test("completed course keeps its sole action on the final lesson when revisiting
   assertCurriculumActions(page);
 });
 
-test("Everything subscription grants one Start action for every published course", async () => {
+test("Everything subscription grants a Start action for every entitled lesson in every published course", async () => {
   const user = await verifiedUser(store, "uc-portal-everything@example.test");
   const { quote } = await store.createQuote(user.id, "everything-pc-6");
   const { order } = await store.createPendingDemoOrder(user.id, quote.id);

@@ -4,10 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-// LEARN-02 design lock: purchased-never-studied stays off the course list
-// (do not write "must show a card"). The handbook also said preview must not
-// mint a card; ML-FR-004 / PRD wins on integrate/offline — preview-range
-// entry lists a card. That conflict is recorded, not re-locked here.
+// Preview is excluded from My Learning; purchase alone does not invent Study history.
 
 const PLAN_ID = "epicureanism-pc-6";
 const COURSE_ID = "epicureanism";
@@ -50,7 +47,7 @@ test("LEARN-02 design: purchased with no studyRecord does not invent a course ca
   assert.equal(overview.courses.length, 0);
 });
 
-test("LEARN-02 / ML-FR-004: preview-range entry lists a card even without entitlement", async () => {
+test("preview-range entry does not create a course card or learning progress", async () => {
   const user = await store.registerUser({
     email: "learn-02-preview@example.test",
     password: "password1",
@@ -69,6 +66,8 @@ test("LEARN-02 / ML-FR-004: preview-range entry lists a card even without entitl
 
   const overview = await store.getLearningOverview(user.id);
   assert.equal(overview.entitlements.length, 0);
-  assert.equal(overview.courses.length, 1);
-  assert.equal(overview.courses[0]?.cardState, "previewing");
+  assert.equal(overview.courses.length, 0);
+  const data = await store.ensureProductData();
+  assert.equal(data.studyEvents.filter(event => event.userId === user.id).length, 0);
+  assert.equal(data.studyRecords.filter(record => record.userId === user.id).length, 0);
 });
