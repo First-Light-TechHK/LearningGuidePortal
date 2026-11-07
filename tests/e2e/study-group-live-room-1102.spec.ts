@@ -164,6 +164,9 @@ test("1106-1: an @AI Tutor entry that cannot be used looks disabled and the room
     expect((await setKsOnline(false)).status()).toBe(200);
     await expect(pageB.getByTestId("tutor-offline")).toHaveText("AI Tutor is offline for this course.", { timeout: 30_000 });
     await expect(entry).toBeDisabled();
+    // The entry eases into grey over .15 s (.tutorEntry transition); read it
+    // once that is over, not part-way (red in a full run 2026-11-07).
+    await entry.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
     expect(await look()).toEqual(["rgb(242, 244, 247)", "rgb(152, 162, 179)", "rgb(228, 231, 236)", "1"]);
 
     expect((await setKsOnline(true)).status()).toBe(200);
