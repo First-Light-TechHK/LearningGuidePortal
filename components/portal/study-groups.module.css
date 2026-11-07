@@ -448,7 +448,8 @@
 .tutorEntry:hover:not(:disabled) { border-color: #3f7bff; background: var(--lg-tutor-accent-soft); }
 .tutorEntry:focus-visible { outline: 2px solid rgba(0, 92, 255, .25); outline-offset: 1px; }
 .tutorEntry[aria-pressed="true"], .tutorEntry[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--lg-tutor-accent); background: var(--lg-tutor-accent); color: #fff; font-weight: 500; }
-.tutorEntry:disabled { opacity: .6; cursor: not-allowed; }
+/* While the Tutor is off the entry turns grey (no brand blue, no border tint), so it does not read as clickable; the reason sits above it (2026-11-06). */
+.tutorEntry:disabled { border-color: #e4e7ec; background: #f2f4f7; color: #98a2b3; cursor: not-allowed; }
 /* 599:1392: the input sits 12px above the panel's bottom edge; the log takes the rest of the panel's height instead of stopping at a cap. */
 .side .chatLog { max-height: none; }
 .side .chatForm { margin-top: auto; }

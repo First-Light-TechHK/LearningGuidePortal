@@ -1072,6 +1072,9 @@ test("the chat input is one frame on the panel's bottom edge and the floating pe
   // Owner 2026-11-06: the entry stays, drawn like the lesson AI Tutor's controls (.tutor-new-chat / .mode-switch).
   assert.match(css, /\.tutorEntry \{[^}]*border: 1px solid var\(--lg-tutor-accent-border\); border-radius: 7px; background: #fff; color: var\(--lg-tutor-accent\);/);
   assert.match(css, /\.tutorEntry\[aria-pressed="true"\], \.tutorEntry\[aria-pressed="true"\]:hover:not\(:disabled\) \{ border-color: var\(--lg-tutor-accent\); background: var\(--lg-tutor-accent\); color: #fff;/);
+  // Off (2026-11-06): grey, not a faded blue that still looks clickable.
+  assert.match(css, /\.tutorEntry:disabled \{ border-color: #e4e7ec; background: #f2f4f7; color: #98a2b3; cursor: not-allowed; \}/);
+  assert.doesNotMatch(css, /\.tutorEntry:disabled \{[^}]*opacity/);
   assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
   assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
   // BUG-0284: the input wraps and grows to a limit; Enter sends, Shift+Enter starts a new line; a message keeps its lines.
