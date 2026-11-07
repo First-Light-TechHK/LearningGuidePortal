@@ -416,11 +416,18 @@ async function checkTrialGate(page, root, lesson, deadline) {
     // is the configured product behaviour, not a failure.
     if (result.duration <= limit + 0.5) { shorterThanLimit += 1; continue; }
     requireCheck(!await page.locator('.la-trial-modal').count(), 'preview_gate_triggered_before_limit');
-    // Start two seconds before the limit and let real playback cross it, so the
-    // gate is driven by playback rather than by a seek landing beyond it.
-    await video.evaluate((element, stop) => { element.currentTime = Math.max(0, stop - 2); void element.play().catch(() => undefined); }, limit);
+    // A seek before the media has metadata is silently dropped and playback
+    // starts at zero, so the limit is never reached. Wait for metadata, apply
+    // the seek, confirm it took effect, and only then play across the boundary.
+    const handle = await video.elementHandle();
+    await page.waitForFunction(element => Number.isFinite(element.duration) && element.readyState >= 1, handle, { timeout: remaining(deadline, LIMIT.resource) });
+    await video.evaluate((element, stop) => { element.currentTime = Math.max(0, stop - 2); }, limit);
+    await page.waitForFunction(({ element, stop }) => element.currentTime >= Math.max(0, stop - 2) - 0.5, { element: handle, stop: limit }, { timeout: remaining(deadline, LIMIT.resource) });
+    await video.evaluate(element => { void element.play().catch(() => undefined); });
     const modal = page.locator('.la-trial-modal');
-    await modal.waitFor({ state: 'visible', timeout: remaining(deadline, 10000) });
+    // Playback has to buffer from the seek point, which took ~13 s on the
+    // longest video; 15 s raced it, 30 s does not.
+    await modal.waitFor({ state: 'visible', timeout: remaining(deadline, 30000) });
     const state = await video.evaluate(element => ({ paused: element.paused, currentTime: element.currentTime }));
     const href = await modal.locator('a.la-trial-pricing').getAttribute('href');
     requireCheck(trialGateStateMatches({ ...state, visible: await modal.isVisible(), upgradeHref: href }, limit), 'preview_gate_did_not_stop_at_limit_with_upgrade');
