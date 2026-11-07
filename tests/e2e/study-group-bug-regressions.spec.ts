@@ -496,6 +496,41 @@ test("BUG-0107: Close and Escape leave the waiting dialog and free the seat; the
   }
 });
 
+// 2026-11-07: BUG-0107 above went red once in a full run on a busy machine.
+// React paints the waiting dialog a frame before PortalDialog calls showModal,
+// and .modal's display painted it while it was not open yet, so the test (or
+// a quick user) saw it and pressed Escape on no dialog. Here showModal runs
+// 400 ms late, a slow machine made certain: the dialog may only show once it
+// is open, and Escape then closes it.
+test("BUG-0107 b: the waiting dialog shows only once it is open, so Escape always closes it", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "0107b-a", "Study Host");
+  const member = await newMember(browser, origin, "0107b-b", "Study Guest");
+  try {
+    const groupId = await createGroup(host, unique("E2E 0107b"));
+    await joinGroup(member, groupId);
+    const sessionId = await scheduleSession(host, groupId, { title: "Waiting room", startsInMs: 5 * 60_000 });
+    const page = await member.context.newPage();
+    await page.addInitScript(() => {
+      const showModal = HTMLDialogElement.prototype.showModal;
+      HTMLDialogElement.prototype.showModal = function () { window.setTimeout(() => { if (this.isConnected) showModal.call(this); }, 400); };
+    });
+    await page.goto(groupPath(groupId));
+    const waiting = page.getByText("Waiting for the host to start the session...");
+
+    await page.getByRole("button", { name: "Join now" }).click();
+    await expect(waiting).toBeVisible();
+    expect(await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => dialog.open)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(waiting).toHaveCount(0);
+    await expect.poll(async () => (await sessionView(host, sessionId)).occupancy).toBe(0);
+  } finally {
+    await host.context.close();
+    await member.context.close();
+  }
+});
+
 test("BUG-0109: a reminder goes away when its session is cancelled, unplanned, left, its group cancelled or it starts", async ({ browser, baseURL }) => {
   test.setTimeout(240_000);
   const origin = appOrigin(baseURL);

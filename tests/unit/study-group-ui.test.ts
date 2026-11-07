@@ -743,6 +743,8 @@ test("the Schedule dialog keeps long Study Group copy inside its context card", 
   // stacks to one column below 800px.
   assert.match(css, /\.contextCard \{[^}]*overflow-wrap: anywhere;[^}]*\}/);
   assert.match(css, /\.modal \{ position: fixed; inset: 0;[^}]*display: grid; place-items: center; \}/);
+  // A dialog that is not open yet is not painted (BUG-0107 2026-11-07: Escape in that frame reached no dialog).
+  assert.match(css, /\.modal:not\(\[open\]\) \{ display: none; \}/);
   assert.match(css, /\.modal form \{[^}]*max-height: calc\(100vh - 48px\); overflow: auto;[^}]*\}/);
   assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.pair[\s\S]*grid-template-columns: 1fr;/);
 });
